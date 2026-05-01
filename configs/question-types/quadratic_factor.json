@@ -1,0 +1,17 @@
+{
+  "id": "quadratic_factor",
+  "version": 1,
+  "section": "Algebra",
+  "template": "Factorise: {expression}",
+  "parameters": {
+    "root1": "int[-5,5]",
+    "root2": "int[-5,5]"
+  },
+  "generator": "question_engine.plugins.quadratic.generate",
+  "solution": "question_engine.plugins.quadratic.solution",
+  "marks": {
+    "method": 2,
+    "answer": 1
+  },
+  "marking": "default"
+}

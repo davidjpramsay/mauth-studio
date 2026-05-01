@@ -1,0 +1,17 @@
+{
+  "id": "default",
+  "type": "algebraic",
+  "equivalence": true,
+  "allowDifferentForm": true,
+  "accuracyMarks": 1,
+  "steps": [
+    {
+      "name": "expand",
+      "marks": 1
+    },
+    {
+      "name": "simplify",
+      "marks": 1
+    }
+  ]
+}

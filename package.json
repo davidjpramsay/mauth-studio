@@ -1,0 +1,38 @@
+{
+  "name": "mauth-studio",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev:web": "pnpm --dir apps/web dev --host 0.0.0.0",
+    "build:web": "pnpm --dir apps/web build",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000",
+    "test:api": "cd apps/api && uv run pytest",
+    "test": "pnpm test:api && pnpm build:web",
+    "format": "pnpm format:web && pnpm format:api",
+    "format:web": "pnpm exec prettier --write .",
+    "format:api": "cd apps/api && uv run ruff format app tests ../../packages/question-engine ../../packages/formatting-engine ../../packages/marking-engine",
+    "format:check": "pnpm format:check:web && pnpm format:check:api",
+    "format:check:web": "pnpm exec prettier --check .",
+    "format:check:api": "cd apps/api && uv run ruff format --check app tests ../../packages/question-engine ../../packages/formatting-engine ../../packages/marking-engine",
+    "lint": "pnpm lint:web && pnpm lint:api",
+    "lint:web": "pnpm exec eslint apps/web packages/shared packages/diagram-plotly packages/diagram-penrose",
+    "lint:api": "cd apps/api && uv run ruff check app tests ../../packages/question-engine ../../packages/formatting-engine ../../packages/marking-engine",
+    "check": "pnpm format:check && pnpm lint && pnpm test"
+  },
+  "workspaces": [
+    "apps/web",
+    "packages/shared",
+    "packages/diagram-penrose",
+    "packages/diagram-plotly"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "typescript-eslint": "^8.59.1"
+  }
+}

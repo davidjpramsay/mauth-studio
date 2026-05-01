@@ -1,0 +1,211 @@
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+GEOMETRY_SPEC = {
+    "type": "geometricConstruction",
+    "data": {
+        "objects": [
+            {"type": "point", "name": "A"},
+            {"type": "point", "name": "B"},
+            {"type": "point", "name": "C"},
+        ],
+        "relationships": [
+            {"type": "triangle", "points": ["A", "B", "C"]},
+            {"type": "rightAngle", "at": "B"},
+            {"type": "labelLength", "between": ["A", "B"], "value": "5"},
+            {"type": "labelLength", "between": ["B", "C"], "value": "12"},
+        ],
+    },
+    "style": "geometry",
+    "options": {"penrosePreset": "geometry", "scalePercent": 100},
+}
+
+
+def test_penrose_endpoint_renders_triangle_svg():
+    response = client.post("/api/diagram/penrose", json=GEOMETRY_SPEC)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["svg"].startswith("<svg")
+    assert "rightAngleMark" in data["svg"]
+    assert data["metadata"]["preset"] == "geometry"
+    assert "Triangle(A, B, C)" in data["metadata"]["substance"]
+    assert "LabelsSegment(sideLabel1, A, B)" in data["metadata"]["substance"]
+    assert "override" not in data["metadata"]["styleSource"]
+    assert "ensure perpendicular(a.dot.center, b.dot.center, c.dot.center)" in data["metadata"]["styleSource"]
+
+
+def test_penrose_variation_resamples_geometry_layout():
+    first = client.post("/api/diagram/penrose", json={**GEOMETRY_SPEC, "options": {"variation": "layout-a"}})
+    second = client.post("/api/diagram/penrose", json={**GEOMETRY_SPEC, "options": {"variation": "layout-b"}})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["svg"] != second.json()["svg"]
+
+
+def test_penrose_diagram_uses_original_canvas_and_test_text_labels():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={**GEOMETRY_SPEC, "options": {"scalePercent": 150, "width": 600, "height": 420}},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert 'viewBox="' in data["svg"]
+    assert 'width="420"' not in data["svg"]
+    assert 'height="300"' not in data["svg"]
+    assert data["metadata"]["width"] == 420
+    assert data["metadata"]["height"] == 300
+    assert data["metadata"]["displayWidth"] <= 420
+    assert data["metadata"]["displayHeight"] <= 300
+    assert data["metadata"]["viewBox"] != "0 0 420 300"
+    assert data["metadata"]["scalePercent"] == 150
+    assert "8.889px Inter, ui-sans-serif" in data["svg"]
+    assert "font-size: 10.755px" in data["svg"]
+
+
+def test_penrose_endpoint_accepts_source_inputs():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **GEOMETRY_SPEC,
+            "options": {
+                "scalePercent": 100,
+                "substanceSource": (
+                    "Point A, B, C\n"
+                    "Label A $A$\n"
+                    "Label B $B$\n"
+                    "Label C $C$\n"
+                    "LengthLabel sideLabel1, sideLabel2\n"
+                    "Triangle(A, B, C)\n"
+                    "RightAngle(A, B, C)\n"
+                    "Label sideLabel1 $9$\n"
+                    "LabelsSegment(sideLabel1, A, B)\n"
+                    "Label sideLabel2 $12$\n"
+                    "LabelsSegment(sideLabel2, B, C)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "Label sideLabel1 $9$" in data["metadata"]["substance"]
+    assert ">9</text>" in data["svg"]
+
+
+def test_penrose_source_inputs_drive_generated_layout_helpers():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **GEOMETRY_SPEC,
+            "options": {
+                "scalePercent": 100,
+                "substanceSource": (
+                    "Point A, B, C, D\n"
+                    "Label A $A$\n"
+                    "Label B $B$\n"
+                    "Label C $C$\n"
+                    "Label D $D$\n"
+                    "LengthLabel sideLabel1, sideLabel2\n"
+                    "Triangle(A, B, D)\n"
+                    "RightAngle(A, B, D)\n"
+                    "Label sideLabel1 $5 cm$\n"
+                    "LabelsSegment(sideLabel1, A, B)\n"
+                    "Label sideLabel2 $12 cm$\n"
+                    "LabelsSegment(sideLabel2, B, D)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "Triangle(A, B, D)" in data["metadata"]["substance"]
+    assert "Point `B`; Point `D`" in data["metadata"]["styleSource"]
+    assert "Point `B`; Point `C`" not in data["metadata"]["styleSource"]
+
+
+def test_penrose_geometry_preset_supports_common_constructions():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **GEOMETRY_SPEC,
+            "options": {
+                "scalePercent": 100,
+                "substanceSource": (
+                    "Point O, A, B, C\n"
+                    "Line tangentA, bisectorABC, perpAB\n"
+                    "Circle omega\n"
+                    "LengthLabel angleLabel, circleLabel\n"
+                    "Label O $O$\n"
+                    "Label A $A$\n"
+                    "Label B $B$\n"
+                    "Label C $C$\n"
+                    "Label omega $\\omega$\n"
+                    "Label angleLabel $45^\\circ$\n"
+                    "Label circleLabel $r=5$\n"
+                    "CircleThrough(omega, O, A)\n"
+                    "OnCircle(B, omega)\n"
+                    "Tangent(tangentA, omega, A)\n"
+                    "AngleBisector(bisectorABC, A, B, C)\n"
+                    "PerpendicularBisector(perpAB, A, B)\n"
+                    "LabelsAngle(angleLabel, A, B, C)\n"
+                    "LabelsCircle(circleLabel, omega)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "Tangent(tangentA, omega, A)" in data["metadata"]["substance"]
+    assert "AngleBisector(bisectorABC, A, B, C)" in data["metadata"]["substance"]
+    assert "rightAngleMark" not in data["svg"]
+
+
+def test_penrose_geometry_preset_draws_equal_length_ticks():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **GEOMETRY_SPEC,
+            "options": {
+                "scalePercent": 100,
+                "variation": "isosceles",
+                "substanceSource": (
+                    "Point L, V, R\n"
+                    "Label L $\\,$\n"
+                    "Label V $\\,$\n"
+                    "Label R $\\,$\n"
+                    "LengthLabel angleTheta\n"
+                    "Label angleTheta $\\theta$\n"
+                    "Triangle(L, V, R)\n"
+                    "EqualLength(V, L, V, R)\n"
+                    "LabelsAngle(angleTheta, L, V, R)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "EqualLength(V, L, V, R)" in data["metadata"]["substance"]
+    assert "tickFirst" in data["svg"]
+    assert "tickSecond" in data["svg"]
+    assert "angleTheta" in data["svg"]
+
+
+def test_geometry_question_embeds_geometric_diagram():
+    response = client.post("/api/questions/generate", json={"type": "right_triangle_geometry", "seed": 3})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["section"] == "Geometry"
+    assert data["contentBlocks"][0]["kind"] == "diagram"
+    assert data["contentBlocks"][0]["graphConfig"]["type"] == "geometricConstruction"
+    assert data["diagram"]["data"]["relationships"][1]["type"] == "rightAngle"

@@ -1,0 +1,307 @@
+canvas {
+  width = 420
+  height = 300
+}
+
+forall Point p {
+  p.dot = Circle {
+    r: 3
+    fillColor: rgba(0, 0, 0, 1)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 0
+  }
+
+  p.labelText = Equation {
+    string: p.label
+    fontSize: "16.133px"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+
+  p.labelText.center = p.dot.center + unit(p.dot.center + (0.001, 0.001)) * 18
+
+  ensure onCanvas(p.dot, 420, 300)
+  ensure onCanvas(p.labelText, 420, 300)
+  ensure disjoint(p.labelText, p.dot, 5)
+  layer p.labelText above p.dot
+}
+
+forall Point p; Point q {
+  ensure disjoint(p.dot, q.dot, 48)
+  ensure disjoint(p.labelText, q.labelText, 6)
+}
+
+forall Point a; Point b
+where Segment(a, b) {
+  segmentLine = Line {
+    start: a.dot.center
+    end: b.dot.center
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+
+  layer segmentLine below a.dot
+  layer segmentLine below b.dot
+}
+
+forall Line l; Point a; Point b
+where LineThrough(l, a, b) {
+  l.shape = Line {
+    start: a.dot.center - unit(b.dot.center - a.dot.center + (0.001, 0.001)) * 180
+    end: b.dot.center + unit(b.dot.center - a.dot.center + (0.001, 0.001)) * 180
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Ray r; Point start; Point through
+where RayFrom(r, start, through) {
+  r.shape = Line {
+    start: start.dot.center
+    end: start.dot.center + unit(through.dot.center - start.dot.center + (0.001, 0.001)) * 220
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Circle c {
+  c.shape = Circle {
+    center: (0, 0)
+    r: 70
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+  }
+
+  c.labelText = Equation {
+    string: c.label
+    fontSize: "16.133px"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+
+  c.labelText.center = c.shape.center + unit(c.shape.center + (0.001, 0.001)) * (c.shape.r + 20)
+
+  ensure onCanvas(c.shape, 420, 300)
+  ensure onCanvas(c.labelText, 420, 300)
+  layer c.labelText above c.shape
+}
+
+forall Circle c; Point center
+where CircleWithCenter(c, center) {
+  c.shape.center = center.dot.center
+  ensure disjoint(c.labelText, center.dot, 8)
+}
+
+forall Circle c; Point center; Point through
+where CircleThrough(c, center, through) {
+  c.shape.center = center.dot.center
+  c.shape.r = vdist(center.dot.center, through.dot.center)
+  ensure disjoint(c.labelText, center.dot, 8)
+}
+
+forall Point p; Circle c
+where OnCircle(p, c) {
+  ensure equal(vdist(p.dot.center, c.shape.center), c.shape.r)
+}
+
+forall Line l; Circle c; Point p
+where Tangent(l, c, p) {
+  ensure equal(vdist(p.dot.center, c.shape.center), c.shape.r)
+  l.shape = Line {
+    start: p.dot.center - rot90(unit(p.dot.center - c.shape.center + (0.001, 0.001))) * 170
+    end: p.dot.center + rot90(unit(p.dot.center - c.shape.center + (0.001, 0.001))) * 170
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Line l; Circle c; Point a; Point b
+where Secant(l, c, a, b) {
+  ensure equal(vdist(a.dot.center, c.shape.center), c.shape.r)
+  ensure equal(vdist(b.dot.center, c.shape.center), c.shape.r)
+  l.shape = Line {
+    start: a.dot.center - unit(b.dot.center - a.dot.center + (0.001, 0.001)) * 120
+    end: b.dot.center + unit(b.dot.center - a.dot.center + (0.001, 0.001)) * 120
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Point m; Point a; Point b
+where Midpoint(m, a, b) {
+  m.dot.center = midpoint(a.dot.center, b.dot.center)
+}
+
+forall Line l; Point a; Point b; Point c
+where AngleBisector(l, a, b, c) {
+  l.shape = Line {
+    start: b.dot.center
+    end: b.dot.center + unit(unit(a.dot.center - b.dot.center + (0.001, 0.001)) + unit(c.dot.center - b.dot.center + (0.001, 0.001)) + (0.001, 0.001)) * 190
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Line l; Point a; Point b
+where PerpendicularBisector(l, a, b) {
+  l.shape = Line {
+    start: midpoint(a.dot.center, b.dot.center) - rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 160
+    end: midpoint(a.dot.center, b.dot.center) + rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 160
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
+forall Point a; Point b; Point c; Point d
+where EqualLength(a, b, c, d) {
+  ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
+
+  tickAB = Line {
+    start: midpoint(a.dot.center, b.dot.center) - rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(a.dot.center, b.dot.center) + rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+
+  tickCD = Line {
+    start: midpoint(c.dot.center, d.dot.center) - rot90(unit(d.dot.center - c.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(c.dot.center, d.dot.center) + rot90(unit(d.dot.center - c.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+
+  layer tickAB above a.dot
+  layer tickAB above b.dot
+  layer tickCD above c.dot
+  layer tickCD above d.dot
+}
+
+forall Point shared; Point b; Point c
+where EqualLength(shared, b, shared, c) {
+  ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
+
+  tickFirst = Line {
+    start: midpoint(shared.dot.center, b.dot.center) - rot90(unit(b.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(shared.dot.center, b.dot.center) + rot90(unit(b.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+
+  tickSecond = Line {
+    start: midpoint(shared.dot.center, c.dot.center) - rot90(unit(c.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(shared.dot.center, c.dot.center) + rot90(unit(c.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+}
+
+forall Point a; Point shared; Point c
+where EqualLength(a, shared, c, shared) {
+  ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
+
+  tickFirst = Line {
+    start: midpoint(a.dot.center, shared.dot.center) - rot90(unit(shared.dot.center - a.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(a.dot.center, shared.dot.center) + rot90(unit(shared.dot.center - a.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+
+  tickSecond = Line {
+    start: midpoint(c.dot.center, shared.dot.center) - rot90(unit(shared.dot.center - c.dot.center + (0.001, 0.001))) * 7
+    end: midpoint(c.dot.center, shared.dot.center) + rot90(unit(shared.dot.center - c.dot.center + (0.001, 0.001))) * 7
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    fillColor: none()
+  }
+}
+
+forall Point a; Point b; Point c
+where Triangle(a, b, c) {
+  tri = Polygon {
+    points: [a.dot.center, b.dot.center, c.dot.center]
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+  }
+
+  encourage nonDegenerateAngle(a.dot, b.dot, c.dot)
+}
+
+forall Point a; Point b; Point c
+where RightAngle(a, b, c) {
+  legA = Line {
+    start: b.dot.center
+    end: a.dot.center
+    strokeWidth: 0
+    strokeColor: none()
+    fillColor: none()
+  }
+
+  legC = Line {
+    start: b.dot.center
+    end: c.dot.center
+    strokeWidth: 0
+    strokeColor: none()
+    fillColor: none()
+  }
+
+  ensure perpendicular(a.dot.center, b.dot.center, c.dot.center)
+  encourage above(a.dot, b.dot, 95)
+  encourage rightwards(c.dot, b.dot, 150)
+  encourage equal(a.dot.center[0], b.dot.center[0])
+  encourage equal(c.dot.center[1], b.dot.center[1])
+
+  rightAngleMark = Path {
+    d: orientedSquare(legA, legC, b.dot.center, 18)
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.7
+  }
+}
+
+forall LengthLabel l {
+  l.text = Text {
+    string: l.label
+    fontSize: "13.333px"
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+
+  ensure onCanvas(l.text, 420, 300)
+}
+
+forall LengthLabel l; Point a; Point b
+where LabelsSegment(l, a, b) {
+  ensure disjoint(l.text, a.dot, 5)
+  ensure disjoint(l.text, b.dot, 5)
+}
+
+forall LengthLabel l; Point a; Point b; Point c
+where LabelsAngle(l, a, b, c) {
+  l.text.center = b.dot.center + unit(unit(a.dot.center - b.dot.center + (0.001, 0.001)) + unit(c.dot.center - b.dot.center + (0.001, 0.001)) + (0.001, 0.001)) * 34
+  ensure disjoint(l.text, a.dot, 6)
+  ensure disjoint(l.text, b.dot, 6)
+  ensure disjoint(l.text, c.dot, 6)
+}
+
+forall LengthLabel l; Circle c
+where LabelsCircle(l, c) {
+  l.text.center = c.shape.center + unit(c.shape.center + (0.001, 0.001)) * (c.shape.r + 18)
+  ensure disjoint(l.text, c.shape, 8)
+}
+
+forall LengthLabel l; Line line
+where LabelsLine(l, line) {
+  l.text.center = midpoint(line.shape.start, line.shape.end) + unit(rot90(line.shape.end - line.shape.start) + (0.001, 0.001)) * 18
+}
