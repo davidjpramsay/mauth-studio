@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, ReactNode } from "react";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
+import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode } from "react";
+import Panzoom from "@panzoom/panzoom";
+import type { PanzoomObject } from "@panzoom/panzoom";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
   ContentBlock,
   DiagramAlignment,
-  DiagramContentBlock,
   DiagramTextSide,
   FormattingConfig,
   GraphConfig,
@@ -33,8 +32,6 @@ import {
   ChevronRight,
   Columns2,
   Copy,
-  FileDown,
-  FileUp,
   FileText,
   GitBranch,
   GripVertical,
@@ -80,8 +77,6 @@ const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
 const GRAPH_LABELS = ["f", "g", "h", "p", "q"];
 const DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH = 2.5;
 const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
-const HEADER_ACTION_CLASS =
-  "h-8 gap-2 border border-blue-300/25 bg-white/[0.06] px-3 text-blue-100 hover:border-blue-200/45 hover:bg-blue-500/15 hover:text-white";
 const HEADER_GROUP_CLASS = "ml-2 flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
@@ -95,8 +90,14 @@ const DEFAULT_PAGE_FORMAT = {
   showPageBreaks: true,
 };
 const QUESTION_GAP_PX = 32;
-const PREVIEW_FIT_PADDING_PX = 32;
+const PREVIEW_FIT_PADDING_PX = 40;
 const MIN_PREVIEW_SCALE = 0.55;
+const DISPLAY_ONLY_PREVIEW_SCALE = 1.25;
+const MIN_PREVIEW_ZOOM = 0.7;
+const MAX_PREVIEW_ZOOM = 3;
+const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0012;
+const WHEEL_DELTA_LINE = 1;
+const WHEEL_DELTA_PAGE = 2;
 const LOGO_LIBRARY_STORAGE_KEY = "mauth-studio.logo-library.v1";
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
@@ -108,9 +109,6 @@ const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const SAVED_TEST_LOGO_PREFIX = "saved-test-logo-";
-const MAUTHDOWN_VERSION = 1;
-const MAUTHDOWN_DATA_FENCE = "````";
-const MAUTHDOWN_CODE_FENCE = "```";
 const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 let nextInsertMenuId = 0;
@@ -410,11 +408,14 @@ interface SubsectionDropIntent {
 }
 
 type DropPlacement = "before" | "after" | "inside";
+type MoveDirection = -1 | 1;
 type PanelDragRegion = "header" | "body";
-type TocItemKind = "title" | "question" | "text" | "choices" | "table" | "diagram" | "space" | "part" | "subpart";
+type TocItemKind = "title" | "question" | "pageBreak" | "text" | "choices" | "table" | "diagram" | "space" | "part" | "subpart";
 
 const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
 const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
+const PAGE_BREAK_DRAG_MIME = "application/x-mauth-page-break";
+const PAGE_BREAK_DRAG_TEXT_PREFIX = "mauth-page-break:";
 
 interface SubsectionDropPreview {
   targetKey: string;
@@ -426,6 +427,13 @@ interface QuestionDropPreview {
   questionId: string;
   placement: Exclude<DropPlacement, "inside">;
 }
+
+interface PageBreakDropPreview {
+  questionId: string;
+  placement: Exclude<DropPlacement, "inside">;
+}
+
+type SafariGestureEvent = Event & { scale?: number; clientX?: number; clientY?: number };
 
 interface DocumentTocItem {
   id: string;
@@ -489,17 +497,6 @@ interface SavedTest {
   logo?: LogoAsset;
   createdAt: string;
   updatedAt: string;
-}
-
-interface MauthdownDocument {
-  format: "mauthdown";
-  version: number;
-  exportedAt: string;
-  testName: string;
-  totalMarks: number;
-  frontMatter: FrontMatterConfig;
-  logo?: LogoAsset;
-  questions: QuestionBlock[];
 }
 
 function id(prefix: string) {
@@ -2249,767 +2246,6 @@ function markLabel(marks: number) {
   return `(${marks} mark${marks === 1 ? "" : "s"})`;
 }
 
-function mauthdownAttributeValue(value: string | number | boolean) {
-  if (typeof value === "number") return String(value);
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return JSON.stringify(value);
-}
-
-function mauthdownDiagramBlock(block: DiagramContentBlock) {
-  const config = withGraphDefaults(block.graphConfig);
-  const align = block.diagramAlign ?? "center";
-  const textSide = normalizeDiagramTextSide(block.diagramTextSide);
-  const textSideAttr = textSide === "none" ? "" : ` textSide="${textSide}"`;
-  if (isPenroseDiagramType(config.type)) {
-    const scale = penroseScalePercent(config);
-    return [
-      `:::diagram type="${config.type}" align="${align}" scale=${scale}${textSideAttr}`,
-      `${MAUTHDOWN_CODE_FENCE}penrose`,
-      penroseSubstanceSource(config).trimEnd(),
-      MAUTHDOWN_CODE_FENCE,
-      ":::",
-      "",
-    ].join("\n");
-  }
-
-  return [
-    `:::diagram type="${config.type}" align="${align}"${textSideAttr}`,
-    `${MAUTHDOWN_CODE_FENCE}json`,
-    JSON.stringify(config, null, 2),
-    MAUTHDOWN_CODE_FENCE,
-    ":::",
-    "",
-  ].join("\n");
-}
-
-function mauthdownChoicesBlock(block: Extract<EditorContentBlock, { kind: "choices" }>) {
-  const style = normalizeChoiceNumberingStyle(block.numberingStyle);
-  const layout = normalizeChoiceListLayout(block.layout);
-  const choices = normalizeChoiceItems(block.choices);
-  return [`:::choices style="${style}" layout="${layout}"`, ...choices.map((choice) => `- ${choice.trimEnd()}`), ":::", ""].join("\n");
-}
-
-function escapeMauthdownTableCell(value: string) {
-  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
-}
-
-function mauthdownTableRow(cells: string[]) {
-  return `| ${cells.map(escapeMauthdownTableCell).join(" | ")} |`;
-}
-
-function mauthdownTableBlock(block: Extract<EditorContentBlock, { kind: "table" }>) {
-  const table = normalizeTableBlock(block);
-  const lines = [
-    `:::table header=${mauthdownAttributeValue(table.showHeader)} align="${table.tableAlign}" cellAlign="${table.cellAlignment}"`,
-  ];
-  if (table.showHeader) lines.push(mauthdownTableRow(table.headers));
-  lines.push(...table.rows.map((row) => mauthdownTableRow(row)), ":::", "");
-  return lines.join("\n");
-}
-
-function mauthdownContentBlocks(blocks: EditorContentBlock[], emptyLabel: string) {
-  if (!blocks.length) {
-    return [`:::text`, `_${emptyLabel}_`, ":::", ""].join("\n");
-  }
-
-  return blocks
-    .map((block) => {
-      if (block.kind === "text") return [`:::text`, (block.text ?? "").trimEnd(), ":::", ""].join("\n");
-      if (block.kind === "choices") return mauthdownChoicesBlock(block);
-      if (block.kind === "table") return mauthdownTableBlock(block);
-      if (block.kind === "space") return `:::space lines=${spaceLines(block.lines)}\n:::\n\n`;
-      if (block.kind === "diagram") return mauthdownDiagramBlock(block);
-      if (block.kind === "pageBreak") return ":::page-break\n:::\n\n";
-      return "";
-    })
-    .join("");
-}
-
-function createMauthdownDocument({
-  frontMatter,
-  questions,
-  logo,
-}: {
-  frontMatter: FrontMatterConfig;
-  questions: QuestionBlock[];
-  logo?: LogoAsset;
-}): MauthdownDocument {
-  const normalizedQuestions = normalizeQuestionBlocks(questions);
-  return {
-    format: "mauthdown",
-    version: MAUTHDOWN_VERSION,
-    exportedAt: new Date().toISOString(),
-    testName: defaultSavedTestName(frontMatter),
-    totalMarks: normalizedQuestions.reduce((sum, question) => sum + questionMarks(question), 0),
-    frontMatter: cloneSerializable(frontMatter),
-    logo: logo ? cloneSerializable(logo) : undefined,
-    questions: cloneSerializable(normalizedQuestions),
-  };
-}
-
-function buildMauthdownFile(document: MauthdownDocument) {
-  const titlePayload = JSON.stringify(
-    {
-      frontMatter: document.frontMatter,
-      logo: document.logo ?? null,
-    },
-    null,
-    2,
-  );
-  const lines = [
-    "---",
-    `mauthdown: ${document.version}`,
-    `title: ${JSON.stringify(document.testName)}`,
-    `exportedAt: ${JSON.stringify(document.exportedAt)}`,
-    `startQuestionNumber: ${normalizedStartQuestionNumber(document.frontMatter)}`,
-    `totalMarks: ${document.totalMarks}`,
-    "---",
-    "",
-    "# Title Page",
-    "",
-    ":::title-page",
-    `${MAUTHDOWN_CODE_FENCE}json`,
-    titlePayload,
-    MAUTHDOWN_CODE_FENCE,
-    ":::",
-    "",
-    "# Questions",
-    "",
-  ];
-
-  document.questions.forEach((question, questionIndex) => {
-    lines.push(
-      `:::question section=${mauthdownAttributeValue(question.section)} marks=${mauthdownAttributeValue(question.marks)}`,
-      `<!-- Question ${questionDisplayNumber(document.frontMatter, questionIndex)} ${markLabel(questionMarks(question))} -->`,
-      "",
-    );
-    const questionItems = orderedQuestionItems(question);
-    if (!questionItems.length) lines.push(mauthdownContentBlocks([], "Blank question"));
-
-    questionItems.forEach((item) => {
-      if (item.kind === "block") {
-        lines.push(mauthdownContentBlocks([item.block], "Blank question"));
-        return;
-      }
-
-      const partIndex = question.parts.findIndex((part) => part.id === item.part.id);
-      lines.push(`:::part marks=${mauthdownAttributeValue(item.part.marks)}`, `<!-- Part (${alphaLabel(Math.max(0, partIndex))}) -->`, "");
-
-      const partItems = orderedPartItems(item.part);
-      if (!partItems.length) lines.push(mauthdownContentBlocks([], "Blank part"));
-      partItems.forEach((partItem) => {
-        if (partItem.kind === "block") {
-          lines.push(mauthdownContentBlocks([partItem.block], "Blank part"));
-          return;
-        }
-
-        const subpartIndex = item.part.subparts.findIndex((subpart) => subpart.id === partItem.subpart.id);
-        lines.push(
-          `:::subpart marks=${mauthdownAttributeValue(partItem.subpart.marks)}`,
-          `<!-- Subpart (${romanLabel(Math.max(0, subpartIndex))}) -->`,
-          "",
-        );
-        lines.push(mauthdownContentBlocks(partItem.subpart.contentBlocks, "Blank subpart"));
-        lines.push(":::/subpart", "");
-      });
-
-      lines.push(":::/part", "");
-    });
-
-    if (question.pageBreakAfter) {
-      lines.push(":::page-break", ":::", "");
-    }
-
-    lines.push(":::/question", "");
-  });
-
-  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n");
-}
-
-function parseMauthdownScalar(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  const numberValue = Number(trimmed);
-  if (Number.isFinite(numberValue) && /^-?\d+(?:\.\d+)?$/.test(trimmed)) return numberValue;
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return trimmed.replace(/^["']|["']$/g, "");
-  }
-}
-
-function parseMauthdownFrontMatter(source: string) {
-  const match = source.match(/^---\s*\n([\s\S]*?)\n---/);
-  const fields: Record<string, unknown> = {};
-  if (!match?.[1]) return fields;
-
-  for (const line of match[1].split(/\r?\n/)) {
-    const separatorIndex = line.indexOf(":");
-    if (separatorIndex === -1) continue;
-    const key = line.slice(0, separatorIndex).trim();
-    if (!key) continue;
-    fields[key] = parseMauthdownScalar(line.slice(separatorIndex + 1));
-  }
-
-  return fields;
-}
-
-function parseMauthdownAttributes(source: string) {
-  const attrs: Record<string, string> = {};
-  const pattern = /([A-Za-z][A-Za-z0-9_-]*)=(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(source))) {
-    attrs[match[1]] = match[2] ?? match[3] ?? match[4] ?? "";
-  }
-  return attrs;
-}
-
-function parseMauthdownDirective(line: string) {
-  const match = line.trim().match(/^:::(\/?)([A-Za-z][A-Za-z0-9_-]*)(.*)$/);
-  if (!match) return null;
-  return {
-    closing: match[1] === "/",
-    name: match[2],
-    attrs: parseMauthdownAttributes(match[3] ?? ""),
-  };
-}
-
-function mauthdownAttributeNumber(attrs: Record<string, string>, key: string, fallback: number) {
-  const value = Number(attrs[key]);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function mauthdownAttributeAlignment(attrs: Record<string, string>) {
-  const value = attrs.align === "centre" ? "center" : attrs.align;
-  return normalizeDiagramAlignment(value);
-}
-
-function readMauthdownPayload(lines: string[], directiveIndex: number) {
-  let index = directiveIndex + 1;
-  while (index < lines.length && !lines[index].trim()) index += 1;
-
-  if (lines[index]?.trim().startsWith(MAUTHDOWN_CODE_FENCE)) {
-    const language = lines[index].trim().slice(MAUTHDOWN_CODE_FENCE.length).trim();
-    index += 1;
-    const payloadLines: string[] = [];
-    while (index < lines.length && !lines[index].trim().startsWith(MAUTHDOWN_CODE_FENCE)) {
-      payloadLines.push(lines[index]);
-      index += 1;
-    }
-    if (index < lines.length) index += 1;
-    while (index < lines.length && lines[index].trim() !== ":::") index += 1;
-    if (index < lines.length) index += 1;
-    return { language, payload: payloadLines.join("\n").trimEnd(), nextIndex: index };
-  }
-
-  const payloadLines: string[] = [];
-  while (index < lines.length && lines[index].trim() !== ":::") {
-    payloadLines.push(lines[index]);
-    index += 1;
-  }
-  if (index < lines.length) index += 1;
-  return { language: "", payload: payloadLines.join("\n").trimEnd(), nextIndex: index };
-}
-
-function readMauthdownPlainText(lines: string[], startIndex: number) {
-  const textLines: string[] = [];
-  let index = startIndex;
-  while (index < lines.length && !lines[index].trim().startsWith(":::")) {
-    const trimmed = lines[index].trim();
-    if (!trimmed.startsWith("<!--") && !trimmed.endsWith("-->")) textLines.push(lines[index]);
-    index += 1;
-  }
-  return { text: textLines.join("\n").trim(), nextIndex: index };
-}
-
-function choicesFromMauthdownPayload(payload: string) {
-  const choices = payload
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.replace(/^[-*]\s+/, ""));
-  return choices.length ? choices : [""];
-}
-
-function splitMauthdownTableRow(line: string) {
-  let trimmed = line.trim();
-  if (!trimmed.startsWith("|")) return [];
-  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
-  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
-
-  const cells: string[] = [];
-  let current = "";
-  for (let index = 0; index < trimmed.length; index += 1) {
-    const char = trimmed[index];
-    const next = trimmed[index + 1];
-    if (char === "\\" && next === "|") {
-      current += "|";
-      index += 1;
-      continue;
-    }
-    if (char === "|") {
-      cells.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  cells.push(current.trim());
-  return cells;
-}
-
-function isMauthdownTableSeparator(cells: string[]) {
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-}
-
-function tableFromMauthdownPayload(payload: string, attrs: Record<string, string>): Extract<EditorContentBlock, { kind: "table" }> {
-  const parsedRows = payload
-    .split(/\r?\n/)
-    .map(splitMauthdownTableRow)
-    .filter((row) => row.length > 0);
-  const showHeader = attrs.header === "false" || attrs.showHeader === "false" ? false : true;
-  const tableAlign = mauthdownAttributeAlignment(attrs);
-  const cellAlignment = normalizeTableCellAlignment(attrs.cellAlign ?? attrs.cellAlignment);
-
-  let headers: string[] = [];
-  let rows = parsedRows;
-  if (showHeader && parsedRows.length) {
-    headers = parsedRows[0];
-    rows = parsedRows.slice(1);
-    if (rows.length && isMauthdownTableSeparator(rows[0])) rows = rows.slice(1);
-  }
-
-  const columnCount = normalizedTableColumnCount(headers, rows);
-  const table: Extract<EditorContentBlock, { kind: "table" }> = {
-    id: id("table"),
-    kind: "table",
-    headers: paddedTableRow(headers, columnCount),
-    rows: (rows.length ? rows : [Array.from({ length: columnCount }, () => "")]).map((row) => paddedTableRow(row, columnCount)),
-    showHeader,
-    tableAlign,
-    cellAlignment,
-  };
-  return normalizeTableBlock(table);
-}
-
-type MauthdownStackItem =
-  | { kind: "question"; value: QuestionBlock }
-  | { kind: "part"; value: EditorPart }
-  | { kind: "subpart"; value: EditorSubpart };
-
-function currentMauthdownQuestion(stack: MauthdownStackItem[], questions: QuestionBlock[]) {
-  return (
-    [...stack].reverse().find((item): item is { kind: "question"; value: QuestionBlock } => item.kind === "question")?.value ??
-    questions.at(-1)
-  );
-}
-
-function ensureMauthdownQuestion(stack: MauthdownStackItem[], questions: QuestionBlock[]) {
-  const existing = currentMauthdownQuestion(stack, questions);
-  if (existing) return existing;
-  const question = createQuestion();
-  questions.push(question);
-  stack.push({ kind: "question", value: question });
-  return question;
-}
-
-function currentMauthdownPart(stack: MauthdownStackItem[], questions: QuestionBlock[]) {
-  const existing = [...stack].reverse().find((item): item is { kind: "part"; value: EditorPart } => item.kind === "part")?.value;
-  if (existing) return existing;
-  const question = ensureMauthdownQuestion(stack, questions);
-  const part: EditorPart = { id: id("part"), label: "", text: "", marks: 0, contentBlocks: [], subparts: [], itemOrder: [] };
-  question.parts.push(part);
-  question.itemOrder.push({ kind: "part", id: part.id });
-  stack.push({ kind: "part", value: part });
-  return part;
-}
-
-function addMauthdownContentBlock(stack: MauthdownStackItem[], questions: QuestionBlock[], block: EditorContentBlock) {
-  const owner = stack[stack.length - 1];
-  if (owner?.kind === "subpart") {
-    owner.value.contentBlocks.push(block);
-    return;
-  }
-  if (owner?.kind === "part") {
-    owner.value.contentBlocks.push(block);
-    owner.value.itemOrder.push({ kind: "block", id: block.id });
-    return;
-  }
-  const question = ensureMauthdownQuestion(stack, questions);
-  question.contentBlocks.push(block);
-  question.itemOrder.push({ kind: "block", id: block.id });
-}
-
-function closeMauthdownContainer(stack: MauthdownStackItem[], name: string) {
-  const expectedKind = name === "question" || name === "part" || name === "subpart" ? name : "";
-  if (!expectedKind) return;
-  let index = -1;
-  for (let itemIndex = stack.length - 1; itemIndex >= 0; itemIndex -= 1) {
-    if (stack[itemIndex].kind === expectedKind) {
-      index = itemIndex;
-      break;
-    }
-  }
-  if (index !== -1) stack.splice(index);
-}
-
-function defaultMauthdownGraphConfig(type: string): GraphConfig {
-  const normalizedType = normalizeDiagramType(type);
-  if (normalizedType === "image") return withGraphDefaults(DEFAULT_IMAGE_DIAGRAM);
-  if (isPenroseDiagramType(normalizedType)) return withGraphDefaults(defaultPenroseDiagramForType(normalizedType));
-  if (normalizedType === "statsChart") return withGraphDefaults(DEFAULT_STATS_CHART);
-  if (normalizedType === "graph3d") return withGraphDefaults({ ...DEFAULT_2D_GRAPH, type: "graph3d" });
-  if (normalizedType === "vector2d") return withGraphDefaults({ ...DEFAULT_2D_GRAPH, type: "vector2d" });
-  return withGraphDefaults({ ...DEFAULT_2D_GRAPH, type: normalizedType });
-}
-
-function graphConfigFromMauthdownDiagram(attrs: Record<string, string>, language: string, payload: string): GraphConfig {
-  const type = normalizeDiagramType(attrs.type);
-  if (isPenroseDiagramType(type) || language === "penrose") {
-    const scalePercent = mauthdownAttributeNumber(attrs, "scale", DEFAULT_PENROSE_SCALE_PERCENT);
-    const penroseType = isPenroseDiagramType(type) ? type : "geometricConstruction";
-    const defaults = defaultPenroseDiagramForType(penroseType);
-    return withGraphDefaults({
-      ...defaults,
-      type: penroseType,
-      scalePercent,
-      options: {
-        ...penroseOptions(defaults),
-        scalePercent,
-        substanceSource: payload.trim(),
-      },
-    });
-  }
-
-  if (language === "json" && payload.trim()) {
-    try {
-      const parsed = JSON.parse(payload) as unknown;
-      const record = asRecord(parsed);
-      const graphConfig = record && asRecord(record.graphConfig) ? (record.graphConfig as GraphConfig) : (parsed as GraphConfig);
-      return withGraphDefaults({ ...graphConfig, type: graphConfig.type ?? type });
-    } catch {
-      return defaultMauthdownGraphConfig(type);
-    }
-  }
-
-  return defaultMauthdownGraphConfig(type);
-}
-
-function parseMauthdownTitlePagePayload(payload: string) {
-  try {
-    const record = asRecord(JSON.parse(payload));
-    if (!record) return {};
-    const frontMatter = normalizeFrontMatter(record.frontMatter ?? record);
-    return {
-      frontMatter: frontMatter ?? undefined,
-      logo: normalizeLogoAsset(record.logo),
-    };
-  } catch {
-    return {};
-  }
-}
-
-function parseAuthoredMauthdownDocument(source: string): MauthdownDocument | null {
-  if (!source.includes(":::question")) return null;
-
-  const header = parseMauthdownFrontMatter(source);
-  const headerVersion = typeof header.mauthdown === "number" ? header.mauthdown : MAUTHDOWN_VERSION;
-  const lines = source.split(/\r?\n/);
-  const stack: MauthdownStackItem[] = [];
-  const questions: QuestionBlock[] = [];
-  let titleFrontMatter: FrontMatterConfig | undefined;
-  let titleLogo: LogoAsset | undefined;
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
-    const directive = parseMauthdownDirective(line);
-
-    if (!trimmed || trimmed.startsWith("#") || (trimmed.startsWith("<!--") && trimmed.endsWith("-->"))) {
-      index += 1;
-      continue;
-    }
-
-    if (!directive) {
-      if (stack.length) {
-        const plain = readMauthdownPlainText(lines, index);
-        if (plain.text) addMauthdownContentBlock(stack, questions, { id: id("text"), kind: "text", text: plain.text });
-        index = plain.nextIndex;
-        continue;
-      }
-      index += 1;
-      continue;
-    }
-
-    if (directive.closing) {
-      closeMauthdownContainer(stack, directive.name);
-      index += 1;
-      continue;
-    }
-
-    if (directive.name === "title-page") {
-      const payload = readMauthdownPayload(lines, index);
-      const titlePage = parseMauthdownTitlePagePayload(payload.payload);
-      titleFrontMatter = titlePage.frontMatter;
-      titleLogo = titlePage.logo;
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "question") {
-      const question: QuestionBlock = {
-        id: id("question"),
-        section: directive.attrs.section || "Algebra",
-        marks: mauthdownAttributeNumber(directive.attrs, "marks", 0),
-        contentBlocks: [],
-        parts: [],
-        itemOrder: [],
-        pageBreakAfter: false,
-      };
-      questions.push(question);
-      stack.push({ kind: "question", value: question });
-      index += 1;
-      continue;
-    }
-
-    if (directive.name === "part") {
-      const question = ensureMauthdownQuestion(stack, questions);
-      const part: EditorPart = {
-        id: id("part"),
-        label: "",
-        text: "",
-        marks: mauthdownAttributeNumber(directive.attrs, "marks", 0),
-        contentBlocks: [],
-        subparts: [],
-        itemOrder: [],
-      };
-      question.parts.push(part);
-      question.itemOrder.push({ kind: "part", id: part.id });
-      stack.push({ kind: "part", value: part });
-      index += 1;
-      continue;
-    }
-
-    if (directive.name === "subpart") {
-      const part = currentMauthdownPart(stack, questions);
-      const subpart: EditorSubpart = {
-        id: id("subpart"),
-        label: "",
-        text: "",
-        marks: mauthdownAttributeNumber(directive.attrs, "marks", 0),
-        contentBlocks: [],
-      };
-      part.subparts.push(subpart);
-      part.itemOrder.push({ kind: "subpart", id: subpart.id });
-      stack.push({ kind: "subpart", value: subpart });
-      index += 1;
-      continue;
-    }
-
-    if (directive.name === "text") {
-      const payload = readMauthdownPayload(lines, index);
-      addMauthdownContentBlock(stack, questions, { id: id("text"), kind: "text", text: payload.payload });
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "choices" || directive.name === "choice-list") {
-      const payload = readMauthdownPayload(lines, index);
-      addMauthdownContentBlock(stack, questions, {
-        id: id("choices"),
-        kind: "choices",
-        choices: choicesFromMauthdownPayload(payload.payload),
-        numberingStyle: normalizeChoiceNumberingStyle(directive.attrs.style ?? directive.attrs.numbering),
-        layout: normalizeChoiceListLayout(directive.attrs.layout),
-      });
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "table") {
-      const payload = readMauthdownPayload(lines, index);
-      addMauthdownContentBlock(stack, questions, tableFromMauthdownPayload(payload.payload, directive.attrs));
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "space") {
-      addMauthdownContentBlock(stack, questions, {
-        id: id("space"),
-        kind: "space",
-        lines: mauthdownAttributeNumber(directive.attrs, "lines", 3),
-      });
-      const payload = readMauthdownPayload(lines, index);
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "page-break" || directive.name === "pagebreak") {
-      const question = currentMauthdownQuestion(stack, questions);
-      if (question) question.pageBreakAfter = true;
-      const payload = readMauthdownPayload(lines, index);
-      index = payload.nextIndex;
-      continue;
-    }
-
-    if (directive.name === "diagram") {
-      const payload = readMauthdownPayload(lines, index);
-      addMauthdownContentBlock(stack, questions, {
-        id: id("diagram"),
-        kind: "diagram",
-        diagramAlign: mauthdownAttributeAlignment(directive.attrs),
-        diagramTextSide: normalizeDiagramTextSide(directive.attrs.textSide),
-        graphConfig: graphConfigFromMauthdownDiagram(directive.attrs, payload.language, payload.payload),
-      });
-      index = payload.nextIndex;
-      continue;
-    }
-
-    index += 1;
-  }
-
-  const frontMatter =
-    titleFrontMatter ??
-    normalizeFrontMatter({
-      ...DEFAULT_FRONT_MATTER,
-      assessmentTitle: typeof header.title === "string" ? header.title : DEFAULT_FRONT_MATTER.assessmentTitle,
-      startQuestionNumber: header.startQuestionNumber,
-    });
-  const normalizedQuestions = normalizeQuestionBlocks(questions);
-  if (!frontMatter || !normalizedQuestions.length) return null;
-
-  return {
-    format: "mauthdown",
-    version: headerVersion,
-    exportedAt: typeof header.exportedAt === "string" ? header.exportedAt : new Date().toISOString(),
-    testName: typeof header.title === "string" ? header.title : defaultSavedTestName(frontMatter),
-    totalMarks: normalizedQuestions.reduce((sum, question) => sum + questionMarks(question), 0),
-    frontMatter,
-    logo: titleLogo,
-    questions: normalizedQuestions,
-  };
-}
-
-function extractMauthdownJson(source: string) {
-  const fencePattern = new RegExp(`${MAUTHDOWN_DATA_FENCE}mauthdown-json\\s*\\n([\\s\\S]*?)\\n${MAUTHDOWN_DATA_FENCE}`);
-  const match = source.match(fencePattern);
-  if (match?.[1]) return match[1];
-
-  const trimmed = source.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  return "";
-}
-
-function parseMauthdownDocument(source: string): MauthdownDocument | null {
-  const authoredDocument = parseAuthoredMauthdownDocument(source);
-  if (authoredDocument) return authoredDocument;
-
-  const jsonSource = extractMauthdownJson(source);
-  if (!jsonSource) return null;
-
-  try {
-    const parsed = JSON.parse(jsonSource) as unknown;
-    const record = asRecord(parsed);
-    if (!record || record.format !== "mauthdown") return null;
-    const frontMatter = normalizeFrontMatter(record.frontMatter);
-    const questions = normalizeQuestionBlocks(record.questions);
-    if (!frontMatter || !questions.length) return null;
-
-    return {
-      format: "mauthdown",
-      version: typeof record.version === "number" ? record.version : MAUTHDOWN_VERSION,
-      exportedAt: typeof record.exportedAt === "string" ? record.exportedAt : new Date().toISOString(),
-      testName: typeof record.testName === "string" ? record.testName : defaultSavedTestName(frontMatter),
-      totalMarks: safeMarkValue(record.totalMarks),
-      frontMatter,
-      logo: normalizeLogoAsset(record.logo),
-      questions,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function slugifyFileName(value: string) {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return slug || "math-test";
-}
-
-function downloadTextFile(fileName: string, contents: string) {
-  const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function nextAnimationFrame() {
-  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-}
-
-function exportPageElements(root: HTMLElement) {
-  return Array.from(root.querySelectorAll<HTMLElement>(".a4-preview-shell .a4-page")).filter((page) => !page.closest(".a4-measure"));
-}
-
-function exportRootHasPendingDiagrams(root: HTMLElement) {
-  const pendingPenrose = Array.from(root.querySelectorAll<HTMLElement>(".penrose-diagram")).some((element) => !element.innerHTML.trim());
-  const pendingStatsCharts = Array.from(root.querySelectorAll<HTMLElement>(".stats-chart-diagram")).some(
-    (element) => !element.querySelector(".js-plotly-plot"),
-  );
-  const pendingJxgGraphs = Array.from(root.querySelectorAll<HTMLElement>(".jxgbox")).some((element) => !element.children.length);
-  return pendingPenrose || pendingStatsCharts || pendingJxgGraphs;
-}
-
-async function waitForPdfExportReady(root: HTMLElement) {
-  await document.fonts?.ready.catch(() => undefined);
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    await nextAnimationFrame();
-    if (exportPageElements(root).length && !exportRootHasPendingDiagrams(root)) return;
-    await delay(75);
-  }
-}
-
-async function exportPreviewRootToPdf(root: HTMLElement, fileName: string) {
-  await waitForPdfExportReady(root);
-  const pages = exportPageElements(root);
-  if (!pages.length) throw new Error("No rendered A4 pages were available for PDF export.");
-
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-  const captureScale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
-
-  for (const [index, page] of pages.entries()) {
-    const canvas = await html2canvas(page, {
-      backgroundColor: "#ffffff",
-      imageTimeout: 15000,
-      logging: false,
-      scale: captureScale,
-      useCORS: true,
-      windowHeight: Math.max(document.documentElement.clientHeight, page.scrollHeight),
-      windowWidth: Math.max(document.documentElement.clientWidth, page.scrollWidth),
-    });
-    const imageData = canvas.toDataURL("image/png");
-    if (index > 0) pdf.addPage("a4", "portrait");
-    pdf.addImage(imageData, "PNG", 0, 0, 210, 297, undefined, "FAST");
-  }
-
-  pdf.save(fileName);
-}
-
 function renderInlineFormatting(text: string): ReactNode[] {
   return text.split(/(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g).map((segment, index) => {
     const key = `${segment}-${index}`;
@@ -3051,24 +2287,84 @@ function FormattedInlineText({ text }: { text: string }) {
   return <>{renderInlineFormatting(text)}</>;
 }
 
-function insertAfter<T extends { id: string }>(items: T[], afterId: string, item: T) {
-  const index = items.findIndex((current) => current.id === afterId);
-  if (index === -1) return [...items, item];
-  return [...items.slice(0, index + 1), item, ...items.slice(index + 1)];
-}
-
 function insertBeforeByKey<T>(items: T[], beforeKey: string, item: T, keyForItem: (item: T) => string) {
   const index = items.findIndex((current) => keyForItem(current) === beforeKey);
   if (index === -1) return [...items, item];
   return [...items.slice(0, index), item, ...items.slice(index)];
 }
 
-function insertAtStart<T>(items: T[], item: T) {
-  return [item, ...items];
-}
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function clampPreviewZoom(value: number, maxZoom = MAX_PREVIEW_ZOOM) {
+  if (!Number.isFinite(value)) return 1;
+  return Math.round(clamp(value, MIN_PREVIEW_ZOOM, maxZoom) * 10000) / 10000;
+}
+
+function normalizedPreviewWheelDelta(event: globalThis.WheelEvent, pageHeight: number) {
+  const primaryDelta = event.deltaY === 0 && event.deltaX ? event.deltaX : event.deltaY;
+  if (event.deltaMode === WHEEL_DELTA_LINE) return primaryDelta * 16;
+  if (event.deltaMode === WHEEL_DELTA_PAGE) return primaryDelta * Math.max(pageHeight, 1);
+  return primaryDelta;
+}
+
+function previewPointFromEvent(event: { clientX?: number; clientY?: number }, fallbackElement: HTMLElement) {
+  const rect = fallbackElement.getBoundingClientRect();
+  return {
+    clientX: typeof event.clientX === "number" ? event.clientX : rect.left + rect.width / 2,
+    clientY: typeof event.clientY === "number" ? event.clientY : rect.top + rect.height / 2,
+  };
+}
+
+function previewContentBaseHeight(panzoomElement: HTMLElement) {
+  const contentElement = panzoomElement.firstElementChild as HTMLElement | null;
+  return contentElement?.offsetHeight || panzoomElement.scrollHeight || panzoomElement.offsetHeight;
+}
+
+function previewPaneContentHeight(previewPane: HTMLElement) {
+  const styles = window.getComputedStyle(previewPane);
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+  return Math.max(0, previewPane.clientHeight - paddingTop - paddingBottom);
+}
+
+function previewPaneContentWidth(previewPane: HTMLElement) {
+  const styles = window.getComputedStyle(previewPane);
+  const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+  return Math.max(0, previewPane.clientWidth - paddingLeft - paddingRight);
+}
+
+function syncPreviewZoomSpace(previewPane: HTMLElement, zoomSpaceElement: HTMLElement, panzoomElement: HTMLElement, scale: number) {
+  const baseHeight = previewContentBaseHeight(panzoomElement);
+  if (!baseHeight || !Number.isFinite(scale) || scale <= 0) return;
+  zoomSpaceElement.style.height = `${Math.ceil(Math.max(previewPaneContentHeight(previewPane), baseHeight * scale))}px`;
+  previewPane.scrollTop = clamp(previewPane.scrollTop, 0, scrollableRange(previewPane));
+}
+
+function zoomPreviewToPoint({
+  panzoom,
+  previewPane,
+  zoomSpaceElement,
+  panzoomElement,
+  nextScale,
+  point,
+}: {
+  panzoom: PanzoomObject;
+  previewPane: HTMLElement;
+  zoomSpaceElement: HTMLElement;
+  panzoomElement: HTMLElement;
+  nextScale: number;
+  point: { clientX: number; clientY: number };
+}) {
+  const currentScale = panzoom.getScale();
+  const paneRect = previewPane.getBoundingClientRect();
+  const localY = clamp(point.clientY - paneRect.top, 0, paneRect.height);
+  const anchorY = currentScale > 0 ? (previewPane.scrollTop + localY) / currentScale : previewPane.scrollTop + localY;
+  panzoom.zoom(nextScale, { animate: false });
+  syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, nextScale);
+  previewPane.scrollTop = clamp(anchorY * nextScale - localY, 0, scrollableRange(previewPane));
 }
 
 function scrollableRange(element: HTMLElement) {
@@ -3087,6 +2383,10 @@ interface ScrollAnchorPosition {
 
 function questionScrollAnchor(questionId: string) {
   return `q:${questionId}`;
+}
+
+function pageBreakScrollAnchor(questionId: string) {
+  return `pb:${questionId}`;
 }
 
 function questionBlockScrollAnchor(questionId: string, blockId: string) {
@@ -3116,6 +2416,10 @@ function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | n
 function questionIdFromScrollAnchor(anchor: string) {
   const [questionSegment] = anchor.split("/");
   return questionSegment?.startsWith("q:") ? questionSegment.slice(2) : "";
+}
+
+function pageBreakQuestionIdFromScrollAnchor(anchor: string) {
+  return anchor.startsWith("pb:") ? anchor.slice(3) : "";
 }
 
 function scrollAnchorFallbacks(anchor: string) {
@@ -3367,6 +2671,23 @@ function parseSubsectionDrag(payload: string): SubsectionDragTarget | null {
   } catch {
     return null;
   }
+}
+
+function parsePageBreakDrag(payload: string, allowRaw = false) {
+  if (!payload) return "";
+  if (payload.startsWith(PAGE_BREAK_DRAG_TEXT_PREFIX)) return payload.slice(PAGE_BREAK_DRAG_TEXT_PREFIX.length);
+  return allowRaw ? payload : "";
+}
+
+function keyboardMoveDirection(event: KeyboardEvent<HTMLElement>): MoveDirection | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
+  if (event.key === "ArrowUp") return -1;
+  if (event.key === "ArrowDown") return 1;
+  return null;
+}
+
+function keyboardDeleteRequested(event: KeyboardEvent<HTMLElement>) {
+  return !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "Backspace");
 }
 
 function questionMarks(question: QuestionBlock) {
@@ -3880,6 +3201,12 @@ function pageStyle(pageFormat: PageFormat, scale = 1) {
     "--a4-page-height": `${pageFormat.heightPx}px`,
     "--a4-page-padding-x": `${pageFormat.paddingXPx}px`,
     "--a4-page-padding-y": `${pageFormat.paddingYPx}px`,
+    "--a4-print-page-width": `${pageFormat.widthPx}px`,
+    "--a4-print-page-height": `${pageFormat.heightPx}px`,
+    "--a4-print-page-padding-x": `${pageFormat.paddingXPx}px`,
+    "--a4-print-page-padding-y": `${pageFormat.paddingYPx}px`,
+    "--a4-print-render-scale": "2",
+    "--a4-print-output-scale": "0.5",
     "--a4-preview-scale": String(scale),
   } as CSSProperties & Record<`--${string}`, string>;
 }
@@ -3890,6 +3217,10 @@ function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
     const other = right[pageIndex];
     return page.overflow === other.overflow && page.segmentIndexes.join(",") === other.segmentIndexes.join(",");
   });
+}
+
+function A4PreviewPageFrame({ children, last = false }: { children: ReactNode; last?: boolean }) {
+  return <div className={cn("a4-page-frame", last && "a4-page-frame-last")}>{children}</div>;
 }
 
 function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
@@ -4282,11 +3613,13 @@ function PaginatedTestPreview({
     <div className="a4-preview-root" style={previewStyle}>
       <div className="a4-preview-shell">
         <div className="a4-preview-stack">
-          <section className="a4-page">
-            <div className="a4-page-content">
-              <TestFrontMatterPreview frontMatter={frontMatter} logo={frontMatterLogo} totalMarks={totalMarks} />
-            </div>
-          </section>
+          <A4PreviewPageFrame last={!visiblePages.length}>
+            <section className="a4-page">
+              <div className="a4-page-content">
+                <TestFrontMatterPreview frontMatter={frontMatter} logo={frontMatterLogo} totalMarks={totalMarks} />
+              </div>
+            </section>
+          </A4PreviewPageFrame>
           {pageFormat.showPageBreaks ? (
             <div className="a4-page-break" aria-hidden="true">
               <span>A4 page break</span>
@@ -4296,26 +3629,28 @@ function PaginatedTestPreview({
             const visibleSegments = page.segmentIndexes.map((segmentIndex) => segments[segmentIndex]).filter(Boolean);
             return (
               <div key={`page-${pageIndex}`} className="contents">
-                <section className={cn("a4-page", pageIndex === visiblePages.length - 1 && "a4-page-last")}>
-                  <div className="a4-page-content">
-                    <div className="test-preview-flow">
-                      {visibleSegments.map((segment, segmentPageIndex) => (
-                        <TestPreviewSegment
-                          key={segment.id}
-                          segment={segment}
-                          frontMatter={frontMatter}
-                          firstOnPage={segmentPageIndex === 0}
-                          onGraphConfigChange={onGraphConfigChange}
-                        />
-                      ))}
-                    </div>
-                    {page.overflow ? (
-                      <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
-                        A single block in this question is taller than the available A4 page space.
+                <A4PreviewPageFrame last={pageIndex === visiblePages.length - 1}>
+                  <section className={cn("a4-page", pageIndex === visiblePages.length - 1 && "a4-page-last")}>
+                    <div className="a4-page-content">
+                      <div className="test-preview-flow">
+                        {visibleSegments.map((segment, segmentPageIndex) => (
+                          <TestPreviewSegment
+                            key={segment.id}
+                            segment={segment}
+                            frontMatter={frontMatter}
+                            firstOnPage={segmentPageIndex === 0}
+                            onGraphConfigChange={onGraphConfigChange}
+                          />
+                        ))}
                       </div>
-                    ) : null}
-                  </div>
-                </section>
+                      {page.overflow ? (
+                        <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                          A single block in this question is taller than the available A4 page space.
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                </A4PreviewPageFrame>
                 {pageFormat.showPageBreaks && pageIndex < visiblePages.length - 1 ? (
                   <div className="a4-page-break" aria-hidden="true">
                     <span>A4 page break</span>
@@ -4614,31 +3949,6 @@ function ContentInsertionActions({
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function TestLevelInsertionActions({
-  className,
-  onAddQuestion,
-  onAddPageBreak,
-}: {
-  className?: string;
-  onAddQuestion: () => void;
-  onAddPageBreak?: () => void;
-}) {
-  return (
-    <div className={cn("flex flex-wrap justify-center gap-2", className)}>
-      {onAddPageBreak ? (
-        <Button type="button" variant="outline" onClick={onAddPageBreak}>
-          <SeparatorHorizontal data-icon="inline-start" />
-          Add Page Break
-        </Button>
-      ) : null}
-      <Button type="button" variant="outline" onClick={onAddQuestion}>
-        <PlusCircle data-icon="inline-start" />
-        Add Question
-      </Button>
     </div>
   );
 }
@@ -5665,6 +4975,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
 function TocItemIcon({ kind }: { kind: TocItemKind }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
   if (kind === "question") return null;
+  if (kind === "pageBreak") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   if (kind === "part" || kind === "subpart") return <GitBranch className="size-4" aria-hidden="true" />;
   if (kind === "diagram") return <ImagePlus className="size-4" aria-hidden="true" />;
   if (kind === "table") return <Table2 className="size-4" aria-hidden="true" />;
@@ -5675,6 +4986,33 @@ function TocItemIcon({ kind }: { kind: TocItemKind }) {
 
 function questionIdSet(questions: QuestionBlock[]) {
   return new Set(questions.map((question) => question.id));
+}
+
+function questionHasPageBreak(question: QuestionBlock) {
+  return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
+}
+
+function pageBreakQuestionIdSet(questions: QuestionBlock[]) {
+  return new Set(questions.filter(questionHasPageBreak).map((question) => question.id));
+}
+
+function firstQuestionId(questions: QuestionBlock[]) {
+  return questions[0]?.id ?? "";
+}
+
+function existingOrFirstQuestionId(questions: QuestionBlock[], preferredQuestionId: string) {
+  return questions.some((question) => question.id === preferredQuestionId) ? preferredQuestionId : firstQuestionId(questions);
+}
+
+function firstQuestionAnchor(questions: QuestionBlock[]) {
+  const questionId = firstQuestionId(questions);
+  return questionId ? questionScrollAnchor(questionId) : SCROLL_ANCHOR_FRONT_MATTER;
+}
+
+function collapsedQuestionIdSet(questions: QuestionBlock[], expandedQuestionId = firstQuestionId(questions)) {
+  const ids = questionIdSet(questions);
+  if (expandedQuestionId) ids.delete(expandedQuestionId);
+  return ids;
 }
 
 function isTocBranchItem(item: DocumentTocItem, items: DocumentTocItem[]) {
@@ -5718,8 +5056,22 @@ function tocRailItems(items: DocumentTocItem[]) {
   return items.filter((item) => item.kind === "title" || (item.kind === "question" && item.depth === 0));
 }
 
+function tocRailPageBreakItem(questionItem: DocumentTocItem, questionId: string): DocumentTocItem {
+  const pageBreakAnchor = pageBreakScrollAnchor(questionId);
+  return {
+    id: pageBreakAnchor,
+    label: `Page break after ${questionItem.label}`,
+    summary: "Page break",
+    kind: "pageBreak",
+    depth: 0,
+    editorAnchor: pageBreakAnchor,
+    previewAnchor: questionItem.previewAnchor,
+  };
+}
+
 function tocRailLabel(item: DocumentTocItem) {
   if (item.kind === "title") return "T";
+  if (item.kind === "pageBreak") return "";
   return item.label.replace(/^Question\s+/i, "");
 }
 
@@ -5778,7 +5130,7 @@ function DocumentNavigator({
   }
 
   return (
-    <aside className="min-h-0 border-r bg-card/95 shadow-panel">
+    <aside className="flex min-h-0 flex-col border-r bg-card/95 shadow-panel">
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex h-14 shrink-0 items-center border-b px-3">
           <h2 className="truncate text-sm font-semibold">Document</h2>
@@ -5787,6 +5139,7 @@ function DocumentNavigator({
           <div className="flex flex-col gap-1">
             {displayedItems.map((item) => {
               const active = item.id === activeItemId;
+              const relatedActive = !active && scrollAnchorContains(item.id, activeItemId);
               const isBranch = branchItemIds.has(item.id);
               const branchCollapsed = collapsedItemIds.has(item.id);
               const summaryText = item.summary ? tocSummaryText(item.summary) : "";
@@ -5798,7 +5151,9 @@ function DocumentNavigator({
                     "group flex min-w-0 items-start gap-1 rounded-md px-2 py-2 text-left text-sm transition-colors",
                     active
                       ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-foreground hover:bg-accent hover:text-accent-foreground",
+                      : relatedActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-foreground hover:bg-accent hover:text-accent-foreground",
                   )}
                   style={{ paddingLeft: `${0.55 + item.depth * 0.85}rem` }}
                 >
@@ -5820,7 +5175,11 @@ function DocumentNavigator({
                       <span
                         className={cn(
                           "mt-0.5 shrink-0",
-                          active ? "text-primary-foreground" : "text-muted-foreground group-hover:text-current",
+                          active
+                            ? "text-primary-foreground"
+                            : relatedActive
+                              ? "text-primary"
+                              : "text-muted-foreground group-hover:text-current",
                         )}
                       >
                         {icon}
@@ -5830,7 +5189,10 @@ function DocumentNavigator({
                       <span className="block truncate font-medium">{item.label}</span>
                       {summaryText ? (
                         <span
-                          className={cn("block truncate text-xs", active ? "text-primary-foreground/80" : "text-muted-foreground")}
+                          className={cn(
+                            "block truncate text-xs",
+                            active ? "text-primary-foreground/80" : relatedActive ? "text-primary/80" : "text-muted-foreground",
+                          )}
                           title={item.summary}
                         >
                           {summaryText}
@@ -5852,20 +5214,78 @@ function DocumentNavigatorRail({
   open,
   items,
   activeItemId,
+  draggedQuestionId,
+  dragOverQuestion,
+  draggedPageBreakQuestionId,
+  dragOverPageBreak,
+  pageBreakQuestionIds,
   onToggle,
   onJump,
+  onPreviewJump,
+  onSelectPageBreak,
+  onToggleEditorAtItem,
+  onAddQuestion,
+  onAddPageBreakAfterQuestion,
+  onMoveQuestion,
+  onMovePageBreak,
+  onDeleteQuestion,
+  onDeletePageBreak,
+  onQuestionDragStart,
+  onQuestionDragOver,
+  onQuestionDragLeave,
+  onQuestionDrop,
+  onQuestionDragEnd,
+  onPageBreakDragStart,
+  onPageBreakDragOver,
+  onPageBreakDragLeave,
+  onPageBreakDrop,
+  onPageBreakDragEnd,
 }: {
   open: boolean;
   items: DocumentTocItem[];
   activeItemId: string;
+  draggedQuestionId: string | null;
+  dragOverQuestion: QuestionDropPreview | null;
+  draggedPageBreakQuestionId: string | null;
+  dragOverPageBreak: PageBreakDropPreview | null;
+  pageBreakQuestionIds: Set<string>;
   onToggle: () => void;
   onJump: (item: DocumentTocItem) => void;
+  onPreviewJump: (item: DocumentTocItem) => void;
+  onSelectPageBreak: (item: DocumentTocItem) => void;
+  onToggleEditorAtItem: (item: DocumentTocItem) => void;
+  onAddQuestion: () => void;
+  onAddPageBreakAfterQuestion: (questionId: string) => void;
+  onMoveQuestion: (questionId: string, direction: MoveDirection) => void;
+  onMovePageBreak: (questionId: string, direction: MoveDirection) => void;
+  onDeleteQuestion: (questionId: string) => void;
+  onDeletePageBreak: (questionId: string) => void;
+  onQuestionDragStart: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDragOver: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDragLeave: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDrop: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDragEnd: () => void;
+  onPageBreakDragStart: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onPageBreakDragOver: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onPageBreakDragLeave: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onPageBreakDrop: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onPageBreakDragEnd: () => void;
 }) {
-  const railItems = useMemo(() => tocRailItems(items), [items]);
+  const railItems = useMemo(
+    () =>
+      tocRailItems(items).flatMap((item) => {
+        const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+        if (!questionId || !pageBreakQuestionIds.has(questionId)) return [item];
+        return [item, tocRailPageBreakItem(item, questionId)];
+      }),
+    [items, pageBreakQuestionIds],
+  );
   const activeRailItemId = useMemo(() => activeTocRailItemId(items, activeItemId), [activeItemId, items]);
+  const selectedQuestionId = questionIdFromScrollAnchor(activeRailItemId);
+  const canAddPageBreak = Boolean(selectedQuestionId && !pageBreakQuestionIds.has(selectedQuestionId));
 
   return (
-    <aside className="min-h-0 border-r bg-card/95 shadow-panel">
+    <aside className="flex min-h-0 w-[3.25rem] flex-col border-r bg-card/95 shadow-panel">
       <div className="flex h-14 items-center justify-center border-b">
         <Button
           type="button"
@@ -5880,22 +5300,140 @@ function DocumentNavigatorRail({
           <ListTree />
         </Button>
       </div>
-      <nav className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-1.5 py-3" aria-label="Document quick navigation">
+      <nav
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain px-1.5 py-3"
+        aria-label="Document quick navigation"
+      >
         {railItems.map((item) => {
+          if (item.kind === "pageBreak") {
+            const questionId = pageBreakQuestionIdFromScrollAnchor(item.editorAnchor);
+            const active = item.id === activeRailItemId;
+            const dragging = draggedPageBreakQuestionId === questionId;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                draggable
+                data-drag-preview
+                title={`${item.label}. Click selects it in the editor. Alt+Up/Alt+Down moves it. Delete removes it.`}
+                aria-label={`${item.label}. Click selects it in the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`}
+                aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Delete Backspace"
+                aria-current={active ? "location" : undefined}
+                onClick={() => onSelectPageBreak(item)}
+                onKeyDown={(event) => {
+                  if (keyboardDeleteRequested(event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDeletePageBreak(questionId);
+                    return;
+                  }
+                  const direction = keyboardMoveDirection(event);
+                  if (!direction) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onMovePageBreak(questionId, direction);
+                }}
+                onDragStart={(event) => onPageBreakDragStart(event, questionId)}
+                onDragEnd={onPageBreakDragEnd}
+                className={cn(
+                  "flex h-6 w-8 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-sm border border-primary/60 bg-primary/15 text-primary transition-colors hover:bg-primary/20 active:cursor-grabbing",
+                  active && "border-primary bg-primary text-primary-foreground shadow-sm hover:bg-primary",
+                  dragging && "scale-95 opacity-60 shadow-lg",
+                )}
+              >
+                <SeparatorHorizontal className="size-4" aria-hidden="true" />
+              </button>
+            );
+          }
+
           const active = item.id === activeRailItemId;
+          const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+          const draggable = Boolean(questionId);
+          const dragging = draggedQuestionId === questionId;
+          const dropPlacement =
+            questionId && dragOverQuestion?.questionId === questionId && draggedQuestionId !== questionId
+              ? dragOverQuestion.placement
+              : null;
+          const pageBreakDropPlacement =
+            questionId && dragOverPageBreak?.questionId === questionId && draggedPageBreakQuestionId ? dragOverPageBreak.placement : null;
           return (
             <button
               key={item.id}
               type="button"
-              title={item.label}
-              aria-label={`Jump to ${item.label}`}
+              draggable={draggable}
+              data-drag-preview={draggable ? true : undefined}
+              title={
+                draggable
+                  ? `${item.label}. Click jumps the display. Double-click opens or closes the editor. Alt+Up/Alt+Down moves it. Delete removes it.`
+                  : item.label
+              }
+              aria-label={
+                draggable
+                  ? `${item.label}. Click jumps the display. Double-click opens or closes the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`
+                  : `Jump to ${item.label}`
+              }
               aria-current={active ? "location" : undefined}
-              onClick={() => onJump(item)}
+              aria-keyshortcuts={draggable ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
+              onClick={() => (questionId ? onPreviewJump(item) : onJump(item))}
+              onDoubleClick={questionId ? () => onToggleEditorAtItem(item) : undefined}
+              onKeyDown={
+                questionId
+                  ? (event) => {
+                      if (keyboardDeleteRequested(event)) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onDeleteQuestion(questionId);
+                        return;
+                      }
+                      const direction = keyboardMoveDirection(event);
+                      if (!direction) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onMoveQuestion(questionId, direction);
+                    }
+                  : undefined
+              }
+              onDragStart={questionId ? (event) => onQuestionDragStart(event, questionId) : undefined}
+              onDragOver={
+                questionId
+                  ? (event) => {
+                      onPageBreakDragOver(event, questionId);
+                      onQuestionDragOver(event, questionId);
+                    }
+                  : undefined
+              }
+              onDragLeave={
+                questionId
+                  ? (event) => {
+                      onPageBreakDragLeave(event, questionId);
+                      onQuestionDragLeave(event, questionId);
+                    }
+                  : undefined
+              }
+              onDrop={
+                questionId
+                  ? (event) => {
+                      onPageBreakDrop(event, questionId);
+                      onQuestionDrop(event, questionId);
+                    }
+                  : undefined
+              }
+              onDragEnd={draggable ? onQuestionDragEnd : undefined}
               className={cn(
-                "flex size-8 items-center justify-center rounded-md border text-sm font-semibold transition-colors",
+                "relative flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border text-sm font-semibold transition-colors",
                 active
                   ? "border-primary bg-primary text-primary-foreground shadow-sm"
                   : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-accent hover:text-accent-foreground",
+                draggable && "cursor-grab active:cursor-grabbing",
+                dragging && "scale-95 opacity-60 shadow-lg",
+                dropPlacement === "before" &&
+                  "before:absolute before:-top-1.5 before:left-0 before:right-0 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
+                dropPlacement === "after" &&
+                  "after:absolute after:-bottom-1.5 after:left-0 after:right-0 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
+                pageBreakDropPlacement === "before" &&
+                  "before:absolute before:-top-1.5 before:left-0 before:right-0 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
+                pageBreakDropPlacement === "after" &&
+                  "after:absolute after:-bottom-1.5 after:left-0 after:right-0 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
               )}
             >
               {tocRailLabel(item)}
@@ -5903,6 +5441,35 @@ function DocumentNavigatorRail({
           );
         })}
       </nav>
+      <div className="flex h-20 shrink-0 flex-col items-center justify-center gap-1 border-t">
+        <button
+          type="button"
+          title="Add question"
+          aria-label="Add question"
+          onClick={onAddQuestion}
+          className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          title={
+            selectedQuestionId
+              ? canAddPageBreak
+                ? "Add page break after selected question"
+                : "Selected question already has a page break"
+              : "Select a question to add a page break"
+          }
+          aria-label="Add page break after selected question"
+          disabled={!canAddPageBreak}
+          onClick={() => {
+            if (selectedQuestionId) onAddPageBreakAfterQuestion(selectedQuestionId);
+          }}
+          className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-border disabled:hover:bg-background disabled:hover:text-muted-foreground"
+        >
+          <SeparatorHorizontal className="size-4" aria-hidden="true" />
+        </button>
+      </div>
     </aside>
   );
 }
@@ -6464,11 +6031,10 @@ function ImageDiagramEditor({ config, onChange }: { config: GraphConfig; onChang
   );
 }
 
-function PageBreakBlockEditor({ label, dragHandle, onRemove }: { label: string; dragHandle?: ReactNode; onRemove: () => void }) {
+function PageBreakStructurePanel({ label, active, onRemove }: { label: string; active: boolean; onRemove: () => void }) {
   return (
-    <section className="rounded-md border bg-background">
+    <section className={cn("rounded-lg border bg-card p-4 shadow-panel transition-colors", active && EDITOR_ACTIVE_PANEL_CLASS)}>
       <div className="flex items-center gap-2 p-2">
-        {dragHandle ? <div className="flex shrink-0 items-center">{dragHandle}</div> : null}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <SeparatorHorizontal className="size-4 text-muted-foreground" aria-hidden="true" />
           <span className="truncate text-sm font-semibold">{label}</span>
@@ -7680,25 +7246,24 @@ export default function App() {
   const [diskStorageStatus, setDiskStorageStatus] = useState<DiskStorageStatus>("loading");
   const [diskStorageMessage, setDiskStorageMessage] = useState("Loading disk saves");
   const [diskStorageHydrated, setDiskStorageHydrated] = useState(false);
-  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState<Set<string>>(() => questionIdSet(initialQuestions));
+  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState<Set<string>>(() => collapsedQuestionIdSet(initialQuestions));
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
   const [dragOverQuestion, setDragOverQuestion] = useState<QuestionDropPreview | null>(null);
+  const [draggedPageBreakQuestionId, setDraggedPageBreakQuestionId] = useState<string | null>(null);
+  const [dragOverPageBreak, setDragOverPageBreak] = useState<PageBreakDropPreview | null>(null);
   const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
   const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
   const [paneMode, setPaneMode] = useState<PaneMode>("split");
-  const [tocOpen, setTocOpen] = useState(true);
-  const [activeTocItemId, setActiveTocItemId] = useState(SCROLL_ANCHOR_FRONT_MATTER);
+  const [tocOpen, setTocOpen] = useState(false);
+  const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
+  const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [pdfExportActive, setPdfExportActive] = useState(false);
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
-  const pdfExportRef = useRef<HTMLDivElement>(null);
-  const pdfExportRunIdRef = useRef(0);
-  const mauthdownImportInputRef = useRef<HTMLInputElement>(null);
+  const previewPanzoomRef = useRef<HTMLDivElement>(null);
   const frontMatterRef = useRef(frontMatter);
   const questionsRef = useRef(questions);
   const logosRef = useRef(logos);
@@ -7708,6 +7273,9 @@ export default function App() {
   const autosaveSequenceRef = useRef(0);
   const pendingEditorJumpAnchorRef = useRef<string | null>(null);
   const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
+  const previewZoomRef = useRef(1);
+  const previewGestureStartZoomRef = useRef(1);
+  const previewPanzoomInstanceRef = useRef<PanzoomObject | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -7762,7 +7330,9 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(questionIdSet(nextQuestions));
+    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions));
+    setActiveQuestionId(firstQuestionId(nextQuestions));
+    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
     setSelectedSavedTestId("");
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
   }, [diskStorageHydrated, questions]);
@@ -7833,11 +7403,18 @@ export default function App() {
   const showEditor = paneMode !== "preview";
   const showPreview = paneMode !== "editor";
   const darkMode = theme === "dark";
-  const previewScale = useMemo(() => {
+  const previewFitScale = useMemo(() => {
     if (!previewViewport.width) return 1;
     const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / DEFAULT_PAGE_FORMAT.widthPx;
-    return clamp(Math.min(widthScale, 1), MIN_PREVIEW_SCALE, 1);
-  }, [previewViewport]);
+    const maxBaseScale = paneMode === "preview" ? DISPLAY_ONLY_PREVIEW_SCALE : 1;
+    return clamp(Math.min(widthScale, maxBaseScale), MIN_PREVIEW_SCALE, maxBaseScale);
+  }, [paneMode, previewViewport.width]);
+  const previewMaxZoom = useMemo(() => {
+    if (!previewViewport.width || previewFitScale <= 0) return 1;
+    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / DEFAULT_PAGE_FORMAT.widthPx;
+    const maxTotalScale = Math.max(widthScale, previewFitScale);
+    return clampPreviewZoom(maxTotalScale / previewFitScale);
+  }, [previewFitScale, previewViewport.width]);
   const workspaceStyle = useMemo(
     () => ({
       gridTemplateColumns: paneMode === "split" ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
@@ -7851,6 +7428,12 @@ export default function App() {
     [tocOpen],
   );
   const documentTocItems = useMemo(() => buildDocumentToc(frontMatter, questions), [frontMatter, questions]);
+  const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? null;
+  const editingFrontMatter = activeTocItemId === SCROLL_ANCHOR_FRONT_MATTER;
+  const pageBreakQuestionIds = useMemo(() => pageBreakQuestionIdSet(questions), [questions]);
+  const activePageBreakQuestionId = pageBreakQuestionIdFromScrollAnchor(activeTocItemId);
+  const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
+  const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
@@ -7858,6 +7441,34 @@ export default function App() {
     logosRef.current = logos;
     savedTestsRef.current = savedTests;
   }, [frontMatter, questions, logos, savedTests]);
+
+  useEffect(() => {
+    if (!questions.length) {
+      setActiveQuestionId("");
+      setActiveTocItemId(SCROLL_ANCHOR_FRONT_MATTER);
+      return;
+    }
+
+    if (activePageBreakQuestionId) {
+      const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId);
+      if (!activePageBreakQuestion || !questionHasPageBreak(activePageBreakQuestion)) {
+        const fallbackQuestion = activePageBreakQuestion ?? questions[0];
+        setActiveQuestionId(fallbackQuestion.id);
+        setActiveTocItemId(questionScrollAnchor(fallbackQuestion.id));
+        return;
+      }
+      if (!questions.some((question) => question.id === activeQuestionId)) {
+        setActiveQuestionId(activePageBreakQuestion.id);
+      }
+      return;
+    }
+
+    const nextActiveQuestionId = existingOrFirstQuestionId(questions, activeQuestionId);
+    if (nextActiveQuestionId !== activeQuestionId) {
+      setActiveQuestionId(nextActiveQuestionId);
+      setActiveTocItemId(questionScrollAnchor(nextActiveQuestionId));
+    }
+  }, [activePageBreakQuestionId, activeQuestionId, questions]);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -7873,8 +7484,7 @@ export default function App() {
     if (!previewPane || !showPreview) return;
 
     const updatePreviewViewport = () => {
-      const rect = previewPane.getBoundingClientRect();
-      setPreviewViewport({ width: rect.width, height: rect.height });
+      setPreviewViewport({ width: previewPaneContentWidth(previewPane), height: previewPaneContentHeight(previewPane) });
     };
 
     updatePreviewViewport();
@@ -7882,6 +7492,103 @@ export default function App() {
     observer.observe(previewPane);
     return () => observer.disconnect();
   }, [showPreview]);
+
+  useEffect(() => {
+    const previewPane = previewPaneRef.current;
+    const panzoomElement = previewPanzoomRef.current;
+    const zoomSpaceElement = panzoomElement?.parentElement;
+    if (!previewPane || !panzoomElement || !zoomSpaceElement || !showPreview) return;
+
+    const panzoom = Panzoom(panzoomElement, {
+      animate: false,
+      cursor: "default",
+      disablePan: true,
+      disableXAxis: true,
+      duration: 120,
+      easing: "ease-out",
+      maxScale: previewMaxZoom,
+      minScale: MIN_PREVIEW_ZOOM,
+      noBind: true,
+      origin: "50% 0",
+      overflow: "visible",
+      startScale: clampPreviewZoom(previewZoomRef.current, previewMaxZoom),
+      step: 0.18,
+      touchAction: "pan-y",
+    });
+    previewPanzoomInstanceRef.current = panzoom;
+    syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
+
+    const resizeObserver = new ResizeObserver(() => {
+      syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
+    });
+    resizeObserver.observe(panzoomElement);
+
+    const handlePanzoomChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ scale?: number }>).detail;
+      if (Number.isFinite(detail?.scale)) {
+        previewZoomRef.current = clampPreviewZoom(detail.scale ?? 1, previewMaxZoom);
+      }
+      syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
+    };
+
+    const handlePreviewWheel = (event: globalThis.WheelEvent) => {
+      const zoomRequested = event.ctrlKey || event.metaKey || event.altKey;
+      if (!zoomRequested) return;
+
+      event.preventDefault();
+      const currentScale = panzoom.getScale();
+      const delta = normalizedPreviewWheelDelta(event, previewPane.clientHeight);
+      const nextScale = clampPreviewZoom(currentScale * Math.exp(-delta * PREVIEW_WHEEL_ZOOM_SENSITIVITY), previewMaxZoom);
+      zoomPreviewToPoint({
+        panzoom,
+        previewPane,
+        zoomSpaceElement,
+        panzoomElement,
+        nextScale,
+        point: previewPointFromEvent(event, previewPane),
+      });
+    };
+
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      previewGestureStartZoomRef.current = panzoom.getScale();
+    };
+
+    const handleGestureChange = (event: Event) => {
+      const gestureEvent = event as SafariGestureEvent;
+      const scale = Number(gestureEvent.scale);
+      if (!Number.isFinite(scale) || scale <= 0) return;
+      event.preventDefault();
+      zoomPreviewToPoint({
+        panzoom,
+        previewPane,
+        zoomSpaceElement,
+        panzoomElement,
+        nextScale: clampPreviewZoom(previewGestureStartZoomRef.current * scale, previewMaxZoom),
+        point: previewPointFromEvent(gestureEvent, previewPane),
+      });
+    };
+
+    panzoomElement.addEventListener("panzoomchange", handlePanzoomChange);
+    previewPane.addEventListener("wheel", handlePreviewWheel, { passive: false });
+    previewPane.addEventListener("gesturestart", handleGestureStart, { passive: false });
+    previewPane.addEventListener("gesturechange", handleGestureChange, { passive: false });
+
+    return () => {
+      panzoomElement.removeEventListener("panzoomchange", handlePanzoomChange);
+      previewPane.removeEventListener("wheel", handlePreviewWheel);
+      previewPane.removeEventListener("gesturestart", handleGestureStart);
+      previewPane.removeEventListener("gesturechange", handleGestureChange);
+      resizeObserver.disconnect();
+      if (previewPanzoomInstanceRef.current === panzoom) {
+        previewPanzoomInstanceRef.current = null;
+      }
+      previewZoomRef.current = clampPreviewZoom(panzoom.getScale(), previewMaxZoom);
+      panzoom.destroy();
+      panzoom.resetStyle();
+      zoomSpaceElement.style.height = "";
+    };
+  }, [previewMaxZoom, showPreview]);
 
   useLayoutEffect(() => {
     const editorPane = editorPaneRef.current;
@@ -7896,32 +7603,6 @@ export default function App() {
     editorPane.addEventListener("scroll", keepEditorPinnedLeft, { passive: true });
     return () => editorPane.removeEventListener("scroll", keepEditorPinnedLeft);
   }, [showEditor]);
-
-  useEffect(() => {
-    if (!pdfExportActive || pdfExportRunIdRef.current) return;
-
-    const runId = Date.now();
-    pdfExportRunIdRef.current = runId;
-
-    async function runPdfExport() {
-      try {
-        await nextAnimationFrame();
-        const exportRoot = pdfExportRef.current;
-        if (!exportRoot) throw new Error("The PDF export renderer was not available.");
-        await exportPreviewRootToPdf(exportRoot, `${slugifyFileName(defaultSavedTestName(frontMatter))}.pdf`);
-      } catch (error) {
-        window.alert(error instanceof Error ? error.message : "PDF export failed.");
-      } finally {
-        if (pdfExportRunIdRef.current === runId) {
-          pdfExportRunIdRef.current = 0;
-          setPdfExportActive(false);
-          setIsExportingPdf(false);
-        }
-      }
-    }
-
-    void runPdfExport();
-  }, [frontMatter, pdfExportActive]);
 
   useLayoutEffect(() => {
     if (!pendingEditorJumpAnchorRef.current && !pendingPreviewJumpAnchorRef.current) return;
@@ -7966,7 +7647,7 @@ export default function App() {
       window.cancelAnimationFrame(secondFrame);
       window.cancelAnimationFrame(retryFrame);
     };
-  }, [showEditor, showPreview, previewScale, questions]);
+  }, [showEditor, showPreview, previewFitScale, questions]);
 
   function currentEditorSnapshot(): EditorHistorySnapshot {
     return {
@@ -7992,15 +7673,27 @@ export default function App() {
   }
 
   function restoreEditorSnapshot(snapshot: EditorHistorySnapshot, options: { collapseQuestions?: boolean } = {}) {
+    const nextActiveQuestionId = existingOrFirstQuestionId(snapshot.questions, activeQuestionId);
     setFrontMatter(snapshot.frontMatter);
     setQuestions(snapshot.questions);
     frontMatterRef.current = snapshot.frontMatter;
     questionsRef.current = snapshot.questions;
     if (options.collapseQuestions) {
-      setCollapsedQuestionIds(questionIdSet(snapshot.questions));
+      setCollapsedQuestionIds(collapsedQuestionIdSet(snapshot.questions, nextActiveQuestionId));
+    }
+    if (nextActiveQuestionId !== activeQuestionId) {
+      setActiveQuestionId(nextActiveQuestionId);
+      setActiveTocItemId(nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER);
+    } else {
+      const activeTocQuestionId = questionIdFromScrollAnchor(activeTocItemId);
+      if (activeTocQuestionId && !snapshot.questions.some((question) => question.id === activeTocQuestionId)) {
+        setActiveTocItemId(nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER);
+      }
     }
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
   }
@@ -8078,9 +7771,13 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(questionIdSet(nextQuestions));
+    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions, nextQuestion.id));
+    setActiveQuestionId(nextQuestion.id);
+    setActiveTocItemId(questionScrollAnchor(nextQuestion.id));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setSelectedSavedTestId("");
@@ -8181,9 +7878,13 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(questionIdSet(nextQuestions));
+    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions));
+    setActiveQuestionId(firstQuestionId(nextQuestions));
+    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setSelectedSavedTestId(savedTest.id);
@@ -8361,6 +8062,17 @@ export default function App() {
     updateContentBlock(change.questionId, change.blockId, { graphConfig: change.graphConfig });
   }
 
+  function selectQuestionInEditor(questionId: string) {
+    if (!questionId) return;
+    setActiveQuestionId(questionId);
+    setCollapsedQuestionIds((current) => {
+      if (!current.has(questionId)) return current;
+      const next = new Set(current);
+      next.delete(questionId);
+      return next;
+    });
+  }
+
   function toggleQuestionCollapsed(questionId: string) {
     setCollapsedQuestionIds((current) => {
       const next = new Set(current);
@@ -8376,12 +8088,7 @@ export default function App() {
   function revealEditorAnchor(anchor: string) {
     const questionId = questionIdFromScrollAnchor(anchor);
     if (questionId) {
-      setCollapsedQuestionIds((current) => {
-        if (!current.has(questionId)) return current;
-        const next = new Set(current);
-        next.delete(questionId);
-        return next;
-      });
+      selectQuestionInEditor(questionId);
     }
 
     setEditorRevealRequest((current) => ({
@@ -8395,7 +8102,7 @@ export default function App() {
   }
 
   function isActiveEditorAnchor(anchor: string) {
-    return activeTocItemId === anchor;
+    return scrollAnchorContains(anchor, activeTocItemId);
   }
 
   function jumpPendingDocumentAnchors() {
@@ -8439,13 +8146,63 @@ export default function App() {
 
   function jumpToTocItem(item: DocumentTocItem) {
     setActiveTocItemId(item.id);
+    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+    if (questionId) selectQuestionInEditor(questionId);
     revealEditorAnchor(item.editorAnchor);
     queueDocumentJump(item.editorAnchor, item.previewAnchor);
+  }
+
+  function jumpPreviewToTocItem(item: DocumentTocItem) {
+    setActiveTocItemId(item.id);
+
+    if (!showPreview) {
+      const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+      if (questionId) selectQuestionInEditor(questionId);
+      revealEditorAnchor(item.editorAnchor);
+      return;
+    }
+
+    pendingPreviewJumpAnchorRef.current = item.previewAnchor;
+
+    const previewPane = previewPaneRef.current;
+    if (previewPane && scrollToAnchorPosition(previewPane, { anchor: item.previewAnchor, progress: 0 })) {
+      pendingPreviewJumpAnchorRef.current = null;
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const nextPreviewPane = previewPaneRef.current;
+      if (nextPreviewPane && scrollToAnchorPosition(nextPreviewPane, { anchor: item.previewAnchor, progress: 0 })) {
+        pendingPreviewJumpAnchorRef.current = null;
+      }
+    });
+  }
+
+  function selectPageBreakInEditor(item: DocumentTocItem) {
+    const questionId = pageBreakQuestionIdFromScrollAnchor(item.editorAnchor);
+    if (questionId) setActiveQuestionId(questionId);
+    setActiveTocItemId(item.id);
+    pendingEditorJumpAnchorRef.current = null;
+    pendingPreviewJumpAnchorRef.current = null;
+
+    if (!showEditor) {
+      setPaneMode("split");
+    }
+  }
+
+  function toggleEditorAtTocItem(item: DocumentTocItem) {
+    if (showEditor) {
+      setPaneMode("preview");
+      return;
+    }
+
+    jumpToTocItem(item);
   }
 
   function jumpPreviewToQuestion(questionId: string) {
     const anchor = questionScrollAnchor(questionId);
     setActiveTocItemId(anchor);
+    selectQuestionInEditor(questionId);
     pendingPreviewJumpAnchorRef.current = anchor;
 
     if (!showPreview) {
@@ -8468,7 +8225,23 @@ export default function App() {
   }
 
   function showSplitPane() {
+    resetPreviewZoom();
     setPaneMode("split");
+  }
+
+  function resetPreviewZoom() {
+    previewZoomRef.current = 1;
+    previewGestureStartZoomRef.current = 1;
+
+    const panzoom = previewPanzoomInstanceRef.current;
+    const previewPane = previewPaneRef.current;
+    const panzoomElement = previewPanzoomRef.current;
+    const zoomSpaceElement = panzoomElement?.parentElement;
+    if (!panzoom || !previewPane || !panzoomElement || !zoomSpaceElement) return;
+
+    panzoom.zoom(1, { animate: false });
+    previewPane.scrollLeft = 0;
+    syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, 1);
   }
 
   function toggleTheme() {
@@ -8483,77 +8256,6 @@ export default function App() {
     setPaneMode("editor");
   }
 
-  function exportPdf() {
-    if (isExportingPdf) return;
-    setIsExportingPdf(true);
-    setPdfExportActive(true);
-  }
-
-  function exportMauthdownFile() {
-    const logo = selectedLogoFromLibrary(logos, frontMatter.logoId);
-    const mauthdownDocument = createMauthdownDocument({ frontMatter, questions, logo });
-    const fileName = `${slugifyFileName(mauthdownDocument.testName)}.mauth.md`;
-    downloadTextFile(fileName, buildMauthdownFile(mauthdownDocument));
-  }
-
-  async function importMauthdownFile(file: File) {
-    let source = "";
-    try {
-      source = await file.text();
-    } catch {
-      window.alert("The selected file could not be read.");
-      return;
-    }
-
-    const mauthdownDocument = parseMauthdownDocument(source);
-    if (!mauthdownDocument) {
-      window.alert("That file is not a valid Mauthdown export.");
-      return;
-    }
-
-    if (mauthdownDocument.version > MAUTHDOWN_VERSION) {
-      window.alert("This Mauthdown file was created by a newer version of the authoring tool.");
-      return;
-    }
-
-    const shouldImport = window.confirm(`Import "${mauthdownDocument.testName}"? This will replace the current editor contents.`);
-    if (!shouldImport) return;
-
-    pushEditorHistory();
-    const nextFrontMatter = cloneSerializable(mauthdownDocument.frontMatter);
-    const nextQuestions = normalizeQuestionBlocks(mauthdownDocument.questions);
-    const importedLogo = mauthdownDocument.logo;
-
-    if (importedLogo) {
-      setLogos((current) => {
-        const existingIndex = current.findIndex((logo) => logo.id === importedLogo.id);
-        const next =
-          existingIndex === -1
-            ? [...current, importedLogo]
-            : current.map((logo) => (logo.id === importedLogo.id && !logo.builtIn ? importedLogo : logo));
-        persistLogoLibrary(next);
-        return next;
-      });
-      nextFrontMatter.logoId = importedLogo.id;
-    }
-
-    setFrontMatter(nextFrontMatter);
-    setQuestions(nextQuestions);
-    frontMatterRef.current = nextFrontMatter;
-    questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(questionIdSet(nextQuestions));
-    setDraggedQuestionId(null);
-    setDragOverQuestion(null);
-    setDraggedSubsection(null);
-    setDragOverSubsection(null);
-    setSelectedSavedTestId("");
-  }
-
-  function handleMauthdownImportFile(file?: File) {
-    if (!file) return;
-    void importMauthdownFile(file);
-  }
-
   function reorderQuestion(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
     if (draggedId === targetId) return;
     setQuestionsWithHistory((current) => {
@@ -8566,6 +8268,49 @@ export default function App() {
       const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
       return [...withoutDragged.slice(0, insertIndex), movedQuestion, ...withoutDragged.slice(insertIndex)];
     });
+  }
+
+  function moveQuestionByKeyboard(questionId: string, direction: MoveDirection) {
+    const sourceIndex = questions.findIndex((question) => question.id === questionId);
+    const targetQuestion = questions[sourceIndex + direction];
+    if (sourceIndex === -1 || !targetQuestion) return;
+
+    const anchor = questionScrollAnchor(questionId);
+    reorderQuestion(questionId, targetQuestion.id, direction < 0 ? "before" : "after");
+    selectQuestionInEditor(questionId);
+    setActiveTocItemId(anchor);
+    queueDocumentJump(anchor, anchor);
+  }
+
+  function pageBreakDropBoundaryQuestionId(targetQuestionId: string, placement: Exclude<DropPlacement, "inside">) {
+    if (placement === "after") return targetQuestionId;
+    const targetIndex = questions.findIndex((question) => question.id === targetQuestionId);
+    if (targetIndex <= 0) return "";
+    return questions[targetIndex - 1]?.id ?? "";
+  }
+
+  function movePageBreakAfterQuestion(sourceQuestionId: string, targetQuestionId: string) {
+    if (!sourceQuestionId || !targetQuestionId || sourceQuestionId === targetQuestionId) return;
+    setQuestionsWithHistory((current) =>
+      current.map((question) => {
+        if (question.id !== sourceQuestionId && question.id !== targetQuestionId) return question;
+        const contentBlocks = question.contentBlocks.filter((block) => block.kind !== "pageBreak");
+        if (question.id === sourceQuestionId) return { ...question, pageBreakAfter: false, contentBlocks };
+        return { ...question, pageBreakAfter: true, contentBlocks };
+      }),
+    );
+  }
+
+  function movePageBreakByKeyboard(questionId: string, direction: MoveDirection) {
+    if (!pageBreakQuestionIds.has(questionId)) return;
+    const sourceIndex = questions.findIndex((question) => question.id === questionId);
+    const targetQuestion = questions[sourceIndex + direction];
+    if (sourceIndex === -1 || !targetQuestion || pageBreakQuestionIds.has(targetQuestion.id)) return;
+
+    const anchor = pageBreakScrollAnchor(targetQuestion.id);
+    movePageBreakAfterQuestion(questionId, targetQuestion.id);
+    setActiveTocItemId(anchor);
+    queueDocumentJump(anchor, questionScrollAnchor(targetQuestion.id));
   }
 
   function setModuleDragImage(event: DragEvent<HTMLElement>) {
@@ -8586,14 +8331,20 @@ export default function App() {
     event.dataTransfer.setData("text/plain", questionId);
     setModuleDragImage(event);
     setDraggedQuestionId(questionId);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
   }
 
   function handleQuestionDragOver(event: DragEvent<HTMLElement>, questionId: string) {
     const activeSubsection = readSubsectionDrag(event);
     if (activeSubsection) return;
+    if (readPageBreakDrag(event)) return;
 
     const activeQuestionId = draggedQuestionId || event.dataTransfer.getData("text/plain");
-    if (!activeQuestionId || activeQuestionId === questionId) return;
+    if (!activeQuestionId || activeQuestionId === questionId || !questions.some((question) => question.id === activeQuestionId)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     setDragOverQuestion({ questionId, placement: dragPlacementFromEvent(event) });
@@ -8610,18 +8361,87 @@ export default function App() {
     if (activeSubsection) {
       return;
     }
+    if (readPageBreakDrag(event)) return;
 
     event.preventDefault();
     const activeQuestionId = draggedQuestionId || event.dataTransfer.getData("text/plain");
     const placement = dragOverQuestion?.questionId === questionId ? dragOverQuestion.placement : dragPlacementFromEvent(event);
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
-    if (activeQuestionId) reorderQuestion(activeQuestionId, questionId, placement);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    if (activeQuestionId && questions.some((question) => question.id === activeQuestionId)) {
+      const anchor = questionScrollAnchor(activeQuestionId);
+      reorderQuestion(activeQuestionId, questionId, placement);
+      selectQuestionInEditor(activeQuestionId);
+      setActiveTocItemId(anchor);
+      queueDocumentJump(anchor, anchor);
+    }
   }
 
   function handleQuestionDragEnd() {
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+  }
+
+  function handlePageBreakDragStart(event: DragEvent<HTMLElement>, questionId: string) {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${PAGE_BREAK_DRAG_TEXT_PREFIX}${questionId}`);
+    try {
+      event.dataTransfer.setData(PAGE_BREAK_DRAG_MIME, questionId);
+    } catch {
+      // The prefixed text/plain payload above is the cross-browser fallback.
+    }
+    setModuleDragImage(event);
+    setDraggedQuestionId(null);
+    setDragOverQuestion(null);
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
+    setDraggedPageBreakQuestionId(questionId);
+    setDragOverPageBreak(null);
+  }
+
+  function handlePageBreakDragOver(event: DragEvent<HTMLElement>, questionId: string) {
+    const sourceQuestionId = readPageBreakDrag(event);
+    if (!sourceQuestionId) return;
+    const placement = dragPlacementFromEvent(event);
+    const targetQuestionId = pageBreakDropBoundaryQuestionId(questionId, placement);
+    if (!targetQuestionId || targetQuestionId === sourceQuestionId || pageBreakQuestionIds.has(targetQuestionId)) {
+      setDragOverPageBreak((current) => (current?.questionId === questionId ? null : current));
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverPageBreak({ questionId, placement });
+  }
+
+  function handlePageBreakDragLeave(event: DragEvent<HTMLElement>, questionId: string) {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    setDragOverPageBreak((current) => (current?.questionId === questionId ? null : current));
+  }
+
+  function handlePageBreakDrop(event: DragEvent<HTMLElement>, questionId: string) {
+    const sourceQuestionId = readPageBreakDrag(event);
+    if (!sourceQuestionId) return;
+    event.preventDefault();
+    const placement = dragOverPageBreak?.questionId === questionId ? dragOverPageBreak.placement : dragPlacementFromEvent(event);
+    const targetQuestionId = pageBreakDropBoundaryQuestionId(questionId, placement);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    if (!targetQuestionId || targetQuestionId === sourceQuestionId || pageBreakQuestionIds.has(targetQuestionId)) return;
+    movePageBreakAfterQuestion(sourceQuestionId, targetQuestionId);
+    const anchor = pageBreakScrollAnchor(targetQuestionId);
+    setActiveTocItemId(anchor);
+    queueDocumentJump(anchor, questionScrollAnchor(targetQuestionId));
+  }
+
+  function handlePageBreakDragEnd() {
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
   }
 
   function insertOrderItem(items: ContainerOrderItem[], item: ContainerOrderItem, beforeItem?: ContainerOrderItem) {
@@ -8806,6 +8626,14 @@ export default function App() {
     );
   }
 
+  function readPageBreakDrag(event: DragEvent<HTMLElement>) {
+    return (
+      draggedPageBreakQuestionId ||
+      parsePageBreakDrag(event.dataTransfer.getData(PAGE_BREAK_DRAG_MIME), true) ||
+      parsePageBreakDrag(event.dataTransfer.getData("text/plain"))
+    );
+  }
+
   function handleSubsectionDragStart(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
     event.stopPropagation();
     const payload = serializeSubsectionDrag(target);
@@ -8820,6 +8648,8 @@ export default function App() {
     setDraggedSubsection(target);
     setDragOverSubsection(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
   }
 
   function handleSubsectionDragOver(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
@@ -8849,6 +8679,8 @@ export default function App() {
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
     moveSubsection(active, intent);
   }
 
@@ -8856,6 +8688,8 @@ export default function App() {
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
   }
 
   function handleContainerDropZoneDragOver(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, placement: "start" | "end") {
@@ -8894,6 +8728,8 @@ export default function App() {
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
     moveSubsection(active, intent);
   }
 
@@ -8963,52 +8799,49 @@ export default function App() {
 
   function addQuestion() {
     const question = createQuestion();
+    const anchor = questionScrollAnchor(question.id);
     setQuestionsWithHistory((current) => [...current, question]);
-    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
-  }
-
-  function insertQuestionAtStart() {
-    const question = createQuestion();
-    setQuestionsWithHistory((current) => insertAtStart(current, question));
-    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
-  }
-
-  function insertQuestionAfter(afterQuestionId: string) {
-    const question = createQuestion();
-    setQuestionsWithHistory((current) => insertAfter(current, afterQuestionId, question));
-    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
-  }
-
-  function addPageBreakAfterLastQuestion() {
-    const question = questions.at(-1);
-    if (!question || question.pageBreakAfter) return;
-    updateQuestion(question.id, {
-      pageBreakAfter: true,
-      contentBlocks: question.contentBlocks.filter((block) => block.kind !== "pageBreak"),
-    });
+    selectQuestionInEditor(question.id);
+    setActiveTocItemId(anchor);
+    queueDocumentJump(anchor, anchor);
   }
 
   function addPageBreakAfterQuestion(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
-    if (!question || question.pageBreakAfter) return;
+    if (!question || questionHasPageBreak(question)) return;
+    const anchor = pageBreakScrollAnchor(question.id);
     updateQuestion(question.id, {
       pageBreakAfter: true,
       contentBlocks: question.contentBlocks.filter((block) => block.kind !== "pageBreak"),
     });
+    setActiveTocItemId(anchor);
+    queueDocumentJump(anchor, questionScrollAnchor(question.id));
   }
 
   function removePageBreakAfterQuestion(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
+    const wasActivePageBreak = activeTocItemId === pageBreakScrollAnchor(question.id);
     updateQuestion(question.id, {
       pageBreakAfter: false,
       contentBlocks: question.contentBlocks.filter((block) => block.kind !== "pageBreak"),
     });
+    if (wasActivePageBreak) {
+      const anchor = questionScrollAnchor(question.id);
+      selectQuestionInEditor(question.id);
+      setActiveTocItemId(anchor);
+      queueDocumentJump(anchor, anchor);
+    }
   }
 
   function removeQuestion(questionId: string) {
+    const removedIndex = questions.findIndex((question) => question.id === questionId);
     const remainingQuestions = questions.filter((question) => question.id !== questionId);
     const nextQuestions = remainingQuestions.length ? remainingQuestions : [createQuestion()];
+    const nextActiveQuestion =
+      questionId === activeQuestionId
+        ? (nextQuestions[Math.min(Math.max(removedIndex, 0), nextQuestions.length - 1)] ?? nextQuestions[0])
+        : (nextQuestions.find((question) => question.id === activeQuestionId) ?? nextQuestions[0]);
     setQuestionsWithHistory(nextQuestions);
     setCollapsedQuestionIds((current) => {
       const nextQuestionIds = questionIdSet(nextQuestions);
@@ -9018,6 +8851,10 @@ export default function App() {
       }
       return next;
     });
+    if (nextActiveQuestion) {
+      setActiveQuestionId(nextActiveQuestion.id);
+      setActiveTocItemId(questionScrollAnchor(nextActiveQuestion.id));
+    }
   }
 
   function addQuestionBlock(questionId: string, kind: ContentBlockKind) {
@@ -9656,395 +9493,376 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-blue-300/15 bg-[#030817] text-white shadow-[0_14px_32px_rgba(3,8,23,0.22)]">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-5">
-          <div className="flex items-center gap-3">
-            <img
-              src={BRAND_LOGO_SRC}
-              alt="Mauth Studio"
-              className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
-            />
-          </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <input
-              ref={mauthdownImportInputRef}
-              type="file"
-              accept=".mauth.md,.md,text/markdown,application/json"
-              className="sr-only"
-              onChange={(event) => {
-                handleMauthdownImportFile(event.currentTarget.files?.[0]);
-                event.currentTarget.value = "";
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title="Import Mauthdown file"
-              aria-label="Import Mauthdown file"
-              onClick={() => mauthdownImportInputRef.current?.click()}
-              className={cn("ml-2", HEADER_ACTION_CLASS)}
-            >
-              <FileUp data-icon="inline-start" />
-              Import File
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title="Export Mauthdown file"
-              aria-label="Export Mauthdown file"
-              onClick={exportMauthdownFile}
-              className={HEADER_ACTION_CLASS}
-            >
-              <FileDown data-icon="inline-start" />
-              Export File
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title="Export PDF"
-              aria-label="Export PDF"
-              onClick={exportPdf}
-              disabled={isExportingPdf}
-              className={cn("ml-2", HEADER_ACTION_CLASS)}
-            >
-              <FileDown data-icon="inline-start" />
-              {isExportingPdf ? "Exporting..." : "Export PDF"}
-            </Button>
-            <div className={HEADER_GROUP_CLASS}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-                aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-                aria-pressed={darkMode}
-                onClick={toggleTheme}
-                className={cn(HEADER_ICON_BUTTON_CLASS, darkMode && HEADER_ICON_ACTIVE_CLASS)}
-              >
-                {darkMode ? <Sun /> : <Moon />}
-              </Button>
+    <>
+      <div className="app-shell min-h-screen bg-background text-foreground">
+        <header className="app-header border-b border-blue-300/15 bg-[#030817] text-white shadow-[0_14px_32px_rgba(3,8,23,0.22)]">
+          <div className="flex min-h-16 items-center justify-between gap-4 px-5">
+            <div className="flex items-center gap-3">
+              <img
+                src={BRAND_LOGO_SRC}
+                alt="Mauth Studio"
+                className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
+              />
             </div>
-            <div className={HEADER_GROUP_CLASS}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Undo"
-                aria-label="Undo"
-                disabled={!canUndo}
-                onClick={undoEdit}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <Undo2 />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Redo"
-                aria-label="Redo"
-                disabled={!canRedo}
-                onClick={redoEdit}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <Redo2 />
-              </Button>
-            </div>
-            <div className={HEADER_GROUP_CLASS}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Show editor and display"
-                aria-label="Show editor and display"
-                aria-pressed={paneMode === "split"}
-                onClick={showSplitPane}
-                className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "split" && HEADER_ICON_ACTIVE_CLASS)}
-              >
-                <Columns2 />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Editor only"
-                aria-label="Editor only"
-                aria-pressed={paneMode === "editor"}
-                onClick={hidePreviewPane}
-                className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "editor" && HEADER_ICON_ACTIVE_CLASS)}
-              >
-                <PanelRightClose />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Display only"
-                aria-label="Display only"
-                aria-pressed={paneMode === "preview"}
-                onClick={hideEditorPane}
-                className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "preview" && HEADER_ICON_ACTIVE_CLASS)}
-              >
-                <PanelLeftClose />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={appShellStyle}>
-        <DocumentNavigatorRail
-          open={tocOpen}
-          items={documentTocItems}
-          activeItemId={activeTocItemId}
-          onToggle={() => setTocOpen((current) => !current)}
-          onJump={jumpToTocItem}
-        />
-        {tocOpen ? <DocumentNavigator items={documentTocItems} activeItemId={activeTocItemId} onJump={jumpToTocItem} /> : null}
-        <div className="grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
-          {showEditor ? (
-            <section
-              ref={editorPaneRef}
-              className="min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r"
-            >
-              <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-4">
-                <SavedTestManager
-                  savedTests={savedTests}
-                  selectedSavedTestId={selectedSavedTestId}
-                  diskStorageMessage={diskStorageMessage}
-                  onSelectSavedTest={selectSavedTest}
-                  onNewTest={startNewTest}
-                  onSaveTest={saveCurrentTest}
-                  onSaveTestAs={saveCurrentTestAs}
-                  onRenameSavedTest={renameSavedTest}
-                  onDeleteSavedTest={deleteSavedTest}
-                />
-
-                <div
-                  className={cn(
-                    "rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                    isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
-                  )}
-                  data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+            <div className="hidden items-center gap-2 md:flex">
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+                  aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+                  aria-pressed={darkMode}
+                  onClick={toggleTheme}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, darkMode && HEADER_ICON_ACTIVE_CLASS)}
                 >
-                  <div className="flex flex-col gap-3">
-                    <FrontMatterEditor
+                  {darkMode ? <Sun /> : <Moon />}
+                </Button>
+              </div>
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Undo"
+                  aria-label="Undo"
+                  disabled={!canUndo}
+                  onClick={undoEdit}
+                  className={HEADER_ICON_BUTTON_CLASS}
+                >
+                  <Undo2 />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Redo"
+                  aria-label="Redo"
+                  disabled={!canRedo}
+                  onClick={redoEdit}
+                  className={HEADER_ICON_BUTTON_CLASS}
+                >
+                  <Redo2 />
+                </Button>
+              </div>
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Show editor and display"
+                  aria-label="Show editor and display"
+                  aria-pressed={paneMode === "split"}
+                  onClick={showSplitPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "split" && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  <Columns2 />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Editor only"
+                  aria-label="Editor only"
+                  aria-pressed={paneMode === "editor"}
+                  onClick={hidePreviewPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "editor" && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  <PanelRightClose />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Display only"
+                  aria-label="Display only"
+                  aria-pressed={paneMode === "preview"}
+                  onClick={hideEditorPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "preview" && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  <PanelLeftClose />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="app-main grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={appShellStyle}>
+          <DocumentNavigatorRail
+            open={tocOpen}
+            items={documentTocItems}
+            activeItemId={activeTocItemId}
+            draggedQuestionId={draggedQuestionId}
+            dragOverQuestion={dragOverQuestion}
+            draggedPageBreakQuestionId={draggedPageBreakQuestionId}
+            dragOverPageBreak={dragOverPageBreak}
+            pageBreakQuestionIds={pageBreakQuestionIds}
+            onToggle={() => setTocOpen((current) => !current)}
+            onJump={jumpToTocItem}
+            onPreviewJump={jumpPreviewToTocItem}
+            onSelectPageBreak={selectPageBreakInEditor}
+            onToggleEditorAtItem={toggleEditorAtTocItem}
+            onAddQuestion={addQuestion}
+            onAddPageBreakAfterQuestion={addPageBreakAfterQuestion}
+            onMoveQuestion={moveQuestionByKeyboard}
+            onMovePageBreak={movePageBreakByKeyboard}
+            onDeleteQuestion={removeQuestion}
+            onDeletePageBreak={removePageBreakAfterQuestion}
+            onQuestionDragStart={handleQuestionDragStart}
+            onQuestionDragOver={handleQuestionDragOver}
+            onQuestionDragLeave={handleQuestionDragLeave}
+            onQuestionDrop={handleQuestionDrop}
+            onQuestionDragEnd={handleQuestionDragEnd}
+            onPageBreakDragStart={handlePageBreakDragStart}
+            onPageBreakDragOver={handlePageBreakDragOver}
+            onPageBreakDragLeave={handlePageBreakDragLeave}
+            onPageBreakDrop={handlePageBreakDrop}
+            onPageBreakDragEnd={handlePageBreakDragEnd}
+          />
+          {tocOpen ? <DocumentNavigator items={documentTocItems} activeItemId={activeTocItemId} onJump={jumpToTocItem} /> : null}
+          <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
+            {showEditor ? (
+              <section
+                ref={editorPaneRef}
+                className="editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r"
+              >
+                <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-4">
+                  <SavedTestManager
+                    savedTests={savedTests}
+                    selectedSavedTestId={selectedSavedTestId}
+                    diskStorageMessage={diskStorageMessage}
+                    onSelectSavedTest={selectSavedTest}
+                    onNewTest={startNewTest}
+                    onSaveTest={saveCurrentTest}
+                    onSaveTestAs={saveCurrentTestAs}
+                    onRenameSavedTest={renameSavedTest}
+                    onDeleteSavedTest={deleteSavedTest}
+                  />
+
+                  {editingFrontMatter ? (
+                    <div
+                      className={cn(
+                        "rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                        isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
+                      )}
+                      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+                    >
+                      <div className="flex flex-col gap-3">
+                        <FrontMatterEditor
+                          frontMatter={frontMatter}
+                          logos={logos}
+                          openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                          onChange={updateFrontMatter}
+                          onAddLogo={addLogo}
+                          onRemoveLogo={removeLogo}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!editingFrontMatter && editingPageBreak && activePageBreakQuestion ? (
+                    <div className="flex flex-col gap-4">
+                      <div data-scroll-anchor={pageBreakScrollAnchor(activePageBreakQuestion.id)}>
+                        <PageBreakStructurePanel
+                          label={`Page break after Question ${questionDisplayNumber(
+                            frontMatter,
+                            Math.max(
+                              0,
+                              questions.findIndex((question) => question.id === activePageBreakQuestion.id),
+                            ),
+                          )}`}
+                          active={isActiveEditorAnchor(pageBreakScrollAnchor(activePageBreakQuestion.id))}
+                          onRemove={() => removePageBreakAfterQuestion(activePageBreakQuestion.id)}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!editingFrontMatter && !editingPageBreak ? (
+                    <div className="flex flex-col gap-4">
+                      {questions.map((question, index) => {
+                        if (question.id !== activeQuestion?.id) return null;
+
+                        const hasParts = question.parts.length > 0;
+                        const questionItems = orderedQuestionItems(question);
+                        const questionAnchor = questionScrollAnchor(question.id);
+                        const questionActive = isActiveEditorAnchor(questionAnchor);
+                        const collapsed = collapsedQuestionIds.has(question.id);
+                        const dragging = draggedQuestionId === question.id;
+                        const questionDropPlacement =
+                          dragOverQuestion?.questionId === question.id && draggedQuestionId !== question.id
+                            ? dragOverQuestion.placement
+                            : null;
+
+                        return (
+                          <div key={question.id} className="contents">
+                            <article
+                              className={cn(
+                                "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                                questionActive && EDITOR_ACTIVE_PANEL_CLASS,
+                                collapsed && "py-3",
+                                dragging && "scale-[0.995] opacity-70 shadow-2xl",
+                                questionDropPlacement === "before" &&
+                                  "before:absolute before:-top-3 before:left-3 before:right-3 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
+                                questionDropPlacement === "after" &&
+                                  "after:absolute after:-bottom-3 after:left-3 after:right-3 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
+                              )}
+                              data-drag-preview
+                              data-scroll-anchor={questionAnchor}
+                              onDragOver={(event) => handleQuestionDragOver(event, question.id)}
+                              onDragLeave={(event) => handleQuestionDragLeave(event, question.id)}
+                              onDrop={(event) => handleQuestionDrop(event, question.id)}
+                            >
+                              <div className={cn("flex items-center justify-between gap-3", collapsed ? "flex-nowrap" : "mb-4 flex-wrap")}>
+                                <div
+                                  className={cn("flex min-w-0 items-center gap-2", collapsed ? "flex-nowrap overflow-hidden" : "flex-wrap")}
+                                >
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    draggable
+                                    title="Drag question"
+                                    aria-label={`Drag Question ${questionDisplayNumber(frontMatter, index)}`}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onDragStart={(event) => handleQuestionDragStart(event, question.id)}
+                                    onDragEnd={handleQuestionDragEnd}
+                                    className="size-9 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                                  >
+                                    <GripVertical />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      toggleQuestionCollapsed(question.id);
+                                    }}
+                                    title={collapsed ? "Expand question" : "Collapse question"}
+                                    aria-label={collapsed ? "Expand question" : "Collapse question"}
+                                    aria-expanded={!collapsed}
+                                    className="size-9 shrink-0"
+                                  >
+                                    {collapsed ? <ChevronRight /> : <ChevronDown />}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                    aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      jumpPreviewToQuestion(question.id);
+                                    }}
+                                    className={cn(
+                                      "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
+                                      questionActive &&
+                                        "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                                    )}
+                                  >
+                                    Question {questionDisplayNumber(frontMatter, index)}
+                                  </Button>
+                                  {hasParts ? (
+                                    <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
+                                      {markLabel(questionMarks(question))}
+                                    </Badge>
+                                  ) : (
+                                    <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+                                      <span className="font-medium text-muted-foreground">Marks</span>
+                                      <input
+                                        aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
+                                        type="number"
+                                        min={0}
+                                        value={question.marks}
+                                        onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
+                                        className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
+                                      />
+                                    </label>
+                                  )}
+                                  {collapsed ? <InlineMathSummary source={firstTextSource(question.contentBlocks)} /> : null}
+                                </div>
+                                <div className={cn("flex items-center gap-2", collapsed ? "shrink-0 flex-nowrap" : "flex-wrap")}>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    title={`Remove Question ${index + 1}`}
+                                    aria-label={`Remove Question ${index + 1}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      removeQuestion(question.id);
+                                    }}
+                                    className="size-9 shrink-0"
+                                  >
+                                    <Trash2 />
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {!collapsed ? (
+                                <>
+                                  {questionItems.length
+                                    ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
+                                    : null}
+                                  <div className="flex flex-col gap-3">
+                                    {questionItems.map((item, itemIndex) =>
+                                      item.kind === "block"
+                                        ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
+                                        : renderPartPanel(question, item.part),
+                                    )}
+                                  </div>
+                                  {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
+                                  <ContentInsertionActions
+                                    buttonLabel="Add"
+                                    centered
+                                    className="mt-4 pt-3"
+                                    onAddText={() => addQuestionBlock(question.id, "text")}
+                                    onAddChoices={() => addQuestionBlock(question.id, "choices")}
+                                    onAddTable={() => addQuestionBlock(question.id, "table")}
+                                    onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                    onAddSpace={() => addQuestionBlock(question.id, "space")}
+                                    extraActions={[
+                                      {
+                                        label: "Part",
+                                        tooltip: "Add a lettered question part, such as (a), (b), (c)",
+                                        icon: <GitBranch className="size-4" aria-hidden="true" />,
+                                        onClick: () => addPart(question.id),
+                                      },
+                                    ]}
+                                  />
+                                </>
+                              ) : null}
+                            </article>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {showPreview ? (
+              <section ref={previewPaneRef} className="preview-pane min-h-0 overflow-auto bg-muted/70 p-4">
+                <div className="preview-panzoom-space">
+                  <div ref={previewPanzoomRef} className="preview-panzoom-content">
+                    <PaginatedTestPreview
                       frontMatter={frontMatter}
                       logos={logos}
-                      openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                      onChange={updateFrontMatter}
-                      onAddLogo={addLogo}
-                      onRemoveLogo={removeLogo}
+                      totalMarks={totalMarks}
+                      questions={questions}
+                      scale={previewFitScale}
+                      onGraphConfigChange={updatePreviewGraphConfig}
                     />
                   </div>
                 </div>
-
-                <div className="flex flex-col gap-4">
-                  <TestLevelInsertionActions onAddQuestion={insertQuestionAtStart} />
-                  {questions.map((question, index) => {
-                    const hasParts = question.parts.length > 0;
-                    const questionItems = orderedQuestionItems(question);
-                    const questionAnchor = questionScrollAnchor(question.id);
-                    const questionActive = isActiveEditorAnchor(questionAnchor);
-                    const collapsed = collapsedQuestionIds.has(question.id);
-                    const dragging = draggedQuestionId === question.id;
-                    const questionDropPlacement =
-                      dragOverQuestion?.questionId === question.id && draggedQuestionId !== question.id ? dragOverQuestion.placement : null;
-                    const questionHasPageBreak =
-                      question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
-
-                    return (
-                      <div key={question.id} className="contents">
-                        <article
-                          className={cn(
-                            "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                            questionActive && EDITOR_ACTIVE_PANEL_CLASS,
-                            collapsed && "py-3",
-                            dragging && "scale-[0.995] opacity-70 shadow-2xl",
-                            questionDropPlacement === "before" &&
-                              "before:absolute before:-top-3 before:left-3 before:right-3 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
-                            questionDropPlacement === "after" &&
-                              "after:absolute after:-bottom-3 after:left-3 after:right-3 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
-                          )}
-                          data-drag-preview
-                          data-scroll-anchor={questionAnchor}
-                          onDragOver={(event) => handleQuestionDragOver(event, question.id)}
-                          onDragLeave={(event) => handleQuestionDragLeave(event, question.id)}
-                          onDrop={(event) => handleQuestionDrop(event, question.id)}
-                        >
-                          <div className={cn("flex items-center justify-between gap-3", collapsed ? "flex-nowrap" : "mb-4 flex-wrap")}>
-                            <div className={cn("flex min-w-0 items-center gap-2", collapsed ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                draggable
-                                title="Drag question"
-                                aria-label={`Drag Question ${questionDisplayNumber(frontMatter, index)}`}
-                                onClick={(event) => event.stopPropagation()}
-                                onDragStart={(event) => handleQuestionDragStart(event, question.id)}
-                                onDragEnd={handleQuestionDragEnd}
-                                className="size-9 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
-                              >
-                                <GripVertical />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  toggleQuestionCollapsed(question.id);
-                                }}
-                                title={collapsed ? "Expand question" : "Collapse question"}
-                                aria-label={collapsed ? "Expand question" : "Collapse question"}
-                                aria-expanded={!collapsed}
-                                className="size-9 shrink-0"
-                              >
-                                {collapsed ? <ChevronRight /> : <ChevronDown />}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  jumpPreviewToQuestion(question.id);
-                                }}
-                                className={cn(
-                                  "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
-                                  questionActive &&
-                                    "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-                                )}
-                              >
-                                Question {questionDisplayNumber(frontMatter, index)}
-                              </Button>
-                              {hasParts ? (
-                                <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                                  {markLabel(questionMarks(question))}
-                                </Badge>
-                              ) : (
-                                <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                  <span className="font-medium text-muted-foreground">Marks</span>
-                                  <input
-                                    aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
-                                    type="number"
-                                    min={0}
-                                    value={question.marks}
-                                    onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                                    className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
-                                  />
-                                </label>
-                              )}
-                              {collapsed ? <InlineMathSummary source={firstTextSource(question.contentBlocks)} /> : null}
-                            </div>
-                            <div className={cn("flex items-center gap-2", collapsed ? "shrink-0 flex-nowrap" : "flex-wrap")}>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                title={`Remove Question ${index + 1}`}
-                                aria-label={`Remove Question ${index + 1}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  removeQuestion(question.id);
-                                }}
-                                className="size-9 shrink-0"
-                              >
-                                <Trash2 />
-                              </Button>
-                            </div>
-                          </div>
-
-                          {!collapsed ? (
-                            <>
-                              {questionItems.length
-                                ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
-                                : null}
-                              <div className="flex flex-col gap-3">
-                                {questionItems.map((item, itemIndex) =>
-                                  item.kind === "block"
-                                    ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
-                                    : renderPartPanel(question, item.part),
-                                )}
-                              </div>
-                              {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
-                              <ContentInsertionActions
-                                buttonLabel="Add"
-                                centered
-                                className="mt-4 pt-3"
-                                onAddText={() => addQuestionBlock(question.id, "text")}
-                                onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                onAddTable={() => addQuestionBlock(question.id, "table")}
-                                onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                                onAddSpace={() => addQuestionBlock(question.id, "space")}
-                                extraActions={[
-                                  {
-                                    label: "Part",
-                                    tooltip: "Add a lettered question part, such as (a), (b), (c)",
-                                    icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                    onClick: () => addPart(question.id),
-                                  },
-                                ]}
-                              />
-                            </>
-                          ) : null}
-                        </article>
-                        {questionHasPageBreak ? (
-                          <PageBreakBlockEditor
-                            label={`Page break after Question ${index + 1}`}
-                            onRemove={() => removePageBreakAfterQuestion(question.id)}
-                          />
-                        ) : null}
-                        {index < questions.length - 1 ? (
-                          <TestLevelInsertionActions
-                            className="py-1"
-                            onAddQuestion={() => insertQuestionAfter(question.id)}
-                            onAddPageBreak={questionHasPageBreak ? undefined : () => addPageBreakAfterQuestion(question.id)}
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  <TestLevelInsertionActions
-                    className="pb-6 pt-1"
-                    onAddQuestion={addQuestion}
-                    onAddPageBreak={
-                      !questions.length ||
-                      Boolean(
-                        questions.at(-1)?.pageBreakAfter || questions.at(-1)?.contentBlocks.some((block) => block.kind === "pageBreak"),
-                      )
-                        ? undefined
-                        : addPageBreakAfterLastQuestion
-                    }
-                  />
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          {showPreview ? (
-            <section ref={previewPaneRef} className="min-h-0 overflow-auto bg-muted/70 p-4">
-              <PaginatedTestPreview
-                frontMatter={frontMatter}
-                logos={logos}
-                totalMarks={totalMarks}
-                questions={questions}
-                scale={previewScale}
-                onGraphConfigChange={updatePreviewGraphConfig}
-              />
-            </section>
-          ) : null}
-        </div>
-      </main>
-      {pdfExportActive ? (
-        <div ref={pdfExportRef} className="pdf-export-stage" aria-hidden="true">
-          <PaginatedTestPreview frontMatter={frontMatter} logos={logos} totalMarks={totalMarks} questions={questions} scale={1} />
-        </div>
-      ) : null}
-    </div>
+              </section>
+            ) : null}
+          </div>
+        </main>
+      </div>
+      <div className="print-preview-stage" aria-hidden="true">
+        <PaginatedTestPreview frontMatter={frontMatter} logos={logos} totalMarks={totalMarks} questions={questions} scale={1} />
+      </div>
+    </>
   );
 }

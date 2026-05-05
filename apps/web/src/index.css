@@ -364,10 +364,31 @@
     position: relative;
   }
 
+  .a4-page-frame {
+    display: contents;
+  }
+
   .a4-preview-shell {
     display: flex;
     justify-content: center;
     min-width: 0;
+  }
+
+  .preview-pane {
+    overscroll-behavior: none;
+    scrollbar-gutter: stable both-edges;
+  }
+
+  .preview-panzoom-space {
+    min-height: 100%;
+    min-width: 100%;
+    overflow: visible;
+  }
+
+  .preview-panzoom-content {
+    min-width: 100%;
+    transform-origin: 50% 0;
+    will-change: transform;
   }
 
   .a4-preview-stack {
@@ -379,34 +400,6 @@
     margin: 0 auto;
     width: max-content;
     zoom: var(--a4-preview-scale, 1);
-  }
-
-  .pdf-export-stage {
-    background: #ffffff;
-    left: -100000px;
-    overflow: visible;
-    pointer-events: none;
-    position: fixed;
-    top: 0;
-    width: var(--a4-page-width, 794px);
-  }
-
-  .pdf-export-stage .a4-preview-shell {
-    justify-content: flex-start;
-  }
-
-  .pdf-export-stage .a4-preview-stack {
-    gap: 0;
-    margin: 0;
-    zoom: 1;
-  }
-
-  .pdf-export-stage .a4-page {
-    box-shadow: none;
-  }
-
-  .pdf-export-stage .a4-page-break {
-    display: none;
   }
 
   .a4-page {
@@ -997,10 +990,20 @@
   .a4-measure .a4-page {
     box-shadow: none;
   }
+
+  .print-preview-stage {
+    background: #ffffff;
+    left: -100000px;
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    visibility: hidden;
+    width: var(--a4-page-width, 794px);
+  }
 }
 
 @page {
-  size: A4;
+  size: 794px 1123px;
   margin: 0;
 }
 
@@ -1009,57 +1012,108 @@
   body,
   #root {
     background: #ffffff;
-    min-height: auto;
-    width: 210mm;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    width: 794px;
   }
 
   body {
     background: #ffffff;
+    margin: 0;
   }
 
   body * {
     visibility: hidden;
   }
 
-  .a4-preview-root,
-  .a4-preview-root * {
+  .print-preview-stage,
+  .print-preview-stage * {
     visibility: visible;
   }
 
-  .a4-preview-root {
-    left: 0;
-    margin: 0;
-    position: absolute;
-    top: 0;
-    width: 210mm;
+  .app-shell {
+    display: none !important;
   }
 
-  .a4-preview-shell {
+  .print-preview-stage {
+    background: #ffffff !important;
+    display: block !important;
+    height: auto !important;
+    left: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    position: static !important;
+    top: auto !important;
+    transform: none !important;
+    width: 794px !important;
+  }
+
+  .print-preview-stage .a4-preview-root {
+    left: auto;
+    margin: 0;
+    position: static;
+    top: auto;
+    transform: none !important;
+    width: var(--a4-print-page-width, 794px);
+  }
+
+  .print-preview-stage .a4-preview-shell {
     margin: 0;
     overflow: visible;
     padding: 0;
   }
 
-  .a4-preview-stack {
+  .print-preview-stage .a4-preview-stack {
     display: block;
     width: auto;
     zoom: 1;
   }
 
-  .a4-page {
-    box-shadow: none;
-    min-height: 297mm;
-    page-break-after: always;
-    padding: 20mm;
-    width: 210mm;
+  .print-preview-stage .a4-page-frame {
+    break-after: auto;
+    break-inside: avoid;
+    box-sizing: border-box;
+    display: block;
+    height: var(--a4-print-page-height, 1123px);
+    overflow: hidden;
+    page-break-after: auto;
+    page-break-inside: avoid;
+    position: relative;
+    width: var(--a4-print-page-width, 794px);
   }
 
-  .a4-page-last {
+  .print-preview-stage .a4-page-frame-last {
+    break-after: auto;
     page-break-after: auto;
   }
 
-  .a4-page-break,
-  .a4-measure {
+  .print-preview-stage .a4-page {
+    box-shadow: none;
+    box-sizing: border-box;
+    height: var(--a4-print-page-height, 1123px);
+    left: 0;
+    max-height: var(--a4-print-page-height, 1123px);
+    min-height: var(--a4-print-page-height, 1123px);
+    overflow: hidden;
+    padding: var(--a4-print-page-padding-y, 76px) var(--a4-print-page-padding-x, 76px);
+    position: absolute;
+    top: 0;
+    transform: scale(var(--a4-print-output-scale, 1));
+    transform-origin: left top;
+    width: var(--a4-print-page-width, 794px);
+    zoom: var(--a4-print-render-scale, 1);
+  }
+
+  .print-preview-stage .a4-page-content,
+  .print-preview-stage .test-front-matter {
+    min-height: calc(var(--a4-print-page-height, 1123px) - var(--a4-print-page-padding-y, 76px) - var(--a4-print-page-padding-y, 76px));
+  }
+
+  .print-preview-stage .a4-page-break,
+  .print-preview-stage .a4-measure {
     display: none;
   }
 }

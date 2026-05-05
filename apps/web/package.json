@@ -12,11 +12,10 @@
   "dependencies": {
     "@mauth-studio/diagram-plotly": "workspace:*",
     "@mauth-studio/shared": "workspace:*",
+    "@panzoom/panzoom": "^4.6.2",
     "@radix-ui/react-slot": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^4.2.1",
     "jsxgraph": "latest",
     "katex": "latest",
     "lucide-react": "latest",

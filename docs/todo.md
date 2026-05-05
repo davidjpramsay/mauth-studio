@@ -37,12 +37,12 @@ Replace the current long nested module editor with a question-focused workflow: 
 
 Suggested implementation phases:
 
-- Phase 1: introduce active-question state and render only the selected question in the module editor, while keeping existing add/page-break controls as a fallback.
-- Phase 2: add mini TOC `+ question`, active-question highlighting, and sync between mini TOC, document TOC, preview selection, and editor selection.
-- Phase 3: add mini TOC question drag-and-drop with tests or focused regression checks for question content, marks, page breaks, and solutions moving correctly.
-- Phase 4: add mini TOC page-break boundary markers/toggles and migrate page-break creation away from the module editor.
-- Phase 5: simplify the module editor by removing redundant document-level add controls, leaving it focused on editing content inside the selected question.
-- Phase 6: run a usability pass on cramped layouts, touch targets, keyboard access, and accidental drag prevention.
+- Phase 1: done in prototype. The editor tracks an active question, TOC/mini TOC jumps select that question, `T` shows the title-page controls, and question selections show only the selected question while keeping existing add/page-break controls as a fallback.
+- Phase 2: done in prototype. The mini TOC has a `+` button for adding questions, new questions are selected immediately, and active/parent highlighting is synced across the mini TOC, document TOC, preview jumps, and editor selection.
+- Phase 3: done in prototype. Mini TOC question buttons can be dragged to reorder whole question objects, with drop indicators and selected-question sync after the drop. Keep focused regression checks for question content, marks, page breaks, and solutions moving correctly as this gets broader testing.
+- Phase 4: done in prototype. Mini TOC page breaks are explicit separator items in the question list, created from the fixed page-break button and stored with the existing page-break-after-question state.
+- Phase 5: done in prototype. Removed redundant document-level add-question/page-break controls from the module editor, leaving it focused on editing content inside the selected question. The mini TOC now owns question creation, question order, and page-break creation.
+- Phase 6: done in prototype. Replaced on/off page-break boundary toggles with explicit draggable/selectable page-break items owned by the mini TOC, added a fixed page-break add button beside the question add button, added `Alt+ArrowUp` / `Alt+ArrowDown` keyboard reorder and `Delete` / `Backspace` removal for mini TOC questions and page breaks, moved page-break editing out of the selected-question module panel, kept page breaks out of the full Document TOC, and tightened cramped-layout/touch-target behaviour. Keep broader browser QA for accidental drag prevention as follow-up testing.
 
 ## Project/File Management System
 
