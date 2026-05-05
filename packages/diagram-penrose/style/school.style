@@ -30,11 +30,22 @@ forall Point p; Point q {
   ensure disjoint(p.labelText, q.labelText, 6)
 }
 
-forall Point a; Point b
-where Segment(a, b) {
+forall Point p
+where HidePoint(p) {
+  p.dot.r = 0
+  p.dot.fillColor = none()
+  p.dot.strokeColor = none()
+  p.dot.strokeWidth = 0
+}
+
+forall NamedSegment s; Point a; Point b
+where Segment(s, a, b) {
+  s.start = a.dot.center
+  s.end = b.dot.center
+
   segmentLine = Line {
-    start: a.dot.center
-    end: b.dot.center
+    start: s.start
+    end: s.end
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 2
     fillColor: none()
@@ -162,19 +173,19 @@ forall Point a; Point b; Point c; Point d
 where EqualLength(a, b, c, d) {
   ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
 
-  tickAB = Line {
-    start: midpoint(a.dot.center, b.dot.center) - rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(a.dot.center, b.dot.center) + rot90(unit(b.dot.center - a.dot.center + (0.001, 0.001))) * 7
+  tickAB = Path {
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 
-  tickCD = Line {
-    start: midpoint(c.dot.center, d.dot.center) - rot90(unit(d.dot.center - c.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(c.dot.center, d.dot.center) + rot90(unit(d.dot.center - c.dot.center + (0.001, 0.001))) * 7
+  tickCD = Path {
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 
@@ -184,23 +195,128 @@ where EqualLength(a, b, c, d) {
   layer tickCD above d.dot
 }
 
+forall Point a; Point b; Point c; Point d
+where EqualLength2(a, b, c, d) {
+  ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
+
+  tickAB = Path {
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickCD = Path {
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall Point a; Point b; Point c; Point d
+where EqualLength3(a, b, c, d) {
+  ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
+
+  tickAB = Path {
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickCD = Path {
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall NamedSegment s1; NamedSegment s2
+where EqualNamedLength(s1, s2) {
+  ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
+
+  tickFirst = Path {
+    d: ticksOnLine(s1.start, s1.end, 6, 1, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(s2.start, s2.end, 6, 1, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall NamedSegment s1; NamedSegment s2
+where EqualNamedLength2(s1, s2) {
+  ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
+
+  tickFirst = Path {
+    d: ticksOnLine(s1.start, s1.end, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(s2.start, s2.end, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall NamedSegment s1; NamedSegment s2
+where EqualNamedLength3(s1, s2) {
+  ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
+
+  tickFirst = Path {
+    d: ticksOnLine(s1.start, s1.end, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(s2.start, s2.end, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
 forall Point shared; Point b; Point c
 where EqualLength(shared, b, shared, c) {
   ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
 
-  tickFirst = Line {
-    start: midpoint(shared.dot.center, b.dot.center) - rot90(unit(b.dot.center - shared.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(shared.dot.center, b.dot.center) + rot90(unit(b.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+  tickFirst = Path {
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 
-  tickSecond = Line {
-    start: midpoint(shared.dot.center, c.dot.center) - rot90(unit(c.dot.center - shared.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(shared.dot.center, c.dot.center) + rot90(unit(c.dot.center - shared.dot.center + (0.001, 0.001))) * 7
+  tickSecond = Path {
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 }
@@ -209,19 +325,103 @@ forall Point a; Point shared; Point c
 where EqualLength(a, shared, c, shared) {
   ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
 
-  tickFirst = Line {
-    start: midpoint(a.dot.center, shared.dot.center) - rot90(unit(shared.dot.center - a.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(a.dot.center, shared.dot.center) + rot90(unit(shared.dot.center - a.dot.center + (0.001, 0.001))) * 7
+  tickFirst = Path {
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 
-  tickSecond = Line {
-    start: midpoint(c.dot.center, shared.dot.center) - rot90(unit(shared.dot.center - c.dot.center + (0.001, 0.001))) * 7
-    end: midpoint(c.dot.center, shared.dot.center) + rot90(unit(shared.dot.center - c.dot.center + (0.001, 0.001))) * 7
+  tickSecond = Path {
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 1, 7)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall Point shared; Point b; Point c
+where EqualLength2(shared, b, shared, c) {
+  ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
+
+  tickFirst = Path {
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall Point a; Point shared; Point c
+where EqualLength2(a, shared, c, shared) {
+  ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
+
+  tickFirst = Path {
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 2, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall Point shared; Point b; Point c
+where EqualLength3(shared, b, shared, c) {
+  ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
+
+  tickFirst = Path {
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+}
+
+forall Point a; Point shared; Point c
+where EqualLength3(a, shared, c, shared) {
+  ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
+
+  tickFirst = Path {
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
+    fillColor: none()
+  }
+
+  tickSecond = Path {
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 3, 7)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.8
+    strokeLinecap: "round"
     fillColor: none()
   }
 }
@@ -271,18 +471,51 @@ where RightAngle(a, b, c) {
 }
 
 forall LengthLabel l {
-  l.text = Text {
+  l.text = Equation {
     string: l.label
-    fontSize: "13.333px"
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "16.133px"
     fillColor: rgba(0, 0, 0, 1)
   }
 
   ensure onCanvas(l.text, 420, 300)
 }
 
+forall Point a; Point b; Point c
+where AngleMark(a, b, c) {
+  angleArc = Path {
+    d: repeatedArcs(b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25, [25, 25], 1, 5, arcSweepFlag(b.dot.center, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25))
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.7
+    strokeLinecap: "round"
+  }
+}
+
+forall Point a; Point b; Point c
+where AngleMark2(a, b, c) {
+  angleArc = Path {
+    d: repeatedArcs(b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 23, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 23, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 28, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 28, [23, 23], 2, 5, arcSweepFlag(b.dot.center, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 23, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 23))
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.7
+    strokeLinecap: "round"
+  }
+}
+
+forall Point a; Point b; Point c
+where AngleMark3(a, b, c) {
+  angleArc = Path {
+    d: repeatedArcs(b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 21, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 21, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 31, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 31, [21, 21], 3, 5, arcSweepFlag(b.dot.center, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 21, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 21))
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 1.7
+    strokeLinecap: "round"
+  }
+}
+
 forall LengthLabel l; Point a; Point b
 where LabelsSegment(l, a, b) {
+  l.text.center = midpoint(a.dot.center, b.dot.center) + unit(rot90(b.dot.center - a.dot.center + (0.001, 0.001)) + (0.001, 0.001)) * 18
   ensure disjoint(l.text, a.dot, 5)
   ensure disjoint(l.text, b.dot, 5)
 }

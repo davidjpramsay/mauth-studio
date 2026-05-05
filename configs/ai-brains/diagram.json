@@ -1,0 +1,52 @@
+{
+  "id": "diagram",
+  "name": "Diagram Brain",
+  "version": 1,
+  "purpose": "Create and revise diagram specifications for JSXGraph, Penrose, and Plotly without mixing diagram rendering rules into question logic.",
+  "owns": [
+    "graph2d and graph3d diagram specs",
+    "geometricConstruction, vectorRelationship, and setDiagram Penrose substance",
+    "statsChart Plotly specs",
+    "diagram labels",
+    "diagram scale and alignment",
+    "visual clarity of diagram features"
+  ],
+  "mustNotOwn": [
+    "question wording outside diagram references",
+    "worked-solution steps",
+    "mark allocation",
+    "page-level spacing except diagram alignment and size"
+  ],
+  "rules": [
+    "Use graph2d or graph3d for coordinate graphs and relations.",
+    "Use image diagrams for teacher-uploaded image files. The current editor stores uploaded images as data URLs, but future file-management work should move large images into asset storage.",
+    "Use geometricConstruction for static geometry, angle, circle theorem, tangent, parallel, perpendicular, and construction diagrams.",
+    "Use setDiagram for Venn and set-region diagrams.",
+    "Use statsChart for histograms, binomial distributions, normal curves, box plots, and statistical data visualisation.",
+    "For statsChart histogram/column graph displays, use barType continuous for binned histograms and barType discrete for separate value columns.",
+    "For statsChart histogram/column graph displays, use yAxisMode frequency for counts and relativeFrequency for relative frequencies or probability-style bars calculated from raw data.",
+    "For statsChart histogram/column graph displays, use yLabelOrientation horizontal when the y-axis label should read across the top-left of the chart instead of rotated vertically.",
+    "For exact probability bars that should not be calculated from raw data, use dataMode manualProbabilities with matching xValues and probabilities.",
+    "Do not unify JSXGraph, Penrose, and Plotly internals.",
+    "Use LaTeX-rendered labels where labels contain mathematical notation.",
+    "Keep diagram label font visually consistent with 10 pt test text unless a specific style says otherwise.",
+    "For free graph labels, store label positions as editable feature coordinates so labels can be dragged and remain round-trippable.",
+    "For solution copies, add small visual annotations when they clarify the worked solution: highlighted intersection points, dashed guide lines to axes, or labelled critical values. Use a contrasting colour such as red only for the solution annotation, not for changing the original diagram meaning.",
+    "For graph2d solution annotations, use structured features such as point, label, and line_segment guide lines rather than ad hoc SVG or changing the underlying functions.",
+    "For Penrose geometry, prefer readable named segments such as Segment(AB, A, B) and EqualLength(AB, AC).",
+    "Triangle(A, B, C) draws the triangle, but add named Segment(...) declarations when a side needs a label, tick mark, or relationship.",
+    "Use EqualLength2 or EqualLength3 for two- or three-tick side marks.",
+    "Use AngleMark, AngleMark2, or AngleMark3 for one-, two-, or three-arc angle marks.",
+    "Hide point dots or labels only when the mathematical diagram convention requires it.",
+    "For graph regions, avoid unnecessary boundary strokes; use fill opacity and clear clipping to the grid.",
+    "For statsChart diagrams, use controlled chart styling: black axes and labels, clean grid boundaries, optional fill colour, and fill opacity. Do not rely on Plotly defaults for assessment output."
+  ],
+  "checks": [
+    "Diagram type matches the mathematical object.",
+    "Labels do not cross important lines where avoidable.",
+    "Graph axes, labels, and numbering are readable.",
+    "Stats chart bins and bars match the statistical interpretation.",
+    "Penrose Substance is valid for the selected preset.",
+    "Solution-only diagram annotations support the reasoning without cluttering or changing the original mathematical object."
+  ]
+}

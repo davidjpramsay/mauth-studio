@@ -3,6 +3,7 @@ import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } fro
 import JXG from "jsxgraph";
 import katex from "katex";
 
+import { inlineDisplayLatex } from "@/lib/latex";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelAttributes } from "./graphTypography";
 
 interface FunctionGraphProps {
@@ -163,12 +164,14 @@ type JXGElement = {
   moveTo?: (coords: [number, number], time?: number) => void;
   on?: (event: string, callback: () => void) => void;
   coords?: { usrCoords?: number[] };
+  isDraggable?: boolean;
+  rendNode?: HTMLElement;
 };
 type NativeRegionElement = unknown;
 
 function graphFunctions(graphConfig?: GraphConfig | null): GraphFunction[] {
   if (!graphConfig) return [];
-  if (graphConfig.functions?.length) return graphConfig.functions;
+  if (Array.isArray(graphConfig.functions)) return graphConfig.functions;
   if (!graphConfig.expression) return [];
   return [
     {
@@ -727,7 +730,7 @@ function graphFunctionLabel(index: number) {
 }
 
 function functionLabelLatex(graphFunction: GraphFunction, index: number) {
-  const label = graphFunction.label || graphFunctionLabel(index);
+  const label = labelNameLatex(graphFunction.label || graphFunctionLabel(index)) || graphFunctionLabel(index);
   if (graphFunction.labelMode === "name") return label;
 
   const expressionLatex = graphFunction.latex?.trim() || expressionToLatex(graphFunction.expression);
@@ -839,15 +842,16 @@ function moveElement(element: unknown, x: number, y: number) {
 
 function renderLatexLabelHtml(latex: string, color: string) {
   const safeColor = safeCssColor(color);
+  const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   try {
-    const html = katex.renderToString(latex, {
+    const html = katex.renderToString(inlineDisplayLatex(latex), {
       throwOnError: false,
       strict: "ignore",
       output: "html",
     });
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};">${html}</span>`;
+    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};">${escapeHtml(latex)}</span>`;
+    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(latex)}</span>`;
   }
 }
 
@@ -861,16 +865,19 @@ function createLabelText(
 ) {
   const initialLatex = typeof latex === "function" ? latex() : latex;
   if (!initialLatex.trim()) return null;
+  const safeColor = safeCssColor(color);
+  const labelInteractionCss = ` user-select: none; -webkit-user-select: none; touch-action: none;${onMove ? " cursor: move;" : ""}`;
+  const labelCss = `${GRAPH_LABEL_FONT_CSS} color: ${safeColor};${labelInteractionCss}`;
   const labelContent = typeof latex === "function" ? () => renderLatexLabelHtml(latex(), color) : renderLatexLabelHtml(latex, color);
   const text = board.create("text", [x, y, labelContent], {
     fixed: !onMove,
     highlight: false,
-    strokeColor: color,
-    highlightStrokeColor: color,
+    strokeColor: safeColor,
+    highlightStrokeColor: safeColor,
     fontSize: AXIS_TEXT_FONT_SIZE,
     fontUnit: GRAPH_LABEL_FONT_UNIT,
-    cssStyle: `${GRAPH_LABEL_FONT_CSS} color: ${color};${onMove ? " cursor: move;" : ""}`,
-    highlightCssStyle: `${GRAPH_LABEL_FONT_CSS} color: ${color};${onMove ? " cursor: move;" : ""}`,
+    cssStyle: labelCss,
+    highlightCssStyle: labelCss,
     anchorX: "left",
     anchorY: "bottom",
     offset: [8, -8],
@@ -881,7 +888,13 @@ function createLabelText(
   } as Record<string, unknown>);
 
   if (onMove) {
-    (text as unknown as { on?: (event: string, callback: () => void) => void }).on?.("up", () => {
+    const draggableText = text as unknown as JXGElement;
+    draggableText.isDraggable = true;
+    draggableText.rendNode?.style.setProperty("cursor", "move");
+    draggableText.rendNode?.style.setProperty("user-select", "none");
+    draggableText.rendNode?.style.setProperty("-webkit-user-select", "none");
+    draggableText.rendNode?.style.setProperty("touch-action", "none");
+    draggableText.on?.("up", () => {
       const coords = textCoordinates(text);
       if (coords) onMove(coords[0], coords[1]);
     });
@@ -969,6 +982,36 @@ function createFreeLabel(board: JXG.Board, feature: GraphFeature, color: string,
   const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
   const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
   createLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
+}
+
+function createLineSegmentFeature(board: JXG.Board, feature: GraphFeature, color: string, onLabelMove?: (x: number, y: number) => void) {
+  const x1 = Number.isFinite(feature.x1) ? (feature.x1 as number) : 0;
+  const y1 = Number.isFinite(feature.y1) ? (feature.y1 as number) : 0;
+  const x2 = Number.isFinite(feature.x2) ? (feature.x2 as number) : 0;
+  const y2 = Number.isFinite(feature.y2) ? (feature.y2 as number) : 0;
+  const start = board.create("point", [x1, y1], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+  const end = board.create("point", [x2, y2], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+  board.create("segment", [start, end], {
+    fixed: true,
+    highlight: false,
+    strokeColor: color,
+    highlightStrokeColor: color,
+    strokeWidth: lineWeight(feature.strokeWidth, 2),
+    dash: lineDash(feature.strokeStyle),
+    layer: GRAPH_LAYERS.point,
+  } as Record<string, unknown>);
+
+  const label = featureLabelLatex(feature);
+  if (label.trim()) {
+    createLabelText(
+      board,
+      Number.isFinite(feature.labelX) ? (feature.labelX as number) : (x1 + x2) / 2,
+      Number.isFinite(feature.labelY) ? (feature.labelY as number) : (y1 + y2) / 2,
+      label,
+      color,
+      onLabelMove,
+    );
+  }
 }
 
 function boundedInterval(feature: GraphFeature, graphConfig: GraphConfig) {
@@ -2307,12 +2350,14 @@ function renderGraphFeature(
   featureIndex: number,
   onLabelMove?: (featureIndex: number, x: number, y: number) => void,
   onPointMove?: (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => void,
+  onFreeLabelMove?: (featureIndex: number, x: number, y: number) => void,
 ) {
   const color = feature.color ?? FUNCTION_COLORS[featureIndex % FUNCTION_COLORS.length];
   const handleLabelMove = onLabelMove ? (x: number, y: number) => onLabelMove(featureIndex, x, y) : undefined;
   const handlePointMove = onPointMove
     ? (x: number, y: number, previousX: number, previousY: number) => onPointMove(featureIndex, x, y, previousX, previousY)
     : undefined;
+  const handleFreeLabelMove = onFreeLabelMove ? (x: number, y: number) => onFreeLabelMove(featureIndex, x, y) : undefined;
   const evaluatorA = createGraphFunctionEvaluator(functions[feature.functionAIndex ?? feature.functionIndex ?? 0], graphConfig);
   const evaluatorB = createGraphFunctionEvaluator(functions[feature.functionBIndex ?? 1], graphConfig);
   const singleEvaluator = createGraphFunctionEvaluator(functions[feature.functionIndex ?? 0], graphConfig);
@@ -2324,9 +2369,12 @@ function renderGraphFeature(
   }
 
   if (feature.kind === "label") {
-    const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
-    const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
-    createFreeLabel(board, feature, color, handlePointMove ? (nextX, nextY) => handlePointMove(nextX, nextY, x, y) : handleLabelMove);
+    createFreeLabel(board, feature, color, handleFreeLabelMove ?? handleLabelMove);
+    return;
+  }
+
+  if (feature.kind === "line_segment") {
+    createLineSegmentFeature(board, feature, color, handleLabelMove);
     return;
   }
 
@@ -2407,7 +2455,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     const functions = graphFunctions(graphConfig).filter((graphFunction) =>
       graphFunction.kind === "piecewise" ? graphFunction.pieces?.some((piece) => piece.expression.trim()) : graphFunction.expression.trim(),
     );
-    if (!graphConfig || (!functions.length && !features.length)) return;
+    if (!graphConfig) return;
 
     const {
       xMin,
@@ -2552,10 +2600,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         layer: GRAPH_LAYERS.axis,
       };
       const axisLabelAttributes = {
-        parse: false,
         strokeColor: AXIS_COLOR,
         ...graphLabelAttributes(` color:${AXIS_COLOR};`),
-        useKatex: true,
         layer: GRAPH_LAYERS.axisLabel,
       };
 
@@ -2625,6 +2671,14 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, labelX: x, labelY: y } : feature,
+      );
+      onGraphConfigChange({ ...graphConfig, features: nextFeatures });
+    };
+
+    const commitFreeLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (!onGraphConfigChange) return;
+      const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
+        index === featureIndex ? { ...feature, x: Number(x.toFixed(6)), y: Number(y.toFixed(6)) } : feature,
       );
       onGraphConfigChange({ ...graphConfig, features: nextFeatures });
     };
@@ -2750,7 +2804,16 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     features.forEach((feature, index) => {
       if (!shouldShowGraphItem(feature)) return;
       if (hiddenBaseRegions.has(index)) return;
-      renderGraphFeature(board, feature, graphConfig, functions, index, commitFeatureLabelPosition, commitFeaturePointPosition);
+      renderGraphFeature(
+        board,
+        feature,
+        graphConfig,
+        functions,
+        index,
+        commitFeatureLabelPosition,
+        commitFeaturePointPosition,
+        commitFreeLabelPosition,
+      );
     });
 
     functions.forEach((graphFunction, index) => {

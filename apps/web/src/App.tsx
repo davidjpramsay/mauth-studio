@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, ReactNode } from "react";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
   ContentBlock,
-  DiagramContentBlock,
   DiagramAlignment,
+  DiagramContentBlock,
+  DiagramTextSide,
   FormattingConfig,
   GraphConfig,
   GraphFeature,
@@ -13,6 +16,7 @@ import type {
   GraphFunctionPiece,
   QuestionPart,
   QuestionSubpart,
+  TableCellAlignment,
 } from "@mauth-studio/shared";
 import {
   DEFAULT_STATS_CHART_SPEC,
@@ -25,26 +29,31 @@ import {
 } from "@mauth-studio/diagram-plotly";
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Columns2,
   Copy,
   FileDown,
   FileUp,
+  FileText,
   GitBranch,
   GripVertical,
   ImagePlus,
-  Link2,
+  ListTree,
   ListOrdered,
+  Minus,
   Moon,
   PanelLeftClose,
   PanelRightClose,
   Pencil,
+  Plus,
   PlusCircle,
   Redo2,
   Save,
   SeparatorHorizontal,
   Shuffle,
   Sun,
+  Table2,
   Trash2,
   Type,
   Undo2,
@@ -76,6 +85,8 @@ const HEADER_ACTION_CLASS =
 const HEADER_GROUP_CLASS = "ml-2 flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
+const EDITOR_ACTIVE_PANEL_CLASS = "border-primary/70 bg-primary/[0.03] shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]";
+const EDITOR_ACTIVE_HEADER_CLASS = "bg-primary/10 text-primary";
 const DEFAULT_PAGE_FORMAT = {
   widthPx: 794,
   heightPx: 1123,
@@ -204,9 +215,23 @@ const DEFAULT_GEOMETRIC_DATA = {
     { type: "labelLength", between: ["B", "C"], value: "12" },
   ],
 };
+const DEFAULT_SET_DATA = {
+  universe: { name: "U", label: "U" },
+  sets: [
+    { type: "set", name: "A", label: "A" },
+    { type: "set", name: "B", label: "B" },
+  ],
+  regions: [
+    { name: "onlyA", label: "A \\setminus B" },
+    { name: "intersection", label: "A \\cap B" },
+    { name: "onlyB", label: "B \\setminus A" },
+    { name: "outside", label: "(A \\cup B)'" },
+  ],
+};
 const PENROSE_ORIGINAL_WIDTH = 420;
 const DEFAULT_PENROSE_SCALE_PERCENT = 100;
 const DEFAULT_PENROSE_PRESET = "geometry";
+const SETS_PENROSE_PRESET = "sets";
 const DEFAULT_GEOMETRIC_DIAGRAM: GraphConfig = {
   type: "geometricConstruction",
   data: DEFAULT_GEOMETRIC_DATA,
@@ -214,6 +239,17 @@ const DEFAULT_GEOMETRIC_DIAGRAM: GraphConfig = {
   options: { scalePercent: DEFAULT_PENROSE_SCALE_PERCENT, penrosePreset: DEFAULT_PENROSE_PRESET },
   scalePercent: DEFAULT_PENROSE_SCALE_PERCENT,
   penrosePreset: DEFAULT_PENROSE_PRESET,
+  functions: [],
+  features: [],
+  metadata: {},
+};
+const DEFAULT_SET_DIAGRAM: GraphConfig = {
+  type: "setDiagram",
+  data: DEFAULT_SET_DATA,
+  style: SETS_PENROSE_PRESET,
+  options: { scalePercent: DEFAULT_PENROSE_SCALE_PERCENT, penrosePreset: SETS_PENROSE_PRESET },
+  scalePercent: DEFAULT_PENROSE_SCALE_PERCENT,
+  penrosePreset: SETS_PENROSE_PRESET,
   functions: [],
   features: [],
   metadata: {},
@@ -229,8 +265,18 @@ const DEFAULT_STATS_CHART: GraphConfig = {
   features: [],
   metadata: {},
 };
+const DEFAULT_IMAGE_DIAGRAM: GraphConfig = {
+  type: "image",
+  data: { src: "", name: "", alt: "" },
+  widthPx: 420,
+  heightPx: 260,
+  functions: [],
+  features: [],
+  metadata: {},
+};
 const DIAGRAM_TYPES = [
   { value: "graph2d", label: "2D graph" },
+  { value: "image", label: "Image" },
   { value: "geometricConstruction", label: "Geometric construction" },
   { value: "vectorRelationship", label: "Vector relationship" },
   { value: "setDiagram", label: "Set diagram" },
@@ -242,6 +288,11 @@ const DIAGRAM_ALIGNMENTS: Array<{ value: DiagramAlignment; label: string }> = [
   { value: "left", label: "Left" },
   { value: "center", label: "Centre" },
   { value: "right", label: "Right" },
+];
+const DIAGRAM_TEXT_SIDES: Array<{ value: DiagramTextSide; label: string }> = [
+  { value: "none", label: "None" },
+  { value: "left", label: "Text left" },
+  { value: "right", label: "Text right" },
 ];
 const CHOICE_NUMBERING_STYLES: Array<{ value: ChoiceNumberingStyle; label: string }> = [
   { value: "roman", label: "Roman numerals" },
@@ -255,6 +306,11 @@ const CHOICE_LIST_LAYOUTS: Array<{ value: ChoiceListLayout; label: string }> = [
   { value: "two-column", label: "Two columns" },
   { value: "inline", label: "Inline" },
 ];
+const TABLE_CELL_ALIGNMENTS: Array<{ value: TableCellAlignment; label: string }> = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Centre" },
+  { value: "right", label: "Right" },
+];
 const GRAPH_FEATURE_TYPES: Array<{ value: GraphFeature["kind"]; label: string }> = [
   { value: "point", label: "Point" },
   { value: "region_between_curves", label: "Region between two curves" },
@@ -262,6 +318,7 @@ const GRAPH_FEATURE_TYPES: Array<{ value: GraphFeature["kind"]; label: string }>
   { value: "turning_point", label: "Turning point" },
   { value: "intersection", label: "Point of intersection" },
   { value: "tangent", label: "Tangent at point" },
+  { value: "line_segment", label: "Line segment" },
   { value: "label", label: "Label" },
 ];
 const GRAPH_FEATURE_LABEL_MODES: Array<{ value: NonNullable<GraphFeature["labelMode"]>; label: string }> = [
@@ -313,7 +370,7 @@ type EditorPart = Omit<QuestionPart, "contentBlocks" | "subparts"> & {
 };
 type OrderedQuestionItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "part"; id: string; part: EditorPart };
 type OrderedPartItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "subpart"; id: string; subpart: EditorSubpart };
-type ContentBlockKind = "text" | "choices" | "diagram" | "space";
+type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "space";
 type GraphFunctionKind = NonNullable<GraphFunction["kind"]>;
 type GraphFeatureKind = NonNullable<GraphFeature["kind"]>;
 
@@ -354,6 +411,10 @@ interface SubsectionDropIntent {
 
 type DropPlacement = "before" | "after" | "inside";
 type PanelDragRegion = "header" | "body";
+type TocItemKind = "title" | "question" | "text" | "choices" | "table" | "diagram" | "space" | "part" | "subpart";
+
+const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
+const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
 
 interface SubsectionDropPreview {
   targetKey: string;
@@ -364,6 +425,16 @@ interface SubsectionDropPreview {
 interface QuestionDropPreview {
   questionId: string;
   placement: Exclude<DropPlacement, "inside">;
+}
+
+interface DocumentTocItem {
+  id: string;
+  label: string;
+  summary?: string;
+  kind: TocItemKind;
+  depth: number;
+  editorAnchor: string;
+  previewAnchor: string;
 }
 
 type PaneMode = "split" | "editor" | "preview";
@@ -590,6 +661,18 @@ function choiceListBlock(choices: string[] = ["", "", ""]): EditorContentBlock {
   return { id: id("choices"), kind: "choices", choices, numberingStyle: "roman", layout: "vertical" };
 }
 
+function tableBlock(): EditorContentBlock {
+  return {
+    id: id("table"),
+    kind: "table",
+    headers: ["x", "0", "1"],
+    rows: [["P(X=x)", "$1-p$", "$p$"]],
+    showHeader: true,
+    tableAlign: "center",
+    cellAlignment: "center",
+  };
+}
+
 function diagramBlock(): EditorContentBlock {
   return {
     id: id("diagram"),
@@ -605,6 +688,7 @@ function spaceBlock(lines = 3): EditorContentBlock {
 
 function contentBlockForKind(kind: ContentBlockKind): EditorContentBlock {
   if (kind === "choices") return choiceListBlock();
+  if (kind === "table") return tableBlock();
   if (kind === "diagram") return diagramBlock();
   if (kind === "space") return spaceBlock();
   return textBlock();
@@ -614,6 +698,10 @@ function diagramAlignmentClass(alignment?: DiagramAlignment) {
   if (alignment === "left") return "justify-start";
   if (alignment === "right") return "justify-end";
   return "justify-center";
+}
+
+function normalizeDiagramTextSide(value: unknown): DiagramTextSide {
+  return value === "left" || value === "right" ? value : "none";
 }
 
 function graphFunctionLabel(index: number) {
@@ -662,6 +750,10 @@ function normalFeatureKind(kind?: GraphFeature["kind"]): GraphFeatureKind {
 function normalFeatureLabelMode(feature: GraphFeature): NonNullable<GraphFeature["labelMode"]> {
   const labelMode = feature.labelMode;
   if (normalFeatureKind(feature.kind) === "label") return "name";
+  if (normalFeatureKind(feature.kind) === "line_segment") {
+    if (labelMode === "area" || labelMode === "name_and_area" || labelMode === "value" || labelMode === "name_and_value") return "name";
+    return labelMode ?? "none";
+  }
   if (normalFeatureKind(feature.kind) === "tangent") {
     if (labelMode === "area" || labelMode === "name_and_area") return "name_and_value";
     return labelMode ?? "name_and_value";
@@ -683,14 +775,25 @@ function createGraphFeature(kind: GraphFeatureKind, index: number, graphConfig?:
   const yMax = graphConfig?.yMax ?? DEFAULT_2D_GRAPH.yMax ?? 5;
   const firstFunction = 0;
   const secondFunction = Math.min(1, Math.max(0, (graphConfig?.functions?.length ?? 1) - 1));
-  const defaultLabel = kind === "point" ? "A" : kind === "tangent" ? "T" : kind === "label" ? `Label ${index + 1}` : `Feature ${index + 1}`;
+  const defaultLabel =
+    kind === "point"
+      ? "A"
+      : kind === "tangent"
+        ? "T"
+        : kind === "line_segment"
+          ? `Line ${index + 1}`
+          : kind === "label"
+            ? `Label ${index + 1}`
+            : `Feature ${index + 1}`;
   const defaultLabelMode = isRegionFeatureKind(kind)
     ? "area"
     : kind === "tangent"
       ? "name_and_value"
       : kind === "label"
         ? "name"
-        : "name_and_coordinates";
+        : kind === "line_segment"
+          ? "none"
+          : "name_and_coordinates";
 
   return {
     id: id("feature"),
@@ -799,7 +902,7 @@ function graphPiecesFromFunction(graphFunction: GraphFunction, graphConfig?: Gra
 }
 
 function graphFunctionsFromConfig(graphConfig?: GraphConfig | null): GraphFunction[] {
-  const configured: GraphFunction[] = graphConfig?.functions?.length
+  const configured: GraphFunction[] = Array.isArray(graphConfig?.functions)
     ? graphConfig.functions
     : graphConfig?.expression
       ? [
@@ -870,14 +973,95 @@ function isPenroseDiagramType(type?: string | null) {
   return type === "geometricConstruction" || type === "vectorRelationship" || type === "setDiagram";
 }
 
+function defaultPenrosePresetForType(type?: string | null) {
+  return normalizeDiagramType(type) === "setDiagram" ? SETS_PENROSE_PRESET : DEFAULT_PENROSE_PRESET;
+}
+
+function defaultPenroseDataForType(type?: string | null) {
+  return normalizeDiagramType(type) === "setDiagram" ? DEFAULT_SET_DATA : DEFAULT_GEOMETRIC_DATA;
+}
+
+function defaultPenroseDiagramForType(type?: string | null): GraphConfig {
+  const normalizedType = isPenroseDiagramType(normalizeDiagramType(type)) ? normalizeDiagramType(type) : "geometricConstruction";
+  if (normalizedType === "setDiagram") return { ...DEFAULT_SET_DIAGRAM };
+  const preset = defaultPenrosePresetForType(normalizedType);
+  return {
+    ...DEFAULT_GEOMETRIC_DIAGRAM,
+    type: normalizedType,
+    data: defaultPenroseDataForType(normalizedType),
+    style: preset,
+    options: { scalePercent: DEFAULT_PENROSE_SCALE_PERCENT, penrosePreset: preset },
+    penrosePreset: preset,
+  };
+}
+
+function isImageDiagramType(type?: string | null) {
+  return normalizeDiagramType(type) === "image";
+}
+
 function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConfig> {
   const normalizedType = normalizeDiagramType(type);
-  if (isPenroseDiagramType(normalizedType)) return { ...DEFAULT_GEOMETRIC_DIAGRAM, type: normalizedType };
+  if (isImageDiagramType(normalizedType)) return DEFAULT_IMAGE_DIAGRAM;
+  if (isPenroseDiagramType(normalizedType)) return defaultPenroseDiagramForType(normalizedType);
   if (normalizedType === "statsChart") return DEFAULT_STATS_CHART;
-  if (isPenroseDiagramType(normalizeDiagramType(current.type)) || normalizeDiagramType(current.type) === "statsChart") {
+  if (
+    isImageDiagramType(current.type) ||
+    isPenroseDiagramType(normalizeDiagramType(current.type)) ||
+    normalizeDiagramType(current.type) === "statsChart"
+  ) {
     return normalizedType === "graph3d" ? { ...DEFAULT_2D_GRAPH, type: "graph3d" } : { ...DEFAULT_2D_GRAPH, type: normalizedType };
   }
   return { type: normalizedType };
+}
+
+function finiteGraphNumber(value: unknown, fallback?: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
+}
+
+function imageDiagramData(graphConfig?: GraphConfig | null) {
+  const data = asRecord(graphConfig?.data);
+  return {
+    src: typeof data?.src === "string" ? data.src : "",
+    name: typeof data?.name === "string" ? data.name : "",
+    alt: typeof data?.alt === "string" ? data.alt : "",
+    mimeType: typeof data?.mimeType === "string" ? data.mimeType : "",
+    naturalWidth: finiteGraphNumber(data?.naturalWidth),
+    naturalHeight: finiteGraphNumber(data?.naturalHeight),
+  };
+}
+
+function imageDiagramName(graphConfig?: GraphConfig | null) {
+  return imageDiagramData(graphConfig).name || "Uploaded image";
+}
+
+function imageDiagramAlt(graphConfig?: GraphConfig | null) {
+  const data = imageDiagramData(graphConfig);
+  return data.alt || data.name || "Uploaded diagram";
+}
+
+function imageNameFromFile(fileName: string) {
+  return (
+    fileName
+      .replace(/\.[^.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .trim() || "Image"
+  );
+}
+
+function diagramImageDimensions(naturalWidth?: number, naturalHeight?: number) {
+  if (!naturalWidth || !naturalHeight) {
+    return {
+      widthPx: DEFAULT_IMAGE_DIAGRAM.widthPx,
+      heightPx: DEFAULT_IMAGE_DIAGRAM.heightPx,
+    };
+  }
+  const maxWidth = DEFAULT_2D_GRAPH.widthPx ?? 680;
+  const widthPx = Math.min(naturalWidth, maxWidth);
+  return {
+    widthPx,
+    heightPx: Math.max(1, Math.round(widthPx * (naturalHeight / naturalWidth))),
+  };
 }
 
 function penroseScalePercent(graphConfig?: GraphConfig | null) {
@@ -886,10 +1070,10 @@ function penroseScalePercent(graphConfig?: GraphConfig | null) {
 }
 
 function penrosePreset(graphConfig?: GraphConfig | null) {
-  const preset = String(
-    graphConfig?.penrosePreset ?? graphConfig?.options?.penrosePreset ?? graphConfig?.options?.preset ?? graphConfig?.style ?? "",
-  );
-  return preset === DEFAULT_PENROSE_PRESET ? preset : DEFAULT_PENROSE_PRESET;
+  const explicitPreset = graphConfig?.penrosePreset ?? graphConfig?.options?.penrosePreset ?? graphConfig?.options?.preset;
+  const stylePreset = graphConfig?.type === "setDiagram" && graphConfig?.style === DEFAULT_PENROSE_PRESET ? undefined : graphConfig?.style;
+  const preset = String(explicitPreset ?? stylePreset ?? "");
+  return preset === DEFAULT_PENROSE_PRESET || preset === SETS_PENROSE_PRESET ? preset : defaultPenrosePresetForType(graphConfig?.type);
 }
 
 function penroseOptions(graphConfig?: GraphConfig | null) {
@@ -919,10 +1103,15 @@ function penroseLabelValue(value: unknown) {
     .replace(/([{}_%&#])/g, "\\$1");
 }
 
+function looksLikePenroseLatex(value: unknown) {
+  return /\\|[_^{}]/.test(String(value ?? ""));
+}
+
 function penroseLabelStatement(name: string, label?: unknown) {
   if (label === undefined || label === null || label === "") return `Label ${name} $${name}$`;
   const source = String(label);
   if (source.startsWith("$") && source.endsWith("$")) return `Label ${name} ${source}`;
+  if (looksLikePenroseLatex(source)) return `Label ${name} $${source}$`;
   return `Label ${name} $${penroseLabelValue(source)}$`;
 }
 
@@ -936,6 +1125,18 @@ function geometricSourceData(config: GraphConfig) {
   const objects = recordArray(data?.objects);
   const relationships = recordArray(data?.relationships);
   return { objects, relationships };
+}
+
+function setSourceData(config: GraphConfig) {
+  const data = asRecord(config.data) ?? asRecord(DEFAULT_SET_DATA);
+  const objectSets = recordArray(data?.objects).filter((object) => object.type === "set");
+  const sets = recordArray(data?.sets);
+  const regions = recordArray(data?.regions);
+  return {
+    universe: asRecord(data?.universe) ?? asRecord(DEFAULT_SET_DATA.universe),
+    sets: sets.length ? sets : objectSets.length ? objectSets : (DEFAULT_SET_DATA.sets as Array<Record<string, unknown>>),
+    regions: regions.length ? regions : (DEFAULT_SET_DATA.regions as Array<Record<string, unknown>>),
+  };
 }
 
 function trianglePoints(relationships: Array<Record<string, unknown>>, fallback: string[]) {
@@ -956,7 +1157,33 @@ function rightAnglePointsForSource(relationships: Array<Record<string, unknown>>
   return others.length >= 2 ? [others[0], at, others[1]] : null;
 }
 
+function penroseMarkCount(value: unknown) {
+  const count = Math.round(Number(value ?? 1));
+  return Number.isFinite(count) ? Math.max(1, Math.min(3, count)) : 1;
+}
+
+function penroseEqualLengthPredicate(count: number) {
+  if (count === 2) return "EqualLength2";
+  if (count === 3) return "EqualLength3";
+  return "EqualLength";
+}
+
+function penroseAngleMarkPredicate(count: number) {
+  if (count === 2) return "AngleMark2";
+  if (count === 3) return "AngleMark3";
+  return "AngleMark";
+}
+
+function penroseAnglePoints(relationship: Record<string, unknown>) {
+  const points = Array.isArray(relationship.points)
+    ? relationship.points
+    : [relationship.a, relationship.at ?? relationship.b, relationship.c];
+  return points.length === 3 ? points.map((point, index) => penroseIdentifier(point, `P${index + 1}`)) : null;
+}
+
 function generatedPenroseSubstance(config: GraphConfig) {
+  if (normalizeDiagramType(config.type) === "setDiagram") return generatedSetPenroseSubstance(config);
+
   const { objects, relationships } = geometricSourceData(config);
   const points = new Map<string, Record<string, unknown>>();
   objects.forEach((object, index) => {
@@ -965,20 +1192,24 @@ function generatedPenroseSubstance(config: GraphConfig) {
     points.set(name, { ...object, name });
   });
   relationships.forEach((relationship) => {
+    const equalLengthRelatedPoints =
+      relationship?.type === "equalLength"
+        ? (() => {
+            const first =
+              relationship.first ?? relationship.segmentA ?? (Array.isArray(relationship.segments) ? relationship.segments[0] : undefined);
+            const second =
+              relationship.second ?? relationship.segmentB ?? (Array.isArray(relationship.segments) ? relationship.segments[1] : undefined);
+            return Array.isArray(first) && Array.isArray(second) ? [...first, ...second] : [];
+          })()
+        : [];
     const relatedPoints =
       relationship?.type === "triangle" && Array.isArray(relationship.points)
         ? relationship.points
         : relationship?.type === "equalLength"
-          ? [
-              relationship.first,
-              relationship.second,
-              relationship.segmentA,
-              relationship.segmentB,
-              ...(Array.isArray(relationship.segments) ? relationship.segments : []),
-            ]
-              .flat()
-              .filter(Boolean)
-          : [];
+          ? equalLengthRelatedPoints.filter(Boolean)
+          : relationship?.type === "angleMark" || relationship?.type === "labelAngle"
+            ? (penroseAnglePoints(relationship) ?? [])
+            : [];
     relatedPoints.forEach((point, index) => {
       const name = penroseIdentifier(point, `P${index + 1}`);
       if (!points.has(name)) points.set(name, { type: "point", name });
@@ -988,8 +1219,17 @@ function generatedPenroseSubstance(config: GraphConfig) {
   const pointNames = pointEntries.map((point, index) => penroseIdentifier(point.name, `P${index + 1}`));
   const lines = [`Point ${pointNames.length ? pointNames.join(", ") : "A, B, C"}`];
   pointEntries.forEach((point, index) => lines.push(penroseLabelStatement(pointNames[index] ?? `P${index + 1}`, point.label)));
+  const namedSegments = relationships
+    .filter((relationship) => relationship.type === "segment" && typeof relationship.name === "string")
+    .map((relationship, index) => penroseIdentifier(relationship.name, `s${index + 1}`));
+  if (namedSegments.length) lines.push(`NamedSegment ${namedSegments.join(", ")}`);
   const lengthLabels = relationships.filter((relationship) => relationship.type === "labelLength" && Array.isArray(relationship.between));
-  if (lengthLabels.length) lines.push(`LengthLabel ${lengthLabels.map((_, index) => `sideLabel${index + 1}`).join(", ")}`);
+  const angleLabels = relationships.filter((relationship) => relationship.type === "labelAngle" && penroseAnglePoints(relationship));
+  const labelDeclarations = [
+    ...lengthLabels.map((_, index) => `sideLabel${index + 1}`),
+    ...angleLabels.map((_, index) => `angleLabel${index + 1}`),
+  ];
+  if (labelDeclarations.length) lines.push(`LengthLabel ${labelDeclarations.join(", ")}`);
   relationships.forEach((relationship) => {
     if (relationship.type === "triangle" && Array.isArray(relationship.points) && relationship.points.length === 3) {
       lines.push(`Triangle(${relationship.points.map((point, index) => penroseIdentifier(point, `P${index + 1}`)).join(", ")})`);
@@ -1004,8 +1244,37 @@ function generatedPenroseSubstance(config: GraphConfig) {
       const second =
         relationship.second ?? relationship.segmentB ?? (Array.isArray(relationship.segments) ? relationship.segments[1] : undefined);
       if (Array.isArray(first) && Array.isArray(second) && first.length === 2 && second.length === 2) {
-        lines.push(`EqualLength(${[...first, ...second].map((point, index) => penroseIdentifier(point, `P${index + 1}`)).join(", ")})`);
+        const predicate = penroseEqualLengthPredicate(
+          penroseMarkCount(relationship.marks ?? relationship.markCount ?? relationship.tickCount ?? relationship.count),
+        );
+        lines.push(`${predicate}(${[...first, ...second].map((point, index) => penroseIdentifier(point, `P${index + 1}`)).join(", ")})`);
+      } else {
+        const segmentNames = Array.isArray(relationship.segmentNames) ? relationship.segmentNames : [first, second];
+        if (segmentNames.length !== 2 || !segmentNames.every((name) => typeof name === "string")) return;
+        const predicate = penroseEqualLengthPredicate(
+          penroseMarkCount(relationship.marks ?? relationship.markCount ?? relationship.tickCount ?? relationship.count),
+        );
+        lines.push(`${predicate}(${segmentNames.map((name, index) => penroseIdentifier(name, `s${index + 1}`)).join(", ")})`);
       }
+    }
+    if (relationship.type === "segment") {
+      const segmentName = typeof relationship.name === "string" ? penroseIdentifier(relationship.name, "s") : null;
+      const points = Array.isArray(relationship.points)
+        ? relationship.points
+        : Array.isArray(relationship.between)
+          ? relationship.between
+          : [];
+      if (segmentName && points.length === 2) {
+        lines.push(`Segment(${segmentName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+      }
+    }
+    if (relationship.type === "angleMark") {
+      const points = penroseAnglePoints(relationship);
+      if (!points) return;
+      const predicate = penroseAngleMarkPredicate(
+        penroseMarkCount(relationship.marks ?? relationship.markCount ?? relationship.arcCount ?? relationship.count),
+      );
+      lines.push(`${predicate}(${points.join(", ")})`);
     }
   });
   lengthLabels.forEach((relationship, index) => {
@@ -1015,6 +1284,45 @@ function generatedPenroseSubstance(config: GraphConfig) {
     lines.push(penroseLabelStatement(labelName, relationship.value));
     lines.push(`LabelsSegment(${labelName}, ${penroseIdentifier(between[0], "A")}, ${penroseIdentifier(between[1], "B")})`);
   });
+  angleLabels.forEach((relationship, index) => {
+    const points = penroseAnglePoints(relationship);
+    if (!points) return;
+    const labelName = `angleLabel${index + 1}`;
+    lines.push(penroseLabelStatement(labelName, relationship.value ?? relationship.label));
+    lines.push(`LabelsAngle(${labelName}, ${points.join(", ")})`);
+  });
+  return `${lines.join("\n")}\n`;
+}
+
+function generatedSetPenroseSubstance(config: GraphConfig) {
+  const { universe, sets, regions } = setSourceData(config);
+  const universeName = penroseIdentifier(universe?.name, "U");
+  const leftSet = sets[0] ?? DEFAULT_SET_DATA.sets[0];
+  const rightSet = sets[1] ?? DEFAULT_SET_DATA.sets[1];
+  const leftName = penroseIdentifier(leftSet.name, "A");
+  const rightName = penroseIdentifier(rightSet.name, "B");
+  const regionEntries = DEFAULT_SET_DATA.regions.map((fallback, index) => {
+    const source = regions[index] ?? fallback;
+    return {
+      name: penroseIdentifier(source.name, fallback.name),
+      label: source.label ?? source.value ?? fallback.label,
+    };
+  });
+  const [onlyA, intersection, onlyB, outside] = regionEntries;
+  const lines = [
+    `Universe ${universeName}`,
+    `Set ${leftName}, ${rightName}`,
+    `RegionLabel ${regionEntries.map((region) => region.name).join(", ")}`,
+    penroseLabelStatement(universeName, universe?.label ?? "U"),
+    penroseLabelStatement(leftName, leftSet.label ?? leftName),
+    penroseLabelStatement(rightName, rightSet.label ?? rightName),
+    ...regionEntries.map((region) => penroseLabelStatement(region.name, region.label)),
+    `Venn(${universeName}, ${leftName}, ${rightName})`,
+    `LabelsLeftOnly(${onlyA.name}, ${leftName}, ${rightName})`,
+    `LabelsIntersection(${intersection.name}, ${leftName}, ${rightName})`,
+    `LabelsRightOnly(${onlyB.name}, ${leftName}, ${rightName})`,
+    `LabelsOutside(${outside.name}, ${universeName}, ${leftName}, ${rightName})`,
+  ];
   return `${lines.join("\n")}\n`;
 }
 
@@ -1024,11 +1332,12 @@ function withGraphDefaults(graphConfig?: GraphConfig | null): GraphConfig {
   const features = graphFeaturesFromConfig(graphConfig);
   const firstFunction = functions[0];
   if (isPenroseDiagramType(type)) {
+    const defaults = defaultPenroseDiagramForType(type);
     return {
-      ...DEFAULT_GEOMETRIC_DIAGRAM,
+      ...defaults,
       ...(graphConfig ?? {}),
       type,
-      data: graphConfig?.data ?? DEFAULT_GEOMETRIC_DATA,
+      data: graphConfig?.data ?? defaults.data,
       style: penrosePreset(graphConfig),
       options: penroseOptions(graphConfig),
       functions: graphConfig?.functions ?? [],
@@ -1053,6 +1362,19 @@ function withGraphDefaults(graphConfig?: GraphConfig | null): GraphConfig {
       heightPx: spec.options?.heightPx,
       functions: [],
       features: [],
+      metadata: graphConfig?.metadata ?? {},
+    };
+  }
+  if (type === "image") {
+    return {
+      ...DEFAULT_IMAGE_DIAGRAM,
+      ...(graphConfig ?? {}),
+      type,
+      data: imageDiagramData(graphConfig),
+      functions: [],
+      features: [],
+      widthPx: finiteGraphNumber(graphConfig?.widthPx, DEFAULT_IMAGE_DIAGRAM.widthPx),
+      heightPx: finiteGraphNumber(graphConfig?.heightPx, DEFAULT_IMAGE_DIAGRAM.heightPx),
       metadata: graphConfig?.metadata ?? {},
     };
   }
@@ -1573,6 +1895,43 @@ function normalizeChoiceItems(value: unknown): string[] {
   return choices.length ? choices : [""];
 }
 
+function normalizeTableCellAlignment(value: unknown): TableCellAlignment {
+  return value === "left" || value === "right" || value === "center" ? value : "center";
+}
+
+function normalizeTableCells(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((cell) => (typeof cell === "string" ? cell : String(cell ?? "")));
+}
+
+function normalizedTableColumnCount(headers: string[], rows: string[][]) {
+  return Math.max(1, headers.length, ...rows.map((row) => row.length));
+}
+
+function paddedTableRow(row: string[], columnCount: number) {
+  return Array.from({ length: columnCount }, (_, index) => row[index] ?? "");
+}
+
+function normalizeTableRows(value: unknown, fallbackColumnCount = 2): string[][] {
+  if (!Array.isArray(value)) return [Array.from({ length: fallbackColumnCount }, () => "")];
+  const rows = value.filter((row): row is unknown[] => Array.isArray(row)).map((row) => normalizeTableCells(row));
+  return rows.length ? rows : [Array.from({ length: fallbackColumnCount }, () => "")];
+}
+
+function normalizeTableBlock(block: Extract<EditorContentBlock, { kind: "table" }>) {
+  const headers = normalizeTableCells(block.headers);
+  const rows = normalizeTableRows(block.rows, Math.max(2, headers.length || 0));
+  const columnCount = normalizedTableColumnCount(headers, rows);
+  return {
+    ...block,
+    headers: paddedTableRow(headers, columnCount),
+    rows: rows.map((row) => paddedTableRow(row, columnCount)),
+    showHeader: block.showHeader !== false,
+    tableAlign: normalizeDiagramAlignment(block.tableAlign),
+    cellAlignment: normalizeTableCellAlignment(block.cellAlignment),
+  };
+}
+
 function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
   if (!Array.isArray(value)) return [];
 
@@ -1603,6 +1962,23 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
       ];
     }
 
+    if (record.kind === "table") {
+      const headers = normalizeTableCells(record.headers);
+      const rows = normalizeTableRows(record.rows, Math.max(2, headers.length || 0));
+      const columnCount = normalizedTableColumnCount(headers, rows);
+      return [
+        {
+          id: blockId,
+          kind: "table",
+          headers: paddedTableRow(headers, columnCount),
+          rows: rows.map((row) => paddedTableRow(row, columnCount)),
+          showHeader: record.showHeader !== false,
+          tableAlign: normalizeDiagramAlignment(record.tableAlign),
+          cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
+        },
+      ];
+    }
+
     if (record.kind === "diagram") {
       const graphConfig = asRecord(record.graphConfig) ? (record.graphConfig as GraphConfig) : DEFAULT_2D_GRAPH;
       return [
@@ -1610,6 +1986,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           id: blockId,
           kind: "diagram",
           diagramAlign: normalizeDiagramAlignment(record.diagramAlign),
+          diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
           graphConfig: withGraphDefaults(graphConfig),
         },
       ];
@@ -1881,10 +2258,12 @@ function mauthdownAttributeValue(value: string | number | boolean) {
 function mauthdownDiagramBlock(block: DiagramContentBlock) {
   const config = withGraphDefaults(block.graphConfig);
   const align = block.diagramAlign ?? "center";
-  if (config.type === "geometricConstruction") {
+  const textSide = normalizeDiagramTextSide(block.diagramTextSide);
+  const textSideAttr = textSide === "none" ? "" : ` textSide="${textSide}"`;
+  if (isPenroseDiagramType(config.type)) {
     const scale = penroseScalePercent(config);
     return [
-      `:::diagram type="geometricConstruction" align="${align}" scale=${scale}`,
+      `:::diagram type="${config.type}" align="${align}" scale=${scale}${textSideAttr}`,
       `${MAUTHDOWN_CODE_FENCE}penrose`,
       penroseSubstanceSource(config).trimEnd(),
       MAUTHDOWN_CODE_FENCE,
@@ -1894,7 +2273,7 @@ function mauthdownDiagramBlock(block: DiagramContentBlock) {
   }
 
   return [
-    `:::diagram type="${config.type}" align="${align}"`,
+    `:::diagram type="${config.type}" align="${align}"${textSideAttr}`,
     `${MAUTHDOWN_CODE_FENCE}json`,
     JSON.stringify(config, null, 2),
     MAUTHDOWN_CODE_FENCE,
@@ -1910,6 +2289,24 @@ function mauthdownChoicesBlock(block: Extract<EditorContentBlock, { kind: "choic
   return [`:::choices style="${style}" layout="${layout}"`, ...choices.map((choice) => `- ${choice.trimEnd()}`), ":::", ""].join("\n");
 }
 
+function escapeMauthdownTableCell(value: string) {
+  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
+function mauthdownTableRow(cells: string[]) {
+  return `| ${cells.map(escapeMauthdownTableCell).join(" | ")} |`;
+}
+
+function mauthdownTableBlock(block: Extract<EditorContentBlock, { kind: "table" }>) {
+  const table = normalizeTableBlock(block);
+  const lines = [
+    `:::table header=${mauthdownAttributeValue(table.showHeader)} align="${table.tableAlign}" cellAlign="${table.cellAlignment}"`,
+  ];
+  if (table.showHeader) lines.push(mauthdownTableRow(table.headers));
+  lines.push(...table.rows.map((row) => mauthdownTableRow(row)), ":::", "");
+  return lines.join("\n");
+}
+
 function mauthdownContentBlocks(blocks: EditorContentBlock[], emptyLabel: string) {
   if (!blocks.length) {
     return [`:::text`, `_${emptyLabel}_`, ":::", ""].join("\n");
@@ -1919,6 +2316,7 @@ function mauthdownContentBlocks(blocks: EditorContentBlock[], emptyLabel: string
     .map((block) => {
       if (block.kind === "text") return [`:::text`, (block.text ?? "").trimEnd(), ":::", ""].join("\n");
       if (block.kind === "choices") return mauthdownChoicesBlock(block);
+      if (block.kind === "table") return mauthdownTableBlock(block);
       if (block.kind === "space") return `:::space lines=${spaceLines(block.lines)}\n:::\n\n`;
       if (block.kind === "diagram") return mauthdownDiagramBlock(block);
       if (block.kind === "pageBreak") return ":::page-break\n:::\n\n";
@@ -2135,6 +2533,67 @@ function choicesFromMauthdownPayload(payload: string) {
   return choices.length ? choices : [""];
 }
 
+function splitMauthdownTableRow(line: string) {
+  let trimmed = line.trim();
+  if (!trimmed.startsWith("|")) return [];
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+
+  const cells: string[] = [];
+  let current = "";
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    const next = trimmed[index + 1];
+    if (char === "\\" && next === "|") {
+      current += "|";
+      index += 1;
+      continue;
+    }
+    if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function isMauthdownTableSeparator(cells: string[]) {
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function tableFromMauthdownPayload(payload: string, attrs: Record<string, string>): Extract<EditorContentBlock, { kind: "table" }> {
+  const parsedRows = payload
+    .split(/\r?\n/)
+    .map(splitMauthdownTableRow)
+    .filter((row) => row.length > 0);
+  const showHeader = attrs.header === "false" || attrs.showHeader === "false" ? false : true;
+  const tableAlign = mauthdownAttributeAlignment(attrs);
+  const cellAlignment = normalizeTableCellAlignment(attrs.cellAlign ?? attrs.cellAlignment);
+
+  let headers: string[] = [];
+  let rows = parsedRows;
+  if (showHeader && parsedRows.length) {
+    headers = parsedRows[0];
+    rows = parsedRows.slice(1);
+    if (rows.length && isMauthdownTableSeparator(rows[0])) rows = rows.slice(1);
+  }
+
+  const columnCount = normalizedTableColumnCount(headers, rows);
+  const table: Extract<EditorContentBlock, { kind: "table" }> = {
+    id: id("table"),
+    kind: "table",
+    headers: paddedTableRow(headers, columnCount),
+    rows: (rows.length ? rows : [Array.from({ length: columnCount }, () => "")]).map((row) => paddedTableRow(row, columnCount)),
+    showHeader,
+    tableAlign,
+    cellAlignment,
+  };
+  return normalizeTableBlock(table);
+}
+
 type MauthdownStackItem =
   | { kind: "question"; value: QuestionBlock }
   | { kind: "part"; value: EditorPart }
@@ -2198,7 +2657,8 @@ function closeMauthdownContainer(stack: MauthdownStackItem[], name: string) {
 
 function defaultMauthdownGraphConfig(type: string): GraphConfig {
   const normalizedType = normalizeDiagramType(type);
-  if (isPenroseDiagramType(normalizedType)) return withGraphDefaults({ ...DEFAULT_GEOMETRIC_DIAGRAM, type: normalizedType });
+  if (normalizedType === "image") return withGraphDefaults(DEFAULT_IMAGE_DIAGRAM);
+  if (isPenroseDiagramType(normalizedType)) return withGraphDefaults(defaultPenroseDiagramForType(normalizedType));
   if (normalizedType === "statsChart") return withGraphDefaults(DEFAULT_STATS_CHART);
   if (normalizedType === "graph3d") return withGraphDefaults({ ...DEFAULT_2D_GRAPH, type: "graph3d" });
   if (normalizedType === "vector2d") return withGraphDefaults({ ...DEFAULT_2D_GRAPH, type: "vector2d" });
@@ -2209,12 +2669,14 @@ function graphConfigFromMauthdownDiagram(attrs: Record<string, string>, language
   const type = normalizeDiagramType(attrs.type);
   if (isPenroseDiagramType(type) || language === "penrose") {
     const scalePercent = mauthdownAttributeNumber(attrs, "scale", DEFAULT_PENROSE_SCALE_PERCENT);
+    const penroseType = isPenroseDiagramType(type) ? type : "geometricConstruction";
+    const defaults = defaultPenroseDiagramForType(penroseType);
     return withGraphDefaults({
-      ...DEFAULT_GEOMETRIC_DIAGRAM,
-      type: isPenroseDiagramType(type) ? type : "geometricConstruction",
+      ...defaults,
+      type: penroseType,
       scalePercent,
       options: {
-        ...penroseOptions(DEFAULT_GEOMETRIC_DIAGRAM),
+        ...penroseOptions(defaults),
         scalePercent,
         substanceSource: payload.trim(),
       },
@@ -2367,6 +2829,13 @@ function parseAuthoredMauthdownDocument(source: string): MauthdownDocument | nul
       continue;
     }
 
+    if (directive.name === "table") {
+      const payload = readMauthdownPayload(lines, index);
+      addMauthdownContentBlock(stack, questions, tableFromMauthdownPayload(payload.payload, directive.attrs));
+      index = payload.nextIndex;
+      continue;
+    }
+
     if (directive.name === "space") {
       addMauthdownContentBlock(stack, questions, {
         id: id("space"),
@@ -2392,6 +2861,7 @@ function parseAuthoredMauthdownDocument(source: string): MauthdownDocument | nul
         id: id("diagram"),
         kind: "diagram",
         diagramAlign: mauthdownAttributeAlignment(directive.attrs),
+        diagramTextSide: normalizeDiagramTextSide(directive.attrs.textSide),
         graphConfig: graphConfigFromMauthdownDiagram(directive.attrs, payload.language, payload.payload),
       });
       index = payload.nextIndex;
@@ -2484,6 +2954,62 @@ function downloadTextFile(fileName: string, contents: string) {
   URL.revokeObjectURL(url);
 }
 
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+function exportPageElements(root: HTMLElement) {
+  return Array.from(root.querySelectorAll<HTMLElement>(".a4-preview-shell .a4-page")).filter((page) => !page.closest(".a4-measure"));
+}
+
+function exportRootHasPendingDiagrams(root: HTMLElement) {
+  const pendingPenrose = Array.from(root.querySelectorAll<HTMLElement>(".penrose-diagram")).some((element) => !element.innerHTML.trim());
+  const pendingStatsCharts = Array.from(root.querySelectorAll<HTMLElement>(".stats-chart-diagram")).some(
+    (element) => !element.querySelector(".js-plotly-plot"),
+  );
+  const pendingJxgGraphs = Array.from(root.querySelectorAll<HTMLElement>(".jxgbox")).some((element) => !element.children.length);
+  return pendingPenrose || pendingStatsCharts || pendingJxgGraphs;
+}
+
+async function waitForPdfExportReady(root: HTMLElement) {
+  await document.fonts?.ready.catch(() => undefined);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await nextAnimationFrame();
+    if (exportPageElements(root).length && !exportRootHasPendingDiagrams(root)) return;
+    await delay(75);
+  }
+}
+
+async function exportPreviewRootToPdf(root: HTMLElement, fileName: string) {
+  await waitForPdfExportReady(root);
+  const pages = exportPageElements(root);
+  if (!pages.length) throw new Error("No rendered A4 pages were available for PDF export.");
+
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+  const captureScale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+
+  for (const [index, page] of pages.entries()) {
+    const canvas = await html2canvas(page, {
+      backgroundColor: "#ffffff",
+      imageTimeout: 15000,
+      logging: false,
+      scale: captureScale,
+      useCORS: true,
+      windowHeight: Math.max(document.documentElement.clientHeight, page.scrollHeight),
+      windowWidth: Math.max(document.documentElement.clientWidth, page.scrollWidth),
+    });
+    const imageData = canvas.toDataURL("image/png");
+    if (index > 0) pdf.addPage("a4", "portrait");
+    pdf.addImage(imageData, "PNG", 0, 0, 210, 297, undefined, "FAST");
+  }
+
+  pdf.save(fileName);
+}
+
 function renderInlineFormatting(text: string): ReactNode[] {
   return text.split(/(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g).map((segment, index) => {
     const key = `${segment}-${index}`;
@@ -2545,25 +3071,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function scrollableRatio(element: HTMLElement) {
-  const maxScroll = scrollableRange(element);
-  return maxScroll > 0 ? clamp(element.scrollTop / maxScroll, 0, 1) : 0;
-}
-
 function scrollableRange(element: HTMLElement) {
   const maxScroll = element.scrollHeight - element.clientHeight;
   return Math.max(0, maxScroll);
 }
 
-function setScrollableRatio(element: HTMLElement, ratio: number) {
-  const maxScroll = scrollableRange(element);
-  if (maxScroll <= 0) return;
-  element.scrollTop = clamp(ratio, 0, 1) * maxScroll;
-}
-
 const SCROLL_ANCHOR_FRONT_MATTER = "front-matter";
 const SCROLL_ANCHOR_TOP_OFFSET_PX = 12;
-const SCROLL_SYNC_RELEASE_MS = 100;
 const SCROLL_ANCHOR_SELECTOR = "[data-scroll-anchor]";
 
 interface ScrollAnchorPosition {
@@ -2595,6 +3109,15 @@ function subpartBlockScrollAnchor(questionId: string, partId: string, subpartId:
   return `${subpartScrollAnchor(questionId, partId, subpartId)}/b:${blockId}`;
 }
 
+function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | null) {
+  return Boolean(targetAnchor && (targetAnchor === containerAnchor || targetAnchor.startsWith(`${containerAnchor}/`)));
+}
+
+function questionIdFromScrollAnchor(anchor: string) {
+  const [questionSegment] = anchor.split("/");
+  return questionSegment?.startsWith("q:") ? questionSegment.slice(2) : "";
+}
+
 function scrollAnchorFallbacks(anchor: string) {
   const fallbacks: string[] = [];
   const parts = anchor.split("/");
@@ -2602,7 +3125,6 @@ function scrollAnchorFallbacks(anchor: string) {
     fallbacks.push(parts.join("/"));
     parts.pop();
   }
-  if (anchor !== SCROLL_ANCHOR_FRONT_MATTER) fallbacks.push(SCROLL_ANCHOR_FRONT_MATTER);
   return fallbacks;
 }
 
@@ -2619,31 +3141,6 @@ function visibleScrollAnchors(container: HTMLElement) {
       return style.display !== "none" && style.visibility !== "hidden";
     })
     .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
-}
-
-function paneAnchorPosition(container: HTMLElement): ScrollAnchorPosition | null {
-  const anchors = visibleScrollAnchors(container);
-  if (!anchors.length) return null;
-
-  const paneTop = container.getBoundingClientRect().top + SCROLL_ANCHOR_TOP_OFFSET_PX;
-  let currentIndex = 0;
-  anchors.forEach((anchor, index) => {
-    if (anchor.getBoundingClientRect().top <= paneTop) currentIndex = index;
-  });
-
-  const currentAnchor = anchors[currentIndex];
-  const currentAnchorValue = scrollAnchorValue(currentAnchor);
-  if (!currentAnchorValue) return null;
-
-  const currentTop = currentAnchor.getBoundingClientRect().top;
-  const nextTop =
-    anchors[currentIndex + 1]?.getBoundingClientRect().top ?? currentTop + Math.max(currentAnchor.getBoundingClientRect().height, 1);
-  const anchorSpan = nextTop - currentTop;
-
-  return {
-    anchor: currentAnchorValue,
-    progress: anchorSpan > 1 ? clamp((paneTop - currentTop) / anchorSpan, 0, 1) : 0,
-  };
 }
 
 function scrollToAnchorPosition(container: HTMLElement, position: ScrollAnchorPosition) {
@@ -2849,10 +3346,15 @@ function subsectionDropPreviewForEvent(
   return intent ? { placement, intent } : null;
 }
 
+function serializeSubsectionDrag(target: SubsectionDragTarget) {
+  return JSON.stringify(target);
+}
+
 function parseSubsectionDrag(payload: string): SubsectionDragTarget | null {
   if (!payload) return null;
+  const json = payload.startsWith(SUBSECTION_DRAG_TEXT_PREFIX) ? payload.slice(SUBSECTION_DRAG_TEXT_PREFIX.length) : payload;
   try {
-    const parsed = JSON.parse(payload) as Partial<SubsectionDragTarget>;
+    const parsed = JSON.parse(json) as Partial<SubsectionDragTarget>;
     if (!parsed.kind || !parsed.questionId || !parsed.id) return null;
     if (!["question-block", "part", "part-block", "subpart", "subpart-block"].includes(parsed.kind)) return null;
     return {
@@ -2929,47 +3431,116 @@ function firstTextSource(blocks: EditorContentBlock[]) {
   const textBlock = blocks.find((block) => block.kind === "text");
   if (textBlock?.kind === "text") return textBlock.text?.replace(/\s+/g, " ").trim() || "";
   const choicesBlock = blocks.find((block) => block.kind === "choices");
-  return choicesBlock?.kind === "choices" ? normalizeChoiceItems(choicesBlock.choices).filter(Boolean).join("; ") : "";
+  if (choicesBlock?.kind === "choices") return normalizeChoiceItems(choicesBlock.choices).filter(Boolean).join("; ");
+  const tableContentBlock = blocks.find((block) => block.kind === "table");
+  if (tableContentBlock?.kind === "table") {
+    const table = normalizeTableBlock(tableContentBlock);
+    return `${table.rows.length} row table`;
+  }
+  return "";
 }
 
 function partPanelSummary(blocks: EditorContentBlock[]) {
   return firstTextSource(blocks);
 }
 
+const SOLUTION_MARK_SYMBOL = "✓";
+const SOLUTION_MARK_ANNOTATION_PATTERN = /\s*\[\[marks:(\d+)]]\s*$/i;
+
+function extractSolutionMarkAnnotation(source: string) {
+  const match = source.match(SOLUTION_MARK_ANNOTATION_PATTERN);
+  if (!match) return { source, marks: 0 };
+  const marks = Math.max(0, Math.min(6, Math.round(Number(match[1]) || 0)));
+  return { source: source.slice(0, match.index).trimEnd(), marks };
+}
+
 function parseMixedMath(source: string) {
-  const segments: Array<{ type: "text" | "inline" | "display"; content: string }> = [];
-  const regex = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
+  const segments: Array<{ type: "text" | "inline" | "display"; content: string; marks?: number }> = [];
+  const regex = /(\$\$[\s\S]+?\$\$(?:\s*\[\[marks:\d+]])?|\$[^$\n]+?\$(?:\s*\[\[marks:\d+]])?)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(source)) !== null) {
-    if (match.index > cursor) segments.push({ type: "text", content: source.slice(cursor, match.index) });
-    const token = match[0];
+    if (match.index > cursor) {
+      const extracted = extractSolutionMarkAnnotation(source.slice(cursor, match.index));
+      if (extracted.source || extracted.marks) segments.push({ type: "text", content: extracted.source, marks: extracted.marks });
+    }
+    const extractedToken = extractSolutionMarkAnnotation(match[0]);
+    const token = extractedToken.source;
     segments.push(
       token.startsWith("$$")
-        ? { type: "display", content: token.slice(2, -2).trim() }
-        : { type: "inline", content: token.slice(1, -1).trim() },
+        ? { type: "display", content: token.slice(2, -2).trim(), marks: extractedToken.marks }
+        : { type: "inline", content: token.slice(1, -1).trim(), marks: extractedToken.marks },
     );
-    cursor = match.index + token.length;
+    cursor = match.index + match[0].length;
   }
 
-  if (cursor < source.length) segments.push({ type: "text", content: source.slice(cursor) });
+  if (cursor < source.length) {
+    const extracted = extractSolutionMarkAnnotation(source.slice(cursor));
+    if (extracted.source || extracted.marks) segments.push({ type: "text", content: extracted.source, marks: extracted.marks });
+  }
   return segments;
 }
 
-function MixedMath({ source }: { source: string }) {
+function SolutionMarkTicks({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span className="solution-mark-ticks" aria-label={`${count} solution ${count === 1 ? "mark" : "marks"}`}>
+      {Array.from({ length: count }, (_, index) => (
+        <span key={index}>{SOLUTION_MARK_SYMBOL}</span>
+      ))}
+    </span>
+  );
+}
+
+function MixedMath({ source, showSolutionMarks = false }: { source: string; showSolutionMarks?: boolean }) {
   const segments = useMemo(() => parseMixedMath(source), [source]);
   return (
     <div className="mixed-math">
       {segments.map((segment, index) => {
+        const marks = showSolutionMarks ? segment.marks : 0;
         if (segment.type === "display") {
+          const displayMath = (
+            <div className="test-display-math">
+              <Latex latex={segment.content} block />
+            </div>
+          );
+          if (marks) {
+            return (
+              <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-display">
+                {displayMath}
+                <SolutionMarkTicks count={marks} />
+              </div>
+            );
+          }
           return (
-            <div key={`${segment.content}-${index}`} className="my-3 text-left">
+            <div key={`${segment.content}-${index}`} className="test-display-math">
               <Latex latex={segment.content} block />
             </div>
           );
         }
-        if (segment.type === "inline") return <Latex key={`${segment.content}-${index}`} latex={segment.content} displayStyle />;
+        if (segment.type === "inline") {
+          const inlineMath = <Latex latex={segment.content} />;
+          if (marks) {
+            return (
+              <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
+                <span>{inlineMath}</span>
+                <SolutionMarkTicks count={marks} />
+              </div>
+            );
+          }
+          return <span key={`${segment.content}-${index}`}>{inlineMath}</span>;
+        }
+        if (marks) {
+          return (
+            <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
+              <span>
+                <FormattedInlineText text={segment.content} />
+              </span>
+              <SolutionMarkTicks count={marks} />
+            </div>
+          );
+        }
         return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
       })}
     </div>
@@ -2982,7 +3553,7 @@ function InlineMathText({ source, className, truncate = false }: { source: strin
     <span className={cn(truncate ? "inline-math-truncate" : "inline min-w-0", className)} title={source}>
       {segments.map((segment, index) => {
         if (segment.type === "text") return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
-        return <Latex key={`${segment.content}-${index}`} latex={segment.content} displayStyle />;
+        return <Latex key={`${segment.content}-${index}`} latex={segment.content} />;
       })}
     </span>
   );
@@ -3005,6 +3576,10 @@ function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: st
       </span>
     </span>
   );
+}
+
+function isSolutionTextBlock(block: EditorContentBlock) {
+  return block.kind === "text" && block.id.startsWith("solution-");
 }
 
 function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
@@ -3040,6 +3615,66 @@ function ChoiceListPreview({ block }: { block: Extract<EditorContentBlock, { kin
   );
 }
 
+function TablePreview({ block }: { block: Extract<EditorContentBlock, { kind: "table" }> }) {
+  const table = normalizeTableBlock(block);
+
+  return (
+    <div className={cn("test-table-wrap", `test-table-${table.tableAlign}`)}>
+      <table className="test-table">
+        {table.showHeader ? (
+          <thead>
+            <tr>
+              {table.headers.map((cell, index) => (
+                <th key={`header-${index}`} className={cn("test-table-cell", `test-table-cell-${table.cellAlignment}`)}>
+                  <MixedMath source={cell} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {row.map((cell, cellIndex) => (
+                <td key={`cell-${rowIndex}-${cellIndex}`} className={cn("test-table-cell", `test-table-cell-${table.cellAlignment}`)}>
+                  <MixedMath source={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UploadedImageDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
+  const config = withGraphDefaults(graphConfig);
+  const data = imageDiagramData(config);
+  const widthPx = graphWidth(config);
+  const heightPx = graphHeight(config);
+
+  if (!data.src) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-xs text-slate-500"
+        style={{ width: widthPx, maxWidth: "100%", height: heightPx }}
+      >
+        No image selected
+      </div>
+    );
+  }
+
+  return (
+    <img
+      className="block max-w-full bg-white object-contain"
+      src={data.src}
+      alt={imageDiagramAlt(config)}
+      style={{ width: widthPx, height: "auto", maxHeight: heightPx }}
+    />
+  );
+}
+
 function DiagramPreview({
   graphConfig,
   measureOnly = false,
@@ -3049,29 +3684,31 @@ function DiagramPreview({
   measureOnly?: boolean;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }) {
+  const config = withGraphDefaults(graphConfig);
+
   if (measureOnly) {
-    return (
-      <div className="w-full overflow-hidden bg-white" style={{ height: graphHeight(graphConfig), maxWidth: graphWidth(graphConfig) }} />
-    );
+    return <div className="w-full overflow-hidden bg-white" style={{ height: graphHeight(config), maxWidth: graphWidth(config) }} />;
   }
 
-  switch (graphConfig?.type) {
+  switch (config.type) {
+    case "image":
+      return <UploadedImageDiagram graphConfig={config} />;
     case "geometricConstruction":
     case "vectorRelationship":
     case "setDiagram":
-      return <GeometricConstructionDiagram graphConfig={graphConfig} />;
+      return <GeometricConstructionDiagram graphConfig={config} />;
     case "statsChart":
-      return <StatsChartDiagram graphConfig={graphConfig} />;
+      return <StatsChartDiagram graphConfig={config} />;
     case "vector2d":
-      return <Vector2DGraph graphConfig={graphConfig} />;
+      return <Vector2DGraph graphConfig={config} />;
     case "graph3d":
     case "basic3d":
-      return <Basic3DGraph graphConfig={graphConfig} />;
+      return <Basic3DGraph graphConfig={config} />;
     case "graph2d":
     case "2d_graph":
     case "function":
     default:
-      return <FunctionGraph graphConfig={graphConfig} onGraphConfigChange={onGraphConfigChange} />;
+      return <FunctionGraph graphConfig={config} onGraphConfigChange={onGraphConfigChange} />;
   }
 }
 
@@ -3086,53 +3723,113 @@ function PreviewContentBlocks({
   onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
   blockAnchorFor?: (block: EditorContentBlock) => string | undefined;
 }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      {blocks.map((block) => {
-        if (block.kind === "pageBreak") return null;
-        const blockAnchor = measureOnly ? undefined : blockAnchorFor?.(block);
-        if (block.kind === "space") {
-          return (
-            <div
-              key={block.id}
-              data-scroll-anchor={blockAnchor}
-              className="test-space-block"
-              style={{ "--space-lines": String(spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
+  const renderedBlocks: ReactNode[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block.kind === "pageBreak") continue;
+    const blockAnchor = measureOnly ? undefined : blockAnchorFor?.(block);
+    if (block.kind === "diagram") {
+      const textSide = normalizeDiagramTextSide(block.diagramTextSide);
+      const nextBlock = blocks[index + 1];
+      if (textSide !== "none" && nextBlock?.kind === "text") {
+        const diagramNode = (
+          <div
+            data-scroll-anchor={blockAnchor}
+            className={cn("test-diagram-pair-diagram flex min-w-0", diagramAlignmentClass(block.diagramAlign))}
+          >
+            <DiagramPreview
+              graphConfig={block.graphConfig}
+              measureOnly={measureOnly}
+              onGraphConfigChange={
+                measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)
+              }
             />
-          );
-        }
-        if (block.kind === "diagram") {
-          return (
-            <div
-              key={block.id}
-              data-scroll-anchor={blockAnchor}
-              className={cn("my-1 flex min-w-0", diagramAlignmentClass(block.diagramAlign))}
-            >
-              <DiagramPreview
-                graphConfig={block.graphConfig}
-                measureOnly={measureOnly}
-                onGraphConfigChange={
-                  measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)
-                }
-              />
-            </div>
-          );
-        }
-        if (block.kind === "choices") {
-          return (
-            <div key={block.id} data-scroll-anchor={blockAnchor}>
-              <ChoiceListPreview block={block} />
-            </div>
-          );
-        }
-        return (
-          <div key={block.id} data-scroll-anchor={blockAnchor}>
-            <MixedMath source={block.text ?? ""} />
           </div>
         );
-      })}
-    </div>
-  );
+        const textNode = (
+          <div
+            data-scroll-anchor={measureOnly ? undefined : blockAnchorFor?.(nextBlock)}
+            className={cn("test-diagram-pair-text min-w-0", isSolutionTextBlock(nextBlock) && "test-solution-block")}
+          >
+            <MixedMath source={nextBlock.text ?? ""} showSolutionMarks={isSolutionTextBlock(nextBlock)} />
+          </div>
+        );
+        renderedBlocks.push(
+          <div
+            key={`${block.id}:${nextBlock.id}`}
+            className={cn("test-diagram-text-pair", textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right")}
+          >
+            {textSide === "left" ? (
+              <>
+                {textNode}
+                {diagramNode}
+              </>
+            ) : (
+              <>
+                {diagramNode}
+                {textNode}
+              </>
+            )}
+          </div>,
+        );
+        index += 1;
+        continue;
+      }
+    }
+
+    if (block.kind === "space") {
+      renderedBlocks.push(
+        <div
+          key={block.id}
+          data-scroll-anchor={blockAnchor}
+          className="test-space-block"
+          style={{ "--space-lines": String(spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
+        />,
+      );
+      continue;
+    }
+    if (block.kind === "diagram") {
+      renderedBlocks.push(
+        <div key={block.id} data-scroll-anchor={blockAnchor} className={cn("my-1 flex min-w-0", diagramAlignmentClass(block.diagramAlign))}>
+          <DiagramPreview
+            graphConfig={block.graphConfig}
+            measureOnly={measureOnly}
+            onGraphConfigChange={
+              measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)
+            }
+          />
+        </div>,
+      );
+      continue;
+    }
+    if (block.kind === "choices") {
+      renderedBlocks.push(
+        <div key={block.id} data-scroll-anchor={blockAnchor}>
+          <ChoiceListPreview block={block} />
+        </div>,
+      );
+      continue;
+    }
+    if (block.kind === "table") {
+      renderedBlocks.push(
+        <div key={block.id} data-scroll-anchor={blockAnchor}>
+          <TablePreview block={block} />
+        </div>,
+      );
+      continue;
+    }
+    renderedBlocks.push(
+      <div
+        key={block.id}
+        data-scroll-anchor={blockAnchor}
+        className={cn("test-text-block", isSolutionTextBlock(block) && "test-solution-block")}
+      >
+        <MixedMath source={block.text ?? ""} showSolutionMarks={isSolutionTextBlock(block)} />
+      </div>,
+    );
+  }
+
+  return <div className="test-content-stack">{renderedBlocks}</div>;
 }
 
 function contentBlocksHaveDiagram(blocks: EditorContentBlock[]) {
@@ -3146,6 +3843,7 @@ interface PreviewSegment {
   spacingTop: number;
   question: QuestionBlock;
   block?: EditorContentBlock;
+  blocks?: EditorContentBlock[];
   part?: EditorPart;
   partIndex?: number;
 }
@@ -3206,8 +3904,18 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
       },
     ];
 
-    orderedQuestionItems(question).forEach((item, itemIndex) => {
+    const questionItems = orderedQuestionItems(question);
+    for (let itemIndex = 0; itemIndex < questionItems.length; itemIndex += 1) {
+      const item = questionItems[itemIndex];
       if (item.kind === "block") {
+        const nextItem = questionItems[itemIndex + 1];
+        const pairedBlocks =
+          item.block.kind === "diagram" &&
+          normalizeDiagramTextSide(item.block.diagramTextSide) !== "none" &&
+          nextItem?.kind === "block" &&
+          nextItem.block.kind === "text"
+            ? [item.block, nextItem.block]
+            : undefined;
         segments.push({
           id: `${question.id}:block:${item.block.id}`,
           kind: "question-block",
@@ -3215,8 +3923,10 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
           spacingTop: itemIndex === 0 ? 8 : 12,
           question,
           block: item.block,
+          blocks: pairedBlocks,
         });
-        return;
+        if (pairedBlocks) itemIndex += 1;
+        continue;
       }
 
       const partIndex = question.parts.findIndex((part) => part.id === item.part.id);
@@ -3224,12 +3934,12 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
         id: `${question.id}:part-group:${item.part.id}`,
         kind: "part-group",
         questionIndex,
-        spacingTop: itemIndex === 0 ? 16 : 28,
+        spacingTop: itemIndex === 0 ? 12 : 18,
         question,
         part: item.part,
         partIndex: Math.max(0, partIndex),
       });
-    });
+    }
 
     if (question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak")) {
       segments.push({
@@ -3303,6 +4013,7 @@ function TestFrontMatterPreview({
     .map((line) => line.trim())
     .filter(Boolean);
   const initials = schoolInitials(schoolNameLines);
+  const isSolutionsTitle = frontMatter.nameLabel.trim().toLowerCase() === "solutions";
 
   return (
     <header className="test-front-matter" data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}>
@@ -3327,14 +4038,17 @@ function TestFrontMatterPreview({
           {frontMatter.showAssessmentSubtitle && frontMatter.assessmentSubtitle.trim() ? (
             <p className="test-assessment-subtitle">{frontMatter.assessmentSubtitle}</p>
           ) : null}
+          {isSolutionsTitle ? <p className="test-solutions-title">{frontMatter.nameLabel}</p> : null}
         </div>
       </section>
 
-      <section className="test-student-row">
-        <div className="test-name-line">
-          <span>{frontMatter.nameLabel}:</span>
-          <span aria-hidden="true" />
-        </div>
+      <section className={`test-student-row ${isSolutionsTitle ? "test-student-row-solutions" : ""}`}>
+        {isSolutionsTitle ? null : (
+          <div className="test-name-line">
+            <span>{frontMatter.nameLabel}:</span>
+            <span aria-hidden="true" />
+          </div>
+        )}
         <div className="test-mark-line">
           <span>{frontMatter.markLabel}:</span>
           <span aria-hidden="true" />
@@ -3407,8 +4121,9 @@ function TestPreviewSegment({
         style={{ paddingTop }}
       >
         <PreviewContentBlocks
-          blocks={[segment.block]}
+          blocks={segment.blocks ?? (segment.block ? [segment.block] : [])}
           measureOnly={measureOnly}
+          blockAnchorFor={(block) => questionBlockScrollAnchor(segment.question.id, block.id)}
           onGraphConfigChange={(blockId, graphConfig) => onGraphConfigChange?.({ questionId: segment.question.id, blockId, graphConfig })}
         />
       </div>
@@ -3440,33 +4155,52 @@ function TestPreviewSegment({
             <span className="test-part-mark" />
           </div>
         ) : null}
-        <div className={cn(hasSubparts && "test-subpart-group")}>
-          {partItems.map((item) => {
-            if (item.kind === "block") {
-              return (
-                <div
-                  key={item.id}
-                  data-scroll-anchor={measureOnly ? undefined : partBlockScrollAnchor(segment.question.id, part.id, item.block.id)}
-                  className={cn("test-question-part", item.block.kind === "diagram" && "test-question-row-with-diagram")}
-                >
-                  <span className="test-part-label">{item.id === firstContentItemId ? `(${partLabel})` : ""}</span>
-                  <div className="test-part-content">
-                    <PreviewContentBlocks
-                      blocks={[item.block]}
-                      measureOnly={measureOnly}
-                      onGraphConfigChange={(blockId, graphConfig) =>
-                        onGraphConfigChange?.({ questionId: segment.question.id, partId: part.id, blockId, graphConfig })
-                      }
-                    />
-                  </div>
-                  <span className="test-part-mark">{!hasSubparts && item.id === firstContentItemId ? markLabel(part.marks) : ""}</span>
-                </div>
-              );
-            }
+        <div
+          className={cn(hasSubparts && "test-subpart-group", hasSubparts && !visiblePartBlocks.length && "test-subpart-group-after-label")}
+        >
+          {(() => {
+            const rows: ReactNode[] = [];
+            for (let itemIndex = 0; itemIndex < partItems.length; itemIndex += 1) {
+              const item = partItems[itemIndex];
+              if (item.kind === "block") {
+                const nextItem = partItems[itemIndex + 1];
+                const pairedBlocks =
+                  item.block.kind === "diagram" &&
+                  normalizeDiagramTextSide(item.block.diagramTextSide) !== "none" &&
+                  nextItem?.kind === "block" &&
+                  nextItem.block.kind === "text"
+                    ? [item.block, nextItem.block]
+                    : undefined;
+                rows.push(
+                  <div
+                    key={pairedBlocks ? `${item.id}:${pairedBlocks[1].id}` : item.id}
+                    data-scroll-anchor={measureOnly ? undefined : partBlockScrollAnchor(segment.question.id, part.id, item.block.id)}
+                    className={cn(
+                      "test-question-part",
+                      item.block.kind === "diagram" && "test-question-row-with-diagram",
+                      item.block.kind === "text" && isSolutionTextBlock(item.block) && "test-solution-row",
+                    )}
+                  >
+                    <span className="test-part-label">{item.id === firstContentItemId ? `(${partLabel})` : ""}</span>
+                    <div className="test-part-content">
+                      <PreviewContentBlocks
+                        blocks={pairedBlocks ?? [item.block]}
+                        measureOnly={measureOnly}
+                        blockAnchorFor={(block) => partBlockScrollAnchor(segment.question.id, part.id, block.id)}
+                        onGraphConfigChange={(blockId, graphConfig) =>
+                          onGraphConfigChange?.({ questionId: segment.question.id, partId: part.id, blockId, graphConfig })
+                        }
+                      />
+                    </div>
+                    <span className="test-part-mark">{!hasSubparts && item.id === firstContentItemId ? markLabel(part.marks) : ""}</span>
+                  </div>,
+                );
+                if (pairedBlocks) itemIndex += 1;
+                continue;
+              }
 
-            if (item.kind === "subpart") {
               const subpartIndex = part.subparts.findIndex((subpart) => subpart.id === item.subpart.id);
-              return (
+              rows.push(
                 <div
                   key={item.subpart.id}
                   data-scroll-anchor={measureOnly ? undefined : subpartScrollAnchor(segment.question.id, part.id, item.subpart.id)}
@@ -3493,12 +4227,11 @@ function TestPreviewSegment({
                     />
                   </div>
                   <span className="test-part-mark">{markLabel(item.subpart.marks)}</span>
-                </div>
+                </div>,
               );
             }
-
-            return null;
-          })}
+            return rows;
+          })()}
         </div>
       </section>
     );
@@ -3613,10 +4346,14 @@ interface DiagramBlockEditorProps {
   label: string;
   graphConfig: GraphConfig;
   alignment?: DiagramAlignment;
+  textSide?: DiagramTextSide;
   dragHandle?: ReactNode;
   muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
   onChange: (graphConfig: GraphConfig) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
+  onTextSideChange: (textSide: DiagramTextSide) => void;
   onRemove: () => void;
 }
 
@@ -3627,6 +4364,8 @@ interface CollapsiblePanelProps {
   actions?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  openSignal?: number;
+  active?: boolean;
   className?: string;
   bodyClassName?: string;
 }
@@ -3638,14 +4377,21 @@ function CollapsiblePanel({
   actions,
   children,
   defaultOpen = true,
+  openSignal,
+  active = false,
   className,
   bodyClassName,
 }: CollapsiblePanelProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen || openSignal !== undefined);
+
+  useEffect(() => {
+    if (openSignal === undefined) return;
+    setOpen(true);
+  }, [openSignal]);
 
   return (
-    <section className={cn("rounded-md border bg-background", className)}>
-      <div data-panel-region="header" className="flex items-center gap-2 p-2">
+    <section className={cn("rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
+      <div data-panel-region="header" className={cn("flex items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}>
         <Button
           type="button"
           variant="ghost"
@@ -3711,6 +4457,7 @@ function ContentInsertionActions({
   centered = false,
   onAddText,
   onAddChoices,
+  onAddTable,
   onAddDiagram,
   onAddSpace,
   extraActions = [],
@@ -3720,6 +4467,7 @@ function ContentInsertionActions({
   centered?: boolean;
   onAddText?: () => void;
   onAddChoices?: () => void;
+  onAddTable?: () => void;
   onAddDiagram?: () => void;
   onAddSpace?: () => void;
   extraActions?: InsertionAction[];
@@ -3748,6 +4496,14 @@ function ContentInsertionActions({
           tooltip: `${actionVerb} answer choices such as i, ii, iii`,
           icon: <ListOrdered className="size-4" aria-hidden="true" />,
           onClick: onAddChoices,
+        }
+      : null,
+    onAddTable
+      ? {
+          label: "Table",
+          tooltip: `${actionVerb} a table with LaTeX-ready cells`,
+          icon: <Table2 className="size-4" aria-hidden="true" />,
+          onClick: onAddTable,
         }
       : null,
     onAddDiagram
@@ -3911,7 +4667,7 @@ function GeometricConstructionEditor({ config, onChange }: { config: GraphConfig
     });
 
   return (
-    <div className="flex flex-col gap-3" data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}>
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex w-36 flex-col gap-2 text-xs font-medium">
           Diagram scale
@@ -3963,6 +4719,14 @@ function parseNumberList(value: string, fallback: number[]) {
   return values.length ? values : fallback;
 }
 
+function histogramYAxisLabel(mode?: StatsChartData["yAxisMode"]) {
+  return mode === "relativeFrequency" ? "Relative frequency" : "Frequency";
+}
+
+function histogramManualProbabilityLabel() {
+  return "P(X=x)";
+}
+
 function defaultStatsDataForType(chartType: StatsChartType, current: StatsChartData): Partial<StatsChartData> {
   if (chartType === "normal") {
     const mean = typeof current.mean === "number" ? current.mean : 0;
@@ -3987,11 +4751,28 @@ function defaultStatsDataForType(chartType: StatsChartType, current: StatsChartD
     };
   }
 
+  if (chartType === "histogram") {
+    const dataMode = current.dataMode ?? "raw";
+    const yAxisMode = current.yAxisMode ?? "frequency";
+    return {
+      chartType,
+      dataMode,
+      barType: current.barType ?? "continuous",
+      yAxisMode,
+      yLabelOrientation: current.yLabelOrientation ?? "vertical",
+      values: current.values?.length ? current.values : [3, 5, 7, 7, 8, 10],
+      xValues: current.xValues?.length ? current.xValues : [2, 4, 5, 6, 7],
+      probabilities: current.probabilities?.length ? current.probabilities : [0.1, 0.25, 0.3, 0.15, 0.2],
+      xLabel: current.xLabel || (dataMode === "manualProbabilities" ? "x" : "Value"),
+      yLabel: current.yLabel || (dataMode === "manualProbabilities" ? histogramManualProbabilityLabel() : histogramYAxisLabel(yAxisMode)),
+    };
+  }
+
   return {
     chartType,
-    values: current.values?.length ? current.values : chartType === "box" ? [1, 2, 3, 4, 5, 6, 7] : [3, 5, 7, 7, 8, 10],
+    values: current.values?.length ? current.values : [1, 2, 3, 4, 5, 6, 7],
     xLabel: current.xLabel || "Value",
-    yLabel: chartType === "box" ? "" : current.yLabel || "Frequency",
+    yLabel: "",
   };
 }
 
@@ -4017,7 +4798,27 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
     });
   };
   const values = data.values?.length ? data.values : data.chartType === "box" ? [1, 2, 3, 4, 5, 6, 7] : [3, 5, 7, 7, 8, 10];
+  const xValues = data.xValues?.length ? data.xValues : [2, 4, 5, 6, 7];
+  const probabilities = data.probabilities?.length ? data.probabilities : [0.1, 0.25, 0.3, 0.15, 0.2];
   const range = data.range ?? [-3, 3];
+  const histogramDataMode = data.dataMode ?? "raw";
+  const histogramBarType = data.barType ?? "continuous";
+  const histogramYAxisMode = data.yAxisMode ?? "frequency";
+  const histogramYLabelOrientation = data.yLabelOrientation ?? "vertical";
+  const updateHistogramDataMode = (dataMode: StatsChartData["dataMode"]) => {
+    updateData({
+      dataMode,
+      barType: dataMode === "manualProbabilities" ? "discrete" : histogramBarType,
+      xLabel: dataMode === "manualProbabilities" ? "x" : data.xLabel || "Value",
+      yLabel: dataMode === "manualProbabilities" ? histogramManualProbabilityLabel() : histogramYAxisLabel(histogramYAxisMode),
+    });
+  };
+  const updateHistogramYAxisMode = (yAxisMode: StatsChartData["yAxisMode"]) => {
+    updateData({
+      yAxisMode,
+      yLabel: histogramYAxisLabel(yAxisMode),
+    });
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -4059,6 +4860,57 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
           />
         </label>
       </section>
+
+      {data.chartType === "histogram" ? (
+        <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Data mode
+            <select
+              value={histogramDataMode}
+              onChange={(event) => updateHistogramDataMode(event.target.value as StatsChartData["dataMode"])}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              <option value="raw">Raw data</option>
+              <option value="manualProbabilities">Manual probabilities</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Bar type
+            <select
+              value={histogramDataMode === "manualProbabilities" ? "discrete" : histogramBarType}
+              disabled={histogramDataMode === "manualProbabilities"}
+              onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
+            >
+              <option value="continuous">Continuous bins</option>
+              <option value="discrete">Discrete values</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Y-axis
+            <select
+              value={histogramYAxisMode}
+              disabled={histogramDataMode === "manualProbabilities"}
+              onChange={(event) => updateHistogramYAxisMode(event.target.value as StatsChartData["yAxisMode"])}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
+            >
+              <option value="frequency">Frequency</option>
+              <option value="relativeFrequency">Relative frequency</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Y label
+            <select
+              value={histogramYLabelOrientation}
+              onChange={(event) => updateData({ yLabelOrientation: event.target.value as StatsChartData["yLabelOrientation"] })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              <option value="vertical">Vertical</option>
+              <option value="horizontal">Horizontal</option>
+            </select>
+          </label>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <label className="flex flex-col gap-2 text-xs font-medium">
@@ -4205,8 +5057,38 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
             />
           </label>
         </section>
+      ) : data.chartType === "histogram" && histogramDataMode === "manualProbabilities" ? (
+        <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            x values
+            <Textarea
+              key={`manual-x-${numberListText(xValues)}`}
+              defaultValue={numberListText(xValues)}
+              className="min-h-24 font-mono text-xs"
+              spellCheck={false}
+              onBlur={(event) => updateData({ xValues: parseNumberList(event.currentTarget.value, xValues) })}
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Probabilities
+            <Textarea
+              key={`manual-p-${numberListText(probabilities)}`}
+              defaultValue={numberListText(probabilities)}
+              className="min-h-24 font-mono text-xs"
+              spellCheck={false}
+              onBlur={(event) => updateData({ probabilities: parseNumberList(event.currentTarget.value, probabilities) })}
+            />
+          </label>
+        </section>
       ) : (
-        <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-[minmax(0,1fr)_120px_120px]">
+        <section
+          className={cn(
+            "grid grid-cols-1 gap-3 border-t pt-3",
+            data.chartType === "histogram" && histogramBarType === "continuous"
+              ? "md:grid-cols-[minmax(0,1fr)_120px_120px]"
+              : "md:grid-cols-1",
+          )}
+        >
           <label className="flex flex-col gap-2 text-xs font-medium">
             Data values
             <Textarea
@@ -4217,7 +5099,7 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
               onBlur={(event) => updateData({ values: parseNumberList(event.currentTarget.value, values) })}
             />
           </label>
-          {data.chartType === "histogram" ? (
+          {data.chartType === "histogram" && histogramBarType === "continuous" ? (
             <>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Bin size
@@ -4283,7 +5165,7 @@ function SavedTestManager({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid grid-cols-1 gap-3">
           <label className="flex min-w-0 flex-col gap-2 text-xs font-medium">
             Test
             <select
@@ -4300,16 +5182,16 @@ function SavedTestManager({
               ))}
             </select>
           </label>
-          <div className="flex flex-wrap items-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onNewTest}>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
+            <Button type="button" variant="outline" size="sm" onClick={onNewTest} className="w-full justify-start sm:justify-center">
               <PlusCircle data-icon="inline-start" />
               New Test
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onSaveTest}>
+            <Button type="button" variant="outline" size="sm" onClick={onSaveTest} className="w-full justify-start sm:justify-center">
               <Save data-icon="inline-start" />
               Save
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onSaveTestAs}>
+            <Button type="button" variant="outline" size="sm" onClick={onSaveTestAs} className="w-full justify-start sm:justify-center">
               <Copy data-icon="inline-start" />
               Duplicate
             </Button>
@@ -4318,6 +5200,7 @@ function SavedTestManager({
               variant="outline"
               size="sm"
               disabled={!selectedSavedTest}
+              className="w-full justify-start sm:justify-center"
               onClick={() => {
                 if (selectedSavedTest) onRenameSavedTest(selectedSavedTest.id);
               }}
@@ -4330,6 +5213,7 @@ function SavedTestManager({
               variant="outline"
               size="sm"
               disabled={!selectedSavedTest}
+              className="w-full justify-start sm:justify-center"
               onClick={() => {
                 if (selectedSavedTest) onDeleteSavedTest(selectedSavedTest.id);
               }}
@@ -4351,12 +5235,14 @@ function SavedTestManager({
 function FrontMatterEditor({
   frontMatter,
   logos,
+  openSignal,
   onChange,
   onAddLogo,
   onRemoveLogo,
 }: {
   frontMatter: FrontMatterConfig;
   logos: LogoAsset[];
+  openSignal?: number;
   onChange: (patch: Partial<FrontMatterConfig>) => void;
   onAddLogo: (file: File) => void;
   onRemoveLogo: (logoId: string) => void;
@@ -4371,6 +5257,7 @@ function FrontMatterEditor({
         }
         defaultOpen={false}
         className="bg-muted/20"
+        openSignal={openSignal}
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="rounded-md border bg-background p-3 md:col-span-2">
@@ -4596,6 +5483,8 @@ interface TextBlockEditorProps {
   text: string;
   dragHandle?: ReactNode;
   muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
   minHeightClassName: string;
   onChange: (text: string) => void;
   onRemove: () => void;
@@ -4621,7 +5510,418 @@ function choiceListSummary(block: Extract<EditorContentBlock, { kind: "choices" 
   return `${choices.length || 0} ${style.toLowerCase()} choice${choices.length === 1 ? "" : "s"}`;
 }
 
-function TextBlockEditor({ label, text, dragHandle, muted = false, minHeightClassName, onChange, onRemove }: TextBlockEditorProps) {
+function tableBlockSummary(block: Extract<EditorContentBlock, { kind: "table" }>) {
+  const table = normalizeTableBlock(block);
+  const columnLabel = `${table.headers.length} column${table.headers.length === 1 ? "" : "s"}`;
+  const rowLabel = `${table.rows.length} row${table.rows.length === 1 ? "" : "s"}`;
+  return `${rowLabel}, ${columnLabel}`;
+}
+
+function diagramBlockSummary(block: Extract<EditorContentBlock, { kind: "diagram" }>) {
+  const config = withGraphDefaults(block.graphConfig);
+  if (config.type === "image") return imageDiagramData(config).src ? imageDiagramName(config) : "Image";
+  if (config.type === "statsChart") return statsChartSummary(config);
+  return DIAGRAM_TYPES.find((diagramType) => diagramType.value === config.type)?.label ?? "Diagram";
+}
+
+function tocBlockLabel(block: EditorContentBlock, blockIndex: number) {
+  const itemNumber = blockIndex + 1;
+  if (block.kind === "text") return `Text ${itemNumber}`;
+  if (block.kind === "choices") return `Choices ${itemNumber}`;
+  if (block.kind === "table") return `Table ${itemNumber}`;
+  if (block.kind === "diagram") return `Diagram ${itemNumber}`;
+  if (block.kind === "space") return `Space ${itemNumber}`;
+  return `Block ${itemNumber}`;
+}
+
+function tocBlockSummary(block: EditorContentBlock) {
+  if (block.kind === "text") return textBlockSummary(block.text ?? "");
+  if (block.kind === "choices") return choiceListSummary(block);
+  if (block.kind === "table") return tableBlockSummary(block);
+  if (block.kind === "diagram") return diagramBlockSummary(block);
+  if (block.kind === "space") {
+    const lines = spaceLines(block.lines);
+    return `${lines} line${lines === 1 ? "" : "s"}`;
+  }
+  return "";
+}
+
+function tocBlockKind(block: EditorContentBlock): TocItemKind {
+  if (block.kind === "choices") return "choices";
+  if (block.kind === "table") return "table";
+  if (block.kind === "diagram") return "diagram";
+  if (block.kind === "space") return "space";
+  return "text";
+}
+
+function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlock[]) {
+  const items: DocumentTocItem[] = [
+    {
+      id: SCROLL_ANCHOR_FRONT_MATTER,
+      label: "Title Page",
+      summary: `${frontMatter.subjectTitle} - ${assessmentTitleText(frontMatter.assessmentTitle)}`,
+      kind: "title",
+      depth: 0,
+      editorAnchor: SCROLL_ANCHOR_FRONT_MATTER,
+      previewAnchor: SCROLL_ANCHOR_FRONT_MATTER,
+    },
+  ];
+
+  questions.forEach((question, questionIndex) => {
+    const questionAnchor = questionScrollAnchor(question.id);
+    items.push({
+      id: questionAnchor,
+      label: `Question ${questionDisplayNumber(frontMatter, questionIndex)}`,
+      summary: firstTextSource(question.contentBlocks) || markLabel(questionMarks(question)),
+      kind: "question",
+      depth: 0,
+      editorAnchor: questionAnchor,
+      previewAnchor: questionAnchor,
+    });
+
+    orderedQuestionItems(question).forEach((item, itemIndex) => {
+      if (item.kind === "block") {
+        const blockAnchor = questionBlockScrollAnchor(question.id, item.block.id);
+        items.push({
+          id: blockAnchor,
+          label: tocBlockLabel(item.block, itemIndex),
+          summary: tocBlockSummary(item.block),
+          kind: tocBlockKind(item.block),
+          depth: 1,
+          editorAnchor: blockAnchor,
+          previewAnchor: blockAnchor,
+        });
+        return;
+      }
+
+      const partIndex = Math.max(
+        0,
+        question.parts.findIndex((part) => part.id === item.part.id),
+      );
+      const partLabel = alphaLabel(partIndex);
+      const partAnchor = partScrollAnchor(question.id, item.part.id);
+      items.push({
+        id: partAnchor,
+        label: `Part (${partLabel})`,
+        summary: partPanelSummary(item.part.contentBlocks) || markLabel(partMarks(item.part)),
+        kind: "part",
+        depth: 1,
+        editorAnchor: partAnchor,
+        previewAnchor: partAnchor,
+      });
+
+      orderedPartItems(item.part).forEach((partItem, partItemIndex) => {
+        if (partItem.kind === "block") {
+          const blockAnchor = partBlockScrollAnchor(question.id, item.part.id, partItem.block.id);
+          items.push({
+            id: blockAnchor,
+            label: tocBlockLabel(partItem.block, partItemIndex),
+            summary: tocBlockSummary(partItem.block),
+            kind: tocBlockKind(partItem.block),
+            depth: 2,
+            editorAnchor: blockAnchor,
+            previewAnchor: blockAnchor,
+          });
+          return;
+        }
+
+        const subpartIndex = Math.max(
+          0,
+          item.part.subparts.findIndex((subpart) => subpart.id === partItem.subpart.id),
+        );
+        const subpartLabel = romanLabel(subpartIndex);
+        const subpartAnchor = subpartScrollAnchor(question.id, item.part.id, partItem.subpart.id);
+        items.push({
+          id: subpartAnchor,
+          label: `Subpart (${subpartLabel})`,
+          summary: partPanelSummary(partItem.subpart.contentBlocks) || markLabel(partItem.subpart.marks),
+          kind: "subpart",
+          depth: 2,
+          editorAnchor: subpartAnchor,
+          previewAnchor: subpartAnchor,
+        });
+
+        partItem.subpart.contentBlocks
+          .filter((block) => block.kind !== "pageBreak")
+          .forEach((block, blockIndex) => {
+            const blockAnchor = subpartBlockScrollAnchor(question.id, item.part.id, partItem.subpart.id, block.id);
+            items.push({
+              id: blockAnchor,
+              label: tocBlockLabel(block, blockIndex),
+              summary: tocBlockSummary(block),
+              kind: tocBlockKind(block),
+              depth: 3,
+              editorAnchor: blockAnchor,
+              previewAnchor: blockAnchor,
+            });
+          });
+      });
+    });
+  });
+
+  return items;
+}
+
+function TocItemIcon({ kind }: { kind: TocItemKind }) {
+  if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
+  if (kind === "question") return null;
+  if (kind === "part" || kind === "subpart") return <GitBranch className="size-4" aria-hidden="true" />;
+  if (kind === "diagram") return <ImagePlus className="size-4" aria-hidden="true" />;
+  if (kind === "table") return <Table2 className="size-4" aria-hidden="true" />;
+  if (kind === "choices") return <ListOrdered className="size-4" aria-hidden="true" />;
+  if (kind === "space") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
+  return <Type className="size-4" aria-hidden="true" />;
+}
+
+function questionIdSet(questions: QuestionBlock[]) {
+  return new Set(questions.map((question) => question.id));
+}
+
+function isTocBranchItem(item: DocumentTocItem, items: DocumentTocItem[]) {
+  if (item.kind !== "question" && item.kind !== "part" && item.kind !== "subpart") return false;
+  const index = items.findIndex((candidate) => candidate.id === item.id);
+  return index >= 0 && (items[index + 1]?.depth ?? -1) > item.depth;
+}
+
+function tocBranchIdSet(items: DocumentTocItem[]) {
+  return new Set(items.filter((item) => isTocBranchItem(item, items)).map((item) => item.id));
+}
+
+function visibleTocItems(items: DocumentTocItem[], collapsedItemIds: Set<string>) {
+  const visibleItems: DocumentTocItem[] = [];
+  let hiddenBelowDepth: number | null = null;
+
+  items.forEach((item) => {
+    if (hiddenBelowDepth !== null) {
+      if (item.depth > hiddenBelowDepth) return;
+      hiddenBelowDepth = null;
+    }
+
+    visibleItems.push(item);
+    if (collapsedItemIds.has(item.id)) {
+      hiddenBelowDepth = item.depth;
+    }
+  });
+
+  return visibleItems;
+}
+
+function tocSummaryText(source: string) {
+  return parseMixedMath(source)
+    .map((segment) => segment.content)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tocRailItems(items: DocumentTocItem[]) {
+  return items.filter((item) => item.kind === "title" || (item.kind === "question" && item.depth === 0));
+}
+
+function tocRailLabel(item: DocumentTocItem) {
+  if (item.kind === "title") return "T";
+  return item.label.replace(/^Question\s+/i, "");
+}
+
+function activeTocRailItemId(items: DocumentTocItem[], activeItemId: string) {
+  const activeIndex = items.findIndex((item) => item.id === activeItemId);
+  if (activeIndex === -1) return activeItemId;
+
+  for (let index = activeIndex; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === "title" || (item.kind === "question" && item.depth === 0)) return item.id;
+  }
+
+  return activeItemId;
+}
+
+function DocumentNavigator({
+  items,
+  activeItemId,
+  onJump,
+}: {
+  items: DocumentTocItem[];
+  activeItemId: string;
+  onJump: (item: DocumentTocItem) => void;
+}) {
+  const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => tocBranchIdSet(items));
+  const knownBranchItemIdsRef = useRef<Set<string>>(tocBranchIdSet(items));
+  const branchItemIds = useMemo(() => tocBranchIdSet(items), [items]);
+  const displayedItems = useMemo(() => visibleTocItems(items, collapsedItemIds), [items, collapsedItemIds]);
+
+  useEffect(() => {
+    const knownBranchItemIds = knownBranchItemIdsRef.current;
+    const branchIds = tocBranchIdSet(items);
+    setCollapsedItemIds((current) => {
+      const next = new Set<string>();
+      current.forEach((id) => {
+        if (branchIds.has(id)) next.add(id);
+      });
+      branchIds.forEach((id) => {
+        if (!knownBranchItemIds.has(id)) next.add(id);
+      });
+      return next;
+    });
+    knownBranchItemIdsRef.current = branchIds;
+  }, [items]);
+
+  function toggleItem(itemId: string) {
+    setCollapsedItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <aside className="min-h-0 border-r bg-card/95 shadow-panel">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-14 shrink-0 items-center border-b px-3">
+          <h2 className="truncate text-sm font-semibold">Document</h2>
+        </div>
+        <nav className="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Document table of contents">
+          <div className="flex flex-col gap-1">
+            {displayedItems.map((item) => {
+              const active = item.id === activeItemId;
+              const isBranch = branchItemIds.has(item.id);
+              const branchCollapsed = collapsedItemIds.has(item.id);
+              const summaryText = item.summary ? tocSummaryText(item.summary) : "";
+              const icon = TocItemIcon({ kind: item.kind });
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "group flex min-w-0 items-start gap-1 rounded-md px-2 py-2 text-left text-sm transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                  style={{ paddingLeft: `${0.55 + item.depth * 0.85}rem` }}
+                >
+                  {isBranch ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleItem(item.id)}
+                      className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm hover:bg-background/20"
+                      aria-label={branchCollapsed ? `Expand ${item.label}` : `Collapse ${item.label}`}
+                      aria-expanded={!branchCollapsed}
+                    >
+                      {branchCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                    </button>
+                  ) : (
+                    <span className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+                  )}
+                  <button type="button" onClick={() => onJump(item)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+                    {icon ? (
+                      <span
+                        className={cn(
+                          "mt-0.5 shrink-0",
+                          active ? "text-primary-foreground" : "text-muted-foreground group-hover:text-current",
+                        )}
+                      >
+                        {icon}
+                      </span>
+                    ) : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{item.label}</span>
+                      {summaryText ? (
+                        <span
+                          className={cn("block truncate text-xs", active ? "text-primary-foreground/80" : "text-muted-foreground")}
+                          title={item.summary}
+                        >
+                          {summaryText}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
+    </aside>
+  );
+}
+
+function DocumentNavigatorRail({
+  open,
+  items,
+  activeItemId,
+  onToggle,
+  onJump,
+}: {
+  open: boolean;
+  items: DocumentTocItem[];
+  activeItemId: string;
+  onToggle: () => void;
+  onJump: (item: DocumentTocItem) => void;
+}) {
+  const railItems = useMemo(() => tocRailItems(items), [items]);
+  const activeRailItemId = useMemo(() => activeTocRailItemId(items, activeItemId), [activeItemId, items]);
+
+  return (
+    <aside className="min-h-0 border-r bg-card/95 shadow-panel">
+      <div className="flex h-14 items-center justify-center border-b">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={open ? "Hide document navigator" : "Show document navigator"}
+          aria-label={open ? "Hide document navigator" : "Show document navigator"}
+          aria-pressed={open}
+          onClick={onToggle}
+          className={cn("size-9", open && "bg-primary/10 text-primary")}
+        >
+          <ListTree />
+        </Button>
+      </div>
+      <nav className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-1.5 py-3" aria-label="Document quick navigation">
+        {railItems.map((item) => {
+          const active = item.id === activeRailItemId;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              title={item.label}
+              aria-label={`Jump to ${item.label}`}
+              aria-current={active ? "location" : undefined}
+              onClick={() => onJump(item)}
+              className={cn(
+                "flex size-8 items-center justify-center rounded-md border text-sm font-semibold transition-colors",
+                active
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              {tocRailLabel(item)}
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+
+function tableColumnLabel(index: number) {
+  return alphaLabel(index).toUpperCase();
+}
+
+function TextBlockEditor({
+  label,
+  text,
+  dragHandle,
+  muted = false,
+  active = false,
+  openSignal,
+  minHeightClassName,
+  onChange,
+  onRemove,
+}: TextBlockEditorProps) {
   return (
     <CollapsiblePanel
       title={<InlineSummaryTitle label={label} summary={textBlockSummary(text)} />}
@@ -4629,6 +5929,8 @@ function TextBlockEditor({ label, text, dragHandle, muted = false, minHeightClas
       actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName="p-3"
+      active={active}
+      openSignal={openSignal}
     >
       <div className="flex flex-col gap-2">
         <Textarea
@@ -4647,11 +5949,22 @@ interface ChoiceListBlockEditorProps {
   block: Extract<EditorContentBlock, { kind: "choices" }>;
   dragHandle?: ReactNode;
   muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
   onChange: (patch: Partial<Extract<EditorContentBlock, { kind: "choices" }>>) => void;
   onRemove: () => void;
 }
 
-function ChoiceListBlockEditor({ label, block, dragHandle, muted = false, onChange, onRemove }: ChoiceListBlockEditorProps) {
+function ChoiceListBlockEditor({
+  label,
+  block,
+  dragHandle,
+  muted = false,
+  active = false,
+  openSignal,
+  onChange,
+  onRemove,
+}: ChoiceListBlockEditorProps) {
   return (
     <CollapsiblePanel
       title={<InlineSummaryTitle label={label} summary={choiceListSummary(block)} />}
@@ -4659,6 +5972,8 @@ function ChoiceListBlockEditor({ label, block, dragHandle, muted = false, onChan
       actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName="p-3"
+      active={active}
+      openSignal={openSignal}
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_160px_minmax(0,1fr)]">
         <label className="flex flex-col gap-2 text-xs font-medium">
@@ -4703,16 +6018,334 @@ function ChoiceListBlockEditor({ label, block, dragHandle, muted = false, onChan
   );
 }
 
+interface TableBlockEditorProps {
+  label: string;
+  block: Extract<EditorContentBlock, { kind: "table" }>;
+  dragHandle?: ReactNode;
+  muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
+  onChange: (patch: Partial<Extract<EditorContentBlock, { kind: "table" }>>) => void;
+  onRemove: () => void;
+}
+
+function TableBlockEditor({
+  label,
+  block,
+  dragHandle,
+  muted = false,
+  active = false,
+  openSignal,
+  onChange,
+  onRemove,
+}: TableBlockEditorProps) {
+  const table = normalizeTableBlock(block);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const columnCount = table.headers.length;
+  const tableGridMinWidth = 40 + columnCount * 136 + 56;
+  const gridStyle = {
+    gridTemplateColumns: `2.5rem repeat(${columnCount}, minmax(136px, 1fr)) 3.5rem`,
+    width: `max(100%, ${tableGridMinWidth}px)`,
+  };
+  const gridControlButtonClass = "size-7 border-input bg-background shadow-sm hover:bg-accent";
+  const patchTable = (patch: Partial<Extract<EditorContentBlock, { kind: "table" }>>) => onChange({ ...patch });
+  const updateHeaders = (headers: string[]) => patchTable({ headers });
+  const updateRows = (rows: string[][]) => patchTable({ rows });
+  const updateHeader = (columnIndex: number, value: string) =>
+    updateHeaders(table.headers.map((cell, index) => (index === columnIndex ? value : cell)));
+  const updateCell = (rowIndex: number, columnIndex: number, value: string) =>
+    updateRows(
+      table.rows.map((row, currentRowIndex) =>
+        currentRowIndex === rowIndex ? row.map((cell, currentColumnIndex) => (currentColumnIndex === columnIndex ? value : cell)) : row,
+      ),
+    );
+  const addColumn = () => {
+    patchTable({
+      headers: [...table.headers, ""],
+      rows: table.rows.map((row) => [...row, ""]),
+    });
+  };
+  const removeColumn = (columnIndex: number) => {
+    if (columnCount <= 1) return;
+    patchTable({
+      headers: table.headers.filter((_, index) => index !== columnIndex),
+      rows: table.rows.map((row) => row.filter((_, index) => index !== columnIndex)),
+    });
+  };
+  const addRow = () => updateRows([...table.rows, Array.from({ length: columnCount }, () => "")]);
+  const removeRow = (rowIndex: number) => {
+    const nextRows = table.rows.filter((_, index) => index !== rowIndex);
+    updateRows(nextRows.length ? nextRows : [Array.from({ length: columnCount }, () => "")]);
+  };
+  const removeLastColumn = () => removeColumn(columnCount - 1);
+  const removeLastRow = () => removeRow(table.rows.length - 1);
+  const scrollTable = (direction: -1 | 1) => {
+    tableScrollRef.current?.scrollBy({ left: direction * 260, behavior: "smooth" });
+  };
+
+  return (
+    <CollapsiblePanel
+      title={<InlineSummaryTitle label={label} summary={tableBlockSummary(table)} />}
+      leading={dragHandle}
+      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
+      className={cn("bg-background", muted && "bg-muted/30")}
+      bodyClassName="p-3"
+      active={active}
+      openSignal={openSignal}
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_160px_minmax(0,1fr)]">
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Position
+            <select
+              value={table.tableAlign}
+              onChange={(event) => patchTable({ tableAlign: event.target.value as DiagramAlignment })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              {DIAGRAM_ALIGNMENTS.map((alignment) => (
+                <option key={alignment.value} value={alignment.value}>
+                  {alignment.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Cell text
+            <select
+              value={table.cellAlignment}
+              onChange={(event) => patchTable({ cellAlignment: event.target.value as TableCellAlignment })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              {TABLE_CELL_ALIGNMENTS.map((alignment) => (
+                <option key={alignment.value} value={alignment.value}>
+                  {alignment.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap items-end justify-start gap-2 md:justify-end">
+            <div className="flex flex-col gap-1 text-xs font-medium">
+              Columns
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={addColumn}
+                  title="Add column"
+                  aria-label="Add column"
+                  className={gridControlButtonClass}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={columnCount <= 1}
+                  onClick={removeLastColumn}
+                  title="Remove last column"
+                  aria-label="Remove last column"
+                  className={gridControlButtonClass}
+                >
+                  <Minus className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 text-xs font-medium">
+              Rows
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={addRow}
+                  title="Add row"
+                  aria-label="Add row"
+                  className={gridControlButtonClass}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={table.rows.length <= 1}
+                  onClick={removeLastRow}
+                  title="Remove last row"
+                  aria-label="Remove last row"
+                  className={gridControlButtonClass}
+                >
+                  <Minus className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-muted/20 p-2">
+          <div className="mb-2 flex justify-end gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => scrollTable(-1)}
+              title="Scroll table left"
+              aria-label="Scroll table left"
+              className={gridControlButtonClass}
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => scrollTable(1)}
+              title="Scroll table right"
+              aria-label="Scroll table right"
+              className={gridControlButtonClass}
+            >
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <div ref={tableScrollRef} tabIndex={0} aria-label="Table editor cells" className="table-editor-scroll">
+            <div className="grid min-w-[560px] overflow-hidden rounded-md border border-input bg-border text-sm" style={gridStyle}>
+              <div className="bg-muted/70" />
+              {table.headers.map((_, columnIndex) => (
+                <div
+                  key={`column-label-${columnIndex}`}
+                  className="flex h-7 items-center justify-center border-l border-input bg-muted/70 text-xs font-semibold text-muted-foreground"
+                >
+                  {tableColumnLabel(columnIndex)}
+                </div>
+              ))}
+              <div className="flex items-center justify-center border-l border-input bg-muted/70">
+                <span className="sr-only">Table controls</span>
+              </div>
+
+              {table.showHeader ? (
+                <>
+                  <div className="flex h-11 items-center justify-center border-t border-input bg-muted/70 text-xs font-semibold text-muted-foreground">
+                    1
+                  </div>
+                  {table.headers.map((cell, columnIndex) => (
+                    <input
+                      key={`header-${columnIndex}`}
+                      aria-label={`Table header ${columnIndex + 1}`}
+                      value={cell}
+                      onChange={(event) => updateHeader(columnIndex, event.target.value)}
+                      className="h-11 min-w-0 border-l border-t border-input bg-muted/60 px-2 text-center font-mono text-sm font-normal outline-none focus:relative focus:z-10 focus:ring-2 focus:ring-ring"
+                    />
+                  ))}
+                  <div className="border-l border-t border-input bg-muted/70" />
+                </>
+              ) : null}
+
+              {table.rows.map((row, rowIndex) => (
+                <div key={`row-${rowIndex}`} className="contents">
+                  <div className="flex h-11 items-center justify-center border-t border-input bg-muted/70 text-xs font-semibold text-muted-foreground">
+                    {rowIndex + (table.showHeader ? 2 : 1)}
+                  </div>
+                  {row.map((cell, columnIndex) => (
+                    <input
+                      key={`cell-${rowIndex}-${columnIndex}`}
+                      aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
+                      value={cell}
+                      onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
+                      className="h-11 min-w-0 border-l border-t border-input bg-background px-2 text-center font-mono text-sm font-normal outline-none focus:relative focus:z-10 focus:ring-2 focus:ring-ring"
+                    />
+                  ))}
+                  <div className="flex h-11 items-center justify-center border-l border-t border-input bg-muted/50">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={table.rows.length <= 1}
+                      onClick={() => removeRow(rowIndex)}
+                      title={`Remove row ${rowIndex + 1}`}
+                      aria-label={`Remove row ${rowIndex + 1}`}
+                      className={gridControlButtonClass}
+                    >
+                      <Minus className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex h-10 items-center justify-center border-t border-input bg-muted/50">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={addRow}
+                  title="Add row"
+                  aria-label="Add row"
+                  className={gridControlButtonClass}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+              {table.headers.map((_, columnIndex) => (
+                <div
+                  key={`column-control-${columnIndex}`}
+                  className="flex h-10 items-center justify-center border-l border-t border-input bg-muted/50"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={columnCount <= 1}
+                    onClick={() => removeColumn(columnIndex)}
+                    title={`Remove column ${columnIndex + 1}`}
+                    aria-label={`Remove column ${columnIndex + 1}`}
+                    className={gridControlButtonClass}
+                  >
+                    <Minus className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              ))}
+              <div className="flex h-10 items-center justify-center border-l border-t border-input bg-muted/50">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={addColumn}
+                  title="Add column"
+                  aria-label="Add column"
+                  className={gridControlButtonClass}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </CollapsiblePanel>
+  );
+}
+
 interface SpaceBlockEditorProps {
   label: string;
   lines: number;
   dragHandle?: ReactNode;
   muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
   onChange: (lines: number) => void;
   onRemove: () => void;
 }
 
-function SpaceBlockEditor({ label, lines, dragHandle, muted = false, onChange, onRemove }: SpaceBlockEditorProps) {
+function SpaceBlockEditor({
+  label,
+  lines,
+  dragHandle,
+  muted = false,
+  active = false,
+  openSignal,
+  onChange,
+  onRemove,
+}: SpaceBlockEditorProps) {
   const normalizedLines = spaceLines(lines);
 
   return (
@@ -4722,6 +6355,8 @@ function SpaceBlockEditor({ label, lines, dragHandle, muted = false, onChange, o
       actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName="p-3"
+      active={active}
+      openSignal={openSignal}
     >
       <label className="flex max-w-40 flex-col gap-2 text-xs font-medium">
         Lines
@@ -4735,6 +6370,97 @@ function SpaceBlockEditor({ label, lines, dragHandle, muted = false, onChange, o
         />
       </label>
     </CollapsiblePanel>
+  );
+}
+
+function ImageDiagramEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
+  const data = imageDiagramData(config);
+  const previewWidth = Math.min(graphWidth(config), 520);
+
+  function uploadImage(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (!src) return;
+
+      const name = imageNameFromFile(file.name);
+      const commitImage = (naturalWidth?: number, naturalHeight?: number) => {
+        const dimensions = diagramImageDimensions(naturalWidth, naturalHeight);
+        onChange({
+          data: {
+            src,
+            name,
+            alt: name,
+            mimeType: file.type,
+            naturalWidth,
+            naturalHeight,
+          },
+          widthPx: dimensions.widthPx,
+          heightPx: dimensions.heightPx,
+          functions: [],
+          features: [],
+        });
+      };
+
+      const image = new Image();
+      image.onload = () => commitImage(image.naturalWidth, image.naturalHeight);
+      image.onerror = () => commitImage();
+      image.src = src;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+      <div className="flex min-h-40 items-center justify-center rounded-md border bg-white p-3">
+        {data.src ? (
+          <img
+            className="max-h-72 max-w-full object-contain"
+            src={data.src}
+            alt={imageDiagramAlt(config)}
+            style={{ width: previewWidth }}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">No image selected</span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2 md:w-44 md:flex-col">
+        <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+          <ImagePlus className="size-4" aria-hidden="true" />
+          Upload image
+          <input
+            type="file"
+            accept="image/*,.svg"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) uploadImage(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        {data.src ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="justify-center"
+            onClick={() =>
+              onChange({
+                data: DEFAULT_IMAGE_DIAGRAM.data,
+                widthPx: DEFAULT_IMAGE_DIAGRAM.widthPx,
+                heightPx: DEFAULT_IMAGE_DIAGRAM.heightPx,
+                functions: [],
+                features: [],
+              })
+            }
+          >
+            <Trash2 data-icon="inline-start" />
+            Remove
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -4757,10 +6483,14 @@ function DiagramBlockEditor({
   label,
   graphConfig,
   alignment = "center",
+  textSide = "none",
   dragHandle,
   muted = false,
+  active = false,
+  openSignal,
   onChange,
   onAlignmentChange,
+  onTextSideChange,
   onRemove,
 }: DiagramBlockEditorProps) {
   const config = withGraphDefaults(graphConfig);
@@ -4789,7 +6519,7 @@ function DiagramBlockEditor({
   };
   const removeFunction = (functionIndex: number) => {
     const nextFunctions = functions.filter((_, index) => index !== functionIndex);
-    patchConfig({ functions: nextFunctions.length ? nextFunctions : [createGraphFunction(0, DEFAULT_2D_GRAPH.expression ?? "x")] });
+    patchConfig({ functions: nextFunctions });
   };
   const setFunctionKind = (functionIndex: number, kind: GraphFunctionKind) => {
     const graphFunction = functions[functionIndex];
@@ -4907,9 +6637,39 @@ function DiagramBlockEditor({
           </option>
         ))}
       </select>
+      <select
+        aria-label={`${label} beside text`}
+        value={textSide}
+        onChange={(event) => onTextSideChange(event.target.value as DiagramTextSide)}
+        className="h-9 w-32 rounded-md border border-input bg-background px-2 text-sm font-normal"
+        title="Place the next text block beside this diagram in the preview"
+      >
+        {DIAGRAM_TEXT_SIDES.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
       <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
     </>
   );
+  if (config.type === "image") {
+    const imageSummary = imageDiagramData(config).src ? imageDiagramName(config) : "No image selected";
+    return (
+      <CollapsiblePanel
+        title={<InlineSummaryTitle label={label} summary={imageSummary} />}
+        leading={dragHandle}
+        actions={diagramActions}
+        className={cn("bg-background", muted && "bg-muted/30")}
+        bodyClassName="p-3"
+        active={active}
+        openSignal={openSignal}
+      >
+        <ImageDiagramEditor config={config} onChange={patchConfig} />
+      </CollapsiblePanel>
+    );
+  }
+
   if (isPenroseDiagramType(config.type)) {
     return (
       <CollapsiblePanel
@@ -4918,6 +6678,8 @@ function DiagramBlockEditor({
         actions={diagramActions}
         className={cn("bg-background", muted && "bg-muted/30")}
         bodyClassName="p-3"
+        active={active}
+        openSignal={openSignal}
       >
         <GeometricConstructionEditor config={config} onChange={patchConfig} />
       </CollapsiblePanel>
@@ -4932,6 +6694,8 @@ function DiagramBlockEditor({
         actions={diagramActions}
         className={cn("bg-background", muted && "bg-muted/30")}
         bodyClassName="p-3"
+        active={active}
+        openSignal={openSignal}
       >
         <StatsChartEditor config={config} onChange={patchConfig} />
       </CollapsiblePanel>
@@ -4944,7 +6708,9 @@ function DiagramBlockEditor({
       leading={dragHandle}
       actions={diagramActions}
       className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="p-3"
+      bodyClassName="graph-editor-controls p-3"
+      active={active}
+      openSignal={openSignal}
     >
       <CollapsiblePanel
         title={<InlineSummaryTitle label="Axes and grid" summary="Domain, range, graph size, grid intervals and arrows" />}
@@ -5232,14 +6998,13 @@ function DiagramBlockEditor({
                   title={`Remove function ${functionIndex + 1}`}
                   aria-label={`Remove function ${functionIndex + 1}`}
                   onClick={() => removeFunction(functionIndex)}
-                  disabled={functions.length === 1}
                   className="size-8"
                 >
                   <Trash2 />
                 </Button>
               }
             >
-              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-[minmax(52px,64px)_minmax(76px,0.6fr)_minmax(120px,0.8fr)_minmax(72px,88px)_minmax(96px,120px)_minmax(180px,1.4fr)] md:items-end">
+              <div className="graph-auto-grid graph-auto-grid-function">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Colour
                   <input
@@ -5313,7 +7078,7 @@ function DiagramBlockEditor({
               </div>
 
               {graphFunction.kind !== "piecewise" ? (
-                <div className="mt-2 grid grid-cols-1 gap-2 border-t pt-2 md:grid-cols-[160px_100px_100px] md:items-end">
+                <div className="graph-auto-grid mt-2 border-t pt-2">
                   <div className="flex flex-col gap-2 text-xs font-medium">
                     <span>Domain</span>
                     <select
@@ -5366,7 +7131,7 @@ function DiagramBlockEditor({
                 </div>
               ) : null}
 
-              <div className="mt-2 grid grid-cols-1 gap-2 border-t pt-2 md:grid-cols-[auto_140px_90px_90px] md:items-end">
+              <div className="graph-auto-grid mt-2 border-t pt-2">
                 <label className="flex items-center gap-2 text-xs font-medium md:pb-2">
                   <input
                     type="checkbox"
@@ -5420,10 +7185,7 @@ function DiagramBlockEditor({
                     </Button>
                   </div>
                   {pieces.map((piece, pieceIndex) => (
-                    <div
-                      key={piece.id ?? `${piece.expression}-${pieceIndex}`}
-                      className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(140px,1fr)_86px_86px_auto_auto_40px] md:items-end"
-                    >
+                    <div key={piece.id ?? `${piece.expression}-${pieceIndex}`} className="graph-auto-grid">
                       <label className="flex flex-col gap-2 text-xs font-medium">
                         Expression
                         <input
@@ -5541,14 +7303,7 @@ function DiagramBlockEditor({
                   </Button>
                 }
               >
-                <div
-                  className={cn(
-                    "grid min-w-0 grid-cols-1 gap-2 md:items-end",
-                    isFreeLabel
-                      ? "md:grid-cols-[minmax(140px,1fr)_minmax(58px,70px)_minmax(160px,1fr)]"
-                      : "md:grid-cols-[minmax(140px,1fr)_minmax(58px,70px)_minmax(72px,88px)_minmax(96px,120px)_minmax(100px,1fr)_minmax(130px,150px)]",
-                  )}
-                >
+                <div className={cn("graph-auto-grid", isFreeLabel && "graph-auto-grid-free-label")}>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Type
                     <select
@@ -5634,7 +7389,7 @@ function DiagramBlockEditor({
                 </div>
 
                 {feature.kind === "point" || feature.kind === "label" ? (
-                  <div className="mt-2 grid grid-cols-1 gap-2 border-t pt-2 md:grid-cols-2">
+                  <div className="graph-auto-grid mt-2 border-t pt-2">
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       x
                       <input
@@ -5658,8 +7413,53 @@ function DiagramBlockEditor({
                   </div>
                 ) : null}
 
+                {feature.kind === "line_segment" ? (
+                  <div className="graph-auto-grid mt-2 border-t pt-2">
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Start x
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={numberInputValue(feature.x1)}
+                        onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Start y
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={numberInputValue(feature.y1)}
+                        onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      End x
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={numberInputValue(feature.x2)}
+                        onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      End y
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={numberInputValue(feature.y2)}
+                        onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
                 {feature.kind === "region_between_curves" || feature.kind === "intersection" ? (
-                  <div className="mt-2 grid grid-cols-1 gap-2 border-t pt-2 md:grid-cols-5">
+                  <div className="graph-auto-grid mt-2 border-t pt-2">
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       First function
                       <select
@@ -5749,7 +7549,7 @@ function DiagramBlockEditor({
                 ) : null}
 
                 {feature.kind === "region_curve_axis" || feature.kind === "turning_point" || feature.kind === "tangent" ? (
-                  <div className="mt-2 grid grid-cols-1 gap-2 border-t pt-2 md:grid-cols-5">
+                  <div className="graph-auto-grid mt-2 border-t pt-2">
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Function
                       <select
@@ -5871,27 +7671,33 @@ function DiagramBlockEditor({
 
 export default function App() {
   const initialEditorDraft = loadInitialEditorDraft();
+  const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [createQuestion()], [initialEditorDraft]);
   const [frontMatter, setFrontMatter] = useState<FrontMatterConfig>(() => initialEditorDraft?.frontMatter ?? DEFAULT_FRONT_MATTER);
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
   const [savedTests, setSavedTests] = useState<SavedTest[]>(loadSavedTests);
   const [selectedSavedTestId, setSelectedSavedTestId] = useState("");
-  const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialEditorDraft?.questions ?? [createQuestion()]);
+  const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
   const [diskStorageStatus, setDiskStorageStatus] = useState<DiskStorageStatus>("loading");
   const [diskStorageMessage, setDiskStorageMessage] = useState("Loading disk saves");
   const [diskStorageHydrated, setDiskStorageHydrated] = useState(false);
-  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState<Set<string>>(() => new Set());
+  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState<Set<string>>(() => questionIdSet(initialQuestions));
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
   const [dragOverQuestion, setDragOverQuestion] = useState<QuestionDropPreview | null>(null);
   const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
   const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
   const [paneMode, setPaneMode] = useState<PaneMode>("split");
-  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
+  const [tocOpen, setTocOpen] = useState(true);
+  const [activeTocItemId, setActiveTocItemId] = useState(SCROLL_ANCHOR_FRONT_MATTER);
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [printRequested, setPrintRequested] = useState(false);
+  const [pdfExportActive, setPdfExportActive] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
+  const pdfExportRef = useRef<HTMLDivElement>(null);
+  const pdfExportRunIdRef = useRef(0);
   const mauthdownImportInputRef = useRef<HTMLInputElement>(null);
   const frontMatterRef = useRef(frontMatter);
   const questionsRef = useRef(questions);
@@ -5900,8 +7706,8 @@ export default function App() {
   const undoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const redoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const autosaveSequenceRef = useRef(0);
-  const scrollSyncSourceRef = useRef<"editor" | "preview" | null>(null);
-  const scrollSyncReleaseRef = useRef<number | null>(null);
+  const pendingEditorJumpAnchorRef = useRef<string | null>(null);
+  const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -5920,7 +7726,7 @@ export default function App() {
         const diskAutosave = normalizeEditorSnapshot(autosaveResponse.autosave);
         const autosave = newerAutosave(browserAutosave, diskAutosave);
         if (autosave) {
-          restoreEditorSnapshot(autosave);
+          restoreEditorSnapshot(autosave, { collapseQuestions: true });
           const selectedId =
             autosave.selectedSavedTestId && mergedSavedTests.some((test) => test.id === autosave.selectedSavedTestId)
               ? autosave.selectedSavedTestId
@@ -5956,7 +7762,7 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(new Set());
+    setCollapsedQuestionIds(questionIdSet(nextQuestions));
     setSelectedSavedTestId("");
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
   }, [diskStorageHydrated, questions]);
@@ -6038,6 +7844,13 @@ export default function App() {
     }),
     [paneMode],
   );
+  const appShellStyle = useMemo(
+    () => ({
+      gridTemplateColumns: tocOpen ? "3.25rem minmax(15rem, 18rem) minmax(0, 1fr)" : "3.25rem minmax(0, 1fr)",
+    }),
+    [tocOpen],
+  );
+  const documentTocItems = useMemo(() => buildDocumentToc(frontMatter, questions), [frontMatter, questions]);
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
@@ -6071,68 +7884,89 @@ export default function App() {
   }, [showPreview]);
 
   useLayoutEffect(() => {
-    if (!printRequested || !showPreview) return;
+    const editorPane = editorPaneRef.current;
+    if (!editorPane || !showEditor) return;
 
-    const timeoutId = window.setTimeout(() => {
-      window.print();
-      setPrintRequested(false);
-    }, 150);
+    editorPane.scrollLeft = 0;
 
-    return () => window.clearTimeout(timeoutId);
-  }, [printRequested, showPreview, frontMatter, questions, logos]);
+    const keepEditorPinnedLeft = () => {
+      if (editorPane.scrollLeft !== 0) editorPane.scrollLeft = 0;
+    };
+
+    editorPane.addEventListener("scroll", keepEditorPinnedLeft, { passive: true });
+    return () => editorPane.removeEventListener("scroll", keepEditorPinnedLeft);
+  }, [showEditor]);
 
   useEffect(() => {
-    const editorPane = editorPaneRef.current;
-    const previewPane = previewPaneRef.current;
-    if (!scrollSyncEnabled || !showEditor || !showPreview || !editorPane || !previewPane) return;
+    if (!pdfExportActive || pdfExportRunIdRef.current) return;
 
-    const releaseProgrammaticScroll = () => {
-      if (scrollSyncReleaseRef.current !== null) {
-        window.clearTimeout(scrollSyncReleaseRef.current);
+    const runId = Date.now();
+    pdfExportRunIdRef.current = runId;
+
+    async function runPdfExport() {
+      try {
+        await nextAnimationFrame();
+        const exportRoot = pdfExportRef.current;
+        if (!exportRoot) throw new Error("The PDF export renderer was not available.");
+        await exportPreviewRootToPdf(exportRoot, `${slugifyFileName(defaultSavedTestName(frontMatter))}.pdf`);
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "PDF export failed.");
+      } finally {
+        if (pdfExportRunIdRef.current === runId) {
+          pdfExportRunIdRef.current = 0;
+          setPdfExportActive(false);
+          setIsExportingPdf(false);
+        }
       }
-      scrollSyncReleaseRef.current = window.setTimeout(() => {
-        scrollSyncSourceRef.current = null;
-        scrollSyncReleaseRef.current = null;
-      }, SCROLL_SYNC_RELEASE_MS);
-    };
+    }
 
-    const syncScroll = (source: HTMLElement, target: HTMLElement, sourceName: "editor" | "preview") => {
-      if (scrollSyncSourceRef.current && scrollSyncSourceRef.current !== sourceName) return;
-      scrollSyncSourceRef.current = sourceName;
-      const anchorPosition = paneAnchorPosition(source);
-      if (!anchorPosition || !scrollToAnchorPosition(target, anchorPosition)) {
-        setScrollableRatio(target, scrollableRatio(source));
-      }
-      releaseProgrammaticScroll();
-    };
-
-    const syncFromEditor = () => syncScroll(editorPane, previewPane, "editor");
-    const syncFromPreview = () => syncScroll(previewPane, editorPane, "preview");
-
-    editorPane.addEventListener("scroll", syncFromEditor, { passive: true });
-    previewPane.addEventListener("scroll", syncFromPreview, { passive: true });
-    syncFromEditor();
-
-    return () => {
-      editorPane.removeEventListener("scroll", syncFromEditor);
-      previewPane.removeEventListener("scroll", syncFromPreview);
-      if (scrollSyncReleaseRef.current !== null) {
-        window.clearTimeout(scrollSyncReleaseRef.current);
-        scrollSyncReleaseRef.current = null;
-      }
-      scrollSyncSourceRef.current = null;
-    };
-  }, [scrollSyncEnabled, showEditor, showPreview, previewScale]);
+    void runPdfExport();
+  }, [frontMatter, pdfExportActive]);
 
   useLayoutEffect(() => {
-    const editorPane = editorPaneRef.current;
-    const previewPane = previewPaneRef.current;
-    if (!scrollSyncEnabled || !showEditor || !showPreview || !editorPane || !previewPane) return;
-    const anchorPosition = paneAnchorPosition(editorPane);
-    if (!anchorPosition || !scrollToAnchorPosition(previewPane, anchorPosition)) {
-      setScrollableRatio(previewPane, scrollableRatio(editorPane));
-    }
-  }, [frontMatter, questions, previewScale, scrollSyncEnabled, showEditor, showPreview]);
+    if (!pendingEditorJumpAnchorRef.current && !pendingPreviewJumpAnchorRef.current) return;
+
+    let firstFrame = 0;
+    let secondFrame = 0;
+    let retryFrame = 0;
+    const jumpPendingAnchors = () => {
+      let attemptedJump = false;
+      const editorAnchor = pendingEditorJumpAnchorRef.current;
+      const previewAnchor = pendingPreviewJumpAnchorRef.current;
+
+      if (editorAnchor && showEditor && editorPaneRef.current) {
+        attemptedJump = true;
+        if (scrollToAnchorPosition(editorPaneRef.current, { anchor: editorAnchor, progress: 0 })) {
+          pendingEditorJumpAnchorRef.current = null;
+        }
+      }
+
+      if (previewAnchor && showPreview && previewPaneRef.current) {
+        attemptedJump = true;
+        if (scrollToAnchorPosition(previewPaneRef.current, { anchor: previewAnchor, progress: 0 })) {
+          pendingPreviewJumpAnchorRef.current = null;
+        }
+      }
+
+      return attemptedJump;
+    };
+
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (!jumpPendingAnchors()) {
+          retryFrame = window.requestAnimationFrame(() => {
+            jumpPendingAnchors();
+          });
+        }
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      window.cancelAnimationFrame(retryFrame);
+    };
+  }, [showEditor, showPreview, previewScale, questions]);
 
   function currentEditorSnapshot(): EditorHistorySnapshot {
     return {
@@ -6157,11 +7991,14 @@ export default function App() {
     setFrontMatter((current) => (typeof updater === "function" ? updater(current) : updater));
   }
 
-  function restoreEditorSnapshot(snapshot: EditorHistorySnapshot) {
+  function restoreEditorSnapshot(snapshot: EditorHistorySnapshot, options: { collapseQuestions?: boolean } = {}) {
     setFrontMatter(snapshot.frontMatter);
     setQuestions(snapshot.questions);
     frontMatterRef.current = snapshot.frontMatter;
     questionsRef.current = snapshot.questions;
+    if (options.collapseQuestions) {
+      setCollapsedQuestionIds(questionIdSet(snapshot.questions));
+    }
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedSubsection(null);
@@ -6241,7 +8078,7 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(new Set());
+    setCollapsedQuestionIds(questionIdSet(nextQuestions));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedSubsection(null);
@@ -6344,7 +8181,7 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(new Set());
+    setCollapsedQuestionIds(questionIdSet(nextQuestions));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedSubsection(null);
@@ -6536,12 +8373,102 @@ export default function App() {
     });
   }
 
-  function showSplitPane() {
-    setPaneMode("split");
+  function revealEditorAnchor(anchor: string) {
+    const questionId = questionIdFromScrollAnchor(anchor);
+    if (questionId) {
+      setCollapsedQuestionIds((current) => {
+        if (!current.has(questionId)) return current;
+        const next = new Set(current);
+        next.delete(questionId);
+        return next;
+      });
+    }
+
+    setEditorRevealRequest((current) => ({
+      anchor,
+      sequence: (current?.sequence ?? 0) + 1,
+    }));
   }
 
-  function toggleScrollSync() {
-    setScrollSyncEnabled((current) => !current);
+  function openSignalForAnchor(anchor: string) {
+    return scrollAnchorContains(anchor, editorRevealRequest?.anchor) ? editorRevealRequest?.sequence : undefined;
+  }
+
+  function isActiveEditorAnchor(anchor: string) {
+    return activeTocItemId === anchor;
+  }
+
+  function jumpPendingDocumentAnchors() {
+    let attemptedJump = false;
+    const editorAnchor = pendingEditorJumpAnchorRef.current;
+    const previewAnchor = pendingPreviewJumpAnchorRef.current;
+
+    if (editorAnchor && showEditor && editorPaneRef.current) {
+      attemptedJump = true;
+      if (scrollToAnchorPosition(editorPaneRef.current, { anchor: editorAnchor, progress: 0 })) {
+        pendingEditorJumpAnchorRef.current = null;
+      }
+    }
+
+    if (previewAnchor && showPreview && previewPaneRef.current) {
+      attemptedJump = true;
+      if (scrollToAnchorPosition(previewPaneRef.current, { anchor: previewAnchor, progress: 0 })) {
+        pendingPreviewJumpAnchorRef.current = null;
+      }
+    }
+
+    return attemptedJump;
+  }
+
+  function queueDocumentJump(editorAnchor: string, previewAnchor: string) {
+    pendingEditorJumpAnchorRef.current = editorAnchor;
+    pendingPreviewJumpAnchorRef.current = previewAnchor;
+
+    if (!showEditor || !showPreview) {
+      setPaneMode("split");
+    }
+
+    window.requestAnimationFrame(() => {
+      if (!jumpPendingDocumentAnchors()) {
+        window.requestAnimationFrame(() => {
+          jumpPendingDocumentAnchors();
+        });
+      }
+    });
+  }
+
+  function jumpToTocItem(item: DocumentTocItem) {
+    setActiveTocItemId(item.id);
+    revealEditorAnchor(item.editorAnchor);
+    queueDocumentJump(item.editorAnchor, item.previewAnchor);
+  }
+
+  function jumpPreviewToQuestion(questionId: string) {
+    const anchor = questionScrollAnchor(questionId);
+    setActiveTocItemId(anchor);
+    pendingPreviewJumpAnchorRef.current = anchor;
+
+    if (!showPreview) {
+      setPaneMode("split");
+      return;
+    }
+
+    const previewPane = previewPaneRef.current;
+    if (previewPane && scrollToAnchorPosition(previewPane, { anchor, progress: 0 })) {
+      pendingPreviewJumpAnchorRef.current = null;
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const nextPreviewPane = previewPaneRef.current;
+      if (nextPreviewPane && scrollToAnchorPosition(nextPreviewPane, { anchor, progress: 0 })) {
+        pendingPreviewJumpAnchorRef.current = null;
+      }
+    });
+  }
+
+  function showSplitPane() {
+    setPaneMode("split");
   }
 
   function toggleTheme() {
@@ -6557,8 +8484,9 @@ export default function App() {
   }
 
   function exportPdf() {
-    setPaneMode("preview");
-    setPrintRequested(true);
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    setPdfExportActive(true);
   }
 
   function exportMauthdownFile() {
@@ -6613,7 +8541,7 @@ export default function App() {
     setQuestions(nextQuestions);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(new Set());
+    setCollapsedQuestionIds(questionIdSet(nextQuestions));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedSubsection(null);
@@ -6644,7 +8572,11 @@ export default function App() {
     const preview = event.currentTarget.closest("[data-drag-preview]");
     if (preview instanceof HTMLElement) {
       const rect = preview.getBoundingClientRect();
-      event.dataTransfer.setDragImage(preview, Math.min(48, rect.width / 2), 28);
+      try {
+        event.dataTransfer.setDragImage(preview, Math.min(48, rect.width / 2), 28);
+      } catch {
+        // Some browsers reject element drag images in edge cases; the drag itself should still proceed.
+      }
     }
   }
 
@@ -6867,13 +8799,23 @@ export default function App() {
   }
 
   function readSubsectionDrag(event: DragEvent<HTMLElement>) {
-    return draggedSubsection ?? parseSubsectionDrag(event.dataTransfer.getData("application/x-math-subsection"));
+    return (
+      draggedSubsection ??
+      parseSubsectionDrag(event.dataTransfer.getData(SUBSECTION_DRAG_MIME)) ??
+      parseSubsectionDrag(event.dataTransfer.getData("text/plain"))
+    );
   }
 
   function handleSubsectionDragStart(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
     event.stopPropagation();
+    const payload = serializeSubsectionDrag(target);
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-math-subsection", JSON.stringify(target));
+    event.dataTransfer.setData("text/plain", `${SUBSECTION_DRAG_TEXT_PREFIX}${payload}`);
+    try {
+      event.dataTransfer.setData(SUBSECTION_DRAG_MIME, payload);
+    } catch {
+      // The prefixed text/plain payload above is the cross-browser fallback.
+    }
     setModuleDragImage(event);
     setDraggedSubsection(target);
     setDragOverSubsection(null);
@@ -7022,16 +8964,19 @@ export default function App() {
   function addQuestion() {
     const question = createQuestion();
     setQuestionsWithHistory((current) => [...current, question]);
+    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
   }
 
   function insertQuestionAtStart() {
     const question = createQuestion();
     setQuestionsWithHistory((current) => insertAtStart(current, question));
+    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
   }
 
   function insertQuestionAfter(afterQuestionId: string) {
     const question = createQuestion();
     setQuestionsWithHistory((current) => insertAfter(current, afterQuestionId, question));
+    setCollapsedQuestionIds((current) => new Set(current).add(question.id));
   }
 
   function addPageBreakAfterLastQuestion() {
@@ -7066,8 +9011,11 @@ export default function App() {
     const nextQuestions = remainingQuestions.length ? remainingQuestions : [createQuestion()];
     setQuestionsWithHistory(nextQuestions);
     setCollapsedQuestionIds((current) => {
-      const next = new Set(current);
-      next.delete(questionId);
+      const nextQuestionIds = questionIdSet(nextQuestions);
+      const next = new Set([...current].filter((id) => nextQuestionIds.has(id)));
+      if (!remainingQuestions.length) {
+        nextQuestions.forEach((question) => next.add(question.id));
+      }
       return next;
     });
   }
@@ -7182,10 +9130,13 @@ export default function App() {
     );
     const blockTarget: SubsectionDragTarget = { kind: "question-block", questionId: question.id, id: block.id };
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(blockTarget));
+    const blockAnchor = questionBlockScrollAnchor(question.id, block.id);
+    const blockOpenSignal = openSignalForAnchor(blockAnchor);
+    const blockActive = isActiveEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
-      "data-scroll-anchor": questionBlockScrollAnchor(question.id, block.id),
+      "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, blockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, blockTarget),
@@ -7199,6 +9150,8 @@ export default function App() {
             label={`Space block ${blockIndex + 1}`}
             lines={block.lines}
             dragHandle={subsectionDragHandle(blockTarget, `Drag space block ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(lines) => updateContentBlock(question.id, block.id, { lines })}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
@@ -7213,9 +9166,13 @@ export default function App() {
             label={`Diagram block ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
+            textSide={block.diagramTextSide}
             dragHandle={subsectionDragHandle(blockTarget, `Drag diagram block ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(graphConfig) => updateContentBlock(question.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updateContentBlock(question.id, block.id, { diagramAlign })}
+            onTextSideChange={(diagramTextSide) => updateContentBlock(question.id, block.id, { diagramTextSide })}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
         </div>,
@@ -7229,6 +9186,24 @@ export default function App() {
             label={`Choice list ${blockIndex + 1}`}
             block={block}
             dragHandle={subsectionDragHandle(blockTarget, `Drag choice list ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
+            onRemove={() => removeQuestionBlock(question.id, block.id)}
+          />
+        </div>,
+      );
+    }
+
+    if (block.kind === "table") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <TableBlockEditor
+            label={`Table block ${blockIndex + 1}`}
+            block={block}
+            dragHandle={subsectionDragHandle(blockTarget, `Drag table block ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
@@ -7243,6 +9218,8 @@ export default function App() {
             label={`Text block ${blockIndex + 1}`}
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(blockTarget, `Drag text block ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
             minHeightClassName="min-h-[110px]"
             onChange={(text) => updateContentBlock(question.id, block.id, { text })}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
@@ -7272,10 +9249,13 @@ export default function App() {
       id: block.id,
     };
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(partBlockTarget));
+    const blockAnchor = partBlockScrollAnchor(question.id, part.id, block.id);
+    const blockOpenSignal = openSignalForAnchor(blockAnchor);
+    const blockActive = isActiveEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
-      "data-scroll-anchor": partBlockScrollAnchor(question.id, part.id, block.id),
+      "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, partBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, partBlockTarget),
@@ -7290,6 +9270,8 @@ export default function App() {
             lines={block.lines}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part space ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(lines) => updatePartContentBlock(question.id, part.id, block.id, { lines })}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
@@ -7304,10 +9286,14 @@ export default function App() {
             label={`Part diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
+            textSide={block.diagramTextSide}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part diagram ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(graphConfig) => updatePartContentBlock(question.id, part.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updatePartContentBlock(question.id, part.id, block.id, { diagramAlign })}
+            onTextSideChange={(diagramTextSide) => updatePartContentBlock(question.id, part.id, block.id, { diagramTextSide })}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
         </div>,
@@ -7322,6 +9308,25 @@ export default function App() {
             block={block}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part choice list ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
+            onRemove={() => removePartBlock(question.id, part, block.id)}
+          />
+        </div>,
+      );
+    }
+
+    if (block.kind === "table") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <TableBlockEditor
+            label={`Part table ${blockIndex + 1}`}
+            block={block}
+            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part table ${blockIndex + 1}`)}
+            muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
@@ -7337,6 +9342,8 @@ export default function App() {
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part text ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             minHeightClassName="min-h-[74px]"
             onChange={(text) => updatePartContentBlock(question.id, part.id, block.id, { text })}
             onRemove={() => removePartBlock(question.id, part, block.id)}
@@ -7363,10 +9370,13 @@ export default function App() {
       id: block.id,
     };
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(subpartBlockTarget));
+    const blockAnchor = subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id);
+    const blockOpenSignal = openSignalForAnchor(blockAnchor);
+    const blockActive = isActiveEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
-      "data-scroll-anchor": subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id),
+      "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, subpartBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, subpartBlockTarget),
@@ -7381,6 +9391,8 @@ export default function App() {
             lines={block.lines}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart space ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(lines) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { lines })}
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
@@ -7395,10 +9407,16 @@ export default function App() {
             label={`Subpart diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
+            textSide={block.diagramTextSide}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart diagram ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(graphConfig) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramAlign })}
+            onTextSideChange={(diagramTextSide) =>
+              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramTextSide })
+            }
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
         </div>,
@@ -7413,6 +9431,25 @@ export default function App() {
             block={block}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart choice list ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
+            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
+          />
+        </div>,
+      );
+    }
+
+    if (block.kind === "table") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <TableBlockEditor
+            label={`Subpart table ${blockIndex + 1}`}
+            block={block}
+            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart table ${blockIndex + 1}`)}
+            muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
@@ -7428,6 +9465,8 @@ export default function App() {
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart text ${blockIndex + 1}`)}
             muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
             minHeightClassName="min-h-[68px]"
             onChange={(text) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { text })}
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
@@ -7451,12 +9490,15 @@ export default function App() {
       partId: part.id,
       id: subpart.id,
     };
+    const subpartAnchor = subpartScrollAnchor(question.id, part.id, subpart.id);
+    const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
+    const subpartActive = isActiveEditorAnchor(subpartAnchor);
 
     return (
       <div
         key={subpart.id}
         data-drag-preview
-        data-scroll-anchor={subpartScrollAnchor(question.id, part.id, subpart.id)}
+        data-scroll-anchor={subpartAnchor}
         className={cn("rounded-md transition-all", subsectionDragClasses(subpartTarget))}
         onDragOver={(event) => handleSubsectionDragOver(event, subpartTarget)}
         onDragLeave={(event) => handleSubsectionDragLeave(event, subpartTarget)}
@@ -7482,6 +9524,9 @@ export default function App() {
           }
           className="bg-muted/20"
           bodyClassName="p-3"
+          defaultOpen={false}
+          active={subpartActive}
+          openSignal={subpartOpenSignal}
         >
           {subpart.contentBlocks.some((block) => block.kind !== "pageBreak")
             ? containerDropZone(
@@ -7506,6 +9551,7 @@ export default function App() {
             className="mt-3 pt-3"
             onAddText={() => addSubpartBlock(question.id, part, subpart, "text")}
             onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
+            onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
             onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
             onAddSpace={() => addSubpartBlock(question.id, part, subpart, "space")}
           />
@@ -7523,6 +9569,9 @@ export default function App() {
     );
     const partTarget: SubsectionDragTarget = { kind: "part", questionId: question.id, id: part.id };
     const partLabel = alphaLabel(partIndex);
+    const partAnchor = partScrollAnchor(question.id, part.id);
+    const partOpenSignal = openSignalForAnchor(partAnchor);
+    const partActive = isActiveEditorAnchor(partAnchor);
     const partInsertAction = {
       label: "Subpart",
       tooltip: "Add a roman-numbered item, such as (i), inside this part",
@@ -7531,7 +9580,7 @@ export default function App() {
     };
 
     return (
-      <div key={part.id} data-scroll-anchor={partScrollAnchor(question.id, part.id)}>
+      <div key={part.id} data-scroll-anchor={partAnchor}>
         <div
           data-drag-preview
           className={cn("rounded-md transition-all", subsectionDragClasses(partTarget))}
@@ -7568,6 +9617,9 @@ export default function App() {
             }
             className="bg-background"
             bodyClassName="p-3"
+            defaultOpen={false}
+            active={partActive}
+            openSignal={partOpenSignal}
           >
             {partItems.length
               ? containerDropZone({ kind: "part", questionId: question.id, partId: part.id }, "start", Boolean(draggedSubsection))
@@ -7592,6 +9644,7 @@ export default function App() {
               className="mt-3 pt-3"
               onAddText={() => addPartBlock(question.id, part, "text")}
               onAddChoices={() => addPartBlock(question.id, part, "choices")}
+              onAddTable={() => addPartBlock(question.id, part, "table")}
               onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
               onAddSpace={() => addPartBlock(question.id, part, "space")}
               extraActions={[partInsertAction]}
@@ -7655,10 +9708,11 @@ export default function App() {
               title="Export PDF"
               aria-label="Export PDF"
               onClick={exportPdf}
+              disabled={isExportingPdf}
               className={cn("ml-2", HEADER_ACTION_CLASS)}
             >
               <FileDown data-icon="inline-start" />
-              Export PDF
+              {isExportingPdf ? "Exporting..." : "Export PDF"}
             </Button>
             <div className={HEADER_GROUP_CLASS}>
               <Button
@@ -7705,20 +9759,6 @@ export default function App() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                title={scrollSyncEnabled ? "Turn scroll sync off" : "Turn scroll sync on"}
-                aria-label={scrollSyncEnabled ? "Turn scroll sync off" : "Turn scroll sync on"}
-                aria-pressed={scrollSyncEnabled}
-                onClick={toggleScrollSync}
-                className={cn(HEADER_ICON_BUTTON_CLASS, scrollSyncEnabled && HEADER_ICON_ACTIVE_CLASS)}
-              >
-                <Link2 />
-              </Button>
-            </div>
-            <div className={HEADER_GROUP_CLASS}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
                 title="Show editor and display"
                 aria-label="Show editor and display"
                 aria-pressed={paneMode === "split"}
@@ -7756,210 +9796,255 @@ export default function App() {
         </div>
       </header>
 
-      <main className="grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={workspaceStyle}>
-        {showEditor ? (
-          <section ref={editorPaneRef} className="min-h-0 overflow-y-auto border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r">
-            <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              <SavedTestManager
-                savedTests={savedTests}
-                selectedSavedTestId={selectedSavedTestId}
-                diskStorageMessage={diskStorageMessage}
-                onSelectSavedTest={selectSavedTest}
-                onNewTest={startNewTest}
-                onSaveTest={saveCurrentTest}
-                onSaveTestAs={saveCurrentTestAs}
-                onRenameSavedTest={renameSavedTest}
-                onDeleteSavedTest={deleteSavedTest}
-              />
+      <main className="grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={appShellStyle}>
+        <DocumentNavigatorRail
+          open={tocOpen}
+          items={documentTocItems}
+          activeItemId={activeTocItemId}
+          onToggle={() => setTocOpen((current) => !current)}
+          onJump={jumpToTocItem}
+        />
+        {tocOpen ? <DocumentNavigator items={documentTocItems} activeItemId={activeTocItemId} onJump={jumpToTocItem} /> : null}
+        <div className="grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
+          {showEditor ? (
+            <section
+              ref={editorPaneRef}
+              className="min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r"
+            >
+              <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-4">
+                <SavedTestManager
+                  savedTests={savedTests}
+                  selectedSavedTestId={selectedSavedTestId}
+                  diskStorageMessage={diskStorageMessage}
+                  onSelectSavedTest={selectSavedTest}
+                  onNewTest={startNewTest}
+                  onSaveTest={saveCurrentTest}
+                  onSaveTestAs={saveCurrentTestAs}
+                  onRenameSavedTest={renameSavedTest}
+                  onDeleteSavedTest={deleteSavedTest}
+                />
 
-              <div className="rounded-lg border bg-card p-4 shadow-panel">
-                <div className="flex flex-col gap-3">
-                  <FrontMatterEditor
-                    frontMatter={frontMatter}
-                    logos={logos}
-                    onChange={updateFrontMatter}
-                    onAddLogo={addLogo}
-                    onRemoveLogo={removeLogo}
+                <div
+                  className={cn(
+                    "rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                    isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
+                  )}
+                  data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+                >
+                  <div className="flex flex-col gap-3">
+                    <FrontMatterEditor
+                      frontMatter={frontMatter}
+                      logos={logos}
+                      openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                      onChange={updateFrontMatter}
+                      onAddLogo={addLogo}
+                      onRemoveLogo={removeLogo}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <TestLevelInsertionActions onAddQuestion={insertQuestionAtStart} />
+                  {questions.map((question, index) => {
+                    const hasParts = question.parts.length > 0;
+                    const questionItems = orderedQuestionItems(question);
+                    const questionAnchor = questionScrollAnchor(question.id);
+                    const questionActive = isActiveEditorAnchor(questionAnchor);
+                    const collapsed = collapsedQuestionIds.has(question.id);
+                    const dragging = draggedQuestionId === question.id;
+                    const questionDropPlacement =
+                      dragOverQuestion?.questionId === question.id && draggedQuestionId !== question.id ? dragOverQuestion.placement : null;
+                    const questionHasPageBreak =
+                      question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
+
+                    return (
+                      <div key={question.id} className="contents">
+                        <article
+                          className={cn(
+                            "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                            questionActive && EDITOR_ACTIVE_PANEL_CLASS,
+                            collapsed && "py-3",
+                            dragging && "scale-[0.995] opacity-70 shadow-2xl",
+                            questionDropPlacement === "before" &&
+                              "before:absolute before:-top-3 before:left-3 before:right-3 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
+                            questionDropPlacement === "after" &&
+                              "after:absolute after:-bottom-3 after:left-3 after:right-3 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
+                          )}
+                          data-drag-preview
+                          data-scroll-anchor={questionAnchor}
+                          onDragOver={(event) => handleQuestionDragOver(event, question.id)}
+                          onDragLeave={(event) => handleQuestionDragLeave(event, question.id)}
+                          onDrop={(event) => handleQuestionDrop(event, question.id)}
+                        >
+                          <div className={cn("flex items-center justify-between gap-3", collapsed ? "flex-nowrap" : "mb-4 flex-wrap")}>
+                            <div className={cn("flex min-w-0 items-center gap-2", collapsed ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                draggable
+                                title="Drag question"
+                                aria-label={`Drag Question ${questionDisplayNumber(frontMatter, index)}`}
+                                onClick={(event) => event.stopPropagation()}
+                                onDragStart={(event) => handleQuestionDragStart(event, question.id)}
+                                onDragEnd={handleQuestionDragEnd}
+                                className="size-9 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                              >
+                                <GripVertical />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleQuestionCollapsed(question.id);
+                                }}
+                                title={collapsed ? "Expand question" : "Collapse question"}
+                                aria-label={collapsed ? "Expand question" : "Collapse question"}
+                                aria-expanded={!collapsed}
+                                className="size-9 shrink-0"
+                              >
+                                {collapsed ? <ChevronRight /> : <ChevronDown />}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  jumpPreviewToQuestion(question.id);
+                                }}
+                                className={cn(
+                                  "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
+                                  questionActive &&
+                                    "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                                )}
+                              >
+                                Question {questionDisplayNumber(frontMatter, index)}
+                              </Button>
+                              {hasParts ? (
+                                <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
+                                  {markLabel(questionMarks(question))}
+                                </Badge>
+                              ) : (
+                                <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+                                  <span className="font-medium text-muted-foreground">Marks</span>
+                                  <input
+                                    aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
+                                    type="number"
+                                    min={0}
+                                    value={question.marks}
+                                    onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
+                                    className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
+                                  />
+                                </label>
+                              )}
+                              {collapsed ? <InlineMathSummary source={firstTextSource(question.contentBlocks)} /> : null}
+                            </div>
+                            <div className={cn("flex items-center gap-2", collapsed ? "shrink-0 flex-nowrap" : "flex-wrap")}>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                title={`Remove Question ${index + 1}`}
+                                aria-label={`Remove Question ${index + 1}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeQuestion(question.id);
+                                }}
+                                className="size-9 shrink-0"
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {!collapsed ? (
+                            <>
+                              {questionItems.length
+                                ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
+                                : null}
+                              <div className="flex flex-col gap-3">
+                                {questionItems.map((item, itemIndex) =>
+                                  item.kind === "block"
+                                    ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
+                                    : renderPartPanel(question, item.part),
+                                )}
+                              </div>
+                              {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
+                              <ContentInsertionActions
+                                buttonLabel="Add"
+                                centered
+                                className="mt-4 pt-3"
+                                onAddText={() => addQuestionBlock(question.id, "text")}
+                                onAddChoices={() => addQuestionBlock(question.id, "choices")}
+                                onAddTable={() => addQuestionBlock(question.id, "table")}
+                                onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                onAddSpace={() => addQuestionBlock(question.id, "space")}
+                                extraActions={[
+                                  {
+                                    label: "Part",
+                                    tooltip: "Add a lettered question part, such as (a), (b), (c)",
+                                    icon: <GitBranch className="size-4" aria-hidden="true" />,
+                                    onClick: () => addPart(question.id),
+                                  },
+                                ]}
+                              />
+                            </>
+                          ) : null}
+                        </article>
+                        {questionHasPageBreak ? (
+                          <PageBreakBlockEditor
+                            label={`Page break after Question ${index + 1}`}
+                            onRemove={() => removePageBreakAfterQuestion(question.id)}
+                          />
+                        ) : null}
+                        {index < questions.length - 1 ? (
+                          <TestLevelInsertionActions
+                            className="py-1"
+                            onAddQuestion={() => insertQuestionAfter(question.id)}
+                            onAddPageBreak={questionHasPageBreak ? undefined : () => addPageBreakAfterQuestion(question.id)}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  <TestLevelInsertionActions
+                    className="pb-6 pt-1"
+                    onAddQuestion={addQuestion}
+                    onAddPageBreak={
+                      !questions.length ||
+                      Boolean(
+                        questions.at(-1)?.pageBreakAfter || questions.at(-1)?.contentBlocks.some((block) => block.kind === "pageBreak"),
+                      )
+                        ? undefined
+                        : addPageBreakAfterLastQuestion
+                    }
                   />
                 </div>
               </div>
+            </section>
+          ) : null}
 
-              <div className="flex flex-col gap-4">
-                <TestLevelInsertionActions onAddQuestion={insertQuestionAtStart} />
-                {questions.map((question, index) => {
-                  const hasParts = question.parts.length > 0;
-                  const questionItems = orderedQuestionItems(question);
-                  const collapsed = collapsedQuestionIds.has(question.id);
-                  const dragging = draggedQuestionId === question.id;
-                  const questionDropPlacement =
-                    dragOverQuestion?.questionId === question.id && draggedQuestionId !== question.id ? dragOverQuestion.placement : null;
-                  const questionHasPageBreak =
-                    question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
-
-                  return (
-                    <div key={question.id} className="contents">
-                      <article
-                        className={cn(
-                          "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                          collapsed && "py-3",
-                          dragging && "scale-[0.995] opacity-70 shadow-2xl",
-                          questionDropPlacement === "before" &&
-                            "before:absolute before:-top-3 before:left-3 before:right-3 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
-                          questionDropPlacement === "after" &&
-                            "after:absolute after:-bottom-3 after:left-3 after:right-3 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
-                        )}
-                        data-drag-preview
-                        data-scroll-anchor={questionScrollAnchor(question.id)}
-                        onDragOver={(event) => handleQuestionDragOver(event, question.id)}
-                        onDragLeave={(event) => handleQuestionDragLeave(event, question.id)}
-                        onDrop={(event) => handleQuestionDrop(event, question.id)}
-                      >
-                        <div className={cn("flex items-center justify-between gap-3", collapsed ? "flex-nowrap" : "mb-4 flex-wrap")}>
-                          <div className={cn("flex min-w-0 items-center gap-2", collapsed ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              draggable
-                              title="Drag question"
-                              aria-label={`Drag Question ${questionDisplayNumber(frontMatter, index)}`}
-                              onClick={(event) => event.stopPropagation()}
-                              onDragStart={(event) => handleQuestionDragStart(event, question.id)}
-                              onDragEnd={handleQuestionDragEnd}
-                              className="size-9 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
-                            >
-                              <GripVertical />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleQuestionCollapsed(question.id);
-                              }}
-                              title={collapsed ? "Expand question" : "Collapse question"}
-                              aria-label={collapsed ? "Expand question" : "Collapse question"}
-                              aria-expanded={!collapsed}
-                              className="size-9 shrink-0"
-                            >
-                              {collapsed ? <ChevronRight /> : <ChevronDown />}
-                            </Button>
-                            <Badge variant="outline" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                              Question {questionDisplayNumber(frontMatter, index)}
-                            </Badge>
-                            {hasParts ? (
-                              <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                                {markLabel(questionMarks(question))}
-                              </Badge>
-                            ) : (
-                              <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                <span className="font-medium text-muted-foreground">Marks</span>
-                                <input
-                                  aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
-                                  type="number"
-                                  min={0}
-                                  value={question.marks}
-                                  onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                                  className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
-                                />
-                              </label>
-                            )}
-                            {collapsed ? <InlineMathSummary source={firstTextSource(question.contentBlocks)} /> : null}
-                          </div>
-                          <div className={cn("flex items-center gap-2", collapsed ? "shrink-0 flex-nowrap" : "flex-wrap")}>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              title={`Remove Question ${index + 1}`}
-                              aria-label={`Remove Question ${index + 1}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                removeQuestion(question.id);
-                              }}
-                              className="size-9 shrink-0"
-                            >
-                              <Trash2 />
-                            </Button>
-                          </div>
-                        </div>
-
-                        {!collapsed ? (
-                          <>
-                            {questionItems.length
-                              ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
-                              : null}
-                            <div className="flex flex-col gap-3">
-                              {questionItems.map((item, itemIndex) =>
-                                item.kind === "block"
-                                  ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
-                                  : renderPartPanel(question, item.part),
-                              )}
-                            </div>
-                            {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
-                            <ContentInsertionActions
-                              buttonLabel="Add"
-                              centered
-                              className="mt-4 pt-3"
-                              onAddText={() => addQuestionBlock(question.id, "text")}
-                              onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                              onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                              onAddSpace={() => addQuestionBlock(question.id, "space")}
-                              extraActions={[
-                                {
-                                  label: "Part",
-                                  tooltip: "Add a lettered question part, such as (a), (b), (c)",
-                                  icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                  onClick: () => addPart(question.id),
-                                },
-                              ]}
-                            />
-                          </>
-                        ) : null}
-                      </article>
-                      {questionHasPageBreak ? (
-                        <PageBreakBlockEditor
-                          label={`Page break after Question ${index + 1}`}
-                          onRemove={() => removePageBreakAfterQuestion(question.id)}
-                        />
-                      ) : null}
-                      {index < questions.length - 1 ? (
-                        <TestLevelInsertionActions
-                          className="py-1"
-                          onAddQuestion={() => insertQuestionAfter(question.id)}
-                          onAddPageBreak={questionHasPageBreak ? undefined : () => addPageBreakAfterQuestion(question.id)}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-                <TestLevelInsertionActions
-                  className="pb-6 pt-1"
-                  onAddQuestion={addQuestion}
-                  onAddPageBreak={
-                    !questions.length ||
-                    Boolean(questions.at(-1)?.pageBreakAfter || questions.at(-1)?.contentBlocks.some((block) => block.kind === "pageBreak"))
-                      ? undefined
-                      : addPageBreakAfterLastQuestion
-                  }
-                />
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {showPreview ? (
-          <section ref={previewPaneRef} className="min-h-0 overflow-auto bg-muted/70 p-4">
-            <PaginatedTestPreview
-              frontMatter={frontMatter}
-              logos={logos}
-              totalMarks={totalMarks}
-              questions={questions}
-              scale={previewScale}
-              onGraphConfigChange={updatePreviewGraphConfig}
-            />
-          </section>
-        ) : null}
+          {showPreview ? (
+            <section ref={previewPaneRef} className="min-h-0 overflow-auto bg-muted/70 p-4">
+              <PaginatedTestPreview
+                frontMatter={frontMatter}
+                logos={logos}
+                totalMarks={totalMarks}
+                questions={questions}
+                scale={previewScale}
+                onGraphConfigChange={updatePreviewGraphConfig}
+              />
+            </section>
+          ) : null}
+        </div>
       </main>
+      {pdfExportActive ? (
+        <div ref={pdfExportRef} className="pdf-export-stage" aria-hidden="true">
+          <PaginatedTestPreview frontMatter={frontMatter} logos={logos} totalMarks={totalMarks} questions={questions} scale={1} />
+        </div>
+      ) : null}
     </div>
   );
 }

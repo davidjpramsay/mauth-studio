@@ -96,9 +96,7 @@
 
 @layer components {
   .latex-inline {
-    display: inline-block;
-    line-height: 1;
-    vertical-align: baseline;
+    white-space: nowrap;
   }
 
   .inline-math-truncate {
@@ -117,6 +115,77 @@
 
   .inline-math-truncate .katex {
     white-space: nowrap;
+  }
+
+  .table-editor-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.45rem;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-editor-scroll:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .table-editor-scroll::-webkit-scrollbar {
+    height: 0.7rem;
+  }
+
+  .table-editor-scroll::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 999px;
+  }
+
+  .table-editor-scroll::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border: 2px solid hsl(var(--muted));
+    border-radius: 999px;
+  }
+
+  .table-editor-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  .graph-editor-controls {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .graph-editor-controls label,
+  .graph-editor-controls .graph-auto-grid > * {
+    min-width: 0;
+  }
+
+  .graph-editor-controls input:not([type="checkbox"]):not([type="radio"]),
+  .graph-editor-controls select,
+  .graph-editor-controls textarea {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .graph-auto-grid {
+    align-items: end;
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+    min-width: 0;
+  }
+
+  .graph-auto-grid-function {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  }
+
+  .graph-auto-grid-function > label:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .graph-auto-grid-free-label {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
   }
 
   .formatted-test {
@@ -170,10 +239,6 @@
     white-space: nowrap;
   }
 
-  .formatted-test .inline-displaystyle {
-    vertical-align: baseline;
-  }
-
   .formatted-test .question-latex,
   .formatted-test .question-diagram {
     background: #f1f5f9;
@@ -200,6 +265,15 @@
   .jxgbox {
     border: 0 !important;
     border-radius: 0 !important;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .jxgbox .jxg-latex-label,
+  .jxgbox .jxg-latex-label * {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .penrose-diagram svg {
@@ -282,6 +356,7 @@
 
   .formatted-test .question-table th {
     background: #f1f5f9;
+    font-weight: 400;
   }
 
   .a4-preview-root {
@@ -304,6 +379,34 @@
     margin: 0 auto;
     width: max-content;
     zoom: var(--a4-preview-scale, 1);
+  }
+
+  .pdf-export-stage {
+    background: #ffffff;
+    left: -100000px;
+    overflow: visible;
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    width: var(--a4-page-width, 794px);
+  }
+
+  .pdf-export-stage .a4-preview-shell {
+    justify-content: flex-start;
+  }
+
+  .pdf-export-stage .a4-preview-stack {
+    gap: 0;
+    margin: 0;
+    zoom: 1;
+  }
+
+  .pdf-export-stage .a4-page {
+    box-shadow: none;
+  }
+
+  .pdf-export-stage .a4-page-break {
+    display: none;
   }
 
   .a4-page {
@@ -421,12 +524,26 @@
     text-transform: uppercase;
   }
 
+  .test-title-main .test-solutions-title {
+    color: #b42318;
+    font-family: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive;
+    font-size: 2.45rem;
+    font-weight: 500;
+    line-height: 0.95;
+    margin: 1.25rem 0 0;
+    text-align: center;
+  }
+
   .test-student-row {
     align-items: start;
     display: grid;
     gap: 2rem;
     grid-template-columns: minmax(0, 1fr) auto;
     margin-top: 7.4rem;
+  }
+
+  .test-student-row-solutions {
+    margin-top: 5rem;
   }
 
   .test-name-line {
@@ -450,6 +567,10 @@
     border-bottom: 1.4px solid #2a333c;
     display: inline-block;
     width: 260px;
+  }
+
+  .test-student-row-solutions .test-mark-line {
+    grid-column: 2;
   }
 
   .test-mark-line span:nth-child(2) {
@@ -558,6 +679,80 @@
     line-height: 1.55;
   }
 
+  .test-content-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.72rem;
+    min-width: 0;
+  }
+
+  .test-display-math {
+    margin: 0.75rem 0;
+    text-align: left;
+  }
+
+  .test-display-math .katex-display {
+    margin: 0;
+  }
+
+  .test-marked-line {
+    align-items: baseline;
+    column-gap: 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    width: 100%;
+  }
+
+  .test-marked-display {
+    align-items: center;
+    margin: 0.75rem 0;
+  }
+
+  .test-marked-display .test-display-math {
+    margin: 0;
+  }
+
+  .solution-mark-ticks {
+    color: #c1121f;
+    display: inline-flex;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: 1.45em;
+    font-weight: 800;
+    gap: 0.08em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .test-solution-block {
+    line-height: 1.45;
+    margin-top: 0.36rem;
+  }
+
+  .test-solution-block .test-display-math {
+    margin: 0.48rem 0 0.58rem;
+  }
+
+  .test-solution-block .test-display-math + .test-display-math {
+    margin-top: 0.28rem;
+  }
+
+  .test-solution-block .test-marked-display {
+    margin: 0.48rem 0 0.58rem;
+  }
+
+  .test-solution-block .test-marked-display .test-display-math {
+    margin: 0;
+  }
+
+  .test-solution-block .katex-display {
+    text-align: left;
+  }
+
+  .test-text-block .mixed-math,
+  .test-diagram-pair-text .mixed-math {
+    white-space: pre-wrap;
+  }
+
   .test-question-header,
   .test-question-part,
   .test-question-subpart {
@@ -573,7 +768,11 @@
     align-items: baseline;
     display: grid;
     gap: 1rem;
-    grid-template-columns: auto minmax(0, 1fr) max-content;
+    grid-template-columns: 2.6rem minmax(0, 1fr) max-content;
+  }
+
+  .test-solution-row {
+    margin-top: 0.35rem;
   }
 
   .test-question-row-with-diagram {
@@ -617,6 +816,82 @@
     text-align: right;
   }
 
+  .test-table-wrap {
+    display: block;
+    margin: 0.75rem 0 0.45rem;
+    max-width: 100%;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .test-table-left .test-table {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .test-table-center .test-table {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .test-table-right .test-table {
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .test-table {
+    border-collapse: collapse;
+    color: inherit;
+    font-size: inherit;
+    line-height: 1.35;
+    min-width: min(100%, 280px);
+  }
+
+  .test-table th,
+  .test-table td {
+    border: 1px solid #1f2937;
+    font-weight: 400;
+    min-width: 3rem;
+    padding: 0.28rem 0.55rem;
+    vertical-align: middle;
+  }
+
+  .test-table-cell-left {
+    text-align: left;
+  }
+
+  .test-table-cell-center {
+    text-align: center;
+  }
+
+  .test-table-cell-right {
+    text-align: right;
+  }
+
+  .test-table-cell .mixed-math {
+    align-items: center;
+    display: flex;
+    min-height: 2.1rem;
+    text-align: inherit;
+    width: 100%;
+  }
+
+  .test-table-cell-left .mixed-math {
+    justify-content: flex-start;
+  }
+
+  .test-table-cell-center .mixed-math {
+    justify-content: center;
+  }
+
+  .test-table-cell-right .mixed-math {
+    justify-content: flex-end;
+  }
+
+  .test-table-cell .latex-inline {
+    text-align: inherit;
+  }
+
   .test-question-subpart {
     padding-left: 2rem;
   }
@@ -624,8 +899,12 @@
   .test-subpart-group {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
-    margin-top: 1rem;
+    gap: 0.95rem;
+    margin-top: 0;
+  }
+
+  .test-subpart-group-after-label {
+    margin-top: 0.55rem;
   }
 
   .test-part-label,
@@ -633,6 +912,7 @@
     align-self: baseline;
     font-weight: 400;
     line-height: 1;
+    text-align: right;
     white-space: nowrap;
   }
 
@@ -644,6 +924,39 @@
 
   .test-part-content {
     min-width: 0;
+  }
+
+  .test-diagram-text-pair {
+    align-items: start;
+    display: flex;
+    gap: 0.85rem;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .test-diagram-text-right {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .test-diagram-text-left {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .test-diagram-pair-diagram {
+    flex: 0 0 auto;
+  }
+
+  .test-diagram-pair-text {
+    flex: 1 1 auto;
+    max-width: 34rem;
+    min-width: 0;
+    padding-top: 0.1rem;
+  }
+
+  .test-diagram-pair-text .mixed-math {
+    gap: 0.7rem;
   }
 
   .test-space-block {

@@ -5,6 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const PENROSE_ORIGINAL_WIDTH = 420;
 const DEFAULT_SCALE_PERCENT = 100;
 const DEFAULT_PENROSE_PRESET = "geometry";
+const SETS_PENROSE_PRESET = "sets";
 
 const DEFAULT_GEOMETRIC_DATA = {
   objects: [
@@ -17,6 +18,19 @@ const DEFAULT_GEOMETRIC_DATA = {
     { type: "rightAngle", at: "B" },
     { type: "labelLength", between: ["A", "B"], value: "5" },
     { type: "labelLength", between: ["B", "C"], value: "12" },
+  ],
+};
+const DEFAULT_SET_DATA = {
+  universe: { name: "U", label: "U" },
+  sets: [
+    { type: "set", name: "A", label: "A" },
+    { type: "set", name: "B", label: "B" },
+  ],
+  regions: [
+    { name: "onlyA", label: "A \\setminus B" },
+    { name: "intersection", label: "A \\cap B" },
+    { name: "onlyB", label: "B \\setminus A" },
+    { name: "outside", label: "(A \\cup B)'" },
   ],
 };
 
@@ -35,11 +49,23 @@ function penroseRequest(graphConfig?: GraphConfig | null) {
   delete options.width;
   delete options.height;
   delete options.preset;
+  const type =
+    graphConfig?.type === "setDiagram"
+      ? "setDiagram"
+      : graphConfig?.type === "vectorRelationship"
+        ? "vectorRelationship"
+        : "geometricConstruction";
   const scale = scalePercent(graphConfig);
-  const preset = String(graphConfig?.penrosePreset ?? options.penrosePreset ?? graphConfig?.style ?? DEFAULT_PENROSE_PRESET);
+  const defaultPreset = type === "setDiagram" ? SETS_PENROSE_PRESET : DEFAULT_PENROSE_PRESET;
+  const preset = String(graphConfig?.penrosePreset ?? options.penrosePreset ?? graphConfig?.style ?? defaultPreset);
   return {
-    type: "geometricConstruction",
-    data: graphConfig?.data && Object.keys(graphConfig.data).length ? graphConfig.data : DEFAULT_GEOMETRIC_DATA,
+    type,
+    data:
+      graphConfig?.data && Object.keys(graphConfig.data).length
+        ? graphConfig.data
+        : type === "setDiagram"
+          ? DEFAULT_SET_DATA
+          : DEFAULT_GEOMETRIC_DATA,
     style: preset,
     options: {
       ...options,

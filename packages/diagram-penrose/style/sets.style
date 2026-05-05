@@ -1,0 +1,83 @@
+canvas {
+  width = 420
+  height = 300
+}
+
+forall Universe u {
+  u.box = Polygon {
+    points: [(-180, -110), (180, -110), (180, 110), (-180, 110)]
+    fillColor: none()
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+  }
+
+  u.labelText = Equation {
+    string: u.label
+    fontSize: "16.133px"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+
+  u.labelText.center = (-162, 92)
+  layer u.labelText above u.box
+}
+
+forall Set s {
+  s.shape = Circle {
+    center: (0, 0)
+    r: 82
+    fillColor: rgba(0, 0, 0, 0.035)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+  }
+
+  s.labelText = Equation {
+    string: s.label
+    fontSize: "16.133px"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+
+  layer s.labelText above s.shape
+}
+
+forall Universe u; Set a; Set b
+where Venn(u, a, b) {
+  a.shape.center = (-50, 0)
+  b.shape.center = (50, 0)
+  a.labelText.center = (-82, 76)
+  b.labelText.center = (82, 76)
+
+  ensure disjoint(a.labelText, b.labelText, 12)
+}
+
+forall RegionLabel l {
+  l.text = Equation {
+    string: l.label
+    fontSize: "16.133px"
+    fillColor: rgba(0, 0, 0, 1)
+  }
+}
+
+forall RegionLabel l; Set a; Set b
+where LabelsLeftOnly(l, a, b) {
+  l.text.center = a.shape.center + (-38, -2)
+  layer l.text above a.shape
+}
+
+forall RegionLabel l; Set a; Set b
+where LabelsIntersection(l, a, b) {
+  l.text.center = midpoint(a.shape.center, b.shape.center) + (0, -2)
+  layer l.text above a.shape
+  layer l.text above b.shape
+}
+
+forall RegionLabel l; Set a; Set b
+where LabelsRightOnly(l, a, b) {
+  l.text.center = b.shape.center + (38, -2)
+  layer l.text above b.shape
+}
+
+forall RegionLabel l; Universe u; Set a; Set b
+where LabelsOutside(l, u, a, b) {
+  l.text.center = (0, -88)
+  layer l.text above u.box
+}

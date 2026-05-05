@@ -12,5 +12,6 @@ build/
 tmp/
 storage/
 drafts/
+output/
 .DS_Store
 *.pyc

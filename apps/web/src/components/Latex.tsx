@@ -1,18 +1,18 @@
 import katex from "katex";
 
+import { inlineDisplayLatex } from "@/lib/latex";
+
 interface LatexProps {
   latex?: string | null;
   block?: boolean;
-  displayStyle?: boolean;
 }
 
-export function Latex({ latex, block = false, displayStyle = false }: LatexProps) {
+export function Latex({ latex, block = false }: LatexProps) {
   if (!latex) {
     return <span className="text-muted-foreground">No expression yet.</span>;
   }
 
-  const source = !block && displayStyle && !latex.trim().startsWith("\\displaystyle") ? `\\displaystyle ${latex}` : latex;
-  const html = katex.renderToString(source, {
+  const html = katex.renderToString(block ? latex : inlineDisplayLatex(latex), {
     displayMode: block,
     throwOnError: false,
     strict: "ignore",

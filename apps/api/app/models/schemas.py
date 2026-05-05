@@ -56,6 +56,7 @@ class GraphFeature(BaseModel):
         "turning_point",
         "intersection",
         "tangent",
+        "line_segment",
         "perpendicular_line",
         "perpendicular_symbol",
         "label",
@@ -145,11 +146,16 @@ class GraphConfig(BaseModel):
 
 class ContentBlock(BaseModel):
     id: str | None = None
-    kind: Literal["text", "choices", "diagram", "space", "pageBreak"]
+    kind: Literal["text", "choices", "table", "diagram", "space", "pageBreak"]
     text: str | None = None
     choices: list[str] = Field(default_factory=list)
     numberingStyle: Literal["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"] | None = "roman"
     layout: Literal["vertical", "two-column", "inline"] | None = "vertical"
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+    showHeader: bool | None = True
+    tableAlign: Literal["left", "center", "right"] | None = "center"
+    cellAlignment: Literal["left", "center", "right"] | None = "center"
     lines: float | None = None
     diagramAlign: Literal["left", "center", "right"] | None = None
     graphConfig: GraphConfig | None = None

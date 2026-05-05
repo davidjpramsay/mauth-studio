@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "description": "Composable AI rule brains for Mauth Studio authoring tasks.",
+  "schema": "mauth-ai-brain-v1",
+  "brains": [
+    {
+      "id": "question",
+      "name": "Question Brain",
+      "path": "configs/ai-brains/question.json"
+    },
+    {
+      "id": "formatting",
+      "name": "Formatting Brain",
+      "path": "configs/ai-brains/formatting.json"
+    },
+    {
+      "id": "diagram",
+      "name": "Diagram Brain",
+      "path": "configs/ai-brains/diagram.json"
+    },
+    {
+      "id": "solutions",
+      "name": "Solutions Brain",
+      "path": "configs/ai-brains/solutions.json"
+    }
+  ],
+  "compositionRules": [
+    "Use only the brains needed for the current task.",
+    "All brains must operate on the shared Mauthdown/test schema.",
+    "Question wording must not contain formatting, diagram, or solution-only decisions.",
+    "Formatting, diagram, and solutions changes must preserve question intent unless the user explicitly asks for content changes.",
+    "When brains disagree, preserve mathematical correctness first, then printable clarity, then editor convenience.",
+    "Update a brain only when a rule should affect future authoring, not for a one-off current-test preference.",
+    "When a durable brain rule changes, update the human documentation in docs/ at the same time."
+  ]
+}

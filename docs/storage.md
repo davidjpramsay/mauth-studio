@@ -21,6 +21,12 @@ You can override the storage root with:
 MATH_APP_STORAGE_ROOT=/path/to/math-app-storage pnpm dev:api
 ```
 
+Run that command from the project root. If you are already inside `apps/api`, use the equivalent direct API command:
+
+```bash
+MATH_APP_STORAGE_ROOT=/path/to/math-app-storage uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000
+```
+
 ## Saved Tests
 
 Saved tests are JSON files in `storage/tests`. A saved file includes:

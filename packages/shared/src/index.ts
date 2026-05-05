@@ -4,6 +4,7 @@ export type DiagramType =
   | "graph2d"
   | "graph3d"
   | "geometricConstruction"
+  | "image"
   | "vectorRelationship"
   | "setDiagram"
   | "statsChart"
@@ -11,10 +12,20 @@ export type DiagramType =
   | string;
 
 export type StatsChartType = "histogram" | "binomial" | "normal" | "box" | "scatter" | "bar" | string;
+export type HistogramBarType = "continuous" | "discrete";
+export type StatsChartDataMode = "raw" | "manualProbabilities";
+export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
+export type StatsChartYLabelOrientation = "vertical" | "horizontal";
 
 export interface StatsChartData {
   chartType: StatsChartType;
+  barType?: HistogramBarType;
+  dataMode?: StatsChartDataMode;
+  yAxisMode?: StatsChartYAxisMode;
+  yLabelOrientation?: StatsChartYLabelOrientation;
   values?: number[];
+  xValues?: number[];
+  probabilities?: number[];
   mean?: number;
   stdDev?: number;
   trials?: number;
@@ -54,6 +65,16 @@ export interface StatsChartSpec {
   options?: StatsChartOptions;
 }
 
+export interface ImageDiagramData {
+  src?: string;
+  name?: string;
+  alt?: string;
+  mimeType?: string;
+  naturalWidth?: number;
+  naturalHeight?: number;
+  [key: string]: unknown;
+}
+
 export interface WorkedStep {
   name?: string;
   title: string;
@@ -64,7 +85,7 @@ export interface WorkedStep {
 
 export interface GraphConfig {
   type: DiagramType;
-  data?: GeometricDiagramData | StatsChartData | Record<string, unknown>;
+  data?: GeometricDiagramData | StatsChartData | ImageDiagramData | Record<string, unknown>;
   style?: string;
   options?: Record<string, unknown>;
   expression?: string;
@@ -119,11 +140,31 @@ export interface GeometricDiagramObject {
 }
 
 export interface GeometricDiagramRelationship {
-  type: "triangle" | "rightAngle" | "labelLength" | "equalLength" | "perpendicular" | "parallel" | "on" | "between" | string;
+  type:
+    | "triangle"
+    | "rightAngle"
+    | "labelLength"
+    | "labelAngle"
+    | "segment"
+    | "equalLength"
+    | "angleMark"
+    | "perpendicular"
+    | "parallel"
+    | "on"
+    | "between"
+    | string;
   points?: string[];
   at?: string;
+  name?: string;
+  segmentNames?: string[];
   between?: string[];
   value?: string;
+  label?: string;
+  marks?: number;
+  markCount?: number;
+  tickCount?: number;
+  arcCount?: number;
+  count?: number;
   first?: string[];
   second?: string[];
   segmentA?: string[];
@@ -192,6 +233,7 @@ export interface GraphFeature {
     | "turning_point"
     | "intersection"
     | "tangent"
+    | "line_segment"
     | "label"
     | "region_clipped_by_curve";
   label?: string;
@@ -275,10 +317,18 @@ export interface QuestionSubpart {
   contentBlocks?: ContentBlock[];
 }
 
-export type ContentBlock = TextContentBlock | ChoiceListContentBlock | DiagramContentBlock | SpaceContentBlock | PageBreakContentBlock;
+export type ContentBlock =
+  | TextContentBlock
+  | ChoiceListContentBlock
+  | TableContentBlock
+  | DiagramContentBlock
+  | SpaceContentBlock
+  | PageBreakContentBlock;
 export type DiagramAlignment = "left" | "center" | "right";
+export type DiagramTextSide = "none" | "left" | "right";
 export type ChoiceNumberingStyle = "roman" | "upper-alpha" | "lower-alpha" | "decimal" | "bullet";
 export type ChoiceListLayout = "vertical" | "two-column" | "inline";
+export type TableCellAlignment = "left" | "center" | "right";
 
 export interface TextContentBlock {
   id: string;
@@ -294,10 +344,21 @@ export interface ChoiceListContentBlock {
   layout?: ChoiceListLayout;
 }
 
+export interface TableContentBlock {
+  id: string;
+  kind: "table";
+  headers: string[];
+  rows: string[][];
+  showHeader?: boolean;
+  tableAlign?: DiagramAlignment;
+  cellAlignment?: TableCellAlignment;
+}
+
 export interface DiagramContentBlock {
   id: string;
   kind: "diagram";
   diagramAlign?: DiagramAlignment;
+  diagramTextSide?: DiagramTextSide;
   graphConfig: GraphConfig;
 }
 

@@ -1,0 +1,48 @@
+{
+  "id": "solutions",
+  "name": "Solutions Brain",
+  "version": 1,
+  "purpose": "Generate worked solutions and answer keys that match the existing questions, marks, notation, and expected high-school reasoning.",
+  "owns": ["worked-solution text", "answer statements", "rubric-aligned reasoning", "solution-copy formatting", "checking final answers"],
+  "mustNotOwn": [
+    "changing question wording unless a mathematical error must be fixed",
+    "changing diagram specs except to clarify a solution reference",
+    "page breaks except when adding solutions requires sensible flow",
+    "changing marks without explicit review"
+  ],
+  "rules": [
+    "Preserve the original question and add solutions after the relevant question, part, or subpart.",
+    "Use clear worked steps, not just final answers.",
+    "Keep default worked solutions concise and mark-focused: include the vital method steps, key equations, and final answer rather than full teaching-note explanation.",
+    "For solution copies, annotate mark-worthy text or equation lines with [[marks:n]] where n is the number of marks earned by that line.",
+    "Prefer [[marks:n]] annotations over long Key marks prose; use prose only when the mark allocation would otherwise be unclear.",
+    "The number of rendered red check marks should match the mark allocation for that solution line.",
+    "When a derivation line is long, put the boxed final answer on its own display line and attach the relevant [[marks:n]] annotation to that final-answer line; avoid punctuation such as commas before a boxed final answer.",
+    "When two important equations would otherwise be cramped on one line, split them across display lines instead of separating them with punctuation.",
+    "When a solution step is mostly algebra with only short connective words such as Since or so, prefer one display-math line using \\text{...} for those words so it aligns visually with surrounding display equations.",
+    "Use the same symbols and notation as the question.",
+    "For random variables, use notation such as $\\mu_X$ and $\\sigma_X$ for mean and standard deviation when appropriate; match the subscript to the random variable name, and avoid informal sd notation in worked equations.",
+    "Use $...$ for inline maths and $$...$$ for display equations.",
+    "Box or clearly state final answers.",
+    "For calculus questions, show enough derivative/integral work to justify the answer.",
+    "For probability and statistics questions, state the formula or relationship being used.",
+    "For optimisation questions, verify that the stationary point gives the required maximum or minimum.",
+    "When a worked solution depends on a diagram, add small solution-copy diagram annotations where useful, such as red intersection points, dashed guide lines, or labelled bounds; keep them high-signal and do not alter the original question diagram semantics.",
+    "When solution annotations need graph geometry, request editable Diagram Brain features such as point, label, and line_segment rather than drawing non-editable overlays.",
+    "For solution copies, replace the student name field with Solutions and render it as a centered red cursive title under the assessment subtitle.",
+    "For solution copies, worked solutions should consume the original answer/work space rather than being followed by the same blank space again.",
+    "If an original diagram is aligned left or right to leave working room beside it, prefer diagramTextSide in the solution copy so the worked solution occupies that side-by-side space.",
+    "Remove or shrink blank space blocks when the worked solution now occupies that answer area.",
+    "Keep deliberate page breaks from the original test unless the solution flow becomes clearly broken.",
+    "Do not include student-facing hints unless the user asks for a teaching version."
+  ],
+  "checks": [
+    "Final answers are mathematically correct.",
+    "Solutions align with the allocated marks.",
+    "Solutions are no longer than needed for the marks unless the user explicitly asks for a teaching version.",
+    "Each part/subpart with marks has an answer or worked solution.",
+    "No large blank working-space blocks remain after a full worked solution for the same question, part, or subpart.",
+    "The title page shows Solutions as the solution-copy identifier, not a student-name line.",
+    "The solution copy remains importable as the same Mauthdown/test schema."
+  ]
+}

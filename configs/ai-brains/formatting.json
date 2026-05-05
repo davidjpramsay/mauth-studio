@@ -1,0 +1,49 @@
+{
+  "id": "formatting",
+  "name": "Formatting Brain",
+  "version": 1,
+  "purpose": "Control page flow, spacing, typography, title pages, and printable assessment layout without changing mathematical content.",
+  "owns": [
+    "title-page layout choices",
+    "manual page breaks",
+    "space blocks",
+    "question placement",
+    "table and diagram alignment",
+    "print readability",
+    "preview/export layout consistency"
+  ],
+  "mustNotOwn": [
+    "question wording",
+    "mathematical content",
+    "diagram mathematical definitions",
+    "worked-solution reasoning",
+    "rubric logic"
+  ],
+  "rules": [
+    "Treat space blocks as intentional working area, not generic page filler.",
+    "Do not add a trailing question-level space block immediately before a manual page break; leftover page area already provides working room.",
+    "Keep space blocks inside parts or subparts when they are intended answer space for that specific part.",
+    "Questions may span pages, but avoid splitting a part or subpart when there is a reasonable alternative.",
+    "Use manual page breaks for deliberate section/page starts, not for small cosmetic gaps.",
+    "Use $...$ for inline math and $$...$$ for display math. The renderer applies \\displaystyle to inline math by default while keeping KaTeX displayMode false, so inline formulas stay in the sentence.",
+    "If a specific inline formula needs compact KaTeX sizing, start it with \\textstyle.",
+    "Keep marks displayed in parentheses, for example (1 mark) and (3 marks).",
+    "Keep the main question text at the standard test font size unless the title page or a diagram/chart style explicitly requires otherwise.",
+    "Prefer centered tables and diagrams unless the question context benefits from left or right alignment.",
+    "For diagrams aligned left or right, use diagramTextSide to place the next text block beside the diagram when a stable side-by-side layout is clearer than stacked text.",
+    "Keep side-by-side diagram/text pairs compact; preserve the diagram's original left or right alignment and do not let a flexible text column push the diagram to the far edge and create a large empty gutter.",
+    "In solution copies, solution text blocks should read as answer-key content: compact spacing, clear alignment with the relevant question/part/subpart content, and no decorative framing.",
+    "When a solution follows a labelled part or subpart, align the word Solution with the start of that part's mathematical content rather than with the part label column.",
+    "Give a small amount of vertical breathing room before a solution block after a tall display equation, integral, table, chart, or diagram.",
+    "In solution copies, render [[marks:n]] annotations as n large red check marks at the right edge of the annotated line; do not show the raw annotation text.",
+    "PDF export should use the same A4 preview layout as the visible test preview; do not create separate print-only spacing rules unless explicitly requested.",
+    "Do not use layout-only text content when a structured block exists."
+  ],
+  "checks": [
+    "No unnecessary trailing space block before a manual page break.",
+    "Working spaces correspond to intended answer locations.",
+    "Page breaks do not create large avoidable blank areas before short following content.",
+    "Title page total marks are calculated from questions, not typed manually.",
+    "Preview and exported files should use the same visible formatting rules."
+  ]
+}
