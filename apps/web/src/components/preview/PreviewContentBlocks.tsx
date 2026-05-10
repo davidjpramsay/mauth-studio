@@ -301,17 +301,32 @@ function DiagramWithBesideNode({
 
 function DiagramBesideContentBlock({
   block,
+  blockAnchor,
+  activePreviewAnchor,
+  measureOnly,
+  showSolutions,
+  onGraphConfigChange,
   runtime,
   renderers,
 }: {
   block: EditorContentBlock;
+  blockAnchor?: string;
+  activePreviewAnchor?: string;
+  measureOnly: boolean;
+  showSolutions: boolean;
+  onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
 }) {
   if (block.kind === "text") {
     const isSolutionText = runtime.isSolutionTextBlock(block);
     return (
-      <div className={cn(isSolutionText && "test-solution-block")}>
+      <div
+        data-scroll-anchor={blockAnchor}
+        data-preview-module-anchor={blockAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+        className={cn("test-text-block", isSolutionText && "test-solution-block")}
+      >
         {renderers.renderMath(block.text ?? "", { showSolutionMarks: isSolutionText })}
       </div>
     );
@@ -320,13 +335,168 @@ function DiagramBesideContentBlock({
   if (block.kind === "space") {
     return (
       <div
+        data-scroll-anchor={blockAnchor}
+        data-preview-module-anchor={blockAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         className="test-space-block"
         style={{ "--space-lines": String(runtime.spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
       />
     );
   }
 
+  if (block.kind === "choices") {
+    return (
+      <div
+        data-scroll-anchor={blockAnchor}
+        data-preview-module-anchor={blockAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+      >
+        <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+      </div>
+    );
+  }
+
+  if (block.kind === "table") {
+    return (
+      <div
+        data-scroll-anchor={blockAnchor}
+        data-preview-module-anchor={blockAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+      >
+        <TablePreview block={block} runtime={runtime} renderers={renderers} />
+      </div>
+    );
+  }
+
+  if (block.kind === "diagram") {
+    return (
+      <div
+        data-scroll-anchor={blockAnchor}
+        data-preview-module-anchor={blockAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+        className={cn("test-diagram-wrap flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
+      >
+        {renderers.renderDiagram({
+          graphConfig: block.graphConfig,
+          measureOnly,
+          showSolutions,
+          onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
+        })}
+      </div>
+    );
+  }
+
   return null;
+}
+
+function DiagramBesideContentBlocks({
+  blocks,
+  measureOnly,
+  showSolutions,
+  onGraphConfigChange,
+  blockAnchorFor,
+  activePreviewAnchor,
+  runtime,
+  renderers,
+}: {
+  blocks: EditorContentBlock[];
+  measureOnly: boolean;
+  showSolutions: boolean;
+  onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
+  blockAnchorFor?: (block: EditorContentBlock) => string | undefined;
+  activePreviewAnchor?: string;
+  runtime: PreviewContentRuntime;
+  renderers: PreviewContentRenderers;
+}) {
+  return (
+    <>
+      {blocks
+        .filter((block) => runtime.isContentBlockVisible(block, showSolutions))
+        .map((block) => (
+          <DiagramBesideContentBlock
+            key={block.id}
+            block={block}
+            blockAnchor={measureOnly ? undefined : blockAnchorFor?.(block)}
+            activePreviewAnchor={activePreviewAnchor}
+            measureOnly={measureOnly}
+            showSolutions={showSolutions}
+            onGraphConfigChange={!onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)}
+            runtime={runtime}
+            renderers={renderers}
+          />
+        ))}
+    </>
+  );
+}
+
+function DiagramWithBesideSolutionSlot({
+  diagramBlock,
+  diagramAnchor,
+  textSide,
+  studentBlock,
+  solutionBlocks,
+  activePreviewAnchor,
+  measureOnly,
+  showSolutions,
+  onGraphConfigChange,
+  blockAnchorFor,
+  runtime,
+  renderers,
+}: {
+  diagramBlock: Extract<EditorContentBlock, { kind: "diagram" }>;
+  diagramAnchor?: string;
+  textSide: DiagramTextSide;
+  studentBlock: EditorContentBlock;
+  solutionBlocks: EditorContentBlock[];
+  activePreviewAnchor?: string;
+  measureOnly: boolean;
+  showSolutions: boolean;
+  onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
+  blockAnchorFor?: (block: EditorContentBlock) => string | undefined;
+  runtime: PreviewContentRuntime;
+  renderers: PreviewContentRenderers;
+}) {
+  const lines = studentBlock.kind === "space" ? runtime.spaceLines(studentBlock.lines) : 0;
+  const diagramHeight = runtime.graphHeight(diagramBlock.graphConfig);
+  return (
+    <div
+      className={cn(
+        "test-diagram-text-pair test-diagram-solution-pair",
+        textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right",
+      )}
+      style={
+        {
+          "--space-lines": String(lines),
+          "--diagram-height": `${diagramHeight}px`,
+        } as CSSProperties & Record<`--${string}`, string>
+      }
+    >
+      <div
+        data-scroll-anchor={diagramAnchor}
+        data-preview-module-anchor={diagramAnchor ? "true" : undefined}
+        data-preview-selected={runtime.previewSelectionAttr(diagramAnchor, activePreviewAnchor)}
+        className={cn("test-diagram-pair-diagram flex min-w-0", runtime.diagramAlignmentClass(diagramBlock.diagramAlign))}
+      >
+        {renderers.renderDiagram({
+          graphConfig: diagramBlock.graphConfig,
+          measureOnly,
+          showSolutions,
+          onGraphConfigChange:
+            measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(diagramBlock.id, graphConfig),
+        })}
+      </div>
+      <DiagramBesideContentBlocks
+        blocks={solutionBlocks}
+        measureOnly={measureOnly}
+        showSolutions={showSolutions}
+        blockAnchorFor={blockAnchorFor}
+        activePreviewAnchor={activePreviewAnchor}
+        onGraphConfigChange={onGraphConfigChange}
+        runtime={runtime}
+        renderers={renderers}
+      />
+    </div>
+  );
 }
 
 function DiagramWithBesideSpaceNode({
@@ -462,7 +632,29 @@ export function PreviewContentBlocks({
           index = replacementSlotFollows.endIndex;
           continue;
         }
-        const besideAnchor = measureOnly ? undefined : blockAnchorFor?.(showSolutions ? solutionBlocks[0] : studentBlock);
+        if (showSolutions) {
+          renderedBlocks.push(
+            <DiagramWithBesideSolutionSlot
+              key={`${block.id}:${studentBlock.id}:${solutionBlocks.map((solutionBlock) => solutionBlock.id).join(":")}:solutions`}
+              diagramBlock={block}
+              diagramAnchor={blockAnchor}
+              textSide={replacementTextSide}
+              studentBlock={studentBlock}
+              solutionBlocks={solutionBlocks}
+              activePreviewAnchor={activePreviewAnchor}
+              measureOnly={measureOnly}
+              showSolutions={showSolutions}
+              onGraphConfigChange={onGraphConfigChange}
+              blockAnchorFor={blockAnchorFor}
+              runtime={runtime}
+              renderers={renderers}
+            />,
+          );
+          index = replacementSlotFollows.endIndex;
+          continue;
+        }
+
+        const besideAnchor = measureOnly ? undefined : blockAnchorFor?.(studentBlock);
         renderedBlocks.push(
           <div key={`${block.id}:${studentBlock.id}:${solutionBlocks.map((solutionBlock) => solutionBlock.id).join(":")}`}>
             <DiagramWithBesideNode
@@ -478,14 +670,15 @@ export function PreviewContentBlocks({
               runtime={runtime}
               renderers={renderers}
               besideNode={
-                <VisibilityReplacementSlot
-                  studentBlock={studentBlock}
-                  solutionBlocks={solutionBlocks}
+                <DiagramBesideContentBlock
+                  block={studentBlock}
+                  blockAnchor={besideAnchor}
+                  activePreviewAnchor={activePreviewAnchor}
                   measureOnly={measureOnly}
                   showSolutions={showSolutions}
-                  blockAnchorFor={blockAnchorFor}
-                  activePreviewAnchor={activePreviewAnchor}
-                  onGraphConfigChange={onGraphConfigChange}
+                  onGraphConfigChange={
+                    !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(studentBlock.id, graphConfig)
+                  }
                   runtime={runtime}
                   renderers={renderers}
                 />
@@ -526,13 +719,25 @@ export function PreviewContentBlocks({
               diagramAnchor={blockAnchor}
               textSide={textSide}
               besideAnchor={measureOnly ? undefined : blockAnchorFor?.(nextBlock)}
+              besideNodeHasOwnAnchor
               activePreviewAnchor={activePreviewAnchor}
               measureOnly={measureOnly}
               showSolutions={showSolutions}
               onGraphConfigChange={!onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)}
               runtime={runtime}
               renderers={renderers}
-              besideNode={<DiagramBesideContentBlock block={nextBlock} runtime={runtime} renderers={renderers} />}
+              besideNode={
+                <DiagramBesideContentBlock
+                  block={nextBlock}
+                  blockAnchor={measureOnly ? undefined : blockAnchorFor?.(nextBlock)}
+                  activePreviewAnchor={activePreviewAnchor}
+                  measureOnly={measureOnly}
+                  showSolutions={showSolutions}
+                  onGraphConfigChange={!onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(nextBlock.id, graphConfig)}
+                  runtime={runtime}
+                  renderers={renderers}
+                />
+              }
             />
           </div>,
         );

@@ -1807,11 +1807,19 @@
     gap: calc(var(--test-inline-block-gap, 0.85rem) - 0.15rem);
   }
 
+  .test-diagram-solution-pair {
+    min-height: max(var(--diagram-height, 0px), calc(var(--space-lines, 0) * 1.55em));
+  }
+
+  .test-diagram-solution-pair > [data-preview-module-anchor="true"] + [data-preview-module-anchor="true"] {
+    margin-top: var(--test-content-gap, 0.72rem);
+  }
+
   .test-diagram-space-pair {
     display: grid;
     margin: var(--test-block-margin-block, 0.45rem 0 0.35rem);
     max-width: 100%;
-    row-gap: 0.25rem;
+    row-gap: 0;
     width: 100%;
   }
 
