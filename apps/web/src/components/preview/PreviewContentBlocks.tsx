@@ -68,8 +68,6 @@ export interface PreviewContentBlocksProps {
   renderers: PreviewContentRenderers;
 }
 
-const TEST_SPACE_LINE_HEIGHT_PX = 24.8;
-
 function ChoiceListPreview({
   block,
   runtime,
@@ -457,7 +455,6 @@ function DiagramWithBesideSolutionSlot({
   renderers: PreviewContentRenderers;
 }) {
   const lines = studentBlock.kind === "space" ? runtime.spaceLines(studentBlock.lines) : 0;
-  const diagramHeight = runtime.graphHeight(diagramBlock.graphConfig);
   return (
     <div
       className={cn(
@@ -467,7 +464,6 @@ function DiagramWithBesideSolutionSlot({
       style={
         {
           "--space-lines": String(lines),
-          "--diagram-height": `${diagramHeight}px`,
         } as CSSProperties & Record<`--${string}`, string>
       }
     >
@@ -525,15 +521,12 @@ function DiagramWithBesideSpaceNode({
   renderers: PreviewContentRenderers;
 }) {
   const lines = runtime.spaceLines(spaceBlock.lines);
-  const diagramHeight = runtime.graphHeight(diagramBlock.graphConfig);
-  const hasUnderSpace = lines * TEST_SPACE_LINE_HEIGHT_PX > diagramHeight + 1;
   return (
     <div
       className={cn("test-diagram-space-pair", textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right")}
       style={
         {
           "--space-lines": String(lines),
-          "--diagram-height": `${diagramHeight}px`,
         } as CSSProperties & Record<`--${string}`, string>
       }
     >
@@ -557,15 +550,20 @@ function DiagramWithBesideSpaceNode({
         data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
         className="test-diagram-l-space-segment test-diagram-l-space-side"
       />
-      {hasUnderSpace ? (
-        <div
-          data-scroll-anchor={spaceAnchor}
-          data-preview-module-anchor={spaceAnchor ? "true" : undefined}
-          data-preview-module-shape="l-space"
-          data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
-          className="test-diagram-l-space-segment test-diagram-l-space-under"
-        />
-      ) : null}
+      <div
+        data-scroll-anchor={spaceAnchor}
+        data-preview-module-anchor={spaceAnchor ? "true" : undefined}
+        data-preview-module-shape="l-space"
+        data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
+        className="test-diagram-l-space-segment test-diagram-l-space-under-side"
+      />
+      <div
+        data-scroll-anchor={spaceAnchor}
+        data-preview-module-anchor={spaceAnchor ? "true" : undefined}
+        data-preview-module-shape="l-space"
+        data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
+        className="test-diagram-l-space-segment test-diagram-l-space-under-diagram"
+      />
     </div>
   );
 }
