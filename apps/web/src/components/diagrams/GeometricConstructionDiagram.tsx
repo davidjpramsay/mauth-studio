@@ -27,9 +27,9 @@ const DEFAULT_SET_DATA = {
     { type: "set", name: "B", label: "B" },
   ],
   regions: [
-    { name: "onlyA", label: "A \\setminus B" },
+    { name: "onlyA", label: "A \\cap B'" },
     { name: "intersection", label: "A \\cap B" },
-    { name: "onlyB", label: "B \\setminus A" },
+    { name: "onlyB", label: "A' \\cap B" },
     { name: "outside", label: "(A \\cup B)'" },
   ],
 };
@@ -77,20 +77,25 @@ function penroseRequest(graphConfig?: GraphConfig | null) {
 
 export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const request = useMemo(() => penroseRequest(graphConfig), [graphConfig]);
+  const requestKey = useMemo(() => JSON.stringify(request), [request]);
   const [diagram, setDiagram] = useState<PenroseDiagramResponse | null>(null);
   const [error, setError] = useState("");
   const baseWidth = numericOption(diagram?.metadata?.displayWidth, PENROSE_ORIGINAL_WIDTH);
+  const requestOptions = request.options as Record<string, unknown>;
+  const baseHeight = numericOption(diagram?.metadata?.displayHeight ?? requestOptions.height, 300);
   const displayWidth = (baseWidth * numericOption(request.options.scalePercent, DEFAULT_SCALE_PERCENT)) / 100;
+  const displayHeight = (baseHeight * numericOption(request.options.scalePercent, DEFAULT_SCALE_PERCENT)) / 100;
 
   useEffect(() => {
     const controller = new AbortController();
+    const currentRequest = JSON.parse(requestKey) as ReturnType<typeof penroseRequest>;
     setError("");
     setDiagram(null);
 
     fetch(`${API_BASE}/api/diagram/penrose`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify(currentRequest),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -106,7 +111,7 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
       });
 
     return () => controller.abort();
-  }, [request]);
+  }, [requestKey]);
 
   if (error) {
     return (
@@ -121,6 +126,7 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
       className="penrose-diagram min-w-0 bg-white"
       style={{
         width: displayWidth,
+        minHeight: displayHeight,
         maxWidth: "100%",
       }}
       dangerouslySetInnerHTML={diagram?.svg ? { __html: diagram.svg } : undefined}

@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from "react";
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
-import katex from "katex";
 
-import { inlineDisplayLatex } from "@/lib/latex";
+import { renderMathJaxSvg } from "@/lib/mathjax";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelAttributes } from "./graphTypography";
 
 interface FunctionGraphProps {
@@ -129,8 +128,6 @@ const GRAPH_LAYERS = {
   featureLabel: 12,
 };
 const X_EPSILON = 1e-7;
-
-(globalThis as unknown as { katex?: unknown }).katex = katex;
 
 interface FunctionArrowGeometry {
   tip: [number, number];
@@ -844,11 +841,7 @@ function renderLatexLabelHtml(latex: string, color: string) {
   const safeColor = safeCssColor(color);
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   try {
-    const html = katex.renderToString(inlineDisplayLatex(latex), {
-      throwOnError: false,
-      strict: "ignore",
-      output: "html",
-    });
+    const html = renderMathJaxSvg(latex, false);
     return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
     return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(latex)}</span>`;
@@ -882,7 +875,6 @@ function createLabelText(
     anchorY: "bottom",
     offset: [8, -8],
     display: "html",
-    useKatex: false,
     parse: false,
     layer: GRAPH_LAYERS.featureLabel,
   } as Record<string, unknown>);
@@ -901,6 +893,34 @@ function createLabelText(
   }
 
   return text;
+}
+
+function createAxisLabelText(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  latex: string,
+  offset: [number, number],
+  anchorX: "left" | "middle" | "right",
+  anchorY: "top" | "middle" | "bottom",
+) {
+  const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
+  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR)], {
+    fixed: true,
+    highlight: false,
+    strokeColor: AXIS_COLOR,
+    highlightStrokeColor: AXIS_COLOR,
+    fontSize: AXIS_TEXT_FONT_SIZE,
+    fontUnit: GRAPH_LABEL_FONT_UNIT,
+    cssStyle: axisLabelCss,
+    highlightCssStyle: axisLabelCss,
+    anchorX,
+    anchorY,
+    offset,
+    display: "html",
+    parse: false,
+    layer: GRAPH_LAYERS.axisLabel,
+  } as Record<string, unknown>);
 }
 
 function createFeaturePoint(
@@ -2599,11 +2619,6 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         strokeColor: AXIS_COLOR,
         layer: GRAPH_LAYERS.axis,
       };
-      const axisLabelAttributes = {
-        strokeColor: AXIS_COLOR,
-        ...graphLabelAttributes(` color:${AXIS_COLOR};`),
-        layer: GRAPH_LAYERS.axisLabel,
-      };
 
       board.create(
         "axis",
@@ -2613,9 +2628,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         ],
         {
           ...axisAttributes,
-          name: showAxisLabels ? "x" : "",
-          withLabel: showAxisLabels,
-          label: { ...axisLabelAttributes, position: "rt", offset: [-10, 8], anchorX: "middle", anchorY: "bottom" },
+          name: "",
+          withLabel: false,
           ticks: {
             ...ticksAttributes,
             ticksDistance: xLabelStep,
@@ -2639,9 +2653,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         ],
         {
           ...axisAttributes,
-          name: showAxisLabels ? "y" : "",
-          withLabel: showAxisLabels,
-          label: { ...axisLabelAttributes, position: "rt", offset: [8, -8], anchorX: "left", anchorY: "bottom" },
+          name: "",
+          withLabel: false,
           ticks: {
             ...ticksAttributes,
             ticksDistance: yLabelStep,
@@ -2657,6 +2670,11 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
           },
         } as Record<string, unknown>,
       );
+
+      if (showAxisLabels) {
+        createAxisLabelText(board, xMax + xAxisExtension, 0, "x", [-10, 8], "middle", "bottom");
+        createAxisLabelText(board, 0, yMax + yAxisExtension, "y", [8, -8], "left", "bottom");
+      }
     }
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {
@@ -2838,10 +2856,11 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
   return (
     <div
       id={boardId}
-      className="w-full overflow-hidden bg-white"
+      className="overflow-hidden bg-white"
       style={{
         height: graphDisplayHeight(graphConfig),
-        maxWidth: graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH,
+        maxWidth: "100%",
+        width: graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH,
       }}
     />
   );

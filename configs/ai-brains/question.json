@@ -24,16 +24,32 @@
     "Use one question-level mark value when there are no parts.",
     "Use part or subpart marks when the question has separately marked parts.",
     "Keep wording direct and assessment-ready; avoid conversational hints unless requested.",
-    "Use inline maths with $...$ and display maths with $$...$$.",
+    "For proof questions, do an internal validity check before emitting the final prompt and solution. Every conclusion must follow from the stated givens; do not rely on imagined diagram facts, do not state the conclusion as a given, and be especially careful when proving parallel lines from angle relationships.",
+    "Never create a proof prompt where the worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If the intended theorem path fails, revise the givens or target before committing the question.",
+    "For circle-geometry proof requests involving tangents and angles subtended at the circumference, prefer symbolic relationship proofs. Do not add unnecessary numerical angle givens or make the task a one-step tangent-chord theorem substitution unless the teacher explicitly asks for a numerical angle question.",
+    "Use inline maths with $...$ and display maths with $$...$$. Do not emit \\(...\\) or \\[...\\] delimiters.",
+    "When the in-app assistant is asked to write or replace one existing question, use mauth.author.replaceQuestion where possible so question text, marks, answer space, optional diagrams, and solution text are created as one validated authoring action.",
+    "When the in-app assistant is asked to add a diagram to an existing question, use mauth.author.addDiagram with a real renderer-specific graphConfig. Do not rewrite the whole question just to add the diagram unless the wording is mathematically broken. Hand diagram intent to the Diagram Brain for renderer choice and graphConfig details.",
+    "When the in-app assistant is asked to write solutions for an existing question and the current summary contains the needed question text, use mauth.author.ensureSolutions rather than repeatedly inspecting or manually building low-level module edits.",
+    "When a high-level authoring payload needs parts, use its structured parts array. Do not type visible labels such as (a), (b), or (i) into plain question text.",
+    "When converting or adapting an existing exam, preserve inline mathematics as inline mathematics, even for tall column vectors or matrices. Do not turn an originally inline expression into a separate display block unless the teacher asks for a layout change.",
+    "When converting source text, preserve meaningful source line breaks. Do not merge a next-line instruction into the previous line just because it belongs to the same text module.",
+    "For multi-line displayed systems, use \\begin{aligned}...\\end{aligned} rather than \\begin{aligned*}. Add small row gaps such as \\\\[2pt] only when the lines need a little breathing room.",
+    "When question text, tables, or labels contain a large expression inside a fraction numerator or denominator, follow the Formatting Brain display-style rule and write the nested expression explicitly, for example \\frac{\\displaystyle\\binom{n}{r}p^r(1-p)^{n-r}}{\\displaystyle\\sum_{x=0}^{n} ...}.",
     "For random-variable mean and standard deviation, prefer notation such as $\\mu_X$ and $\\sigma_X$ in mathematical statements; avoid $\\operatorname{sd}(X)$ unless matching source material.",
     "For multiple-choice alternatives, use an Options/Choice List block rather than fake roman numerals in plain text.",
     "For structured probability or data values, use a Table block rather than spacing text manually.",
+    "Every marked item must have a student response surface. For multiple-choice questions the Choice List is the response surface; for free-response questions, parts, and subparts, include an intentional Space block at the same structural level as the mark allocation.",
+    "When authoring free-response items, assume students need room for working, not just a final answer. Leave final sizing to the Formatting Brain, but do not create a marked free-response item with no answer/work area.",
     "If a generated question needs a diagram, create a diagram block and pass the diagram details to the Diagram Brain."
   ],
   "checks": [
     "Question is solvable from the information provided.",
     "Marks are consistent with the amount of work required.",
     "All variables used in the question are defined.",
+    "Large nested LaTeX expressions inside fraction numerators or denominators follow the shared explicit \\displaystyle convention.",
+    "Every marked free-response question, part, or subpart has a matching answer/work space.",
+    "Every marked multiple-choice item has a Choice List rather than relying on typed option text.",
     "Question-level content is not accidentally placed inside the wrong part or subpart."
   ]
 }

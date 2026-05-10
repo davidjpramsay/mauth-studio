@@ -12,6 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -22,5 +23,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../../packages/shared/src", "../../packages/diagram-plotly/src"]
+  "include": ["src", "../../packages/shared/src", "../../packages/diagram-plotly/src"],
+  "exclude": ["src/**/*.test.ts"]
 }

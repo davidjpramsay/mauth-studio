@@ -52,15 +52,18 @@ function expandPlotClipRects(element: HTMLElement, resetBase = false) {
 export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const spec = useMemo(() => normalizeStatsChartSpec(graphConfig), [graphConfig]);
+  const title = spec.data.title ?? "";
+  const xLabel = spec.data.xLabel ?? "";
+  const yLabel = spec.data.yLabel ?? "";
   const horizontalYLabel =
     spec.data.chartType === "histogram" && spec.data.yLabelOrientation === "horizontal" && Boolean(spec.data.yLabel?.trim());
   const labelMath = useMemo(
     () => ({
-      title: mathTextHasMath(spec.data.title),
-      x: mathTextHasMath(spec.data.xLabel),
-      y: mathTextHasMath(spec.data.yLabel),
+      title: mathTextHasMath(title),
+      x: mathTextHasMath(xLabel),
+      y: mathTextHasMath(yLabel),
     }),
-    [spec],
+    [title, xLabel, yLabel],
   );
   const plotlyConfig = useMemo(() => {
     const config = buildStatsChartPlotlyConfig(graphConfig);
@@ -76,14 +79,13 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
       },
     };
   }, [graphConfig, horizontalYLabel, labelMath]);
+  const plotlyConfigKey = useMemo(() => JSON.stringify(plotlyConfig), [plotlyConfig]);
   const [error, setError] = useState("");
-  const title = spec.data.title ?? "";
-  const xLabel = spec.data.xLabel ?? "";
-  const yLabel = spec.data.yLabel ?? "";
 
   useEffect(() => {
     let cancelled = false;
     const element = containerRef.current;
+    const currentPlotlyConfig = JSON.parse(plotlyConfigKey) as ReturnType<typeof buildStatsChartPlotlyConfig>;
     let plotly: typeof import("plotly.js-dist-min").default | null = null;
     if (!element) return undefined;
 
@@ -93,9 +95,11 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
       .then((module) => {
         if (cancelled) return;
         plotly = module.default;
-        void Promise.resolve(plotly.react(element, plotlyConfig.data, plotlyConfig.layout, plotlyConfig.config)).then(() => {
-          if (!cancelled) expandPlotClipRects(element, true);
-        });
+        void Promise.resolve(plotly.react(element, currentPlotlyConfig.data, currentPlotlyConfig.layout, currentPlotlyConfig.config)).then(
+          () => {
+            if (!cancelled) expandPlotClipRects(element, true);
+          },
+        );
       })
       .catch((renderError) => {
         if (cancelled) return;
@@ -106,7 +110,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
       cancelled = true;
       plotly?.purge(element);
     };
-  }, [plotlyConfig]);
+  }, [plotlyConfigKey]);
 
   useEffect(() => {
     const element = containerRef.current;

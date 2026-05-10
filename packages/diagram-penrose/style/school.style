@@ -30,6 +30,16 @@ forall Point p; Point q {
   ensure disjoint(p.labelText, q.labelText, 6)
 }
 
+forall Line l {
+  l.shape = Line {
+    start: (-150, 0)
+    end: (150, 0)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+}
+
 forall Point p
 where HidePoint(p) {
   p.dot.r = 0
@@ -55,6 +65,36 @@ where Segment(s, a, b) {
   layer segmentLine below b.dot
 }
 
+forall NamedSegment s; Point a; Point b
+where VectorSegment(s, a, b) {
+  s.start = a.dot.center
+  s.end = b.dot.center
+
+  direction = unit(b.dot.center - a.dot.center + (0.001, 0.001))
+  normal = rot90(direction)
+  tip = b.dot.center
+  base = b.dot.center - direction * 18
+
+  vectorLine = Line {
+    start: a.dot.center
+    end: base
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2.2
+    fillColor: none()
+  }
+
+  vectorHead = Polygon {
+    points: [tip, base + normal * 6, base - normal * 6]
+    fillColor: rgba(0, 0, 0, 1)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 0
+  }
+
+  layer vectorLine below vectorHead
+  layer vectorLine below a.dot
+  layer vectorHead below b.labelText
+}
+
 forall Line l; Point a; Point b
 where LineThrough(l, a, b) {
   l.shape = Line {
@@ -64,6 +104,36 @@ where LineThrough(l, a, b) {
     strokeWidth: 2
     fillColor: none()
   }
+}
+
+forall Line l; Point a; Point b
+where ParallelToSegment(l, a, b) {
+  dx1 = l.shape.end[0] - l.shape.start[0]
+  dy1 = l.shape.end[1] - l.shape.start[1]
+  dx2 = b.dot.center[0] - a.dot.center[0]
+  dy2 = b.dot.center[1] - a.dot.center[1]
+
+  ensure equal(dx1 * dy2, dy1 * dx2)
+}
+
+forall Line l; Point a; Point b
+where PerpendicularToSegment(l, a, b) {
+  dx1 = l.shape.end[0] - l.shape.start[0]
+  dy1 = l.shape.end[1] - l.shape.start[1]
+  dx2 = b.dot.center[0] - a.dot.center[0]
+  dy2 = b.dot.center[1] - a.dot.center[1]
+
+  ensure equal(dx1 * dx2 + dy1 * dy2, 0)
+}
+
+forall Line l1; Line l2
+where Parallel(l1, l2) {
+  dx1 = l1.shape.end[0] - l1.shape.start[0]
+  dy1 = l1.shape.end[1] - l1.shape.start[1]
+  dx2 = l2.shape.end[0] - l2.shape.start[0]
+  dy2 = l2.shape.end[1] - l2.shape.start[1]
+
+  ensure equal(dx1 * dy2, dy1 * dx2)
 }
 
 forall Ray r; Point start; Point through

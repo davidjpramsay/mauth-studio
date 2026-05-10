@@ -2,6 +2,8 @@
 
 Basic Substance syntax for static geometry diagrams in Mauth Studio.
 
+The assistant-facing path for `geometricConstruction` should normally use this supported Penrose Substance dialect directly in `graphConfig.options.substanceSource`. Structured `graphConfig.data` geometry can exist for simple UI controls, but it should not become a second Penrose language.
+
 ## What You Usually Edit
 
 For normal use, edit only **Substance**. Mauth supplies the Penrose Domain and Style preset.
@@ -144,7 +146,12 @@ RayFrom(r, A, B)
 
 Perpendicular(l, m)
 Parallel(l, m)
+ParallelToSegment(l, A, B)
+PerpendicularToSegment(l, A, B)
 ```
+
+Use `ParallelToSegment(l, A, B)` when the visible object should be only the segment `AB`, such as a chord parallel to a tangent. Use `Parallel(l, m)` when both full construction lines should be visible.
+Use `PerpendicularToSegment(l, A, B)` for a line perpendicular to a drawn segment `AB`.
 
 ## Circles
 
@@ -164,6 +171,7 @@ OnCircle(B, gamma)
 ```penrose
 Line tangentA
 Tangent(tangentA, gamma, A)
+ParallelToSegment(tangentA, B, C)
 
 Line secantBC
 Secant(secantBC, gamma, B, C)
@@ -197,9 +205,9 @@ RegionLabel onlyA, intersection, onlyB, outside
 Label U $U$
 Label A $A$
 Label B $B$
-Label onlyA $A \setminus B$
+Label onlyA $A \cap B'$
 Label intersection $A \cap B$
-Label onlyB $B \setminus A$
+Label onlyB $A' \cap B$
 Label outside $(A \cup B)'$
 
 Venn(U, A, B)
@@ -207,6 +215,39 @@ LabelsLeftOnly(onlyA, A, B)
 LabelsIntersection(intersection, A, B)
 LabelsRightOnly(onlyB, A, B)
 LabelsOutside(outside, U, A, B)
+```
+
+Optional shaded-region predicates for two-set Venn diagrams:
+
+```penrose
+ShadeLeftOnly(A, B)
+ShadeIntersection(A, B)
+ShadeRightOnly(A, B)
+ShadeOutside(U, A, B)
+```
+
+Venn labels should stay as plain dark text, including over shaded regions. Avoid adding white halos or label boxes unless the task explicitly calls for a boxed count badge.
+
+Use count badges only when the problem asks for totals or placeholders. Preferred style: a small square badge attached to the top-right corner of the universal rectangle for `n(U)`/total/occasionally `U`, and small arc-only semicircle side tabs attached to the outside edge of the relevant set circle for set totals such as `n(A)` and `n(B)`. Side tabs should not have a straight chord line, and the count should sit inside the semicircle tab rather than outside the diagram or on a region boundary. Put set labels such as `A` and `B` just outside the top of the circles. When side-tab totals are present, align the A-total, A-only, intersection, B-only, and B-total values on one horizontal centreline and space the three inner values evenly between the side-tab totals. Put the outside value near the lower-right of the universal rectangle unless the teacher explicitly wants another placement. Venn label text is held at document-size maths text and compensated against diagram scale and the default 80% display scale.
+
+For two-set Venn diagrams, `scalePercent=100` is the normal size and displays the 420 by 300 SVG canvas at 80% by default.
+
+Use `VectorSegment(name, start, end)` for directed links in schematic network diagrams. Use `Segment(name, start, end)` for undirected links. Coordinate-accurate vectors such as $\mathbf{a}=\begin{pmatrix}2\\3\end{pmatrix}$ should use the JSXGraph `vector2d` diagram type instead of Penrose.
+
+```penrose
+Point A, B, C
+NamedSegment AB, AC, BC
+LengthLabel abLabel
+
+Label A $A$
+Label B $B$
+Label C $C$
+Label abLabel $p$
+
+VectorSegment(AB, A, B)
+VectorSegment(AC, A, C)
+Segment(BC, B, C)
+LabelsSegment(abLabel, A, B)
 ```
 
 ## Common Patterns
@@ -232,17 +273,17 @@ HidePoints(A, B, C)
 ### Circle With Tangent
 
 ```penrose
-Point O, A
+Point centre, A
 Circle gamma
 Line tangentA
 
-Label O $O$
+Label centre $\,$
 Label A $A$
 Label gamma $\Gamma$
 
-CircleThrough(gamma, O, A)
+HidePoint(centre)
+CircleThrough(gamma, centre, A)
 Tangent(tangentA, gamma, A)
-Segment(OA, O, A)
 ```
 
 ### Right Triangle

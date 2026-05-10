@@ -281,4 +281,87 @@ class AutosaveRequest(BaseModel):
 
     frontMatter: dict[str, Any] = Field(default_factory=dict)
     questions: list[dict[str, Any]] = Field(default_factory=list)
-    selectedSavedTestId: str = ""
+    formattingConfig: dict[str, Any] = Field(default_factory=dict)
+    logo: dict[str, Any] | None = None
+    activeProjectFilePath: str | None = None
+    activeProjectFileRevision: int | None = None
+
+
+class LogoAssetRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = None
+    name: str = "Custom logo"
+    src: str = ""
+    schoolName: str | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
+
+
+class ProjectRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = None
+    name: str = "Untitled project"
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectFileRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    content: str | None = ""
+    kind: Literal["file", "folder"] = "file"
+    fileType: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    sortOrder: int = 0
+    baseRevision: int | None = None
+
+
+class AssistantChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system", "developer"] = "user"
+    content: str
+
+
+class AssistantToolOutput(BaseModel):
+    callId: str
+    name: str | None = None
+    output: Any
+
+
+class AssistantChatRequest(BaseModel):
+    messages: list[AssistantChatMessage] = Field(default_factory=list)
+    previousResponseId: str | None = None
+    toolOutputs: list[AssistantToolOutput] = Field(default_factory=list)
+    documentSummary: dict[str, Any] | None = None
+    model: str | None = None
+
+
+class AssistantToolCallResponse(BaseModel):
+    id: str | None = None
+    callId: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    mauthToolName: str | None = None
+    mauthArguments: Any = Field(default_factory=dict)
+
+
+class AssistantUsageSummary(BaseModel):
+    model: str
+    inputTokens: int = 0
+    cachedInputTokens: int = 0
+    billableInputTokens: int = 0
+    outputTokens: int = 0
+    totalTokens: int = 0
+    estimatedCostUsd: float | None = None
+    pricingSource: str | None = None
+
+
+class AssistantChatResponse(BaseModel):
+    configured: bool
+    model: str
+    message: str = ""
+    responseId: str | None = None
+    toolCalls: list[AssistantToolCallResponse] = Field(default_factory=list)
+    usage: AssistantUsageSummary | None = None
+    error: str | None = None

@@ -263,6 +263,7 @@ export interface GraphFeature {
   xMax?: number;
   labelX?: number;
   labelY?: number;
+  solutionOnly?: boolean;
 }
 
 export interface MathRequest {
@@ -305,6 +306,7 @@ export interface QuestionPart {
   label: string;
   text: string;
   marks: number;
+  pageBreakBefore?: boolean;
   contentBlocks?: ContentBlock[];
   subparts?: QuestionSubpart[];
 }
@@ -314,6 +316,7 @@ export interface QuestionSubpart {
   label: string;
   text: string;
   marks: number;
+  pageBreakBefore?: boolean;
   contentBlocks?: ContentBlock[];
 }
 
@@ -329,14 +332,21 @@ export type DiagramTextSide = "none" | "left" | "right";
 export type ChoiceNumberingStyle = "roman" | "upper-alpha" | "lower-alpha" | "decimal" | "bullet";
 export type ChoiceListLayout = "vertical" | "two-column" | "inline";
 export type TableCellAlignment = "left" | "center" | "right";
+export type ContentBlockVisibility = "always" | "student" | "solution";
 
-export interface TextContentBlock {
+export interface ContentBlockVisibilityOptions {
+  visibility?: ContentBlockVisibility;
+  solutionOnly?: boolean;
+  studentOnly?: boolean;
+}
+
+export interface TextContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "text";
   text: string;
 }
 
-export interface ChoiceListContentBlock {
+export interface ChoiceListContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "choices";
   choices: string[];
@@ -344,7 +354,7 @@ export interface ChoiceListContentBlock {
   layout?: ChoiceListLayout;
 }
 
-export interface TableContentBlock {
+export interface TableContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "table";
   headers: string[];
@@ -354,7 +364,7 @@ export interface TableContentBlock {
   cellAlignment?: TableCellAlignment;
 }
 
-export interface DiagramContentBlock {
+export interface DiagramContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "diagram";
   diagramAlign?: DiagramAlignment;
@@ -362,13 +372,13 @@ export interface DiagramContentBlock {
   graphConfig: GraphConfig;
 }
 
-export interface SpaceContentBlock {
+export interface SpaceContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "space";
   lines: number;
 }
 
-export interface PageBreakContentBlock {
+export interface PageBreakContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "pageBreak";
 }
@@ -431,4 +441,74 @@ export interface GeneratedTest {
   blocks: Array<Record<string, unknown>>;
   formattedSections: Array<Record<string, unknown>>;
   formattingConfig?: FormattingConfig;
+}
+
+export type ProjectFileKind = "file" | "folder";
+
+export type MauthProjectFileType =
+  | "folder"
+  | "mauthdown"
+  | "worksheet"
+  | "test"
+  | "diagram"
+  | "config"
+  | "markdown"
+  | "json"
+  | "generated"
+  | "asset"
+  | "text"
+  | string;
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description?: string | null;
+  metadata: Record<string, unknown>;
+  fileCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectFileSummary {
+  id: string;
+  projectId: string;
+  parentId?: string | null;
+  parentPath?: string | null;
+  path: string;
+  name: string;
+  kind: ProjectFileKind;
+  fileType?: MauthProjectFileType | null;
+  metadata: Record<string, unknown>;
+  sortOrder: number;
+  revision: number;
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectFileDocument extends ProjectFileSummary {
+  content: string | null;
+  versionCount: number;
+}
+
+export interface ProjectFileVersion {
+  id: string;
+  projectId: string;
+  filePath: string;
+  fileId?: string | null;
+  fileType?: MauthProjectFileType | null;
+  metadata: Record<string, unknown>;
+  revision: number;
+  reason?: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ProjectFileSaveRequest {
+  content?: string | null;
+  kind?: ProjectFileKind;
+  fileType?: MauthProjectFileType | null;
+  metadata?: Record<string, unknown>;
+  sortOrder?: number;
+  baseRevision?: number | null;
 }

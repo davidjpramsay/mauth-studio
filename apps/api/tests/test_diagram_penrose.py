@@ -58,7 +58,7 @@ def test_penrose_endpoint_renders_default_two_set_diagram():
     assert "LabelsIntersection(intersection, A, B)" in data["metadata"]["substance"]
     assert "LabelsRightOnly(onlyB, A, B)" in data["metadata"]["substance"]
     assert "LabelsOutside(outside, U, A, B)" in data["metadata"]["substance"]
-    assert "A \\setminus B" in data["metadata"]["substance"]
+    assert "A \\cap B'" in data["metadata"]["substance"]
     assert "A \\cap B" in data["metadata"]["substance"]
 
 
@@ -120,6 +120,54 @@ def test_penrose_endpoint_accepts_source_inputs():
     assert "Label sideLabel1 $9$" in data["metadata"]["substance"]
     assert "`sideLabel1`.text" in data["svg"]
     assert 'data-c="39"' in data["svg"]
+
+
+def test_penrose_endpoint_repairs_common_assistant_geometry_source_aliases():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "geometricConstruction",
+            "data": {
+                "objects": [
+                    {"type": "point", "name": "O", "label": "O"},
+                    {"type": "point", "name": "A", "label": "A"},
+                    {"type": "point", "name": "B", "label": "B"},
+                    {"type": "point", "name": "C", "label": "C"},
+                    {"type": "circle", "name": "omega", "label": ""},
+                    {"type": "line", "name": "t", "label": "tangent at $A$"},
+                ],
+                "relationships": [],
+            },
+            "style": "geometry",
+            "options": {
+                "scalePercent": 100,
+                "substanceSource": (
+                    "Point O, A, B, C\n"
+                    "Circle omega\n"
+                    "Line t\n"
+                    "Segment AB, AC, BC, OA\n"
+                    "On(A, omega)\n"
+                    "On(B, omega)\n"
+                    "On(C, omega)\n"
+                    "Segment(AB, A, B)\n"
+                    "Segment(AC, A, C)\n"
+                    "Segment(BC, B, C)\n"
+                    "Segment(OA, O, A)\n"
+                    "Perpendicular(t, OA)\n"
+                    "Parallel(t, BC)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    substance = response.json()["metadata"]["substance"]
+    assert "NamedSegment AB, AC, BC, OA" in substance
+    assert "OnCircle(A, omega)" in substance
+    assert "PerpendicularToSegment(t, O, A)" in substance
+    assert "ParallelToSegment(t, B, C)" in substance
+    assert "Label A $A$" in substance
+    assert "Label t $\\,$" in substance
 
 
 def test_penrose_source_inputs_drive_generated_layout_helpers():
@@ -457,6 +505,119 @@ def test_penrose_geometry_preset_can_hide_point_dots():
     assert "HidePoint(B)" in data["metadata"]["substance"]
     assert "HidePoint(C)" in data["metadata"]["substance"]
     assert "where HidePoint(p)" in data["metadata"]["styleSource"]
+
+
+def test_penrose_vector_relationship_draws_arrows_and_can_hide_endpoints():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "vectorRelationship",
+            "data": {
+                "hidePoints": True,
+                "hidePointLabels": True,
+                "objects": [
+                    {"type": "point", "name": "O"},
+                    {"type": "point", "name": "A"},
+                    {"type": "point", "name": "B"},
+                ],
+                "relationships": [
+                    {"type": "vectorSegment", "name": "OA", "points": ["O", "A"], "label": "\\vec u"},
+                    {"type": "vectorSegment", "name": "AB", "points": ["A", "B"], "label": "\\vec v"},
+                    {"type": "vectorSegment", "name": "OB", "points": ["O", "B"], "label": "\\vec u+\\vec v"},
+                ],
+            },
+            "style": "geometry",
+            "options": {"penrosePreset": "geometry", "scalePercent": 100},
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "VectorSegment(OA, O, A)" in data["metadata"]["substance"]
+    assert "VectorSegment(AB, A, B)" in data["metadata"]["substance"]
+    assert "VectorSegment(OB, O, B)" in data["metadata"]["substance"]
+    assert "HidePoint(O)" in data["metadata"]["substance"]
+    assert "Label O $\\,$" in data["metadata"]["substance"]
+    assert "<polygon" in data["svg"]
+
+
+def test_penrose_set_diagram_supports_smooth_shading_and_count_badges():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "setDiagram",
+            "data": {
+                "universe": {"name": "U", "label": "U", "countLabel": "n(U)"},
+                "sets": [
+                    {"id": "A", "label": "A", "countLabel": "n(A)", "count": "18"},
+                    {"id": "B", "label": "B", "countLabel": "n(B)", "count": "12"},
+                ],
+                "regions": [
+                    {"id": "onlyA", "label": "A \\cap B'", "shaded": True, "count": "9"},
+                    {"id": "intersection", "label": "A \\cap B", "count": "9"},
+                    {"id": "onlyB", "label": "A' \\cap B", "count": "3"},
+                    {"id": "outside", "label": "(A \\cup B)'", "shaded": True, "count": "9"},
+                ],
+            },
+            "style": "sets",
+            "options": {"penrosePreset": "sets", "scalePercent": 100},
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "ShadeLeftOnly(A, B)" in data["metadata"]["substance"]
+    assert "ShadeOutside(U, A, B)" in data["metadata"]["substance"]
+    assert "A \\cap B'" in data["metadata"]["substance"]
+    assert "n(A)" in data["svg"]
+    assert "n(U)" in data["svg"]
+    assert 'paint-order="stroke"' not in data["svg"]
+    assert 'stroke="#ffffff"' not in data["svg"]
+    assert 'data-badge-kind="box"' in data["svg"]
+    assert 'data-badge-kind="left-tab"' in data["svg"]
+    assert 'data-badge-kind="right-tab"' in data["svg"]
+    assert 'data-badge-kind="cap"' not in data["svg"]
+    assert 'x="342" y="250"' in data["svg"]
+    assert 'font-size="16.666"' in data["svg"]
+    assert 'font-size="23"' not in data["svg"]
+    assert " Z" not in data["svg"].split('data-badge-kind="left-tab"', 1)[1].split("</g>", 1)[0]
+    assert " Z" not in data["svg"].split('data-badge-kind="right-tab"', 1)[1].split("</g>", 1)[0]
+    assert data["metadata"]["displayWidth"] == 336
+    assert data["metadata"]["displayHeight"] == 240
+    assert 'x="126" y="150"' in data["svg"]
+    assert 'x="210" y="150"' in data["svg"]
+    assert 'x="294" y="150"' in data["svg"]
+
+    scaled_response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "setDiagram",
+            "data": {
+                "universe": {"name": "U", "label": "U", "countLabel": "30"},
+                "sets": [
+                    {"id": "A", "label": "A", "countLabel": "18"},
+                    {"id": "B", "label": "B", "countLabel": "16"},
+                ],
+                "regions": [
+                    {"id": "onlyA", "label": "8"},
+                    {"id": "intersection", "label": "10"},
+                    {"id": "onlyB", "label": "6"},
+                    {"id": "outside", "label": "11"},
+                ],
+            },
+            "style": "sets",
+            "options": {"penrosePreset": "sets", "scalePercent": 200},
+        },
+    )
+
+    assert scaled_response.status_code == 200
+    scaled_svg = scaled_response.json()["svg"]
+    assert 'font-size="8.333"' in scaled_svg
+    assert 'x="96.018" y="150"' in scaled_svg
+    assert 'x="144" y="150"' in scaled_svg
+    assert 'x="210" y="150"' in scaled_svg
+    assert 'x="276" y="150"' in scaled_svg
+    assert 'x="323.982" y="150"' in scaled_svg
 
 
 def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():

@@ -43,8 +43,8 @@ forall Universe u; Set a; Set b
 where Venn(u, a, b) {
   a.shape.center = (-50, 0)
   b.shape.center = (50, 0)
-  a.labelText.center = (-82, 76)
-  b.labelText.center = (82, 76)
+  a.labelText.center = (-88, 60)
+  b.labelText.center = (88, 60)
 
   ensure disjoint(a.labelText, b.labelText, 12)
 }
@@ -78,6 +78,81 @@ where LabelsRightOnly(l, a, b) {
 
 forall RegionLabel l; Universe u; Set a; Set b
 where LabelsOutside(l, u, a, b) {
-  l.text.center = (0, -88)
+  l.text.center = (0, -96)
   layer l.text above u.box
+}
+
+forall Set a; Set b
+where ShadeLeftOnly(a, b) {
+  leftOnlyShade = Polygon {
+    points: [(-132, 0), (-116, 52), (-78, 76), (-31, 66), (-3, 35), (0, 0), (-3, -35), (-31, -66), (-78, -76), (-116, -52)]
+    fillColor: rgba(14, 116, 144, 0.32)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  layer leftOnlyShade below a.shape
+  layer leftOnlyShade below b.shape
+}
+
+forall Set a; Set b
+where ShadeIntersection(a, b) {
+  intersectionShade = Polygon {
+    points: [(-32, 0), (-24, 36), (0, 65), (24, 36), (32, 0), (24, -36), (0, -65), (-24, -36)]
+    fillColor: rgba(14, 116, 144, 0.34)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  layer intersectionShade below a.shape
+  layer intersectionShade below b.shape
+}
+
+forall Set a; Set b
+where ShadeRightOnly(a, b) {
+  rightOnlyShade = Polygon {
+    points: [(132, 0), (116, 52), (78, 76), (31, 66), (3, 35), (0, 0), (3, -35), (31, -66), (78, -76), (116, -52)]
+    fillColor: rgba(14, 116, 144, 0.32)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  layer rightOnlyShade below a.shape
+  layer rightOnlyShade below b.shape
+}
+
+forall Universe u; Set a; Set b
+where ShadeOutside(u, a, b) {
+  outsideTopShade = Polygon {
+    points: [(-180, 110), (180, 110), (180, 82), (-180, 82)]
+    fillColor: rgba(14, 116, 144, 0.26)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  outsideBottomShade = Polygon {
+    points: [(-180, -82), (180, -82), (180, -110), (-180, -110)]
+    fillColor: rgba(14, 116, 144, 0.26)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  outsideLeftShade = Polygon {
+    points: [(-180, 82), (-132, 82), (-132, -82), (-180, -82)]
+    fillColor: rgba(14, 116, 144, 0.26)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  outsideRightShade = Polygon {
+    points: [(132, 82), (180, 82), (180, -82), (132, -82)]
+    fillColor: rgba(14, 116, 144, 0.26)
+    strokeColor: none()
+    strokeWidth: 0
+  }
+
+  layer outsideTopShade below u.box
+  layer outsideBottomShade below u.box
+  layer outsideLeftShade below u.box
+  layer outsideRightShade below u.box
 }

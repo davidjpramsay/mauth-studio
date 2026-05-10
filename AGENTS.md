@@ -10,6 +10,8 @@ Mauth Studio is a rule-driven high-school mathematics assessment authoring syste
 
 Do not put marking or formatting decisions inside question generator logic.
 
+Product direction: build for AI-controlled authoring first. Human UI should remain usable and clear, but new features, schemas, editor actions, validation, and docs should assume an AI agent will often create, inspect, and edit the document through structured operations. Prefer explicit document state, deterministic validators, reversible actions, and small focused controls over UI-only behaviour that an agent cannot reason about or reproduce.
+
 ## Commands
 
 Run root scripts from the project root: the folder containing this `AGENTS.md`, the root `package.json`, `apps/`, and `packages/`.
@@ -51,7 +53,7 @@ Do not commit local authoring data or generated output:
 - `apps/web/dist/`
 - Python caches and virtual environments
 
-The app stores live tests under `storage/` and browser fallback state in localStorage. Treat those as user data, not source code.
+The app stores live tests, autosave, reusable logo assets, and prototype project files under `storage/`, with browser fallback state in localStorage. Treat those as user data, not source code. Logos are not built in: starter logos are editable seed data added once for new or migrated browsers, and the shared logo library is independent of any one saved test. Project/file storage lives under `storage/projects`; use revision-aware saves and version snapshots. The Files drawer ZIP backup/import path is the supported portable backup workflow and includes project files, version snapshots, and reusable logo assets. Treat legacy `storage/tests` as migration input only, while `storage/autosave/current-test.json` is the current recovery draft and should not be confused with a saved file.
 
 ## Mauthdown
 
@@ -69,7 +71,7 @@ Mauthdown is the AI-friendly file format for tests. Prefer explicit containers:
 
 Question, part, and subpart labels are automatic. Do not store visible labels like `(a)` or `(i)` in text unless they are part of the actual question content.
 
-Use `$...$` for inline maths and `$$...$$` for display maths. Inline maths is rendered with `\displaystyle` by default while keeping KaTeX `displayMode: false`, so it stays in the sentence but fractions and operators use display-style sizing. If a specific inline formula needs compact KaTeX sizing, start it with `\textstyle`. Markdown `**bold**`, `*italic*`, and `***bold italic***` are supported in text blocks. Table cells use the same inline maths and formatting renderer.
+Use `$...$` for inline maths and `$$...$$` for display maths. Maths is rendered through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default so it stays in the sentence while fractions and operators use display-style sizing. This is a local wrapper, not MathJax display mode, because MathJax display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`. TeX still shrinks content inside fraction numerators and denominators; for printable questions, solutions, table cells, and diagram labels, write nested large expressions explicitly, such as `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`. Markdown `**bold**`, `*italic*`, and `***bold italic***` are supported in text blocks. Table cells use the same inline maths and formatting renderer.
 
 ## AI Rule Brains
 
@@ -82,7 +84,11 @@ Keep AI authoring behaviour split into focused rule sets. The machine-readable c
 
 All brains operate on the same Mauthdown/test schema. Do not let formatting, diagram, or solutions rules leak into question-writing logic.
 
+AI-authored document edits should prefer the structured Mauth action layer in `apps/web/src/lib/mauthActions.ts` when the action exists. Human UI controls should use the same action path where practical, so future in-app AI can rely on deterministic edit contracts instead of guessing local React state. Use document action batches when edits touch front matter, logo/school-name selection, page format, and question content together; use question action batches for question-only edits. Use `module.move`, `part.move`, and `subpart.move` for relocating existing content so ids, undo/history, mixed `itemOrder`, and validation remain intact. For large model-generated edits, run a document-action dry run first and inspect the preview summary before committing the same batch. Keep `pnpm test:web-actions` passing when changing the action contract.
+
 Formatting brain rule: treat `:::space` blocks as intentional working area, not generic page filler. If a manual page break immediately follows a question, do not add a trailing question-level space block just to fill the remaining page area. Keep spaces inside parts/subparts when they are intended answer space for that part.
+
+For deliberate splits inside a long question, use `pageBreakBefore` on the relevant part or subpart. Keep question-boundary page breaks in the mini TOC/page-break-after-question model; do not reintroduce standalone page-break modules inside question content.
 
 When adding a durable behaviour rule, update both the relevant brain config and the human docs. Do not add one-off preferences to a brain unless they should apply to future AI/API authoring. Prefer small, testable rules that point to the shared schema.
 
@@ -108,11 +114,9 @@ For statistics charts, extend `packages/diagram-plotly` instead of adding chart 
 
 For solution-copy graph annotations, use editable graph features such as `point`, `label`, and `line_segment`. Do not draw one-off SVG overlays in React.
 
-## Export
+## Print
 
-`Export PDF` is a real in-app export path. It renders the same A4 preview into a hidden export stage, waits for fonts/KaTeX/JSXGraph/Penrose/Plotly output, captures each page, and writes a PDF with `html2canvas` and `jsPDF`. Keep this path aligned with the visible preview; do not replace it with `window.print()`.
-
-The current PDF export is raster-page based. That is acceptable for the prototype because it preserves diagram and maths fidelity, but selectable text and DOCX export are future work.
+PDF output uses the browser print dialog and Save as PDF from the same generated A4 preview pages shown on screen. Screen preview uses pixel-sized page boxes for visual layout and zoom. Print CSS should use physical paged-media rules: `@page { size: A4; }` owns paper size and margins, while each generated app page renders only its printable content area. Do not make print DOM pages full physical-height paper boxes; that can create blank trailing pages in WebKit/Safari. Avoid browser-specific print branches unless a narrow compatibility issue is proven.
 
 ## Frontend Notes
 

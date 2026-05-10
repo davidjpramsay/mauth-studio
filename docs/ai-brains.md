@@ -2,6 +2,8 @@
 
 Mauth Studio uses small, composable AI rule brains instead of one large prompt. A brain is a focused rule set that operates on the shared Mauthdown/test schema.
 
+The product goal is AI-controlled authoring first. Human editing remains important, but durable behaviour should be encoded so an AI can create, inspect, edit, validate, and repair documents through structured Mauth actions rather than relying on hidden UI state or one-off manual judgement. The in-app assistant is expected to become the main AI workflow for Mauth and should aim for parity with the current Codex-assisted workflow for document work: complete question/test authoring, solutions, diagrams, layout, files, print checks, and repair passes from inside the app. When deciding whether to add a feature or rule, prefer the option that gives the assistant explicit schema fields, clear ownership by a brain, deterministic validation, reversible document patches, and enough inspection data to reason without guessing.
+
 The brain configs live in `configs/ai-brains/`:
 
 - `question.json`: wording, curriculum fit, marks intent, and question structure.
@@ -33,13 +35,71 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 Current durable conventions:
 
 - Use `[[marks:n]]` for solution-copy mark ticks.
+- Any brain that emits LaTeX follows the shared MathJax style contract: use `$...$` for inline maths and `$$...$$` for display maths; do not emit `\(...\)` or `\[...\]`. Inline maths is wrapped with `\displaystyle` by default, but TeX still shrinks fraction numerators and denominators, so large nested expressions need explicit nested display style, for example `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`.
+- When converting source exams, preserve inline maths as inline maths even when it contains tall vectors or matrices. Use display maths only for standalone source equations or deliberate working lines.
+- Preserve meaningful source line breaks and paragraph breaks during exam conversion. A text block may contain real newlines; do not merge next-line instructions into one long line unless the original break was clearly accidental.
+- For vertical displayed systems, use `\begin{aligned} ... \end{aligned}`, not `aligned*`. Add small row gaps such as `\\[2pt]` only when the rows need more breathing room.
+- Every marked item needs a student response surface. Multiple-choice items use the Choice List; free-response questions, parts, and subparts use intentional answer/work space at the same structural level as the marks.
+- Proof questions must be internally valid before they are committed. Do not emit a proof prompt where the worked solution says the requested conclusion does not follow, cannot be proven, or proves a different result.
+- For tangent/circle-theorem proof prompts, prefer symbolic relationship proofs unless the teacher asks for a numerical angle calculation. Avoid padding a proof with irrelevant numerical angle givens.
+- A solutions pass is incomplete until every marked question, part, and subpart has a corresponding solution or answer key entry.
+- Ordinary question text, tables, choices, and given diagrams are shared automatically between the student copy and the solution copy. Do not make normal test modules solution-specific.
+- Blank answer/completion tables are response surfaces, not given-data tables. They may be student-only and replaced by adjacent solution modules, while given-data tables stay shared.
+- Store worked-solution text/diagrams as solution modules and keep them immediately adjacent to the answer `space` they replace, so the app-level solution toggle can swap student working space for worked solutions without deleting either copy.
+- In raw test JSON, encode worked-solution modules with `visibility: "solution"` or the legacy `solutionOnly` compatibility field. Do not add visibility fields to ordinary question modules.
+- New answer-space blocks created for response/solution slots should use `visibility: "student"`. Existing or imported plain `space` blocks with no visibility field are ordinary shared blocks until deliberately converted, so do not infer student-only behaviour from `kind: "space"` alone.
+- When generating raw JSON with code, preserve LaTeX backslashes with raw strings or double escaping, then validate that solution text has no unintended control characters from sequences like `\f`, `\b`, `\r`, or `\t`.
+- Treat newly added free-response `space` blocks as student answer/work space by default.
+- When manually authoring in the editor, the Add -> Solution slot action creates the correct adjacent pair: a student answer-space block followed by a solution text block beginning with `**Solution.**`.
+- In marked free-response questions, parts, and subparts, the editor's Add -> Answer + solution action is the normal way to add response space. It creates the same paired student-space/solution structure without requiring the author to add a separate solution block later.
+- The renderer treats adjacent answer-space and solution modules as one matched replacement slot and reserves the larger height for both copies.
+- Be generous with student answer space. If a concise worked solution needs more room than the original space, increase the adjacent answer `space` block so the student and solution copies keep matching pagination. When that space follows a left- or right-aligned diagram, the renderer uses an L-shaped side-and-under answer slot automatically.
+- Every worked solution should fit within its paired student slot. If it does not, first tighten the solution and use side-by-side diagram placement where helpful; if it still does not fit, increase the paired answer space.
+- Do not stretch solution working to fill the whole reserved student space. Write compact solutions first; unused slot space should remain after the solution.
+- Respect manual teacher edits to space lines and diagram alignment unless they create a clear layout problem.
+- Mark solution-only graph features as `solutionOnly` so graph annotations hide on the student copy.
 - Solution text aligns with the content column for its question, part, or subpart.
 - Solution-copy graph annotations use editable graph features such as red points, labels, and `line_segment` guide lines.
-- Side-by-side solution text beside left/right diagrams uses `diagramTextSide`, not improvised text wrapping.
-- PDF export uses the same A4 preview layout as the visible test preview.
+- Side-by-side solution text beside given diagrams or solution-only diagrams uses automatic left/right diagram placement. The diagram floats left or right and the answer/solution content wraps beside it, then continues at full width underneath if it is taller than the diagram. Do not fake this with blank-line padding, duplicated diagrams, or manual columns.
+- In calculator-assumed sections, worked probability/statistics solutions should include useful evaluated intermediate values when they help marking. For example, in a conditional binomial probability, show the numerator and denominator calculator values before the final ratio rather than only a large unevaluated sum.
+- Diagram renderer, chart-default, and diagram-control changes should be checked against the saved `DIAGRAM AUDIT GALLERY`; use `pnpm smoke:diagram-gallery` for repeatable screenshots and human-inspect the written expected-result notes.
+- After a solution pass, the total of all `[[marks:n]]` annotations should match the test total marks.
+- After an AI-authored solution pass, use the app's solution validation status as the deterministic finish check. Do not call the pass complete while it reports missing response surfaces, missing solution modules, unpaired solution modules, or fixable solution-fit warnings.
+- Use solution validation quick fixes for routine repairs before hand editing: add a full solution slot, add the missing solution after an answer space, add the missing answer space before a solution, or increase the paired space line count when a concise solution needs more room.
+- PDF output uses the browser print path from the same generated A4 preview pages. Screen preview may use pixel A4 boxes, but print should use physical `@page` sizing and printable content blocks rather than full-height paper boxes in the DOM.
 
 ## Runtime Plan
 
-When an AI API is added, the service should load `configs/ai-brains/index.json`, select the requested brain configs, and pass them beside the current Mauthdown/test JSON. The AI output should be a structured patch or replacement test document, not free-form instructions.
+When the in-app assistant calls an AI provider, the service should load or summarise the relevant brain rules, select the requested brain configs, and pass them beside a compact inspection of the current Mauthdown/test document. The AI output should be structured Mauth tool calls/actions, not free-form instructions or arbitrary JSON mutation.
+
+The assistant should be designed to handle the same teacher requests currently handled by Codex in-repo, but through app-native tools: write or revise questions, create diagrams, write solutions, add marking ticks, adjust answer space, repair formatting, inspect output, manage files, and check print/PDF readiness. If a task repeatedly requires Codex-style manual inference, add a tool, validator, renderer inspection, or brain rule rather than relying on hidden prompt judgement.
+
+When an edit is covered by the Mauth action layer, the AI should output or call a structured Mauth action instead of directly mutating arbitrary JSON. Use atomic action batches for multi-step edits that should be one undoable operation, especially when setting front matter, selecting a logo/school name, changing page format, or creating multipart questions with parts, subparts, modules, answer spaces, diagrams, and solutions. Use `module.move`, `part.move`, and `subpart.move` to relocate existing content while preserving ids and mixed `itemOrder`; do not simulate moves by deleting and recreating content. See `docs/mauth-actions.md` for the current action contract.
+
+For exam conversions, the AI should use the school-exam front-matter recipe exposed by `mauth.tools.describe`: apply `frontMatter.update` with `titlePageTemplate: "exam"` and a populated `frontMatter.exam`, then `formatting.update` with `id: "exam-booklet"`. This is the only active exam style, including for ATAR/external source papers unless the user explicitly asks otherwise. Choose the matching `frontMatter.exam.sectionPreset`: `section-one-calculator-free` or `section-two-calculator-assumed`. Current-section structure rows should use `useCurrentDocument: true`, and the exam cover should use the selected school logo from the logo bank.
+
+For large AI-authored edits, run a document-action dry run first. Inspect the preview summary for validity, touched ids, added/deleted/moved/reordered counts, changed front-matter/page-format fields, warnings, and validation output before applying the same batch as a committed edit.
+
+In-app assistant work should use the assistant tool loop documented in `docs/ai-chatbox-readiness.md`: inspect the current document with `mauth.document.inspect`, preview edits with `mauth.actions.preview`, validate with `mauth.validation.run`, apply accepted actions with `mauth.actions.apply`, then commit the returned document through editor history/autosave. Do not teach AI workflows to mutate React state, DOM nodes, browser cache, or raw project files directly.
+
+For focused teacher prompts, the in-app assistant should use high-level authoring tools before falling back to low-level action batches:
+
+- Use `mauth.author.replaceQuestion` for writing or replacing one existing question.
+- Use `mauth.author.addDiagram` for follow-ups such as "add the diagram to Question 1". Choose the renderer first, then emit a real `graphConfig`: Penrose `geometricConstruction` for schematic geometry and circle theorem diagrams, `graph2d` for coordinate/function graphs, `vector2d` for coordinate vectors, `statsChart` for statistics, `setDiagram` for Venn diagrams, `graph3d` for 3D diagrams, and `image` for uploads. Do not use canned `standardDiagram` recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in `graphConfig.options.substanceSource`; do not invent a second geometry translation schema.
+- Use `mauth.author.ensureSolutions` for compact solution requests when the current document summary contains enough question text. The tool should create or resize the matched student answer space and add solution-only worked-solution text.
+
+In-app chatbox file operations should use the `mauth.files.*` tools documented in `docs/ai-chatbox-readiness.md` and implemented in `apps/web/src/lib/mauthAssistantFileTools.ts`. Use those tools for list/open/save/save-as/create-folder/duplicate/rename/move/delete/version operations. The chatbox adapter still owns active editor state and autosave draft updates after a file tool returns.
+
+Project-file saves must stay revision-safe. Save the active file with the revision that was loaded or last saved for that editor document; do not fetch the latest file summary immediately before saving just to obtain a current revision. If the file changed on disk, reload it or save the current draft as a copy.
+
+File save, autosave, revision, and external-edit conflict handling are infrastructure. Prefer quiet background save/reload/refresh/revision-sync work when it is safe. Teacher-facing messages should stay short and appear only when there is a real data-loss choice, such as reloading a changed file or saving the current draft as a copy.
+
+If Codex, scripts, or backend AI edit a saved project file that may be open in Mauth, keep project-file API metadata, active revision, and autosave draft state aligned so browser autosave cannot restore an older draft over the fresh file.
+
+Visible chatbox/provider code should call `runMauthAssistantAdapterTool` from `apps/web/src/lib/mauthAssistantAdapter.ts`. That adapter is the boundary between model tool calls and host editor/file callbacks; it commits accepted document edits, parses opened files, serialises current documents for save/save-as, and returns changed ids/paths for user-visible logs. The Assistant panel's chat provider and manual JSON runner both use this adapter, so future work should extend that path rather than inventing a parallel editor mutation route.
+
+Mauth actions and validation are assistant/editor internals, not teacher-facing chores. The assistant/provider workflow should preview and validate generated action batches in the background, apply accepted actions through the normal undo/autosave path, and explain the outcome in plain language. The live editor document includes `formattingConfig`, so AI proposals may use `formatting.update` and `pageFormat.update` for document styling changes such as the high-school mathematics test preset, page size, margins, and page-break visibility.
+
+The human UI for these whole-document settings is the `Test format` panel under `T`, beside the title-page controls. Treat that panel as test title-page and structure format only: it is appropriate for saved presets, page size, margins, mark-label visibility, and page-break-label visibility. Per-question spacing, tables, diagrams, charts, answer spaces, and solutions should still be edited through their own structured modules and actions.
 
 The document schema remains the source of truth. Brains are guidance for authoring and editing, not a second storage model.

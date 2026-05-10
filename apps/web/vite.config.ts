@@ -31,7 +31,10 @@ export default defineConfig({
           groups: [
             { name: "plotly", test: /node_modules[\\/]plotly\.js-dist-min[\\/]/ },
             { name: "jsxgraph", test: /node_modules[\\/]jsxgraph[\\/]/ },
-            { name: "math-rendering", test: /node_modules[\\/](katex|@babel[\\/]runtime)[\\/]/ },
+            {
+              name: "math-rendering",
+              test: /node_modules[\\/](mathjax-full|speech-rule-engine|wicked-good-xpath|@babel[\\/]runtime)[\\/]/,
+            },
           ],
         },
       },

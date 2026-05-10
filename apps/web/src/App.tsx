@@ -1,11 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode } from "react";
-import Panzoom from "@panzoom/panzoom";
-import type { PanzoomObject } from "@panzoom/panzoom";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import type {
+  CSSProperties,
+  DragEvent,
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
   ContentBlock,
+  ContentBlockVisibility,
   DiagramAlignment,
   DiagramTextSide,
   FormattingConfig,
@@ -13,6 +20,11 @@ import type {
   GraphFeature,
   GraphFunction,
   GraphFunctionPiece,
+  ProjectFileDocument,
+  ProjectFileSaveRequest,
+  ProjectFileSummary,
+  ProjectFileVersion,
+  ProjectSummary,
   QuestionPart,
   QuestionSubpart,
   TableCellAlignment,
@@ -27,18 +39,22 @@ import {
   type StatsChartType,
 } from "@mauth-studio/diagram-plotly";
 import {
+  Bot,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Columns2,
   Copy,
+  Download,
+  Eye,
+  EyeOff,
   FileText,
+  FolderOpen,
   GitBranch,
   GripVertical,
   ImagePlus,
   ListTree,
   ListOrdered,
-  Minus,
   Moon,
   PanelLeftClose,
   PanelRightClose,
@@ -54,9 +70,12 @@ import {
   Trash2,
   Type,
   Undo2,
+  Upload,
+  X,
 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
+import { MauthAssistantPanel, type MauthAssistantChatMessage } from "@/components/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
@@ -67,38 +86,154 @@ import {
   snapImplicitRelationPointAtY,
 } from "@/components/graphs/FunctionGraph";
 import { Vector2DGraph } from "@/components/graphs/Vector2DGraph";
+import {
+  PreviewContentBlocks as PreviewContentBlocksBase,
+  type PreviewContentBlocksProps as PreviewContentBlocksBaseProps,
+  type PreviewContentRenderers,
+  type PreviewContentRuntime,
+} from "@/components/preview/PreviewContentBlocks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { deleteStoredTest, getStorageAutosave, getStoredTest, listStoredTests, saveStorageAutosave, saveStoredTest } from "@/lib/api";
+import {
+  ApiError,
+  deleteStoredLogo,
+  downloadProjectBackup,
+  getDefaultProject,
+  getAssistantStatus,
+  getProjectFile,
+  getStorageAutosave,
+  importProjectBackup,
+  listProjectFiles,
+  listProjectFileVersions,
+  listStoredLogos,
+  listStoredTests as listLegacyStoredTests,
+  deleteProjectFile,
+  restoreProjectFileVersion,
+  saveProjectFile,
+  sendAssistantChat,
+  saveStorageAutosave,
+  saveStoredLogo,
+  updateProject,
+  type AssistantChatMessage,
+  type AssistantProviderToolCall,
+  type AssistantToolOutput,
+  type AssistantUsageSummary,
+} from "@/lib/api";
+import {
+  applyMauthAction,
+  applyMauthActions,
+  applyMauthDocumentAction,
+  applyMauthDocumentActions,
+  previewMauthDocumentActions,
+  type MauthAction,
+  type MauthActionPreviewSummary,
+  type MauthActionResult,
+  type MauthContentScope,
+  type MauthDocumentAction,
+  type MauthDocumentActionOptions,
+  type MauthDocumentActionResult,
+} from "@/lib/mauthActions";
+import {
+  runMauthAssistantAdapterTool,
+  type MauthAssistantAdapterHost,
+  type MauthAssistantAdapterResult,
+  type MauthAssistantAdapterToolCall,
+} from "@/lib/mauthAssistantAdapter";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
 const GRAPH_LABELS = ["f", "g", "h", "p", "q"];
 const DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH = 2.5;
 const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
-const HEADER_GROUP_CLASS = "ml-2 flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
+const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
 const EDITOR_ACTIVE_PANEL_CLASS = "border-primary/70 bg-primary/[0.03] shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]";
 const EDITOR_ACTIVE_HEADER_CLASS = "bg-primary/10 text-primary";
+const A4_WIDTH_PX = 793.700787;
+const A4_HEIGHT_PX = 1122.519685;
 const DEFAULT_PAGE_FORMAT = {
-  widthPx: 794,
-  heightPx: 1123,
+  widthPx: A4_WIDTH_PX,
+  heightPx: A4_HEIGHT_PX,
   paddingXPx: 76,
   paddingYPx: 76,
   showPageBreaks: true,
 };
+const DEFAULT_FORMATTING_CONFIG: FormattingConfig = {
+  id: "high-school-mathematics-test",
+  showMarks: true,
+  marksStyle: "right-aligned",
+  questionSpacing: "large",
+  diagramPosition: "below",
+  fontSize: "12pt",
+  numbering: "numeric",
+  sectionHeaders: true,
+  page: {
+    size: "A4",
+    orientation: "portrait",
+    ...DEFAULT_PAGE_FORMAT,
+  },
+};
+const TEST_FORMAT_PRESETS = [
+  {
+    id: "high-school-mathematics-test",
+    label: "High school mathematics test",
+  },
+  {
+    id: "exam-booklet",
+    label: "School exam booklet",
+  },
+];
+const NEW_TEST_TEMPLATES: Array<{
+  id: TitlePageTemplate;
+  title: string;
+  description: string;
+  formatPresetId: FormattingConfig["id"];
+}> = [
+  {
+    id: "standard",
+    title: "School test",
+    description: "Single Mauth title page with school logo, name line, marks, declaration, and test conditions.",
+    formatPresetId: "high-school-mathematics-test",
+  },
+  {
+    id: "exam",
+    title: "School exam booklet",
+    description: "School-logo exam cover, structure page, running headers, question footers, and supplementary pages.",
+    formatPresetId: "exam-booklet",
+  },
+];
+const PAGE_PRESETS = [
+  {
+    id: "a4-portrait",
+    label: "A4 portrait",
+    page: {
+      size: "A4",
+      orientation: "portrait",
+      ...DEFAULT_PAGE_FORMAT,
+    },
+  },
+];
 const QUESTION_GAP_PX = 32;
 const PREVIEW_FIT_PADDING_PX = 40;
 const MIN_PREVIEW_SCALE = 0.55;
-const DISPLAY_ONLY_PREVIEW_SCALE = 1.25;
+const MAX_PREVIEW_FIT_SCALE = 1;
 const MIN_PREVIEW_ZOOM = 0.7;
 const MAX_PREVIEW_ZOOM = 3;
-const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0012;
+const ASSISTANT_PREVIEW_RESERVED_WIDTH_PX = 640;
+const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0018;
+const PREVIEW_ZOOM_STATE_SYNC_DELAY_MS = 160;
+const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
+const DEFAULT_SOLUTION_SLOT_LINES = 8;
+const MIN_SOLUTION_SLOT_LINES = 4;
+const MAX_SOLUTION_SLOT_LINES = 18;
+const DEFAULT_SOLUTION_SLOT_TEXT = "**Solution.**\n\n";
+const ASSISTANT_MAX_TOOL_ROUNDS = 4;
 const LOGO_LIBRARY_STORAGE_KEY = "mauth-studio.logo-library.v1";
+const LOGO_STARTER_SEED_STORAGE_KEY = "mauth-studio.logo-starter-seed.v1";
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
 const STARTER_DOCUMENT_STORAGE_KEY = "mauth-studio.starter-document.v1";
@@ -108,20 +243,30 @@ const LEGACY_SAVED_TEST_STORAGE_KEY = "math-app.saved-tests.v1";
 const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
-const SAVED_TEST_LOGO_PREFIX = "saved-test-logo-";
 const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 const AUTOSAVE_DEBOUNCE_MS = 900;
+const TEST_FILE_ROOT = "tests";
+const TEST_FILE_ROOT_LABEL = "Documents";
+const LEGACY_SAVED_TESTS_MIGRATED_AT_KEY = "legacySavedTestsMigratedAt";
+const LEGACY_SAVED_TESTS_IMPORTED_KEY = "legacySavedTestsImported";
 let nextInsertMenuId = 0;
-const BUILT_IN_LOGOS: LogoAsset[] = [
+const STARTER_LOGOS: LogoAsset[] = [
   {
     id: "acc-logo",
     name: "Australian Christian College",
     src: "/logos/acc_logo.svg",
-    builtIn: true,
+    schoolName: "AUSTRALIAN\nCHRISTIAN COLLEGE",
+  },
+  {
+    id: "cornerstone-logo",
+    name: "Cornerstone Christian College",
+    src: "/logos/cornerstone_logo.svg",
+    schoolName: "CORNERSTONE\nCHRISTIAN COLLEGE",
   },
 ];
 const DEFAULT_FRONT_MATTER: FrontMatterConfig = {
-  logoId: BUILT_IN_LOGOS[0].id,
+  titlePageTemplate: "standard",
+  logoId: STARTER_LOGOS[0].id,
   schoolName: "AUSTRALIAN\nCHRISTIAN COLLEGE",
   subjectTitle: "YEAR 10 MATHEMATICS",
   assessmentTitle: "TEST 2",
@@ -141,6 +286,120 @@ const DEFAULT_FRONT_MATTER: FrontMatterConfig = {
   instructionsBody:
     "Time: 60 mins\n\n**All calculations** should be shown for full marks.\n\nPermitted items: ruler, pencils (or pens) and an eraser.\n\nStudents may use a scientific calculator.",
 };
+const DEFAULT_EXAM_TITLE_PAGE: ExamTitlePageConfig = {
+  sectionPreset: "section-one-calculator-free",
+  documentCode: "",
+  authorityName: "",
+  examHeading: "Semester One Examination, 2021",
+  bookletTitle: "Question/Answer booklet",
+  candidateLabelText: "",
+  studentNumberLabel: "WA student number:",
+  studentNumberFiguresLabel: "In figures",
+  studentNumberWordsLabel: "In words",
+  timeTitle: "Time allowed for this section",
+  readingTimeLabel: "Reading time before commencing work:",
+  readingTime: "five minutes",
+  workingTimeLabel: "Working time:",
+  workingTime: "fifty minutes",
+  additionalBookletsLabel: "Number of additional\nanswer booklets used\n(if applicable):",
+  materialsTitle: "Materials required/recommended for this section",
+  supervisorMaterialsTitle: "To be provided by the supervisor",
+  supervisorMaterials: "This Question/Answer booklet\nFormula sheet",
+  candidateMaterialsTitle: "To be provided by the candidate",
+  standardItemsLabel: "Standard items:",
+  standardItems:
+    "pens (blue/black preferred), pencils (including coloured), sharpener,\ncorrection fluid/tape, eraser, ruler, highlighters",
+  specialItemsLabel: "Special items:",
+  specialItems: "nil",
+  importantNoteTitle: "Important note to candidates",
+  importantNoteBody:
+    "No other items may be taken into the examination room. It is your responsibility to ensure that you do not have any unauthorised material. If you have any unauthorised material with you, hand it to the supervisor before reading any further.",
+  referenceText: "",
+  bookletCode: "",
+  courseHeader: "METHODS UNIT 3",
+  sectionHeader: "CALCULATOR-FREE",
+  structureTitle: "Structure of this paper",
+  structureRows: [
+    {
+      id: "section-one",
+      section: "Section One:\nCalculator-free",
+      useCurrentDocument: true,
+      questionsAvailable: 9,
+      questionsToBeAnswered: 9,
+      workingTimeMinutes: 50,
+      marksAvailable: 53,
+      percentage: 35,
+    },
+    {
+      id: "section-two",
+      section: "Section Two:\nCalculator-assumed",
+      useCurrentDocument: false,
+      questionsAvailable: 12,
+      questionsToBeAnswered: 12,
+      workingTimeMinutes: 100,
+      marksAvailable: 97,
+      percentage: 65,
+    },
+  ],
+  instructionsTitle: "Instructions to candidates",
+  instructionsBody:
+    "1. The rules for the conduct of the Western Australian external examinations are detailed in the Year 12 Information Handbook 2020: Part II Examinations. Sitting this examination implies that you agree to abide by these rules.\n\n2. Write your answers in this Question/Answer booklet preferably using a blue/black pen. Do not use erasable or gel pens.\n\n3. You must be careful to confine your answers to the specific questions asked and to follow any instructions that are specific to a particular question.\n\n4. Show all your working clearly. Your working should be in sufficient detail to allow your answers to be checked readily and for marks to be awarded for reasoning. Incorrect answers given without supporting reasoning cannot be allocated any marks. For any question or part question worth more than two marks, valid working or justification is required to receive full marks. If you repeat any question, ensure that you cancel the answer you do not wish to have marked.\n\n5. It is recommended that you do not use pencil, except in diagrams.\n\n6. Supplementary pages for planning/continuing your answers to questions are provided at the end of this Question/Answer booklet. If you use these pages to continue an answer, indicate at the original answer where the answer is continued, i.e. give the page number.\n\n7. The Formula sheet is not to be handed in with your Question/Answer booklet.",
+  cutOffNotice: "DO NOT WRITE IN THIS AREA AS IT WILL BE CUT OFF",
+  footerText: "See next page",
+  endOfQuestionsFooterText: "End of questions",
+  supplementaryPageTitle: "Supplementary page",
+  supplementaryQuestionNumberLabel: "Question number:",
+  supplementaryPageCount: 0,
+};
+const DEFAULT_EXAM_FRONT_MATTER: FrontMatterConfig = {
+  ...DEFAULT_FRONT_MATTER,
+  titlePageTemplate: "exam",
+  subjectTitle: "MATHEMATICS\nMETHODS\nUNIT 3",
+  assessmentTitle: "Semester One Examination, 2021",
+  showAssessmentSubtitle: true,
+  assessmentSubtitle: "Section One:\nCalculator-free",
+  showDeclaration: false,
+  showInstructions: false,
+  exam: DEFAULT_EXAM_TITLE_PAGE,
+};
+const EXAM_SECTION_PRESETS: Array<{
+  id: ExamSectionPresetId;
+  label: string;
+  assessmentSubtitle: string;
+  sectionHeader: string;
+  readingTime: string;
+  workingTime: string;
+  startQuestionNumber: number;
+  supervisorMaterials: string;
+  specialItems: string;
+  currentRowId: string;
+}> = [
+  {
+    id: "section-one-calculator-free",
+    label: "Section One: Calculator-free",
+    assessmentSubtitle: "Section One:\nCalculator-free",
+    sectionHeader: "CALCULATOR-FREE",
+    readingTime: "five minutes",
+    workingTime: "fifty minutes",
+    startQuestionNumber: 1,
+    supervisorMaterials: "This Question/Answer booklet\nFormula sheet",
+    specialItems: "nil",
+    currentRowId: "section-one",
+  },
+  {
+    id: "section-two-calculator-assumed",
+    label: "Section Two: Calculator-assumed",
+    assessmentSubtitle: "Section Two:\nCalculator-assumed",
+    sectionHeader: "CALCULATOR-ASSUMED",
+    readingTime: "ten minutes",
+    workingTime: "one hundred minutes",
+    startQuestionNumber: 10,
+    supervisorMaterials: "This Question/Answer booklet\nFormula sheet (retained from Section One)",
+    specialItems:
+      "drawing instruments, templates, notes on one unfolded sheet of A4 paper,\nand up to three calculators, which can include scientific, graphic and\nComputer Algebra System (CAS) calculators, are permitted in this ATAR\ncourse examination",
+    currentRowId: "section-two",
+  },
+];
 const DEFAULT_2D_GRAPH: GraphConfig = {
   type: "graph2d",
   expression: "x^2 - 5*x + 6",
@@ -213,6 +472,58 @@ const DEFAULT_GEOMETRIC_DATA = {
     { type: "labelLength", between: ["B", "C"], value: "12" },
   ],
 };
+const DEFAULT_VECTOR_RELATIONSHIP_DATA = {
+  hidePoints: false,
+  hidePointLabels: false,
+  objects: [
+    { type: "point", name: "A", label: "A" },
+    { type: "point", name: "B", label: "B" },
+    { type: "point", name: "C", label: "C" },
+  ],
+  relationships: [
+    { type: "vectorSegment", name: "AB", points: ["A", "B"], label: "" },
+    { type: "vectorSegment", name: "AC", points: ["A", "C"], label: "" },
+    { type: "segment", name: "BC", points: ["B", "C"], label: "" },
+  ],
+};
+const VECTOR_2D_COLORS = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#7c3aed"];
+const DEFAULT_VECTOR_2D_METADATA = {
+  vector2d: {
+    labelStyle: "boldLower",
+    vectors: [
+      { id: "a", name: "a", label: "", start: [0, 0], components: [2, 3], color: VECTOR_2D_COLORS[0], showComponents: false },
+      { id: "b", name: "b", label: "", start: [0, 0], components: [4, -3], color: VECTOR_2D_COLORS[1], showComponents: false },
+    ],
+  },
+};
+const DEFAULT_VECTOR_2D_GRAPH: GraphConfig = {
+  ...DEFAULT_2D_GRAPH,
+  type: "vector2d",
+  xMin: -1,
+  xMax: 6,
+  yMin: -4,
+  yMax: 4,
+  widthPx: 520,
+  heightPx: 320,
+  functions: [],
+  features: [],
+  metadata: DEFAULT_VECTOR_2D_METADATA,
+};
+const DEFAULT_3D_VIEW_STATE = {
+  az: 1,
+  el: 0.3,
+  bank: 0,
+};
+const DEFAULT_3D_GRAPH: GraphConfig = {
+  type: "graph3d",
+  widthPx: 420,
+  heightPx: 320,
+  functions: [],
+  features: [],
+  metadata: {
+    view3d: DEFAULT_3D_VIEW_STATE,
+  },
+};
 const DEFAULT_SET_DATA = {
   universe: { name: "U", label: "U" },
   sets: [
@@ -220,9 +531,9 @@ const DEFAULT_SET_DATA = {
     { type: "set", name: "B", label: "B" },
   ],
   regions: [
-    { name: "onlyA", label: "A \\setminus B" },
+    { name: "onlyA", label: "A \\cap B'" },
     { name: "intersection", label: "A \\cap B" },
-    { name: "onlyB", label: "B \\setminus A" },
+    { name: "onlyB", label: "A' \\cap B" },
     { name: "outside", label: "(A \\cup B)'" },
   ],
 };
@@ -274,23 +585,24 @@ const DEFAULT_IMAGE_DIAGRAM: GraphConfig = {
 };
 const DIAGRAM_TYPES = [
   { value: "graph2d", label: "2D graph" },
+  { value: "vector2d", label: "2D vector graph" },
+  { value: "graph3d", label: "3D graph" },
   { value: "image", label: "Image" },
   { value: "geometricConstruction", label: "Geometric construction" },
-  { value: "vectorRelationship", label: "Vector relationship" },
+  { value: "vectorRelationship", label: "Network" },
   { value: "setDiagram", label: "Set diagram" },
   { value: "statsChart", label: "Statistics chart" },
-  { value: "vector2d", label: "2D vector" },
-  { value: "graph3d", label: "3D graph" },
+];
+const DIAGRAM_TYPE_GROUPS = [
+  { label: "Coordinate", values: ["graph2d", "vector2d", "graph3d"] },
+  { label: "Construction", values: ["geometricConstruction", "vectorRelationship", "setDiagram"] },
+  { label: "Statistics", values: ["statsChart"] },
+  { label: "Media", values: ["image"] },
 ];
 const DIAGRAM_ALIGNMENTS: Array<{ value: DiagramAlignment; label: string }> = [
   { value: "left", label: "Left" },
   { value: "center", label: "Centre" },
   { value: "right", label: "Right" },
-];
-const DIAGRAM_TEXT_SIDES: Array<{ value: DiagramTextSide; label: string }> = [
-  { value: "none", label: "None" },
-  { value: "left", label: "Text left" },
-  { value: "right", label: "Text right" },
 ];
 const CHOICE_NUMBERING_STYLES: Array<{ value: ChoiceNumberingStyle; label: string }> = [
   { value: "roman", label: "Roman numerals" },
@@ -353,7 +665,6 @@ const GRAPH_INTERSECTION_TARGETS: Array<{ value: NonNullable<GraphFeature["inter
   { value: "xAxis", label: "x-axis" },
   { value: "yAxis", label: "y-axis" },
 ];
-
 type EditorContentBlock = ContentBlock;
 type EditorSubpart = Omit<QuestionSubpart, "contentBlocks"> & { contentBlocks: EditorContentBlock[] };
 type ContainerItemKind = "block" | "part" | "subpart";
@@ -435,6 +746,12 @@ interface PageBreakDropPreview {
 
 type SafariGestureEvent = Event & { scale?: number; clientX?: number; clientY?: number };
 
+interface PreviewEditClickStart {
+  x: number;
+  y: number;
+  pointerId: number;
+}
+
 interface DocumentTocItem {
   id: string;
   label: string;
@@ -451,25 +768,97 @@ type ThemeMode = "light" | "dark";
 interface EditorHistorySnapshot {
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  formattingConfig: FormattingConfig;
 }
 
+type EditorDocumentState = EditorHistorySnapshot;
+
 interface AutosavedEditorSnapshot extends EditorHistorySnapshot {
-  selectedSavedTestId?: string;
+  logo?: LogoAsset;
+  activeProjectFilePath?: string;
+  activeProjectFileRevision?: number;
   updatedAt?: string;
 }
 
-type DiskStorageStatus = "loading" | "ready" | "saving" | "saved" | "unavailable" | "error";
+type DraftAutosaveStatus = "loading" | "ready" | "saving" | "saved" | "unavailable" | "error";
+type HeaderSaveStatus = DraftAutosaveStatus | "dirty" | "draft" | "conflict";
+type ProjectFilesStatus = "idle" | "loading" | "ready" | "saving" | "error";
+
+interface ProjectSaveConflict {
+  filePath: string;
+  message: string;
+  localRevision: number | null;
+  currentRevision?: number;
+}
 
 const HISTORY_LIMIT = 80;
+const PROJECT_FILE_REVISION_MISSING_ERROR = "PROJECT_FILE_REVISION_MISSING";
 
 interface LogoAsset {
   id: string;
   name: string;
   src: string;
-  builtIn?: boolean;
+  schoolName?: string;
+}
+
+type TitlePageTemplate = "standard" | "exam";
+type ExamSectionPresetId = "section-one-calculator-free" | "section-two-calculator-assumed";
+
+interface ExamStructureRowConfig {
+  id: string;
+  section: string;
+  useCurrentDocument?: boolean;
+  questionsAvailable: number;
+  questionsToBeAnswered: number;
+  workingTimeMinutes: number;
+  marksAvailable: number;
+  percentage: number;
+}
+
+interface ExamTitlePageConfig {
+  sectionPreset: ExamSectionPresetId;
+  documentCode: string;
+  authorityName: string;
+  examHeading: string;
+  bookletTitle: string;
+  candidateLabelText: string;
+  studentNumberLabel: string;
+  studentNumberFiguresLabel: string;
+  studentNumberWordsLabel: string;
+  timeTitle: string;
+  readingTimeLabel: string;
+  readingTime: string;
+  workingTimeLabel: string;
+  workingTime: string;
+  additionalBookletsLabel: string;
+  materialsTitle: string;
+  supervisorMaterialsTitle: string;
+  supervisorMaterials: string;
+  candidateMaterialsTitle: string;
+  standardItemsLabel: string;
+  standardItems: string;
+  specialItemsLabel: string;
+  specialItems: string;
+  importantNoteTitle: string;
+  importantNoteBody: string;
+  referenceText: string;
+  bookletCode: string;
+  courseHeader: string;
+  sectionHeader: string;
+  structureTitle: string;
+  structureRows: ExamStructureRowConfig[];
+  instructionsTitle: string;
+  instructionsBody: string;
+  cutOffNotice: string;
+  footerText: string;
+  endOfQuestionsFooterText: string;
+  supplementaryPageTitle: string;
+  supplementaryQuestionNumberLabel: string;
+  supplementaryPageCount: number;
 }
 
 interface FrontMatterConfig {
+  titlePageTemplate: TitlePageTemplate;
   logoId: string;
   schoolName: string;
   subjectTitle: string;
@@ -487,6 +876,7 @@ interface FrontMatterConfig {
   showInstructions: boolean;
   instructionsTitle: string;
   instructionsBody: string;
+  exam?: ExamTitlePageConfig;
 }
 
 interface SavedTest {
@@ -494,6 +884,7 @@ interface SavedTest {
   name: string;
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  formattingConfig: FormattingConfig;
   logo?: LogoAsset;
   createdAt: string;
   updatedAt: string;
@@ -524,22 +915,21 @@ function applyTheme(theme: ThemeMode) {
 }
 
 function loadLogoLibrary(): LogoAsset[] {
-  if (typeof window === "undefined") return BUILT_IN_LOGOS;
+  if (typeof window === "undefined") return STARTER_LOGOS;
 
   try {
     const stored = localStorageItem(LOGO_LIBRARY_STORAGE_KEY, LEGACY_LOGO_LIBRARY_STORAGE_KEY);
-    if (!stored) return BUILT_IN_LOGOS;
-    const parsed = JSON.parse(stored) as LogoAsset[];
-    const builtInIds = new Set(BUILT_IN_LOGOS.map((logo) => logo.id));
-    const customLogos = Array.isArray(parsed)
-      ? parsed.filter(
-          (logo) =>
-            typeof logo.id === "string" && typeof logo.name === "string" && typeof logo.src === "string" && !builtInIds.has(logo.id),
-        )
+    if (!stored) return STARTER_LOGOS;
+    const parsed = JSON.parse(stored) as unknown[];
+    const storedLogos = Array.isArray(parsed)
+      ? parsed.flatMap((logo) => {
+          const normalizedLogo = normalizeLogoAsset(logo);
+          return normalizedLogo ? [normalizedLogo] : [];
+        })
       : [];
-    return [...BUILT_IN_LOGOS, ...customLogos];
+    return storedLogos.length ? storedLogos : STARTER_LOGOS;
   } catch {
-    return BUILT_IN_LOGOS;
+    return STARTER_LOGOS;
   }
 }
 
@@ -547,13 +937,26 @@ function persistLogoLibrary(logos: LogoAsset[]) {
   if (typeof window === "undefined") return;
 
   try {
-    const customLogos = logos
-      .filter((logo) => !logo.builtIn && !logo.id.startsWith(SAVED_TEST_LOGO_PREFIX))
-      .map(({ id: logoId, name, src }) => ({ id: logoId, name, src }));
-    window.localStorage.setItem(LOGO_LIBRARY_STORAGE_KEY, JSON.stringify(customLogos));
+    const persistedLogos = logos.map(({ id: logoId, name, src, schoolName }) => ({
+      id: logoId,
+      name,
+      src,
+      ...(typeof schoolName === "string" ? { schoolName } : {}),
+    }));
+    window.localStorage.setItem(LOGO_LIBRARY_STORAGE_KEY, JSON.stringify(persistedLogos));
   } catch {
     // Large uploaded images can exceed browser storage limits; keep the in-memory choice for this session.
   }
+}
+
+function shouldSeedStarterLogos() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(LOGO_STARTER_SEED_STORAGE_KEY) !== "done";
+}
+
+function markStarterLogosSeeded() {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LOGO_STARTER_SEED_STORAGE_KEY, "done");
 }
 
 function logoNameFromFile(fileName: string) {
@@ -566,11 +969,149 @@ function logoNameFromFile(fileName: string) {
 }
 
 function selectedLogoFromLibrary(logos: LogoAsset[], logoId: string) {
-  return logos.find((logo) => logo.id === logoId) ?? logos[0] ?? BUILT_IN_LOGOS[0];
+  return logos.find((logo) => logo.id === logoId) ?? logos[0] ?? STARTER_LOGOS[0];
+}
+
+function selectedLogoForFrontMatter(logos: LogoAsset[], frontMatter: Pick<FrontMatterConfig, "logoId">) {
+  return frontMatter.logoId ? selectedLogoFromLibrary(logos, frontMatter.logoId) : undefined;
+}
+
+function frontMatterPatchForLogo(logos: LogoAsset[], logoId: string): Pick<FrontMatterConfig, "logoId"> & Partial<FrontMatterConfig> {
+  const logo = selectedLogoFromLibrary(logos, logoId);
+  return {
+    logoId,
+    ...(typeof logo.schoolName === "string" ? { schoolName: logo.schoolName } : {}),
+  };
 }
 
 function assessmentTitleText(value: string) {
-  return value.toUpperCase();
+  return value
+    .split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g)
+    .map((segment) => (segment.startsWith("$") ? segment : segment.toUpperCase()))
+    .join("");
+}
+
+function titlePageTemplateFromValue(value: unknown): TitlePageTemplate {
+  return value === "exam" ? "exam" : "standard";
+}
+
+function stringOrDefault(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function nonNegativeNumberOrDefault(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : fallback;
+}
+
+function examSectionPresetFromValue(value: unknown, fallback: ExamSectionPresetId = "section-one-calculator-free"): ExamSectionPresetId {
+  return EXAM_SECTION_PRESETS.some((preset) => preset.id === value) ? (value as ExamSectionPresetId) : fallback;
+}
+
+function inferExamSectionPreset(record: Record<string, unknown> | null | undefined): ExamSectionPresetId {
+  const stored = examSectionPresetFromValue(record?.sectionPreset, "section-one-calculator-free");
+  if (EXAM_SECTION_PRESETS.some((preset) => preset.id === record?.sectionPreset)) return stored;
+
+  const sectionHeader = typeof record?.sectionHeader === "string" ? record.sectionHeader.toLowerCase() : "";
+  const assessmentSubtitle = typeof record?.assessmentSubtitle === "string" ? record.assessmentSubtitle.toLowerCase() : "";
+  const combined = `${sectionHeader} ${assessmentSubtitle}`;
+  return combined.includes("assumed") || combined.includes("section two") ? "section-two-calculator-assumed" : stored;
+}
+
+function examSectionPresetById(sectionPresetId: ExamSectionPresetId) {
+  return EXAM_SECTION_PRESETS.find((preset) => preset.id === sectionPresetId) ?? EXAM_SECTION_PRESETS[0];
+}
+
+function examStructureRowsForSectionPreset(sectionPresetId: ExamSectionPresetId): ExamStructureRowConfig[] {
+  const preset = examSectionPresetById(sectionPresetId);
+  return DEFAULT_EXAM_TITLE_PAGE.structureRows.map((row) => ({
+    ...row,
+    useCurrentDocument: row.id === preset.currentRowId,
+  }));
+}
+
+function examSectionPresetPatch(exam: ExamTitlePageConfig, sectionPresetId: ExamSectionPresetId): Partial<FrontMatterConfig> {
+  const preset = examSectionPresetById(sectionPresetId);
+  return {
+    startQuestionNumber: preset.startQuestionNumber,
+    showAssessmentSubtitle: true,
+    assessmentSubtitle: preset.assessmentSubtitle,
+    exam: {
+      ...exam,
+      sectionPreset: preset.id,
+      sectionHeader: preset.sectionHeader,
+      readingTime: preset.readingTime,
+      workingTime: preset.workingTime,
+      supervisorMaterials: preset.supervisorMaterials,
+      specialItems: preset.specialItems,
+      structureRows: examStructureRowsForSectionPreset(preset.id),
+    },
+  };
+}
+
+function normalizeExamStructureRow(value: unknown, fallback: ExamStructureRowConfig): ExamStructureRowConfig {
+  const record = asRecord(value);
+  return {
+    id: stringOrDefault(record?.id, fallback.id || id("exam-section")),
+    section: stringOrDefault(record?.section, fallback.section),
+    useCurrentDocument: typeof record?.useCurrentDocument === "boolean" ? record.useCurrentDocument : fallback.useCurrentDocument,
+    questionsAvailable: nonNegativeNumberOrDefault(record?.questionsAvailable, fallback.questionsAvailable),
+    questionsToBeAnswered: nonNegativeNumberOrDefault(record?.questionsToBeAnswered, fallback.questionsToBeAnswered),
+    workingTimeMinutes: nonNegativeNumberOrDefault(record?.workingTimeMinutes, fallback.workingTimeMinutes),
+    marksAvailable: nonNegativeNumberOrDefault(record?.marksAvailable, fallback.marksAvailable),
+    percentage: nonNegativeNumberOrDefault(record?.percentage, fallback.percentage),
+  };
+}
+
+function normalizeExamTitlePage(value: unknown): ExamTitlePageConfig {
+  const record = asRecord(value);
+  const defaultRows = DEFAULT_EXAM_TITLE_PAGE.structureRows;
+  const sourceRows = Array.isArray(record?.structureRows) && record.structureRows.length ? record.structureRows : defaultRows;
+  const structureRows = sourceRows.map((row, index) => normalizeExamStructureRow(row, defaultRows[index] ?? defaultRows[0]));
+
+  return {
+    sectionPreset: inferExamSectionPreset(record),
+    documentCode: stringOrDefault(record?.documentCode, DEFAULT_EXAM_TITLE_PAGE.documentCode),
+    authorityName: stringOrDefault(record?.authorityName, DEFAULT_EXAM_TITLE_PAGE.authorityName),
+    examHeading: stringOrDefault(record?.examHeading, DEFAULT_EXAM_TITLE_PAGE.examHeading),
+    bookletTitle: stringOrDefault(record?.bookletTitle, DEFAULT_EXAM_TITLE_PAGE.bookletTitle),
+    candidateLabelText: stringOrDefault(record?.candidateLabelText, DEFAULT_EXAM_TITLE_PAGE.candidateLabelText),
+    studentNumberLabel: stringOrDefault(record?.studentNumberLabel, DEFAULT_EXAM_TITLE_PAGE.studentNumberLabel),
+    studentNumberFiguresLabel: stringOrDefault(record?.studentNumberFiguresLabel, DEFAULT_EXAM_TITLE_PAGE.studentNumberFiguresLabel),
+    studentNumberWordsLabel: stringOrDefault(record?.studentNumberWordsLabel, DEFAULT_EXAM_TITLE_PAGE.studentNumberWordsLabel),
+    timeTitle: stringOrDefault(record?.timeTitle, DEFAULT_EXAM_TITLE_PAGE.timeTitle),
+    readingTimeLabel: stringOrDefault(record?.readingTimeLabel, DEFAULT_EXAM_TITLE_PAGE.readingTimeLabel),
+    readingTime: stringOrDefault(record?.readingTime, DEFAULT_EXAM_TITLE_PAGE.readingTime),
+    workingTimeLabel: stringOrDefault(record?.workingTimeLabel, DEFAULT_EXAM_TITLE_PAGE.workingTimeLabel),
+    workingTime: stringOrDefault(record?.workingTime, DEFAULT_EXAM_TITLE_PAGE.workingTime),
+    additionalBookletsLabel: stringOrDefault(record?.additionalBookletsLabel, DEFAULT_EXAM_TITLE_PAGE.additionalBookletsLabel),
+    materialsTitle: stringOrDefault(record?.materialsTitle, DEFAULT_EXAM_TITLE_PAGE.materialsTitle),
+    supervisorMaterialsTitle: stringOrDefault(record?.supervisorMaterialsTitle, DEFAULT_EXAM_TITLE_PAGE.supervisorMaterialsTitle),
+    supervisorMaterials: stringOrDefault(record?.supervisorMaterials, DEFAULT_EXAM_TITLE_PAGE.supervisorMaterials),
+    candidateMaterialsTitle: stringOrDefault(record?.candidateMaterialsTitle, DEFAULT_EXAM_TITLE_PAGE.candidateMaterialsTitle),
+    standardItemsLabel: stringOrDefault(record?.standardItemsLabel, DEFAULT_EXAM_TITLE_PAGE.standardItemsLabel),
+    standardItems: stringOrDefault(record?.standardItems, DEFAULT_EXAM_TITLE_PAGE.standardItems),
+    specialItemsLabel: stringOrDefault(record?.specialItemsLabel, DEFAULT_EXAM_TITLE_PAGE.specialItemsLabel),
+    specialItems: stringOrDefault(record?.specialItems, DEFAULT_EXAM_TITLE_PAGE.specialItems),
+    importantNoteTitle: stringOrDefault(record?.importantNoteTitle, DEFAULT_EXAM_TITLE_PAGE.importantNoteTitle),
+    importantNoteBody: stringOrDefault(record?.importantNoteBody, DEFAULT_EXAM_TITLE_PAGE.importantNoteBody),
+    referenceText: stringOrDefault(record?.referenceText, DEFAULT_EXAM_TITLE_PAGE.referenceText),
+    bookletCode: stringOrDefault(record?.bookletCode, DEFAULT_EXAM_TITLE_PAGE.bookletCode),
+    courseHeader: stringOrDefault(record?.courseHeader, DEFAULT_EXAM_TITLE_PAGE.courseHeader),
+    sectionHeader: stringOrDefault(record?.sectionHeader, DEFAULT_EXAM_TITLE_PAGE.sectionHeader),
+    structureTitle: stringOrDefault(record?.structureTitle, DEFAULT_EXAM_TITLE_PAGE.structureTitle),
+    structureRows,
+    instructionsTitle: stringOrDefault(record?.instructionsTitle, DEFAULT_EXAM_TITLE_PAGE.instructionsTitle),
+    instructionsBody: stringOrDefault(record?.instructionsBody, DEFAULT_EXAM_TITLE_PAGE.instructionsBody),
+    cutOffNotice: stringOrDefault(record?.cutOffNotice, DEFAULT_EXAM_TITLE_PAGE.cutOffNotice),
+    footerText: stringOrDefault(record?.footerText, DEFAULT_EXAM_TITLE_PAGE.footerText),
+    endOfQuestionsFooterText: stringOrDefault(record?.endOfQuestionsFooterText, DEFAULT_EXAM_TITLE_PAGE.endOfQuestionsFooterText),
+    supplementaryPageTitle: stringOrDefault(record?.supplementaryPageTitle, DEFAULT_EXAM_TITLE_PAGE.supplementaryPageTitle),
+    supplementaryQuestionNumberLabel: stringOrDefault(
+      record?.supplementaryQuestionNumberLabel,
+      DEFAULT_EXAM_TITLE_PAGE.supplementaryQuestionNumberLabel,
+    ),
+    supplementaryPageCount: nonNegativeNumberOrDefault(record?.supplementaryPageCount, DEFAULT_EXAM_TITLE_PAGE.supplementaryPageCount),
+  };
 }
 
 function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
@@ -592,7 +1133,9 @@ function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
       : typeof candidate.sectionHeading === "string"
         ? candidate.sectionHeading
         : DEFAULT_FRONT_MATTER.assessmentSubtitle;
+  const titlePageTemplate = titlePageTemplateFromValue(candidate.titlePageTemplate);
   return {
+    titlePageTemplate,
     logoId: typeof candidate.logoId === "string" ? candidate.logoId : DEFAULT_FRONT_MATTER.logoId,
     schoolName: typeof candidate.schoolName === "string" ? candidate.schoolName : DEFAULT_FRONT_MATTER.schoolName,
     subjectTitle: typeof candidate.subjectTitle === "string" ? candidate.subjectTitle : DEFAULT_FRONT_MATTER.subjectTitle,
@@ -613,7 +1156,64 @@ function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
     instructionsTitle:
       typeof candidate.instructionsTitle === "string" ? candidate.instructionsTitle : DEFAULT_FRONT_MATTER.instructionsTitle,
     instructionsBody: typeof candidate.instructionsBody === "string" ? candidate.instructionsBody : DEFAULT_FRONT_MATTER.instructionsBody,
+    ...(titlePageTemplate === "exam" || candidate.exam ? { exam: normalizeExamTitlePage(candidate.exam) } : {}),
   };
+}
+
+function finiteNumberOrDefault(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizePageFormattingConfig(value: unknown): NonNullable<FormattingConfig["page"]> {
+  const record = asRecord(value);
+  const defaultPage = DEFAULT_FORMATTING_CONFIG.page ?? {};
+  return {
+    size: typeof record?.size === "string" ? record.size : defaultPage.size,
+    orientation: typeof record?.orientation === "string" ? record.orientation : defaultPage.orientation,
+    widthPx: finiteNumberOrDefault(record?.widthPx, defaultPage.widthPx ?? DEFAULT_PAGE_FORMAT.widthPx),
+    heightPx: finiteNumberOrDefault(record?.heightPx, defaultPage.heightPx ?? DEFAULT_PAGE_FORMAT.heightPx),
+    paddingXPx: finiteNumberOrDefault(record?.paddingXPx, defaultPage.paddingXPx ?? DEFAULT_PAGE_FORMAT.paddingXPx),
+    paddingYPx: finiteNumberOrDefault(record?.paddingYPx, defaultPage.paddingYPx ?? DEFAULT_PAGE_FORMAT.paddingYPx),
+    showPageBreaks: typeof record?.showPageBreaks === "boolean" ? record.showPageBreaks : defaultPage.showPageBreaks,
+  };
+}
+
+function normalizeFormattingConfig(value: unknown): FormattingConfig {
+  const record = asRecord(value);
+  return {
+    id: typeof record?.id === "string" ? record.id : DEFAULT_FORMATTING_CONFIG.id,
+    showMarks: typeof record?.showMarks === "boolean" ? record.showMarks : DEFAULT_FORMATTING_CONFIG.showMarks,
+    marksStyle: typeof record?.marksStyle === "string" ? record.marksStyle : DEFAULT_FORMATTING_CONFIG.marksStyle,
+    questionSpacing: typeof record?.questionSpacing === "string" ? record.questionSpacing : DEFAULT_FORMATTING_CONFIG.questionSpacing,
+    diagramPosition: typeof record?.diagramPosition === "string" ? record.diagramPosition : DEFAULT_FORMATTING_CONFIG.diagramPosition,
+    fontSize: typeof record?.fontSize === "string" ? record.fontSize : DEFAULT_FORMATTING_CONFIG.fontSize,
+    numbering: typeof record?.numbering === "string" ? record.numbering : DEFAULT_FORMATTING_CONFIG.numbering,
+    sectionHeaders: typeof record?.sectionHeaders === "boolean" ? record.sectionHeaders : DEFAULT_FORMATTING_CONFIG.sectionHeaders,
+    page: normalizePageFormattingConfig(record?.page),
+  };
+}
+
+function formattingPresetLabel(formattingConfig: FormattingConfig) {
+  return TEST_FORMAT_PRESETS.find((preset) => preset.id === formattingConfig.id)?.label ?? formattingConfig.id ?? "Custom test format";
+}
+
+function pagePresetId(formattingConfig: FormattingConfig) {
+  const page = normalizePageFormattingConfig(formattingConfig.page);
+  const a4Page = PAGE_PRESETS[0].page;
+  if (
+    page.size === a4Page.size &&
+    page.orientation === a4Page.orientation &&
+    page.widthPx === a4Page.widthPx &&
+    page.heightPx === a4Page.heightPx
+  ) {
+    return PAGE_PRESETS[0].id;
+  }
+  return "custom";
+}
+
+function formatSettingNumber(value: unknown, fallback: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
 }
 
 function normalizedStartQuestionNumber(frontMatter: FrontMatterConfig) {
@@ -634,12 +1234,55 @@ function normalizeLogoAsset(value: unknown): LogoAsset | undefined {
     id: candidate.id,
     name: candidate.name,
     src: candidate.src,
-    builtIn: Boolean(candidate.builtIn),
+    ...(typeof candidate.schoolName === "string" ? { schoolName: candidate.schoolName } : {}),
   };
 }
 
-function savedTestLogoId(testId: string) {
-  return `${SAVED_TEST_LOGO_PREFIX}${testId}`;
+function normalizeLogoAssets(value: unknown): LogoAsset[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((logo): LogoAsset[] => {
+    const normalizedLogo = normalizeLogoAsset(logo);
+    return normalizedLogo ? [normalizedLogo] : [];
+  });
+}
+
+function mergeLogoAssets(current: LogoAsset[], assets: Array<LogoAsset | null | undefined>) {
+  let changed = false;
+  const next = [...current];
+
+  for (const asset of assets) {
+    const logo = normalizeLogoAsset(asset);
+    if (!logo) continue;
+
+    const existingIndex = next.findIndex((candidate) => candidate.id === logo.id);
+    if (existingIndex === -1) {
+      next.push(logo);
+      changed = true;
+      continue;
+    }
+
+    const existing = next[existingIndex];
+    if (existing.name !== logo.name || existing.src !== logo.src || existing.schoolName !== logo.schoolName) {
+      next[existingIndex] = logo;
+      changed = true;
+    }
+  }
+
+  return changed ? next : current;
+}
+
+function appendMissingLogoAssets(current: LogoAsset[], assets: Array<LogoAsset | null | undefined>) {
+  let changed = false;
+  const next = [...current];
+
+  for (const asset of assets) {
+    const logo = normalizeLogoAsset(asset);
+    if (!logo || next.some((candidate) => candidate.id === logo.id)) continue;
+    next.push(logo);
+    changed = true;
+  }
+
+  return changed ? next : current;
 }
 
 function schoolInitials(lines: string[]) {
@@ -650,8 +1293,14 @@ function schoolInitials(lines: string[]) {
     .join("");
 }
 
-function textBlock(text = ""): EditorContentBlock {
-  return { id: id("text"), kind: "text", text };
+function textBlock(text = "", visibilityOrSolutionOnly?: ContentBlockVisibility | boolean): EditorContentBlock {
+  const visibility = visibilityOrSolutionOnly === true ? "solution" : visibilityOrSolutionOnly || undefined;
+  return {
+    id: id(visibility === "solution" ? "solution" : "text"),
+    kind: "text",
+    text,
+    ...blockVisibilityFields(visibility),
+  };
 }
 
 function choiceListBlock(choices: string[] = ["", "", ""]): EditorContentBlock {
@@ -662,9 +1311,12 @@ function tableBlock(): EditorContentBlock {
   return {
     id: id("table"),
     kind: "table",
-    headers: ["x", "0", "1"],
-    rows: [["P(X=x)", "$1-p$", "$p$"]],
-    showHeader: true,
+    headers: ["", "", ""],
+    rows: [
+      ["x", "0", "1"],
+      ["P(X=x)", "$1-p$", "$p$"],
+    ],
+    showHeader: false,
     tableAlign: "center",
     cellAlignment: "center",
   };
@@ -679,8 +1331,12 @@ function diagramBlock(): EditorContentBlock {
   };
 }
 
-function spaceBlock(lines = 3): EditorContentBlock {
-  return { id: id("space"), kind: "space", lines };
+function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): EditorContentBlock {
+  return { id: id("space"), kind: "space", lines, ...blockVisibilityFields(visibility) };
+}
+
+function solutionSlotBlocks(lines = DEFAULT_SOLUTION_SLOT_LINES): EditorContentBlock[] {
+  return [spaceBlock(lines, "student"), textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")];
 }
 
 function contentBlockForKind(kind: ContentBlockKind): EditorContentBlock {
@@ -699,6 +1355,17 @@ function diagramAlignmentClass(alignment?: DiagramAlignment) {
 
 function normalizeDiagramTextSide(value: unknown): DiagramTextSide {
   return value === "left" || value === "right" ? value : "none";
+}
+
+function automaticDiagramTextSide(alignment?: DiagramAlignment): DiagramTextSide {
+  if (alignment === "left") return "right";
+  if (alignment === "right") return "left";
+  return "none";
+}
+
+function effectiveDiagramTextSide(block: Extract<EditorContentBlock, { kind: "diagram" }>, hasBesideContent: boolean): DiagramTextSide {
+  if (!hasBesideContent) return "none";
+  return automaticDiagramTextSide(block.diagramAlign);
 }
 
 function graphFunctionLabel(index: number) {
@@ -866,6 +1533,7 @@ function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): GraphFeature
       xMax: feature.xMax ?? graphConfig?.xMax ?? DEFAULT_2D_GRAPH.xMax,
       labelX: feature.labelX,
       labelY: feature.labelY,
+      solutionOnly: feature.solutionOnly === true,
     };
   });
 }
@@ -975,7 +1643,10 @@ function defaultPenrosePresetForType(type?: string | null) {
 }
 
 function defaultPenroseDataForType(type?: string | null) {
-  return normalizeDiagramType(type) === "setDiagram" ? DEFAULT_SET_DATA : DEFAULT_GEOMETRIC_DATA;
+  const normalizedType = normalizeDiagramType(type);
+  if (normalizedType === "setDiagram") return DEFAULT_SET_DATA;
+  if (normalizedType === "vectorRelationship") return DEFAULT_VECTOR_RELATIONSHIP_DATA;
+  return DEFAULT_GEOMETRIC_DATA;
 }
 
 function defaultPenroseDiagramForType(type?: string | null): GraphConfig {
@@ -1006,8 +1677,11 @@ function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConf
     isPenroseDiagramType(normalizeDiagramType(current.type)) ||
     normalizeDiagramType(current.type) === "statsChart"
   ) {
-    return normalizedType === "graph3d" ? { ...DEFAULT_2D_GRAPH, type: "graph3d" } : { ...DEFAULT_2D_GRAPH, type: normalizedType };
+    if (normalizedType === "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
+    return normalizedType === "graph3d" ? DEFAULT_3D_GRAPH : { ...DEFAULT_2D_GRAPH, type: normalizedType };
   }
+  if (normalizedType === "vector2d" && normalizeDiagramType(current.type) !== "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
+  if (normalizedType === "graph3d" && normalizeDiagramType(current.type) !== "graph3d") return DEFAULT_3D_GRAPH;
   return { type: normalizedType };
 }
 
@@ -1118,10 +1792,85 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
 }
 
 function geometricSourceData(config: GraphConfig) {
-  const data = asRecord(config.data) ?? asRecord(DEFAULT_GEOMETRIC_DATA);
+  const fallback = normalizeDiagramType(config.type) === "vectorRelationship" ? DEFAULT_VECTOR_RELATIONSHIP_DATA : DEFAULT_GEOMETRIC_DATA;
+  const data = asRecord(config.data) ?? asRecord(fallback);
   const objects = recordArray(data?.objects);
   const relationships = recordArray(data?.relationships);
-  return { objects, relationships };
+  return { data: data ?? {}, objects, relationships };
+}
+
+function relationshipPointNames(relationship: Record<string, unknown>) {
+  const pointSources = [
+    relationship.points,
+    relationship.between,
+    relationship.first,
+    relationship.second,
+    relationship.segmentA,
+    relationship.segmentB,
+  ];
+  const points = pointSources.flatMap((source) => (Array.isArray(source) ? source : []));
+  [relationship.a, relationship.at, relationship.b, relationship.c].forEach((point) => {
+    if (typeof point === "string") points.push(point);
+  });
+  if (Array.isArray(relationship.segments)) {
+    relationship.segments.forEach((segment) => {
+      if (Array.isArray(segment)) points.push(...segment);
+    });
+  }
+  return points.filter((point): point is string => typeof point === "string");
+}
+
+function vectorRelationshipsFromConfig(config: GraphConfig) {
+  const { relationships } = geometricSourceData(config);
+  const source = relationships.filter((relationship) => relationship.type === "segment" || relationship.type === "vectorSegment");
+  return source.length ? source : recordArray(DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships);
+}
+
+function vectorPointNamesFromRelationships(relationships: Array<Record<string, unknown>>) {
+  const names = new Set<string>();
+  relationships.forEach((relationship) => {
+    relationshipPointNames(relationship).forEach((point) => names.add(penroseIdentifier(point, `P${names.size + 1}`)));
+  });
+  return [...names];
+}
+
+function normalizedVectorRelationshipData(config: GraphConfig) {
+  const { data, objects } = geometricSourceData(config);
+  const relationships = vectorRelationshipsFromConfig(config).map((relationship, index) => {
+    const points = relationshipPointNames(relationship).slice(0, 2);
+    const fallback = DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships[index] ?? DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships[0];
+    const fallbackPoints = Array.isArray(fallback.points) ? fallback.points : ["O", "A"];
+    const start = penroseIdentifier(points[0], String(fallbackPoints[0] ?? "O"));
+    const end = penroseIdentifier(points[1], String(fallbackPoints[1] ?? "A"));
+    return {
+      type: relationship.type === "segment" ? "segment" : "vectorSegment",
+      name: penroseIdentifier(relationship.name, `${start}${end}`),
+      points: [start, end],
+      label: relationship.label ?? relationship.value ?? fallback.label ?? "",
+    };
+  });
+  const relationshipPointNamesSet = vectorPointNamesFromRelationships(relationships);
+  const objectMap = new Map<string, Record<string, unknown>>();
+  objects.forEach((object) => {
+    const name = penroseIdentifier(object.name, "");
+    if (name) objectMap.set(name, object);
+  });
+  relationshipPointNamesSet.forEach((name) => {
+    if (!objectMap.has(name)) objectMap.set(name, { type: "point", name });
+  });
+  return {
+    hidePoints: data.hidePoints === true,
+    hidePointLabels: data.hidePointLabels === true,
+    objects: [...objectMap.values()].map((object, index) => {
+      const name = penroseIdentifier(object.name, `P${index + 1}`);
+      return {
+        type: "point",
+        name,
+        label: object.label ?? name,
+      };
+    }),
+    relationships,
+  };
 }
 
 function setSourceData(config: GraphConfig) {
@@ -1134,6 +1883,59 @@ function setSourceData(config: GraphConfig) {
     sets: sets.length ? sets : objectSets.length ? objectSets : (DEFAULT_SET_DATA.sets as Array<Record<string, unknown>>),
     regions: regions.length ? regions : (DEFAULT_SET_DATA.regions as Array<Record<string, unknown>>),
   };
+}
+
+function setCountLabel(source?: Record<string, unknown> | null) {
+  const value = source?.countLabel ?? source?.count ?? source?.total ?? source?.totalLabel;
+  return value === undefined || value === null ? "" : String(value);
+}
+
+function normalizedSetDiagramData(config: GraphConfig) {
+  const { universe, sets, regions } = setSourceData(config);
+  const leftSet = sets[0] ?? DEFAULT_SET_DATA.sets[0];
+  const rightSet = sets[1] ?? DEFAULT_SET_DATA.sets[1];
+  const normalizedRegions = DEFAULT_SET_DATA.regions.map((fallback, index) => {
+    const source = regions[index] ?? fallback;
+    return {
+      ...fallback,
+      ...source,
+      name: penroseIdentifier(source.name, String(fallback.name)),
+      label: source.label ?? source.value ?? fallback.label,
+      shaded: source.shaded === true || source.shade === true,
+    };
+  });
+  return {
+    universe: {
+      ...DEFAULT_SET_DATA.universe,
+      ...universe,
+      name: penroseIdentifier(universe?.name, "U"),
+      label: universe?.label ?? "U",
+      countLabel: setCountLabel(universe),
+    },
+    sets: [
+      {
+        ...DEFAULT_SET_DATA.sets[0],
+        ...leftSet,
+        name: penroseIdentifier(leftSet.name, "A"),
+        label: leftSet.label ?? "A",
+        countLabel: setCountLabel(leftSet),
+      },
+      {
+        ...DEFAULT_SET_DATA.sets[1],
+        ...rightSet,
+        name: penroseIdentifier(rightSet.name, "B"),
+        label: rightSet.label ?? "B",
+        countLabel: setCountLabel(rightSet),
+      },
+    ],
+    regions: normalizedRegions,
+  };
+}
+
+function removePenroseSubstanceOverride(config: GraphConfig) {
+  const options = { ...penroseOptions(config) };
+  delete options.substanceSource;
+  return options;
 }
 
 function trianglePoints(relationships: Array<Record<string, unknown>>, fallback: string[]) {
@@ -1181,7 +1983,10 @@ function penroseAnglePoints(relationship: Record<string, unknown>) {
 function generatedPenroseSubstance(config: GraphConfig) {
   if (normalizeDiagramType(config.type) === "setDiagram") return generatedSetPenroseSubstance(config);
 
-  const { objects, relationships } = geometricSourceData(config);
+  const { data, objects, relationships } = geometricSourceData(config);
+  const isVectorRelationship = normalizeDiagramType(config.type) === "vectorRelationship";
+  const hideVectorPoints = isVectorRelationship && data.hidePoints === true;
+  const hideVectorPointLabels = isVectorRelationship && data.hidePointLabels === true;
   const points = new Map<string, Record<string, unknown>>();
   objects.forEach((object, index) => {
     if (object?.type !== "point") return;
@@ -1204,9 +2009,11 @@ function generatedPenroseSubstance(config: GraphConfig) {
         ? relationship.points
         : relationship?.type === "equalLength"
           ? equalLengthRelatedPoints.filter(Boolean)
-          : relationship?.type === "angleMark" || relationship?.type === "labelAngle"
-            ? (penroseAnglePoints(relationship) ?? [])
-            : [];
+          : relationship?.type === "segment" || relationship?.type === "vectorSegment" || relationship?.type === "labelLength"
+            ? relationshipPointNames(relationship)
+            : relationship?.type === "angleMark" || relationship?.type === "labelAngle"
+              ? (penroseAnglePoints(relationship) ?? [])
+              : [];
     relatedPoints.forEach((point, index) => {
       const name = penroseIdentifier(point, `P${index + 1}`);
       if (!points.has(name)) points.set(name, { type: "point", name });
@@ -1215,15 +2022,32 @@ function generatedPenroseSubstance(config: GraphConfig) {
   const pointEntries = [...points.values()];
   const pointNames = pointEntries.map((point, index) => penroseIdentifier(point.name, `P${index + 1}`));
   const lines = [`Point ${pointNames.length ? pointNames.join(", ") : "A, B, C"}`];
-  pointEntries.forEach((point, index) => lines.push(penroseLabelStatement(pointNames[index] ?? `P${index + 1}`, point.label)));
+  pointEntries.forEach((point, index) => {
+    const pointName = pointNames[index] ?? `P${index + 1}`;
+    const hideLabel = point.hideLabel === true || point.showLabel === false || hideVectorPointLabels;
+    lines.push(penroseLabelStatement(pointName, hideLabel ? "\\," : (point.label ?? pointName)));
+  });
+  pointEntries.forEach((point, index) => {
+    if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideVectorPoints) {
+      lines.push(`HidePoint(${pointNames[index] ?? `P${index + 1}`})`);
+    }
+  });
   const namedSegments = relationships
-    .filter((relationship) => relationship.type === "segment" && typeof relationship.name === "string")
+    .filter(
+      (relationship) => (relationship.type === "segment" || relationship.type === "vectorSegment") && typeof relationship.name === "string",
+    )
     .map((relationship, index) => penroseIdentifier(relationship.name, `s${index + 1}`));
   if (namedSegments.length) lines.push(`NamedSegment ${namedSegments.join(", ")}`);
   const lengthLabels = relationships.filter((relationship) => relationship.type === "labelLength" && Array.isArray(relationship.between));
+  const segmentLabels = relationships.filter(
+    (relationship) =>
+      (relationship.type === "segment" || relationship.type === "vectorSegment") &&
+      String(relationship.label ?? relationship.value ?? "").trim().length > 0,
+  );
   const angleLabels = relationships.filter((relationship) => relationship.type === "labelAngle" && penroseAnglePoints(relationship));
   const labelDeclarations = [
     ...lengthLabels.map((_, index) => `sideLabel${index + 1}`),
+    ...segmentLabels.map((_, index) => `segmentLabel${index + 1}`),
     ...angleLabels.map((_, index) => `angleLabel${index + 1}`),
   ];
   if (labelDeclarations.length) lines.push(`LengthLabel ${labelDeclarations.join(", ")}`);
@@ -1265,6 +2089,17 @@ function generatedPenroseSubstance(config: GraphConfig) {
         lines.push(`Segment(${segmentName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
       }
     }
+    if (relationship.type === "vectorSegment") {
+      const segmentName = typeof relationship.name === "string" ? penroseIdentifier(relationship.name, "s") : null;
+      const points = Array.isArray(relationship.points)
+        ? relationship.points
+        : Array.isArray(relationship.between)
+          ? relationship.between
+          : [];
+      if (segmentName && points.length === 2) {
+        lines.push(`VectorSegment(${segmentName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+      }
+    }
     if (relationship.type === "angleMark") {
       const points = penroseAnglePoints(relationship);
       if (!points) return;
@@ -1281,6 +2116,17 @@ function generatedPenroseSubstance(config: GraphConfig) {
     lines.push(penroseLabelStatement(labelName, relationship.value));
     lines.push(`LabelsSegment(${labelName}, ${penroseIdentifier(between[0], "A")}, ${penroseIdentifier(between[1], "B")})`);
   });
+  segmentLabels.forEach((relationship, index) => {
+    const points = Array.isArray(relationship.points)
+      ? relationship.points
+      : Array.isArray(relationship.between)
+        ? relationship.between
+        : [];
+    if (points.length !== 2) return;
+    const labelName = `segmentLabel${index + 1}`;
+    lines.push(penroseLabelStatement(labelName, relationship.label ?? relationship.value));
+    lines.push(`LabelsSegment(${labelName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+  });
   angleLabels.forEach((relationship, index) => {
     const points = penroseAnglePoints(relationship);
     if (!points) return;
@@ -1289,6 +2135,17 @@ function generatedPenroseSubstance(config: GraphConfig) {
     lines.push(`LabelsAngle(${labelName}, ${points.join(", ")})`);
   });
   return `${lines.join("\n")}\n`;
+}
+
+function setRegionShadePredicate(region: { shaded?: unknown; shade?: unknown; shadePredicate?: unknown }, index: number) {
+  if (region.shaded !== true && region.shade !== true) return null;
+  if (typeof region.shadePredicate === "string" && region.shadePredicate.trim()) {
+    return penroseIdentifier(region.shadePredicate, "ShadeIntersection");
+  }
+  if (index === 0) return "ShadeLeftOnly";
+  if (index === 1) return "ShadeIntersection";
+  if (index === 2) return "ShadeRightOnly";
+  return "ShadeOutside";
 }
 
 function generatedSetPenroseSubstance(config: GraphConfig) {
@@ -1303,6 +2160,8 @@ function generatedSetPenroseSubstance(config: GraphConfig) {
     return {
       name: penroseIdentifier(source.name, fallback.name),
       label: source.label ?? source.value ?? fallback.label,
+      shaded: source.shaded === true || source.shade === true,
+      shadePredicate: typeof source.shadePredicate === "string" ? source.shadePredicate : undefined,
     };
   });
   const [onlyA, intersection, onlyB, outside] = regionEntries;
@@ -1320,6 +2179,15 @@ function generatedSetPenroseSubstance(config: GraphConfig) {
     `LabelsRightOnly(${onlyB.name}, ${leftName}, ${rightName})`,
     `LabelsOutside(${outside.name}, ${universeName}, ${leftName}, ${rightName})`,
   ];
+  regionEntries.forEach((region, index) => {
+    const shadePredicate = setRegionShadePredicate(region, index);
+    if (!shadePredicate) return;
+    if (shadePredicate === "ShadeOutside") {
+      lines.push(`${shadePredicate}(${universeName}, ${leftName}, ${rightName})`);
+      return;
+    }
+    lines.push(`${shadePredicate}(${leftName}, ${rightName})`);
+  });
   return `${lines.join("\n")}\n`;
 }
 
@@ -1373,6 +2241,29 @@ function withGraphDefaults(graphConfig?: GraphConfig | null): GraphConfig {
       widthPx: finiteGraphNumber(graphConfig?.widthPx, DEFAULT_IMAGE_DIAGRAM.widthPx),
       heightPx: finiteGraphNumber(graphConfig?.heightPx, DEFAULT_IMAGE_DIAGRAM.heightPx),
       metadata: graphConfig?.metadata ?? {},
+    };
+  }
+  if (type === "vector2d") {
+    return {
+      ...DEFAULT_VECTOR_2D_GRAPH,
+      ...(graphConfig ?? {}),
+      type,
+      functions: [],
+      features: [],
+      metadata: graphConfig?.metadata ?? DEFAULT_VECTOR_2D_METADATA,
+    };
+  }
+  if (type === "graph3d") {
+    return {
+      ...DEFAULT_3D_GRAPH,
+      ...(graphConfig ?? {}),
+      type,
+      functions: [],
+      features: [],
+      metadata: {
+        ...DEFAULT_3D_GRAPH.metadata,
+        ...(graphConfig?.metadata ?? {}),
+      },
     };
   }
   return {
@@ -1615,6 +2506,7 @@ function starterPart(contentBlocks: EditorContentBlock[], marks: number): Editor
     label: "",
     text: "",
     marks,
+    pageBreakBefore: false,
     contentBlocks,
     subparts: [],
     itemOrder: contentBlocks.map((block) => ({ kind: "block", id: block.id })),
@@ -1852,6 +2744,18 @@ function spaceLines(value: unknown) {
   return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 3;
 }
 
+function defaultSolutionSlotLines(marks: number) {
+  const safeMarks = safeMarkValue(marks);
+  if (!safeMarks) return DEFAULT_SOLUTION_SLOT_LINES;
+  return Math.max(MIN_SOLUTION_SLOT_LINES, Math.min(MAX_SOLUTION_SLOT_LINES, Math.ceil(safeMarks * 3 + 2)));
+}
+
+function requestedSolutionSlotLines(defaultLines: number) {
+  const requested = window.prompt("Student space lines for this solution slot", String(defaultLines));
+  if (requested === null) return null;
+  return Math.max(1, Math.floor(spaceLines(requested)));
+}
+
 function defaultSavedTestName(frontMatter: FrontMatterConfig) {
   const name = [frontMatter.subjectTitle, frontMatter.assessmentTitle]
     .map((part) => part.trim())
@@ -1860,16 +2764,182 @@ function defaultSavedTestName(frontMatter: FrontMatterConfig) {
   return name || "Untitled test";
 }
 
-function uniqueSavedTestName(baseName: string, savedTests: SavedTest[], ignoreId?: string) {
-  const base = baseName.trim() || "Untitled test";
-  const names = new Set(savedTests.filter((test) => test.id !== ignoreId).map((test) => test.name.trim().toLowerCase()));
-  if (!names.has(base.toLowerCase())) return base;
+function safeProjectFileName(value: string) {
+  const safeName = value
+    .replace(/[<>:"/\\|?*]+/g, " ")
+    .split("")
+    .filter((character) => character.charCodeAt(0) >= 32)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  return (safeName || "Untitled test").slice(0, 120);
+}
 
-  let suffix = 2;
-  while (names.has(`${base} ${suffix}`.toLowerCase())) {
-    suffix += 1;
+function normalizeTestFolderPath(path: string) {
+  return path
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => safeProjectFileName(part))
+    .filter(Boolean)
+    .join("/");
+}
+
+function joinTestPath(folderPath: string, name: string) {
+  const cleanFolder = normalizeTestFolderPath(folderPath);
+  const cleanName = safeProjectFileName(name);
+  return [cleanFolder, cleanName].filter(Boolean).join("/");
+}
+
+function projectPathForTestPath(relativePath: string) {
+  const cleanPath = normalizeTestFolderPath(relativePath);
+  return [TEST_FILE_ROOT, cleanPath].filter(Boolean).join("/");
+}
+
+function testPathFromProjectPath(path: string) {
+  if (path === TEST_FILE_ROOT) return "";
+  if (!path.startsWith(`${TEST_FILE_ROOT}/`)) return null;
+  return path.slice(TEST_FILE_ROOT.length + 1);
+}
+
+function parentTestPath(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  return parts.slice(0, -1).join("/");
+}
+
+function topLevelProjectPaths(filePaths: string[]) {
+  const uniquePaths = [...new Set(filePaths)].sort((left, right) => left.localeCompare(right));
+  return uniquePaths.filter((path) => !uniquePaths.some((candidate) => candidate !== path && path.startsWith(`${candidate}/`)));
+}
+
+function projectPathContains(containerPath: string, candidatePath: string) {
+  return candidatePath === containerPath || candidatePath.startsWith(`${containerPath}/`);
+}
+
+function testPathBasename(path: string) {
+  return path.split("/").filter(Boolean).at(-1) ?? path;
+}
+
+function ensureTestFileName(name: string) {
+  const safeName = safeProjectFileName(name.replace(/\.test\.json$/i, "").replace(/\.json$/i, ""));
+  return `${safeName}.test.json`;
+}
+
+function testFileDisplayName(name: string) {
+  return name.replace(/\.test\.json$/i, "");
+}
+
+function formatProjectFileSize(size: unknown) {
+  const bytes = typeof size === "number" && Number.isFinite(size) ? size : 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatShortDateTime(value: unknown) {
+  if (typeof value !== "string" || !value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function draftBackupStatusSummary(status: DraftAutosaveStatus, message: string) {
+  if (status === "saving") return "backing up draft";
+  if (status === "saved") return message.replace(/^Autosaved draft/, "draft backed up").replace(/^Autosaved/, "draft backed up");
+  if (status === "unavailable") return "browser backup only";
+  if (status === "loading") return "loading draft backup";
+  if (status === "error") return "draft backup error";
+  return message.replace(/^Draft autosave/, "Draft backup") || "draft backup ready";
+}
+
+function projectFileSummaryFromApiError(error: ApiError): ProjectFileSummary | null {
+  const body = asRecord(error.detail);
+  const detail = asRecord(body?.detail) ?? body;
+  const current = asRecord(detail?.current);
+  if (!current || typeof current.path !== "string" || typeof current.revision !== "number") return null;
+  return current as unknown as ProjectFileSummary;
+}
+
+function projectFileConflictFromError(error: unknown, filePath: string, localRevision: number | null): ProjectSaveConflict | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const current = projectFileSummaryFromApiError(error);
+  return {
+    filePath,
+    message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
+    localRevision,
+    currentRevision: current?.revision,
+  };
+}
+
+function missingProjectRevisionConflict(filePath: string): ProjectSaveConflict {
+  return {
+    filePath,
+    message: "This draft was restored without a file revision. Reload the file before saving, or use Save as to keep it as a copy.",
+    localRevision: null,
+  };
+}
+
+function isProjectTestFile(file: Pick<ProjectFileSummary, "kind" | "fileType" | "path">) {
+  return file.kind === "file" && (file.fileType === "test" || file.path.endsWith(".test.json"));
+}
+
+function testFilePathKey(file: ProjectFileSummary) {
+  return testPathFromProjectPath(file.path);
+}
+
+function visibleTestFiles(files: ProjectFileSummary[]) {
+  return files
+    .map((file) => {
+      const testPath = testFilePathKey(file);
+      return testPath === null ? null : { file, testPath };
+    })
+    .filter((entry): entry is { file: ProjectFileSummary; testPath: string } => {
+      if (!entry) return false;
+      if (entry.testPath === "") return false;
+      return entry.file.kind === "folder" || isProjectTestFile(entry.file);
+    });
+}
+
+function childTestFiles(files: ProjectFileSummary[], folderPath: string) {
+  const cleanFolder = normalizeTestFolderPath(folderPath);
+  return visibleTestFiles(files)
+    .filter(({ testPath }) => parentTestPath(testPath) === cleanFolder)
+    .sort((left, right) => {
+      if (left.file.kind !== right.file.kind) return left.file.kind === "folder" ? -1 : 1;
+      return testFileDisplayName(testPathBasename(left.testPath)).localeCompare(testFileDisplayName(testPathBasename(right.testPath)));
+    });
+}
+
+function testFolderOptions(files: ProjectFileSummary[]) {
+  const folders = visibleTestFiles(files)
+    .filter(({ file }) => file.kind === "folder")
+    .map(({ testPath }) => testPath)
+    .sort((left, right) => left.localeCompare(right));
+  return ["", ...folders];
+}
+
+function uniqueTestPath(files: ProjectFileSummary[], folderPath: string, baseName: string, kind: "file" | "folder") {
+  const cleanFolder = normalizeTestFolderPath(folderPath);
+  const existing = new Set(visibleTestFiles(files).map(({ testPath }) => testPath.toLowerCase()));
+  const cleanBaseName =
+    kind === "file" ? safeProjectFileName(baseName.replace(/\.test\.json$/i, "").replace(/\.json$/i, "")) : safeProjectFileName(baseName);
+  const extension = kind === "file" ? ".test.json" : "";
+
+  let suffix = "";
+  let counter = 2;
+  while (true) {
+    const candidateName = `${cleanBaseName}${suffix}${extension}`;
+    const candidatePath = [cleanFolder, candidateName].filter(Boolean).join("/");
+    if (!existing.has(candidatePath.toLowerCase())) return candidatePath;
+    suffix = ` copy${counter === 2 ? "" : ` ${counter}`}`;
+    counter += 1;
   }
-  return `${base} ${suffix}`;
 }
 
 function normalizeDiagramAlignment(value: unknown): DiagramAlignment {
@@ -1929,6 +2999,40 @@ function normalizeTableBlock(block: Extract<EditorContentBlock, { kind: "table" 
   };
 }
 
+function plainTableRows(table: ReturnType<typeof normalizeTableBlock>) {
+  return table.showHeader ? [table.headers, ...table.rows] : table.rows;
+}
+
+function plainTablePatch(rows: string[][]): Partial<Extract<EditorContentBlock, { kind: "table" }>> {
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+  return {
+    headers: Array.from({ length: columnCount }, () => ""),
+    rows: rows.map((row) => paddedTableRow(row, columnCount)),
+    showHeader: false,
+  };
+}
+
+function normalizeContentBlockVisibility(value: unknown): ContentBlockVisibility | undefined {
+  return value === "always" || value === "student" || value === "solution" ? value : undefined;
+}
+
+function normalizedBlockVisibility(record: Record<string, unknown>, blockId: string): ContentBlockVisibility | undefined {
+  const explicitVisibility = normalizeContentBlockVisibility(record.visibility);
+  if (explicitVisibility) return explicitVisibility;
+  if (record.studentOnly === true) return "student";
+  if (record.solutionOnly === true || blockId.startsWith("solution-")) return "solution";
+  return undefined;
+}
+
+function blockVisibilityFields(visibility?: ContentBlockVisibility) {
+  if (!visibility) return {};
+  return {
+    visibility,
+    ...(visibility === "solution" ? { solutionOnly: true } : {}),
+    ...(visibility === "student" ? { studentOnly: true } : {}),
+  };
+}
+
 function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
   if (!Array.isArray(value)) return [];
 
@@ -1936,6 +3040,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
     const record = asRecord(block);
     if (!record) return [];
     const blockId = typeof record.id === "string" ? record.id : id("block");
+    const visibility = normalizedBlockVisibility(record, blockId);
 
     if (record.kind === "text") {
       return [
@@ -1943,6 +3048,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           id: blockId,
           kind: "text",
           text: typeof record.text === "string" ? record.text : "",
+          ...blockVisibilityFields(visibility),
         },
       ];
     }
@@ -1955,6 +3061,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           choices: normalizeChoiceItems(record.choices),
           numberingStyle: normalizeChoiceNumberingStyle(record.numberingStyle),
           layout: normalizeChoiceListLayout(record.layout),
+          ...blockVisibilityFields(visibility),
         },
       ];
     }
@@ -1972,6 +3079,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           showHeader: record.showHeader !== false,
           tableAlign: normalizeDiagramAlignment(record.tableAlign),
           cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
+          ...blockVisibilityFields(visibility),
         },
       ];
     }
@@ -1985,6 +3093,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           diagramAlign: normalizeDiagramAlignment(record.diagramAlign),
           diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
           graphConfig: withGraphDefaults(graphConfig),
+          ...blockVisibilityFields(visibility),
         },
       ];
     }
@@ -1995,6 +3104,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           id: blockId,
           kind: "space",
           lines: spaceLines(record.lines),
+          ...blockVisibilityFields(visibility),
         },
       ];
     }
@@ -2020,6 +3130,7 @@ function normalizeEditorSubparts(value: unknown): EditorSubpart[] {
           label: typeof record.label === "string" ? record.label : "",
           text: typeof record.text === "string" ? record.text : "",
           marks: safeMarkValue(record.marks),
+          pageBreakBefore: record.pageBreakBefore === true,
           contentBlocks: normalizeContentBlocks(record.contentBlocks),
         },
       ];
@@ -2042,6 +3153,7 @@ function normalizeEditorParts(value: unknown): EditorPart[] {
           label: "",
           text: typeof record.text === "string" ? record.text : "",
           marks: safeMarkValue(record.marks),
+          pageBreakBefore: record.pageBreakBefore === true,
           contentBlocks,
           subparts,
           itemOrder: normalizeItemOrder(record.itemOrder, partAllowedOrderItems(contentBlocks, subparts)),
@@ -2080,17 +3192,24 @@ function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null
   if (!record) return null;
   const frontMatter = normalizeFrontMatter(record.frontMatter);
   const questions = normalizeQuestionBlocks(record.questions);
+  const formattingConfig = normalizeFormattingConfig(record.formattingConfig);
   if (!frontMatter || !questions.length) return null;
 
   return {
     frontMatter,
     questions,
-    selectedSavedTestId: typeof record.selectedSavedTestId === "string" ? record.selectedSavedTestId : undefined,
+    formattingConfig,
+    logo: normalizeLogoAsset(record.logo),
+    activeProjectFilePath: typeof record.activeProjectFilePath === "string" ? record.activeProjectFilePath : undefined,
+    activeProjectFileRevision:
+      typeof record.activeProjectFileRevision === "number" && Number.isInteger(record.activeProjectFileRevision)
+        ? record.activeProjectFileRevision
+        : undefined,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
   };
 }
 
-function loadCurrentDraft(): EditorHistorySnapshot | null {
+function loadCurrentDraft(): AutosavedEditorSnapshot | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -2103,7 +3222,7 @@ function loadCurrentDraft(): EditorHistorySnapshot | null {
   }
 }
 
-let initialEditorDraftCache: EditorHistorySnapshot | null | undefined;
+let initialEditorDraftCache: AutosavedEditorSnapshot | null | undefined;
 
 function loadInitialEditorDraft() {
   if (initialEditorDraftCache !== undefined) return initialEditorDraftCache;
@@ -2127,7 +3246,7 @@ function persistCurrentDraft(snapshot: AutosavedEditorSnapshot) {
   }
 }
 
-function loadSavedTests(): SavedTest[] {
+function loadLegacySavedTests(): SavedTest[] {
   if (typeof window === "undefined") return [];
 
   try {
@@ -2140,6 +3259,7 @@ function loadSavedTests(): SavedTest[] {
   }
 }
 
+// Legacy saved tests only exist so older browser/API saves can be migrated into project files.
 function normalizeSavedTests(value: unknown): SavedTest[] {
   if (!Array.isArray(value)) return [];
 
@@ -2157,6 +3277,7 @@ function normalizeSavedTests(value: unknown): SavedTest[] {
         name: record.name,
         frontMatter,
         questions: normalizeQuestionBlocks(record.questions),
+        formattingConfig: normalizeFormattingConfig(record.formattingConfig),
         logo: normalizeLogoAsset(record.logo),
         createdAt,
         updatedAt,
@@ -2169,7 +3290,7 @@ function normalizeSavedTest(value: unknown): SavedTest | null {
   return normalizeSavedTests([value])[0] ?? null;
 }
 
-function mergeSavedTests(primary: SavedTest[], fallback: SavedTest[]) {
+function mergeLegacySavedTests(primary: SavedTest[], fallback: SavedTest[]) {
   const byId = new Map<string, SavedTest>();
   for (const test of fallback) byId.set(test.id, test);
   for (const test of primary) {
@@ -2177,13 +3298,6 @@ function mergeSavedTests(primary: SavedTest[], fallback: SavedTest[]) {
     byId.set(test.id, !existing || test.updatedAt >= existing.updatedAt ? test : existing);
   }
   return [...byId.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-}
-
-function upsertSavedTestList(current: SavedTest[], savedTest: SavedTest) {
-  const next = current.some((test) => test.id === savedTest.id)
-    ? current.map((test) => (test.id === savedTest.id ? savedTest : test))
-    : [savedTest, ...current];
-  return next.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 function newerAutosave(left: AutosavedEditorSnapshot | null, right: AutosavedEditorSnapshot | null) {
@@ -2196,14 +3310,25 @@ function newerAutosave(left: AutosavedEditorSnapshot | null, right: AutosavedEdi
   return (right.updatedAt ?? "") > (left.updatedAt ?? "") ? right : left;
 }
 
-function persistSavedTests(savedTests: SavedTest[]) {
+function persistLegacySavedTests(legacyTests: SavedTest[]) {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(SAVED_TEST_STORAGE_KEY, JSON.stringify(savedTests));
+    window.localStorage.setItem(SAVED_TEST_STORAGE_KEY, JSON.stringify(legacyTests));
   } catch {
     // Large embedded logo data can exceed browser storage limits; keep the in-memory tests for this session.
   }
+}
+
+function savedLogoSnapshot(logo?: LogoAsset | null) {
+  return logo
+    ? {
+        id: logo.id,
+        name: logo.name,
+        src: logo.src,
+        ...(typeof logo.schoolName === "string" ? { schoolName: logo.schoolName } : {}),
+      }
+    : undefined;
 }
 
 function createSavedTestSnapshot({
@@ -2211,6 +3336,7 @@ function createSavedTestSnapshot({
   name,
   frontMatter,
   questions,
+  formattingConfig,
   logo,
   createdAt,
 }: {
@@ -2218,28 +3344,36 @@ function createSavedTestSnapshot({
   name: string;
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  formattingConfig: FormattingConfig;
   logo?: LogoAsset;
   createdAt?: string;
 }): SavedTest {
   const now = new Date().toISOString();
-  const savedLogo = logo
-    ? {
-        id: logo.builtIn ? logo.id : savedTestLogoId(testId),
-        name: logo.name,
-        src: logo.src,
-        builtIn: logo.builtIn,
-      }
-    : undefined;
 
   return {
     id: testId,
     name,
-    frontMatter: cloneSerializable({ ...frontMatter, logoId: savedLogo?.id ?? frontMatter.logoId }),
+    frontMatter: cloneSerializable(frontMatter),
     questions: cloneSerializable(normalizeQuestionBlocks(questions)),
-    logo: savedLogo,
+    formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
+    logo: savedLogoSnapshot(logo),
     createdAt: createdAt ?? now,
     updatedAt: now,
   };
+}
+
+function editorDocumentFingerprint(
+  frontMatter: FrontMatterConfig,
+  questions: QuestionBlock[],
+  formattingConfig: FormattingConfig,
+  logo?: LogoAsset | null,
+) {
+  return JSON.stringify({
+    frontMatter: cloneSerializable(frontMatter),
+    questions: cloneSerializable(normalizeQuestionBlocks(questions)),
+    formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
+    logo: savedLogoSnapshot(logo),
+  });
 }
 
 function markLabel(marks: number) {
@@ -2275,9 +3409,9 @@ function FormattedText({ text, className }: { text: string; className?: string }
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       {paragraphs.map((paragraph, index) => (
-        <p key={`${paragraph}-${index}`} className="m-0">
-          {renderInlineFormatting(paragraph)}
-        </p>
+        <div key={`${paragraph}-${index}`} className="m-0">
+          <MixedMath source={paragraph} />
+        </div>
       ))}
     </div>
   );
@@ -2285,12 +3419,6 @@ function FormattedText({ text, className }: { text: string; className?: string }
 
 function FormattedInlineText({ text }: { text: string }) {
   return <>{renderInlineFormatting(text)}</>;
-}
-
-function insertBeforeByKey<T>(items: T[], beforeKey: string, item: T, keyForItem: (item: T) => string) {
-  const index = items.findIndex((current) => keyForItem(current) === beforeKey);
-  if (index === -1) return [...items, item];
-  return [...items.slice(0, index), item, ...items.slice(index)];
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -2317,11 +3445,6 @@ function previewPointFromEvent(event: { clientX?: number; clientY?: number }, fa
   };
 }
 
-function previewContentBaseHeight(panzoomElement: HTMLElement) {
-  const contentElement = panzoomElement.firstElementChild as HTMLElement | null;
-  return contentElement?.offsetHeight || panzoomElement.scrollHeight || panzoomElement.offsetHeight;
-}
-
 function previewPaneContentHeight(previewPane: HTMLElement) {
   const styles = window.getComputedStyle(previewPane);
   const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
@@ -2336,39 +3459,39 @@ function previewPaneContentWidth(previewPane: HTMLElement) {
   return Math.max(0, previewPane.clientWidth - paddingLeft - paddingRight);
 }
 
-function syncPreviewZoomSpace(previewPane: HTMLElement, zoomSpaceElement: HTMLElement, panzoomElement: HTMLElement, scale: number) {
-  const baseHeight = previewContentBaseHeight(panzoomElement);
-  if (!baseHeight || !Number.isFinite(scale) || scale <= 0) return;
-  zoomSpaceElement.style.height = `${Math.ceil(Math.max(previewPaneContentHeight(previewPane), baseHeight * scale))}px`;
-  previewPane.scrollTop = clamp(previewPane.scrollTop, 0, scrollableRange(previewPane));
-}
-
-function zoomPreviewToPoint({
-  panzoom,
+function previewZoomScrollTarget({
   previewPane,
-  zoomSpaceElement,
-  panzoomElement,
+  currentScale,
   nextScale,
   point,
+  currentScrollLeft = previewPane.scrollLeft,
+  currentScrollTop = previewPane.scrollTop,
 }: {
-  panzoom: PanzoomObject;
   previewPane: HTMLElement;
-  zoomSpaceElement: HTMLElement;
-  panzoomElement: HTMLElement;
+  currentScale: number;
   nextScale: number;
   point: { clientX: number; clientY: number };
+  currentScrollLeft?: number;
+  currentScrollTop?: number;
 }) {
-  const currentScale = panzoom.getScale();
   const paneRect = previewPane.getBoundingClientRect();
+  const localX = clamp(point.clientX - paneRect.left, 0, paneRect.width);
   const localY = clamp(point.clientY - paneRect.top, 0, paneRect.height);
-  const anchorY = currentScale > 0 ? (previewPane.scrollTop + localY) / currentScale : previewPane.scrollTop + localY;
-  panzoom.zoom(nextScale, { animate: false });
-  syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, nextScale);
-  previewPane.scrollTop = clamp(anchorY * nextScale - localY, 0, scrollableRange(previewPane));
+  const anchorX = currentScale > 0 ? (currentScrollLeft + localX) / currentScale : currentScrollLeft + localX;
+  const anchorY = currentScale > 0 ? (currentScrollTop + localY) / currentScale : currentScrollTop + localY;
+  return {
+    scrollLeft: anchorX * nextScale - localX,
+    scrollTop: anchorY * nextScale - localY,
+  };
 }
 
 function scrollableRange(element: HTMLElement) {
   const maxScroll = element.scrollHeight - element.clientHeight;
+  return Math.max(0, maxScroll);
+}
+
+function horizontalScrollableRange(element: HTMLElement) {
+  const maxScroll = element.scrollWidth - element.clientWidth;
   return Math.max(0, maxScroll);
 }
 
@@ -2413,6 +3536,10 @@ function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | n
   return Boolean(targetAnchor && (targetAnchor === containerAnchor || targetAnchor.startsWith(`${containerAnchor}/`)));
 }
 
+function previewSelectionAttr(anchor: string | undefined, activeAnchor?: string) {
+  return anchor && activeAnchor === anchor ? "true" : undefined;
+}
+
 function questionIdFromScrollAnchor(anchor: string) {
   const [questionSegment] = anchor.split("/");
   return questionSegment?.startsWith("q:") ? questionSegment.slice(2) : "";
@@ -2434,6 +3561,70 @@ function scrollAnchorFallbacks(anchor: string) {
 
 function scrollAnchorValue(element: HTMLElement) {
   return element.getAttribute("data-scroll-anchor");
+}
+
+function previewAnchorFromEventTarget(target: EventTarget | null, container: HTMLElement | null) {
+  if (!container || !(target instanceof Element)) return "";
+  if (target.closest("a, button, input, textarea, select, [contenteditable='true'], [data-preview-click-ignore]")) return "";
+
+  const moduleAnchorElement = target.closest<HTMLElement>("[data-preview-module-anchor='true']");
+  if (moduleAnchorElement && container.contains(moduleAnchorElement)) return scrollAnchorValue(moduleAnchorElement) ?? "";
+
+  const anchorElement = target.closest<HTMLElement>("[data-preview-structure-anchor='true']");
+  if (!anchorElement || !container.contains(anchorElement)) return "";
+  return scrollAnchorValue(anchorElement) ?? "";
+}
+
+type ParsedScrollAnchorKind =
+  | "frontMatter"
+  | "pageBreak"
+  | "question"
+  | "questionBlock"
+  | "part"
+  | "partBlock"
+  | "subpart"
+  | "subpartBlock"
+  | "unknown";
+
+interface ParsedScrollAnchor {
+  kind: ParsedScrollAnchorKind;
+  questionId?: string;
+  partId?: string;
+  subpartId?: string;
+  blockId?: string;
+}
+
+function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
+  if (anchor === SCROLL_ANCHOR_FRONT_MATTER) return { kind: "frontMatter" };
+  if (anchor.startsWith("pb:")) return { kind: "pageBreak", questionId: pageBreakQuestionIdFromScrollAnchor(anchor) };
+
+  const [questionSegment, ...segments] = anchor.split("/");
+  if (!questionSegment?.startsWith("q:")) return { kind: "unknown" };
+
+  const parsed: ParsedScrollAnchor = {
+    kind: "question",
+    questionId: questionSegment.slice(2),
+  };
+
+  for (const segment of segments) {
+    if (segment.startsWith("p:")) parsed.partId = segment.slice(2);
+    if (segment.startsWith("s:")) parsed.subpartId = segment.slice(2);
+    if (segment.startsWith("b:")) parsed.blockId = segment.slice(2);
+  }
+
+  if (parsed.partId && parsed.subpartId && parsed.blockId) return { ...parsed, kind: "subpartBlock" };
+  if (parsed.partId && parsed.subpartId) return { ...parsed, kind: "subpart" };
+  if (parsed.partId && parsed.blockId) return { ...parsed, kind: "partBlock" };
+  if (parsed.partId) return { ...parsed, kind: "part" };
+  if (parsed.blockId) return { ...parsed, kind: "questionBlock" };
+  return parsed;
+}
+
+function keyboardTargetConsumesGlobalDelete(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest("a, button, input, textarea, select, [contenteditable='true'], [role='textbox'], [data-delete-key-ignore]"))
+  );
 }
 
 function visibleScrollAnchors(container: HTMLElement) {
@@ -2690,6 +3881,10 @@ function keyboardDeleteRequested(event: KeyboardEvent<HTMLElement>) {
   return !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "Backspace");
 }
 
+function nativeKeyboardDeleteRequested(event: globalThis.KeyboardEvent) {
+  return !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "Backspace");
+}
+
 function questionMarks(question: QuestionBlock) {
   if (question.parts.length) {
     return question.parts.reduce((sum, part) => sum + partMarks(part), 0);
@@ -2748,25 +3943,32 @@ function relabelParts(parts: EditorPart[]) {
   return parts.map((part, index) => withNormalizedPartOrder({ ...part, label: alphaLabel(index) }));
 }
 
-function firstTextSource(blocks: EditorContentBlock[]) {
-  const textBlock = blocks.find((block) => block.kind === "text");
+function visibleContentBlocks(blocks: EditorContentBlock[], showSolutions: boolean) {
+  return blocks.filter((block) => isContentBlockVisible(block, showSolutions));
+}
+
+function firstTextSource(blocks: EditorContentBlock[], showSolutions = true) {
+  const visibleBlocks = visibleContentBlocks(blocks, showSolutions);
+  const textBlock = visibleBlocks.find((block) => block.kind === "text");
   if (textBlock?.kind === "text") return textBlock.text?.replace(/\s+/g, " ").trim() || "";
-  const choicesBlock = blocks.find((block) => block.kind === "choices");
+  const choicesBlock = visibleBlocks.find((block) => block.kind === "choices");
   if (choicesBlock?.kind === "choices") return normalizeChoiceItems(choicesBlock.choices).filter(Boolean).join("; ");
-  const tableContentBlock = blocks.find((block) => block.kind === "table");
+  const tableContentBlock = visibleBlocks.find((block) => block.kind === "table");
   if (tableContentBlock?.kind === "table") {
     const table = normalizeTableBlock(tableContentBlock);
-    return `${table.rows.length} row table`;
+    return `${plainTableRows(table).length} row table`;
   }
   return "";
 }
 
-function partPanelSummary(blocks: EditorContentBlock[]) {
-  return firstTextSource(blocks);
+function partPanelSummary(blocks: EditorContentBlock[], showSolutions = true) {
+  return firstTextSource(blocks, showSolutions);
 }
 
 const SOLUTION_MARK_SYMBOL = "✓";
 const SOLUTION_MARK_ANNOTATION_PATTERN = /\s*\[\[marks:(\d+)]]\s*$/i;
+type MixedMathSegmentType = "text" | "inline" | "display" | "marked-text" | "marked-display";
+type MixedMathSegment = { type: MixedMathSegmentType; content: string; marks?: number };
 
 function extractSolutionMarkAnnotation(source: string) {
   const match = source.match(SOLUTION_MARK_ANNOTATION_PATTERN);
@@ -2775,8 +3977,13 @@ function extractSolutionMarkAnnotation(source: string) {
   return { source: source.slice(0, match.index).trimEnd(), marks };
 }
 
-function parseMixedMath(source: string) {
-  const segments: Array<{ type: "text" | "inline" | "display"; content: string; marks?: number }> = [];
+function isDisplayMathLine(source: string) {
+  const trimmed = source.trim();
+  return trimmed.startsWith("$$") && trimmed.endsWith("$$");
+}
+
+function parseMixedMathLine(source: string) {
+  const segments: MixedMathSegment[] = [];
   const regex = /(\$\$[\s\S]+?\$\$(?:\s*\[\[marks:\d+]])?|\$[^$\n]+?\$(?:\s*\[\[marks:\d+]])?)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -2803,6 +4010,91 @@ function parseMixedMath(source: string) {
   return segments;
 }
 
+const MIXED_MATH_PARSE_CACHE_LIMIT = 1500;
+const mixedMathParseCache = new Map<string, MixedMathSegment[]>();
+
+function getCachedMixedMathSegments(source: string) {
+  const cached = mixedMathParseCache.get(source);
+  if (!cached) return undefined;
+
+  mixedMathParseCache.delete(source);
+  mixedMathParseCache.set(source, cached);
+  return cached;
+}
+
+function setCachedMixedMathSegments(source: string, segments: MixedMathSegment[]) {
+  if (mixedMathParseCache.size >= MIXED_MATH_PARSE_CACHE_LIMIT) {
+    const oldestKey = mixedMathParseCache.keys().next().value;
+    if (oldestKey) mixedMathParseCache.delete(oldestKey);
+  }
+
+  mixedMathParseCache.set(source, segments);
+}
+
+function parseMixedMathText(source: string) {
+  const segments: MixedMathSegment[] = [];
+  const lines = source.split(/(\n)/);
+
+  for (const line of lines) {
+    if (line === "\n") {
+      segments.push({ type: "text", content: line });
+      continue;
+    }
+
+    const extractedLine = extractSolutionMarkAnnotation(line);
+    if (extractedLine.marks) {
+      const content = extractedLine.source;
+      if (isDisplayMathLine(content)) {
+        const trimmed = content.trim();
+        segments.push({ type: "marked-display", content: trimmed.slice(2, -2).trim(), marks: extractedLine.marks });
+      } else {
+        segments.push({ type: "marked-text", content, marks: extractedLine.marks });
+      }
+      continue;
+    }
+
+    segments.push(...parseMixedMathLine(line));
+  }
+
+  return segments;
+}
+
+function parseMixedMathUncached(source: string) {
+  const segments: MixedMathSegment[] = [];
+  const displayRegex = /(\$\$[\s\S]+?\$\$(?:\s*\[\[marks:\d+]])?)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = displayRegex.exec(source)) !== null) {
+    if (match.index > cursor) {
+      segments.push(...parseMixedMathText(source.slice(cursor, match.index)));
+    }
+
+    const extractedToken = extractSolutionMarkAnnotation(match[0]);
+    segments.push({
+      type: extractedToken.marks ? "marked-display" : "display",
+      content: extractedToken.source.slice(2, -2).trim(),
+      marks: extractedToken.marks,
+    });
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < source.length) {
+    segments.push(...parseMixedMathText(source.slice(cursor)));
+  }
+
+  return segments;
+}
+
+function parseMixedMath(source: string) {
+  const cached = getCachedMixedMathSegments(source);
+  if (cached) return cached;
+
+  const segments = parseMixedMathUncached(source);
+  setCachedMixedMathSegments(source, segments);
+  return segments;
+}
+
 function SolutionMarkTicks({ count }: { count?: number }) {
   if (!count) return null;
   return (
@@ -2814,13 +4106,35 @@ function SolutionMarkTicks({ count }: { count?: number }) {
   );
 }
 
+function compactSolutionTextSegment(
+  content: string,
+  previousType?: "text" | "inline" | "display",
+  nextType?: "text" | "inline" | "display",
+) {
+  let compacted = content.replace(/\n{3,}/g, "\n\n");
+
+  if (previousType === "display") compacted = compacted.replace(/^\s*\n+\s*/g, "");
+  if (nextType === "display") compacted = compacted.replace(/\s*\n+\s*$/g, "");
+
+  return compacted.replace(/\n{2,}/g, "\n");
+}
+
+function mixedMathLayoutType(type?: MixedMathSegmentType): "text" | "inline" | "display" | undefined {
+  if (!type) return undefined;
+  if (type === "marked-display") return "display";
+  if (type === "marked-text") return "text";
+  return type;
+}
+
 function MixedMath({ source, showSolutionMarks = false }: { source: string; showSolutionMarks?: boolean }) {
   const segments = useMemo(() => parseMixedMath(source), [source]);
   return (
     <div className="mixed-math">
       {segments.map((segment, index) => {
+        const previousType = mixedMathLayoutType(segments[index - 1]?.type);
+        const nextType = mixedMathLayoutType(segments[index + 1]?.type);
         const marks = showSolutionMarks ? segment.marks : 0;
-        if (segment.type === "display") {
+        if (segment.type === "display" || segment.type === "marked-display") {
           const displayMath = (
             <div className="test-display-math">
               <Latex latex={segment.content} block />
@@ -2840,6 +4154,21 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
             </div>
           );
         }
+        if (segment.type === "marked-text") {
+          const textContent = showSolutionMarks ? compactSolutionTextSegment(segment.content, previousType, nextType) : segment.content;
+          if (showSolutionMarks && !textContent.trim()) return null;
+          if (marks) {
+            return (
+              <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
+                <span>
+                  <InlineMathText source={textContent} />
+                </span>
+                <SolutionMarkTicks count={marks} />
+              </div>
+            );
+          }
+          return <InlineMathText key={`${segment.content}-${index}`} source={textContent} />;
+        }
         if (segment.type === "inline") {
           const inlineMath = <Latex latex={segment.content} />;
           if (marks) {
@@ -2852,17 +4181,22 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
           }
           return <span key={`${segment.content}-${index}`}>{inlineMath}</span>;
         }
+        const textContent = showSolutionMarks ? compactSolutionTextSegment(segment.content, previousType, nextType) : segment.content;
+        if (showSolutionMarks && !textContent.trim()) {
+          if (textContent.includes("\n")) return <span key={`${segment.content}-${index}`}>{textContent}</span>;
+          return null;
+        }
         if (marks) {
           return (
             <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
               <span>
-                <FormattedInlineText text={segment.content} />
+                <FormattedInlineText text={textContent} />
               </span>
               <SolutionMarkTicks count={marks} />
             </div>
           );
         }
-        return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
+        return <FormattedInlineText key={`${segment.content}-${index}`} text={textContent} />;
       })}
     </div>
   );
@@ -2873,15 +4207,17 @@ function InlineMathText({ source, className, truncate = false }: { source: strin
   return (
     <span className={cn(truncate ? "inline-math-truncate" : "inline min-w-0", className)} title={source}>
       {segments.map((segment, index) => {
-        if (segment.type === "text") return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
+        if (segment.type === "text" || segment.type === "marked-text") {
+          return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
+        }
         return <Latex key={`${segment.content}-${index}`} latex={segment.content} />;
       })}
     </span>
   );
 }
 
-function InlineMathSummary({ source }: { source: string }) {
-  return <InlineMathText source={source} truncate className="min-w-0 flex-1 text-sm text-muted-foreground" />;
+function FrontMatterInlineText({ text, className }: { text: string; className?: string }) {
+  return <InlineMathText source={text} className={className} />;
 }
 
 function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: string }) {
@@ -2899,8 +4235,115 @@ function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: st
   );
 }
 
+function contentBlockVisibility(block: EditorContentBlock): ContentBlockVisibility {
+  const explicitVisibility = normalizeContentBlockVisibility(block.visibility);
+  if (block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))) return "solution";
+  if (explicitVisibility === "solution") return "solution";
+  if (explicitVisibility === "student" || block.studentOnly === true) return "student";
+  return "always";
+}
+
+function isContentBlockVisible(block: EditorContentBlock, showSolutions: boolean) {
+  const visibility = contentBlockVisibility(block);
+  if (visibility === "solution") return showSolutions;
+  if (visibility === "student") return !showSolutions;
+  return true;
+}
+
+function isDiagramBesideContentBlock(block: EditorContentBlock | undefined, showSolutions: boolean) {
+  return Boolean(block && (block.kind === "text" || block.kind === "space") && isContentBlockVisible(block, showSolutions));
+}
+
 function isSolutionTextBlock(block: EditorContentBlock) {
-  return block.kind === "text" && block.id.startsWith("solution-");
+  return block.kind === "text" && contentBlockVisibility(block) === "solution";
+}
+
+interface VisibilityReplacementSlotGroup {
+  studentBlock: EditorContentBlock;
+  solutionBlocks: EditorContentBlock[];
+  blocks: EditorContentBlock[];
+  endIndex: number;
+}
+
+function isStudentReplacementBlock(block: EditorContentBlock) {
+  return contentBlockVisibility(block) === "student";
+}
+
+function isSolutionReplacementBlock(block: EditorContentBlock) {
+  return contentBlockVisibility(block) === "solution";
+}
+
+function visibilityReplacementSlotAt(blocks: EditorContentBlock[], startIndex: number): VisibilityReplacementSlotGroup | null {
+  const block = blocks[startIndex];
+  if (!block || block.kind === "pageBreak") return null;
+
+  if (isStudentReplacementBlock(block)) {
+    const solutionBlocks: EditorContentBlock[] = [];
+    let cursor = startIndex + 1;
+    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor])) {
+      solutionBlocks.push(blocks[cursor]);
+      cursor += 1;
+    }
+    if (!solutionBlocks.length) return null;
+    return {
+      studentBlock: block,
+      solutionBlocks,
+      blocks: [block, ...solutionBlocks],
+      endIndex: cursor - 1,
+    };
+  }
+
+  if (isSolutionReplacementBlock(block)) {
+    const solutionBlocks: EditorContentBlock[] = [];
+    let cursor = startIndex;
+    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor])) {
+      solutionBlocks.push(blocks[cursor]);
+      cursor += 1;
+    }
+    const studentBlock = blocks[cursor];
+    if (!studentBlock || !isStudentReplacementBlock(studentBlock)) return null;
+    return {
+      studentBlock,
+      solutionBlocks,
+      blocks: [...solutionBlocks, studentBlock],
+      endIndex: cursor,
+    };
+  }
+
+  return null;
+}
+
+function visibilityReplacementSlotAtOrderedItems(
+  items: Array<OrderedQuestionItem | OrderedPartItem>,
+  startIndex: number,
+): (VisibilityReplacementSlotGroup & { endItemIndex: number }) | null {
+  const contiguousBlocks: EditorContentBlock[] = [];
+  const itemIndexes: number[] = [];
+  for (let cursor = startIndex; cursor < items.length; cursor += 1) {
+    const item = items[cursor];
+    if (item.kind !== "block") break;
+    contiguousBlocks.push(item.block);
+    itemIndexes.push(cursor);
+  }
+
+  const slot = visibilityReplacementSlotAt(contiguousBlocks, 0);
+  if (!slot) return null;
+  return {
+    ...slot,
+    endItemIndex: itemIndexes[slot.endIndex] ?? startIndex,
+  };
+}
+
+function isSolutionOnlyGraphFeature(feature: GraphFeature) {
+  return feature.solutionOnly === true;
+}
+
+function graphConfigForSolutionVisibility(graphConfig: GraphConfig, showSolutions: boolean) {
+  if (showSolutions || !graphConfig.features?.some(isSolutionOnlyGraphFeature)) return graphConfig;
+  return {
+    ...graphConfig,
+    features: graphConfig.features.filter((feature) => !isSolutionOnlyGraphFeature(feature)),
+  };
 }
 
 function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
@@ -2910,63 +4353,6 @@ function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
   if (normalizedStyle === "upper-alpha") return `${alphaLabel(index).toUpperCase()}.`;
   if (normalizedStyle === "lower-alpha") return `${alphaLabel(index)}.`;
   return `${romanLabel(index)}.`;
-}
-
-function ChoiceListPreview({ block }: { block: Extract<EditorContentBlock, { kind: "choices" }> }) {
-  const choices = normalizeChoiceItems(block.choices);
-  const layout = normalizeChoiceListLayout(block.layout);
-
-  return (
-    <div
-      className={cn(
-        "test-choice-list",
-        layout === "two-column" && "test-choice-list-two-column",
-        layout === "inline" && "test-choice-list-inline",
-      )}
-    >
-      {choices.map((choice, index) => (
-        <div key={`${choice}-${index}`} className="test-choice-item">
-          <span className="test-choice-label">{choiceLabel(block.numberingStyle, index)}</span>
-          <div className="test-choice-content">
-            <MixedMath source={choice} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TablePreview({ block }: { block: Extract<EditorContentBlock, { kind: "table" }> }) {
-  const table = normalizeTableBlock(block);
-
-  return (
-    <div className={cn("test-table-wrap", `test-table-${table.tableAlign}`)}>
-      <table className="test-table">
-        {table.showHeader ? (
-          <thead>
-            <tr>
-              {table.headers.map((cell, index) => (
-                <th key={`header-${index}`} className={cn("test-table-cell", `test-table-cell-${table.cellAlignment}`)}>
-                  <MixedMath source={cell} />
-                </th>
-              ))}
-            </tr>
-          </thead>
-        ) : null}
-        <tbody>
-          {table.rows.map((row, rowIndex) => (
-            <tr key={`row-${rowIndex}`}>
-              {row.map((cell, cellIndex) => (
-                <td key={`cell-${rowIndex}-${cellIndex}`} className={cn("test-table-cell", `test-table-cell-${table.cellAlignment}`)}>
-                  <MixedMath source={cell} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 }
 
 function UploadedImageDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
@@ -2999,13 +4385,18 @@ function UploadedImageDiagram({ graphConfig }: { graphConfig?: GraphConfig | nul
 function DiagramPreview({
   graphConfig,
   measureOnly = false,
+  showSolutions = true,
   onGraphConfigChange,
 }: {
   graphConfig?: GraphConfig | null;
   measureOnly?: boolean;
+  showSolutions?: boolean;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }) {
-  const config = withGraphDefaults(graphConfig);
+  const baseConfig = withGraphDefaults(graphConfig);
+  const hasHiddenSolutionFeatures = !showSolutions && Boolean(baseConfig.features?.some(isSolutionOnlyGraphFeature));
+  const config = graphConfigForSolutionVisibility(baseConfig, showSolutions);
+  const visibleGraphConfigChange = hasHiddenSolutionFeatures ? undefined : onGraphConfigChange;
 
   if (measureOnly) {
     return <div className="w-full overflow-hidden bg-white" style={{ height: graphHeight(config), maxWidth: graphWidth(config) }} />;
@@ -3021,140 +4412,348 @@ function DiagramPreview({
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
     case "vector2d":
-      return <Vector2DGraph graphConfig={config} />;
+      return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "graph3d":
     case "basic3d":
-      return <Basic3DGraph graphConfig={config} />;
+      return <Basic3DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "graph2d":
     case "2d_graph":
     case "function":
     default:
-      return <FunctionGraph graphConfig={config} onGraphConfigChange={onGraphConfigChange} />;
+      return <FunctionGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
   }
 }
 
-function PreviewContentBlocks({
-  blocks,
-  measureOnly = false,
-  onGraphConfigChange,
-  blockAnchorFor,
-}: {
-  blocks: EditorContentBlock[];
-  measureOnly?: boolean;
-  onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
-  blockAnchorFor?: (block: EditorContentBlock) => string | undefined;
-}) {
-  const renderedBlocks: ReactNode[] = [];
+const SOLUTION_SLOT_OVERFLOW_MIN_TOLERANCE_LINES = 2;
+const SOLUTION_SLOT_OVERFLOW_MAX_TOLERANCE_LINES = 5;
+const SOLUTION_SLOT_OVERFLOW_DEFAULT_TOLERANCE_LINES = 3;
+
+function measuredLineHeightPx(element: HTMLElement) {
+  const styles = window.getComputedStyle(element);
+  const lineHeight = Number.parseFloat(styles.lineHeight);
+  if (Number.isFinite(lineHeight)) return lineHeight;
+
+  const fontSize = Number.parseFloat(styles.fontSize);
+  return Number.isFinite(fontSize) ? fontSize * 1.55 : 20;
+}
+
+function solutionSlotToleranceLines(studentBlock: EditorContentBlock) {
+  if (studentBlock.kind !== "space") return SOLUTION_SLOT_OVERFLOW_DEFAULT_TOLERANCE_LINES;
+
+  return Math.min(
+    SOLUTION_SLOT_OVERFLOW_MAX_TOLERANCE_LINES,
+    Math.max(SOLUTION_SLOT_OVERFLOW_MIN_TOLERANCE_LINES, Math.floor(spaceLines(studentBlock.lines) / 2)),
+  );
+}
+
+type SolutionValidationSeverity = "error" | "warning";
+
+type SolutionValidationFix =
+  | { kind: "add-slot"; lines: number }
+  | { kind: "add-solution"; afterBlockId: string }
+  | { kind: "add-student-space"; beforeBlockId: string; lines: number }
+  | { kind: "increase-space"; blockId: string; lines: number };
+
+interface SolutionValidationIssue {
+  id: string;
+  severity: SolutionValidationSeverity;
+  label: string;
+  message: string;
+  anchor: string;
+  fix?: SolutionValidationFix;
+}
+
+interface SolutionValidationResult {
+  checkedItems: number;
+  errorCount: number;
+  warningCount: number;
+  issues: SolutionValidationIssue[];
+}
+
+function tableHasBlankResponseCells(block: Extract<EditorContentBlock, { kind: "table" }>) {
+  const table = normalizeTableBlock(block);
+  return plainTableRows(table).some((row) => row.some((cell) => !cell.trim()));
+}
+
+function isStudentResponseSurfaceBlock(block: EditorContentBlock) {
+  const visibility = contentBlockVisibility(block);
+  if (visibility === "solution") return false;
+  if (visibility === "student") return true;
+  if (block.kind === "choices") return normalizeChoiceItems(block.choices).length > 0;
+  if (block.kind === "table") return tableHasBlankResponseCells(block);
+  return false;
+}
+
+function solutionTextLineEstimate(text: string) {
+  const visibleText = text.replace(/\[\[marks:\s*\d+\s*\]\]/gi, "");
+  const lines = visibleText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const displayMathCount = (visibleText.match(/\$\$[\s\S]*?\$\$/g) ?? []).length;
+  const alignedBreakCount = (visibleText.match(/\\\\/g) ?? []).length;
+  return Math.max(1, lines.length + displayMathCount + alignedBreakCount);
+}
+
+function solutionBlockLineEstimate(block: EditorContentBlock) {
+  if (block.kind === "text") return solutionTextLineEstimate(block.text ?? "");
+  if (block.kind === "diagram") return Math.max(4, Math.ceil(graphHeight(withGraphDefaults(block.graphConfig)) / 26));
+  if (block.kind === "table") return Math.max(2, plainTableRows(normalizeTableBlock(block)).length + 1);
+  if (block.kind === "choices") return Math.max(1, normalizeChoiceItems(block.choices).length);
+  if (block.kind === "space") return spaceLines(block.lines);
+  return 1;
+}
+
+function replacementSlotLineCapacity(studentBlock: EditorContentBlock) {
+  if (studentBlock.kind === "space") return spaceLines(studentBlock.lines);
+  if (studentBlock.kind === "table") return Math.max(2, plainTableRows(normalizeTableBlock(studentBlock)).length + 1);
+  if (studentBlock.kind === "choices") return Math.max(1, normalizeChoiceItems(studentBlock.choices).length);
+  return 0;
+}
+
+function solutionValidationFixLabel(fix?: SolutionValidationFix) {
+  if (!fix) return "";
+  if (fix.kind === "add-slot") return "Add solution slot";
+  if (fix.kind === "add-solution") return "Add solution";
+  if (fix.kind === "add-student-space") return "Add answer space";
+  if (fix.kind === "increase-space") return `Set space to ${fix.lines} lines`;
+  return "";
+}
+
+function collectReplacementSlotAnalysis(blocks: EditorContentBlock[]) {
+  const slots: VisibilityReplacementSlotGroup[] = [];
+  const pairedBlockIds = new Set<string>();
   for (let index = 0; index < blocks.length; index += 1) {
-    const block = blocks[index];
-    if (block.kind === "pageBreak") continue;
-    const blockAnchor = measureOnly ? undefined : blockAnchorFor?.(block);
-    if (block.kind === "diagram") {
-      const textSide = normalizeDiagramTextSide(block.diagramTextSide);
-      const nextBlock = blocks[index + 1];
-      if (textSide !== "none" && nextBlock?.kind === "text") {
-        const diagramNode = (
-          <div
-            data-scroll-anchor={blockAnchor}
-            className={cn("test-diagram-pair-diagram flex min-w-0", diagramAlignmentClass(block.diagramAlign))}
-          >
-            <DiagramPreview
-              graphConfig={block.graphConfig}
-              measureOnly={measureOnly}
-              onGraphConfigChange={
-                measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)
-              }
-            />
-          </div>
-        );
-        const textNode = (
-          <div
-            data-scroll-anchor={measureOnly ? undefined : blockAnchorFor?.(nextBlock)}
-            className={cn("test-diagram-pair-text min-w-0", isSolutionTextBlock(nextBlock) && "test-solution-block")}
-          >
-            <MixedMath source={nextBlock.text ?? ""} showSolutionMarks={isSolutionTextBlock(nextBlock)} />
-          </div>
-        );
-        renderedBlocks.push(
-          <div
-            key={`${block.id}:${nextBlock.id}`}
-            className={cn("test-diagram-text-pair", textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right")}
-          >
-            {textSide === "left" ? (
-              <>
-                {textNode}
-                {diagramNode}
-              </>
-            ) : (
-              <>
-                {diagramNode}
-                {textNode}
-              </>
-            )}
-          </div>,
-        );
-        index += 1;
-        continue;
-      }
-    }
-
-    if (block.kind === "space") {
-      renderedBlocks.push(
-        <div
-          key={block.id}
-          data-scroll-anchor={blockAnchor}
-          className="test-space-block"
-          style={{ "--space-lines": String(spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
-        />,
-      );
-      continue;
-    }
-    if (block.kind === "diagram") {
-      renderedBlocks.push(
-        <div key={block.id} data-scroll-anchor={blockAnchor} className={cn("my-1 flex min-w-0", diagramAlignmentClass(block.diagramAlign))}>
-          <DiagramPreview
-            graphConfig={block.graphConfig}
-            measureOnly={measureOnly}
-            onGraphConfigChange={
-              measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)
-            }
-          />
-        </div>,
-      );
-      continue;
-    }
-    if (block.kind === "choices") {
-      renderedBlocks.push(
-        <div key={block.id} data-scroll-anchor={blockAnchor}>
-          <ChoiceListPreview block={block} />
-        </div>,
-      );
-      continue;
-    }
-    if (block.kind === "table") {
-      renderedBlocks.push(
-        <div key={block.id} data-scroll-anchor={blockAnchor}>
-          <TablePreview block={block} />
-        </div>,
-      );
-      continue;
-    }
-    renderedBlocks.push(
-      <div
-        key={block.id}
-        data-scroll-anchor={blockAnchor}
-        className={cn("test-text-block", isSolutionTextBlock(block) && "test-solution-block")}
-      >
-        <MixedMath source={block.text ?? ""} showSolutionMarks={isSolutionTextBlock(block)} />
-      </div>,
-    );
+    const slot = visibilityReplacementSlotAt(blocks, index);
+    if (!slot) continue;
+    slots.push(slot);
+    slot.blocks.forEach((block) => pairedBlockIds.add(block.id));
+    index = slot.endIndex;
   }
 
-  return <div className="test-content-stack">{renderedBlocks}</div>;
+  const studentBlocks = blocks.filter((block) => isStudentReplacementBlock(block));
+  const solutionBlocks = blocks.filter((block) => isSolutionReplacementBlock(block));
+  return {
+    slots,
+    studentBlocks,
+    solutionBlocks,
+    unpairedStudentBlocks: studentBlocks.filter((block) => !pairedBlockIds.has(block.id)),
+    unpairedSolutionBlocks: solutionBlocks.filter((block) => !pairedBlockIds.has(block.id)),
+  };
 }
 
-function contentBlocksHaveDiagram(blocks: EditorContentBlock[]) {
-  return blocks.some((block) => block.kind === "diagram");
+function orderedBlocksFromQuestion(question: QuestionBlock) {
+  return orderedQuestionItems(question)
+    .filter((item): item is Extract<OrderedQuestionItem, { kind: "block" }> => item.kind === "block")
+    .map((item) => item.block)
+    .filter((block) => block.kind !== "pageBreak");
+}
+
+function orderedBlocksFromPart(part: EditorPart) {
+  return orderedPartItems(part)
+    .filter((item): item is Extract<OrderedPartItem, { kind: "block" }> => item.kind === "block")
+    .map((item) => item.block)
+    .filter((block) => block.kind !== "pageBreak");
+}
+
+function orderedBlocksFromSubpart(subpart: EditorSubpart) {
+  return subpart.contentBlocks.filter((block) => block.kind !== "pageBreak");
+}
+
+function validateMarkedSolutionContainer({
+  issues,
+  label,
+  marks,
+  blocks,
+  anchor,
+}: {
+  issues: SolutionValidationIssue[];
+  label: string;
+  marks: number;
+  blocks: EditorContentBlock[];
+  anchor: string;
+}) {
+  if (marks <= 0) return 0;
+
+  const analysis = collectReplacementSlotAnalysis(blocks);
+  const hasResponseSurface = blocks.some(isStudentResponseSurfaceBlock);
+  const hasSolutionContent = analysis.solutionBlocks.length > 0;
+  const issuePrefix = `${label}:${marks}`;
+  const defaultLines = defaultSolutionSlotLines(marks);
+  const firstStudentBlock = analysis.studentBlocks[0];
+  const firstUnpairedStudentBlock = analysis.unpairedStudentBlocks[0];
+  const firstUnpairedSolutionBlock = analysis.unpairedSolutionBlocks[0];
+
+  if (!hasResponseSurface) {
+    issues.push({
+      id: `${issuePrefix}:missing-response`,
+      severity: "error",
+      label,
+      message: `${marks} mark${marks === 1 ? "" : "s"} but no student response surface was found.`,
+      anchor,
+      fix: firstUnpairedSolutionBlock
+        ? { kind: "add-student-space", beforeBlockId: firstUnpairedSolutionBlock.id, lines: defaultLines }
+        : { kind: "add-slot", lines: defaultLines },
+    });
+  }
+
+  if (!hasSolutionContent) {
+    issues.push({
+      id: `${issuePrefix}:missing-solution`,
+      severity: "error",
+      label,
+      message: "No solution module was found for this marked item.",
+      anchor,
+      fix: firstStudentBlock ? { kind: "add-solution", afterBlockId: firstStudentBlock.id } : { kind: "add-slot", lines: defaultLines },
+    });
+  } else if (!analysis.slots.length) {
+    issues.push({
+      id: `${issuePrefix}:unpaired-solution`,
+      severity: "warning",
+      label,
+      message: "A solution module exists, but it is not paired with a student answer space/table.",
+      anchor,
+      fix: firstUnpairedSolutionBlock
+        ? { kind: "add-student-space", beforeBlockId: firstUnpairedSolutionBlock.id, lines: defaultLines }
+        : undefined,
+    });
+  }
+
+  if (analysis.unpairedStudentBlocks.length && hasSolutionContent) {
+    issues.push({
+      id: `${issuePrefix}:unpaired-student`,
+      severity: "warning",
+      label,
+      message: "A student-only response block is not adjacent to a solution module.",
+      anchor,
+      fix: firstUnpairedStudentBlock ? { kind: "add-solution", afterBlockId: firstUnpairedStudentBlock.id } : undefined,
+    });
+  }
+
+  if (analysis.unpairedSolutionBlocks.length && analysis.slots.length) {
+    issues.push({
+      id: `${issuePrefix}:floating-solution`,
+      severity: "warning",
+      label,
+      message: "One or more solution modules are outside the matched replacement slot.",
+      anchor,
+    });
+  }
+
+  for (const [slotIndex, slot] of analysis.slots.entries()) {
+    const capacity = replacementSlotLineCapacity(slot.studentBlock);
+    if (!capacity) continue;
+    const estimate = slot.solutionBlocks.reduce((sum, block) => sum + solutionBlockLineEstimate(block), 0);
+    const tolerance = solutionSlotToleranceLines(slot.studentBlock);
+    if (estimate > capacity + tolerance) {
+      const overflowLines = Math.max(1, Math.ceil(estimate - capacity));
+      issues.push({
+        id: `${issuePrefix}:fit-${slotIndex}`,
+        severity: "warning",
+        label,
+        message: `The paired solution may need about ${overflowLines} more line${overflowLines === 1 ? "" : "s"} than the reserved student space.`,
+        anchor,
+        fix:
+          slot.studentBlock.kind === "space"
+            ? { kind: "increase-space", blockId: slot.studentBlock.id, lines: Math.ceil(capacity + overflowLines) }
+            : undefined,
+      });
+    }
+  }
+
+  return 1;
+}
+
+function validateSolutionCompleteness(frontMatter: FrontMatterConfig, questions: QuestionBlock[]): SolutionValidationResult {
+  const issues: SolutionValidationIssue[] = [];
+  let checkedItems = 0;
+
+  questions.forEach((question, questionIndex) => {
+    const questionLabel = `Question ${questionDisplayNumber(frontMatter, questionIndex)}`;
+    if (!question.parts.length) {
+      checkedItems += validateMarkedSolutionContainer({
+        issues,
+        label: questionLabel,
+        marks: Math.max(0, Number(question.marks) || 0),
+        blocks: orderedBlocksFromQuestion(question),
+        anchor: questionScrollAnchor(question.id),
+      });
+      return;
+    }
+
+    question.parts.forEach((part, partIndex) => {
+      const partLabel = `${questionLabel}(${alphaLabel(partIndex)})`;
+      if (!part.subparts?.length) {
+        checkedItems += validateMarkedSolutionContainer({
+          issues,
+          label: partLabel,
+          marks: Math.max(0, Number(part.marks) || 0),
+          blocks: orderedBlocksFromPart(part),
+          anchor: partScrollAnchor(question.id, part.id),
+        });
+        return;
+      }
+
+      part.subparts.forEach((subpart, subpartIndex) => {
+        checkedItems += validateMarkedSolutionContainer({
+          issues,
+          label: `${partLabel}(${romanLabel(subpartIndex)})`,
+          marks: Math.max(0, Number(subpart.marks) || 0),
+          blocks: orderedBlocksFromSubpart(subpart),
+          anchor: subpartScrollAnchor(question.id, part.id, subpart.id),
+        });
+      });
+    });
+  });
+
+  const errorCount = issues.filter((issue) => issue.severity === "error").length;
+  const warningCount = issues.length - errorCount;
+  return { checkedItems, errorCount, warningCount, issues };
+}
+
+function solutionValidationSummary(result: SolutionValidationResult) {
+  if (!result.checkedItems) return "No marked items to validate";
+  if (!result.issues.length) {
+    return `${result.checkedItems} marked item${result.checkedItems === 1 ? "" : "s"} checked · all have student space and solutions`;
+  }
+  const parts = [];
+  if (result.errorCount) parts.push(`${result.errorCount} error${result.errorCount === 1 ? "" : "s"}`);
+  if (result.warningCount) parts.push(`${result.warningCount} warning${result.warningCount === 1 ? "" : "s"}`);
+  return `${result.checkedItems} marked item${result.checkedItems === 1 ? "" : "s"} checked · ${parts.join(", ")}`;
+}
+
+type AppPreviewContentBlocksProps = Omit<PreviewContentBlocksBaseProps, "runtime" | "renderers">;
+
+const previewContentRuntime: PreviewContentRuntime = {
+  choiceLabel,
+  diagramAlignmentClass,
+  effectiveDiagramTextSide,
+  graphHeight,
+  isContentBlockVisible,
+  isDiagramBesideContentBlock,
+  isSolutionTextBlock,
+  measuredLineHeightPx,
+  normalizeChoiceItems,
+  normalizeChoiceListLayout,
+  normalizeTableBlock,
+  plainTableRows: (table) => plainTableRows(table as ReturnType<typeof normalizeTableBlock>),
+  previewSelectionAttr,
+  solutionSlotToleranceLines,
+  spaceLines,
+  visibilityReplacementSlotAt,
+};
+
+const previewContentRenderers: PreviewContentRenderers = {
+  renderDiagram: (props) => <DiagramPreview {...props} />,
+  renderMath: (source, options) => <MixedMath source={source} showSolutionMarks={Boolean(options?.showSolutionMarks)} />,
+};
+
+function PreviewContentBlocks(props: AppPreviewContentBlocksProps) {
+  return <PreviewContentBlocksBase {...props} runtime={previewContentRuntime} renderers={previewContentRenderers} />;
+}
+
+function contentBlocksHaveDiagram(blocks: EditorContentBlock[], showSolutions = true) {
+  return blocks.some((block) => block.kind === "diagram" && isContentBlockVisible(block, showSolutions));
 }
 
 interface PreviewSegment {
@@ -3166,7 +4765,9 @@ interface PreviewSegment {
   block?: EditorContentBlock;
   blocks?: EditorContentBlock[];
   part?: EditorPart;
+  partItems?: OrderedPartItem[];
   partIndex?: number;
+  showPartLabel?: boolean;
 }
 
 interface PreviewGraphConfigChange {
@@ -3180,6 +4781,17 @@ interface PreviewGraphConfigChange {
 interface PreviewPage {
   segmentIndexes: number[];
   overflow: boolean;
+}
+
+interface PreviewPageSegmentEntry {
+  segment: PreviewSegment;
+  segmentPageIndex: number;
+}
+
+interface PreviewQuestionSegmentGroup {
+  id: string;
+  question: QuestionBlock;
+  entries: PreviewPageSegmentEntry[];
 }
 
 type PageFormat = typeof DEFAULT_PAGE_FORMAT;
@@ -3201,14 +4813,44 @@ function pageStyle(pageFormat: PageFormat, scale = 1) {
     "--a4-page-height": `${pageFormat.heightPx}px`,
     "--a4-page-padding-x": `${pageFormat.paddingXPx}px`,
     "--a4-page-padding-y": `${pageFormat.paddingYPx}px`,
-    "--a4-print-page-width": `${pageFormat.widthPx}px`,
-    "--a4-print-page-height": `${pageFormat.heightPx}px`,
-    "--a4-print-page-padding-x": `${pageFormat.paddingXPx}px`,
-    "--a4-print-page-padding-y": `${pageFormat.paddingYPx}px`,
-    "--a4-print-render-scale": "2",
-    "--a4-print-output-scale": "0.5",
     "--a4-preview-scale": String(scale),
+    "--a4-preview-page-width": `${pageFormat.widthPx * scale}px`,
+    "--a4-preview-page-height": `${pageFormat.heightPx * scale}px`,
+    "--a4-preview-page-gap": `${16 * scale}px`,
   } as CSSProperties & Record<`--${string}`, string>;
+}
+
+function cssAttributeValue(value: string) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function syncPreviewSelection(previewPane: HTMLElement, activeAnchor?: string) {
+  previewPane
+    .querySelectorAll<HTMLElement>('[data-preview-selected="true"]')
+    .forEach((element) => element.removeAttribute("data-preview-selected"));
+
+  if (!activeAnchor) return;
+  previewPane
+    .querySelectorAll<HTMLElement>(`[data-scroll-anchor="${cssAttributeValue(activeAnchor)}"]`)
+    .forEach((element) => element.setAttribute("data-preview-selected", "true"));
+}
+
+function useStableEvent<TArgs extends unknown[], TResult>(callback: (...args: TArgs) => TResult) {
+  const callbackRef = useRef(callback);
+
+  useLayoutEffect(() => {
+    callbackRef.current = callback;
+  });
+
+  return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+}
+
+function applyPreviewScaleStyle(previewRoot: HTMLElement, pageFormat: PageFormat, scale = 1) {
+  previewRoot.style.setProperty("--a4-preview-scale", String(scale));
+  previewRoot.style.setProperty("--a4-preview-page-width", `${pageFormat.widthPx * scale}px`);
+  previewRoot.style.setProperty("--a4-preview-page-height", `${pageFormat.heightPx * scale}px`);
+  previewRoot.style.setProperty("--a4-preview-page-gap", `${16 * scale}px`);
 }
 
 function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
@@ -3219,11 +4861,90 @@ function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
   });
 }
 
+function groupPreviewPageSegments(entries: PreviewPageSegmentEntry[]): PreviewQuestionSegmentGroup[] {
+  const groups: PreviewQuestionSegmentGroup[] = [];
+
+  for (const entry of entries) {
+    const previousGroup = groups.at(-1);
+    if (previousGroup?.question.id === entry.segment.question.id) {
+      previousGroup.entries.push(entry);
+      continue;
+    }
+
+    groups.push({
+      id: `${entry.segment.question.id}:${entry.segmentPageIndex}`,
+      question: entry.segment.question,
+      entries: [entry],
+    });
+  }
+
+  return groups;
+}
+
 function A4PreviewPageFrame({ children, last = false }: { children: ReactNode; last?: boolean }) {
   return <div className={cn("a4-page-frame", last && "a4-page-frame-last")}>{children}</div>;
 }
 
-function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
+function frontMatterPageCount(frontMatter: FrontMatterConfig) {
+  return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
+}
+
+function examQuestionPageReservedHeight(frontMatter: FrontMatterConfig) {
+  return frontMatter.titlePageTemplate === "exam" ? 86 : 0;
+}
+
+function bookletSupplementaryPageCount(frontMatter: FrontMatterConfig, contentPageCount: number) {
+  if (frontMatter.titlePageTemplate !== "exam") return 0;
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+  const basePageCount = frontMatterPageCount(frontMatter) + contentPageCount;
+  const minimumSupplementaryPages = Math.max(0, exam.supplementaryPageCount);
+  const pageCountWithMinimum = basePageCount + minimumSupplementaryPages;
+  return minimumSupplementaryPages + ((4 - (pageCountWithMinimum % 4)) % 4);
+}
+
+function partGroupPageBreakSegment(question: QuestionBlock, questionIndex: number, part: EditorPart, suffix: string): PreviewSegment {
+  return {
+    id: `${question.id}:part-group:${part.id}:page-break:${suffix}`,
+    kind: "page-break",
+    questionIndex,
+    spacingTop: 0,
+    question,
+  };
+}
+
+function pushPartGroupSegment({
+  segments,
+  question,
+  questionIndex,
+  part,
+  partIndex,
+  itemIndex,
+  partItems,
+  segmentIndex,
+}: {
+  segments: PreviewSegment[];
+  question: QuestionBlock;
+  questionIndex: number;
+  part: EditorPart;
+  partIndex: number;
+  itemIndex: number;
+  partItems: OrderedPartItem[];
+  segmentIndex: number;
+}) {
+  segments.push({
+    id: `${question.id}:part-group:${part.id}:${segmentIndex}`,
+    kind: "part-group",
+    questionIndex,
+    spacingTop: itemIndex === 0 && segmentIndex === 0 ? 12 : 18,
+    question,
+    part,
+    partItems,
+    partIndex: Math.max(0, partIndex),
+    showPartLabel: segmentIndex === 0,
+  });
+}
+
+function buildPreviewSegments(questions: QuestionBlock[], showSolutions: boolean): PreviewSegment[] {
   return questions.flatMap((question, questionIndex) => {
     const segments: PreviewSegment[] = [
       {
@@ -3240,11 +4961,45 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
       const item = questionItems[itemIndex];
       if (item.kind === "block") {
         const nextItem = questionItems[itemIndex + 1];
+        const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(questionItems, itemIndex + 1);
+        if (
+          item.block.kind === "diagram" &&
+          isContentBlockVisible(item.block, showSolutions) &&
+          replacementSlotFollows &&
+          effectiveDiagramTextSide(item.block, true) !== "none"
+        ) {
+          segments.push({
+            id: `${question.id}:block:${item.block.id}:${replacementSlotFollows.blocks.map((block) => block.id).join(":")}`,
+            kind: "question-block",
+            questionIndex,
+            spacingTop: itemIndex === 0 ? 8 : 12,
+            question,
+            block: item.block,
+            blocks: [item.block, ...replacementSlotFollows.blocks],
+          });
+          itemIndex = replacementSlotFollows.endItemIndex;
+          continue;
+        }
+        const replacementSlot = visibilityReplacementSlotAtOrderedItems(questionItems, itemIndex);
+        if (replacementSlot) {
+          segments.push({
+            id: `${question.id}:block:${replacementSlot.blocks.map((block) => block.id).join(":")}`,
+            kind: "question-block",
+            questionIndex,
+            spacingTop: itemIndex === 0 ? 8 : 12,
+            question,
+            block: replacementSlot.studentBlock,
+            blocks: replacementSlot.blocks,
+          });
+          itemIndex = replacementSlot.endItemIndex;
+          continue;
+        }
+        if (!isContentBlockVisible(item.block, showSolutions)) continue;
         const pairedBlocks =
           item.block.kind === "diagram" &&
-          normalizeDiagramTextSide(item.block.diagramTextSide) !== "none" &&
           nextItem?.kind === "block" &&
-          nextItem.block.kind === "text"
+          isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+          effectiveDiagramTextSide(item.block, true) !== "none"
             ? [item.block, nextItem.block]
             : undefined;
         segments.push({
@@ -3261,15 +5016,46 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
       }
 
       const partIndex = question.parts.findIndex((part) => part.id === item.part.id);
-      segments.push({
-        id: `${question.id}:part-group:${item.part.id}`,
-        kind: "part-group",
-        questionIndex,
-        spacingTop: itemIndex === 0 ? 12 : 18,
-        question,
-        part: item.part,
-        partIndex: Math.max(0, partIndex),
-      });
+      if (item.part.pageBreakBefore) {
+        segments.push(partGroupPageBreakSegment(question, questionIndex, item.part, "before-part"));
+      }
+
+      const partItems = orderedPartItems(item.part);
+      let partItemChunk: OrderedPartItem[] = [];
+      let partSegmentIndex = 0;
+      for (const partItem of partItems) {
+        if (partItem.kind === "subpart" && partItem.subpart.pageBreakBefore) {
+          if (partItemChunk.length) {
+            pushPartGroupSegment({
+              segments,
+              question,
+              questionIndex,
+              part: item.part,
+              partIndex,
+              itemIndex,
+              partItems: partItemChunk,
+              segmentIndex: partSegmentIndex,
+            });
+            partSegmentIndex += 1;
+            partItemChunk = [];
+          }
+          segments.push(partGroupPageBreakSegment(question, questionIndex, item.part, `before-subpart-${partItem.subpart.id}`));
+        }
+        partItemChunk.push(partItem);
+      }
+
+      if (partItemChunk.length || !partItems.length) {
+        pushPartGroupSegment({
+          segments,
+          question,
+          questionIndex,
+          part: item.part,
+          partIndex,
+          itemIndex,
+          partItems: partItemChunk,
+          segmentIndex: partSegmentIndex,
+        });
+      }
     }
 
     if (question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak")) {
@@ -3286,10 +5072,54 @@ function buildPreviewSegments(questions: QuestionBlock[]): PreviewSegment[] {
   });
 }
 
-function buildMeasuredPages(segmentHeights: number[], segments: PreviewSegment[], pageFormat: PageFormat): PreviewPage[] {
+function previewPartBlockRowIds(partItems: OrderedPartItem[], showSolutions: boolean) {
+  const rowIds: string[] = [];
+  for (let index = 0; index < partItems.length; index += 1) {
+    const item = partItems[index];
+    if (item.kind !== "block") continue;
+    const nextItem = partItems[index + 1];
+    const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(partItems, index + 1);
+    if (
+      item.block.kind === "diagram" &&
+      isContentBlockVisible(item.block, showSolutions) &&
+      replacementSlotFollows &&
+      effectiveDiagramTextSide(item.block, true) !== "none"
+    ) {
+      rowIds.push(item.id);
+      index = replacementSlotFollows.endItemIndex;
+      continue;
+    }
+    const replacementSlot = visibilityReplacementSlotAtOrderedItems(partItems, index);
+    if (replacementSlot) {
+      rowIds.push(item.id);
+      index = replacementSlot.endItemIndex;
+      continue;
+    }
+    if (
+      item.block.kind === "diagram" &&
+      isContentBlockVisible(item.block, showSolutions) &&
+      nextItem?.kind === "block" &&
+      isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+      effectiveDiagramTextSide(item.block, true) !== "none"
+    ) {
+      rowIds.push(item.id);
+      index += 1;
+      continue;
+    }
+    if (isContentBlockVisible(item.block, showSolutions)) rowIds.push(item.id);
+  }
+  return rowIds;
+}
+
+function buildMeasuredPages(
+  segmentHeights: number[],
+  segments: PreviewSegment[],
+  pageFormat: PageFormat,
+  reservedPageHeight = 0,
+): PreviewPage[] {
   if (!segmentHeights.length) return [{ segmentIndexes: [], overflow: false }];
 
-  const contentHeight = pageFormat.heightPx - pageFormat.paddingYPx * 2;
+  const contentHeight = pageFormat.heightPx - pageFormat.paddingYPx * 2 - reservedPageHeight;
   const pages: PreviewPage[] = [];
   let currentSegmentIndexes: number[] = [];
   let currentHeight = 0;
@@ -3330,14 +5160,351 @@ function buildMeasuredPages(segmentHeights: number[], segments: PreviewSegment[]
   return pages;
 }
 
+function examStructureRows(frontMatter: FrontMatterConfig, totalMarks: number, questionCount: number) {
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+  return exam.structureRows.map((row) =>
+    row.useCurrentDocument
+      ? {
+          ...row,
+          questionsAvailable: questionCount,
+          questionsToBeAnswered: questionCount,
+          marksAvailable: totalMarks,
+        }
+      : row,
+  );
+}
+
+function examStructurePercentageTotal(rows: ExamStructureRowConfig[]) {
+  return rows.reduce((sum, row) => sum + row.percentage, 0);
+}
+
+function ExamTextLines({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\n").map((line, index) => (
+        <Fragment key={`${line}-${index}`}>
+          {index ? <br /> : null}
+          <FrontMatterInlineText text={line} />
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+function ExamInstructionList({ text }: { text: string }) {
+  const items = text
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(\d+)\.\s*([\s\S]+)$/);
+      return match ? { number: match[1], text: match[2] } : { number: "", text: item };
+    });
+
+  return (
+    <div className="exam-instructions-list">
+      {items.map((item, index) => (
+        <div key={`${item.number}-${index}`} className="exam-instruction-item">
+          <span>{item.number ? `${item.number}.` : ""}</span>
+          <div>
+            <FormattedText text={item.text} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SchoolExamRunningHeader({
+  exam,
+  pageNumber,
+  variant = "content",
+}: {
+  exam: ExamTitlePageConfig;
+  pageNumber: number;
+  variant?: "structure" | "content" | "supplementary";
+}) {
+  const course = exam.courseHeader || DEFAULT_EXAM_TITLE_PAGE.courseHeader;
+  const section = exam.sectionHeader || DEFAULT_EXAM_TITLE_PAGE.sectionHeader;
+  const sectionOnLeft = variant === "supplementary" || (variant === "content" && pageNumber % 2 === 1);
+  const leftText = sectionOnLeft ? section : course;
+  const rightText = sectionOnLeft ? course : section;
+
+  return (
+    <header className="school-exam-running-header">
+      <strong>
+        <FrontMatterInlineText text={leftText} />
+      </strong>
+      <strong>{pageNumber}</strong>
+      <strong>
+        <FrontMatterInlineText text={rightText} />
+      </strong>
+    </header>
+  );
+}
+
+function SchoolExamCutOffNotice({ text, side = "right" }: { text: string; side?: "left" | "right" }) {
+  if (!text.trim()) return null;
+  return (
+    <aside className={cn("school-exam-cut-off-notice", side === "left" && "school-exam-cut-off-notice-left")}>
+      <FrontMatterInlineText text={text} />
+    </aside>
+  );
+}
+
+function SchoolExamPageFooter({ text }: { text: string }) {
+  if (!text.trim()) return null;
+  return (
+    <footer className="school-exam-page-footer">
+      <FrontMatterInlineText text={text} />
+    </footer>
+  );
+}
+
+function ExamCoverPage({
+  frontMatter,
+  logo,
+  activePreviewAnchor,
+}: {
+  frontMatter: FrontMatterConfig;
+  logo?: LogoAsset;
+  activePreviewAnchor?: string;
+}) {
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+  const schoolNameLines = frontMatter.schoolName
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const initials = schoolInitials(schoolNameLines);
+
+  return (
+    <header
+      className="exam-title-page school-exam-cover-page"
+      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+      data-preview-structure-anchor="true"
+      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FRONT_MATTER, activePreviewAnchor)}
+    >
+      <section className="school-exam-logo-lockup">
+        <div className="school-exam-logo-frame">
+          {logo ? (
+            <img className="school-exam-logo" src={logo.src} alt={`${logo.name} logo`} />
+          ) : (
+            <div className="school-exam-monogram" aria-hidden="true">
+              {initials}
+            </div>
+          )}
+        </div>
+        <div className="school-exam-school-name">
+          <ExamTextLines text={frontMatter.schoolName} />
+        </div>
+      </section>
+
+      <section className="school-exam-heading">
+        <div />
+        <div>
+          <h1>
+            <FrontMatterInlineText text={exam.examHeading} />
+          </h1>
+          <p>
+            <FrontMatterInlineText text={exam.bookletTitle} />
+          </p>
+        </div>
+      </section>
+
+      <section className="school-exam-course-row">
+        <div className="school-exam-course-block">
+          <h2>
+            <ExamTextLines text={frontMatter.subjectTitle} />
+          </h2>
+          {frontMatter.showAssessmentSubtitle && frontMatter.assessmentSubtitle.trim() ? (
+            <p>
+              <ExamTextLines text={frontMatter.assessmentSubtitle} />
+            </p>
+          ) : null}
+        </div>
+        <div className="school-exam-student-number">
+          <div className="school-exam-student-number-figures">
+            <span>
+              <FrontMatterInlineText text={exam.studentNumberLabel} />
+            </span>
+            <span>
+              <FrontMatterInlineText text={exam.studentNumberFiguresLabel} />
+            </span>
+            <div className="exam-student-number-boxes" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+          <div className="school-exam-student-number-words">
+            <span>
+              <FrontMatterInlineText text={exam.studentNumberWordsLabel} />
+            </span>
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </div>
+        </div>
+      </section>
+
+      <section className="school-exam-time-block">
+        <h3>
+          <FrontMatterInlineText text={exam.timeTitle} />
+        </h3>
+        <dl>
+          <dt>
+            <FrontMatterInlineText text={exam.readingTimeLabel} />
+          </dt>
+          <dd>
+            <FrontMatterInlineText text={exam.readingTime} />
+          </dd>
+          <dt>
+            <FrontMatterInlineText text={exam.workingTimeLabel} />
+          </dt>
+          <dd>
+            <FrontMatterInlineText text={exam.workingTime} />
+          </dd>
+        </dl>
+      </section>
+
+      <section className="school-exam-materials-block">
+        <h3>
+          <FrontMatterInlineText text={exam.materialsTitle} />
+        </h3>
+        <p className="exam-italic-heading">
+          <FrontMatterInlineText text={exam.supervisorMaterialsTitle} />
+        </p>
+        <p>
+          <ExamTextLines text={exam.supervisorMaterials} />
+        </p>
+        <p className="exam-italic-heading">
+          <FrontMatterInlineText text={exam.candidateMaterialsTitle} />
+        </p>
+        <div className="exam-material-row">
+          <strong>
+            <FrontMatterInlineText text={exam.standardItemsLabel} />
+          </strong>
+          <span>
+            <ExamTextLines text={exam.standardItems} />
+          </span>
+        </div>
+        <div className="exam-material-row">
+          <strong>
+            <FrontMatterInlineText text={exam.specialItemsLabel} />
+          </strong>
+          <span>
+            <ExamTextLines text={exam.specialItems} />
+          </span>
+        </div>
+      </section>
+
+      <section className="school-exam-important-note">
+        <h3>
+          <FrontMatterInlineText text={exam.importantNoteTitle} />
+        </h3>
+        <FormattedText text={exam.importantNoteBody} />
+      </section>
+    </header>
+  );
+}
+
+function ExamStructurePage({
+  frontMatter,
+  totalMarks,
+  questionCount,
+}: {
+  frontMatter: FrontMatterConfig;
+  totalMarks: number;
+  questionCount: number;
+}) {
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+  const rows = examStructureRows(frontMatter, totalMarks, questionCount);
+
+  return (
+    <section className="exam-title-page school-exam-structure-page">
+      <SchoolExamRunningHeader exam={exam} pageNumber={2} variant="structure" />
+
+      <section>
+        <h2>
+          <FrontMatterInlineText text={exam.structureTitle} />
+        </h2>
+        <table className="exam-structure-table">
+          <thead>
+            <tr>
+              <th>Section</th>
+              <th>Number of questions available</th>
+              <th>Number of questions to be answered</th>
+              <th>Working time (minutes)</th>
+              <th>Marks available</th>
+              <th>Percentage of examination</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <ExamTextLines text={row.section} />
+                </td>
+                <td>{row.questionsAvailable}</td>
+                <td>{row.questionsToBeAnswered}</td>
+                <td>{row.workingTimeMinutes}</td>
+                <td>{row.marksAvailable}</td>
+                <td>{row.percentage}</td>
+              </tr>
+            ))}
+            <tr className="exam-structure-total-row">
+              <td className="exam-structure-total-spacer" colSpan={4} aria-hidden="true" />
+              <td className="exam-structure-total-label">Total</td>
+              <td>{examStructurePercentageTotal(rows)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="exam-candidate-instructions">
+        <h2>
+          <FrontMatterInlineText text={exam.instructionsTitle} />
+        </h2>
+        <ExamInstructionList text={exam.instructionsBody} />
+      </section>
+      <SchoolExamCutOffNotice text={exam.cutOffNotice} />
+      <SchoolExamPageFooter text={exam.footerText} />
+    </section>
+  );
+}
+
+function SchoolExamSupplementaryPage({ frontMatter, pageNumber }: { frontMatter: FrontMatterConfig; pageNumber: number }) {
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+
+  return (
+    <section className="a4-page school-exam-question-page">
+      <div className="a4-page-content">
+        <div className="exam-title-page school-exam-supplementary-page">
+          <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} variant="supplementary" />
+          <section className="school-exam-supplementary-content">
+            <h2>
+              <FrontMatterInlineText text={exam.supplementaryPageTitle} />
+            </h2>
+            <p>
+              <FrontMatterInlineText text={`${exam.supplementaryQuestionNumberLabel} ________`} />
+            </p>
+          </section>
+          <SchoolExamCutOffNotice text={exam.cutOffNotice} side="left" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TestFrontMatterPreview({
   frontMatter,
   logo,
   totalMarks,
+  activePreviewAnchor,
 }: {
   frontMatter: FrontMatterConfig;
   logo?: LogoAsset;
   totalMarks: number;
+  activePreviewAnchor?: string;
 }) {
   const schoolNameLines = frontMatter.schoolName
     .split("\n")
@@ -3347,7 +5514,12 @@ function TestFrontMatterPreview({
   const isSolutionsTitle = frontMatter.nameLabel.trim().toLowerCase() === "solutions";
 
   return (
-    <header className="test-front-matter" data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}>
+    <header
+      className="test-front-matter"
+      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+      data-preview-structure-anchor="true"
+      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FRONT_MATTER, activePreviewAnchor)}
+    >
       <section className="test-title-panel">
         <div className="test-school-lockup">
           {logo ? (
@@ -3359,29 +5531,45 @@ function TestFrontMatterPreview({
           )}
           <div className="test-school-name">
             {schoolNameLines.map((line) => (
-              <span key={line}>{line}</span>
+              <span key={line}>
+                <FrontMatterInlineText text={line} />
+              </span>
             ))}
           </div>
         </div>
         <div className="test-title-main">
-          <h1>{frontMatter.subjectTitle}</h1>
-          <p>{assessmentTitleText(frontMatter.assessmentTitle)}</p>
+          <h1>
+            <FrontMatterInlineText text={frontMatter.subjectTitle} />
+          </h1>
+          <p>
+            <FrontMatterInlineText text={assessmentTitleText(frontMatter.assessmentTitle)} />
+          </p>
           {frontMatter.showAssessmentSubtitle && frontMatter.assessmentSubtitle.trim() ? (
-            <p className="test-assessment-subtitle">{frontMatter.assessmentSubtitle}</p>
+            <p className="test-assessment-subtitle">
+              <FrontMatterInlineText text={frontMatter.assessmentSubtitle} />
+            </p>
           ) : null}
-          {isSolutionsTitle ? <p className="test-solutions-title">{frontMatter.nameLabel}</p> : null}
+          {isSolutionsTitle ? (
+            <p className="test-solutions-title">
+              <FrontMatterInlineText text={frontMatter.nameLabel} />
+            </p>
+          ) : null}
         </div>
       </section>
 
       <section className={`test-student-row ${isSolutionsTitle ? "test-student-row-solutions" : ""}`}>
         {isSolutionsTitle ? null : (
           <div className="test-name-line">
-            <span>{frontMatter.nameLabel}:</span>
+            <span>
+              <FrontMatterInlineText text={`${frontMatter.nameLabel}:`} />
+            </span>
             <span aria-hidden="true" />
           </div>
         )}
         <div className="test-mark-line">
-          <span>{frontMatter.markLabel}:</span>
+          <span>
+            <FrontMatterInlineText text={`${frontMatter.markLabel}:`} />
+          </span>
           <span aria-hidden="true" />
           <strong>{totalMarks}</strong>
         </div>
@@ -3390,20 +5578,28 @@ function TestFrontMatterPreview({
       {frontMatter.showDeclaration ? (
         <section className="test-declaration-panel">
           <div className="test-declaration-copy">
-            <h2>{frontMatter.declarationTitle}</h2>
+            <h2>
+              <FrontMatterInlineText text={frontMatter.declarationTitle} />
+            </h2>
             <FormattedText text={frontMatter.declarationBody} />
           </div>
           <div className="test-signature-panel">
-            <strong>{frontMatter.signatureLabel}</strong>
+            <strong>
+              <FrontMatterInlineText text={frontMatter.signatureLabel} />
+            </strong>
             <span aria-hidden="true" />
-            <em>{frontMatter.signatureRole}</em>
+            <em>
+              <FrontMatterInlineText text={frontMatter.signatureRole} />
+            </em>
           </div>
         </section>
       ) : null}
 
       {frontMatter.showInstructions ? (
         <section className="test-instructions-panel">
-          <h2>{frontMatter.instructionsTitle}</h2>
+          <h2>
+            <FrontMatterInlineText text={frontMatter.instructionsTitle} />
+          </h2>
           <FormattedText text={frontMatter.instructionsBody} className="test-instructions-body" />
         </section>
       ) : null}
@@ -3411,17 +5607,75 @@ function TestFrontMatterPreview({
   );
 }
 
-function TestPreviewSegment({
+function FrontMatterPreviewPages({
+  frontMatter,
+  logo,
+  totalMarks,
+  questionCount,
+  activePreviewAnchor,
+  showPageBreaks,
+}: {
+  frontMatter: FrontMatterConfig;
+  logo?: LogoAsset;
+  totalMarks: number;
+  questionCount: number;
+  activePreviewAnchor?: string;
+  showPageBreaks: boolean;
+}) {
+  if (frontMatter.titlePageTemplate === "exam") {
+    return (
+      <>
+        <A4PreviewPageFrame>
+          <section className="a4-page">
+            <div className="a4-page-content">
+              <ExamCoverPage frontMatter={frontMatter} logo={logo} activePreviewAnchor={activePreviewAnchor} />
+            </div>
+          </section>
+        </A4PreviewPageFrame>
+        {showPageBreaks ? (
+          <div className="a4-page-break" aria-hidden="true">
+            <span>A4 page break</span>
+          </div>
+        ) : null}
+        <A4PreviewPageFrame>
+          <section className="a4-page">
+            <div className="a4-page-content">
+              <ExamStructurePage frontMatter={frontMatter} totalMarks={totalMarks} questionCount={questionCount} />
+            </div>
+          </section>
+        </A4PreviewPageFrame>
+      </>
+    );
+  }
+
+  return (
+    <A4PreviewPageFrame>
+      <section className="a4-page">
+        <div className="a4-page-content">
+          <TestFrontMatterPreview frontMatter={frontMatter} logo={logo} totalMarks={totalMarks} activePreviewAnchor={activePreviewAnchor} />
+        </div>
+      </section>
+    </A4PreviewPageFrame>
+  );
+}
+
+const TestPreviewSegment = memo(function TestPreviewSegment({
   segment,
   frontMatter,
   firstOnPage = false,
   measureOnly = false,
+  showSolutions = true,
+  showMarks = true,
+  activePreviewAnchor,
   onGraphConfigChange,
 }: {
   segment: PreviewSegment;
   frontMatter: FrontMatterConfig;
   firstOnPage?: boolean;
   measureOnly?: boolean;
+  showSolutions?: boolean;
+  showMarks?: boolean;
+  activePreviewAnchor?: string;
   onGraphConfigChange?: (change: PreviewGraphConfigChange) => void;
 }) {
   const questionNumber = questionDisplayNumber(frontMatter, segment.questionIndex);
@@ -3437,7 +5691,7 @@ function TestPreviewSegment({
       >
         <div className="test-question-header flex items-start justify-between gap-4">
           <h3 className="font-bold">Question {questionNumber}</h3>
-          <span className="whitespace-nowrap font-bold">{markLabel(questionMarks(segment.question))}</span>
+          <span className="whitespace-nowrap font-bold">{showMarks ? markLabel(questionMarks(segment.question)) : ""}</span>
         </div>
       </div>
     );
@@ -3454,6 +5708,8 @@ function TestPreviewSegment({
         <PreviewContentBlocks
           blocks={segment.blocks ?? (segment.block ? [segment.block] : [])}
           measureOnly={measureOnly}
+          showSolutions={showSolutions}
+          activePreviewAnchor={activePreviewAnchor}
           blockAnchorFor={(block) => questionBlockScrollAnchor(segment.question.id, block.id)}
           onGraphConfigChange={(blockId, graphConfig) => onGraphConfigChange?.({ questionId: segment.question.id, blockId, graphConfig })}
         />
@@ -3469,17 +5725,23 @@ function TestPreviewSegment({
     const part = segment.part;
     const hasSubparts = part.subparts.length > 0;
     const partLabel = alphaLabel(segment.partIndex ?? 0);
-    const partItems = orderedPartItems(part);
-    const visiblePartBlocks = partItems.filter((item) => item.kind === "block");
-    const firstContentItemId = visiblePartBlocks[0]?.id;
+    const partItems = segment.partItems ?? orderedPartItems(part);
+    const visiblePartBlockRowIds = previewPartBlockRowIds(partItems, showSolutions);
+    const firstContentItemId = visiblePartBlockRowIds[0];
+    const showPartLabel = segment.showPartLabel !== false;
     return (
       <section
         className="test-preview-segment test-part-group"
         data-scroll-anchor={measureOnly ? undefined : partScrollAnchor(segment.question.id, part.id)}
+        data-preview-structure-anchor={measureOnly ? undefined : "true"}
+        data-preview-selected={previewSelectionAttr(
+          measureOnly ? undefined : partScrollAnchor(segment.question.id, part.id),
+          activePreviewAnchor,
+        )}
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
       >
-        {hasSubparts && !visiblePartBlocks.length ? (
+        {showPartLabel && hasSubparts && !visiblePartBlockRowIds.length ? (
           <div className="test-question-part">
             <span className="test-part-label">({partLabel})</span>
             <div className="test-part-content" />
@@ -3487,7 +5749,10 @@ function TestPreviewSegment({
           </div>
         ) : null}
         <div
-          className={cn(hasSubparts && "test-subpart-group", hasSubparts && !visiblePartBlocks.length && "test-subpart-group-after-label")}
+          className={cn(
+            hasSubparts && "test-subpart-group",
+            showPartLabel && hasSubparts && !visiblePartBlockRowIds.length && "test-subpart-group-after-label",
+          )}
         >
           {(() => {
             const rows: ReactNode[] = [];
@@ -3495,16 +5760,28 @@ function TestPreviewSegment({
               const item = partItems[itemIndex];
               if (item.kind === "block") {
                 const nextItem = partItems[itemIndex + 1];
+                const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(partItems, itemIndex + 1);
+                const diagramReplacementBlocks =
+                  item.block.kind === "diagram" &&
+                  isContentBlockVisible(item.block, showSolutions) &&
+                  replacementSlotFollows &&
+                  effectiveDiagramTextSide(item.block, true) !== "none"
+                    ? [item.block, ...replacementSlotFollows.blocks]
+                    : undefined;
+                const replacementSlot = visibilityReplacementSlotAtOrderedItems(partItems, itemIndex);
+                const replacementBlocks = replacementSlot?.blocks;
+                if (!diagramReplacementBlocks && !replacementBlocks && !isContentBlockVisible(item.block, showSolutions)) continue;
                 const pairedBlocks =
                   item.block.kind === "diagram" &&
-                  normalizeDiagramTextSide(item.block.diagramTextSide) !== "none" &&
                   nextItem?.kind === "block" &&
-                  nextItem.block.kind === "text"
+                  isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+                  effectiveDiagramTextSide(item.block, true) !== "none"
                     ? [item.block, nextItem.block]
                     : undefined;
+                const rowBlocks = diagramReplacementBlocks ?? replacementBlocks ?? pairedBlocks ?? [item.block];
                 rows.push(
                   <div
-                    key={pairedBlocks ? `${item.id}:${pairedBlocks[1].id}` : item.id}
+                    key={rowBlocks.length > 1 ? `${item.id}:${rowBlocks[1].id}` : item.id}
                     data-scroll-anchor={measureOnly ? undefined : partBlockScrollAnchor(segment.question.id, part.id, item.block.id)}
                     className={cn(
                       "test-question-part",
@@ -3512,21 +5789,27 @@ function TestPreviewSegment({
                       item.block.kind === "text" && isSolutionTextBlock(item.block) && "test-solution-row",
                     )}
                   >
-                    <span className="test-part-label">{item.id === firstContentItemId ? `(${partLabel})` : ""}</span>
+                    <span className="test-part-label">{showPartLabel && item.id === firstContentItemId ? `(${partLabel})` : ""}</span>
                     <div className="test-part-content">
                       <PreviewContentBlocks
-                        blocks={pairedBlocks ?? [item.block]}
+                        blocks={rowBlocks}
                         measureOnly={measureOnly}
+                        showSolutions={showSolutions}
+                        activePreviewAnchor={activePreviewAnchor}
                         blockAnchorFor={(block) => partBlockScrollAnchor(segment.question.id, part.id, block.id)}
                         onGraphConfigChange={(blockId, graphConfig) =>
                           onGraphConfigChange?.({ questionId: segment.question.id, partId: part.id, blockId, graphConfig })
                         }
                       />
                     </div>
-                    <span className="test-part-mark">{!hasSubparts && item.id === firstContentItemId ? markLabel(part.marks) : ""}</span>
+                    <span className="test-part-mark">
+                      {showMarks && !hasSubparts && item.id === firstContentItemId ? markLabel(part.marks) : ""}
+                    </span>
                   </div>,
                 );
-                if (pairedBlocks) itemIndex += 1;
+                if (diagramReplacementBlocks && replacementSlotFollows) itemIndex = replacementSlotFollows.endItemIndex;
+                else if (replacementBlocks && replacementSlot) itemIndex = replacementSlot.endItemIndex;
+                else if (pairedBlocks) itemIndex += 1;
                 continue;
               }
 
@@ -3535,9 +5818,14 @@ function TestPreviewSegment({
                 <div
                   key={item.subpart.id}
                   data-scroll-anchor={measureOnly ? undefined : subpartScrollAnchor(segment.question.id, part.id, item.subpart.id)}
+                  data-preview-structure-anchor={measureOnly ? undefined : "true"}
+                  data-preview-selected={previewSelectionAttr(
+                    measureOnly ? undefined : subpartScrollAnchor(segment.question.id, part.id, item.subpart.id),
+                    activePreviewAnchor,
+                  )}
                   className={cn(
                     "test-question-subpart",
-                    contentBlocksHaveDiagram(item.subpart.contentBlocks) && "test-question-row-with-diagram",
+                    contentBlocksHaveDiagram(item.subpart.contentBlocks, showSolutions) && "test-question-row-with-diagram",
                   )}
                 >
                   <span className="test-part-label">({romanLabel(Math.max(0, subpartIndex))})</span>
@@ -3545,6 +5833,8 @@ function TestPreviewSegment({
                     <PreviewContentBlocks
                       blocks={item.subpart.contentBlocks}
                       measureOnly={measureOnly}
+                      showSolutions={showSolutions}
+                      activePreviewAnchor={activePreviewAnchor}
                       blockAnchorFor={(block) => subpartBlockScrollAnchor(segment.question.id, part.id, item.subpart.id, block.id)}
                       onGraphConfigChange={(blockId, graphConfig) =>
                         onGraphConfigChange?.({
@@ -3557,7 +5847,7 @@ function TestPreviewSegment({
                       }
                     />
                   </div>
-                  <span className="test-part-mark">{markLabel(item.subpart.marks)}</span>
+                  <span className="test-part-mark">{showMarks ? markLabel(item.subpart.marks) : ""}</span>
                 </div>,
               );
             }
@@ -3569,32 +5859,42 @@ function TestPreviewSegment({
   }
 
   return <div className="test-preview-segment" data-measure-segment={measureOnly ? "true" : undefined} style={{ paddingTop }} />;
-}
+});
 
-function PaginatedTestPreview({
-  frontMatter,
-  logos,
-  totalMarks,
-  questions,
-  formattingConfig,
-  scale = 1,
-  onGraphConfigChange,
-}: {
+interface PaginatedTestPreviewProps {
   frontMatter: FrontMatterConfig;
   logos: LogoAsset[];
   totalMarks: number;
   questions: QuestionBlock[];
   formattingConfig?: FormattingConfig;
   scale?: number;
+  showSolutions?: boolean;
+  activePreviewAnchor?: string;
   onGraphConfigChange?: (change: PreviewGraphConfigChange) => void;
-}) {
+}
+
+const PaginatedTestPreview = memo(function PaginatedTestPreview({
+  frontMatter,
+  logos,
+  totalMarks,
+  questions,
+  formattingConfig,
+  scale = 1,
+  showSolutions = true,
+  activePreviewAnchor,
+  onGraphConfigChange,
+}: PaginatedTestPreviewProps) {
   const measureRef = useRef<HTMLDivElement>(null);
   const pageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
+  const showMarks = formattingConfig?.showMarks ?? DEFAULT_FORMATTING_CONFIG.showMarks ?? true;
   const previewStyle = useMemo(() => pageStyle(pageFormat, scale), [pageFormat, scale]);
-  const segments = useMemo(() => buildPreviewSegments(questions), [questions]);
+  const segments = useMemo(() => buildPreviewSegments(questions, showSolutions), [questions, showSolutions]);
   const fallbackPages = useMemo<PreviewPage[]>(() => [{ segmentIndexes: segments.map((_, index) => index), overflow: false }], [segments]);
   const [pages, setPages] = useState<PreviewPage[]>(fallbackPages);
-  const frontMatterLogo = useMemo(() => selectedLogoFromLibrary(logos, frontMatter.logoId), [frontMatter.logoId, logos]);
+  const frontMatterLogo = useMemo(() => selectedLogoForFrontMatter(logos, frontMatter), [frontMatter, logos]);
+  const exam = useMemo(() => normalizeExamTitlePage(frontMatter.exam), [frontMatter.exam]);
+  const isExamTemplate = frontMatter.titlePageTemplate === "exam";
+  const reservedPageHeight = examQuestionPageReservedHeight(frontMatter);
 
   useLayoutEffect(() => {
     const measureRoot = measureRef.current;
@@ -3603,44 +5903,78 @@ function PaginatedTestPreview({
     const segmentHeights = Array.from(measureRoot.querySelectorAll<HTMLElement>("[data-measure-segment]")).map(
       (element) => element.getBoundingClientRect().height,
     );
-    const nextPages = buildMeasuredPages(segmentHeights, segments, pageFormat);
+    const nextPages = buildMeasuredPages(segmentHeights, segments, pageFormat, reservedPageHeight);
     setPages((currentPages) => (pagesAreEqual(currentPages, nextPages) ? currentPages : nextPages));
-  }, [fallbackPages, frontMatter, pageFormat, questions, segments, totalMarks]);
+  }, [pageFormat, reservedPageHeight, segments, showMarks]);
 
   const visiblePages = pages.length ? pages : fallbackPages;
+  const supplementaryPageCount = bookletSupplementaryPageCount(frontMatter, visiblePages.length);
+  const visiblePageGroups = useMemo(
+    () =>
+      visiblePages.map((page) => {
+        const entries: PreviewPageSegmentEntry[] = [];
+        page.segmentIndexes.forEach((segmentIndex, segmentPageIndex) => {
+          const segment = segments[segmentIndex];
+          if (segment) entries.push({ segment, segmentPageIndex });
+        });
+
+        return {
+          page,
+          groups: groupPreviewPageSegments(entries),
+        };
+      }),
+    [segments, visiblePages],
+  );
 
   return (
     <div className="a4-preview-root" style={previewStyle}>
       <div className="a4-preview-shell">
         <div className="a4-preview-stack">
-          <A4PreviewPageFrame last={!visiblePages.length}>
-            <section className="a4-page">
-              <div className="a4-page-content">
-                <TestFrontMatterPreview frontMatter={frontMatter} logo={frontMatterLogo} totalMarks={totalMarks} />
-              </div>
-            </section>
-          </A4PreviewPageFrame>
+          <FrontMatterPreviewPages
+            frontMatter={frontMatter}
+            logo={frontMatterLogo}
+            totalMarks={totalMarks}
+            questionCount={questions.length}
+            activePreviewAnchor={activePreviewAnchor}
+            showPageBreaks={pageFormat.showPageBreaks}
+          />
           {pageFormat.showPageBreaks ? (
             <div className="a4-page-break" aria-hidden="true">
               <span>A4 page break</span>
             </div>
           ) : null}
-          {visiblePages.map((page, pageIndex) => {
-            const visibleSegments = page.segmentIndexes.map((segmentIndex) => segments[segmentIndex]).filter(Boolean);
+          {visiblePageGroups.map(({ page, groups }, pageIndex) => {
+            const isLastQuestionPage = pageIndex === visiblePages.length - 1;
+            const isLastRenderedPage = isLastQuestionPage && supplementaryPageCount === 0;
+            const pageNumber = frontMatterPageCount(frontMatter) + pageIndex + 1;
             return (
-              <div key={`page-${pageIndex}`} className="contents">
-                <A4PreviewPageFrame last={pageIndex === visiblePages.length - 1}>
-                  <section className={cn("a4-page", pageIndex === visiblePages.length - 1 && "a4-page-last")}>
+              <Fragment key={`page-${pageIndex}`}>
+                <A4PreviewPageFrame last={isLastRenderedPage}>
+                  <section className={cn("a4-page", isExamTemplate && "school-exam-question-page", isLastRenderedPage && "a4-page-last")}>
                     <div className="a4-page-content">
-                      <div className="test-preview-flow">
-                        {visibleSegments.map((segment, segmentPageIndex) => (
-                          <TestPreviewSegment
-                            key={segment.id}
-                            segment={segment}
-                            frontMatter={frontMatter}
-                            firstOnPage={segmentPageIndex === 0}
-                            onGraphConfigChange={onGraphConfigChange}
-                          />
+                      {isExamTemplate ? <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} /> : null}
+                      <div className={cn("test-preview-flow", isExamTemplate && "school-exam-question-flow")}>
+                        {groups.map((group) => (
+                          <div
+                            key={group.id}
+                            className="test-preview-question-group"
+                            data-scroll-anchor={questionScrollAnchor(group.question.id)}
+                            data-preview-structure-anchor="true"
+                            data-preview-selected={previewSelectionAttr(questionScrollAnchor(group.question.id), activePreviewAnchor)}
+                          >
+                            {group.entries.map(({ segment, segmentPageIndex }) => (
+                              <TestPreviewSegment
+                                key={segment.id}
+                                segment={segment}
+                                frontMatter={frontMatter}
+                                firstOnPage={segmentPageIndex === 0}
+                                showSolutions={showSolutions}
+                                showMarks={showMarks}
+                                activePreviewAnchor={activePreviewAnchor}
+                                onGraphConfigChange={onGraphConfigChange}
+                              />
+                            ))}
+                          </div>
                         ))}
                       </div>
                       {page.overflow ? (
@@ -3648,15 +5982,35 @@ function PaginatedTestPreview({
                           A single block in this question is taller than the available A4 page space.
                         </div>
                       ) : null}
+                      {isExamTemplate ? <SchoolExamCutOffNotice text={exam.cutOffNotice} /> : null}
+                      {isExamTemplate ? (
+                        <SchoolExamPageFooter text={isLastQuestionPage ? exam.endOfQuestionsFooterText : exam.footerText} />
+                      ) : null}
                     </div>
                   </section>
                 </A4PreviewPageFrame>
-                {pageFormat.showPageBreaks && pageIndex < visiblePages.length - 1 ? (
+                {pageFormat.showPageBreaks && !isLastRenderedPage ? (
                   <div className="a4-page-break" aria-hidden="true">
                     <span>A4 page break</span>
                   </div>
                 ) : null}
-              </div>
+              </Fragment>
+            );
+          })}
+          {Array.from({ length: supplementaryPageCount }).map((_, supplementaryPageIndex) => {
+            const finalPage = supplementaryPageIndex === supplementaryPageCount - 1;
+            const pageNumber = frontMatterPageCount(frontMatter) + visiblePages.length + supplementaryPageIndex + 1;
+            return (
+              <Fragment key={`exam-supplementary-page-${supplementaryPageIndex}`}>
+                <A4PreviewPageFrame last={finalPage}>
+                  <SchoolExamSupplementaryPage frontMatter={frontMatter} pageNumber={pageNumber} />
+                </A4PreviewPageFrame>
+                {pageFormat.showPageBreaks && !finalPage ? (
+                  <div className="a4-page-break" aria-hidden="true">
+                    <span>A4 page break</span>
+                  </div>
+                ) : null}
+              </Fragment>
             );
           })}
         </div>
@@ -3667,7 +6021,14 @@ function PaginatedTestPreview({
           <div className="a4-page-content">
             <div className="test-preview-flow">
               {segments.map((segment) => (
-                <TestPreviewSegment key={segment.id} segment={segment} frontMatter={frontMatter} measureOnly />
+                <TestPreviewSegment
+                  key={segment.id}
+                  segment={segment}
+                  frontMatter={frontMatter}
+                  measureOnly
+                  showSolutions={showSolutions}
+                  showMarks={showMarks}
+                />
               ))}
             </div>
           </div>
@@ -3675,20 +6036,19 @@ function PaginatedTestPreview({
       </div>
     </div>
   );
-}
+});
 
 interface DiagramBlockEditorProps {
   label: string;
   graphConfig: GraphConfig;
   alignment?: DiagramAlignment;
-  textSide?: DiagramTextSide;
+  showSolutions?: boolean;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
   onChange: (graphConfig: GraphConfig) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
-  onTextSideChange: (textSide: DiagramTextSide) => void;
   onRemove: () => void;
 }
 
@@ -3726,7 +6086,10 @@ function CollapsiblePanel({
 
   return (
     <section className={cn("rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
-      <div data-panel-region="header" className={cn("flex items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}>
+      <div
+        data-panel-region="header"
+        className={cn("flex flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
+      >
         <Button
           type="button"
           variant="ghost"
@@ -3741,13 +6104,13 @@ function CollapsiblePanel({
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
-          className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
+          className="flex min-w-36 flex-1 flex-col items-start gap-0.5 text-left"
           aria-expanded={open}
         >
           <span className="block max-w-full truncate text-sm font-semibold">{title}</span>
           {subtitle ? <span className="block max-w-full truncate text-xs text-muted-foreground">{subtitle}</span> : null}
         </button>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div> : null}
+        {actions ? <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
       </div>
       {open ? (
         <div data-panel-region="body" className={cn("border-t p-3", bodyClassName)}>
@@ -3790,6 +6153,8 @@ function ContentInsertionActions({
   buttonLabel = "Add",
   className,
   centered = false,
+  spaceActionLabel = "Space",
+  spaceActionTooltip,
   onAddText,
   onAddChoices,
   onAddTable,
@@ -3800,6 +6165,8 @@ function ContentInsertionActions({
   buttonLabel?: "Add";
   className?: string;
   centered?: boolean;
+  spaceActionLabel?: string;
+  spaceActionTooltip?: string;
   onAddText?: () => void;
   onAddChoices?: () => void;
   onAddTable?: () => void;
@@ -3851,8 +6218,8 @@ function ContentInsertionActions({
       : null,
     onAddSpace
       ? {
-          label: "Space",
-          tooltip: `${actionVerb} blank working space here`,
+          label: spaceActionLabel,
+          tooltip: spaceActionTooltip ?? `${actionVerb} blank working space here`,
           icon: <SeparatorHorizontal className="size-4" aria-hidden="true" />,
           onClick: onAddSpace,
         }
@@ -4013,6 +6380,1178 @@ function GeometricConstructionEditor({ config, onChange }: { config: GraphConfig
           onBlur={(event) => updateSubstance(event.currentTarget.value)}
         />
       </label>
+    </div>
+  );
+}
+
+type Graph3DViewState = typeof DEFAULT_3D_VIEW_STATE;
+
+function graph3dViewState(config: GraphConfig): Graph3DViewState {
+  const viewRecord = asRecord(config.metadata?.view3d) ?? {};
+  return {
+    az: finiteNumberOrDefault(viewRecord.az, DEFAULT_3D_VIEW_STATE.az),
+    el: finiteNumberOrDefault(viewRecord.el, DEFAULT_3D_VIEW_STATE.el),
+    bank: finiteNumberOrDefault(viewRecord.bank, DEFAULT_3D_VIEW_STATE.bank),
+  };
+}
+
+function Graph3DGraphEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
+  const view = graph3dViewState(config);
+  const updateView = (patch: Partial<Graph3DViewState>) =>
+    onChange({
+      metadata: {
+        ...(config.metadata ?? {}),
+        view3d: {
+          ...view,
+          ...patch,
+        },
+      },
+    });
+  const resetView = () =>
+    onChange({
+      metadata: {
+        ...(config.metadata ?? {}),
+        view3d: DEFAULT_3D_VIEW_STATE,
+      },
+    });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Diagram width
+          <input
+            type="number"
+            min={240}
+            step={20}
+            value={numberInputValue(config.widthPx)}
+            onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.widthPx })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Diagram height
+          <input
+            type="number"
+            min={180}
+            step={20}
+            value={numberInputValue(config.heightPx)}
+            onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.heightPx })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+      </section>
+
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Azimuth
+          <input
+            type="number"
+            step={0.05}
+            value={numberInputValue(view.az)}
+            onChange={(event) => updateView({ az: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.az })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Elevation
+          <input
+            type="number"
+            step={0.05}
+            value={numberInputValue(view.el)}
+            onChange={(event) => updateView({ el: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.el })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Bank
+          <input
+            type="number"
+            step={0.05}
+            value={numberInputValue(view.bank)}
+            onChange={(event) => updateView({ bank: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.bank })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <Button type="button" variant="outline" className="self-end" onClick={resetView}>
+          Reset view
+        </Button>
+      </section>
+    </div>
+  );
+}
+
+type Vector2DLabelStyle = "boldLower" | "arrow" | "custom";
+
+const VECTOR_2D_LABEL_STYLES: Array<{ value: Vector2DLabelStyle; label: string }> = [
+  { value: "boldLower", label: "Bold lower-case" },
+  { value: "arrow", label: "Arrow over points" },
+  { value: "custom", label: "Custom LaTeX" },
+];
+type Vector2DPreset = "single" | "two-origin" | "addition" | "component-guides";
+const VECTOR_2D_PRESETS: Array<{ value: Vector2DPreset; label: string }> = [
+  { value: "single", label: "Single vector" },
+  { value: "two-origin", label: "Two from origin" },
+  { value: "addition", label: "Addition triangle" },
+  { value: "component-guides", label: "Guide solution" },
+];
+
+type Vector2DControlEntry = {
+  id: string;
+  name: string;
+  label: string;
+  start: [number, number];
+  components: [number, number];
+  color: string;
+  showComponents: boolean;
+  labelX?: number;
+  labelY?: number;
+};
+
+function finiteVectorNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function vectorPair(value: unknown, fallback: [number, number]): [number, number] {
+  if (!Array.isArray(value)) return fallback;
+  return [finiteVectorNumber(value[0], fallback[0]), finiteVectorNumber(value[1], fallback[1])];
+}
+
+function finiteOptionalVectorNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function vector2dMetadata(config?: GraphConfig | null) {
+  const metadata = config?.metadata ?? {};
+  const vector2d = asRecord(metadata.vector2d) ?? {};
+  return vector2d;
+}
+
+function vector2dLabelStyle(value: unknown, fallback: Vector2DLabelStyle = "boldLower"): Vector2DLabelStyle {
+  return value === "boldLower" || value === "arrow" || value === "custom" ? value : fallback;
+}
+
+function defaultVector2DName(index: number, labelStyle: Vector2DLabelStyle) {
+  if (labelStyle === "arrow") {
+    const arrowNames = ["AB", "CD", "EF", "GH", "PQ", "RS", "UV", "WX"];
+    return arrowNames[index] ?? `AB_${index + 1}`;
+  }
+
+  if (index >= 0 && index < 26) return String.fromCharCode(97 + index);
+  return `v_${index + 1}`;
+}
+
+function normalizedVector2DEntries(config: GraphConfig): Vector2DControlEntry[] {
+  const vector2d = vector2dMetadata(config);
+  const rawVectors = Array.isArray(vector2d.vectors)
+    ? vector2d.vectors
+    : Array.isArray(config.metadata?.vectors)
+      ? config.metadata.vectors
+      : undefined;
+
+  if (rawVectors?.length) {
+    return rawVectors.map((entry, index) => {
+      const record = asRecord(entry) ?? {};
+      const fallback = DEFAULT_VECTOR_2D_METADATA.vector2d.vectors[index % DEFAULT_VECTOR_2D_METADATA.vector2d.vectors.length];
+      const name = String(record.name ?? record.id ?? fallback.name);
+      return {
+        id: String(record.id ?? name ?? `v${index + 1}`),
+        name,
+        label: String(record.label ?? ""),
+        start: vectorPair(record.start, fallback.start as [number, number]),
+        components: vectorPair(record.components ?? record.vector, fallback.components as [number, number]),
+        color: String(record.color ?? VECTOR_2D_COLORS[index % VECTOR_2D_COLORS.length]),
+        showComponents: record.showComponents === true,
+        labelX: finiteOptionalVectorNumber(record.labelX),
+        labelY: finiteOptionalVectorNumber(record.labelY),
+      };
+    });
+  }
+
+  if (Array.isArray(config.metadata?.vector)) {
+    return [
+      {
+        id: "a",
+        name: "a",
+        label: "",
+        start: [0, 0],
+        components: vectorPair(config.metadata.vector, [2, 3]),
+        color: VECTOR_2D_COLORS[0],
+        showComponents: false,
+      },
+    ];
+  }
+
+  return DEFAULT_VECTOR_2D_METADATA.vector2d.vectors.map((vector) => ({
+    ...vector,
+    start: vector.start as [number, number],
+    components: vector.components as [number, number],
+  }));
+}
+
+function vector2dMetadataFromEntries(config: GraphConfig, vectors: Vector2DControlEntry[]) {
+  return {
+    ...(config.metadata ?? {}),
+    vector2d: {
+      ...vector2dMetadata(config),
+      vectors,
+    },
+  };
+}
+
+function vector2dPresetVectors(preset: Vector2DPreset): Vector2DControlEntry[] {
+  if (preset === "single") {
+    return [
+      {
+        id: "a",
+        name: "a",
+        label: "",
+        start: [0, 0],
+        components: [3, 2],
+        color: VECTOR_2D_COLORS[1],
+        showComponents: false,
+      },
+    ];
+  }
+
+  if (preset === "addition") {
+    return [
+      {
+        id: "a",
+        name: "a",
+        label: "",
+        start: [0, 0],
+        components: [2, 1],
+        color: VECTOR_2D_COLORS[0],
+        showComponents: false,
+      },
+      {
+        id: "b",
+        name: "b",
+        label: "",
+        start: [2, 1],
+        components: [2, 2],
+        color: VECTOR_2D_COLORS[1],
+        showComponents: false,
+      },
+      {
+        id: "a-plus-b",
+        name: "a+b",
+        label: "",
+        start: [0, 0],
+        components: [4, 3],
+        color: VECTOR_2D_COLORS[2],
+        showComponents: false,
+      },
+    ];
+  }
+
+  const showComponents = preset === "component-guides";
+  return DEFAULT_VECTOR_2D_METADATA.vector2d.vectors.map((vector) => ({
+    ...vector,
+    start: vector.start as [number, number],
+    components: vector.components as [number, number],
+    showComponents,
+  }));
+}
+
+function vector2dPresetGraph(preset: Vector2DPreset): GraphConfig {
+  const vectors = vector2dPresetVectors(preset);
+  const yMin = preset === "two-origin" || preset === "component-guides" ? -4 : -1;
+  const yMax = preset === "two-origin" || preset === "component-guides" ? 4 : 4;
+  const xMax = preset === "single" || preset === "addition" ? 5 : 6;
+  return {
+    ...DEFAULT_VECTOR_2D_GRAPH,
+    xMin: -1,
+    xMax,
+    yMin,
+    yMax,
+    widthPx: preset === "single" ? 420 : 520,
+    heightPx: preset === "single" ? 300 : 320,
+    metadata: {
+      vector2d: {
+        labelStyle: "boldLower",
+        vectors,
+      },
+    },
+  };
+}
+
+function Vector2DGraphEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
+  const vectors = normalizedVector2DEntries(config);
+  const labelStyle = vector2dLabelStyle(vector2dMetadata(config).labelStyle);
+  const patchVectors = (nextVectors: Vector2DControlEntry[]) => {
+    onChange({
+      functions: [],
+      features: [],
+      metadata: vector2dMetadataFromEntries(config, nextVectors),
+    });
+  };
+  const updateLabelStyle = (nextLabelStyle: Vector2DLabelStyle) => {
+    onChange({
+      metadata: {
+        ...(config.metadata ?? {}),
+        vector2d: {
+          ...vector2dMetadata(config),
+          labelStyle: nextLabelStyle,
+          vectors: vectors.map((vector, index) => {
+            const autoNames = new Set([
+              defaultVector2DName(index, "boldLower"),
+              defaultVector2DName(index, "arrow"),
+              defaultVector2DName(index, "custom"),
+              `v_${index + 1}`,
+            ]);
+            return autoNames.has(vector.name) ? { ...vector, name: defaultVector2DName(index, nextLabelStyle) } : vector;
+          }),
+        },
+      },
+    });
+  };
+  const updateVector = (vectorIndex: number, patch: Partial<Vector2DControlEntry>) => {
+    patchVectors(vectors.map((vector, index) => (index === vectorIndex ? { ...vector, ...patch } : vector)));
+  };
+  const addVector = () => {
+    const index = vectors.length;
+    patchVectors([
+      ...vectors,
+      {
+        id: `v${index + 1}`,
+        name: defaultVector2DName(index, labelStyle),
+        label: "",
+        start: [0, 0],
+        components: [1, 1],
+        color: VECTOR_2D_COLORS[index % VECTOR_2D_COLORS.length],
+        showComponents: false,
+      },
+    ]);
+  };
+  const removeVector = (vectorIndex: number) => {
+    if (vectors.length <= 1) return;
+    patchVectors(vectors.filter((_, index) => index !== vectorIndex));
+  };
+  const applyPreset = (preset: Vector2DPreset) => {
+    onChange(vector2dPresetGraph(preset));
+  };
+  const updateStart = (vectorIndex: number, axis: 0 | 1, value: number) => {
+    const vector = vectors[vectorIndex];
+    if (!vector) return;
+    const start: [number, number] = [...vector.start];
+    start[axis] = value;
+    updateVector(vectorIndex, { start });
+  };
+  const updateComponents = (vectorIndex: number, axis: 0 | 1, value: number) => {
+    const vector = vectors[vectorIndex];
+    if (!vector) return;
+    const components: [number, number] = [...vector.components];
+    components[axis] = value;
+    updateVector(vectorIndex, { components });
+  };
+  const updateLabelPosition = (vectorIndex: number, axis: 0 | 1, value?: number) => {
+    updateVector(vectorIndex, axis === 0 ? { labelX: value } : { labelY: value });
+  };
+  const resetLabelPosition = (vectorIndex: number) => {
+    updateVector(vectorIndex, { labelX: undefined, labelY: undefined });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="flex flex-wrap items-end gap-3">
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          x min
+          <input
+            type="number"
+            value={numberInputValue(config.xMin)}
+            onChange={(event) => onChange({ xMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          x max
+          <input
+            type="number"
+            value={numberInputValue(config.xMax)}
+            onChange={(event) => onChange({ xMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          y min
+          <input
+            type="number"
+            value={numberInputValue(config.yMin)}
+            onChange={(event) => onChange({ yMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          y max
+          <input
+            type="number"
+            value={numberInputValue(config.yMax)}
+            onChange={(event) => onChange({ yMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          Width
+          <input
+            type="number"
+            min={160}
+            value={numberInputValue(config.widthPx)}
+            onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+          Height
+          <input
+            type="number"
+            min={120}
+            value={numberInputValue(config.heightPx)}
+            onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex w-44 flex-col gap-2 text-xs font-medium">
+          Label style
+          <select
+            value={labelStyle}
+            onChange={(event) => updateLabelStyle(event.target.value as Vector2DLabelStyle)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          >
+            {VECTOR_2D_LABEL_STYLES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Presets</div>
+        <div className="flex flex-wrap gap-2">
+          {VECTOR_2D_PRESETS.map((preset) => (
+            <Button key={preset.value} type="button" variant="outline" size="sm" onClick={() => applyPreset(preset.value)}>
+              <Shuffle data-icon="inline-start" />
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Coordinate vectors</div>
+          <Button type="button" variant="outline" size="sm" onClick={addVector}>
+            <PlusCircle data-icon="inline-start" />
+            Add vector
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {vectors.map((vector, vectorIndex) => (
+            <div key={`${vector.id}-${vectorIndex}`} className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_minmax(10rem,1fr)_96px_40px] md:items-end">
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Name
+                  <input
+                    value={vector.name}
+                    onChange={(event) => updateVector(vectorIndex, { name: event.target.value })}
+                    className="h-9 rounded-md border border-input bg-background px-2 font-mono text-sm font-normal"
+                  />
+                </label>
+                {labelStyle === "custom" ? (
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Custom label
+                    <input
+                      value={vector.label}
+                      onChange={(event) => updateVector(vectorIndex, { label: event.target.value })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                ) : (
+                  <div className="hidden md:block" />
+                )}
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Colour
+                  <input
+                    type="color"
+                    value={vector.color}
+                    onChange={(event) => updateVector(vectorIndex, { color: event.target.value })}
+                    className="h-9 rounded-md border border-input bg-background px-2"
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Remove vector"
+                  aria-label="Remove vector"
+                  onClick={() => removeVector(vectorIndex)}
+                  className="size-9"
+                  disabled={vectors.length <= 1}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(6,minmax(70px,1fr))_auto] md:items-end">
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Start x
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.start[0])}
+                    onChange={(event) => updateStart(vectorIndex, 0, optionalNumber(event.target.value) ?? 0)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Start y
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.start[1])}
+                    onChange={(event) => updateStart(vectorIndex, 1, optionalNumber(event.target.value) ?? 0)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  x comp.
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.components[0])}
+                    onChange={(event) => updateComponents(vectorIndex, 0, optionalNumber(event.target.value) ?? 0)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  y comp.
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.components[1])}
+                    onChange={(event) => updateComponents(vectorIndex, 1, optionalNumber(event.target.value) ?? 0)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Label x
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.labelX)}
+                    onChange={(event) => updateLabelPosition(vectorIndex, 0, optionalNumber(event.target.value))}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Label y
+                  <input
+                    type="number"
+                    value={numberInputValue(vector.labelY)}
+                    onChange={(event) => updateLabelPosition(vectorIndex, 1, optionalNumber(event.target.value))}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="col-span-2 md:col-span-1"
+                  onClick={() => resetLabelPosition(vectorIndex)}
+                >
+                  Reset label
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Annotations</div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {vectors.map((vector, vectorIndex) => (
+            <label
+              key={`${vector.id}-${vectorIndex}-guides`}
+              className="flex h-10 items-center gap-2 rounded-md border bg-muted/20 px-3 text-sm"
+            >
+              <input
+                type="checkbox"
+                checked={vector.showComponents}
+                onChange={(event) => updateVector(vectorIndex, { showComponents: event.target.checked })}
+              />
+              {vector.name || vector.id} component guides
+            </label>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function vectorDataForSave(data: ReturnType<typeof normalizedVectorRelationshipData>) {
+  const points = new Map<string, Record<string, unknown>>();
+  data.objects.forEach((object) => {
+    const name = penroseIdentifier(object.name, "");
+    if (name) points.set(name, { type: "point", name, label: object.label ?? name });
+  });
+  data.relationships.forEach((relationship) => {
+    relationship.points.forEach((point) => {
+      const name = penroseIdentifier(point, "");
+      if (name && !points.has(name)) points.set(name, { type: "point", name, label: name });
+    });
+  });
+  return {
+    hidePoints: data.hidePoints,
+    hidePointLabels: data.hidePointLabels,
+    objects: [...points.values()],
+    relationships: data.relationships,
+  };
+}
+
+function VectorRelationshipEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
+  const scalePercent = penroseScalePercent(config);
+  const data = normalizedVectorRelationshipData(config);
+  const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
+  const patchVectorData = (nextData: ReturnType<typeof normalizedVectorRelationshipData>) => {
+    onChange({
+      data: vectorDataForSave(nextData),
+      options: removePenroseSubstanceOverride(config),
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+  };
+  const updateScale = (value: number) =>
+    onChange({
+      scalePercent: value,
+      options: { ...penroseOptions(config), scalePercent: value },
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+  const updateVisibility = (
+    patch: Partial<Pick<ReturnType<typeof normalizedVectorRelationshipData>, "hidePoints" | "hidePointLabels">>,
+  ) => {
+    patchVectorData({ ...data, ...patch });
+  };
+  const updateNode = (nodeIndex: number, patch: Partial<(typeof data)["objects"][number]>) => {
+    patchVectorData({
+      ...data,
+      objects: data.objects.map((node, index) => {
+        if (index !== nodeIndex) return node;
+        const nextName = patch.name ? penroseIdentifier(patch.name, node.name) : node.name;
+        return { ...node, ...patch, name: nextName, label: patch.label ?? node.label ?? nextName };
+      }),
+      relationships: data.relationships.map((relationship) => ({
+        ...relationship,
+        points: relationship.points.map((point) => {
+          const currentNode = data.objects[nodeIndex];
+          const nextName = patch.name ? penroseIdentifier(patch.name, currentNode.name) : currentNode.name;
+          return point === currentNode.name ? nextName : point;
+        }),
+      })),
+    });
+  };
+  const addNode = () => {
+    const nextIndex = data.objects.length + 1;
+    const name = penroseIdentifier(String.fromCharCode(64 + Math.min(nextIndex, 26)), `N${nextIndex}`);
+    patchVectorData({
+      ...data,
+      objects: [...data.objects, { type: "point", name, label: name }],
+    });
+  };
+  const removeNode = (nodeIndex: number) => {
+    const node = data.objects[nodeIndex];
+    if (!node || data.objects.length <= 1) return;
+    patchVectorData({
+      ...data,
+      objects: data.objects.filter((_, index) => index !== nodeIndex),
+      relationships: data.relationships.filter((relationship) => !relationship.points.includes(node.name)),
+    });
+  };
+  const updateRelationship = (relationshipIndex: number, patch: Partial<(typeof data)["relationships"][number]>) => {
+    patchVectorData({
+      ...data,
+      relationships: data.relationships.map((relationship, index) =>
+        index === relationshipIndex ? { ...relationship, ...patch } : relationship,
+      ),
+    });
+  };
+  const addRelationship = () => {
+    const pointNames = data.objects.map((object) => object.name);
+    const start = pointNames[0] ?? "A";
+    const end = pointNames[1] ?? "B";
+    patchVectorData({
+      ...data,
+      relationships: [
+        ...data.relationships,
+        {
+          type: "vectorSegment",
+          name: penroseIdentifier(`${start}${end}${data.relationships.length + 1}`, `v${data.relationships.length + 1}`),
+          points: [start, end],
+          label: "",
+        },
+      ],
+    });
+  };
+  const removeRelationship = (relationshipIndex: number) => {
+    patchVectorData({
+      ...data,
+      relationships: data.relationships.filter((_, index) => index !== relationshipIndex),
+    });
+  };
+  const useNetworkPreset = () => {
+    patchVectorData({
+      hidePoints: false,
+      hidePointLabels: false,
+      objects: DEFAULT_VECTOR_RELATIONSHIP_DATA.objects.map((object) => ({ ...object, label: object.name })),
+      relationships: DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships.map((relationship) => ({ ...relationship })),
+    });
+  };
+  const updateSubstance = (value: string) =>
+    onChange({
+      options: { ...penroseOptions(config), substanceSource: value },
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex w-36 flex-col gap-2 text-xs font-medium">
+          Diagram scale
+          <input
+            type="number"
+            min={25}
+            max={250}
+            step={5}
+            value={numberInputValue(scalePercent)}
+            onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
+          Original
+        </Button>
+        <Button type="button" variant="outline" className="self-end" onClick={useNetworkPreset}>
+          Network preset
+        </Button>
+      </div>
+
+      {hasSubstanceOverride ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          This network diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured
+          network data.
+        </div>
+      ) : null}
+
+      <section className="flex flex-wrap gap-4 border-t pt-3 text-sm">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={!data.hidePoints} onChange={(event) => updateVisibility({ hidePoints: !event.target.checked })} />
+          Show node dots
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!data.hidePointLabels}
+            onChange={(event) => updateVisibility({ hidePointLabels: !event.target.checked })}
+          />
+          Show node labels
+        </label>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nodes</div>
+          <Button type="button" variant="outline" size="sm" onClick={addNode}>
+            <PlusCircle data-icon="inline-start" />
+            Add node
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {data.objects.map((node, nodeIndex) => (
+            <div
+              key={`${node.name}-${nodeIndex}`}
+              className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[110px_minmax(0,1fr)_40px] md:items-end"
+            >
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Node
+                <input
+                  value={node.name}
+                  onChange={(event) => updateNode(nodeIndex, { name: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 font-mono text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Label
+                <input
+                  value={String(node.label ?? "")}
+                  onChange={(event) => updateNode(nodeIndex, { label: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title="Remove node"
+                aria-label="Remove node"
+                onClick={() => removeNode(nodeIndex)}
+                className="size-9"
+                disabled={data.objects.length <= 1}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Links</div>
+          <Button type="button" variant="outline" size="sm" onClick={addRelationship}>
+            <PlusCircle data-icon="inline-start" />
+            Add link
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {data.relationships.map((relationship, relationshipIndex) => (
+            <div
+              key={`${relationship.name}-${relationshipIndex}`}
+              className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[140px_90px_90px_minmax(0,1fr)_40px] md:items-end"
+            >
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Type
+                <select
+                  value={relationship.type}
+                  onChange={(event) =>
+                    updateRelationship(relationshipIndex, { type: event.target.value === "segment" ? "segment" : "vectorSegment" })
+                  }
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="vectorSegment">Directed arrow</option>
+                  <option value="segment">Undirected line</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                From
+                <select
+                  value={relationship.points[0] ?? ""}
+                  onChange={(event) =>
+                    updateRelationship(relationshipIndex, {
+                      points: [penroseIdentifier(event.target.value, "O"), relationship.points[1] ?? "A"],
+                    })
+                  }
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  {data.objects.map((node) => (
+                    <option key={node.name} value={node.name}>
+                      {node.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                To
+                <select
+                  value={relationship.points[1] ?? ""}
+                  onChange={(event) =>
+                    updateRelationship(relationshipIndex, {
+                      points: [relationship.points[0] ?? "O", penroseIdentifier(event.target.value, "A")],
+                    })
+                  }
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  {data.objects.map((node) => (
+                    <option key={node.name} value={node.name}>
+                      {node.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Label
+                <input
+                  value={String(relationship.label ?? "")}
+                  onChange={(event) => updateRelationship(relationshipIndex, { label: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title="Remove link"
+                aria-label="Remove link"
+                onClick={() => removeRelationship(relationshipIndex)}
+                className="size-9"
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <CollapsiblePanel title="Advanced Substance" defaultOpen={false} className="bg-muted/20">
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Substance
+          <Textarea
+            key={`vector-substance-${penroseSubstanceSource(config)}`}
+            defaultValue={penroseSubstanceSource(config)}
+            className="min-h-40 font-mono text-xs"
+            spellCheck={false}
+            onBlur={(event) => updateSubstance(event.currentTarget.value)}
+          />
+        </label>
+      </CollapsiblePanel>
+    </div>
+  );
+}
+
+const SET_REGION_EDITOR_LABELS = ["A only", "A and B", "B only", "Outside"] as const;
+const SET_REGION_COUNT_LABELS = ["8", "10", "6", "6"] as const;
+const SET_SHADING_OPTIONS: Array<{ label: string; regionIndex: number | null }> = [
+  { label: "None", regionIndex: null },
+  { label: "A only", regionIndex: 0 },
+  { label: "A and B", regionIndex: 1 },
+  { label: "B only", regionIndex: 2 },
+  { label: "Outside", regionIndex: 3 },
+];
+
+function SetDiagramEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
+  const scalePercent = penroseScalePercent(config);
+  const data = normalizedSetDiagramData(config);
+  const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
+  const patchSetData = (nextData: typeof data) => {
+    onChange({
+      data: nextData,
+      options: removePenroseSubstanceOverride(config),
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+  };
+  const updateScale = (value: number) =>
+    onChange({
+      scalePercent: value,
+      options: { ...penroseOptions(config), scalePercent: value },
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+  const updateUniverse = (patch: Partial<(typeof data)["universe"]>) => {
+    patchSetData({ ...data, universe: { ...data.universe, ...patch } });
+  };
+  const updateSet = (setIndex: number, patch: Partial<(typeof data)["sets"][number]>) => {
+    patchSetData({
+      ...data,
+      sets: data.sets.map((set, index) => (index === setIndex ? { ...set, ...patch } : set)),
+    });
+  };
+  const updateRegion = (regionIndex: number, patch: Partial<(typeof data)["regions"][number]>) => {
+    patchSetData({
+      ...data,
+      regions: data.regions.map((region, index) => (index === regionIndex ? { ...region, ...patch } : region)),
+    });
+  };
+  const applyNotationLabels = () => {
+    const [leftSet, rightSet] = data.sets;
+    patchSetData({
+      ...data,
+      regions: data.regions.map((region, index) => ({
+        ...region,
+        label:
+          index === 0
+            ? `${leftSet.name} \\cap ${rightSet.name}'`
+            : index === 1
+              ? `${leftSet.name} \\cap ${rightSet.name}`
+              : index === 2
+                ? `${leftSet.name}' \\cap ${rightSet.name}`
+                : `(${leftSet.name} \\cup ${rightSet.name})'`,
+      })),
+    });
+  };
+  const applyCountLabels = (includeTotals: boolean) => {
+    patchSetData({
+      ...data,
+      universe: { ...data.universe, countLabel: includeTotals ? "30" : "" },
+      sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? (index === 0 ? "18" : "16") : "" })),
+      regions: data.regions.map((region, index) => ({
+        ...region,
+        label: SET_REGION_COUNT_LABELS[index] ?? "",
+      })),
+    });
+  };
+  const clearShading = () => {
+    patchSetData({
+      ...data,
+      regions: data.regions.map((region) => ({ ...region, shaded: false })),
+    });
+  };
+  const setSingleShadedRegion = (regionIndex: number | null) => {
+    patchSetData({
+      ...data,
+      regions: data.regions.map((region, index) => ({ ...region, shaded: regionIndex === index })),
+    });
+  };
+  const updateSubstance = (value: string) =>
+    onChange({
+      options: { ...penroseOptions(config), substanceSource: value },
+      widthPx: undefined,
+      heightPx: undefined,
+    });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex w-36 flex-col gap-2 text-xs font-medium">
+          Diagram scale
+          <input
+            type="number"
+            min={25}
+            max={250}
+            step={5}
+            value={numberInputValue(scalePercent)}
+            onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
+          Original
+        </Button>
+        <Button type="button" variant="outline" className="self-end" onClick={applyNotationLabels}>
+          Set notation
+        </Button>
+        <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(false)}>
+          Counts
+        </Button>
+        <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(true)}>
+          Counts + totals
+        </Button>
+      </div>
+
+      {hasSubstanceOverride ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          This set diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured set
+          diagram data.
+        </div>
+      ) : null}
+
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-3">
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Universe label
+          <input
+            value={String(data.universe.label ?? "")}
+            onChange={(event) => updateUniverse({ label: event.target.value })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          A label
+          <input
+            value={String(data.sets[0]?.label ?? "")}
+            onChange={(event) => updateSet(0, { label: event.target.value })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          B label
+          <input
+            value={String(data.sets[1]?.label ?? "")}
+            onChange={(event) => updateSet(1, { label: event.target.value })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optional totals</div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            U total box
+            <input
+              value={String(data.universe.countLabel ?? "")}
+              onChange={(event) => updateUniverse({ countLabel: event.target.value })}
+              placeholder="optional"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            A total tab
+            <input
+              value={String(data.sets[0]?.countLabel ?? "")}
+              onChange={(event) => updateSet(0, { countLabel: event.target.value })}
+              placeholder="optional"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            B total tab
+            <input
+              value={String(data.sets[1]?.countLabel ?? "")}
+              onChange={(event) => updateSet(1, { countLabel: event.target.value })}
+              placeholder="optional"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Regions</div>
+          <div className="flex flex-wrap gap-2">
+            {SET_SHADING_OPTIONS.map((option) => (
+              <Button
+                key={`${option.label}-${option.regionIndex ?? "none"}`}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => (option.regionIndex === null ? clearShading() : setSingleShadedRegion(option.regionIndex))}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {data.regions.map((region, regionIndex) => (
+            <div
+              key={region.name ?? regionIndex}
+              className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[90px_minmax(0,1fr)_90px] md:items-end"
+            >
+              <div className="text-sm font-medium">{SET_REGION_EDITOR_LABELS[regionIndex]}</div>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Label or count
+                <input
+                  value={String(region.label ?? "")}
+                  onChange={(event) => updateRegion(regionIndex, { label: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex h-9 items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={region.shaded === true}
+                  onChange={(event) => updateRegion(regionIndex, { shaded: event.target.checked })}
+                />
+                Shaded
+              </label>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <CollapsiblePanel title="Advanced Substance" defaultOpen={false} className="bg-muted/20">
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Substance
+          <Textarea
+            key={`set-substance-${penroseSubstanceSource(config)}`}
+            defaultValue={penroseSubstanceSource(config)}
+            className="min-h-40 font-mono text-xs"
+            spellCheck={false}
+            onBlur={(event) => updateSubstance(event.currentTarget.value)}
+          />
+        </label>
+      </CollapsiblePanel>
     </div>
   );
 }
@@ -4441,104 +7980,1297 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
   );
 }
 
-function SavedTestManager({
-  savedTests,
-  selectedSavedTestId,
-  diskStorageMessage,
-  onSelectSavedTest,
+function TestFileManager({
+  files,
+  status,
+  message,
+  activeProjectFilePath,
   onNewTest,
-  onSaveTest,
-  onSaveTestAs,
-  onRenameSavedTest,
-  onDeleteSavedTest,
+  onOpenFile,
+  onCreateFolder,
+  onExportBackup,
+  onImportBackup,
+  onRenameItem,
+  onDuplicateItems,
+  onMoveItems,
+  onDeleteItems,
+  onListVersions,
+  onRestoreVersion,
 }: {
-  savedTests: SavedTest[];
-  selectedSavedTestId: string;
-  diskStorageMessage: string;
-  onSelectSavedTest: (testId: string) => void;
+  files: ProjectFileSummary[];
+  status: ProjectFilesStatus;
+  message: string;
+  activeProjectFilePath: string | null;
   onNewTest: () => void;
-  onSaveTest: () => void;
-  onSaveTestAs: () => void;
-  onRenameSavedTest: (testId: string) => void;
-  onDeleteSavedTest: (testId: string) => void;
+  onOpenFile: (filePath: string) => void;
+  onCreateFolder: (folderPath: string) => void;
+  onExportBackup: () => void;
+  onImportBackup: (file: File) => void;
+  onRenameItem: (filePath: string) => void;
+  onDuplicateItems: (filePaths: string[]) => void;
+  onMoveItems: (filePaths: string[], targetFolderPath: string) => void;
+  onDeleteItems: (filePaths: string[]) => void;
+  onListVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
+  onRestoreVersion: (filePath: string, versionId: string) => Promise<void>;
 }) {
-  const selectedSavedTest = savedTests.find((test) => test.id === selectedSavedTestId);
+  const [currentFolderPath, setCurrentFolderPath] = useState("");
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set());
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
+  const [dropTargetFolderPath, setDropTargetFolderPath] = useState<string | null>(null);
+  const [versionsTestPath, setVersionsTestPath] = useState<string | null>(null);
+  const [versions, setVersions] = useState<ProjectFileVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [versionStatus, setVersionStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [versionMessage, setVersionMessage] = useState("");
+  const backupImportInputRef = useRef<HTMLInputElement>(null);
+  const visibleEntries = useMemo(() => visibleTestFiles(files), [files]);
+  const folderOptions = useMemo(() => testFolderOptions(files), [files]);
+  const currentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
+  const currentItemPaths = useMemo(() => currentItems.map((item) => item.testPath), [currentItems]);
+  const selectedEntries = useMemo(
+    () => visibleEntries.filter(({ testPath }) => selectedPaths.has(testPath)),
+    [selectedPaths, visibleEntries],
+  );
+  const selectedEntry = selectedEntries.length === 1 ? selectedEntries[0] : null;
+  const selectedProjectPaths = selectedEntries.map(({ testPath }) => projectPathForTestPath(testPath));
+  const selectedCount = selectedEntries.length;
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? versions[0] ?? null;
+  const selectedVersionPreview = selectedVersion ? projectFileVersionPreview(selectedVersion) : null;
+  const activeRelativePath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
+  const busy = status === "loading" || status === "saving";
+  const breadcrumbTargets = useMemo(() => {
+    const parts = currentFolderPath.split("/").filter(Boolean);
+    return [
+      { label: TEST_FILE_ROOT_LABEL, path: "" },
+      ...parts.map((part, index) => ({
+        label: part,
+        path: parts.slice(0, index + 1).join("/"),
+      })),
+    ];
+  }, [currentFolderPath]);
+
+  useEffect(() => {
+    if (currentFolderPath && !folderOptions.includes(currentFolderPath)) {
+      setCurrentFolderPath("");
+      setSelectedPaths(new Set());
+      setLastSelectedPath(null);
+    }
+  }, [currentFolderPath, folderOptions]);
+
+  useEffect(() => {
+    const availablePaths = new Set(visibleEntries.map(({ testPath }) => testPath));
+    setSelectedPaths((current) => {
+      const next = new Set([...current].filter((testPath) => availablePaths.has(testPath)));
+      return next.size === current.size ? current : next;
+    });
+    if (lastSelectedPath && !availablePaths.has(lastSelectedPath)) {
+      setLastSelectedPath(null);
+    }
+    if (versionsTestPath && !availablePaths.has(versionsTestPath)) {
+      setVersionsTestPath(null);
+      setVersions([]);
+      setSelectedVersionId(null);
+      setVersionStatus("idle");
+      setVersionMessage("");
+    }
+  }, [lastSelectedPath, versionsTestPath, visibleEntries]);
+
+  function navigateToFolder(folderPath: string) {
+    setCurrentFolderPath(normalizeTestFolderPath(folderPath));
+    setSelectedPaths(new Set());
+    setLastSelectedPath(null);
+    setDropTargetFolderPath(null);
+  }
+
+  function clearFileSelection() {
+    setSelectedPaths(new Set());
+    setLastSelectedPath(null);
+    setVersionsTestPath(null);
+    setVersions([]);
+    setSelectedVersionId(null);
+    setVersionStatus("idle");
+    setVersionMessage("");
+  }
+
+  function editableFileManagerTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+  }
+
+  function handleFileManagerKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (busy || editableFileManagerTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    if ((event.metaKey || event.ctrlKey) && key === "a") {
+      event.preventDefault();
+      setSelectedPaths(new Set(currentItemPaths));
+      setLastSelectedPath(currentItemPaths.at(-1) ?? null);
+      return;
+    }
+    if (event.key === "Escape") {
+      if (!selectedCount && !versionsTestPath) return;
+      event.preventDefault();
+      clearFileSelection();
+      return;
+    }
+    if (event.key === "Enter") {
+      if (!selectedEntry) return;
+      event.preventDefault();
+      openSelected();
+      return;
+    }
+    if ((event.key === "Backspace" || event.key === "Delete") && selectedCount) {
+      event.preventDefault();
+      onDeleteItems(selectedProjectPaths);
+    }
+  }
+
+  function handleItemClick(event: ReactMouseEvent<HTMLButtonElement>, testPath: string) {
+    if (event.shiftKey && lastSelectedPath) {
+      const itemPaths = currentItems.map((item) => item.testPath);
+      const startIndex = itemPaths.indexOf(lastSelectedPath);
+      const endIndex = itemPaths.indexOf(testPath);
+      if (startIndex !== -1 && endIndex !== -1) {
+        const [start, end] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+        setSelectedPaths(new Set(itemPaths.slice(start, end + 1)));
+      } else {
+        setSelectedPaths(new Set([testPath]));
+      }
+    } else if (event.metaKey || event.ctrlKey) {
+      setSelectedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(testPath)) {
+          next.delete(testPath);
+        } else {
+          next.add(testPath);
+        }
+        return next;
+      });
+    } else {
+      setSelectedPaths(new Set([testPath]));
+    }
+    setLastSelectedPath(testPath);
+  }
+
+  function canMoveTestPathsToFolder(testPaths: string[], targetFolderPath: string) {
+    const cleanTargetFolder = normalizeTestFolderPath(targetFolderPath);
+    if (busy || !testPaths.length) return false;
+
+    return testPaths.every((testPath) => {
+      const entry = visibleEntries.find((candidate) => candidate.testPath === testPath);
+      if (!entry) return false;
+      if (parentTestPath(testPath) === cleanTargetFolder) return false;
+      if (entry.file.kind === "folder" && (cleanTargetFolder === testPath || cleanTargetFolder.startsWith(`${testPath}/`))) return false;
+      return true;
+    });
+  }
+
+  function dragPathsFromEvent(event: DragEvent<HTMLElement>) {
+    const raw = event.dataTransfer.getData("application/x-mauth-test-paths");
+    if (!raw) return draggedPaths;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : draggedPaths;
+    } catch {
+      return draggedPaths;
+    }
+  }
+
+  function handleItemDragStart(event: DragEvent<HTMLElement>, testPath: string) {
+    const testPaths = selectedPaths.has(testPath) ? [...selectedPaths] : [testPath];
+    setSelectedPaths(new Set(testPaths));
+    setLastSelectedPath(testPath);
+    setDraggedPaths(testPaths);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-mauth-test-paths", JSON.stringify(testPaths));
+    event.dataTransfer.setData("text/plain", testPaths.join("\n"));
+  }
+
+  function handleDragEnd() {
+    setDraggedPaths([]);
+    setDropTargetFolderPath(null);
+  }
+
+  function handleDragOverFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
+    const testPaths = dragPathsFromEvent(event);
+    if (!canMoveTestPathsToFolder(testPaths, targetFolderPath)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDropTargetFolderPath(normalizeTestFolderPath(targetFolderPath));
+  }
+
+  function handleDragLeaveFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
+    const cleanTargetFolder = normalizeTestFolderPath(targetFolderPath);
+    setDropTargetFolderPath((current) => (current === cleanTargetFolder ? null : current));
+  }
+
+  function handleDropOnFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    const testPaths = dragPathsFromEvent(event);
+    setDraggedPaths([]);
+    setDropTargetFolderPath(null);
+    if (!canMoveTestPathsToFolder(testPaths, targetFolderPath)) return;
+    onMoveItems(
+      testPaths.map((testPath) => projectPathForTestPath(testPath)),
+      targetFolderPath,
+    );
+    setSelectedPaths(new Set());
+    setLastSelectedPath(null);
+  }
+
+  function dropTargetClass(targetFolderPath: string) {
+    return dropTargetFolderPath === normalizeTestFolderPath(targetFolderPath)
+      ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/25"
+      : "";
+  }
+
+  function openSelected() {
+    if (!selectedEntry) return;
+    if (selectedEntry.file.kind === "folder") {
+      navigateToFolder(selectedEntry.testPath);
+      return;
+    }
+    onOpenFile(projectPathForTestPath(selectedEntry.testPath));
+  }
+
+  async function openVersionHistory() {
+    if (!selectedEntry || selectedEntry.file.kind === "folder") return;
+    const testPath = selectedEntry.testPath;
+    const filePath = projectPathForTestPath(testPath);
+    setVersionsTestPath(testPath);
+    setVersionStatus("loading");
+    setVersionMessage("Loading versions");
+    try {
+      const nextVersions = await onListVersions(filePath);
+      setVersions(nextVersions);
+      setSelectedVersionId(nextVersions[0]?.id ?? null);
+      setVersionStatus("ready");
+      setVersionMessage(
+        nextVersions.length ? `${nextVersions.length} previous version${nextVersions.length === 1 ? "" : "s"}` : "No previous versions yet",
+      );
+    } catch {
+      setVersions([]);
+      setSelectedVersionId(null);
+      setVersionStatus("error");
+      setVersionMessage("Versions unavailable");
+    }
+  }
+
+  async function restoreVersion(version: ProjectFileVersion) {
+    if (!versionsTestPath) return;
+    const filePath = projectPathForTestPath(versionsTestPath);
+    const fileName = testFileDisplayName(testPathBasename(versionsTestPath));
+    const shouldRestore = window.confirm(`Restore "${fileName}" to revision ${version.revision}? This creates a new current version.`);
+    if (!shouldRestore) return;
+    setVersionStatus("loading");
+    setVersionMessage("Restoring version");
+    try {
+      await onRestoreVersion(filePath, version.id);
+      const nextVersions = await onListVersions(filePath);
+      setVersions(nextVersions);
+      setSelectedVersionId(nextVersions[0]?.id ?? null);
+      setVersionStatus("ready");
+      setVersionMessage(`Restored revision ${version.revision}`);
+    } catch {
+      setVersionStatus("error");
+      setVersionMessage("Restore failed");
+    }
+  }
 
   return (
-    <section className="rounded-lg border bg-card p-4 shadow-panel">
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Saved tests</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Save and reload the current title page, questions, parts, diagrams, marks, and page breaks.
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-3">
-          <label className="flex min-w-0 flex-col gap-2 text-xs font-medium">
-            Test
-            <select
-              value={selectedSavedTestId}
-              onChange={(event) => onSelectSavedTest(event.target.value)}
-              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              aria-label="Saved test"
-            >
-              <option value="">Current unsaved test</option>
-              {savedTests.map((test) => (
-                <option key={test.id} value={test.id}>
-                  {test.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
-            <Button type="button" variant="outline" size="sm" onClick={onNewTest} className="w-full justify-start sm:justify-center">
-              <PlusCircle data-icon="inline-start" />
-              New Test
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onSaveTest} className="w-full justify-start sm:justify-center">
-              <Save data-icon="inline-start" />
-              Save
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onSaveTestAs} className="w-full justify-start sm:justify-center">
-              <Copy data-icon="inline-start" />
-              Duplicate
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!selectedSavedTest}
-              className="w-full justify-start sm:justify-center"
-              onClick={() => {
-                if (selectedSavedTest) onRenameSavedTest(selectedSavedTest.id);
-              }}
-            >
-              <Pencil data-icon="inline-start" />
-              Rename
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!selectedSavedTest}
-              className="w-full justify-start sm:justify-center"
-              onClick={() => {
-                if (selectedSavedTest) onDeleteSavedTest(selectedSavedTest.id);
-              }}
-            >
-              <Trash2 data-icon="inline-start" />
-              Delete
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {selectedSavedTest ? `Last saved ${new Date(selectedSavedTest.updatedAt).toLocaleString()}. ` : ""}
-          {diskStorageMessage}
-        </p>
+    <section className="flex min-h-0 flex-1 flex-col gap-3" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onNewTest} disabled={busy}>
+          <PlusCircle data-icon="inline-start" />
+          New test
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => onCreateFolder(currentFolderPath)} disabled={busy}>
+          <PlusCircle data-icon="inline-start" />
+          New folder
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onExportBackup} disabled={busy}>
+          <Download data-icon="inline-start" />
+          Backup ZIP
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => backupImportInputRef.current?.click()} disabled={busy}>
+          <Upload data-icon="inline-start" />
+          Import ZIP
+        </Button>
+        <input
+          ref={backupImportInputRef}
+          type="file"
+          accept=".zip,application/zip"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) onImportBackup(file);
+          }}
+        />
       </div>
+
+      <div className="flex min-h-9 items-center gap-2 rounded-md border bg-background px-2 text-sm">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={!currentFolderPath}
+          title="Back"
+          aria-label="Back"
+          data-mauth-folder-back={parentTestPath(currentFolderPath)}
+          onClick={() => navigateToFolder(parentTestPath(currentFolderPath))}
+          onDragOver={(event) => {
+            if (currentFolderPath) handleDragOverFolder(event, parentTestPath(currentFolderPath));
+          }}
+          onDragLeave={(event) => {
+            if (currentFolderPath) handleDragLeaveFolder(event, parentTestPath(currentFolderPath));
+          }}
+          onDrop={(event) => {
+            if (currentFolderPath) handleDropOnFolder(event, parentTestPath(currentFolderPath));
+          }}
+          className={cn("size-7", currentFolderPath && dropTargetClass(parentTestPath(currentFolderPath)))}
+        >
+          <ChevronLeft />
+        </Button>
+        <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+          {breadcrumbTargets.map((target, index) => (
+            <Fragment key={target.path || "root"}>
+              {index ? <span className="text-muted-foreground">/</span> : null}
+              <button
+                type="button"
+                title={`Open ${target.path || TEST_FILE_ROOT_LABEL}`}
+                data-mauth-folder-breadcrumb={target.path}
+                onClick={() => navigateToFolder(target.path)}
+                onDragOver={(event) => handleDragOverFolder(event, target.path)}
+                onDragLeave={(event) => handleDragLeaveFolder(event, target.path)}
+                onDrop={(event) => handleDropOnFolder(event, target.path)}
+                className={cn(
+                  "min-w-0 truncate rounded px-2 py-1 font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                  target.path === currentFolderPath && "text-foreground",
+                  target.path !== currentFolderPath && "text-muted-foreground",
+                  dropTargetClass(target.path),
+                )}
+              >
+                {target.label}
+              </button>
+            </Fragment>
+          ))}
+        </span>
+      </div>
+
+      <div
+        data-mauth-folder-pane={currentFolderPath}
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden rounded-lg border bg-background transition-colors",
+          dropTargetClass(currentFolderPath),
+        )}
+        onDragOver={(event) => handleDragOverFolder(event, currentFolderPath)}
+        onDragLeave={(event) => handleDragLeaveFolder(event, currentFolderPath)}
+        onDrop={(event) => handleDropOnFolder(event, currentFolderPath)}
+      >
+        <div className="max-h-[56vh] min-h-72 overflow-y-auto">
+          {currentItems.length ? (
+            currentItems.map(({ file, testPath }) => {
+              const active = activeRelativePath === testPath;
+              const selected = selectedPaths.has(testPath);
+              const name = file.kind === "folder" ? testPathBasename(testPath) : testFileDisplayName(testPathBasename(testPath));
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  data-mauth-file-path={testPath}
+                  draggable={!busy}
+                  aria-selected={selected}
+                  onClick={(event) => handleItemClick(event, testPath)}
+                  onDoubleClick={() => {
+                    if (file.kind === "folder") {
+                      navigateToFolder(testPath);
+                    } else {
+                      onOpenFile(file.path);
+                    }
+                  }}
+                  onDragStart={(event) => handleItemDragStart(event, testPath)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={file.kind === "folder" ? (event) => handleDragOverFolder(event, testPath) : undefined}
+                  onDragLeave={file.kind === "folder" ? (event) => handleDragLeaveFolder(event, testPath) : undefined}
+                  onDrop={file.kind === "folder" ? (event) => handleDropOnFolder(event, testPath) : undefined}
+                  className={cn(
+                    "grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent/60",
+                    selected && "bg-primary/10 hover:bg-primary/10",
+                    file.kind === "folder" && dropTargetClass(testPath),
+                  )}
+                >
+                  {file.kind === "folder" ? (
+                    <FolderOpen className="size-4 text-primary" aria-hidden="true" />
+                  ) : (
+                    <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{name}</span>
+                      {active ? (
+                        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                          Open
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {file.kind === "folder"
+                        ? "Folder"
+                        : `${formatProjectFileSize(file.sizeBytes)} - ${new Date(file.updatedAt).toLocaleString()}`}
+                    </span>
+                  </span>
+                  <ChevronRight className={cn("size-4 text-muted-foreground", file.kind !== "folder" && "opacity-0")} aria-hidden="true" />
+                </button>
+              );
+            })
+          ) : (
+            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+              {status === "loading" ? "Loading files..." : status === "error" ? message || "Files unavailable." : "No files here yet."}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Button type="button" variant="outline" size="sm" disabled={!selectedEntry || busy} onClick={openSelected}>
+          Open
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!selectedEntry || busy}
+          onClick={() => selectedEntry && onRenameItem(projectPathForTestPath(selectedEntry.testPath))}
+        >
+          <Pencil data-icon="inline-start" />
+          Rename
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!selectedCount || busy}
+          onClick={() => onDuplicateItems(selectedProjectPaths)}
+        >
+          <Copy data-icon="inline-start" />
+          Duplicate
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!selectedEntry || selectedEntry.file.kind === "folder" || busy}
+          onClick={() => void openVersionHistory()}
+        >
+          Versions
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!selectedCount || busy}
+          onClick={() => onDeleteItems(selectedProjectPaths)}
+        >
+          <Trash2 data-icon="inline-start" />
+          Delete
+        </Button>
+      </div>
+
+      {versionsTestPath ? (
+        <div className="rounded-lg border bg-background p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold">Versions: {testFileDisplayName(testPathBasename(versionsTestPath))}</h3>
+              <p className="truncate text-xs text-muted-foreground">{versionMessage}</p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setVersionsTestPath(null);
+                setVersions([]);
+                setSelectedVersionId(null);
+                setVersionStatus("idle");
+                setVersionMessage("");
+              }}
+            >
+              Close
+            </Button>
+          </div>
+          {versionStatus === "loading" ? (
+            <p className="py-3 text-sm text-muted-foreground">Loading versions...</p>
+          ) : versions.length ? (
+            <div className="grid min-h-0 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="max-h-80 overflow-y-auto rounded-md border">
+                {versions.map((version) => {
+                  const selected = selectedVersion?.id === version.id;
+                  return (
+                    <div
+                      key={version.id}
+                      className={cn(
+                        "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0",
+                        selected && "bg-primary/10",
+                      )}
+                    >
+                      <button type="button" className="min-w-0 text-left" onClick={() => setSelectedVersionId(version.id)}>
+                        <p className="truncate font-medium">Revision {version.revision}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {new Date(version.createdAt).toLocaleString()}
+                          {version.reason ? ` - ${version.reason}` : ""}
+                        </p>
+                      </button>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedVersionId(version.id)}>
+                          Preview
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void restoreVersion(version)}>
+                          Restore
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {selectedVersion && selectedVersionPreview ? (
+                <div className="min-w-0 rounded-md border bg-muted/20 p-3">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="truncate text-sm font-semibold">{selectedVersionPreview.title}</h4>
+                      <p className="truncate text-xs text-muted-foreground">{selectedVersionPreview.subtitle}</p>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0">
+                      r{selectedVersion.revision}
+                    </Badge>
+                  </div>
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {selectedVersionPreview.details.map((detail) => (
+                      <span key={detail} className="rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                        {detail}
+                      </span>
+                    ))}
+                  </div>
+                  {selectedVersionPreview.questions.length ? (
+                    <ul className="mb-3 max-h-28 overflow-y-auto rounded border bg-background p-2 text-xs">
+                      {selectedVersionPreview.questions.map((question) => (
+                        <li key={question} className="truncate py-0.5">
+                          {question}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <details className="group">
+                    <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground group-open:mb-2">
+                      Raw snapshot
+                    </summary>
+                    <pre className="max-h-44 overflow-auto rounded border bg-background p-2 text-[10px] leading-snug text-muted-foreground">
+                      {selectedVersionPreview.rawPreview}
+                    </pre>
+                  </details>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="py-3 text-sm text-muted-foreground">
+              {versionStatus === "error" ? versionMessage || "Versions unavailable." : "No previous versions yet."}
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      <p className="min-h-4 truncate text-xs text-muted-foreground">
+        {message ||
+          (selectedCount
+            ? `${selectedCount} selected. Drag onto a folder, breadcrumb, or empty folder pane to move.`
+            : "Shift-click or Cmd/Ctrl-click to select. Drag onto folders or breadcrumbs to move.")}
+      </p>
     </section>
+  );
+}
+
+function storageStatusTone(status: HeaderSaveStatus) {
+  if (status === "saved" || status === "ready") return "bg-emerald-400";
+  if (status === "draft") return "bg-amber-300";
+  if (status === "saving" || status === "loading") return "bg-amber-300";
+  if (status === "dirty") return "bg-orange-300";
+  return "bg-red-400";
+}
+
+function HeaderFileControls({
+  currentFileName,
+  fileStatusMessage,
+  fileStatusTitle,
+  saveStatus,
+  onNewTest,
+  onSaveTest,
+  onOpenFiles,
+}: {
+  currentFileName: string;
+  fileStatusMessage: string;
+  fileStatusTitle: string;
+  saveStatus: HeaderSaveStatus;
+  onNewTest: () => void;
+  onSaveTest: () => void;
+  onOpenFiles: () => void;
+}) {
+  return (
+    <div className="flex w-auto max-w-full shrink-0 items-center gap-2 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
+      <span className={cn("ml-1 size-2 shrink-0 rounded-full", storageStatusTone(saveStatus))} title={fileStatusTitle} aria-hidden="true" />
+      <div
+        className="flex h-8 w-[min(42rem,42vw)] min-w-[14rem] flex-col justify-center rounded-md border border-blue-300/20 bg-[#050b1d] px-2"
+        title={fileStatusTitle}
+      >
+        <span className="truncate text-sm font-medium leading-tight text-blue-50">{currentFileName}</span>
+        <span className="truncate text-[10px] leading-tight text-blue-100/70">{fileStatusMessage}</span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        title="New test"
+        aria-label="New test"
+        onClick={onNewTest}
+        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
+      >
+        <PlusCircle />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        title="Save current test"
+        aria-label="Save current test"
+        onClick={onSaveTest}
+        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
+      >
+        <Save />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        title="Open files"
+        aria-label="Open files"
+        onClick={onOpenFiles}
+        className="h-8 shrink-0 border border-blue-300/15 px-2 text-blue-100 hover:bg-blue-500/15 hover:text-white"
+      >
+        <FolderOpen className="size-4" aria-hidden="true" />
+        Files
+      </Button>
+    </div>
+  );
+}
+
+function SolutionValidationPanel({
+  result,
+  onClose,
+  onJump,
+  onFix,
+}: {
+  result: SolutionValidationResult;
+  onClose: () => void;
+  onJump: (anchor: string) => void;
+  onFix: (issue: SolutionValidationIssue) => void;
+}) {
+  const summary = solutionValidationSummary(result);
+  return (
+    <aside className="fixed right-4 top-20 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border bg-background shadow-2xl">
+      <div className="flex items-start justify-between gap-3 border-b p-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Solution validation</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" title="Close" aria-label="Close solution validation" onClick={onClose}>
+          <X />
+        </Button>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto p-3">
+        {!result.checkedItems ? (
+          <p className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+            No marked questions, parts, or subparts were found.
+          </p>
+        ) : !result.issues.length ? (
+          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+            All marked items have a student response surface and a solution.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {result.issues.map((issue) => {
+              const fixLabel = solutionValidationFixLabel(issue.fix);
+              return (
+                <div
+                  key={issue.id}
+                  className={cn(
+                    "w-full rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent",
+                    issue.severity === "error" ? "border-red-300 bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950",
+                  )}
+                >
+                  <span className="mb-1 flex items-center justify-between gap-2">
+                    <button type="button" className="min-w-0 text-left font-semibold hover:underline" onClick={() => onJump(issue.anchor)}>
+                      {issue.label}
+                    </button>
+                    <Badge
+                      variant="secondary"
+                      className={cn(issue.severity === "error" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900")}
+                    >
+                      {issue.severity}
+                    </Badge>
+                  </span>
+                  <span className="block text-xs leading-relaxed">{issue.message}</span>
+                  <span className="mt-2 flex flex-wrap gap-2">
+                    {fixLabel ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 bg-background/80 px-2 text-xs"
+                        onClick={() => onFix(issue)}
+                      >
+                        {fixLabel}
+                      </Button>
+                    ) : null}
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onJump(issue.anchor)}>
+                      Jump
+                    </Button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function strippedJsonProposalSource(source: string) {
+  const trimmed = source.trim();
+  const fenceMatch = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
+function actionFromUnknown(value: unknown): MauthDocumentAction | null {
+  const record = asRecord(value);
+  if (!record || typeof record.type !== "string") return null;
+  return record as MauthDocumentAction;
+}
+
+function parseMauthDocumentActionProposal(source: string): MauthDocumentAction[] {
+  const proposalSource = strippedJsonProposalSource(source);
+  if (!proposalSource) throw new Error("Paste a JSON action, an action array, or an object with an actions array.");
+
+  const parsed = JSON.parse(proposalSource) as unknown;
+  const proposalRecord = asRecord(parsed);
+  const rawActions = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(proposalRecord?.actions)
+      ? proposalRecord.actions
+      : proposalRecord?.action
+        ? [proposalRecord.action]
+        : [parsed];
+
+  const actions = rawActions.flatMap((action) => {
+    const parsedAction = actionFromUnknown(action);
+    return parsedAction ? [parsedAction] : [];
+  });
+  if (actions.length !== rawActions.length) throw new Error("Every proposed action must be an object with a string type.");
+  if (!actions.length) throw new Error("No actions found in that proposal.");
+  return actions;
+}
+
+function assistantResultMessage(result: MauthAssistantAdapterResult<QuestionBlock, FrontMatterConfig, FormattingConfig>) {
+  if (!result.ok) return result.error || "Tool failed.";
+  const data = asRecord(result.data);
+  if (result.toolName === "mauth.document.inspect") {
+    const counts = asRecord(data?.counts);
+    const questionsCount = typeof counts?.questions === "number" ? counts.questions : 0;
+    const marksTotal = typeof counts?.marksTotal === "number" ? counts.marksTotal : 0;
+    return `Inspected ${questionsCount} question${questionsCount === 1 ? "" : "s"} and ${marksTotal} mark${marksTotal === 1 ? "" : "s"}.`;
+  }
+  if (result.toolName === "mauth.validation.run") {
+    return result.warnings.length
+      ? `Validation completed with ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}.`
+      : "Validation completed with no warnings.";
+  }
+  if (result.toolName === "mauth.actions.preview") {
+    const preview = asRecord(data?.preview);
+    const requested = typeof preview?.requestedActionCount === "number" ? preview.requestedActionCount : result.changedIds.length;
+    return `Previewed ${requested} action${requested === 1 ? "" : "s"}.`;
+  }
+  if (result.toolName === "mauth.actions.apply") {
+    return `Applied changes to ${result.changedIds.length} item${result.changedIds.length === 1 ? "" : "s"}.`;
+  }
+  if (result.toolName === "mauth.author.replaceQuestion") {
+    return result.changedIds.length ? "Replaced the question." : "Question authoring completed.";
+  }
+  if (result.toolName === "mauth.author.addDiagram") {
+    return result.changedIds.length ? "Added the diagram." : "Diagram authoring completed.";
+  }
+  if (result.toolName === "mauth.author.ensureSolutions") {
+    return result.changedIds.length ? "Updated the solutions." : "Solution authoring completed.";
+  }
+  if (result.toolName === "mauth.files.list") {
+    const files = Array.isArray(data?.files) ? data.files : (result.files ?? []);
+    return `Listed ${files.length} file${files.length === 1 ? "" : "s"} or folder${files.length === 1 ? "" : "s"}.`;
+  }
+  if (result.changedPaths.length) {
+    return `Changed ${result.changedPaths.length} path${result.changedPaths.length === 1 ? "" : "s"}.`;
+  }
+  return "Tool completed.";
+}
+
+function mergeAssistantUsageSummary(
+  current: AssistantUsageSummary | null | undefined,
+  next: AssistantUsageSummary | null | undefined,
+): AssistantUsageSummary | null {
+  if (!current) return next ?? null;
+  if (!next) return current;
+  const currentCost = typeof current.estimatedCostUsd === "number" ? current.estimatedCostUsd : null;
+  const nextCost = typeof next.estimatedCostUsd === "number" ? next.estimatedCostUsd : null;
+  return {
+    model: current.model === next.model ? current.model : `${current.model} + ${next.model}`,
+    inputTokens: current.inputTokens + next.inputTokens,
+    cachedInputTokens: current.cachedInputTokens + next.cachedInputTokens,
+    billableInputTokens: current.billableInputTokens + next.billableInputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    totalTokens: current.totalTokens + next.totalTokens,
+    estimatedCostUsd: currentCost === null || nextCost === null ? null : currentCost + nextCost,
+    pricingSource: current.pricingSource === next.pricingSource ? current.pricingSource : current.pricingSource || next.pricingSource,
+  };
+}
+
+function addUsageToLastAssistantMessage(messages: MauthAssistantChatMessage[], usage: AssistantUsageSummary): MauthAssistantChatMessage[] {
+  const nextMessages = [...messages];
+  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+    const message = nextMessages[index];
+    if (message.role === "assistant") {
+      nextMessages[index] = { ...message, usage };
+      return nextMessages;
+    }
+  }
+  return [...messages, { id: id("assistant-message"), role: "assistant", content: "Done.", usage }];
+}
+
+interface AssistantPendingToolContinuation {
+  responseId: string | null;
+  toolCalls: AssistantProviderToolCall[];
+}
+
+interface AssistantToolLoopResult {
+  responseId: string | null;
+  usage: AssistantUsageSummary | null;
+  pending: AssistantPendingToolContinuation | null;
+}
+
+function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): MauthAssistantAdapterToolCall | null {
+  const mauthToolName =
+    typeof toolCall.mauthToolName === "string" ? toolCall.mauthToolName : toolCall.name.startsWith("mauth.") ? toolCall.name : "";
+  if (!mauthToolName) return null;
+  return {
+    name: mauthToolName as MauthAssistantAdapterToolCall["name"],
+    arguments: toolCall.mauthArguments ?? toolCall.arguments ?? {},
+  } as MauthAssistantAdapterToolCall;
+}
+
+function assistantActivityLabelForTool(name: MauthAssistantAdapterToolCall["name"]) {
+  if (name === "mauth.document.inspect") return "Inspecting document";
+  if (name === "mauth.validation.run") return "Checking document";
+  if (name === "mauth.actions.preview") return "Previewing changes";
+  if (name === "mauth.actions.apply") return "Applying changes";
+  if (name === "mauth.author.replaceQuestion") return "Writing question";
+  if (name === "mauth.author.addDiagram") return "Adding diagram";
+  if (name === "mauth.author.ensureSolutions") return "Writing solutions";
+  if (name === "mauth.files.list") return "Reading files";
+  if (name === "mauth.files.open") return "Opening file";
+  if (name === "mauth.files.save" || name === "mauth.files.saveAs") return "Saving file";
+  if (name.startsWith("mauth.files.")) return "Updating files";
+  return "Using Mauth tools";
+}
+
+function compactAssistantProviderOutput(
+  result: MauthAssistantAdapterResult<QuestionBlock, FrontMatterConfig, FormattingConfig>,
+): Record<string, unknown> {
+  const data = asRecord(result.data);
+  const preview = asRecord(data?.preview);
+  const validation = asRecord(data?.validation);
+  const files = result.files ?? (Array.isArray(data?.files) ? data.files : undefined);
+  const output: Record<string, unknown> = {
+    ok: result.ok,
+    toolName: result.toolName,
+    kind: result.kind,
+    message: assistantResultMessage(result),
+    changedIds: result.changedIds,
+    changedPaths: result.changedPaths,
+    warnings: result.warnings.map((warning) => ({ code: warning.code, message: warning.message })),
+    error: result.error ?? null,
+    committedDocument: result.committedDocument,
+    activeFilePath: result.activeFilePath ?? null,
+  };
+
+  if (result.toolName === "mauth.document.inspect") output.documentSummary = result.data ?? null;
+  if (result.toolName === "mauth.validation.run") output.validation = result.data ?? null;
+  if (Array.isArray(data?.validationIssues)) output.validationIssues = data.validationIssues;
+  if (preview) output.preview = preview;
+  if (validation) output.validation = validation;
+  if (files) {
+    output.files = files
+      .filter((file): file is ProjectFileSummary => asRecord(file) !== null)
+      .map((file) => ({
+        path: file.path,
+        name: file.name,
+        kind: file.kind,
+        fileType: file.fileType,
+        updatedAt: file.updatedAt,
+      }));
+  }
+
+  return output;
+}
+
+function shortActionPreviewList(values: readonly string[], limit = 8) {
+  if (!values.length) return "";
+  const visible = values.slice(0, limit);
+  const remaining = values.length - visible.length;
+  return remaining > 0 ? `${visible.join(", ")} + ${remaining} more` : visible.join(", ");
+}
+
+function actionPreviewSummaryLines(preview: MauthActionPreviewSummary) {
+  const lines: string[] = [];
+  const actionCounts = Object.entries(preview.actionCounts)
+    .filter((entry): entry is [string, number] => Number(entry[1]) > 0)
+    .map(([type, count]) => `${type} x${count}`);
+
+  if (actionCounts.length) lines.push(`Actions: ${actionCounts.join(", ")}`);
+  if (preview.changedIds.length) lines.push(`Changed: ${shortActionPreviewList(preview.changedIds)}`);
+  if (preview.addedIds.length) lines.push(`Added: ${shortActionPreviewList(preview.addedIds)}`);
+  if (preview.deletedIds.length) lines.push(`Deleted: ${shortActionPreviewList(preview.deletedIds)}`);
+  if (preview.movedIds.length) lines.push(`Moved: ${shortActionPreviewList(preview.movedIds)}`);
+  if (preview.reorderedIds.length) lines.push(`Reordered: ${shortActionPreviewList(preview.reorderedIds)}`);
+  if (preview.updatedIds.length) lines.push(`Updated: ${shortActionPreviewList(preview.updatedIds)}`);
+  if (preview.frontMatterFields.length) lines.push(`Front matter: ${shortActionPreviewList(preview.frontMatterFields)}`);
+  if (preview.formattingFields.length) lines.push(`Formatting: ${shortActionPreviewList(preview.formattingFields)}`);
+  if (preview.pageFormatFields.length) lines.push(`Page format: ${shortActionPreviewList(preview.pageFormatFields)}`);
+  return lines;
+}
+
+function ActionProposalPanel({
+  value,
+  message,
+  result,
+  onChange,
+  onPreview,
+  onApply,
+  onClose,
+  onClear,
+}: {
+  value: string;
+  message: string;
+  result: MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> | null;
+  onChange: (value: string) => void;
+  onPreview: () => void;
+  onApply: () => void;
+  onClose: () => void;
+  onClear: () => void;
+}) {
+  const preview = result?.preview;
+  const summaryLines = preview ? actionPreviewSummaryLines(preview) : [];
+  const canSubmit = Boolean(value.trim());
+  const validPreview = Boolean(result?.ok && preview?.valid);
+
+  return (
+    <aside className="fixed right-4 top-20 z-50 w-[min(34rem,calc(100vw-2rem))] rounded-xl border bg-background shadow-2xl">
+      <div className="flex items-start justify-between gap-3 border-b p-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Action proposal</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">Paste Mauth document action JSON, preview it, then apply it.</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" title="Close" aria-label="Close action proposal" onClick={onClose}>
+          <X />
+        </Button>
+      </div>
+      <div className="max-h-[72vh] space-y-3 overflow-y-auto p-3">
+        <Textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          rows={12}
+          spellCheck={false}
+          className="min-h-56 font-mono text-xs"
+          placeholder='{"actions":[{"type":"module.update","scope":{"kind":"question","questionId":"..."},"blockId":"...","patch":{"text":"..."}}]}'
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" onClick={onPreview} disabled={!canSubmit}>
+            Preview
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onApply} disabled={!canSubmit}>
+            Apply
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onClear} disabled={!value && !result && !message}>
+            Clear
+          </Button>
+        </div>
+        {message ? (
+          <p className={cn("rounded-md border p-2 text-xs", validPreview ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "")}>
+            {message}
+          </p>
+        ) : null}
+        {preview ? (
+          <div className="space-y-3 rounded-md border bg-muted/20 p-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className={cn(validPreview ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900")}>
+                {validPreview ? "Dry run valid" : "Needs attention"}
+              </Badge>
+              <span className="text-muted-foreground">
+                {preview.attemptedActionCount} of {preview.requestedActionCount} action
+                {preview.requestedActionCount === 1 ? "" : "s"} checked
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Added</span>
+                <span className="font-semibold">{preview.counts.added}</span>
+              </div>
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Updated</span>
+                <span className="font-semibold">{preview.counts.updated}</span>
+              </div>
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Moved</span>
+                <span className="font-semibold">{preview.counts.moved}</span>
+              </div>
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Deleted</span>
+                <span className="font-semibold">{preview.counts.deleted}</span>
+              </div>
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Fields</span>
+                <span className="font-semibold">
+                  {preview.counts.frontMatterFields + preview.counts.formattingFields + preview.counts.pageFormatFields}
+                </span>
+              </div>
+              <div className="rounded-md bg-background p-2">
+                <span className="block text-[10px] uppercase text-muted-foreground">Warnings</span>
+                <span className="font-semibold">{preview.counts.warnings}</span>
+              </div>
+            </div>
+            {summaryLines.length ? (
+              <ul className="space-y-1 text-muted-foreground">
+                {summaryLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No content changes in the dry run.</p>
+            )}
+            {result?.error ? <p className="text-red-700">{result.error}</p> : null}
+            {result?.warnings.length ? (
+              <ul className="space-y-1 text-amber-800">
+                {result.warnings.map((warning, index) => (
+                  <li key={`${warning.code}-${warning.targetId ?? index}`}>{warning.message}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+interface VersionPreviewSummary {
+  kind: "test" | "raw";
+  title: string;
+  subtitle: string;
+  details: string[];
+  questions: string[];
+  rawPreview: string;
+}
+
+function projectFileVersionPreview(version: ProjectFileVersion): VersionPreviewSummary {
+  const rawPreview = version.content.length > 6000 ? `${version.content.slice(0, 6000)}\n...` : version.content;
+  try {
+    const parsed = JSON.parse(version.content) as unknown;
+    const savedTest = normalizeSavedTest(parsed);
+    if (!savedTest) throw new Error("Unsupported saved test");
+    const totalMarks = savedTest.questions.reduce((sum, question) => sum + questionMarks(question), 0);
+    return {
+      kind: "test",
+      title: savedTest.name || `Revision ${version.revision}`,
+      subtitle: [savedTest.frontMatter.subjectTitle, savedTest.frontMatter.assessmentTitle].filter(Boolean).join(" - "),
+      details: [
+        `${savedTest.questions.length} question${savedTest.questions.length === 1 ? "" : "s"}`,
+        `${totalMarks} mark${totalMarks === 1 ? "" : "s"}`,
+        `Saved ${new Date(version.createdAt).toLocaleString()}`,
+      ],
+      questions: savedTest.questions.slice(0, 8).map((question, index) => {
+        const marks = questionMarks(question);
+        const partCount = question.parts.length;
+        const blockCount =
+          question.contentBlocks.length +
+          question.parts.reduce(
+            (partSum, part) =>
+              partSum +
+              part.contentBlocks.length +
+              part.subparts.reduce((subpartSum, subpart) => subpartSum + subpart.contentBlocks.length, 0),
+            0,
+          );
+        return `Question ${index + 1}: ${marks} mark${marks === 1 ? "" : "s"}, ${partCount || blockCount} ${
+          partCount ? `part${partCount === 1 ? "" : "s"}` : `module${blockCount === 1 ? "" : "s"}`
+        }`;
+      }),
+      rawPreview,
+    };
+  } catch {
+    return {
+      kind: "raw",
+      title: `Revision ${version.revision}`,
+      subtitle: version.fileType ? `${version.fileType} file` : "File snapshot",
+      details: [`Saved ${new Date(version.createdAt).toLocaleString()}`, `${formatProjectFileSize(version.content.length)} text`],
+      questions: [],
+      rawPreview,
+    };
+  }
+}
+
+function FileManagementDrawer({
+  open,
+  projectFiles,
+  projectFilesStatus,
+  projectFilesMessage,
+  activeProjectFilePath,
+  onClose,
+  onNewTest,
+  onOpenProjectFile,
+  onCreateProjectFolder,
+  onExportProjectBackup,
+  onImportProjectBackup,
+  onRenameProjectFile,
+  onDuplicateProjectFiles,
+  onMoveProjectFiles,
+  onDeleteProjectFiles,
+  onListProjectFileVersions,
+  onRestoreProjectFileVersion,
+}: {
+  open: boolean;
+  projectFiles: ProjectFileSummary[];
+  projectFilesStatus: ProjectFilesStatus;
+  projectFilesMessage: string;
+  activeProjectFilePath: string | null;
+  onClose: () => void;
+  onNewTest: () => void;
+  onOpenProjectFile: (filePath: string) => void;
+  onCreateProjectFolder: (folderPath: string) => void;
+  onExportProjectBackup: () => void;
+  onImportProjectBackup: (file: File) => void;
+  onRenameProjectFile: (filePath: string) => void;
+  onDuplicateProjectFiles: (filePaths: string[]) => void;
+  onMoveProjectFiles: (filePaths: string[], targetFolderPath: string) => void;
+  onDeleteProjectFiles: (filePaths: string[]) => void;
+  onListProjectFileVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
+  onRestoreProjectFileVersion: (filePath: string, versionId: string) => Promise<void>;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-40 bg-slate-950/35 p-4 pt-20" onMouseDown={onClose}>
+      <aside
+        className="ml-auto flex max-h-[calc(100vh-6rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl"
+        aria-label="Files"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b p-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <FolderOpen className="size-5 text-primary" aria-hidden="true" />
+            <h2 className="truncate text-base font-semibold">Files</h2>
+          </div>
+          <Button type="button" variant="ghost" size="icon" title="Close files" aria-label="Close files" onClick={onClose}>
+            <X />
+          </Button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+          <TestFileManager
+            files={projectFiles}
+            status={projectFilesStatus}
+            message={projectFilesMessage}
+            activeProjectFilePath={activeProjectFilePath}
+            onNewTest={onNewTest}
+            onOpenFile={(filePath) => {
+              onOpenProjectFile(filePath);
+              onClose();
+            }}
+            onCreateFolder={onCreateProjectFolder}
+            onExportBackup={onExportProjectBackup}
+            onImportBackup={onImportProjectBackup}
+            onRenameItem={onRenameProjectFile}
+            onDuplicateItems={onDuplicateProjectFiles}
+            onMoveItems={onMoveProjectFiles}
+            onDeleteItems={onDeleteProjectFiles}
+            onListVersions={onListProjectFileVersions}
+            onRestoreVersion={onRestoreProjectFileVersion}
+          />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function NewTestDialog({
+  open,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (template: TitlePageTemplate) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" onMouseDown={onClose}>
+      <section
+        className="w-full max-w-2xl rounded-xl border bg-background shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-test-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b p-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <PlusCircle className="size-5 text-primary" aria-hidden="true" />
+            <h2 id="new-test-dialog-title" className="truncate text-base font-semibold">
+              New test
+            </h2>
+          </div>
+          <Button type="button" variant="ghost" size="icon" title="Close new test" aria-label="Close new test" onClick={onClose}>
+            <X />
+          </Button>
+        </header>
+        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
+          {NEW_TEST_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onCreate(template.id)}
+              className="group flex min-h-40 flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition hover:border-primary hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="flex size-10 items-center justify-center rounded-md border bg-background text-primary transition group-hover:border-primary">
+                {template.id === "exam" ? (
+                  <ListTree className="size-5" aria-hidden="true" />
+                ) : (
+                  <FileText className="size-5" aria-hidden="true" />
+                )}
+              </span>
+              <span className="text-lg font-semibold">{template.title}</span>
+              <span className="text-sm leading-6 text-muted-foreground">{template.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -4546,18 +9278,77 @@ function FrontMatterEditor({
   frontMatter,
   logos,
   openSignal,
+  questionCount,
+  totalMarks,
   onChange,
   onAddLogo,
+  onUpdateLogo,
   onRemoveLogo,
 }: {
   frontMatter: FrontMatterConfig;
   logos: LogoAsset[];
   openSignal?: number;
+  questionCount: number;
+  totalMarks: number;
   onChange: (patch: Partial<FrontMatterConfig>) => void;
   onAddLogo: (file: File) => void;
+  onUpdateLogo: (logoId: string, patch: { name: string; schoolName: string }) => void;
   onRemoveLogo: (logoId: string) => void;
 }) {
   const selectedLogo = selectedLogoFromLibrary(logos, frontMatter.logoId);
+  const [logoNameDraft, setLogoNameDraft] = useState(selectedLogo.name);
+  const normalizedLogoNameDraft = logoNameDraft.trim() || selectedLogo.name;
+  const selectedLogoSchoolName = selectedLogo.schoolName ?? "";
+  const logoHasDraftChanges = normalizedLogoNameDraft !== selectedLogo.name || frontMatter.schoolName !== selectedLogoSchoolName;
+
+  useEffect(() => {
+    setLogoNameDraft(selectedLogo.name);
+  }, [selectedLogo.id, selectedLogo.name]);
+
+  function handleUpdateLogo() {
+    onUpdateLogo(selectedLogo.id, {
+      name: normalizedLogoNameDraft,
+      schoolName: frontMatter.schoolName,
+    });
+    setLogoNameDraft(normalizedLogoNameDraft);
+  }
+
+  const titlePageTemplate = frontMatter.titlePageTemplate ?? "standard";
+  const exam = normalizeExamTitlePage(frontMatter.exam);
+  const activeExamSectionPreset = examSectionPresetById(exam.sectionPreset);
+  const updateExam = (patch: Partial<ExamTitlePageConfig>) => onChange({ exam: { ...exam, ...patch } });
+  const updateExamRow = (rowId: string, patch: Partial<ExamStructureRowConfig>) =>
+    updateExam({
+      structureRows: exam.structureRows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+    });
+  const updateExamRowNumber = (
+    rowId: string,
+    key: keyof Pick<
+      ExamStructureRowConfig,
+      "questionsAvailable" | "questionsToBeAnswered" | "workingTimeMinutes" | "marksAvailable" | "percentage"
+    >,
+    value: string,
+  ) => updateExamRow(rowId, { [key]: nonNegativeNumberOrDefault(Number(value), 0) } as Partial<ExamStructureRowConfig>);
+  const addExamRow = () =>
+    updateExam({
+      structureRows: [
+        ...exam.structureRows,
+        {
+          id: id("exam-section"),
+          section: "Section",
+          useCurrentDocument: false,
+          questionsAvailable: 0,
+          questionsToBeAnswered: 0,
+          workingTimeMinutes: 0,
+          marksAvailable: 0,
+          percentage: 0,
+        },
+      ],
+    });
+  const removeExamRow = (rowId: string) =>
+    updateExam({
+      structureRows: exam.structureRows.length <= 1 ? exam.structureRows : exam.structureRows.filter((row) => row.id !== rowId),
+    });
 
   return (
     <div className="flex flex-col gap-3">
@@ -4570,6 +9361,45 @@ function FrontMatterEditor({
         openSignal={openSignal}
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+            Title page template
+            <select
+              value={titlePageTemplate}
+              onChange={(event) => {
+                const nextTemplate = titlePageTemplateFromValue(event.target.value);
+                onChange({
+                  titlePageTemplate: nextTemplate,
+                  ...(nextTemplate === "exam"
+                    ? {
+                        ...examSectionPresetPatch(exam, exam.sectionPreset),
+                        showDeclaration: false,
+                        showInstructions: false,
+                      }
+                    : { showDeclaration: true, showInstructions: true }),
+                });
+              }}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              <option value="standard">School test title page</option>
+              <option value="exam">School exam booklet</option>
+            </select>
+          </label>
+          {titlePageTemplate === "exam" ? (
+            <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+              Exam section
+              <select
+                value={activeExamSectionPreset.id}
+                onChange={(event) => onChange(examSectionPresetPatch(exam, examSectionPresetFromValue(event.target.value)))}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                {EXAM_SECTION_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className="rounded-md border bg-background p-3 md:col-span-2">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[88px_minmax(0,1fr)] md:items-center">
               <div className="flex h-24 items-center justify-center rounded-md border bg-white p-2">
@@ -4580,20 +9410,38 @@ function FrontMatterEditor({
                 )}
               </div>
               <div className="flex min-w-0 flex-col gap-3">
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Logo
-                  <select
-                    value={frontMatter.logoId}
-                    onChange={(event) => onChange({ logoId: event.target.value })}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  >
-                    {logos.map((logoOption) => (
-                      <option key={logoOption.id} value={logoOption.id}>
-                        {logoOption.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                    Logo
+                    <select
+                      value={frontMatter.logoId}
+                      onChange={(event) => onChange({ logoId: event.target.value })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    >
+                      {logos.map((logoOption) => (
+                        <option key={logoOption.id} value={logoOption.id}>
+                          {logoOption.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Logo name
+                    <input
+                      value={logoNameDraft}
+                      onChange={(event) => setLogoNameDraft(event.target.value)}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    School name
+                    <Textarea
+                      value={frontMatter.schoolName}
+                      onChange={(event) => onChange({ schoolName: event.target.value })}
+                      className="min-h-16 font-mono text-sm"
+                    />
+                  </label>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
                     <ImagePlus className="size-4" aria-hidden="true" />
@@ -4609,7 +9457,11 @@ function FrontMatterEditor({
                       }}
                     />
                   </label>
-                  {selectedLogo && !selectedLogo.builtIn ? (
+                  <Button type="button" variant="outline" size="sm" disabled={!logoHasDraftChanges} onClick={handleUpdateLogo}>
+                    <Save data-icon="inline-start" />
+                    Update logo
+                  </Button>
+                  {selectedLogo && logos.length > 1 ? (
                     <Button type="button" variant="outline" size="sm" onClick={() => onRemoveLogo(selectedLogo.id)}>
                       <Trash2 data-icon="inline-start" />
                       Remove logo
@@ -4635,30 +9487,26 @@ function FrontMatterEditor({
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-            School name
-            <Textarea
-              value={frontMatter.schoolName}
-              onChange={(event) => onChange({ schoolName: event.target.value })}
-              className="min-h-16 font-mono text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Name label
-            <input
-              value={frontMatter.nameLabel}
-              onChange={(event) => onChange({ nameLabel: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Mark label
-            <input
-              value={frontMatter.markLabel}
-              onChange={(event) => onChange({ markLabel: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
+          {titlePageTemplate === "standard" ? (
+            <>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Name label
+                <input
+                  value={frontMatter.nameLabel}
+                  onChange={(event) => onChange({ nameLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Mark label
+                <input
+                  value={frontMatter.markLabel}
+                  onChange={(event) => onChange({ markLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </>
+          ) : null}
           <label className="flex flex-col gap-2 text-xs font-medium">
             Start questions at
             <input
@@ -4670,8 +9518,8 @@ function FrontMatterEditor({
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
-          <div className="grid grid-cols-1 gap-3 rounded-md border bg-background p-3 md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
-            <label className="flex items-center gap-2 pb-2 text-xs font-medium">
+          <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
+            <label className="flex h-9 items-center gap-2 text-xs font-medium">
               <input
                 type="checkbox"
                 checked={frontMatter.showAssessmentSubtitle}
@@ -4681,110 +9529,641 @@ function FrontMatterEditor({
             </label>
             <label className="flex flex-col gap-2 text-xs font-medium">
               Assessment subtitle
-              <input
-                value={frontMatter.assessmentSubtitle}
-                onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
-                placeholder="Calculator Free Section"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              />
+              {titlePageTemplate === "exam" ? (
+                <Textarea
+                  value={frontMatter.assessmentSubtitle}
+                  onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
+                  placeholder={"Section One:\nCalculator-free"}
+                  className="min-h-16 text-sm"
+                />
+              ) : (
+                <input
+                  value={frontMatter.assessmentSubtitle}
+                  onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
+                  placeholder="Calculator Free Section"
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              )}
             </label>
           </div>
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel
-        title={
-          <InlineSummaryTitle
-            label="Supervisor declaration"
-            summary={frontMatter.showDeclaration ? frontMatter.declarationTitle : "Hidden"}
-          />
-        }
-        defaultOpen={false}
-        className="bg-muted/20"
-        actions={
-          <label className="flex items-center gap-2 text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={frontMatter.showDeclaration}
-              onChange={(event) => onChange({ showDeclaration: event.target.checked })}
-            />
-            Show
-          </label>
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-            Heading
-            <input
-              value={frontMatter.declarationTitle}
-              onChange={(event) => onChange({ declarationTitle: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-            Declaration text
-            <Textarea
-              value={frontMatter.declarationBody}
-              onChange={(event) => onChange({ declarationBody: event.target.value })}
-              className="min-h-28 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Signature label
-            <input
-              value={frontMatter.signatureLabel}
-              onChange={(event) => onChange({ signatureLabel: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Signature role
-            <input
-              value={frontMatter.signatureRole}
-              onChange={(event) => onChange({ signatureRole: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-        </div>
-      </CollapsiblePanel>
+      {titlePageTemplate === "exam" ? (
+        <>
+          <CollapsiblePanel
+            title={<InlineSummaryTitle label="Exam cover" summary={`${exam.examHeading} · ${exam.sectionHeader}`} />}
+            defaultOpen={false}
+            className="bg-muted/20"
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Exam heading
+                <input
+                  value={exam.examHeading}
+                  onChange={(event) => updateExam({ examHeading: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Booklet title
+                <input
+                  value={exam.bookletTitle}
+                  onChange={(event) => updateExam({ bookletTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Running header course
+                <input
+                  value={exam.courseHeader}
+                  onChange={(event) => updateExam({ courseHeader: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Running header section
+                <input
+                  value={exam.sectionHeader}
+                  onChange={(event) => updateExam({ sectionHeader: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Student number label
+                <input
+                  value={exam.studentNumberLabel}
+                  onChange={(event) => updateExam({ studentNumberLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Student number figures label
+                <input
+                  value={exam.studentNumberFiguresLabel}
+                  onChange={(event) => updateExam({ studentNumberFiguresLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Student number words label
+                <input
+                  value={exam.studentNumberWordsLabel}
+                  onChange={(event) => updateExam({ studentNumberWordsLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </div>
+          </CollapsiblePanel>
 
-      <CollapsiblePanel
-        title={
-          <InlineSummaryTitle label="Instructions" summary={frontMatter.showInstructions ? frontMatter.instructionsTitle : "Hidden"} />
-        }
-        defaultOpen={false}
-        className="bg-muted/20"
-        actions={
-          <label className="flex items-center gap-2 text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={frontMatter.showInstructions}
-              onChange={(event) => onChange({ showInstructions: event.target.checked })}
-            />
-            Show
-          </label>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Heading
-            <input
-              value={frontMatter.instructionsTitle}
-              onChange={(event) => onChange({ instructionsTitle: event.target.value })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Instructions text
-            <Textarea
-              value={frontMatter.instructionsBody}
-              onChange={(event) => onChange({ instructionsBody: event.target.value })}
-              className="min-h-36 text-sm"
-            />
-          </label>
-        </div>
-      </CollapsiblePanel>
+          <CollapsiblePanel
+            title={<InlineSummaryTitle label="Exam time and materials" summary={`${exam.workingTimeLabel} ${exam.workingTime}`} />}
+            defaultOpen={false}
+            className="bg-muted/20"
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Time section title
+                <input
+                  value={exam.timeTitle}
+                  onChange={(event) => updateExam({ timeTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Reading time label
+                <input
+                  value={exam.readingTimeLabel}
+                  onChange={(event) => updateExam({ readingTimeLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Reading time
+                <input
+                  value={exam.readingTime}
+                  onChange={(event) => updateExam({ readingTime: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Working time label
+                <input
+                  value={exam.workingTimeLabel}
+                  onChange={(event) => updateExam({ workingTimeLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Working time
+                <input
+                  value={exam.workingTime}
+                  onChange={(event) => updateExam({ workingTime: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Additional booklets label
+                <Textarea
+                  value={exam.additionalBookletsLabel}
+                  onChange={(event) => updateExam({ additionalBookletsLabel: event.target.value })}
+                  className="min-h-16 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Materials title
+                <input
+                  value={exam.materialsTitle}
+                  onChange={(event) => updateExam({ materialsTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Supervisor materials heading
+                <input
+                  value={exam.supervisorMaterialsTitle}
+                  onChange={(event) => updateExam({ supervisorMaterialsTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Supervisor materials
+                <Textarea
+                  value={exam.supervisorMaterials}
+                  onChange={(event) => updateExam({ supervisorMaterials: event.target.value })}
+                  className="min-h-20 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Standard items
+                <Textarea
+                  value={exam.standardItems}
+                  onChange={(event) => updateExam({ standardItems: event.target.value })}
+                  className="min-h-24 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Special items
+                <Textarea
+                  value={exam.specialItems}
+                  onChange={(event) => updateExam({ specialItems: event.target.value })}
+                  className="min-h-24 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Important note
+                <Textarea
+                  value={exam.importantNoteBody}
+                  onChange={(event) => updateExam({ importantNoteBody: event.target.value })}
+                  className="min-h-24 text-sm"
+                />
+              </label>
+            </div>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            title={
+              <InlineSummaryTitle
+                label="Exam structure table"
+                summary={`Current document: ${questionCount} questions, ${markLabel(totalMarks)}`}
+              />
+            }
+            defaultOpen={false}
+            className="bg-muted/20"
+            actions={
+              <Button type="button" variant="outline" size="sm" onClick={addExamRow}>
+                <PlusCircle data-icon="inline-start" />
+                Row
+              </Button>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Table title
+                <input
+                  value={exam.structureTitle}
+                  onChange={(event) => updateExam({ structureTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <div className="flex flex-col gap-3">
+                {exam.structureRows.map((row, index) => {
+                  const rowQuestionsAvailable = row.useCurrentDocument ? questionCount : row.questionsAvailable;
+                  const rowQuestionsToBeAnswered = row.useCurrentDocument ? questionCount : row.questionsToBeAnswered;
+                  const rowMarks = row.useCurrentDocument ? totalMarks : row.marksAvailable;
+
+                  return (
+                    <div key={row.id} className="rounded-md border bg-background p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <strong className="text-sm">Row {index + 1}</strong>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-2 text-xs font-medium">
+                            <input
+                              type="checkbox"
+                              checked={row.useCurrentDocument === true}
+                              onChange={(event) => updateExamRow(row.id, { useCurrentDocument: event.target.checked })}
+                            />
+                            Auto from current document
+                          </label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title="Remove structure row"
+                            aria-label="Remove structure row"
+                            disabled={exam.structureRows.length <= 1}
+                            onClick={() => removeExamRow(row.id)}
+                            className="size-8"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+                        <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                          Section
+                          <Textarea
+                            value={row.section}
+                            onChange={(event) => updateExamRow(row.id, { section: event.target.value })}
+                            className="min-h-20 text-sm"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Available
+                          <input
+                            type="number"
+                            min={0}
+                            value={rowQuestionsAvailable}
+                            disabled={row.useCurrentDocument === true}
+                            onChange={(event) => updateExamRowNumber(row.id, "questionsAvailable", event.target.value)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Answered
+                          <input
+                            type="number"
+                            min={0}
+                            value={rowQuestionsToBeAnswered}
+                            disabled={row.useCurrentDocument === true}
+                            onChange={(event) => updateExamRowNumber(row.id, "questionsToBeAnswered", event.target.value)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Minutes
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.workingTimeMinutes}
+                            onChange={(event) => updateExamRowNumber(row.id, "workingTimeMinutes", event.target.value)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Marks
+                          <input
+                            type="number"
+                            min={0}
+                            value={rowMarks}
+                            disabled={row.useCurrentDocument === true}
+                            onChange={(event) => updateExamRowNumber(row.id, "marksAvailable", event.target.value)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Percentage
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.percentage}
+                            onChange={(event) => updateExamRowNumber(row.id, "percentage", event.target.value)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use the Exam section selector to choose which row represents the current paper. Rows marked auto use the current document
+                question count and total marks in the preview and print output. Percentage total:{" "}
+                {examStructurePercentageTotal(exam.structureRows)}.
+              </p>
+            </div>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            title={<InlineSummaryTitle label="Exam instructions" summary={exam.instructionsTitle} />}
+            defaultOpen={false}
+            className="bg-muted/20"
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Instructions heading
+                <input
+                  value={exam.instructionsTitle}
+                  onChange={(event) => updateExam({ instructionsTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Numbered instructions
+                <Textarea
+                  value={exam.instructionsBody}
+                  onChange={(event) => updateExam({ instructionsBody: event.target.value })}
+                  className="min-h-52 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Cut-off notice
+                <input
+                  value={exam.cutOffNotice}
+                  onChange={(event) => updateExam({ cutOffNotice: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Continued footer text
+                <input
+                  value={exam.footerText}
+                  onChange={(event) => updateExam({ footerText: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Last question footer text
+                <input
+                  value={exam.endOfQuestionsFooterText}
+                  onChange={(event) => updateExam({ endOfQuestionsFooterText: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Supplementary page title
+                <input
+                  value={exam.supplementaryPageTitle}
+                  onChange={(event) => updateExam({ supplementaryPageTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Supplementary question label
+                <input
+                  value={exam.supplementaryQuestionNumberLabel}
+                  onChange={(event) => updateExam({ supplementaryQuestionNumberLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Minimum supplementary pages
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={exam.supplementaryPageCount}
+                  onChange={(event) => updateExam({ supplementaryPageCount: nonNegativeNumberOrDefault(Number(event.target.value), 0) })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </div>
+          </CollapsiblePanel>
+        </>
+      ) : null}
+
+      {titlePageTemplate === "standard" ? (
+        <>
+          <CollapsiblePanel
+            title={
+              <InlineSummaryTitle
+                label="Supervisor declaration"
+                summary={frontMatter.showDeclaration ? frontMatter.declarationTitle : "Hidden"}
+              />
+            }
+            defaultOpen={false}
+            className="bg-muted/20"
+            actions={
+              <label className="flex items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  checked={frontMatter.showDeclaration}
+                  onChange={(event) => onChange({ showDeclaration: event.target.checked })}
+                />
+                Show
+              </label>
+            }
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Heading
+                <input
+                  value={frontMatter.declarationTitle}
+                  onChange={(event) => onChange({ declarationTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                Declaration text
+                <Textarea
+                  value={frontMatter.declarationBody}
+                  onChange={(event) => onChange({ declarationBody: event.target.value })}
+                  className="min-h-28 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Signature label
+                <input
+                  value={frontMatter.signatureLabel}
+                  onChange={(event) => onChange({ signatureLabel: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Signature role
+                <input
+                  value={frontMatter.signatureRole}
+                  onChange={(event) => onChange({ signatureRole: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </div>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            title={
+              <InlineSummaryTitle label="Instructions" summary={frontMatter.showInstructions ? frontMatter.instructionsTitle : "Hidden"} />
+            }
+            defaultOpen={false}
+            className="bg-muted/20"
+            actions={
+              <label className="flex items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  checked={frontMatter.showInstructions}
+                  onChange={(event) => onChange({ showInstructions: event.target.checked })}
+                />
+                Show
+              </label>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Heading
+                <input
+                  value={frontMatter.instructionsTitle}
+                  onChange={(event) => onChange({ instructionsTitle: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Instructions text
+                <Textarea
+                  value={frontMatter.instructionsBody}
+                  onChange={(event) => onChange({ instructionsBody: event.target.value })}
+                  className="min-h-36 text-sm"
+                />
+              </label>
+            </div>
+          </CollapsiblePanel>
+        </>
+      ) : null}
     </div>
+  );
+}
+
+function TestFormatEditor({
+  formattingConfig,
+  openSignal,
+  onFormattingChange,
+  onPageChange,
+  onReset,
+}: {
+  formattingConfig: FormattingConfig;
+  openSignal?: number;
+  onFormattingChange: (patch: Partial<FormattingConfig>) => void;
+  onPageChange: (patch: Partial<NonNullable<FormattingConfig["page"]>>) => void;
+  onReset: () => void;
+}) {
+  const normalizedFormatting = normalizeFormattingConfig(formattingConfig);
+  const page = normalizePageFormattingConfig(normalizedFormatting.page);
+  const selectedPagePresetId = pagePresetId(normalizedFormatting);
+  const formatPresetOptions = TEST_FORMAT_PRESETS.some((preset) => preset.id === normalizedFormatting.id)
+    ? TEST_FORMAT_PRESETS
+    : [...TEST_FORMAT_PRESETS, { id: normalizedFormatting.id ?? "custom", label: "Custom current style" }];
+  const pagePresetOptions =
+    selectedPagePresetId === "custom" ? [...PAGE_PRESETS, { id: "custom", label: "Custom current size", page }] : PAGE_PRESETS;
+  const summary = `${formattingPresetLabel(normalizedFormatting)} · ${page.size ?? "Page"} ${page.orientation ?? ""} · ${
+    normalizedFormatting.showMarks ? "marks shown" : "marks hidden"
+  }`;
+  const setPagePreset = (presetId: string) => {
+    const preset = PAGE_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    onPageChange(preset.page);
+  };
+
+  return (
+    <CollapsiblePanel
+      title={<InlineSummaryTitle label="Test format" summary={summary} />}
+      defaultOpen={false}
+      className="bg-muted/20"
+      openSignal={openSignal}
+      actions={
+        <Button type="button" variant="outline" size="sm" onClick={onReset}>
+          Reset
+        </Button>
+      }
+    >
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+          Test style
+          <select
+            value={normalizedFormatting.id ?? DEFAULT_FORMATTING_CONFIG.id}
+            onChange={(event) => {
+              const preset = TEST_FORMAT_PRESETS.find((item) => item.id === event.target.value);
+              if (preset) onFormattingChange({ id: preset.id });
+            }}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          >
+            {formatPresetOptions.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex h-9 items-center gap-2 text-xs font-medium md:col-span-2">
+          <input
+            type="checkbox"
+            checked={normalizedFormatting.showMarks ?? true}
+            onChange={(event) => onFormattingChange({ showMarks: event.target.checked })}
+          />
+          Show mark labels on questions, parts, and subparts
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Page
+          <select
+            value={selectedPagePresetId}
+            onChange={(event) => setPagePreset(event.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          >
+            {pagePresetOptions.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex h-9 items-end gap-2 text-xs font-medium md:mt-6">
+          <input
+            type="checkbox"
+            checked={page.showPageBreaks ?? true}
+            onChange={(event) => onPageChange({ showPageBreaks: event.target.checked })}
+          />
+          Show page break labels in preview
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Page width
+          <input
+            type="number"
+            min={1}
+            value={formatSettingNumber(page.widthPx, DEFAULT_PAGE_FORMAT.widthPx)}
+            onChange={(event) => onPageChange({ widthPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.widthPx) })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Page height
+          <input
+            type="number"
+            min={1}
+            value={formatSettingNumber(page.heightPx, DEFAULT_PAGE_FORMAT.heightPx)}
+            onChange={(event) => onPageChange({ heightPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.heightPx) })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Side margin
+          <input
+            type="number"
+            min={0}
+            value={formatSettingNumber(page.paddingXPx, DEFAULT_PAGE_FORMAT.paddingXPx)}
+            onChange={(event) => onPageChange({ paddingXPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.paddingXPx) })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-medium">
+          Top/bottom margin
+          <input
+            type="number"
+            min={0}
+            value={formatSettingNumber(page.paddingYPx, DEFAULT_PAGE_FORMAT.paddingYPx)}
+            onChange={(event) => onPageChange({ paddingYPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.paddingYPx) })}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+      </div>
+    </CollapsiblePanel>
   );
 }
 
@@ -4822,16 +10201,42 @@ function choiceListSummary(block: Extract<EditorContentBlock, { kind: "choices" 
 
 function tableBlockSummary(block: Extract<EditorContentBlock, { kind: "table" }>) {
   const table = normalizeTableBlock(block);
-  const columnLabel = `${table.headers.length} column${table.headers.length === 1 ? "" : "s"}`;
-  const rowLabel = `${table.rows.length} row${table.rows.length === 1 ? "" : "s"}`;
+  const rows = plainTableRows(table);
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+  const columnLabel = `${columnCount} column${columnCount === 1 ? "" : "s"}`;
+  const rowLabel = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
   return `${rowLabel}, ${columnLabel}`;
 }
 
-function diagramBlockSummary(block: Extract<EditorContentBlock, { kind: "diagram" }>) {
-  const config = withGraphDefaults(block.graphConfig);
-  if (config.type === "image") return imageDiagramData(config).src ? imageDiagramName(config) : "Image";
+function diagramTypeLabel(type?: string | null) {
+  const normalizedType = normalizeDiagramType(type);
+  return DIAGRAM_TYPES.find((diagramType) => diagramType.value === normalizedType)?.label ?? "Diagram";
+}
+
+function diagramConfigSummary(graphConfig: GraphConfig) {
+  const config = withGraphDefaults(graphConfig);
+  if (config.type === "image") return imageDiagramData(config).src ? imageDiagramName(config) : "No image selected";
   if (config.type === "statsChart") return statsChartSummary(config);
-  return DIAGRAM_TYPES.find((diagramType) => diagramType.value === config.type)?.label ?? "Diagram";
+  if (config.type === "graph2d") {
+    const visibleFunctions = (config.functions ?? []).filter((graphFunction) => graphFunction.show !== false).length;
+    const visibleFeatures = (config.features ?? []).filter((feature) => feature.show !== false).length;
+    if (!visibleFunctions && !visibleFeatures) return "Blank coordinate grid";
+    const functionLabel = `${visibleFunctions} function${visibleFunctions === 1 ? "" : "s"}`;
+    return visibleFeatures ? `${functionLabel}, ${visibleFeatures} feature${visibleFeatures === 1 ? "" : "s"}` : functionLabel;
+  }
+  if (config.type === "vector2d") {
+    const vectorCount = normalizedVector2DEntries(config).length;
+    return `${vectorCount} coordinate vector${vectorCount === 1 ? "" : "s"}`;
+  }
+  if (config.type === "graph3d") return "3D axes and saved camera view";
+  if (config.type === "vectorRelationship") return "Schematic network";
+  if (config.type === "setDiagram") return "Two-set Venn";
+  if (config.type === "geometricConstruction") return "Penrose construction";
+  return diagramTypeLabel(config.type);
+}
+
+function diagramBlockSummary(block: Extract<EditorContentBlock, { kind: "diagram" }>) {
+  return diagramConfigSummary(block.graphConfig);
 }
 
 function tocBlockLabel(block: EditorContentBlock, blockIndex: number) {
@@ -4864,7 +10269,7 @@ function tocBlockKind(block: EditorContentBlock): TocItemKind {
   return "text";
 }
 
-function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlock[]) {
+function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlock[], showSolutions: boolean) {
   const items: DocumentTocItem[] = [
     {
       id: SCROLL_ANCHOR_FRONT_MATTER,
@@ -4882,7 +10287,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
     items.push({
       id: questionAnchor,
       label: `Question ${questionDisplayNumber(frontMatter, questionIndex)}`,
-      summary: firstTextSource(question.contentBlocks) || markLabel(questionMarks(question)),
+      summary: firstTextSource(question.contentBlocks, showSolutions) || markLabel(questionMarks(question)),
       kind: "question",
       depth: 0,
       editorAnchor: questionAnchor,
@@ -4891,6 +10296,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
 
     orderedQuestionItems(question).forEach((item, itemIndex) => {
       if (item.kind === "block") {
+        if (!isContentBlockVisible(item.block, showSolutions)) return;
         const blockAnchor = questionBlockScrollAnchor(question.id, item.block.id);
         items.push({
           id: blockAnchor,
@@ -4913,7 +10319,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
       items.push({
         id: partAnchor,
         label: `Part (${partLabel})`,
-        summary: partPanelSummary(item.part.contentBlocks) || markLabel(partMarks(item.part)),
+        summary: partPanelSummary(item.part.contentBlocks, showSolutions) || markLabel(partMarks(item.part)),
         kind: "part",
         depth: 1,
         editorAnchor: partAnchor,
@@ -4922,6 +10328,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
 
       orderedPartItems(item.part).forEach((partItem, partItemIndex) => {
         if (partItem.kind === "block") {
+          if (!isContentBlockVisible(partItem.block, showSolutions)) return;
           const blockAnchor = partBlockScrollAnchor(question.id, item.part.id, partItem.block.id);
           items.push({
             id: blockAnchor,
@@ -4944,7 +10351,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
         items.push({
           id: subpartAnchor,
           label: `Subpart (${subpartLabel})`,
-          summary: partPanelSummary(partItem.subpart.contentBlocks) || markLabel(partItem.subpart.marks),
+          summary: partPanelSummary(partItem.subpart.contentBlocks, showSolutions) || markLabel(partItem.subpart.marks),
           kind: "subpart",
           depth: 2,
           editorAnchor: subpartAnchor,
@@ -4952,7 +10359,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
         });
 
         partItem.subpart.contentBlocks
-          .filter((block) => block.kind !== "pageBreak")
+          .filter((block) => block.kind !== "pageBreak" && isContentBlockVisible(block, showSolutions))
           .forEach((block, blockIndex) => {
             const blockAnchor = subpartBlockScrollAnchor(question.id, item.part.id, partItem.subpart.id, block.id);
             items.push({
@@ -4984,10 +10391,6 @@ function TocItemIcon({ kind }: { kind: TocItemKind }) {
   return <Type className="size-4" aria-hidden="true" />;
 }
 
-function questionIdSet(questions: QuestionBlock[]) {
-  return new Set(questions.map((question) => question.id));
-}
-
 function questionHasPageBreak(question: QuestionBlock) {
   return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
 }
@@ -5007,12 +10410,6 @@ function existingOrFirstQuestionId(questions: QuestionBlock[], preferredQuestion
 function firstQuestionAnchor(questions: QuestionBlock[]) {
   const questionId = firstQuestionId(questions);
   return questionId ? questionScrollAnchor(questionId) : SCROLL_ANCHOR_FRONT_MATTER;
-}
-
-function collapsedQuestionIdSet(questions: QuestionBlock[], expandedQuestionId = firstQuestionId(questions)) {
-  const ids = questionIdSet(questions);
-  if (expandedQuestionId) ids.delete(expandedQuestionId);
-  return ids;
 }
 
 function isTocBranchItem(item: DocumentTocItem, items: DocumentTocItem[]) {
@@ -5315,8 +10712,8 @@ function DocumentNavigatorRail({
                 type="button"
                 draggable
                 data-drag-preview
-                title={`${item.label}. Click selects it in the editor. Alt+Up/Alt+Down moves it. Delete removes it.`}
-                aria-label={`${item.label}. Click selects it in the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`}
+                title={`${item.label}. Click selects it in the mini TOC. Alt+Up/Alt+Down moves it. Delete removes it.`}
+                aria-label={`${item.label}. Click selects it in the mini TOC. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`}
                 aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Delete Backspace"
                 aria-current={active ? "location" : undefined}
                 onClick={() => onSelectPageBreak(item)}
@@ -5348,6 +10745,7 @@ function DocumentNavigatorRail({
 
           const active = item.id === activeRailItemId;
           const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+          const togglesEditor = item.kind === "title" || Boolean(questionId);
           const draggable = Boolean(questionId);
           const dragging = draggedQuestionId === questionId;
           const dropPlacement =
@@ -5364,18 +10762,18 @@ function DocumentNavigatorRail({
               data-drag-preview={draggable ? true : undefined}
               title={
                 draggable
-                  ? `${item.label}. Click jumps the display. Double-click opens or closes the editor. Alt+Up/Alt+Down moves it. Delete removes it.`
-                  : item.label
+                  ? `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor. Alt+Up/Alt+Down moves it. Delete removes it.`
+                  : `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor.`
               }
               aria-label={
                 draggable
-                  ? `${item.label}. Click jumps the display. Double-click opens or closes the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`
-                  : `Jump to ${item.label}`
+                  ? `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`
+                  : `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor.`
               }
               aria-current={active ? "location" : undefined}
               aria-keyshortcuts={draggable ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
-              onClick={() => (questionId ? onPreviewJump(item) : onJump(item))}
-              onDoubleClick={questionId ? () => onToggleEditorAtItem(item) : undefined}
+              onClick={() => (item.kind === "title" || questionId ? onPreviewJump(item) : onJump(item))}
+              onDoubleClick={togglesEditor ? () => onToggleEditorAtItem(item) : undefined}
               onKeyDown={
                 questionId
                   ? (event) => {
@@ -5474,10 +10872,6 @@ function DocumentNavigatorRail({
   );
 }
 
-function tableColumnLabel(index: number) {
-  return alphaLabel(index).toUpperCase();
-}
-
 function TextBlockEditor({
   label,
   text,
@@ -5542,7 +10936,7 @@ function ChoiceListBlockEditor({
       active={active}
       openSignal={openSignal}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_160px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
         <label className="flex flex-col gap-2 text-xs font-medium">
           Labels
           <select
@@ -5596,6 +10990,31 @@ interface TableBlockEditorProps {
   onRemove: () => void;
 }
 
+const MIN_TABLE_ROWS = 1;
+const MAX_TABLE_ROWS = 24;
+const MIN_TABLE_COLUMNS = 1;
+const MAX_TABLE_COLUMNS = 12;
+
+function clampedTableDimension(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function tableEditorContentLength(value: string) {
+  const readableSource = value
+    .replace(/\\[a-zA-Z]+/g, "mm")
+    .replace(/[{}_$^]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(readableSource).length;
+}
+
+function tableEditorColumnWidthCh(table: ReturnType<typeof normalizeTableBlock>, columnIndex: number) {
+  const values = plainTableRows(table).map((row) => row[columnIndex] ?? "");
+  const longestValue = Math.max(1, ...values.map(tableEditorContentLength));
+  return Math.min(42, Math.max(6, longestValue + 3));
+}
+
 function TableBlockEditor({
   label,
   block,
@@ -5607,47 +11026,28 @@ function TableBlockEditor({
   onRemove,
 }: TableBlockEditorProps) {
   const table = normalizeTableBlock(block);
-  const tableScrollRef = useRef<HTMLDivElement | null>(null);
-  const columnCount = table.headers.length;
-  const tableGridMinWidth = 40 + columnCount * 136 + 56;
-  const gridStyle = {
-    gridTemplateColumns: `2.5rem repeat(${columnCount}, minmax(136px, 1fr)) 3.5rem`,
-    width: `max(100%, ${tableGridMinWidth}px)`,
-  };
-  const gridControlButtonClass = "size-7 border-input bg-background shadow-sm hover:bg-accent";
+  const tableRows = plainTableRows(table);
+  const columnCount = Math.max(1, ...tableRows.map((row) => row.length));
+  const columnWidths = Array.from({ length: columnCount }, (_, columnIndex) => tableEditorColumnWidthCh(table, columnIndex));
   const patchTable = (patch: Partial<Extract<EditorContentBlock, { kind: "table" }>>) => onChange({ ...patch });
-  const updateHeaders = (headers: string[]) => patchTable({ headers });
-  const updateRows = (rows: string[][]) => patchTable({ rows });
-  const updateHeader = (columnIndex: number, value: string) =>
-    updateHeaders(table.headers.map((cell, index) => (index === columnIndex ? value : cell)));
+  const updateRows = (rows: string[][]) => patchTable(plainTablePatch(rows));
   const updateCell = (rowIndex: number, columnIndex: number, value: string) =>
     updateRows(
-      table.rows.map((row, currentRowIndex) =>
+      tableRows.map((row, currentRowIndex) =>
         currentRowIndex === rowIndex ? row.map((cell, currentColumnIndex) => (currentColumnIndex === columnIndex ? value : cell)) : row,
       ),
     );
-  const addColumn = () => {
-    patchTable({
-      headers: [...table.headers, ""],
-      rows: table.rows.map((row) => [...row, ""]),
-    });
+  const resizeColumns = (nextColumnCountValue: number) => {
+    const nextColumnCount = clampedTableDimension(nextColumnCountValue, MIN_TABLE_COLUMNS, MAX_TABLE_COLUMNS);
+    updateRows(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
   };
-  const removeColumn = (columnIndex: number) => {
-    if (columnCount <= 1) return;
-    patchTable({
-      headers: table.headers.filter((_, index) => index !== columnIndex),
-      rows: table.rows.map((row) => row.filter((_, index) => index !== columnIndex)),
-    });
-  };
-  const addRow = () => updateRows([...table.rows, Array.from({ length: columnCount }, () => "")]);
-  const removeRow = (rowIndex: number) => {
-    const nextRows = table.rows.filter((_, index) => index !== rowIndex);
-    updateRows(nextRows.length ? nextRows : [Array.from({ length: columnCount }, () => "")]);
-  };
-  const removeLastColumn = () => removeColumn(columnCount - 1);
-  const removeLastRow = () => removeRow(table.rows.length - 1);
-  const scrollTable = (direction: -1 | 1) => {
-    tableScrollRef.current?.scrollBy({ left: direction * 260, behavior: "smooth" });
+  const resizeRows = (nextRowCountValue: number) => {
+    const nextRowCount = clampedTableDimension(nextRowCountValue, MIN_TABLE_ROWS, MAX_TABLE_ROWS);
+    updateRows(
+      Array.from({ length: nextRowCount }, (_, rowIndex) =>
+        paddedTableRow(tableRows[rowIndex] ?? Array.from({ length: columnCount }, () => ""), columnCount),
+      ),
+    );
   };
 
   return (
@@ -5661,7 +11061,7 @@ function TableBlockEditor({
       openSignal={openSignal}
     >
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_160px_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_96px_96px]">
           <label className="flex flex-col gap-2 text-xs font-medium">
             Position
             <select
@@ -5690,201 +11090,55 @@ function TableBlockEditor({
               ))}
             </select>
           </label>
-          <div className="flex flex-wrap items-end justify-start gap-2 md:justify-end">
-            <div className="flex flex-col gap-1 text-xs font-medium">
-              Columns
-              <div className="flex gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={addColumn}
-                  title="Add column"
-                  aria-label="Add column"
-                  className={gridControlButtonClass}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={columnCount <= 1}
-                  onClick={removeLastColumn}
-                  title="Remove last column"
-                  aria-label="Remove last column"
-                  className={gridControlButtonClass}
-                >
-                  <Minus className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 text-xs font-medium">
-              Rows
-              <div className="flex gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={addRow}
-                  title="Add row"
-                  aria-label="Add row"
-                  className={gridControlButtonClass}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={table.rows.length <= 1}
-                  onClick={removeLastRow}
-                  title="Remove last row"
-                  aria-label="Remove last row"
-                  className={gridControlButtonClass}
-                >
-                  <Minus className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-          </div>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Rows
+            <input
+              type="number"
+              min={MIN_TABLE_ROWS}
+              max={MAX_TABLE_ROWS}
+              value={tableRows.length}
+              onChange={(event) => resizeRows(event.currentTarget.valueAsNumber)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Columns
+            <input
+              type="number"
+              min={MIN_TABLE_COLUMNS}
+              max={MAX_TABLE_COLUMNS}
+              value={columnCount}
+              onChange={(event) => resizeColumns(event.currentTarget.valueAsNumber)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
         </div>
 
         <div className="rounded-md border bg-muted/20 p-2">
-          <div className="mb-2 flex justify-end gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => scrollTable(-1)}
-              title="Scroll table left"
-              aria-label="Scroll table left"
-              className={gridControlButtonClass}
-            >
-              <ChevronLeft className="size-4" aria-hidden="true" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => scrollTable(1)}
-              title="Scroll table right"
-              aria-label="Scroll table right"
-              className={gridControlButtonClass}
-            >
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-          <div ref={tableScrollRef} tabIndex={0} aria-label="Table editor cells" className="table-editor-scroll">
-            <div className="grid min-w-[560px] overflow-hidden rounded-md border border-input bg-border text-sm" style={gridStyle}>
-              <div className="bg-muted/70" />
-              {table.headers.map((_, columnIndex) => (
-                <div
-                  key={`column-label-${columnIndex}`}
-                  className="flex h-7 items-center justify-center border-l border-input bg-muted/70 text-xs font-semibold text-muted-foreground"
-                >
-                  {tableColumnLabel(columnIndex)}
-                </div>
-              ))}
-              <div className="flex items-center justify-center border-l border-input bg-muted/70">
-                <span className="sr-only">Table controls</span>
-              </div>
-
-              {table.showHeader ? (
-                <>
-                  <div className="flex h-11 items-center justify-center border-t border-input bg-muted/70 text-xs font-semibold text-muted-foreground">
-                    1
-                  </div>
-                  {table.headers.map((cell, columnIndex) => (
-                    <input
-                      key={`header-${columnIndex}`}
-                      aria-label={`Table header ${columnIndex + 1}`}
-                      value={cell}
-                      onChange={(event) => updateHeader(columnIndex, event.target.value)}
-                      className="h-11 min-w-0 border-l border-t border-input bg-muted/60 px-2 text-center font-mono text-sm font-normal outline-none focus:relative focus:z-10 focus:ring-2 focus:ring-ring"
-                    />
-                  ))}
-                  <div className="border-l border-t border-input bg-muted/70" />
-                </>
-              ) : null}
-
-              {table.rows.map((row, rowIndex) => (
-                <div key={`row-${rowIndex}`} className="contents">
-                  <div className="flex h-11 items-center justify-center border-t border-input bg-muted/70 text-xs font-semibold text-muted-foreground">
-                    {rowIndex + (table.showHeader ? 2 : 1)}
-                  </div>
-                  {row.map((cell, columnIndex) => (
-                    <input
-                      key={`cell-${rowIndex}-${columnIndex}`}
-                      aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
-                      value={cell}
-                      onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                      className="h-11 min-w-0 border-l border-t border-input bg-background px-2 text-center font-mono text-sm font-normal outline-none focus:relative focus:z-10 focus:ring-2 focus:ring-ring"
-                    />
-                  ))}
-                  <div className="flex h-11 items-center justify-center border-l border-t border-input bg-muted/50">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      disabled={table.rows.length <= 1}
-                      onClick={() => removeRow(rowIndex)}
-                      title={`Remove row ${rowIndex + 1}`}
-                      aria-label={`Remove row ${rowIndex + 1}`}
-                      className={gridControlButtonClass}
-                    >
-                      <Minus className="size-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-
-              <div className="flex h-10 items-center justify-center border-t border-input bg-muted/50">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={addRow}
-                  title="Add row"
-                  aria-label="Add row"
-                  className={gridControlButtonClass}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
-              {table.headers.map((_, columnIndex) => (
-                <div
-                  key={`column-control-${columnIndex}`}
-                  className="flex h-10 items-center justify-center border-l border-t border-input bg-muted/50"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    disabled={columnCount <= 1}
-                    onClick={() => removeColumn(columnIndex)}
-                    title={`Remove column ${columnIndex + 1}`}
-                    aria-label={`Remove column ${columnIndex + 1}`}
-                    className={gridControlButtonClass}
-                  >
-                    <Minus className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex h-10 items-center justify-center border-l border-t border-input bg-muted/50">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={addColumn}
-                  title="Add column"
-                  aria-label="Add column"
-                  className={gridControlButtonClass}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
+          <div tabIndex={0} aria-label="Table editor cells" className="table-editor-scroll">
+            <table className="table-editor-table">
+              <colgroup>
+                {columnWidths.map((width, columnIndex) => (
+                  <col key={`column-width-${columnIndex}`} style={{ width: `${width}ch` }} />
+                ))}
+              </colgroup>
+              <tbody>
+                {tableRows.map((row, rowIndex) => (
+                  <tr key={`row-${rowIndex}`}>
+                    {row.map((cell, columnIndex) => (
+                      <td key={`cell-${rowIndex}-${columnIndex}`}>
+                        <input
+                          aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
+                          value={cell}
+                          onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
+                          className="table-editor-input"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -5925,17 +11179,19 @@ function SpaceBlockEditor({
       active={active}
       openSignal={openSignal}
     >
-      <label className="flex max-w-40 flex-col gap-2 text-xs font-medium">
-        Lines
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={normalizedLines}
-          onChange={(event) => onChange(spaceLines(event.target.value))}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-        />
-      </label>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,11rem)_minmax(0,10rem)]">
+        <label className="flex max-w-40 flex-col gap-2 text-xs font-medium">
+          Lines
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={normalizedLines}
+            onChange={(event) => onChange(spaceLines(event.target.value))}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          />
+        </label>
+      </div>
     </CollapsiblePanel>
   );
 }
@@ -6049,14 +11305,13 @@ function DiagramBlockEditor({
   label,
   graphConfig,
   alignment = "center",
-  textSide = "none",
+  showSolutions = true,
   dragHandle,
   muted = false,
   active = false,
   openSignal,
   onChange,
   onAlignmentChange,
-  onTextSideChange,
   onRemove,
 }: DiagramBlockEditorProps) {
   const config = withGraphDefaults(graphConfig);
@@ -6071,6 +11326,9 @@ function DiagramBlockEditor({
   };
   const functions = config.functions ?? [];
   const features = config.features ?? [];
+  const visibleFeatureEntries = features
+    .map((feature, featureIndex) => ({ feature, featureIndex }))
+    .filter(({ feature }) => showSolutions || !isSolutionOnlyGraphFeature(feature));
   const functionOptions = functions.map((graphFunction, index) => ({
     value: index,
     label: `${index + 1}: ${graphFunction.label || graphFunctionLabel(index)}`,
@@ -6173,6 +11431,7 @@ function DiagramBlockEditor({
               ? "solid"
               : current.strokeStyle,
       show: current.show ?? true,
+      solutionOnly: current.solutionOnly === true,
       label: current.label || defaultFeature.label,
       kind,
     });
@@ -6183,34 +11442,29 @@ function DiagramBlockEditor({
         aria-label={`${label} type`}
         value={config.type}
         onChange={(event) => patchConfig(diagramTypePatch(event.target.value, config))}
-        className="h-9 w-52 rounded-md border border-input bg-background px-2 text-sm font-normal"
+        className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
       >
-        {DIAGRAM_TYPES.map((type) => (
-          <option key={type.value} value={type.value}>
-            {type.label}
-          </option>
+        {DIAGRAM_TYPE_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.values.map((value) => {
+              const type = DIAGRAM_TYPES.find((diagramType) => diagramType.value === value);
+              if (!type) return null;
+              return (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              );
+            })}
+          </optgroup>
         ))}
       </select>
       <select
         aria-label={`${label} position`}
         value={alignment}
         onChange={(event) => onAlignmentChange(event.target.value as DiagramAlignment)}
-        className="h-9 w-32 rounded-md border border-input bg-background px-2 text-sm font-normal"
+        className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
       >
         {DIAGRAM_ALIGNMENTS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${label} beside text`}
-        value={textSide}
-        onChange={(event) => onTextSideChange(event.target.value as DiagramTextSide)}
-        className="h-9 w-32 rounded-md border border-input bg-background px-2 text-sm font-normal"
-        title="Place the next text block beside this diagram in the preview"
-      >
-        {DIAGRAM_TEXT_SIDES.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -6239,7 +11493,7 @@ function DiagramBlockEditor({
   if (isPenroseDiagramType(config.type)) {
     return (
       <CollapsiblePanel
-        title={label}
+        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
         leading={dragHandle}
         actions={diagramActions}
         className={cn("bg-background", muted && "bg-muted/30")}
@@ -6247,7 +11501,45 @@ function DiagramBlockEditor({
         active={active}
         openSignal={openSignal}
       >
-        <GeometricConstructionEditor config={config} onChange={patchConfig} />
+        {config.type === "vectorRelationship" ? (
+          <VectorRelationshipEditor config={config} onChange={patchConfig} />
+        ) : config.type === "setDiagram" ? (
+          <SetDiagramEditor config={config} onChange={patchConfig} />
+        ) : (
+          <GeometricConstructionEditor config={config} onChange={patchConfig} />
+        )}
+      </CollapsiblePanel>
+    );
+  }
+
+  if (config.type === "vector2d") {
+    return (
+      <CollapsiblePanel
+        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
+        leading={dragHandle}
+        actions={diagramActions}
+        className={cn("bg-background", muted && "bg-muted/30")}
+        bodyClassName="graph-editor-controls p-3"
+        active={active}
+        openSignal={openSignal}
+      >
+        <Vector2DGraphEditor config={config} onChange={patchConfig} />
+      </CollapsiblePanel>
+    );
+  }
+
+  if (config.type === "graph3d") {
+    return (
+      <CollapsiblePanel
+        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
+        leading={dragHandle}
+        actions={diagramActions}
+        className={cn("bg-background", muted && "bg-muted/30")}
+        bodyClassName="graph-editor-controls p-3"
+        active={active}
+        openSignal={openSignal}
+      >
+        <Graph3DGraphEditor config={config} onChange={patchConfig} />
       </CollapsiblePanel>
     );
   }
@@ -6270,7 +11562,7 @@ function DiagramBlockEditor({
 
   return (
     <CollapsiblePanel
-      title={label}
+      title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
       leading={dragHandle}
       actions={diagramActions}
       className={cn("bg-background", muted && "bg-muted/30")}
@@ -6821,9 +12113,9 @@ function DiagramBlockEditor({
         </Button>
       </div>
 
-      {features.length ? (
+      {visibleFeatureEntries.length ? (
         <div className="mt-3 flex flex-col gap-2">
-          {features.map((feature, featureIndex) => {
+          {visibleFeatureEntries.map(({ feature, featureIndex }) => {
             const featureTypeLabel = GRAPH_FEATURE_TYPES.find((type) => type.value === feature.kind)?.label ?? "Feature";
             const featureLabelModes =
               feature.kind === "tangent"
@@ -6883,6 +12175,14 @@ function DiagramBlockEditor({
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-medium md:pb-2">
+                    <input
+                      type="checkbox"
+                      checked={feature.solutionOnly === true}
+                      onChange={(event) => updateFeature(featureIndex, { solutionOnly: event.target.checked })}
+                    />
+                    Solution only
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Colour
@@ -7239,14 +12539,15 @@ export default function App() {
   const initialEditorDraft = loadInitialEditorDraft();
   const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [createQuestion()], [initialEditorDraft]);
   const [frontMatter, setFrontMatter] = useState<FrontMatterConfig>(() => initialEditorDraft?.frontMatter ?? DEFAULT_FRONT_MATTER);
+  const [formattingConfig, setFormattingConfig] = useState<FormattingConfig>(
+    () => initialEditorDraft?.formattingConfig ?? DEFAULT_FORMATTING_CONFIG,
+  );
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
-  const [savedTests, setSavedTests] = useState<SavedTest[]>(loadSavedTests);
-  const [selectedSavedTestId, setSelectedSavedTestId] = useState("");
+  const [legacySavedTests, setLegacySavedTests] = useState<SavedTest[]>(loadLegacySavedTests);
   const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
-  const [diskStorageStatus, setDiskStorageStatus] = useState<DiskStorageStatus>("loading");
-  const [diskStorageMessage, setDiskStorageMessage] = useState("Loading disk saves");
-  const [diskStorageHydrated, setDiskStorageHydrated] = useState(false);
-  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState<Set<string>>(() => collapsedQuestionIdSet(initialQuestions));
+  const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
+  const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
+  const [storageHydrated, setStorageHydrated] = useState(false);
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
   const [dragOverQuestion, setDragOverQuestion] = useState<QuestionDropPreview | null>(null);
   const [draggedPageBreakQuestionId, setDraggedPageBreakQuestionId] = useState<string | null>(null);
@@ -7256,59 +12557,297 @@ export default function App() {
   const [paneMode, setPaneMode] = useState<PaneMode>("split");
   const [tocOpen, setTocOpen] = useState(false);
   const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
+  const [activeRailItemId, setActiveRailItemId] = useState(() => firstQuestionAnchor(initialQuestions));
   const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
+  const [showSolutions, setShowSolutions] = useState(false);
+  const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
+  const [fileManagerOpen, setFileManagerOpen] = useState(false);
+  const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
+  const [actionProposalOpen, setActionProposalOpen] = useState(false);
+  const [actionProposalText, setActionProposalText] = useState("");
+  const [actionProposalMessage, setActionProposalMessage] = useState("");
+  const [actionProposalResult, setActionProposalResult] = useState<MauthDocumentActionResult<
+    QuestionBlock,
+    FrontMatterConfig,
+    FormattingConfig
+  > | null>(null);
+  const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
+  const [assistantChatInput, setAssistantChatInput] = useState("");
+  const [assistantChatMessages, setAssistantChatMessages] = useState<MauthAssistantChatMessage[]>([]);
+  const [assistantChatRunning, setAssistantChatRunning] = useState(false);
+  const [assistantActivityLabel, setAssistantActivityLabel] = useState("Thinking");
+  const [assistantActivityStartedAt, setAssistantActivityStartedAt] = useState<number | null>(null);
+  const [assistantProviderConfigured, setAssistantProviderConfigured] = useState<boolean | null>(null);
+  const [assistantProviderStatusMessage, setAssistantProviderStatusMessage] = useState("Checking assistant provider");
+  const [assistantPreviousResponseId, setAssistantPreviousResponseId] = useState<string | null>(null);
+  const [assistantPendingToolContinuation, setAssistantPendingToolContinuation] = useState<AssistantPendingToolContinuation | null>(null);
+  const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
+  const [projectFiles, setProjectFiles] = useState<ProjectFileSummary[]>([]);
+  const [projectFilesStatus, setProjectFilesStatus] = useState<ProjectFilesStatus>("idle");
+  const [projectFilesMessage, setProjectFilesMessage] = useState("");
+  const [activeProjectFilePath, setActiveProjectFilePath] = useState<string | null>(
+    () => initialEditorDraft?.activeProjectFilePath ?? null,
+  );
+  const [activeProjectFileRevision, setActiveProjectFileRevision] = useState<number | null>(
+    () => initialEditorDraft?.activeProjectFileRevision ?? null,
+  );
+  const [projectSaveConflict, setProjectSaveConflict] = useState<ProjectSaveConflict | null>(null);
+  const [lastProjectSaveFingerprint, setLastProjectSaveFingerprint] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
-  const previewPanzoomRef = useRef<HTMLDivElement>(null);
   const frontMatterRef = useRef(frontMatter);
+  const formattingConfigRef = useRef(formattingConfig);
   const questionsRef = useRef(questions);
   const logosRef = useRef(logos);
-  const savedTestsRef = useRef(savedTests);
+  const legacySavedTestsRef = useRef(legacySavedTests);
+  const activeProjectFilePathRef = useRef(activeProjectFilePath);
+  const activeProjectFileRevisionRef = useRef(activeProjectFileRevision);
   const undoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const redoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const autosaveSequenceRef = useRef(0);
   const pendingEditorJumpAnchorRef = useRef<string | null>(null);
   const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
+  const previewEditClickStartRef = useRef<PreviewEditClickStart | null>(null);
+  const deleteActiveEditorSelectionRef = useRef<() => boolean>(() => false);
   const previewZoomRef = useRef(1);
   const previewGestureStartZoomRef = useRef(1);
-  const previewPanzoomInstanceRef = useRef<PanzoomObject | null>(null);
+  const previewZoomStateSyncTimerRef = useRef<number | null>(null);
+  const emptyFileRefreshAttemptedRef = useRef(false);
+
+  const printDocument = useCallback(() => {
+    flushSync(() => setPrintPreviewMounted(true));
+    window.requestAnimationFrame(() => window.print());
+  }, []);
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      flushSync(() => setPrintPreviewMounted(true));
+    };
+    const handleAfterPrint = () => setPrintPreviewMounted(false);
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, []);
+
+  const refreshProjectFiles = useCallback(async () => {
+    setProjectFilesStatus("loading");
+    setProjectFilesMessage("Loading files");
+    try {
+      let project = await getDefaultProject();
+      let filesResponse = await listProjectFiles(project.id);
+      const migrationDone = typeof project.metadata?.[LEGACY_SAVED_TESTS_MIGRATED_AT_KEY] === "string";
+
+      if (!migrationDone) {
+        let projectFilesForImport = filesResponse.files;
+        let importedCount = 0;
+        for (const savedTest of legacySavedTestsRef.current) {
+          const alreadyImported = projectFilesForImport.some(
+            (file) => file.kind === "file" && file.metadata?.legacySavedTestId === savedTest.id,
+          );
+          if (alreadyImported) continue;
+
+          const testPath = uniqueTestPath(projectFilesForImport, "", savedTest.name, "file");
+          const projectPath = projectPathForTestPath(testPath);
+          const savedFile = await saveProjectFile(project.id, projectPath, {
+            content: JSON.stringify(savedTest, null, 2),
+            kind: "file",
+            fileType: "test",
+            metadata: {
+              format: "saved-test-json",
+              source: "legacy-saved-tests-migration",
+              legacySavedTestId: savedTest.id,
+            },
+          });
+          projectFilesForImport = [...projectFilesForImport, savedFile];
+          importedCount += 1;
+        }
+
+        project = await updateProject(project.id, {
+          metadata: {
+            ...project.metadata,
+            [LEGACY_SAVED_TESTS_MIGRATED_AT_KEY]: new Date().toISOString(),
+            [LEGACY_SAVED_TESTS_IMPORTED_KEY]: importedCount,
+          },
+        });
+        filesResponse = await listProjectFiles(project.id);
+        setProjectFilesMessage(importedCount ? `Imported ${importedCount} existing tests` : "");
+      } else {
+        setProjectFilesMessage("");
+      }
+
+      setActiveProject(project);
+      setProjectFiles(filesResponse.files);
+      setProjectFilesStatus("ready");
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Files unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!fileManagerOpen) {
+      emptyFileRefreshAttemptedRef.current = false;
+      return;
+    }
+    if (!storageHydrated) {
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage("Loading files");
+      return;
+    }
+    void refreshProjectFiles();
+  }, [storageHydrated, fileManagerOpen, refreshProjectFiles]);
+
+  useEffect(() => {
+    if (!fileManagerOpen || !storageHydrated || projectFilesStatus !== "ready") return;
+    if (visibleTestFiles(projectFiles).some(({ file }) => file.kind === "file")) return;
+    if (emptyFileRefreshAttemptedRef.current) return;
+
+    emptyFileRefreshAttemptedRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      void refreshProjectFiles();
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [storageHydrated, fileManagerOpen, projectFiles, projectFilesStatus, refreshProjectFiles]);
+
+  useEffect(() => {
+    if (!assistantPanelOpen) return;
+
+    let cancelled = false;
+    setAssistantProviderStatusMessage("Checking assistant provider");
+
+    getAssistantStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setAssistantProviderConfigured(status.configured);
+        setAssistantProviderStatusMessage(
+          status.configured
+            ? `Connected to ${status.provider} (${status.model})`
+            : `Assistant provider missing ${status.missingSetting ?? "configuration"}`,
+        );
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setAssistantProviderConfigured(false);
+        setAssistantProviderStatusMessage(error instanceof Error ? error.message : "Assistant provider is unavailable.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assistantPanelOpen]);
+
+  useEffect(() => {
+    if (paneMode !== "preview" && assistantPanelOpen) {
+      setAssistantPanelOpen(false);
+    }
+  }, [assistantPanelOpen, paneMode]);
+
+  function openFileManager() {
+    setFileManagerOpen(true);
+    if (!storageHydrated) {
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage("Loading files");
+      return;
+    }
+    void refreshProjectFiles();
+  }
+
+  async function refreshLogoLibraryFromDisk() {
+    const logosResponse = await listStoredLogos<unknown>();
+    const diskLogos = normalizeLogoAssets(logosResponse.logos);
+    setLogos((current) => {
+      const next = mergeLogoAssets(current, diskLogos);
+      logosRef.current = next;
+      persistLogoLibrary(next);
+      return next;
+    });
+  }
+
+  function upsertLogoFromDisk(logo: LogoAsset) {
+    setLogos((current) => {
+      const next = mergeLogoAssets(current, [logo]);
+      if (next !== current) {
+        logosRef.current = next;
+        persistLogoLibrary(next);
+      }
+      return next;
+    });
+  }
+
+  function writeLogoToDisk(logo: LogoAsset) {
+    if (draftAutosaveStatus === "unavailable") return;
+    saveStoredLogo<LogoAsset>(logo)
+      .then((savedLogo) => {
+        const normalizedLogo = normalizeLogoAsset(savedLogo);
+        if (normalizedLogo) upsertLogoFromDisk(normalizedLogo);
+      })
+      .catch(() => {
+        setDraftAutosaveStatus("unavailable");
+        setDraftAutosaveMessage("Logo save failed: using browser backup only");
+      });
+  }
 
   useEffect(() => {
     let cancelled = false;
 
     async function hydrateDiskStorage() {
       try {
-        const [testsResponse, autosaveResponse] = await Promise.all([listStoredTests<unknown>(), getStorageAutosave<unknown>()]);
+        const [testsResponse, autosaveResponse, logosResponse] = await Promise.all([
+          listLegacyStoredTests<unknown>(),
+          getStorageAutosave<unknown>(),
+          listStoredLogos<unknown>(),
+        ]);
         if (cancelled) return;
 
-        const diskSavedTests = normalizeSavedTests(testsResponse.tests);
-        const mergedSavedTests = mergeSavedTests(diskSavedTests, savedTests);
-        setSavedTests(mergedSavedTests);
-        persistSavedTests(mergedSavedTests);
+        const diskLegacySavedTests = normalizeSavedTests(testsResponse.tests);
+        const mergedLegacySavedTests = mergeLegacySavedTests(diskLegacySavedTests, legacySavedTests);
+        const diskLogos = normalizeLogoAssets(logosResponse.logos);
+        const localLogos = logosRef.current.length ? logosRef.current : STARTER_LOGOS;
+        const legacySavedTestLogos = mergedLegacySavedTests.map((test) => test.logo);
+        const starterLogos = shouldSeedStarterLogos() ? STARTER_LOGOS : [];
+        const mergedLogos = appendMissingLogoAssets(
+          appendMissingLogoAssets(appendMissingLogoAssets(diskLogos.length ? diskLogos : localLogos, starterLogos), localLogos),
+          legacySavedTestLogos,
+        );
+        setLegacySavedTests(mergedLegacySavedTests);
+        setLogos(mergedLogos);
+        logosRef.current = mergedLogos;
+        persistLogoLibrary(mergedLogos);
+        markStarterLogosSeeded();
+        persistLegacySavedTests(mergedLegacySavedTests);
+        Promise.allSettled(mergedLogos.map((logo) => saveStoredLogo<LogoAsset>(logo))).catch(() => undefined);
 
         const browserAutosave = loadCurrentDraft() as AutosavedEditorSnapshot | null;
         const diskAutosave = normalizeEditorSnapshot(autosaveResponse.autosave);
         const autosave = newerAutosave(browserAutosave, diskAutosave);
         if (autosave) {
-          restoreEditorSnapshot(autosave, { collapseQuestions: true });
-          const selectedId =
-            autosave.selectedSavedTestId && mergedSavedTests.some((test) => test.id === autosave.selectedSavedTestId)
-              ? autosave.selectedSavedTestId
-              : "";
-          setSelectedSavedTestId(selectedId);
+          restoreEditorSnapshot(autosave);
+          activeProjectFilePathRef.current = autosave.activeProjectFilePath ?? null;
+          activeProjectFileRevisionRef.current = autosave.activeProjectFileRevision ?? null;
+          setActiveProjectFilePath(autosave.activeProjectFilePath ?? null);
+          setActiveProjectFileRevision(autosave.activeProjectFileRevision ?? null);
+          setProjectSaveConflict(null);
+          setLastProjectSaveFingerprint(null);
         }
 
-        setDiskStorageStatus("ready");
-        setDiskStorageMessage("Saving to disk");
+        setDraftAutosaveStatus("ready");
+        setDraftAutosaveMessage("Draft autosave ready");
       } catch {
-        setDiskStorageStatus("unavailable");
-        setDiskStorageMessage("API unavailable: using browser backup only");
+        setDraftAutosaveStatus("unavailable");
+        setDraftAutosaveMessage("API unavailable: using browser backup only");
       } finally {
-        if (!cancelled) setDiskStorageHydrated(true);
+        if (!cancelled) setStorageHydrated(true);
       }
     }
 
@@ -7316,110 +12855,111 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // The initial disk hydrate intentionally merges with the browser tests captured at mount.
+    // The initial disk hydrate intentionally merges with the legacy browser saved tests captured at mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useLayoutEffect(() => {
-    if (!diskStorageHydrated) return;
+    if (!storageHydrated) return;
     if (!shouldSeedScreenshotStarter(questions)) return;
 
     const nextFrontMatter = createScreenshotStarterFrontMatter();
     const nextQuestions = createScreenshotStarterQuestions();
+    const nextFormattingConfig = cloneSerializable(DEFAULT_FORMATTING_CONFIG);
     setFrontMatter(nextFrontMatter);
     setQuestions(nextQuestions);
+    setFormattingConfig(nextFormattingConfig);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions));
+    formattingConfigRef.current = nextFormattingConfig;
     setActiveQuestionId(firstQuestionId(nextQuestions));
     setActiveTocItemId(firstQuestionAnchor(nextQuestions));
-    setSelectedSavedTestId("");
+    setActiveRailItemId(firstQuestionAnchor(nextQuestions));
+    activeProjectFilePathRef.current = null;
+    activeProjectFileRevisionRef.current = null;
+    setActiveProjectFilePath(null);
+    setActiveProjectFileRevision(null);
+    setProjectSaveConflict(null);
+    setLastProjectSaveFingerprint(null);
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
-  }, [diskStorageHydrated, questions]);
+  }, [storageHydrated, questions]);
 
   useLayoutEffect(() => {
-    if (!diskStorageHydrated) return;
-    persistCurrentDraft({ frontMatter, questions, selectedSavedTestId });
-  }, [frontMatter, questions, selectedSavedTestId, diskStorageHydrated]);
+    if (!storageHydrated) return;
+    persistCurrentDraft({
+      frontMatter,
+      questions,
+      formattingConfig,
+      activeProjectFilePath: activeProjectFilePath ?? undefined,
+      activeProjectFileRevision: activeProjectFileRevision ?? undefined,
+      logo: selectedLogoForFrontMatter(logosRef.current, frontMatter),
+    });
+  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, questions, storageHydrated]);
 
   useEffect(() => {
-    if (!diskStorageHydrated || diskStorageStatus === "unavailable") return;
+    if (!storageHydrated || draftAutosaveStatus === "unavailable") return;
 
-    const selectedSavedTest = savedTestsRef.current.find((test) => test.id === selectedSavedTestId);
     const autosaveSequence = autosaveSequenceRef.current + 1;
     autosaveSequenceRef.current = autosaveSequence;
-    setDiskStorageStatus("saving");
-    setDiskStorageMessage(selectedSavedTest ? `Autosaving "${selectedSavedTest.name}"` : "Autosaving draft to disk");
+    setDraftAutosaveStatus("saving");
+    setDraftAutosaveMessage(activeProjectFilePath ? "Autosaving file draft" : "Autosaving draft");
     const timeoutId = window.setTimeout(() => {
-      const saveSelectedTest = selectedSavedTest
-        ? saveStoredTest<unknown>(
-            createSavedTestSnapshot({
-              testId: selectedSavedTest.id,
-              name: selectedSavedTest.name,
-              frontMatter,
-              questions,
-              logo: selectedLogoFromLibrary(logosRef.current, frontMatter.logoId),
-              createdAt: selectedSavedTest.createdAt,
-            }),
-          )
-        : Promise.resolve(null);
-
-      Promise.all([saveStorageAutosave<AutosavedEditorSnapshot>({ frontMatter, questions, selectedSavedTestId }), saveSelectedTest])
-        .then(([autosaveResponse, savedTestResponse]) => {
+      saveStorageAutosave<AutosavedEditorSnapshot>({
+        frontMatter,
+        questions,
+        formattingConfig,
+        activeProjectFilePath: activeProjectFilePath ?? undefined,
+        activeProjectFileRevision: activeProjectFileRevision ?? undefined,
+        logo: selectedLogoForFrontMatter(logosRef.current, frontMatter),
+      })
+        .then((autosaveResponse) => {
           if (autosaveSequenceRef.current !== autosaveSequence) return;
-          if (savedTestResponse) {
-            const diskSavedTest = normalizeSavedTest(savedTestResponse);
-            if (diskSavedTest) {
-              setSavedTests((current) => {
-                const next = upsertSavedTestList(current, diskSavedTest);
-                persistSavedTests(next);
-                return next;
-              });
-            }
-          }
-          setDiskStorageStatus("saved");
+          setDraftAutosaveStatus("saved");
           const updatedAt = autosaveResponse.autosave.updatedAt
             ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
             : "now";
-          setDiskStorageMessage(
-            selectedSavedTest ? `Autosaved "${selectedSavedTest.name}" at ${updatedAt}` : `Autosaved draft at ${updatedAt}`,
-          );
+          setDraftAutosaveMessage(`Autosaved draft at ${updatedAt}`);
         })
         .catch(() => {
           if (autosaveSequenceRef.current !== autosaveSequence) return;
-          setDiskStorageStatus("unavailable");
-          setDiskStorageMessage("Disk autosave failed: using browser backup only");
+          setDraftAutosaveStatus("unavailable");
+          setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
         });
     }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeoutId);
-    // diskStorageStatus is used as a guard; including it would reschedule autosave status updates.
+    // draftAutosaveStatus is used as a guard; including it would reschedule autosave status updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frontMatter, questions, selectedSavedTestId, diskStorageHydrated]);
+  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, questions, storageHydrated]);
 
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
   const canUndo = historyVersion >= 0 && undoStackRef.current.length > 0;
   const canRedo = historyVersion >= 0 && redoStackRef.current.length > 0;
   const showEditor = paneMode !== "preview";
   const showPreview = paneMode !== "editor";
+  const assistantPreviewOpen = paneMode === "preview" && assistantPanelOpen;
   const darkMode = theme === "dark";
+  const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const previewFitScale = useMemo(() => {
     if (!previewViewport.width) return 1;
-    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / DEFAULT_PAGE_FORMAT.widthPx;
-    const maxBaseScale = paneMode === "preview" ? DISPLAY_ONLY_PREVIEW_SCALE : 1;
-    return clamp(Math.min(widthScale, maxBaseScale), MIN_PREVIEW_SCALE, maxBaseScale);
-  }, [paneMode, previewViewport.width]);
+    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / currentPageFormat.widthPx;
+    return clamp(Math.min(widthScale, MAX_PREVIEW_FIT_SCALE), MIN_PREVIEW_SCALE, MAX_PREVIEW_FIT_SCALE);
+  }, [currentPageFormat.widthPx, previewViewport.width]);
   const previewMaxZoom = useMemo(() => {
     if (!previewViewport.width || previewFitScale <= 0) return 1;
-    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / DEFAULT_PAGE_FORMAT.widthPx;
-    const maxTotalScale = Math.max(widthScale, previewFitScale);
+    const maxTotalScale = MAX_PREVIEW_FIT_SCALE;
     return clampPreviewZoom(maxTotalScale / previewFitScale);
   }, [previewFitScale, previewViewport.width]);
+  const previewLayoutScale = previewFitScale * previewZoomRef.current;
   const workspaceStyle = useMemo(
     () => ({
       gridTemplateColumns: paneMode === "split" ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
     }),
     [paneMode],
+  );
+  const previewPaneStyle = useMemo<CSSProperties | undefined>(
+    () => (assistantPreviewOpen ? { paddingLeft: ASSISTANT_PREVIEW_RESERVED_WIDTH_PX } : undefined),
+    [assistantPreviewOpen],
   );
   const appShellStyle = useMemo(
     () => ({
@@ -7427,7 +12967,91 @@ export default function App() {
     }),
     [tocOpen],
   );
-  const documentTocItems = useMemo(() => buildDocumentToc(frontMatter, questions), [frontMatter, questions]);
+  const documentTocItems = useMemo(() => buildDocumentToc(frontMatter, questions, showSolutions), [frontMatter, questions, showSolutions]);
+  const solutionValidation = useMemo(() => validateSolutionCompleteness(frontMatter, questions), [frontMatter, questions]);
+  const printModeLabel = showSolutions ? "Solutions" : "Student";
+  const printModeTitle = showSolutions
+    ? "Print output is currently the solutions copy. Hide solutions before printing the student copy."
+    : "Print output is currently the student copy. Show solutions before printing the solutions copy.";
+  const activePreviewAnchor = useMemo(() => {
+    if (activeTocItemId.startsWith("pb:")) return undefined;
+    const activeItem = documentTocItems.find((item) => item.id === activeTocItemId || item.editorAnchor === activeTocItemId);
+    return activeItem?.previewAnchor ?? activeTocItemId;
+  }, [activeTocItemId, documentTocItems]);
+  const currentDocumentFingerprint = useMemo(
+    () => editorDocumentFingerprint(frontMatter, questions, formattingConfig, selectedLogoForFrontMatter(logos, frontMatter)),
+    [formattingConfig, frontMatter, logos, questions],
+  );
+  const hasUnsavedProjectChanges = Boolean(activeProjectFilePath && lastProjectSaveFingerprint !== currentDocumentFingerprint);
+  const activeProjectFileSummary = activeProjectFilePath ? projectFiles.find((file) => file.path === activeProjectFilePath) : undefined;
+  const activeProjectTestPath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
+  const activeProjectPathLabel = activeProjectFilePath
+    ? activeProjectTestPath
+      ? `${TEST_FILE_ROOT_LABEL}/${activeProjectTestPath}`
+      : activeProjectFilePath
+    : "";
+  const activeProjectRevisionIssue =
+    activeProjectFilePath && projectSaveConflict?.filePath === activeProjectFilePath
+      ? projectSaveConflict
+      : activeProjectFilePath && activeProjectFileRevision === null
+        ? missingProjectRevisionConflict(activeProjectFilePath)
+        : null;
+  const activeProjectSavedAt = formatShortDateTime(activeProjectFileSummary?.updatedAt);
+  const draftBackupSummary = draftBackupStatusSummary(draftAutosaveStatus, draftAutosaveMessage);
+  const currentProjectFileName = activeProjectFilePath
+    ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? activeProjectFilePath))
+    : "Untitled test";
+  const fileOperationBusy = projectFilesStatus === "saving" || projectFilesStatus === "loading";
+  const headerFileStatusMessage = fileOperationBusy
+    ? projectFilesMessage || "Working with files"
+    : activeProjectFilePath
+      ? activeProjectRevisionIssue
+        ? "File changed outside app · reload or Save as"
+        : hasUnsavedProjectChanges
+          ? `Unsaved file changes · ${draftBackupSummary}`
+          : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
+      : `New file not saved · ${draftBackupSummary}`;
+  const headerFileStatusTitle = fileOperationBusy
+    ? [projectFilesMessage || "Working with files", activeProjectPathLabel ? `Current file: ${activeProjectPathLabel}` : ""]
+        .filter(Boolean)
+        .join("\n")
+    : activeProjectFilePath
+      ? [
+          `File: ${currentProjectFileName}`,
+          `Path: ${activeProjectPathLabel}`,
+          activeProjectRevisionIssue
+            ? [
+                `File save: ${activeProjectRevisionIssue.message}`,
+                typeof activeProjectRevisionIssue.localRevision === "number"
+                  ? `Loaded revision: ${activeProjectRevisionIssue.localRevision}`
+                  : "",
+                typeof activeProjectRevisionIssue.currentRevision === "number"
+                  ? `Disk revision: ${activeProjectRevisionIssue.currentRevision}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n")
+            : hasUnsavedProjectChanges
+              ? "File save: unsaved changes. Press Save to write the project file."
+              : `File save: saved${activeProjectSavedAt ? ` ${activeProjectSavedAt}` : ""}`,
+          `Draft backup: ${draftBackupSummary}`,
+        ].join("\n")
+      : [
+          `File: ${currentProjectFileName}`,
+          "File save: not saved yet. Press Save or Save as to create a project file.",
+          `Draft backup: ${draftBackupSummary}`,
+        ].join("\n");
+  const headerStorageStatus: HeaderSaveStatus = fileOperationBusy
+    ? "saving"
+    : activeProjectFilePath
+      ? activeProjectRevisionIssue
+        ? "conflict"
+        : hasUnsavedProjectChanges
+          ? "dirty"
+          : "saved"
+      : draftAutosaveStatus === "saved"
+        ? "draft"
+        : draftAutosaveStatus;
   const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? null;
   const editingFrontMatter = activeTocItemId === SCROLL_ANCHOR_FRONT_MATTER;
   const pageBreakQuestionIds = useMemo(() => pageBreakQuestionIdSet(questions), [questions]);
@@ -7437,36 +13061,36 @@ export default function App() {
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
+    formattingConfigRef.current = formattingConfig;
     questionsRef.current = questions;
     logosRef.current = logos;
-    savedTestsRef.current = savedTests;
-  }, [frontMatter, questions, logos, savedTests]);
+    legacySavedTestsRef.current = legacySavedTests;
+    activeProjectFilePathRef.current = activeProjectFilePath;
+    activeProjectFileRevisionRef.current = activeProjectFileRevision;
+  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, legacySavedTests, logos, questions]);
 
   useEffect(() => {
     if (!questions.length) {
       setActiveQuestionId("");
       setActiveTocItemId(SCROLL_ANCHOR_FRONT_MATTER);
+      setActiveRailItemId(SCROLL_ANCHOR_FRONT_MATTER);
       return;
     }
 
     if (activePageBreakQuestionId) {
-      const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId);
-      if (!activePageBreakQuestion || !questionHasPageBreak(activePageBreakQuestion)) {
-        const fallbackQuestion = activePageBreakQuestion ?? questions[0];
-        setActiveQuestionId(fallbackQuestion.id);
-        setActiveTocItemId(questionScrollAnchor(fallbackQuestion.id));
-        return;
-      }
-      if (!questions.some((question) => question.id === activeQuestionId)) {
-        setActiveQuestionId(activePageBreakQuestion.id);
-      }
+      const fallbackQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? questions[0];
+      const fallbackAnchor = questionScrollAnchor(fallbackQuestion.id);
+      setActiveQuestionId(fallbackQuestion.id);
+      setActiveTocItemId(fallbackAnchor);
       return;
     }
 
     const nextActiveQuestionId = existingOrFirstQuestionId(questions, activeQuestionId);
     if (nextActiveQuestionId !== activeQuestionId) {
+      const nextAnchor = questionScrollAnchor(nextActiveQuestionId);
       setActiveQuestionId(nextActiveQuestionId);
-      setActiveTocItemId(questionScrollAnchor(nextActiveQuestionId));
+      setActiveTocItemId(nextAnchor);
+      setActiveRailItemId(nextAnchor);
     }
   }, [activePageBreakQuestionId, activeQuestionId, questions]);
 
@@ -7491,44 +13115,60 @@ export default function App() {
     const observer = new ResizeObserver(updatePreviewViewport);
     observer.observe(previewPane);
     return () => observer.disconnect();
-  }, [showPreview]);
+  }, [assistantPreviewOpen, showPreview]);
+
+  useLayoutEffect(() => {
+    const previewPane = previewPaneRef.current;
+    if (!previewPane || !showPreview || paneMode !== "split") return;
+    syncPreviewSelection(previewPane, activePreviewAnchor);
+  }, [activePreviewAnchor, frontMatter, formattingConfig, paneMode, questions, showPreview, showSolutions]);
 
   useEffect(() => {
     const previewPane = previewPaneRef.current;
-    const panzoomElement = previewPanzoomRef.current;
-    const zoomSpaceElement = panzoomElement?.parentElement;
-    if (!previewPane || !panzoomElement || !zoomSpaceElement || !showPreview) return;
+    if (!previewPane || !showPreview) return;
+    let previewZoomFrameId: number | null = null;
+    let pendingPreviewScrollTarget: { scrollLeft: number; scrollTop: number } | null = null;
 
-    const panzoom = Panzoom(panzoomElement, {
-      animate: false,
-      cursor: "default",
-      disablePan: true,
-      disableXAxis: true,
-      duration: 120,
-      easing: "ease-out",
-      maxScale: previewMaxZoom,
-      minScale: MIN_PREVIEW_ZOOM,
-      noBind: true,
-      origin: "50% 0",
-      overflow: "visible",
-      startScale: clampPreviewZoom(previewZoomRef.current, previewMaxZoom),
-      step: 0.18,
-      touchAction: "pan-y",
-    });
-    previewPanzoomInstanceRef.current = panzoom;
-    syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
+    const schedulePreviewZoomStateSync = (nextZoom: number) => {
+      if (previewZoomStateSyncTimerRef.current) window.clearTimeout(previewZoomStateSyncTimerRef.current);
+      previewZoomStateSyncTimerRef.current = window.setTimeout(() => {
+        previewZoomStateSyncTimerRef.current = null;
+        setPreviewZoom((currentZoom) => (currentZoom === nextZoom ? currentZoom : nextZoom));
+      }, PREVIEW_ZOOM_STATE_SYNC_DELAY_MS);
+    };
 
-    const resizeObserver = new ResizeObserver(() => {
-      syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
-    });
-    resizeObserver.observe(panzoomElement);
+    const applyPreviewZoom = (nextZoom: number, point: { clientX: number; clientY: number }) => {
+      const currentZoom = previewZoomRef.current;
+      const clampedZoom = clampPreviewZoom(nextZoom, previewMaxZoom);
+      if (clampedZoom === currentZoom) return;
+      const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
+      const nextScale = previewFitScale * clampedZoom;
+      pendingPreviewScrollTarget = previewZoomScrollTarget({
+        previewPane,
+        currentScale: previewFitScale * currentZoom,
+        nextScale,
+        point,
+        currentScrollLeft: pendingPreviewScrollTarget?.scrollLeft,
+        currentScrollTop: pendingPreviewScrollTarget?.scrollTop,
+      });
 
-    const handlePanzoomChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ scale?: number }>).detail;
-      if (Number.isFinite(detail?.scale)) {
-        previewZoomRef.current = clampPreviewZoom(detail.scale ?? 1, previewMaxZoom);
+      previewZoomRef.current = clampedZoom;
+      if (previewRoot) {
+        applyPreviewScaleStyle(previewRoot, currentPageFormat, nextScale);
+        schedulePreviewZoomStateSync(clampedZoom);
+      } else {
+        setPreviewZoom(clampedZoom);
       }
-      syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, panzoom.getScale());
+
+      if (previewZoomFrameId !== null) return;
+      previewZoomFrameId = window.requestAnimationFrame(() => {
+        previewZoomFrameId = null;
+        const target = pendingPreviewScrollTarget;
+        pendingPreviewScrollTarget = null;
+        if (!target) return;
+        previewPane.scrollLeft = clamp(target.scrollLeft, 0, horizontalScrollableRange(previewPane));
+        previewPane.scrollTop = clamp(target.scrollTop, 0, scrollableRange(previewPane));
+      });
     };
 
     const handlePreviewWheel = (event: globalThis.WheelEvent) => {
@@ -7536,22 +13176,16 @@ export default function App() {
       if (!zoomRequested) return;
 
       event.preventDefault();
-      const currentScale = panzoom.getScale();
       const delta = normalizedPreviewWheelDelta(event, previewPane.clientHeight);
-      const nextScale = clampPreviewZoom(currentScale * Math.exp(-delta * PREVIEW_WHEEL_ZOOM_SENSITIVITY), previewMaxZoom);
-      zoomPreviewToPoint({
-        panzoom,
-        previewPane,
-        zoomSpaceElement,
-        panzoomElement,
-        nextScale,
-        point: previewPointFromEvent(event, previewPane),
-      });
+      applyPreviewZoom(
+        previewZoomRef.current * Math.exp(-delta * PREVIEW_WHEEL_ZOOM_SENSITIVITY),
+        previewPointFromEvent(event, previewPane),
+      );
     };
 
     const handleGestureStart = (event: Event) => {
       event.preventDefault();
-      previewGestureStartZoomRef.current = panzoom.getScale();
+      previewGestureStartZoomRef.current = previewZoomRef.current;
     };
 
     const handleGestureChange = (event: Event) => {
@@ -7559,36 +13193,40 @@ export default function App() {
       const scale = Number(gestureEvent.scale);
       if (!Number.isFinite(scale) || scale <= 0) return;
       event.preventDefault();
-      zoomPreviewToPoint({
-        panzoom,
-        previewPane,
-        zoomSpaceElement,
-        panzoomElement,
-        nextScale: clampPreviewZoom(previewGestureStartZoomRef.current * scale, previewMaxZoom),
-        point: previewPointFromEvent(gestureEvent, previewPane),
-      });
+      applyPreviewZoom(previewGestureStartZoomRef.current * scale, previewPointFromEvent(gestureEvent, previewPane));
     };
 
-    panzoomElement.addEventListener("panzoomchange", handlePanzoomChange);
     previewPane.addEventListener("wheel", handlePreviewWheel, { passive: false });
     previewPane.addEventListener("gesturestart", handleGestureStart, { passive: false });
     previewPane.addEventListener("gesturechange", handleGestureChange, { passive: false });
 
     return () => {
-      panzoomElement.removeEventListener("panzoomchange", handlePanzoomChange);
       previewPane.removeEventListener("wheel", handlePreviewWheel);
       previewPane.removeEventListener("gesturestart", handleGestureStart);
       previewPane.removeEventListener("gesturechange", handleGestureChange);
-      resizeObserver.disconnect();
-      if (previewPanzoomInstanceRef.current === panzoom) {
-        previewPanzoomInstanceRef.current = null;
+      if (previewZoomFrameId !== null) window.cancelAnimationFrame(previewZoomFrameId);
+      if (previewZoomStateSyncTimerRef.current) {
+        window.clearTimeout(previewZoomStateSyncTimerRef.current);
+        previewZoomStateSyncTimerRef.current = null;
       }
-      previewZoomRef.current = clampPreviewZoom(panzoom.getScale(), previewMaxZoom);
-      panzoom.destroy();
-      panzoom.resetStyle();
-      zoomSpaceElement.style.height = "";
     };
-  }, [previewMaxZoom, showPreview]);
+  }, [currentPageFormat, previewFitScale, previewMaxZoom, showPreview]);
+
+  useLayoutEffect(() => {
+    const previewPane = previewPaneRef.current;
+    if (!previewPane) return;
+    const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
+    if (previewRoot) applyPreviewScaleStyle(previewRoot, currentPageFormat, previewFitScale * previewZoomRef.current);
+    previewPane.scrollLeft = clamp(previewPane.scrollLeft, 0, horizontalScrollableRange(previewPane));
+    previewPane.scrollTop = clamp(previewPane.scrollTop, 0, scrollableRange(previewPane));
+  }, [currentPageFormat, previewFitScale, previewZoom]);
+
+  useEffect(() => {
+    const nextZoom = clampPreviewZoom(previewZoomRef.current, previewMaxZoom);
+    if (nextZoom === previewZoomRef.current) return;
+    previewZoomRef.current = nextZoom;
+    setPreviewZoom(nextZoom);
+  }, [previewMaxZoom]);
 
   useLayoutEffect(() => {
     const editorPane = editorPaneRef.current;
@@ -7653,6 +13291,7 @@ export default function App() {
     return {
       frontMatter: frontMatterRef.current,
       questions: questionsRef.current,
+      formattingConfig: formattingConfigRef.current,
     };
   }
 
@@ -7667,27 +13306,524 @@ export default function App() {
     setQuestions((current) => (typeof updater === "function" ? updater(current) : updater));
   }
 
-  function setFrontMatterWithHistory(updater: FrontMatterConfig | ((current: FrontMatterConfig) => FrontMatterConfig)) {
-    pushEditorHistory();
-    setFrontMatter((current) => (typeof updater === "function" ? updater(current) : updater));
+  function currentEditorDocument(): EditorDocumentState {
+    return {
+      frontMatter: frontMatterRef.current,
+      questions: questionsRef.current,
+      formattingConfig: formattingConfigRef.current,
+    };
   }
 
-  function restoreEditorSnapshot(snapshot: EditorHistorySnapshot, options: { collapseQuestions?: boolean } = {}) {
+  function setEditorDocumentWithHistory(document: {
+    frontMatter: FrontMatterConfig;
+    questions: QuestionBlock[];
+    formattingConfig?: FormattingConfig;
+  }) {
+    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+    pushEditorHistory();
+    setFrontMatter(document.frontMatter);
+    setQuestions(document.questions);
+    setFormattingConfig(nextFormattingConfig);
+    frontMatterRef.current = document.frontMatter;
+    questionsRef.current = document.questions;
+    formattingConfigRef.current = nextFormattingConfig;
+  }
+
+  function normalizeEditorFrontMatter(nextFrontMatter: FrontMatterConfig) {
+    return normalizeFrontMatter(nextFrontMatter) ?? DEFAULT_FRONT_MATTER;
+  }
+
+  function normalizeEditorFormattingConfig(nextFormattingConfig?: FormattingConfig) {
+    return normalizeFormattingConfig(nextFormattingConfig);
+  }
+
+  function editorDocumentActionOptions(): Omit<MauthDocumentActionOptions<QuestionBlock, FrontMatterConfig, FormattingConfig>, "dryRun"> {
+    return {
+      normalizeQuestion: withNormalizedQuestionOrder,
+      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
+      normalizeFrontMatter: normalizeEditorFrontMatter,
+      normalizeFormattingConfig: normalizeEditorFormattingConfig,
+      validateSolutions: (nextQuestions: QuestionBlock[]) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
+      validateDocument: (document) => validateSolutionCompleteness(document.frontMatter, document.questions),
+    };
+  }
+
+  function applyEditorAction(action: MauthAction): MauthActionResult<QuestionBlock> {
+    const result = applyMauthAction<QuestionBlock>(questionsRef.current, action, {
+      normalizeQuestion: withNormalizedQuestionOrder,
+      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
+      validateSolutions: (nextQuestions) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
+    });
+    if (result.ok && result.changedIds.length) {
+      setQuestionsWithHistory(result.questions);
+    }
+    return result;
+  }
+
+  function applyEditorDocumentAction(
+    action: MauthDocumentAction,
+  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    const result = applyMauthDocumentAction<QuestionBlock, FrontMatterConfig, FormattingConfig>(
+      currentEditorDocument(),
+      action,
+      editorDocumentActionOptions(),
+    );
+    if (result.ok && result.changedIds.length) {
+      setEditorDocumentWithHistory(result.document);
+    }
+    return result;
+  }
+
+  function previewEditorDocumentActions(
+    actions: MauthDocumentAction[],
+  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    return previewMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
+      currentEditorDocument(),
+      actions,
+      editorDocumentActionOptions(),
+    );
+  }
+
+  function applyEditorDocumentActions(
+    actions: MauthDocumentAction[],
+  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
+      currentEditorDocument(),
+      actions,
+      editorDocumentActionOptions(),
+    );
+    if (result.ok && result.changedIds.length) {
+      setEditorDocumentWithHistory(result.document);
+    }
+    return result;
+  }
+
+  function applyEditorActions(actions: MauthAction[]): MauthActionResult<QuestionBlock> {
+    const result = applyMauthActions<QuestionBlock>(questionsRef.current, actions, {
+      normalizeQuestion: withNormalizedQuestionOrder,
+      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
+      validateSolutions: (nextQuestions) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
+    });
+    if (result.ok && result.changedIds.length) {
+      setQuestionsWithHistory(result.questions);
+    }
+    return result;
+  }
+
+  function readActionProposalActions(): MauthDocumentAction[] | null {
+    try {
+      return parseMauthDocumentActionProposal(actionProposalText);
+    } catch (error) {
+      setActionProposalResult(null);
+      setActionProposalMessage(error instanceof Error ? error.message : "Invalid action proposal JSON.");
+      return null;
+    }
+  }
+
+  function previewActionProposal() {
+    const actions = readActionProposalActions();
+    if (!actions) return;
+    const result = previewEditorDocumentActions(actions);
+    setActionProposalResult(result);
+    setActionProposalMessage(
+      result.ok && result.preview?.valid
+        ? `Dry run valid: ${result.preview.requestedActionCount} action${result.preview.requestedActionCount === 1 ? "" : "s"} checked.`
+        : result.error || result.preview?.error || "Dry run found an issue.",
+    );
+  }
+
+  function applyActionProposal() {
+    const actions = readActionProposalActions();
+    if (!actions) return;
+    const previewResult = previewEditorDocumentActions(actions);
+    setActionProposalResult(previewResult);
+    if (!previewResult.ok || !previewResult.preview?.valid) {
+      setActionProposalMessage(previewResult.error || previewResult.preview?.error || "Dry run failed. Nothing was applied.");
+      return;
+    }
+
+    const result = applyEditorDocumentActions(actions);
+    setActionProposalResult({ ...result, preview: previewResult.preview });
+    setActionProposalMessage(
+      result.ok
+        ? `Applied ${actions.length} action${actions.length === 1 ? "" : "s"}${result.changedIds.length ? `, changed ${result.changedIds.length} item${result.changedIds.length === 1 ? "" : "s"}` : ""}.`
+        : result.error || "Action proposal failed. Nothing was applied.",
+    );
+  }
+
+  function clearActionProposal() {
+    setActionProposalText("");
+    setActionProposalMessage("");
+    setActionProposalResult(null);
+  }
+
+  function openAssistantPanel() {
+    setAssistantPanelOpen((current) => {
+      const nextOpen = !current;
+      if (nextOpen && paneMode !== "preview") hideEditorPane();
+      return nextOpen;
+    });
+  }
+
+  async function ensureAssistantProject() {
+    const project = activeProject ?? (await getDefaultProject());
+    setActiveProject(project);
+    return project;
+  }
+
+  function commitAssistantDocument(document: {
+    frontMatter: FrontMatterConfig;
+    questions: QuestionBlock[];
+    formattingConfig?: FormattingConfig;
+  }) {
+    setEditorDocumentWithHistory({
+      frontMatter: normalizeEditorFrontMatter(document.frontMatter),
+      questions: normalizeQuestionBlocks(document.questions),
+      formattingConfig: normalizeEditorFormattingConfig(document.formattingConfig),
+    });
+  }
+
+  function serializeAssistantDocument(document: {
+    frontMatter: FrontMatterConfig;
+    questions: QuestionBlock[];
+    formattingConfig?: FormattingConfig;
+  }) {
+    const filePath = activeProjectFilePathRef.current ?? "";
+    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
+    const nextFormattingConfig = normalizeEditorFormattingConfig(document.formattingConfig);
+    const savedTest = createSavedTestSnapshot({
+      testId: filePath ? `project-file:${filePath}` : id("assistant-test"),
+      name: filePath
+        ? testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))
+        : defaultSavedTestName(document.frontMatter),
+      frontMatter: document.frontMatter,
+      questions: document.questions,
+      formattingConfig: nextFormattingConfig,
+      logo: currentLogo,
+    });
+    return JSON.stringify(savedTest, null, 2);
+  }
+
+  function parseAssistantProjectDocument(document: ProjectFileDocument): EditorDocumentState {
+    const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
+    const savedTest = normalizeSavedTest(parsed);
+    if (!savedTest) throw new Error("Unsupported project file.");
+    if (savedTest.logo) {
+      setLogos((current) => {
+        const next = mergeLogoAssets(current, [savedTest.logo as LogoAsset]);
+        if (next !== current) {
+          logosRef.current = next;
+          persistLogoLibrary(next);
+        }
+        return next;
+      });
+      writeLogoToDisk(savedTest.logo);
+    }
+    return {
+      frontMatter: cloneSerializable(savedTest.frontMatter),
+      questions: normalizeQuestionBlocks(savedTest.questions),
+      formattingConfig: normalizeFormattingConfig(savedTest.formattingConfig),
+    };
+  }
+
+  function assistantFileDriver() {
+    return {
+      listFiles: async (projectId: string) => (await listProjectFiles(projectId)).files,
+      getFile: (projectId: string, filePath: string) => getProjectFile(projectId, filePath),
+      saveFile: (projectId: string, filePath: string, file: ProjectFileSaveRequest) => saveProjectFile(projectId, filePath, file),
+      deleteFile: (projectId: string, filePath: string, baseRevision?: number) => deleteProjectFile(projectId, filePath, baseRevision),
+      listVersions: async (projectId: string, filePath: string) => (await listProjectFileVersions(projectId, filePath)).versions,
+      restoreVersion: (projectId: string, filePath: string, versionId: string) => restoreProjectFileVersion(projectId, filePath, versionId),
+    };
+  }
+
+  function assistantHost(): MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    return {
+      getDocument: currentEditorDocument,
+      commitDocument: (document) => commitAssistantDocument(document),
+      documentOptions: editorDocumentActionOptions,
+      fileDriver: assistantFileDriver(),
+      getProjectId: async () => (await ensureAssistantProject()).id,
+      getActiveFilePath: () => activeProjectFilePathRef.current,
+      getActiveFileRevision: () => activeProjectFileRevisionRef.current,
+      setActiveFilePath: (filePath, context) => {
+        const contextData = asRecord(context.data);
+        const contextDocument = asRecord(contextData?.document);
+        const contextRevision = typeof contextDocument?.revision === "number" ? contextDocument.revision : null;
+        activeProjectFilePathRef.current = filePath;
+        activeProjectFileRevisionRef.current = filePath ? contextRevision : null;
+        setActiveProjectFilePath(filePath);
+        setActiveProjectFileRevision(filePath ? contextRevision : null);
+        setProjectSaveConflict(null);
+        if (filePath) {
+          setLastProjectSaveFingerprint(
+            editorDocumentFingerprint(
+              frontMatterRef.current,
+              questionsRef.current,
+              formattingConfigRef.current,
+              selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
+            ),
+          );
+          if (context.toolName === "mauth.files.open") setFileManagerOpen(false);
+        } else {
+          setLastProjectSaveFingerprint(null);
+        }
+      },
+      serializeDocument: (document) => serializeAssistantDocument(document),
+      parseProjectFileDocument: (document) => parseAssistantProjectDocument(document),
+      onFilesChanged: (files) => {
+        setProjectFiles(files);
+        setProjectFilesStatus("ready");
+      },
+    };
+  }
+
+  async function assistantDocumentSummary(host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>) {
+    setAssistantActivityLabel("Inspecting document");
+    const result = await runMauthAssistantAdapterTool(host, { name: "mauth.document.inspect", arguments: {} });
+    return result.ok ? (asRecord(result.data) ?? null) : null;
+  }
+
+  async function runAssistantProviderToolCall(
+    host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>,
+    toolCall: AssistantProviderToolCall,
+  ): Promise<AssistantToolOutput> {
+    const call = assistantToolCallFromProvider(toolCall);
+    if (!call) {
+      return {
+        callId: toolCall.callId,
+        name: toolCall.name,
+        output: {
+          ok: false,
+          error: `Unsupported assistant tool call: ${toolCall.name}`,
+        },
+      };
+    }
+
+    setAssistantActivityLabel(assistantActivityLabelForTool(call.name));
+    if (call.name.startsWith("mauth.files.")) {
+      setProjectFilesStatus(call.name === "mauth.files.open" ? "loading" : "saving");
+      setProjectFilesMessage(`Assistant: ${call.name}`);
+    }
+
+    const result = await runMauthAssistantAdapterTool(host, call);
+
+    return {
+      callId: toolCall.callId,
+      name: toolCall.name,
+      output: compactAssistantProviderOutput(result),
+    };
+  }
+
+  function localTerminalAssistantToolMessage(toolOutput: AssistantToolOutput) {
+    const output = asRecord(toolOutput.output);
+    const toolName = typeof output?.toolName === "string" ? output.toolName : "";
+    if (output?.ok !== true) return "";
+    if (
+      toolName !== "mauth.author.replaceQuestion" &&
+      toolName !== "mauth.author.addDiagram" &&
+      toolName !== "mauth.author.ensureSolutions"
+    ) {
+      return "";
+    }
+    return typeof output?.message === "string" && output.message.trim() ? output.message.trim() : "Completed the edit.";
+  }
+
+  async function continueAssistantToolLoop(
+    host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>,
+    initialResponseId: string | null,
+    initialToolCalls: AssistantProviderToolCall[],
+  ): Promise<AssistantToolLoopResult> {
+    let responseId = initialResponseId;
+    let toolCalls = initialToolCalls;
+    let rounds = 0;
+    let totalUsage: AssistantUsageSummary | null = null;
+
+    while (toolCalls.length && rounds < ASSISTANT_MAX_TOOL_ROUNDS) {
+      rounds += 1;
+      const toolOutputs: AssistantToolOutput[] = [];
+      for (const toolCall of toolCalls) {
+        toolOutputs.push(await runAssistantProviderToolCall(host, toolCall));
+      }
+
+      const localMessages = toolOutputs.map(localTerminalAssistantToolMessage).filter(Boolean);
+      if (localMessages.length === toolOutputs.length) {
+        setAssistantChatMessages((current) => [
+          ...current,
+          ...localMessages.map((message) => ({ id: id("assistant-message"), role: "assistant" as const, content: message })),
+        ]);
+        setAssistantPendingToolContinuation(null);
+        setAssistantPreviousResponseId(null);
+        return { responseId: null, usage: totalUsage, pending: null };
+      }
+
+      const documentSummary = await assistantDocumentSummary(host);
+      setAssistantActivityLabel("Thinking");
+      const response = await sendAssistantChat({
+        previousResponseId: responseId,
+        toolOutputs,
+        documentSummary,
+      });
+
+      responseId = response.responseId ?? responseId;
+      totalUsage = mergeAssistantUsageSummary(totalUsage, response.usage);
+      if (response.message.trim()) {
+        setAssistantChatMessages((current) => [
+          ...current,
+          { id: id("assistant-message"), role: "assistant", content: response.message.trim() },
+        ]);
+      }
+      toolCalls = response.toolCalls;
+    }
+
+    if (toolCalls.length) {
+      const pending = { responseId, toolCalls };
+      setAssistantPendingToolContinuation(pending);
+      setAssistantPreviousResponseId(null);
+      setAssistantChatMessages((current) => [
+        ...current,
+        {
+          id: id("assistant-message"),
+          role: "assistant",
+          content: "I stopped after several tool rounds. Ask me to continue if you want me to keep going.",
+        },
+      ]);
+      return { responseId, usage: totalUsage, pending };
+    }
+
+    setAssistantPendingToolContinuation(null);
+    setAssistantPreviousResponseId(responseId);
+    return { responseId, usage: totalUsage, pending: null };
+  }
+
+  async function sendAssistantChatMessage() {
+    const userContent = assistantChatInput.trim();
+    if (!userContent || assistantChatRunning) return;
+
+    const pendingContinuation = assistantPendingToolContinuation;
+    const resumePendingTools = Boolean(pendingContinuation && userContent.toLowerCase().startsWith("continue"));
+    const previousResponseId = pendingContinuation ? null : assistantPreviousResponseId;
+    const priorMessages = assistantChatMessages
+      .filter((chatMessage) => !chatMessage.content.startsWith("I stopped after several tool rounds."))
+      .slice(-8)
+      .map(
+        (chatMessage): AssistantChatMessage => ({
+          role: chatMessage.role,
+          content: chatMessage.content.length > 2000 ? `${chatMessage.content.slice(0, 2000)}...` : chatMessage.content,
+        }),
+      );
+    const outgoingMessages: AssistantChatMessage[] = previousResponseId
+      ? [{ role: "user", content: userContent }]
+      : [...priorMessages, { role: "user", content: userContent }];
+
+    setAssistantChatInput("");
+    setAssistantChatMessages((current) => [...current, { id: id("assistant-message"), role: "user", content: userContent }]);
+    setAssistantChatRunning(true);
+    setAssistantActivityLabel(resumePendingTools ? "Continuing" : "Thinking");
+    setAssistantActivityStartedAt(Date.now());
+    setAssistantProviderStatusMessage((current) => current || "Assistant working");
+
+    try {
+      const host = assistantHost();
+      if (resumePendingTools && pendingContinuation) {
+        setAssistantPendingToolContinuation(null);
+        const loopResult = await continueAssistantToolLoop(host, pendingContinuation.responseId, pendingContinuation.toolCalls);
+        const resumedUsage = loopResult.usage;
+        if (resumedUsage) {
+          setAssistantChatMessages((current) => addUsageToLastAssistantMessage(current, resumedUsage));
+        }
+        setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "ready" : current));
+        setProjectFilesMessage((current) => (current.startsWith("Assistant:") ? "Assistant tool completed" : current));
+        return;
+      }
+
+      if (pendingContinuation) {
+        setAssistantPendingToolContinuation(null);
+        setAssistantPreviousResponseId(null);
+      }
+
+      const documentSummary = await assistantDocumentSummary(host);
+      setAssistantActivityLabel("Thinking");
+      const response = await sendAssistantChat({
+        previousResponseId,
+        messages: outgoingMessages,
+        documentSummary,
+      });
+
+      let requestUsage = response.usage ?? null;
+      setAssistantProviderConfigured(response.configured);
+      if (!response.configured) {
+        setAssistantProviderStatusMessage(response.error || response.message || "Assistant provider is not configured.");
+      }
+
+      const nextResponseId = response.responseId ?? previousResponseId;
+      if (response.message.trim()) {
+        setAssistantChatMessages((current) => [
+          ...current,
+          { id: id("assistant-message"), role: "assistant", content: response.message.trim() },
+        ]);
+      }
+
+      if (response.toolCalls.length) {
+        const loopResult = await continueAssistantToolLoop(host, nextResponseId, response.toolCalls);
+        requestUsage = mergeAssistantUsageSummary(requestUsage, loopResult.usage);
+      } else {
+        setAssistantPendingToolContinuation(null);
+        setAssistantPreviousResponseId(nextResponseId);
+      }
+
+      if (requestUsage) {
+        setAssistantChatMessages((current) => addUsageToLastAssistantMessage(current, requestUsage));
+      }
+
+      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "ready" : current));
+      setProjectFilesMessage((current) => (current.startsWith("Assistant:") ? "Assistant tool completed" : current));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Assistant request failed.";
+      setAssistantProviderConfigured(false);
+      setAssistantProviderStatusMessage(message);
+      setAssistantPendingToolContinuation(null);
+      setAssistantPreviousResponseId(null);
+      setAssistantChatMessages((current) => [...current, { id: id("assistant-message"), role: "assistant", content: message }]);
+      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "error" : current));
+    } finally {
+      setAssistantChatRunning(false);
+      setAssistantActivityStartedAt(null);
+      setAssistantActivityLabel("Thinking");
+    }
+  }
+
+  function restoreEditorSnapshot(snapshot: EditorHistorySnapshot) {
     const nextActiveQuestionId = existingOrFirstQuestionId(snapshot.questions, activeQuestionId);
+    const snapshotLogo = "logo" in snapshot ? normalizeLogoAsset(snapshot.logo) : undefined;
+    if (snapshotLogo) {
+      setLogos((current) => {
+        const next = mergeLogoAssets(current, [snapshotLogo]);
+        if (next !== current) {
+          logosRef.current = next;
+          persistLogoLibrary(next);
+        }
+        return next;
+      });
+      writeLogoToDisk(snapshotLogo);
+    }
     setFrontMatter(snapshot.frontMatter);
     setQuestions(snapshot.questions);
+    setFormattingConfig(snapshot.formattingConfig);
     frontMatterRef.current = snapshot.frontMatter;
     questionsRef.current = snapshot.questions;
-    if (options.collapseQuestions) {
-      setCollapsedQuestionIds(collapsedQuestionIdSet(snapshot.questions, nextActiveQuestionId));
-    }
+    formattingConfigRef.current = snapshot.formattingConfig;
     if (nextActiveQuestionId !== activeQuestionId) {
+      const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
       setActiveQuestionId(nextActiveQuestionId);
-      setActiveTocItemId(nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER);
+      setActiveTocItemId(nextAnchor);
+      setActiveRailItemId(nextAnchor);
     } else {
       const activeTocQuestionId = questionIdFromScrollAnchor(activeTocItemId);
       if (activeTocQuestionId && !snapshot.questions.some((question) => question.id === activeTocQuestionId)) {
-        setActiveTocItemId(nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER);
+        const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
+        setActiveTocItemId(nextAnchor);
+        setActiveRailItemId(nextAnchor);
       }
     }
     setDraggedQuestionId(null);
@@ -7717,13 +13853,50 @@ export default function App() {
   }
 
   function updateQuestion(questionId: string, patch: Partial<QuestionBlock>) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) => (question.id === questionId ? withNormalizedQuestionOrder({ ...question, ...patch }) : question)),
-    );
+    applyEditorAction({ type: "question.update", questionId, patch: patch as Record<string, unknown> });
+  }
+
+  function updateLogo(logoId: string, patch: { name: string; schoolName: string }) {
+    const existingLogo = logosRef.current.find((logo) => logo.id === logoId);
+    if (!existingLogo) return;
+    const updatedLogo = {
+      ...existingLogo,
+      name: patch.name.trim() || existingLogo.name,
+      schoolName: patch.schoolName,
+    };
+    const nextLogos = logosRef.current.map((logo) => (logo.id === logoId ? updatedLogo : logo));
+    logosRef.current = nextLogos;
+    setLogos(nextLogos);
+    persistLogoLibrary(nextLogos);
+    writeLogoToDisk(updatedLogo);
+    if (frontMatterRef.current.logoId === logoId) {
+      applyEditorDocumentAction({ type: "frontMatter.update", patch: { schoolName: patch.schoolName } });
+    }
   }
 
   function updateFrontMatter(patch: Partial<FrontMatterConfig>) {
-    setFrontMatterWithHistory((current) => ({ ...current, ...patch }));
+    applyEditorDocumentAction({
+      type: "frontMatter.update",
+      patch: {
+        ...(typeof patch.logoId === "string" ? frontMatterPatchForLogo(logosRef.current, patch.logoId) : {}),
+        ...patch,
+      } as Record<string, unknown>,
+    });
+  }
+
+  function updateFormattingConfig(patch: Partial<FormattingConfig>) {
+    applyEditorDocumentAction({ type: "formatting.update", patch: patch as Record<string, unknown> });
+  }
+
+  function updatePageFormat(patch: Partial<NonNullable<FormattingConfig["page"]>>) {
+    applyEditorDocumentAction({ type: "pageFormat.update", patch: patch as Record<string, unknown> });
+  }
+
+  function resetTestFormat() {
+    applyEditorDocumentAction({
+      type: "formatting.update",
+      patch: cloneSerializable(DEFAULT_FORMATTING_CONFIG) as Record<string, unknown>,
+    });
   }
 
   function addLogo(file: File) {
@@ -7736,281 +13909,765 @@ export default function App() {
         id: id("logo"),
         name: logoNameFromFile(file.name),
         src,
+        schoolName: frontMatterRef.current.schoolName,
       };
-      setLogos((current) => {
-        const next = [...current, logo];
-        persistLogoLibrary(next);
-        return next;
-      });
-      setFrontMatterWithHistory((current) => ({ ...current, logoId: logo.id }));
+      const nextLogos = [...logosRef.current, logo];
+      logosRef.current = nextLogos;
+      setLogos(nextLogos);
+      persistLogoLibrary(nextLogos);
+      writeLogoToDisk(logo);
+      applyEditorDocumentAction({ type: "frontMatter.logo.set", logoId: logo.id, schoolName: logo.schoolName });
     };
     reader.readAsDataURL(file);
   }
 
   function removeLogo(logoId: string) {
-    setLogos((current) => {
-      const logo = current.find((candidate) => candidate.id === logoId);
-      if (!logo || logo.builtIn) return current;
-      const next = current.filter((candidate) => candidate.id !== logoId);
-      persistLogoLibrary(next);
-      return next;
+    const nextLogos = logosRef.current.filter((candidate) => candidate.id !== logoId);
+    if (nextLogos.length === logosRef.current.length || !nextLogos.length) return;
+    logosRef.current = nextLogos;
+    setLogos(nextLogos);
+    persistLogoLibrary(nextLogos);
+    deleteStoredLogo(logoId).catch(() => {
+      setDraftAutosaveStatus("unavailable");
+      setDraftAutosaveMessage("Logo delete failed: using browser backup only");
     });
-    setFrontMatterWithHistory((current) => (current.logoId === logoId ? { ...current, logoId: BUILT_IN_LOGOS[0].id } : current));
-  }
-
-  function startNewTest() {
-    const shouldStart = window.confirm("Start a new test? This will replace the current editor contents.");
-    if (!shouldStart) return;
-
-    pushEditorHistory();
-    const nextQuestion = createQuestion();
-    const nextFrontMatter = cloneSerializable(DEFAULT_FRONT_MATTER);
-    const nextQuestions = [nextQuestion];
-
-    setFrontMatter(nextFrontMatter);
-    setQuestions(nextQuestions);
-    frontMatterRef.current = nextFrontMatter;
-    questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions, nextQuestion.id));
-    setActiveQuestionId(nextQuestion.id);
-    setActiveTocItemId(questionScrollAnchor(nextQuestion.id));
-    setDraggedQuestionId(null);
-    setDragOverQuestion(null);
-    setDraggedPageBreakQuestionId(null);
-    setDragOverPageBreak(null);
-    setDraggedSubsection(null);
-    setDragOverSubsection(null);
-    setSelectedSavedTestId("");
-  }
-
-  function commitSavedTestLocally(savedTest: SavedTest) {
-    setSavedTests((current) => {
-      const next = upsertSavedTestList(current, savedTest);
-      persistSavedTests(next);
-      return next;
-    });
-    setSelectedSavedTestId(savedTest.id);
-  }
-
-  function writeSavedTestToDisk(savedTest: SavedTest) {
-    setDiskStorageStatus("saving");
-    setDiskStorageMessage(`Saving "${savedTest.name}" to disk`);
-    saveStoredTest<unknown>(savedTest)
-      .then((response) => {
-        const diskSavedTest = normalizeSavedTest(response) ?? savedTest;
-        setSavedTests((current) => {
-          const next = upsertSavedTestList(current, diskSavedTest);
-          persistSavedTests(next);
-          return next;
-        });
-        setSelectedSavedTestId(diskSavedTest.id);
-        setDiskStorageStatus("saved");
-        setDiskStorageMessage(`Saved "${diskSavedTest.name}" to disk`);
-      })
-      .catch(() => {
-        setDiskStorageStatus("unavailable");
-        setDiskStorageMessage("Disk save failed: browser backup kept");
-      });
+    if (frontMatterRef.current.logoId === logoId) {
+      const nextLogo = selectedLogoFromLibrary(nextLogos, nextLogos[0].id);
+      applyEditorDocumentAction({ type: "frontMatter.logo.set", logoId: nextLogo.id, schoolName: nextLogo.schoolName });
+    }
   }
 
   function saveCurrentTest() {
-    const existingTest = savedTests.find((test) => test.id === selectedSavedTestId);
-    const testId = existingTest?.id ?? id("saved-test");
-    const testName = existingTest?.name ?? uniqueSavedTestName(defaultSavedTestName(frontMatter), savedTests);
-    const logo = selectedLogoFromLibrary(logos, frontMatter.logoId);
-    const savedTest = createSavedTestSnapshot({
-      testId,
-      name: testName,
-      frontMatter,
-      questions,
-      logo,
-      createdAt: existingTest?.createdAt,
-    });
-
-    commitSavedTestLocally(savedTest);
-    writeSavedTestToDisk(savedTest);
+    void saveCurrentTestToProjectFile("");
   }
 
-  function saveCurrentTestAs() {
-    const selectedTest = savedTests.find((test) => test.id === selectedSavedTestId);
-    const testId = id("saved-test");
-    const baseName = selectedTest?.name ?? defaultSavedTestName(frontMatter);
-    const logo = selectedLogoFromLibrary(logos, frontMatter.logoId);
-    const savedTest = createSavedTestSnapshot({
-      testId,
-      name: uniqueSavedTestName(`${baseName} copy`, savedTests),
-      frontMatter,
-      questions,
-      logo,
-    });
-
-    commitSavedTestLocally(savedTest);
-    writeSavedTestToDisk(savedTest);
+  function startNewTest() {
+    setNewTestDialogOpen(true);
   }
 
-  async function selectSavedTest(testId: string) {
-    if (!testId) {
-      setSelectedSavedTestId("");
-      return;
-    }
-
-    let savedTest = savedTests.find((test) => test.id === testId) ?? null;
-    if (!savedTest) return;
-
-    const shouldLoad = window.confirm(`Load saved test "${savedTest.name}"? This will replace the current editor contents.`);
-    if (!shouldLoad) return;
-
-    try {
-      const storedTest = normalizeSavedTest(await getStoredTest<unknown>(testId));
-      if (storedTest) {
-        savedTest = storedTest;
-        commitSavedTestLocally(storedTest);
-      }
-    } catch {
-      setDiskStorageStatus("unavailable");
-      setDiskStorageMessage("Could not load disk copy: using browser backup");
-    }
-
+  function createNewTestFromTemplate(template: TitlePageTemplate) {
     pushEditorHistory();
-    const nextFrontMatter = cloneSerializable(savedTest.frontMatter);
-    const nextQuestions = normalizeQuestionBlocks(savedTest.questions);
+    const currentLogo = selectedLogoFromLibrary(logos, frontMatter.logoId);
+    const frontMatterTemplate = template === "exam" ? DEFAULT_EXAM_FRONT_MATTER : DEFAULT_FRONT_MATTER;
+    const nextFrontMatter = {
+      ...cloneSerializable(frontMatterTemplate),
+      logoId: currentLogo.id,
+      schoolName: currentLogo.schoolName ?? frontMatter.schoolName,
+    };
+    const nextQuestions = [createQuestion()];
+    const nextFormattingConfig = {
+      ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
+      id: NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
+    };
+    const nextAnchor = questionScrollAnchor(nextQuestions[0].id);
+
     setFrontMatter(nextFrontMatter);
     setQuestions(nextQuestions);
+    setFormattingConfig(nextFormattingConfig);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
-    setCollapsedQuestionIds(collapsedQuestionIdSet(nextQuestions));
-    setActiveQuestionId(firstQuestionId(nextQuestions));
-    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
+    formattingConfigRef.current = nextFormattingConfig;
+    activeProjectFilePathRef.current = null;
+    activeProjectFileRevisionRef.current = null;
+    setActiveProjectFilePath(null);
+    setActiveProjectFileRevision(null);
+    setProjectSaveConflict(null);
+    setLastProjectSaveFingerprint(null);
+    setActiveQuestionId(nextQuestions[0].id);
+    setActiveTocItemId(nextAnchor);
+    setActiveRailItemId(nextAnchor);
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
-    setSelectedSavedTestId(savedTest.id);
+    setNewTestDialogOpen(false);
+    setFileManagerOpen(false);
+    queueDocumentJump(nextAnchor, nextAnchor);
+  }
 
-    if (savedTest.logo) {
-      setLogos((current) => {
-        const existingIndex = current.findIndex((logo) => logo.id === savedTest.logo?.id);
-        if (existingIndex === -1) return [...current, savedTest.logo as LogoAsset];
-        if (current[existingIndex]?.builtIn) return current;
-        return current.map((logo) => (logo.id === savedTest.logo?.id ? (savedTest.logo as LogoAsset) : logo));
+  async function writeCurrentTestProjectFile(filePath: string, testName: string) {
+    setProjectFilesStatus("saving");
+    setProjectFilesMessage("Saving");
+
+    const project = activeProject ?? (await getDefaultProject());
+    const loadedFilePath = activeProjectFilePathRef.current;
+    const loadedRevision = loadedFilePath === filePath ? activeProjectFileRevisionRef.current : undefined;
+    if (loadedFilePath === filePath && loadedRevision === null) {
+      const conflict = missingProjectRevisionConflict(filePath);
+      setProjectSaveConflict(conflict);
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Reload file before saving");
+      throw new Error(PROJECT_FILE_REVISION_MISSING_ERROR);
+    }
+
+    const existingFile =
+      loadedFilePath === filePath ? undefined : projectFiles.find((file) => file.kind === "file" && file.path === filePath);
+    const currentLogo = selectedLogoForFrontMatter(logos, frontMatter);
+    const savedTest = createSavedTestSnapshot({
+      testId: `project-file:${filePath}`,
+      name: testName,
+      frontMatter,
+      questions,
+      formattingConfig,
+      logo: currentLogo,
+    });
+
+    let savedDocument: ProjectFileDocument;
+    const baseRevision = loadedRevision ?? existingFile?.revision ?? null;
+    try {
+      savedDocument = await saveProjectFile(project.id, filePath, {
+        content: JSON.stringify(savedTest, null, 2),
+        kind: "file",
+        fileType: "test",
+        metadata: {
+          format: "saved-test-json",
+          source: "mauth-studio",
+        },
+        baseRevision,
       });
+    } catch (error) {
+      const conflict = projectFileConflictFromError(error, filePath, baseRevision ?? null);
+      if (conflict) {
+        setProjectSaveConflict(conflict);
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("File changed on disk");
+        void refreshProjectFiles();
+      }
+      throw error;
+    }
+
+    const refreshedFiles = await listProjectFiles(project.id);
+    setActiveProject(project);
+    setProjectFiles(refreshedFiles.files);
+    activeProjectFilePathRef.current = filePath;
+    activeProjectFileRevisionRef.current = savedDocument.revision;
+    setActiveProjectFilePath(filePath);
+    setActiveProjectFileRevision(savedDocument.revision);
+    setProjectSaveConflict(null);
+    setLastProjectSaveFingerprint(editorDocumentFingerprint(frontMatter, questions, formattingConfig, currentLogo));
+    setProjectFilesStatus("ready");
+    setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
+  }
+
+  async function saveCurrentTestToProjectFile(folderPath = "") {
+    let saveTargetPath = activeProjectFilePath;
+    try {
+      const defaultName =
+        activeProjectFilePath && testPathFromProjectPath(activeProjectFilePath)
+          ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? ""))
+          : defaultSavedTestName(frontMatter);
+      let filePath = activeProjectFilePath;
+      let testName = defaultName;
+
+      if (!filePath) {
+        const requestedName = window.prompt("File name", defaultName);
+        if (requestedName === null) return;
+        testName = safeProjectFileName(requestedName);
+        filePath = projectPathForTestPath(joinTestPath(folderPath, ensureTestFileName(testName)));
+      }
+
+      saveTargetPath = filePath;
+      await writeCurrentTestProjectFile(filePath, testName);
+    } catch (error) {
+      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
+      const conflict = saveTargetPath ? projectFileConflictFromError(error, saveTargetPath, activeProjectFileRevisionRef.current) : null;
+      if (conflict) {
+        setProjectSaveConflict(conflict);
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("File changed on disk");
+        void refreshProjectFiles();
+        return;
+      }
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Save failed");
     }
   }
 
-  function renameSavedTest(testId: string) {
-    const savedTest = savedTests.find((test) => test.id === testId);
-    if (!savedTest) return;
+  function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedTest: SavedTest, revision: number | null) {
+    pushEditorHistory();
+    const nextFrontMatter = cloneSerializable(savedTest.frontMatter);
+    const nextQuestions = normalizeQuestionBlocks(savedTest.questions);
+    const nextFormattingConfig = normalizeFormattingConfig(savedTest.formattingConfig);
+    setFrontMatter(nextFrontMatter);
+    setQuestions(nextQuestions);
+    setFormattingConfig(nextFormattingConfig);
+    frontMatterRef.current = nextFrontMatter;
+    questionsRef.current = nextQuestions;
+    formattingConfigRef.current = nextFormattingConfig;
+    setActiveQuestionId(firstQuestionId(nextQuestions));
+    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
+    setActiveRailItemId(firstQuestionAnchor(nextQuestions));
+    setDraggedQuestionId(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
+    setActiveProject(project);
+    activeProjectFilePathRef.current = filePath;
+    activeProjectFileRevisionRef.current = revision;
+    setActiveProjectFilePath(filePath);
+    setActiveProjectFileRevision(revision);
+    setProjectSaveConflict(null);
+    setLastProjectSaveFingerprint(
+      editorDocumentFingerprint(
+        nextFrontMatter,
+        nextQuestions,
+        nextFormattingConfig,
+        savedTest.logo ?? selectedLogoFromLibrary(logosRef.current, nextFrontMatter.logoId),
+      ),
+    );
 
-    const requestedName = window.prompt("Rename saved test", savedTest.name);
-    if (requestedName === null) return;
-    const nextName = uniqueSavedTestName(requestedName, savedTests, savedTest.id);
-    if (!nextName) return;
-
-    const renamedSavedTest = { ...savedTest, name: nextName, updatedAt: new Date().toISOString() };
-    setSavedTests((current) => {
-      const next = current.map((test) => (test.id === savedTest.id ? renamedSavedTest : test));
-      persistSavedTests(next);
-      return next;
-    });
-    writeSavedTestToDisk(renamedSavedTest);
+    if (savedTest.logo) {
+      setLogos((current) => {
+        const next = mergeLogoAssets(current, [savedTest.logo]);
+        if (next !== current) {
+          logosRef.current = next;
+          persistLogoLibrary(next);
+        }
+        return next;
+      });
+      writeLogoToDisk(savedTest.logo);
+    }
   }
 
-  function deleteSavedTest(testId: string) {
-    const savedTest = savedTests.find((test) => test.id === testId);
-    if (!savedTest) return;
+  async function openProjectFile(filePath: string) {
+    try {
+      const project = activeProject ?? (await getDefaultProject());
+      const summary = projectFiles.find((file) => file.path === filePath);
+      if (summary && !isProjectTestFile(summary)) {
+        setProjectFilesMessage("Only test files can be opened");
+        return;
+      }
+      if (!summary && !filePath.endsWith(".test.json")) {
+        setProjectFilesMessage("Only test files can be opened");
+        return;
+      }
 
-    const shouldDelete = window.confirm(`Delete saved test "${savedTest.name}"?`);
-    if (!shouldDelete) return;
+      const fileName = testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath));
+      if (hasUnsavedProjectChanges && activeProjectFilePath) {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      }
 
-    setSavedTests((current) => {
-      const next = current.filter((test) => test.id !== savedTest.id);
-      persistSavedTests(next);
-      return next;
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage(`Opening ${fileName}`);
+      const document = await getProjectFile(project.id, filePath);
+      const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
+      const savedTest = normalizeSavedTest(parsed);
+      if (!savedTest) throw new Error("Unsupported project file");
+
+      applySavedProjectDocument(project, filePath, savedTest, document.revision);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Opened ${fileName}`);
+      setFileManagerOpen(false);
+    } catch (error) {
+      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
+      const conflictTarget = activeProjectFilePath ?? filePath;
+      const conflict = projectFileConflictFromError(error, conflictTarget, activeProjectFileRevisionRef.current);
+      if (conflict) {
+        setProjectSaveConflict(conflict);
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("File changed on disk");
+        void refreshProjectFiles();
+        return;
+      }
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Open failed");
+    }
+  }
+
+  async function loadProjectFileVersions(filePath: string) {
+    const project = activeProject ?? (await getDefaultProject());
+    const response = await listProjectFileVersions(project.id, filePath);
+    setActiveProject(project);
+    return response.versions;
+  }
+
+  async function restoreProjectFileFromVersion(filePath: string, versionId: string) {
+    setProjectFilesStatus("saving");
+    setProjectFilesMessage("Restoring version");
+    const project = activeProject ?? (await getDefaultProject());
+    const restoredDocument = await restoreProjectFileVersion(project.id, filePath, versionId);
+    const refreshedFiles = await listProjectFiles(project.id);
+    setActiveProject(project);
+    setProjectFiles(refreshedFiles.files);
+
+    if (activeProjectFilePath === filePath) {
+      const parsed = restoredDocument.content ? (JSON.parse(restoredDocument.content) as unknown) : null;
+      const savedTest = normalizeSavedTest(parsed);
+      if (!savedTest) throw new Error("Unsupported project file");
+      applySavedProjectDocument(project, filePath, savedTest, restoredDocument.revision);
+    }
+
+    setProjectFilesStatus("ready");
+    setProjectFilesMessage(`Restored ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
+  }
+
+  async function createProjectFolder(folderPath: string) {
+    const requestedName = window.prompt("Folder name", "New folder");
+    if (requestedName === null) return;
+    const folderName = safeProjectFileName(requestedName);
+    if (!folderName) return;
+    const testPath = joinTestPath(folderPath, folderName);
+    const filePath = projectPathForTestPath(testPath);
+    if (projectFiles.some((file) => file.path.toLowerCase() === filePath.toLowerCase())) {
+      window.alert("A file or folder with that name already exists.");
+      return;
+    }
+
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage("Creating folder");
+      const project = activeProject ?? (await getDefaultProject());
+      await saveProjectFile(project.id, filePath, { kind: "folder", fileType: "folder" });
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Created ${folderName}`);
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Folder create failed");
+    }
+  }
+
+  async function exportCurrentProjectBackup() {
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage("Preparing backup");
+
+      if (activeProjectFilePath && hasUnsavedProjectChanges) {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      } else if (!activeProjectFilePath) {
+        const shouldSaveDraft = window.confirm(
+          `This test is not saved as a file yet. Save it into ${TEST_FILE_ROOT_LABEL} before creating the backup?`,
+        );
+        if (shouldSaveDraft) {
+          await saveCurrentTestToProjectFile("");
+        }
+      }
+
+      const project = activeProject ?? (await getDefaultProject());
+      const backup = await downloadProjectBackup(project.id);
+      const url = window.URL.createObjectURL(backup.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = backup.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Created backup ${backup.fileName}`);
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Backup failed");
+    }
+  }
+
+  async function importProjectBackupFile(file: File) {
+    const shouldImport = window.confirm(
+      `Import "${file.name}"? Existing files will not be overwritten; matching file names are imported with a new name.`,
+    );
+    if (!shouldImport) return;
+
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage("Importing backup");
+      const project = activeProject ?? (await getDefaultProject());
+      const result = await importProjectBackup(project.id, file);
+      const refreshedFiles = await listProjectFiles(project.id);
+      await refreshLogoLibraryFromDisk();
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(
+        `Imported ${result.importedFiles} file${result.importedFiles === 1 ? "" : "s"}, ${result.importedFolders} folder${
+          result.importedFolders === 1 ? "" : "s"
+        }, ${result.importedLogos} logo${result.importedLogos === 1 ? "" : "s"}`,
+      );
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Import failed");
+    }
+  }
+
+  async function copyProjectItem(projectId: string, sourcePath: string, targetPath: string, files: ProjectFileSummary[]) {
+    const source = files.find((file) => file.path === sourcePath);
+    if (!source) throw new Error("Missing source file");
+
+    if (source.kind === "folder") {
+      await saveProjectFile(projectId, targetPath, { kind: "folder", fileType: "folder", metadata: source.metadata });
+      const descendants = files
+        .filter((file) => file.path.startsWith(`${sourcePath}/`))
+        .sort((left, right) => {
+          if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1;
+          return left.path.localeCompare(right.path);
+        });
+      for (const descendant of descendants) {
+        const descendantTargetPath = `${targetPath}${descendant.path.slice(sourcePath.length)}`;
+        if (descendant.kind === "folder") {
+          await saveProjectFile(projectId, descendantTargetPath, {
+            kind: "folder",
+            fileType: "folder",
+            metadata: descendant.metadata,
+          });
+        } else {
+          const document = await getProjectFile(projectId, descendant.path);
+          await saveProjectFile(projectId, descendantTargetPath, {
+            content: document.content ?? "",
+            kind: "file",
+            fileType: document.fileType ?? "test",
+            metadata: document.metadata,
+          });
+        }
+      }
+      return;
+    }
+
+    const document = await getProjectFile(projectId, sourcePath);
+    await saveProjectFile(projectId, targetPath, {
+      content: document.content ?? "",
+      kind: "file",
+      fileType: document.fileType ?? "test",
+      metadata: document.metadata,
     });
-    setSelectedSavedTestId((current) => (current === savedTest.id ? "" : current));
-    setDiskStorageStatus("saving");
-    setDiskStorageMessage(`Deleting "${savedTest.name}" from disk`);
-    deleteStoredTest(savedTest.id)
-      .then(() => {
-        setDiskStorageStatus("saved");
-        setDiskStorageMessage(`Deleted "${savedTest.name}" from disk; backup kept`);
+  }
+
+  async function duplicateProjectFiles(filePaths: string[]) {
+    const sourcePaths = topLevelProjectPaths(filePaths);
+    if (!sourcePaths.length) return;
+
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage(sourcePaths.length === 1 ? "Duplicating" : `Duplicating ${sourcePaths.length} items`);
+      const project = activeProject ?? (await getDefaultProject());
+      if (
+        activeProjectFilePath &&
+        hasUnsavedProjectChanges &&
+        sourcePaths.some((sourcePath) => projectPathContains(sourcePath, activeProjectFilePath))
+      ) {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      }
+      let currentFiles = (await listProjectFiles(project.id)).files;
+      let duplicatedCount = 0;
+      let openedDuplicatePath: string | null = null;
+      let openedDuplicateFingerprint: string | null = null;
+      let openedDuplicateRevision: number | null = null;
+
+      for (const filePath of sourcePaths) {
+        const source = currentFiles.find((file) => file.path === filePath);
+        const sourceTestPath = testPathFromProjectPath(filePath);
+        if (!source || sourceTestPath === null) continue;
+        const parentPath = parentTestPath(sourceTestPath);
+        const baseName =
+          source.kind === "folder"
+            ? `${testPathBasename(sourceTestPath)} copy`
+            : `${testFileDisplayName(testPathBasename(sourceTestPath))} copy`;
+        const targetTestPath = uniqueTestPath(currentFiles, parentPath, baseName, source.kind);
+        const targetFilePath = projectPathForTestPath(targetTestPath);
+        const duplicatingActiveEditor = sourcePaths.length === 1 && source.kind === "file" && filePath === activeProjectFilePath;
+        if (duplicatingActiveEditor) {
+          const currentLogo = selectedLogoForFrontMatter(logosRef.current, frontMatter);
+          const savedTest = createSavedTestSnapshot({
+            testId: `project-file:${targetFilePath}`,
+            name: testFileDisplayName(testPathBasename(targetTestPath)),
+            frontMatter,
+            questions,
+            formattingConfig,
+            logo: currentLogo,
+          });
+          const duplicatedDocument = await saveProjectFile(project.id, targetFilePath, {
+            content: JSON.stringify(savedTest, null, 2),
+            kind: "file",
+            fileType: "test",
+            metadata: {
+              format: "saved-test-json",
+              source: "mauth-studio",
+            },
+          });
+          openedDuplicatePath = targetFilePath;
+          openedDuplicateFingerprint = editorDocumentFingerprint(frontMatter, questions, formattingConfig, currentLogo);
+          openedDuplicateRevision = duplicatedDocument.revision;
+        } else {
+          await copyProjectItem(project.id, filePath, targetFilePath, currentFiles);
+        }
+        currentFiles = (await listProjectFiles(project.id)).files;
+        duplicatedCount += 1;
+      }
+
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      if (openedDuplicatePath) {
+        activeProjectFilePathRef.current = openedDuplicatePath;
+        activeProjectFileRevisionRef.current = openedDuplicateRevision;
+        setActiveProjectFilePath(openedDuplicatePath);
+        setActiveProjectFileRevision(openedDuplicateRevision);
+        setProjectSaveConflict(null);
+        setLastProjectSaveFingerprint(openedDuplicateFingerprint);
+      }
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(
+        openedDuplicatePath
+          ? `Duplicated and opened ${testFileDisplayName(testPathBasename(testPathFromProjectPath(openedDuplicatePath) ?? openedDuplicatePath))}`
+          : duplicatedCount === 1
+            ? "Duplicated 1 item"
+            : `Duplicated ${duplicatedCount} items`,
+      );
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Duplicate failed");
+    }
+  }
+
+  async function renameProjectFile(filePath: string) {
+    const source = projectFiles.find((file) => file.path === filePath);
+    const sourceTestPath = testPathFromProjectPath(filePath);
+    if (!source || sourceTestPath === null) return;
+    const currentName = source.kind === "folder" ? testPathBasename(sourceTestPath) : testFileDisplayName(testPathBasename(sourceTestPath));
+    const requestedName = window.prompt("Rename", currentName);
+    if (requestedName === null) return;
+    const newName = source.kind === "folder" ? safeProjectFileName(requestedName) : ensureTestFileName(requestedName);
+    if (!newName) return;
+    const targetTestPath = joinTestPath(parentTestPath(sourceTestPath), newName);
+    const targetFilePath = projectPathForTestPath(targetTestPath);
+    if (targetFilePath === filePath) return;
+    if (projectFiles.some((file) => file.path.toLowerCase() === targetFilePath.toLowerCase())) {
+      window.alert("A file or folder with that name already exists.");
+      return;
+    }
+    await moveProjectFileToPath(filePath, targetFilePath);
+  }
+
+  async function moveProjectFileToPath(filePath: string, targetFilePath: string) {
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage("Moving");
+      const project = activeProject ?? (await getDefaultProject());
+      if (activeProjectFilePath && hasUnsavedProjectChanges && projectPathContains(filePath, activeProjectFilePath)) {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      }
+      const currentFiles = await listProjectFiles(project.id);
+      const source = currentFiles.files.find((file) => file.path === filePath);
+      if (!source) return;
+      await copyProjectItem(project.id, filePath, targetFilePath, currentFiles.files);
+      await deleteProjectFile(project.id, filePath, source.revision);
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      const nextActiveFilePath = activeProjectFilePath
+        ? activeProjectFilePath === filePath
+          ? targetFilePath
+          : source.kind === "folder" && activeProjectFilePath.startsWith(`${filePath}/`)
+            ? `${targetFilePath}${activeProjectFilePath.slice(filePath.length)}`
+            : activeProjectFilePath
+        : null;
+      activeProjectFilePathRef.current = nextActiveFilePath;
+      setActiveProjectFilePath(nextActiveFilePath);
+      if (nextActiveFilePath !== activeProjectFilePath) {
+        const nextRevision = nextActiveFilePath
+          ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
+          : null;
+        activeProjectFileRevisionRef.current = nextRevision;
+        setActiveProjectFileRevision(nextRevision);
+        setProjectSaveConflict(null);
+      }
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage("Moved");
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Move failed");
+    }
+  }
+
+  async function moveProjectFiles(filePaths: string[], targetFolderPath: string) {
+    const sourcePaths = topLevelProjectPaths(filePaths);
+    if (!sourcePaths.length) return;
+    const targetFolder = normalizeTestFolderPath(targetFolderPath);
+
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage(sourcePaths.length === 1 ? "Moving" : `Moving ${sourcePaths.length} items`);
+      const project = activeProject ?? (await getDefaultProject());
+      if (
+        activeProjectFilePath &&
+        hasUnsavedProjectChanges &&
+        sourcePaths.some((sourcePath) => projectPathContains(sourcePath, activeProjectFilePath))
+      ) {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      }
+      const currentFiles = (await listProjectFiles(project.id)).files;
+      const existingPaths = new Set(currentFiles.map((file) => file.path.toLowerCase()));
+      const plannedTargets = new Set<string>();
+      const plannedMoves: Array<{ source: ProjectFileSummary; sourcePath: string; targetPath: string }> = [];
+
+      for (const filePath of sourcePaths) {
+        const source = currentFiles.find((file) => file.path === filePath);
+        const sourceTestPath = testPathFromProjectPath(filePath);
+        if (!source || sourceTestPath === null) continue;
+        if (source.kind === "folder" && (targetFolder === sourceTestPath || targetFolder.startsWith(`${sourceTestPath}/`))) {
+          window.alert("A folder cannot be moved inside itself.");
+          setProjectFilesStatus("ready");
+          setProjectFilesMessage("");
+          return;
+        }
+
+        const targetTestPath = [targetFolder, testPathBasename(sourceTestPath)].filter(Boolean).join("/");
+        const targetFilePath = projectPathForTestPath(targetTestPath);
+        const targetKey = targetFilePath.toLowerCase();
+        if (targetFilePath === filePath) continue;
+        if (existingPaths.has(targetKey) || plannedTargets.has(targetKey)) {
+          window.alert("A file or folder with that name already exists in that folder.");
+          setProjectFilesStatus("ready");
+          setProjectFilesMessage("");
+          return;
+        }
+        plannedTargets.add(targetKey);
+        plannedMoves.push({ source, sourcePath: filePath, targetPath: targetFilePath });
+      }
+
+      if (!plannedMoves.length) {
+        setProjectFilesStatus("ready");
+        setProjectFilesMessage("");
+        return;
+      }
+
+      for (const move of plannedMoves) {
+        await copyProjectItem(project.id, move.sourcePath, move.targetPath, currentFiles);
+      }
+      for (const move of plannedMoves) {
+        await deleteProjectFile(project.id, move.sourcePath, move.source.revision);
+      }
+
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      const nextActiveFilePath = activeProjectFilePath
+        ? (() => {
+            for (const move of plannedMoves) {
+              if (activeProjectFilePath === move.sourcePath) return move.targetPath;
+              if (move.source.kind === "folder" && activeProjectFilePath.startsWith(`${move.sourcePath}/`)) {
+                return `${move.targetPath}${activeProjectFilePath.slice(move.sourcePath.length)}`;
+              }
+            }
+            return activeProjectFilePath;
+          })()
+        : null;
+      activeProjectFilePathRef.current = nextActiveFilePath;
+      setActiveProjectFilePath(nextActiveFilePath);
+      if (nextActiveFilePath !== activeProjectFilePath) {
+        const nextRevision = nextActiveFilePath
+          ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
+          : null;
+        activeProjectFileRevisionRef.current = nextRevision;
+        setActiveProjectFileRevision(nextRevision);
+        setProjectSaveConflict(null);
+      }
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(plannedMoves.length === 1 ? "Moved 1 item" : `Moved ${plannedMoves.length} items`);
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Move failed");
+    }
+  }
+
+  async function removeProjectFiles(filePaths: string[]) {
+    const sourcePaths = topLevelProjectPaths(filePaths);
+    const sources = sourcePaths
+      .map((filePath) => {
+        const source = projectFiles.find((file) => file.path === filePath);
+        const sourceTestPath = testPathFromProjectPath(filePath);
+        return source && sourceTestPath !== null ? { source, sourceTestPath, filePath } : null;
       })
-      .catch(() => {
-        setDiskStorageStatus("unavailable");
-        setDiskStorageMessage("Disk delete failed: browser list removed only");
-      });
+      .filter((entry): entry is { source: ProjectFileSummary; sourceTestPath: string; filePath: string } => Boolean(entry));
+    if (!sources.length) return;
+    const shouldDelete =
+      sources.length === 1
+        ? window.confirm(
+            `Delete "${
+              sources[0].source.kind === "folder"
+                ? testPathBasename(sources[0].sourceTestPath)
+                : testFileDisplayName(testPathBasename(sources[0].sourceTestPath))
+            }"?`,
+          )
+        : window.confirm(`Delete ${sources.length} selected items?`);
+    if (!shouldDelete) return;
+    try {
+      setProjectFilesStatus("saving");
+      setProjectFilesMessage("Deleting");
+      const project = activeProject ?? (await getDefaultProject());
+      const deletingActiveProjectFile = activeProjectFilePath
+        ? sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
+        : false;
+      for (const { filePath, source } of sources) {
+        await deleteProjectFile(project.id, filePath, source.revision);
+      }
+      const refreshedFiles = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(refreshedFiles.files);
+      const nextActiveFilePath =
+        activeProjectFilePath &&
+        sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
+          ? null
+          : activeProjectFilePath;
+      activeProjectFilePathRef.current = nextActiveFilePath;
+      setActiveProjectFilePath(nextActiveFilePath);
+      if (deletingActiveProjectFile) {
+        activeProjectFileRevisionRef.current = null;
+        setActiveProjectFileRevision(null);
+        setProjectSaveConflict(null);
+        setLastProjectSaveFingerprint(null);
+      }
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(sources.length === 1 ? "Deleted 1 item" : `Deleted ${sources.length} items`);
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Delete failed");
+    }
   }
 
   function updateContentBlock(questionId: string, blockId: string, patch: Partial<EditorContentBlock>) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) =>
-        question.id === questionId
-          ? {
-              ...question,
-              contentBlocks: question.contentBlocks.map((block) =>
-                block.id === blockId ? ({ ...block, ...patch } as EditorContentBlock) : block,
-              ),
-            }
-          : question,
-      ),
-    );
+    applyEditorAction({
+      type: "module.update",
+      scope: { kind: "question", questionId },
+      blockId,
+      patch: patch as Record<string, unknown>,
+    });
   }
 
   function updatePart(questionId: string, partId: string, patch: Partial<EditorPart>) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) =>
-        question.id === questionId
-          ? withNormalizedQuestionOrder({
-              ...question,
-              parts: question.parts.map((part) => (part.id === partId ? withNormalizedPartOrder({ ...part, ...patch }) : part)),
-            })
-          : question,
-      ),
-    );
+    applyEditorAction({
+      type: "part.update",
+      questionId,
+      partId,
+      patch: patch as Record<string, unknown>,
+    });
   }
 
   function updatePartContentBlock(questionId: string, partId: string, blockId: string, patch: Partial<EditorContentBlock>) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) =>
-        question.id === questionId
-          ? {
-              ...question,
-              parts: question.parts.map((part) =>
-                part.id === partId
-                  ? {
-                      ...part,
-                      contentBlocks: part.contentBlocks.map((block) =>
-                        block.id === blockId ? ({ ...block, ...patch } as EditorContentBlock) : block,
-                      ),
-                    }
-                  : part,
-              ),
-            }
-          : question,
-      ),
-    );
+    applyEditorAction({
+      type: "module.update",
+      scope: { kind: "part", questionId, partId },
+      blockId,
+      patch: patch as Record<string, unknown>,
+    });
   }
 
   function updateSubpart(questionId: string, partId: string, subpartId: string, patch: Partial<EditorSubpart>) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) =>
-        question.id === questionId
-          ? {
-              ...question,
-              parts: question.parts.map((part) =>
-                part.id === partId
-                  ? {
-                      ...part,
-                      subparts: (part.subparts ?? []).map((subpart) => (subpart.id === subpartId ? { ...subpart, ...patch } : subpart)),
-                    }
-                  : part,
-              ),
-            }
-          : question,
-      ),
-    );
+    applyEditorAction({
+      type: "subpart.update",
+      questionId,
+      partId,
+      subpartId,
+      patch: patch as Record<string, unknown>,
+    });
   }
 
   function updateSubpartContentBlock(
@@ -8020,32 +14677,12 @@ export default function App() {
     blockId: string,
     patch: Partial<EditorContentBlock>,
   ) {
-    setQuestionsWithHistory((current) =>
-      current.map((question) =>
-        question.id === questionId
-          ? {
-              ...question,
-              parts: question.parts.map((part) =>
-                part.id === partId
-                  ? {
-                      ...part,
-                      subparts: (part.subparts ?? []).map((subpart) =>
-                        subpart.id === subpartId
-                          ? {
-                              ...subpart,
-                              contentBlocks: subpart.contentBlocks.map((block) =>
-                                block.id === blockId ? ({ ...block, ...patch } as EditorContentBlock) : block,
-                              ),
-                            }
-                          : subpart,
-                      ),
-                    }
-                  : part,
-              ),
-            }
-          : question,
-      ),
-    );
+    applyEditorAction({
+      type: "module.update",
+      scope: { kind: "subpart", questionId, partId, subpartId },
+      blockId,
+      patch: patch as Record<string, unknown>,
+    });
   }
 
   function updatePreviewGraphConfig(change: PreviewGraphConfigChange) {
@@ -8062,27 +14699,18 @@ export default function App() {
     updateContentBlock(change.questionId, change.blockId, { graphConfig: change.graphConfig });
   }
 
+  const handlePreviewGraphConfigChange = useStableEvent(updatePreviewGraphConfig);
+
   function selectQuestionInEditor(questionId: string) {
     if (!questionId) return;
     setActiveQuestionId(questionId);
-    setCollapsedQuestionIds((current) => {
-      if (!current.has(questionId)) return current;
-      const next = new Set(current);
-      next.delete(questionId);
-      return next;
-    });
   }
 
-  function toggleQuestionCollapsed(questionId: string) {
-    setCollapsedQuestionIds((current) => {
-      const next = new Set(current);
-      if (next.has(questionId)) {
-        next.delete(questionId);
-      } else {
-        next.add(questionId);
-      }
-      return next;
-    });
+  function activateEditorAnchor(anchor: string) {
+    const questionId = questionIdFromScrollAnchor(anchor);
+    if (questionId) selectQuestionInEditor(questionId);
+    setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
   }
 
   function revealEditorAnchor(anchor: string) {
@@ -8097,12 +14725,142 @@ export default function App() {
     }));
   }
 
+  function jumpToSolutionValidationIssue(anchor: string) {
+    setSolutionValidationOpen(false);
+    if (paneMode === "preview") setPaneMode("split");
+    activateEditorAnchor(anchor);
+    revealEditorAnchor(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
+  }
+
+  function focusSolutionValidationAnchor(anchor: string) {
+    if (paneMode === "preview") setPaneMode("split");
+    activateEditorAnchor(anchor);
+    revealEditorAnchor(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
+  }
+
+  function solutionValidationScope(question: QuestionBlock, parsed: ParsedScrollAnchor) {
+    if (!parsed.questionId) return null;
+
+    if (parsed.partId && parsed.subpartId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+      if (!part || !subpart) return null;
+      return {
+        scope: {
+          kind: "subpart",
+          questionId: parsed.questionId,
+          partId: parsed.partId,
+          subpartId: parsed.subpartId,
+        } satisfies MauthContentScope,
+        contentBlocks: subpart.contentBlocks,
+      };
+    }
+
+    if (parsed.partId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      if (!part) return null;
+      return {
+        scope: { kind: "part", questionId: parsed.questionId, partId: parsed.partId } satisfies MauthContentScope,
+        contentBlocks: part.contentBlocks,
+      };
+    }
+
+    return {
+      scope: { kind: "question", questionId: parsed.questionId } satisfies MauthContentScope,
+      contentBlocks: question.contentBlocks,
+    };
+  }
+
+  function solutionValidationFixActions(scope: MauthContentScope, contentBlocks: EditorContentBlock[], fix: SolutionValidationFix) {
+    if (fix.kind === "add-slot") {
+      return {
+        actions: [{ type: "solutionSlot.add", scope, blocks: solutionSlotBlocks(fix.lines) } satisfies MauthAction],
+        showSolutionsAfter: true,
+      };
+    }
+
+    if (fix.kind === "add-solution") {
+      return {
+        actions: [
+          {
+            type: "module.add",
+            scope,
+            blocks: [textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")],
+            placement: { blockId: fix.afterBlockId, position: "after" },
+          } satisfies MauthAction,
+        ],
+        showSolutionsAfter: true,
+      };
+    }
+
+    if (fix.kind === "add-student-space") {
+      return {
+        actions: [
+          {
+            type: "module.add",
+            scope,
+            blocks: [spaceBlock(fix.lines, "student")],
+            placement: { blockId: fix.beforeBlockId, position: "before" },
+          } satisfies MauthAction,
+        ],
+        showSolutionsAfter: true,
+      };
+    }
+
+    const block = contentBlocks.find((current) => current.id === fix.blockId);
+    if (block?.kind !== "space") return null;
+    return {
+      actions: [
+        {
+          type: "module.update",
+          scope,
+          blockId: fix.blockId,
+          patch: { lines: Math.max(spaceLines(block.lines), fix.lines) },
+        } satisfies MauthAction,
+      ],
+      showSolutionsAfter: false,
+    };
+  }
+
+  function applySolutionValidationFix(issue: SolutionValidationIssue) {
+    const fix = issue.fix;
+    if (!fix) {
+      jumpToSolutionValidationIssue(issue.anchor);
+      return;
+    }
+
+    const parsed = parseScrollAnchor(issue.anchor);
+    const question = parsed.questionId ? questions.find((current) => current.id === parsed.questionId) : null;
+    if (!question || !parsed.questionId) {
+      jumpToSolutionValidationIssue(issue.anchor);
+      return;
+    }
+
+    const target = solutionValidationScope(question, parsed);
+    const actionPatch = target ? solutionValidationFixActions(target.scope, target.contentBlocks, fix) : null;
+    if (!actionPatch) {
+      jumpToSolutionValidationIssue(issue.anchor);
+      return;
+    }
+
+    const result = applyEditorActions(actionPatch.actions);
+    if (!result.ok) {
+      jumpToSolutionValidationIssue(issue.anchor);
+      return;
+    }
+
+    if (actionPatch.showSolutionsAfter) setShowSolutions(true);
+    focusSolutionValidationAnchor(issue.anchor);
+  }
+
   function openSignalForAnchor(anchor: string) {
     return scrollAnchorContains(anchor, editorRevealRequest?.anchor) ? editorRevealRequest?.sequence : undefined;
   }
 
   function isActiveEditorAnchor(anchor: string) {
-    return scrollAnchorContains(anchor, activeTocItemId);
+    return anchor === activeTocItemId;
   }
 
   function jumpPendingDocumentAnchors() {
@@ -8127,11 +14885,11 @@ export default function App() {
     return attemptedJump;
   }
 
-  function queueDocumentJump(editorAnchor: string, previewAnchor: string) {
-    pendingEditorJumpAnchorRef.current = editorAnchor;
-    pendingPreviewJumpAnchorRef.current = previewAnchor;
+  function queueDocumentJump(editorAnchor: string, previewAnchor: string, options: { preservePaneMode?: boolean } = {}) {
+    pendingEditorJumpAnchorRef.current = options.preservePaneMode && !showEditor ? null : editorAnchor;
+    pendingPreviewJumpAnchorRef.current = options.preservePaneMode && !showPreview ? null : previewAnchor;
 
-    if (!showEditor || !showPreview) {
+    if (!options.preservePaneMode && (!showEditor || !showPreview)) {
       setPaneMode("split");
     }
 
@@ -8144,8 +14902,67 @@ export default function App() {
     });
   }
 
+  function queueEditorJump(editorAnchor: string) {
+    pendingEditorJumpAnchorRef.current = editorAnchor;
+    pendingPreviewJumpAnchorRef.current = null;
+
+    window.requestAnimationFrame(() => {
+      if (!jumpPendingDocumentAnchors()) {
+        window.requestAnimationFrame(() => {
+          jumpPendingDocumentAnchors();
+        });
+      }
+    });
+  }
+
+  function tocItemForPreviewAnchor(anchor: string) {
+    for (const fallback of scrollAnchorFallbacks(anchor)) {
+      const item = documentTocItems.find((tocItem) => tocItem.previewAnchor === fallback || tocItem.editorAnchor === fallback);
+      if (item) return item;
+    }
+    return null;
+  }
+
+  function openEditorFromPreviewAnchor(anchor: string) {
+    if (!anchor || paneMode !== "split") return;
+    const tocItem = tocItemForPreviewAnchor(anchor);
+    const editorAnchor = tocItem?.editorAnchor ?? anchor;
+    const activeAnchor = tocItem?.id ?? editorAnchor;
+    setActiveTocItemId(activeAnchor);
+    setActiveRailItemId(activeAnchor);
+    revealEditorAnchor(editorAnchor);
+    queueEditorJump(editorAnchor);
+  }
+
+  function handlePreviewPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (paneMode !== "split" || event.button !== 0) {
+      previewEditClickStartRef.current = null;
+      return;
+    }
+    previewEditClickStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
+  }
+
+  function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
+    const start = previewEditClickStartRef.current;
+    previewEditClickStartRef.current = null;
+    if (paneMode !== "split" || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (!start) return;
+
+    const movement = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (movement > PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX) return;
+
+    const anchor = previewAnchorFromEventTarget(event.target, previewPaneRef.current);
+    if (!anchor) return;
+    openEditorFromPreviewAnchor(anchor);
+  }
+
   function jumpToTocItem(item: DocumentTocItem) {
     setActiveTocItemId(item.id);
+    setActiveRailItemId(item.id);
     const questionId = questionIdFromScrollAnchor(item.editorAnchor);
     if (questionId) selectQuestionInEditor(questionId);
     revealEditorAnchor(item.editorAnchor);
@@ -8153,12 +14970,16 @@ export default function App() {
   }
 
   function jumpPreviewToTocItem(item: DocumentTocItem) {
-    setActiveTocItemId(item.id);
+    setActiveRailItemId(item.id);
+    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
 
-    if (!showPreview) {
-      const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+    if (showEditor) {
+      setActiveTocItemId(item.id);
       if (questionId) selectQuestionInEditor(questionId);
       revealEditorAnchor(item.editorAnchor);
+    }
+
+    if (!showPreview) {
       return;
     }
 
@@ -8178,16 +14999,10 @@ export default function App() {
     });
   }
 
-  function selectPageBreakInEditor(item: DocumentTocItem) {
-    const questionId = pageBreakQuestionIdFromScrollAnchor(item.editorAnchor);
-    if (questionId) setActiveQuestionId(questionId);
-    setActiveTocItemId(item.id);
+  function selectPageBreakInRail(item: DocumentTocItem) {
+    setActiveRailItemId(item.id);
     pendingEditorJumpAnchorRef.current = null;
     pendingPreviewJumpAnchorRef.current = null;
-
-    if (!showEditor) {
-      setPaneMode("split");
-    }
   }
 
   function toggleEditorAtTocItem(item: DocumentTocItem) {
@@ -8202,6 +15017,7 @@ export default function App() {
   function jumpPreviewToQuestion(questionId: string) {
     const anchor = questionScrollAnchor(questionId);
     setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
     selectQuestionInEditor(questionId);
     pendingPreviewJumpAnchorRef.current = anchor;
 
@@ -8232,16 +15048,18 @@ export default function App() {
   function resetPreviewZoom() {
     previewZoomRef.current = 1;
     previewGestureStartZoomRef.current = 1;
+    if (previewZoomStateSyncTimerRef.current) {
+      window.clearTimeout(previewZoomStateSyncTimerRef.current);
+      previewZoomStateSyncTimerRef.current = null;
+    }
+    setPreviewZoom(1);
 
-    const panzoom = previewPanzoomInstanceRef.current;
     const previewPane = previewPaneRef.current;
-    const panzoomElement = previewPanzoomRef.current;
-    const zoomSpaceElement = panzoomElement?.parentElement;
-    if (!panzoom || !previewPane || !panzoomElement || !zoomSpaceElement) return;
-
-    panzoom.zoom(1, { animate: false });
-    previewPane.scrollLeft = 0;
-    syncPreviewZoomSpace(previewPane, zoomSpaceElement, panzoomElement, 1);
+    if (previewPane) {
+      previewPane.scrollLeft = 0;
+      const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
+      if (previewRoot) applyPreviewScaleStyle(previewRoot, currentPageFormat, previewFitScale);
+    }
   }
 
   function toggleTheme() {
@@ -8249,6 +15067,7 @@ export default function App() {
   }
 
   function hideEditorPane() {
+    resetPreviewZoom();
     setPaneMode("preview");
   }
 
@@ -8258,16 +15077,7 @@ export default function App() {
 
   function reorderQuestion(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
     if (draggedId === targetId) return;
-    setQuestionsWithHistory((current) => {
-      const fromIndex = current.findIndex((question) => question.id === draggedId);
-      if (fromIndex === -1) return current;
-      const movedQuestion = current[fromIndex];
-      const withoutDragged = current.filter((question) => question.id !== draggedId);
-      const targetIndex = withoutDragged.findIndex((question) => question.id === targetId);
-      if (targetIndex === -1) return current;
-      const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
-      return [...withoutDragged.slice(0, insertIndex), movedQuestion, ...withoutDragged.slice(insertIndex)];
-    });
+    applyEditorAction({ type: "question.reorder", questionId: draggedId, targetQuestionId: targetId, placement });
   }
 
   function moveQuestionByKeyboard(questionId: string, direction: MoveDirection) {
@@ -8279,7 +15089,8 @@ export default function App() {
     reorderQuestion(questionId, targetQuestion.id, direction < 0 ? "before" : "after");
     selectQuestionInEditor(questionId);
     setActiveTocItemId(anchor);
-    queueDocumentJump(anchor, anchor);
+    setActiveRailItemId(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
   }
 
   function pageBreakDropBoundaryQuestionId(targetQuestionId: string, placement: Exclude<DropPlacement, "inside">) {
@@ -8309,8 +15120,9 @@ export default function App() {
 
     const anchor = pageBreakScrollAnchor(targetQuestion.id);
     movePageBreakAfterQuestion(questionId, targetQuestion.id);
-    setActiveTocItemId(anchor);
-    queueDocumentJump(anchor, questionScrollAnchor(targetQuestion.id));
+    setActiveRailItemId(anchor);
+    pendingEditorJumpAnchorRef.current = null;
+    pendingPreviewJumpAnchorRef.current = null;
   }
 
   function setModuleDragImage(event: DragEvent<HTMLElement>) {
@@ -8375,7 +15187,8 @@ export default function App() {
       reorderQuestion(activeQuestionId, questionId, placement);
       selectQuestionInEditor(activeQuestionId);
       setActiveTocItemId(anchor);
-      queueDocumentJump(anchor, anchor);
+      setActiveRailItemId(anchor);
+      queueDocumentJump(anchor, anchor, { preservePaneMode: true });
     }
   }
 
@@ -8435,8 +15248,9 @@ export default function App() {
     if (!targetQuestionId || targetQuestionId === sourceQuestionId || pageBreakQuestionIds.has(targetQuestionId)) return;
     movePageBreakAfterQuestion(sourceQuestionId, targetQuestionId);
     const anchor = pageBreakScrollAnchor(targetQuestionId);
-    setActiveTocItemId(anchor);
-    queueDocumentJump(anchor, questionScrollAnchor(targetQuestionId));
+    setActiveRailItemId(anchor);
+    pendingEditorJumpAnchorRef.current = null;
+    pendingPreviewJumpAnchorRef.current = null;
   }
 
   function handlePageBreakDragEnd() {
@@ -8444,178 +15258,71 @@ export default function App() {
     setDragOverPageBreak(null);
   }
 
-  function insertOrderItem(items: ContainerOrderItem[], item: ContainerOrderItem, beforeItem?: ContainerOrderItem) {
-    if (!beforeItem) return [...items, item];
-    return insertBeforeByKey(items, orderItemKey(beforeItem), item, orderItemKey);
+  function contentScopeFromContainer(container: SubsectionContainerRef): MauthContentScope | null {
+    if (container.kind === "question") return { kind: "question", questionId: container.questionId };
+    if (container.kind === "part" && container.partId) return { kind: "part", questionId: container.questionId, partId: container.partId };
+    if (container.kind === "subpart" && container.partId && container.subpartId) {
+      return { kind: "subpart", questionId: container.questionId, partId: container.partId, subpartId: container.subpartId };
+    }
+    return null;
   }
 
-  function removeOrderItem(items: ContainerOrderItem[], item: ContainerOrderItem) {
-    const key = orderItemKey(item);
-    return items.filter((current) => orderItemKey(current) !== key);
+  function movePlacementFromIntent(intent: SubsectionDropIntent) {
+    const beforeItem =
+      intent.beforeItem ?? (intent.beforeBlockId ? ({ kind: "block", id: intent.beforeBlockId } satisfies ContainerOrderItem) : undefined);
+    return beforeItem ? { item: beforeItem, position: "before" as const } : undefined;
+  }
+
+  function subsectionMoveAction(active: SubsectionDragTarget, intent: SubsectionDropIntent): MauthAction | null {
+    const activeKind = subsectionItemKind(active);
+    const sourceContainer = subsectionSourceContainer(active);
+    const placement = movePlacementFromIntent(intent);
+
+    if (activeKind === "block") {
+      const fromScope = contentScopeFromContainer(sourceContainer);
+      const toScope = contentScopeFromContainer(intent.container);
+      if (!fromScope || !toScope) return null;
+      return {
+        type: "module.move",
+        fromScope,
+        toScope,
+        blockId: active.id,
+        ...(placement ? { placement } : {}),
+      };
+    }
+
+    if (activeKind === "part" && sourceContainer.kind === "question" && intent.container.kind === "question") {
+      return {
+        type: "part.move",
+        fromQuestionId: sourceContainer.questionId,
+        toQuestionId: intent.container.questionId,
+        partId: active.id,
+        ...(placement ? { placement } : {}),
+      };
+    }
+
+    if (
+      activeKind === "subpart" &&
+      sourceContainer.kind === "part" &&
+      sourceContainer.partId &&
+      intent.container.kind === "part" &&
+      intent.container.partId
+    ) {
+      return {
+        type: "subpart.move",
+        from: { questionId: sourceContainer.questionId, partId: sourceContainer.partId },
+        to: { questionId: intent.container.questionId, partId: intent.container.partId },
+        subpartId: active.id,
+        ...(placement ? { placement } : {}),
+      };
+    }
+
+    return null;
   }
 
   function moveSubsection(active: SubsectionDragTarget, intent: SubsectionDropIntent) {
-    const activeKind = subsectionItemKind(active);
-    const sourceContainer = subsectionSourceContainer(active);
-    const activeOrderItem = subsectionOrderItem(active);
-    if (!activeOrderItem) return;
-
-    setQuestionsWithHistory((current) => {
-      let movedBlock: EditorContentBlock | null = null;
-      let movedPart: EditorPart | null = null;
-      let movedSubpart: EditorSubpart | null = null;
-
-      const withoutActive = current.map((question) => {
-        if (sourceContainer.kind === "question" && question.id === sourceContainer.questionId) {
-          if (activeKind === "block") {
-            movedBlock = question.contentBlocks.find((block) => block.id === active.id) ?? null;
-            if (!movedBlock) return question;
-            return withNormalizedQuestionOrder({
-              ...question,
-              contentBlocks: question.contentBlocks.filter((block) => block.id !== active.id),
-              itemOrder: removeOrderItem(question.itemOrder, activeOrderItem),
-            });
-          }
-          if (activeKind === "part") {
-            movedPart = question.parts.find((part) => part.id === active.id) ?? null;
-            if (!movedPart) return question;
-            return withNormalizedQuestionOrder({
-              ...question,
-              parts: question.parts.filter((part) => part.id !== active.id),
-              itemOrder: removeOrderItem(question.itemOrder, activeOrderItem),
-            });
-          }
-        }
-
-        if (sourceContainer.kind === "part" && question.id === sourceContainer.questionId) {
-          return withNormalizedQuestionOrder({
-            ...question,
-            parts: question.parts.map((part) => {
-              if (part.id !== sourceContainer.partId) return part;
-              if (activeKind === "block") {
-                movedBlock = part.contentBlocks.find((block) => block.id === active.id) ?? null;
-                if (!movedBlock) return part;
-                return withNormalizedPartOrder({
-                  ...part,
-                  contentBlocks: part.contentBlocks.filter((block) => block.id !== active.id),
-                  itemOrder: removeOrderItem(part.itemOrder, activeOrderItem),
-                });
-              }
-              if (activeKind === "subpart") {
-                movedSubpart = (part.subparts ?? []).find((subpart) => subpart.id === active.id) ?? null;
-                if (!movedSubpart) return part;
-                return withNormalizedPartOrder({
-                  ...part,
-                  subparts: (part.subparts ?? []).filter((subpart) => subpart.id !== active.id),
-                  itemOrder: removeOrderItem(part.itemOrder, activeOrderItem),
-                });
-              }
-              return part;
-            }),
-          });
-        }
-
-        if (sourceContainer.kind === "subpart" && question.id === sourceContainer.questionId && activeKind === "block") {
-          return withNormalizedQuestionOrder({
-            ...question,
-            parts: question.parts.map((part) => {
-              if (part.id !== sourceContainer.partId) return part;
-              return withNormalizedPartOrder({
-                ...part,
-                subparts: (part.subparts ?? []).map((subpart) => {
-                  if (subpart.id !== sourceContainer.subpartId) return subpart;
-                  movedBlock = subpart.contentBlocks.find((block) => block.id === active.id) ?? null;
-                  if (!movedBlock) return subpart;
-                  return {
-                    ...subpart,
-                    contentBlocks: subpart.contentBlocks.filter((block) => block.id !== active.id),
-                  };
-                }),
-              });
-            }),
-          });
-        }
-
-        return question;
-      });
-
-      if ((activeKind === "block" && !movedBlock) || (activeKind === "part" && !movedPart) || (activeKind === "subpart" && !movedSubpart)) {
-        return current;
-      }
-
-      const inserted = withoutActive.map((question) => {
-        if (intent.container.kind === "question" && question.id === intent.container.questionId) {
-          if (activeKind === "block" && movedBlock) {
-            return withNormalizedQuestionOrder({
-              ...question,
-              contentBlocks: [...question.contentBlocks, movedBlock],
-              itemOrder: insertOrderItem(question.itemOrder, { kind: "block", id: movedBlock.id }, intent.beforeItem),
-            });
-          }
-          if (activeKind === "part" && movedPart) {
-            return withNormalizedQuestionOrder({
-              ...question,
-              parts: [...question.parts, movedPart],
-              itemOrder: insertOrderItem(question.itemOrder, { kind: "part", id: movedPart.id }, intent.beforeItem),
-            });
-          }
-        }
-
-        if (intent.container.kind === "part" && question.id === intent.container.questionId) {
-          return withNormalizedQuestionOrder({
-            ...question,
-            parts: question.parts.map((part) => {
-              if (part.id !== intent.container.partId) return part;
-              if (activeKind === "block" && movedBlock) {
-                return withNormalizedPartOrder({
-                  ...part,
-                  contentBlocks: [...part.contentBlocks, movedBlock],
-                  itemOrder: insertOrderItem(part.itemOrder, { kind: "block", id: movedBlock.id }, intent.beforeItem),
-                });
-              }
-              if (activeKind === "subpart" && movedSubpart) {
-                return withNormalizedPartOrder({
-                  ...part,
-                  subparts: [...(part.subparts ?? []), movedSubpart],
-                  itemOrder: insertOrderItem(part.itemOrder, { kind: "subpart", id: movedSubpart.id }, intent.beforeItem),
-                });
-              }
-              return part;
-            }),
-          });
-        }
-
-        if (intent.container.kind === "subpart" && question.id === intent.container.questionId && activeKind === "block" && movedBlock) {
-          return withNormalizedQuestionOrder({
-            ...question,
-            parts: question.parts.map((part) => {
-              if (part.id !== intent.container.partId) return part;
-              return withNormalizedPartOrder({
-                ...part,
-                subparts: (part.subparts ?? []).map((subpart) => {
-                  if (subpart.id !== intent.container.subpartId) return subpart;
-                  return {
-                    ...subpart,
-                    contentBlocks: intent.beforeBlockId
-                      ? insertBeforeByKey(
-                          subpart.contentBlocks,
-                          intent.beforeBlockId,
-                          movedBlock as EditorContentBlock,
-                          (block) => block.id,
-                        )
-                      : [...subpart.contentBlocks, movedBlock as EditorContentBlock],
-                  };
-                }),
-              });
-            }),
-          });
-        }
-
-        return question;
-      });
-
-      return inserted.map(withNormalizedQuestionOrder);
-    });
+    const action = subsectionMoveAction(active, intent);
+    if (action) applyEditorAction(action);
   }
 
   function readSubsectionDrag(event: DragEvent<HTMLElement>) {
@@ -8800,9 +15507,10 @@ export default function App() {
   function addQuestion() {
     const question = createQuestion();
     const anchor = questionScrollAnchor(question.id);
-    setQuestionsWithHistory((current) => [...current, question]);
+    applyEditorAction({ type: "question.add", question });
     selectQuestionInEditor(question.id);
     setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
     queueDocumentJump(anchor, anchor);
   }
 
@@ -8810,50 +15518,46 @@ export default function App() {
     const question = questions.find((current) => current.id === questionId);
     if (!question || questionHasPageBreak(question)) return;
     const anchor = pageBreakScrollAnchor(question.id);
-    updateQuestion(question.id, {
-      pageBreakAfter: true,
-      contentBlocks: question.contentBlocks.filter((block) => block.kind !== "pageBreak"),
-    });
-    setActiveTocItemId(anchor);
-    queueDocumentJump(anchor, questionScrollAnchor(question.id));
+    applyEditorAction({ type: "pageBreak.set", target: { kind: "question", questionId: question.id }, enabled: true });
+    setActiveRailItemId(anchor);
+    pendingEditorJumpAnchorRef.current = null;
+    pendingPreviewJumpAnchorRef.current = null;
   }
 
   function removePageBreakAfterQuestion(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const wasActivePageBreak = activeTocItemId === pageBreakScrollAnchor(question.id);
-    updateQuestion(question.id, {
-      pageBreakAfter: false,
-      contentBlocks: question.contentBlocks.filter((block) => block.kind !== "pageBreak"),
-    });
+    const pageBreakAnchor = pageBreakScrollAnchor(question.id);
+    const wasActivePageBreak = activeTocItemId === pageBreakAnchor;
+    const wasActiveRailPageBreak = activeRailItemId === pageBreakAnchor;
+    applyEditorAction({ type: "pageBreak.set", target: { kind: "question", questionId: question.id }, enabled: false });
+    if (wasActiveRailPageBreak) {
+      setActiveRailItemId(questionScrollAnchor(question.id));
+    }
     if (wasActivePageBreak) {
       const anchor = questionScrollAnchor(question.id);
       selectQuestionInEditor(question.id);
       setActiveTocItemId(anchor);
+      setActiveRailItemId(anchor);
       queueDocumentJump(anchor, anchor);
     }
   }
 
   function removeQuestion(questionId: string) {
     const removedIndex = questions.findIndex((question) => question.id === questionId);
-    const remainingQuestions = questions.filter((question) => question.id !== questionId);
-    const nextQuestions = remainingQuestions.length ? remainingQuestions : [createQuestion()];
+    const fallbackQuestion = questions.length <= 1 ? createQuestion() : undefined;
+    const result = applyEditorAction({ type: "question.delete", questionId, fallbackQuestion });
+    if (!result.ok) return;
+    const nextQuestions = result.questions;
     const nextActiveQuestion =
       questionId === activeQuestionId
         ? (nextQuestions[Math.min(Math.max(removedIndex, 0), nextQuestions.length - 1)] ?? nextQuestions[0])
         : (nextQuestions.find((question) => question.id === activeQuestionId) ?? nextQuestions[0]);
-    setQuestionsWithHistory(nextQuestions);
-    setCollapsedQuestionIds((current) => {
-      const nextQuestionIds = questionIdSet(nextQuestions);
-      const next = new Set([...current].filter((id) => nextQuestionIds.has(id)));
-      if (!remainingQuestions.length) {
-        nextQuestions.forEach((question) => next.add(question.id));
-      }
-      return next;
-    });
     if (nextActiveQuestion) {
+      const anchor = questionScrollAnchor(nextActiveQuestion.id);
       setActiveQuestionId(nextActiveQuestion.id);
-      setActiveTocItemId(questionScrollAnchor(nextActiveQuestion.id));
+      setActiveTocItemId(anchor);
+      setActiveRailItemId(anchor);
     }
   }
 
@@ -8861,19 +15565,24 @@ export default function App() {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
     const block = contentBlockForKind(kind);
-    updateQuestion(question.id, {
-      contentBlocks: [...question.contentBlocks, block],
-      itemOrder: [...question.itemOrder, { kind: "block", id: block.id }],
-    });
+    applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
+  }
+
+  function addQuestionSolutionSlot(questionId: string) {
+    const question = questions.find((current) => current.id === questionId);
+    if (!question) return;
+    const defaultLines = defaultSolutionSlotLines(question.parts.length ? questionMarks(question) : question.marks);
+    const lines = requestedSolutionSlotLines(defaultLines);
+    if (lines === null) return;
+    const blocks = solutionSlotBlocks(lines);
+    applyEditorAction({ type: "solutionSlot.add", scope: { kind: "question", questionId: question.id }, blocks });
+    setShowSolutions(true);
   }
 
   function removeQuestionBlock(questionId: string, blockId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    updateQuestion(question.id, {
-      contentBlocks: question.contentBlocks.filter((block) => block.id !== blockId),
-      itemOrder: question.itemOrder.filter((item) => orderItemKey(item) !== `block:${blockId}`),
-    });
+    applyEditorAction({ type: "module.delete", scope: { kind: "question", questionId: question.id }, blockId });
   }
 
   function createPart(): EditorPart {
@@ -8882,6 +15591,7 @@ export default function App() {
       label: "",
       text: "",
       marks: 0,
+      pageBreakBefore: false,
       contentBlocks: [],
       subparts: [],
       itemOrder: [],
@@ -8892,19 +15602,13 @@ export default function App() {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
     const part = createPart();
-    updateQuestion(question.id, {
-      parts: relabelParts([...question.parts, part]),
-      itemOrder: [...question.itemOrder, { kind: "part", id: part.id }],
-    });
+    applyEditorAction({ type: "part.add", questionId: question.id, part });
   }
 
   function removePart(questionId: string, partId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    updateQuestion(question.id, {
-      parts: relabelParts(question.parts.filter((part) => part.id !== partId)),
-      itemOrder: question.itemOrder.filter((item) => orderItemKey(item) !== `part:${partId}`),
-    });
+    applyEditorAction({ type: "part.delete", questionId: question.id, partId });
   }
 
   function createSubpart(subpartIndex: number): EditorSubpart {
@@ -8913,6 +15617,7 @@ export default function App() {
       label: romanLabel(subpartIndex),
       text: "",
       marks: 0,
+      pageBreakBefore: false,
       contentBlocks: [],
     };
   }
@@ -8920,47 +15625,128 @@ export default function App() {
   function addSubpart(questionId: string, part: EditorPart) {
     const subparts = part.subparts ?? [];
     const subpart = createSubpart(subparts.length);
-    updatePart(questionId, part.id, {
-      subparts: relabelSubparts([...subparts, subpart]),
-      itemOrder: [...part.itemOrder, { kind: "subpart", id: subpart.id }],
-    });
+    applyEditorAction({ type: "subpart.add", questionId, partId: part.id, subpart });
   }
 
   function removeSubpart(questionId: string, part: EditorPart, subpartId: string) {
-    updatePart(questionId, part.id, {
-      subparts: relabelSubparts((part.subparts ?? []).filter((subpart) => subpart.id !== subpartId)),
-      itemOrder: part.itemOrder.filter((item) => orderItemKey(item) !== `subpart:${subpartId}`),
-    });
+    applyEditorAction({ type: "subpart.delete", questionId, partId: part.id, subpartId });
   }
 
   function addPartBlock(questionId: string, part: EditorPart, kind: ContentBlockKind) {
     const block = contentBlockForKind(kind);
-    updatePart(questionId, part.id, {
-      contentBlocks: [...part.contentBlocks, block],
-      itemOrder: [...part.itemOrder, { kind: "block", id: block.id }],
-    });
+    applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
+  }
+
+  function addPartSolutionSlot(questionId: string, part: EditorPart) {
+    const defaultLines = defaultSolutionSlotLines(part.subparts?.length ? partMarks(part) : part.marks);
+    const lines = requestedSolutionSlotLines(defaultLines);
+    if (lines === null) return;
+    const blocks = solutionSlotBlocks(lines);
+    applyEditorAction({ type: "solutionSlot.add", scope: { kind: "part", questionId, partId: part.id }, blocks });
+    setShowSolutions(true);
   }
 
   function removePartBlock(questionId: string, part: EditorPart, blockId: string) {
-    updatePart(questionId, part.id, {
-      contentBlocks: part.contentBlocks.filter((block) => block.id !== blockId),
-      itemOrder: part.itemOrder.filter((item) => orderItemKey(item) !== `block:${blockId}`),
-    });
+    applyEditorAction({ type: "module.delete", scope: { kind: "part", questionId, partId: part.id }, blockId });
   }
 
   function addSubpartBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, kind: ContentBlockKind) {
-    updateSubpart(questionId, part.id, subpart.id, {
-      contentBlocks: [...subpart.contentBlocks, contentBlockForKind(kind)],
+    applyEditorAction({
+      type: "module.add",
+      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
+      blocks: [contentBlockForKind(kind)],
     });
+  }
+
+  function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
+    const lines = requestedSolutionSlotLines(defaultSolutionSlotLines(subpart.marks));
+    if (lines === null) return;
+    applyEditorAction({
+      type: "solutionSlot.add",
+      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
+      blocks: solutionSlotBlocks(lines),
+    });
+    setShowSolutions(true);
   }
 
   function removeSubpartBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, blockId: string) {
-    updateSubpart(questionId, part.id, subpart.id, {
-      contentBlocks: subpart.contentBlocks.filter((block) => block.id !== blockId),
-    });
+    applyEditorAction({ type: "module.delete", scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, blockId });
   }
 
+  deleteActiveEditorSelectionRef.current = () => {
+    const anchor = activeRailItemId.startsWith("pb:") ? activeRailItemId : activeTocItemId;
+    const parsed = parseScrollAnchor(anchor);
+    if (!parsed.questionId) return false;
+
+    const question = questions.find((current) => current.id === parsed.questionId);
+    if (!question) return false;
+
+    if (parsed.kind === "pageBreak") {
+      removePageBreakAfterQuestion(parsed.questionId);
+      return true;
+    }
+
+    if (parsed.kind === "question") {
+      removeQuestion(parsed.questionId);
+      return true;
+    }
+
+    if (parsed.kind === "questionBlock" && parsed.blockId) {
+      removeQuestionBlock(parsed.questionId, parsed.blockId);
+      activateEditorAnchor(questionScrollAnchor(parsed.questionId));
+      return true;
+    }
+
+    if (parsed.kind === "part" && parsed.partId) {
+      removePart(parsed.questionId, parsed.partId);
+      activateEditorAnchor(questionScrollAnchor(parsed.questionId));
+      return true;
+    }
+
+    if (parsed.kind === "partBlock" && parsed.partId && parsed.blockId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      if (!part) return false;
+      removePartBlock(parsed.questionId, part, parsed.blockId);
+      activateEditorAnchor(partScrollAnchor(parsed.questionId, parsed.partId));
+      return true;
+    }
+
+    if (parsed.kind === "subpart" && parsed.partId && parsed.subpartId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      if (!part) return false;
+      removeSubpart(parsed.questionId, part, parsed.subpartId);
+      activateEditorAnchor(partScrollAnchor(parsed.questionId, parsed.partId));
+      return true;
+    }
+
+    if (parsed.kind === "subpartBlock" && parsed.partId && parsed.subpartId && parsed.blockId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+      if (!part || !subpart) return false;
+      removeSubpartBlock(parsed.questionId, part, subpart, parsed.blockId);
+      activateEditorAnchor(subpartScrollAnchor(parsed.questionId, parsed.partId, parsed.subpartId));
+      return true;
+    }
+
+    return false;
+  };
+
+  useEffect(() => {
+    function handleGlobalDelete(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented || fileManagerOpen || !nativeKeyboardDeleteRequested(event)) return;
+      if (keyboardTargetConsumesGlobalDelete(event.target)) return;
+      if (!deleteActiveEditorSelectionRef.current()) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    window.addEventListener("keydown", handleGlobalDelete);
+    return () => window.removeEventListener("keydown", handleGlobalDelete);
+  }, [fileManagerOpen]);
+
   function renderQuestionContentBlock(question: QuestionBlock, block: EditorContentBlock, _itemIndex: number, _itemCount: number) {
+    if (!isContentBlockVisible(block, showSolutions)) return null;
+
     const blockIndex = Math.max(
       0,
       question.contentBlocks.filter((current) => current.kind !== "pageBreak").findIndex((current) => current.id === block.id),
@@ -8984,9 +15770,9 @@ export default function App() {
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Space block ${blockIndex + 1}`}
+            label={`Answer space ${blockIndex + 1}`}
             lines={block.lines}
-            dragHandle={subsectionDragHandle(blockTarget, `Drag space block ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(blockTarget, `Drag answer space ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
             onChange={(lines) => updateContentBlock(question.id, block.id, { lines })}
@@ -9003,13 +15789,12 @@ export default function App() {
             label={`Diagram block ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            textSide={block.diagramTextSide}
+            showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(blockTarget, `Drag diagram block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
             onChange={(graphConfig) => updateContentBlock(question.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updateContentBlock(question.id, block.id, { diagramAlign })}
-            onTextSideChange={(diagramTextSide) => updateContentBlock(question.id, block.id, { diagramTextSide })}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
         </div>,
@@ -9075,6 +15860,8 @@ export default function App() {
     _itemIndex: number,
     _itemCount: number,
   ) {
+    if (!isContentBlockVisible(block, showSolutions)) return null;
+
     const blockIndex = Math.max(
       0,
       part.contentBlocks.filter((current) => current.kind !== "pageBreak").findIndex((current) => current.id === block.id),
@@ -9103,9 +15890,9 @@ export default function App() {
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Part space ${blockIndex + 1}`}
+            label={`Part answer space ${blockIndex + 1}`}
             lines={block.lines}
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part space ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part answer space ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -9123,14 +15910,13 @@ export default function App() {
             label={`Part diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            textSide={block.diagramTextSide}
+            showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
             onChange={(graphConfig) => updatePartContentBlock(question.id, part.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updatePartContentBlock(question.id, part.id, block.id, { diagramAlign })}
-            onTextSideChange={(diagramTextSide) => updatePartContentBlock(question.id, part.id, block.id, { diagramTextSide })}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
         </div>,
@@ -9199,6 +15985,8 @@ export default function App() {
     block: EditorContentBlock,
     blockIndex: number,
   ) {
+    if (!isContentBlockVisible(block, showSolutions)) return null;
+
     const subpartBlockTarget: SubsectionDragTarget = {
       kind: "subpart-block",
       questionId: question.id,
@@ -9224,9 +16012,9 @@ export default function App() {
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Subpart space ${blockIndex + 1}`}
+            label={`Subpart answer space ${blockIndex + 1}`}
             lines={block.lines}
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart space ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart answer space ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -9244,16 +16032,13 @@ export default function App() {
             label={`Subpart diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            textSide={block.diagramTextSide}
+            showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
             onChange={(graphConfig) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramAlign })}
-            onTextSideChange={(diagramTextSide) =>
-              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramTextSide })
-            }
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
         </div>,
@@ -9330,6 +16115,13 @@ export default function App() {
     const subpartAnchor = subpartScrollAnchor(question.id, part.id, subpart.id);
     const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
     const subpartActive = isActiveEditorAnchor(subpartAnchor);
+    const subpartUsesSolutionSpace = safeMarkValue(subpart.marks) > 0;
+    const subpartSolutionSlotAction = {
+      label: "Solution slot",
+      tooltip: "Add paired answer space and solution text",
+      icon: <FileText className="size-4" aria-hidden="true" />,
+      onClick: () => addSubpartSolutionSlot(question.id, part, subpart),
+    };
 
     return (
       <div
@@ -9347,13 +16139,26 @@ export default function App() {
           actions={
             <>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
+                Page
+                <span className="flex h-8 w-28 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm font-normal">
+                  <input
+                    type="checkbox"
+                    checked={subpart.pageBreakBefore === true}
+                    onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { pageBreakBefore: event.target.checked })}
+                    className="size-3.5"
+                    aria-label={`Start subpart ${subpartLabel} on a new page`}
+                  />
+                  <span>New page</span>
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                 Marks
                 <input
                   type="number"
                   min={0}
                   value={subpart.marks}
                   onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
-                  className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  className="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <RemoveActionButton label={`Remove subpart ${subpartLabel}`} onRemove={() => removeSubpart(question.id, part, subpart.id)} />
@@ -9390,7 +16195,18 @@ export default function App() {
             onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
             onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
             onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
-            onAddSpace={() => addSubpartBlock(question.id, part, subpart, "space")}
+            onAddSpace={() =>
+              subpartUsesSolutionSpace
+                ? addSubpartSolutionSlot(question.id, part, subpart)
+                : addSubpartBlock(question.id, part, subpart, "space")
+            }
+            spaceActionLabel={subpartUsesSolutionSpace ? "Answer + solution" : "Space"}
+            spaceActionTooltip={
+              subpartUsesSolutionSpace
+                ? "Add the default paired student answer space and solution block for this marked subpart"
+                : undefined
+            }
+            extraActions={subpartUsesSolutionSpace ? [] : [subpartSolutionSlotAction]}
           />
         </CollapsiblePanel>
       </div>
@@ -9409,11 +16225,18 @@ export default function App() {
     const partAnchor = partScrollAnchor(question.id, part.id);
     const partOpenSignal = openSignalForAnchor(partAnchor);
     const partActive = isActiveEditorAnchor(partAnchor);
+    const partUsesSolutionSpace = !subparts.length && safeMarkValue(part.marks) > 0;
     const partInsertAction = {
       label: "Subpart",
       tooltip: "Add a roman-numbered item, such as (i), inside this part",
       icon: <GitBranch className="size-4" aria-hidden="true" />,
       onClick: () => addSubpart(question.id, part),
+    };
+    const partSolutionSlotAction = {
+      label: "Solution slot",
+      tooltip: "Add paired answer space and solution text",
+      icon: <FileText className="size-4" aria-hidden="true" />,
+      onClick: () => addPartSolutionSlot(question.id, part),
     };
 
     return (
@@ -9430,10 +16253,23 @@ export default function App() {
             leading={subsectionDragHandle(partTarget, `Drag part ${partLabel}`)}
             actions={
               <>
+                <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
+                  Page
+                  <span className="flex h-8 w-28 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm font-normal">
+                    <input
+                      type="checkbox"
+                      checked={part.pageBreakBefore === true}
+                      onChange={(event) => updatePart(question.id, part.id, { pageBreakBefore: event.target.checked })}
+                      className="size-3.5"
+                      aria-label={`Start part ${partLabel} on a new page`}
+                    />
+                    <span>New page</span>
+                  </span>
+                </label>
                 {subparts.length ? (
                   <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                     Marks
-                    <div className="flex h-8 w-24 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
+                    <div className="flex h-8 w-28 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
                       {markLabel(partMarks(part))}
                     </div>
                   </div>
@@ -9445,7 +16281,7 @@ export default function App() {
                       min={0}
                       value={part.marks}
                       onChange={(event) => updatePart(question.id, part.id, { marks: Number(event.target.value) })}
-                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      className="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
                 )}
@@ -9483,8 +16319,12 @@ export default function App() {
               onAddChoices={() => addPartBlock(question.id, part, "choices")}
               onAddTable={() => addPartBlock(question.id, part, "table")}
               onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
-              onAddSpace={() => addPartBlock(question.id, part, "space")}
-              extraActions={[partInsertAction]}
+              onAddSpace={() => (partUsesSolutionSpace ? addPartSolutionSlot(question.id, part) : addPartBlock(question.id, part, "space"))}
+              spaceActionLabel={partUsesSolutionSpace ? "Answer + solution" : "Space"}
+              spaceActionTooltip={
+                partUsesSolutionSpace ? "Add the default paired student answer space and solution block for this marked part" : undefined
+              }
+              extraActions={[...(partUsesSolutionSpace ? [] : [partSolutionSlotAction]), partInsertAction]}
             />
           </CollapsiblePanel>
         </div>
@@ -9497,14 +16337,58 @@ export default function App() {
       <div className="app-shell min-h-screen bg-background text-foreground">
         <header className="app-header border-b border-blue-300/15 bg-[#030817] text-white shadow-[0_14px_32px_rgba(3,8,23,0.22)]">
           <div className="flex min-h-16 items-center justify-between gap-4 px-5">
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-3">
               <img
                 src={BRAND_LOGO_SRC}
                 alt="Mauth Studio"
                 className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
               />
             </div>
-            <div className="hidden items-center gap-2 md:flex">
+            <div className="flex items-center gap-2 md:hidden">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="New test"
+                aria-label="New test"
+                onClick={startNewTest}
+                className={HEADER_ICON_BUTTON_CLASS}
+              >
+                <PlusCircle />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Save current test"
+                aria-label="Save current test"
+                onClick={saveCurrentTest}
+                className={HEADER_ICON_BUTTON_CLASS}
+              >
+                <Save />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Open files"
+                aria-label="Open files"
+                onClick={openFileManager}
+                className={HEADER_ICON_BUTTON_CLASS}
+              >
+                <FolderOpen />
+              </Button>
+            </div>
+            <div className="hidden min-w-0 flex-1 items-center justify-end gap-2 md:flex">
+              <HeaderFileControls
+                currentFileName={currentProjectFileName}
+                fileStatusMessage={headerFileStatusMessage}
+                fileStatusTitle={headerFileStatusTitle}
+                saveStatus={headerStorageStatus}
+                onNewTest={startNewTest}
+                onSaveTest={saveCurrentTest}
+                onOpenFiles={openFileManager}
+              />
               <div className={HEADER_GROUP_CLASS}>
                 <Button
                   type="button"
@@ -9518,6 +16402,36 @@ export default function App() {
                 >
                   {darkMode ? <Sun /> : <Moon />}
                 </Button>
+              </div>
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={showSolutions ? "Hide solutions" : "Show solutions"}
+                  aria-label={showSolutions ? "Hide solutions" : "Show solutions"}
+                  aria-pressed={showSolutions}
+                  onClick={() => setShowSolutions((current) => !current)}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, showSolutions && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  {showSolutions ? <Eye /> : <EyeOff />}
+                </Button>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors",
+                    showSolutions
+                      ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
+                      : "border-emerald-300/30 bg-emerald-500/15 text-emerald-50 hover:bg-emerald-500/25 hover:text-white",
+                  )}
+                  title={`${printModeTitle} Open print dialog.`}
+                  aria-label={`Print mode: ${printModeLabel}`}
+                  onClick={printDocument}
+                >
+                  <FileText className="size-4" aria-hidden="true" />
+                  <span className="hidden xl:inline">Print:</span>
+                  <span>{printModeLabel}</span>
+                </button>
               </div>
               <div className={HEADER_GROUP_CLASS}>
                 <Button
@@ -9591,7 +16505,7 @@ export default function App() {
           <DocumentNavigatorRail
             open={tocOpen}
             items={documentTocItems}
-            activeItemId={activeTocItemId}
+            activeItemId={activeRailItemId}
             draggedQuestionId={draggedQuestionId}
             dragOverQuestion={dragOverQuestion}
             draggedPageBreakQuestionId={draggedPageBreakQuestionId}
@@ -9600,7 +16514,7 @@ export default function App() {
             onToggle={() => setTocOpen((current) => !current)}
             onJump={jumpToTocItem}
             onPreviewJump={jumpPreviewToTocItem}
-            onSelectPageBreak={selectPageBreakInEditor}
+            onSelectPageBreak={selectPageBreakInRail}
             onToggleEditorAtItem={toggleEditorAtTocItem}
             onAddQuestion={addQuestion}
             onAddPageBreakAfterQuestion={addPageBreakAfterQuestion}
@@ -9624,21 +16538,12 @@ export default function App() {
             {showEditor ? (
               <section
                 ref={editorPaneRef}
-                className="editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r"
+                className={cn(
+                  "editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r",
+                  paneMode === "split" && "split-pane-scroll",
+                )}
               >
                 <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-4">
-                  <SavedTestManager
-                    savedTests={savedTests}
-                    selectedSavedTestId={selectedSavedTestId}
-                    diskStorageMessage={diskStorageMessage}
-                    onSelectSavedTest={selectSavedTest}
-                    onNewTest={startNewTest}
-                    onSaveTest={saveCurrentTest}
-                    onSaveTestAs={saveCurrentTestAs}
-                    onRenameSavedTest={renameSavedTest}
-                    onDeleteSavedTest={deleteSavedTest}
-                  />
-
                   {editingFrontMatter ? (
                     <div
                       className={cn(
@@ -9652,9 +16557,19 @@ export default function App() {
                           frontMatter={frontMatter}
                           logos={logos}
                           openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                          questionCount={questions.length}
+                          totalMarks={totalMarks}
                           onChange={updateFrontMatter}
                           onAddLogo={addLogo}
+                          onUpdateLogo={updateLogo}
                           onRemoveLogo={removeLogo}
+                        />
+                        <TestFormatEditor
+                          formattingConfig={formattingConfig}
+                          openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                          onFormattingChange={updateFormattingConfig}
+                          onPageChange={updatePageFormat}
+                          onReset={resetTestFormat}
                         />
                       </div>
                     </div>
@@ -9687,12 +16602,13 @@ export default function App() {
                         const questionItems = orderedQuestionItems(question);
                         const questionAnchor = questionScrollAnchor(question.id);
                         const questionActive = isActiveEditorAnchor(questionAnchor);
-                        const collapsed = collapsedQuestionIds.has(question.id);
-                        const dragging = draggedQuestionId === question.id;
-                        const questionDropPlacement =
-                          dragOverQuestion?.questionId === question.id && draggedQuestionId !== question.id
-                            ? dragOverQuestion.placement
-                            : null;
+                        const questionUsesSolutionSpace = !hasParts && safeMarkValue(question.marks) > 0;
+                        const questionSolutionSlotAction = {
+                          label: "Solution slot",
+                          tooltip: "Add paired answer space and solution text",
+                          icon: <FileText className="size-4" aria-hidden="true" />,
+                          onClick: () => addQuestionSolutionSlot(question.id),
+                        };
 
                         return (
                           <div key={question.id} className="contents">
@@ -9700,51 +16616,11 @@ export default function App() {
                               className={cn(
                                 "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
                                 questionActive && EDITOR_ACTIVE_PANEL_CLASS,
-                                collapsed && "py-3",
-                                dragging && "scale-[0.995] opacity-70 shadow-2xl",
-                                questionDropPlacement === "before" &&
-                                  "before:absolute before:-top-3 before:left-3 before:right-3 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
-                                questionDropPlacement === "after" &&
-                                  "after:absolute after:-bottom-3 after:left-3 after:right-3 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
                               )}
-                              data-drag-preview
                               data-scroll-anchor={questionAnchor}
-                              onDragOver={(event) => handleQuestionDragOver(event, question.id)}
-                              onDragLeave={(event) => handleQuestionDragLeave(event, question.id)}
-                              onDrop={(event) => handleQuestionDrop(event, question.id)}
                             >
-                              <div className={cn("flex items-center justify-between gap-3", collapsed ? "flex-nowrap" : "mb-4 flex-wrap")}>
-                                <div
-                                  className={cn("flex min-w-0 items-center gap-2", collapsed ? "flex-nowrap overflow-hidden" : "flex-wrap")}
-                                >
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    draggable
-                                    title="Drag question"
-                                    aria-label={`Drag Question ${questionDisplayNumber(frontMatter, index)}`}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onDragStart={(event) => handleQuestionDragStart(event, question.id)}
-                                    onDragEnd={handleQuestionDragEnd}
-                                    className="size-9 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
-                                  >
-                                    <GripVertical />
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      toggleQuestionCollapsed(question.id);
-                                    }}
-                                    title={collapsed ? "Expand question" : "Collapse question"}
-                                    aria-label={collapsed ? "Expand question" : "Collapse question"}
-                                    aria-expanded={!collapsed}
-                                    className="size-9 shrink-0"
-                                  >
-                                    {collapsed ? <ChevronRight /> : <ChevronDown />}
-                                  </Button>
+                              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
                                   <Button
                                     type="button"
                                     variant="outline"
@@ -9779,9 +16655,8 @@ export default function App() {
                                       />
                                     </label>
                                   )}
-                                  {collapsed ? <InlineMathSummary source={firstTextSource(question.contentBlocks)} /> : null}
                                 </div>
-                                <div className={cn("flex items-center gap-2", collapsed ? "shrink-0 flex-nowrap" : "flex-wrap")}>
+                                <div className="flex flex-wrap items-center gap-2">
                                   <Button
                                     variant="outline"
                                     size="icon"
@@ -9798,39 +16673,44 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {!collapsed ? (
-                                <>
-                                  {questionItems.length
-                                    ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
-                                    : null}
-                                  <div className="flex flex-col gap-3">
-                                    {questionItems.map((item, itemIndex) =>
-                                      item.kind === "block"
-                                        ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
-                                        : renderPartPanel(question, item.part),
-                                    )}
-                                  </div>
-                                  {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
-                                  <ContentInsertionActions
-                                    buttonLabel="Add"
-                                    centered
-                                    className="mt-4 pt-3"
-                                    onAddText={() => addQuestionBlock(question.id, "text")}
-                                    onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                    onAddTable={() => addQuestionBlock(question.id, "table")}
-                                    onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                                    onAddSpace={() => addQuestionBlock(question.id, "space")}
-                                    extraActions={[
-                                      {
-                                        label: "Part",
-                                        tooltip: "Add a lettered question part, such as (a), (b), (c)",
-                                        icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                        onClick: () => addPart(question.id),
-                                      },
-                                    ]}
-                                  />
-                                </>
-                              ) : null}
+                              {questionItems.length
+                                ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
+                                : null}
+                              <div className="flex flex-col gap-3">
+                                {questionItems.map((item, itemIndex) =>
+                                  item.kind === "block"
+                                    ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
+                                    : renderPartPanel(question, item.part),
+                                )}
+                              </div>
+                              {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
+                              <ContentInsertionActions
+                                buttonLabel="Add"
+                                centered
+                                className="mt-4 pt-3"
+                                onAddText={() => addQuestionBlock(question.id, "text")}
+                                onAddChoices={() => addQuestionBlock(question.id, "choices")}
+                                onAddTable={() => addQuestionBlock(question.id, "table")}
+                                onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                onAddSpace={() =>
+                                  questionUsesSolutionSpace ? addQuestionSolutionSlot(question.id) : addQuestionBlock(question.id, "space")
+                                }
+                                spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
+                                spaceActionTooltip={
+                                  questionUsesSolutionSpace
+                                    ? "Add the default paired student answer space and solution block for this marked question"
+                                    : undefined
+                                }
+                                extraActions={[
+                                  ...(questionUsesSolutionSpace ? [] : [questionSolutionSlotAction]),
+                                  {
+                                    label: "Part",
+                                    tooltip: "Add a lettered question part, such as (a), (b), (c)",
+                                    icon: <GitBranch className="size-4" aria-hidden="true" />,
+                                    onClick: () => addPart(question.id),
+                                  },
+                                ]}
+                              />
                             </article>
                           </div>
                         );
@@ -9842,27 +16722,120 @@ export default function App() {
             ) : null}
 
             {showPreview ? (
-              <section ref={previewPaneRef} className="preview-pane min-h-0 overflow-auto bg-muted/70 p-4">
-                <div className="preview-panzoom-space">
-                  <div ref={previewPanzoomRef} className="preview-panzoom-content">
-                    <PaginatedTestPreview
-                      frontMatter={frontMatter}
-                      logos={logos}
-                      totalMarks={totalMarks}
-                      questions={questions}
-                      scale={previewFitScale}
-                      onGraphConfigChange={updatePreviewGraphConfig}
-                    />
-                  </div>
-                </div>
+              <section
+                ref={previewPaneRef}
+                className={cn(
+                  "preview-pane min-h-0 overflow-auto bg-muted/70 p-4",
+                  paneMode === "split" && "preview-pane-edit-sync split-pane-scroll",
+                )}
+                style={previewPaneStyle}
+                onPointerDown={handlePreviewPointerDown}
+                onClick={handlePreviewClick}
+              >
+                <PaginatedTestPreview
+                  frontMatter={frontMatter}
+                  logos={logos}
+                  totalMarks={totalMarks}
+                  questions={questions}
+                  formattingConfig={formattingConfig}
+                  scale={previewLayoutScale}
+                  showSolutions={showSolutions}
+                  onGraphConfigChange={handlePreviewGraphConfigChange}
+                />
               </section>
             ) : null}
           </div>
         </main>
+        {paneMode === "preview" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            title={assistantPanelOpen ? "Hide assistant" : "Open assistant"}
+            aria-label={assistantPanelOpen ? "Hide assistant" : "Open assistant"}
+            aria-pressed={assistantPanelOpen}
+            onClick={openAssistantPanel}
+            className={cn(
+              "fixed left-[4.25rem] top-20 z-50 size-10 border-blue-200 bg-background/95 text-primary shadow-lg backdrop-blur hover:bg-primary/10",
+              assistantPanelOpen && "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
+            )}
+          >
+            <Bot className="size-5" aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
-      <div className="print-preview-stage" aria-hidden="true">
-        <PaginatedTestPreview frontMatter={frontMatter} logos={logos} totalMarks={totalMarks} questions={questions} scale={1} />
-      </div>
+      <FileManagementDrawer
+        open={fileManagerOpen}
+        projectFiles={projectFiles}
+        projectFilesStatus={projectFilesStatus}
+        projectFilesMessage={projectFilesMessage}
+        activeProjectFilePath={activeProjectFilePath}
+        onClose={() => setFileManagerOpen(false)}
+        onNewTest={startNewTest}
+        onOpenProjectFile={(filePath) => void openProjectFile(filePath)}
+        onCreateProjectFolder={(folderPath) => void createProjectFolder(folderPath)}
+        onExportProjectBackup={() => void exportCurrentProjectBackup()}
+        onImportProjectBackup={(file) => void importProjectBackupFile(file)}
+        onRenameProjectFile={(filePath) => void renameProjectFile(filePath)}
+        onDuplicateProjectFiles={(filePaths) => void duplicateProjectFiles(filePaths)}
+        onMoveProjectFiles={(filePaths, targetFolderPath) => void moveProjectFiles(filePaths, targetFolderPath)}
+        onDeleteProjectFiles={(filePaths) => void removeProjectFiles(filePaths)}
+        onListProjectFileVersions={loadProjectFileVersions}
+        onRestoreProjectFileVersion={restoreProjectFileFromVersion}
+      />
+      <NewTestDialog open={newTestDialogOpen} onClose={() => setNewTestDialogOpen(false)} onCreate={createNewTestFromTemplate} />
+      {solutionValidationOpen ? (
+        <SolutionValidationPanel
+          result={solutionValidation}
+          onClose={() => setSolutionValidationOpen(false)}
+          onJump={jumpToSolutionValidationIssue}
+          onFix={applySolutionValidationFix}
+        />
+      ) : null}
+      {actionProposalOpen ? (
+        <ActionProposalPanel
+          value={actionProposalText}
+          message={actionProposalMessage}
+          result={actionProposalResult}
+          onChange={(nextValue) => {
+            setActionProposalText(nextValue);
+            setActionProposalMessage("");
+            setActionProposalResult(null);
+          }}
+          onPreview={previewActionProposal}
+          onApply={applyActionProposal}
+          onClose={() => setActionProposalOpen(false)}
+          onClear={clearActionProposal}
+        />
+      ) : null}
+      {assistantPanelOpen && paneMode === "preview" ? (
+        <MauthAssistantPanel
+          placement="preview-left"
+          chatMessages={assistantChatMessages}
+          chatInput={assistantChatInput}
+          chatRunning={assistantChatRunning}
+          providerConfigured={assistantProviderConfigured}
+          providerStatusMessage={assistantProviderStatusMessage}
+          activityLabel={assistantActivityLabel}
+          activityStartedAt={assistantActivityStartedAt}
+          onChatInputChange={setAssistantChatInput}
+          onSendChat={() => void sendAssistantChatMessage()}
+          onClose={() => setAssistantPanelOpen(false)}
+        />
+      ) : null}
+      {printPreviewMounted ? (
+        <div className="print-preview-stage" aria-hidden="true">
+          <PaginatedTestPreview
+            frontMatter={frontMatter}
+            logos={logos}
+            totalMarks={totalMarks}
+            questions={questions}
+            formattingConfig={formattingConfig}
+            scale={1}
+            showSolutions={showSolutions}
+          />
+        </div>
+      ) : null}
     </>
   );
 }
