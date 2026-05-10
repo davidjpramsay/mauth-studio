@@ -110,6 +110,10 @@ function validateVisibilityFields(record: Record<string, unknown>, path: string,
   booleanField(record, "studentOnly", path, issues, true);
 }
 
+function isSolutionOnlyTextBlock(value: Record<string, unknown>) {
+  return value.visibility === "solution" || value.solutionOnly === true;
+}
+
 function validateContentBlock(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
   if (!isRecord(value)) {
     addIssue(issues, path, "must be a content block object", "ContentBlock");
@@ -122,12 +126,12 @@ function validateContentBlock(value: unknown, path: string, issues: MauthActionV
 
   if (value.kind === "text") {
     stringField(value, "text", path, issues);
-    if (typeof value.text === "string" && /\[\[\s*marks\s*:/i.test(value.text)) {
+    if (typeof value.text === "string" && /\[\[\s*marks\s*:/i.test(value.text) && !isSolutionOnlyTextBlock(value)) {
       addIssue(
         issues,
         `${path}.text`,
-        "must not contain raw [[marks:...]] placeholders",
-        "normal solution text plus separate mark ticks/marking modules",
+        "mark tick annotations are only allowed in solution-only text blocks",
+        'solution text with visibility: "solution"',
       );
     }
     if (

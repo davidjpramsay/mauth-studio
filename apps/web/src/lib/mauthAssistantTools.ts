@@ -622,8 +622,28 @@ function authorBlockId(questionId: string, suffix: string) {
   return `${questionId}-${slugPart(suffix)}`;
 }
 
+const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
+const TRAILING_VISIBLE_MARK_NOTE_PATTERN = /\s*(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))\s*$/i;
+const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
+
+function normalizeSolutionMarkAnnotations(value: string) {
+  return value
+    .replace(MARK_TICK_ANNOTATION_PATTERN, (_, count: string) => `[[marks:${count}]]`)
+    .split("\n")
+    .map((line) =>
+      line.replace(TRAILING_VISIBLE_MARK_NOTE_PATTERN, (_match, squareCount: string | undefined, roundCount: string | undefined) => {
+        const count = squareCount ?? roundCount;
+        return count ? ` [[marks:${count}]]` : "";
+      }),
+    )
+    .join("\n");
+}
+
 function solutionBlockText(value: string) {
-  return /^\s*(?:\*\*)?Solution\b/i.test(value) ? value : `**Solution.**\n\n${value}`;
+  const normalized = normalizeSolutionMarkAnnotations(value.trim());
+  if (!SOLUTION_HEADING_PATTERN.test(normalized)) return `**Solution.**\n\n${normalized}`;
+  const body = normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart();
+  return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
 }
 
 function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {

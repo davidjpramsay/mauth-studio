@@ -111,7 +111,7 @@ The screen preview uses pixel-sized A4 pages so pan/zoom and pagination stay pre
 
 Display zoom uses a fast temporary transform during pinch/scroll gestures, then settles into the preview page scale itself. This keeps the gesture responsive while leaving text, MathJax SVG, and vector diagrams sharper at rest; bitmap images still depend on the resolution of the uploaded image.
 
-Maths is rendered by MathJax SVG. Inline maths is locally wrapped with `\displaystyle` by default; use `\textstyle` at the start of a specific inline formula when compact inline sizing is wanted. TeX still shrinks nested fraction contents, so AI-authored questions, solutions, table cells, and diagram labels should use explicit nested display style for large expressions in fractions, for example `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`.
+Maths is rendered by MathJax SVG. Inline maths is locally wrapped with `\displaystyle` by default; use `\textstyle` at the start of a specific inline formula when compact inline sizing is wanted. TeX still shrinks nested fraction contents, so AI-authored questions, solutions, table cells, and diagram labels should use explicit nested display style for large expressions in fractions, for example `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`. Solution mark allocation uses hidden `[[marks:n]]` line annotations that render as red check marks; avoid visible `[1 mark]` notes in worked solutions.
 
 ## Prototype Capabilities
 

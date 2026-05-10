@@ -34,7 +34,7 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 
 Current durable conventions:
 
-- Use `[[marks:n]]` for solution-copy mark ticks.
+- Use `[[marks:n]]` for solution-copy mark ticks. These annotations are hidden by the renderer and become red check marks; do not use visible `[1 mark]` or `(1 mark)` notes in solution prose.
 - Any brain that emits LaTeX follows the shared MathJax style contract: use `$...$` for inline maths and `$$...$$` for display maths; do not emit `\(...\)` or `\[...\]`. Inline maths is wrapped with `\displaystyle` by default, but TeX still shrinks fraction numerators and denominators, so large nested expressions need explicit nested display style, for example `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`.
 - When converting source exams, preserve inline maths as inline maths even when it contains tall vectors or matrices. Use display maths only for standalone source equations or deliberate working lines.
 - Preserve meaningful source line breaks and paragraph breaks during exam conversion. A text block may contain real newlines; do not merge next-line instructions into one long line unless the original break was clearly accidental.

@@ -366,6 +366,33 @@ test("ensures top-level solution and student space for a question", () => {
   assert.match(solution?.kind === "text" ? solution.text : "", /^\*\*Solution\.\*\*/);
 });
 
+test("normalises visible assistant mark notes into hidden solution tick annotations", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.ensureSolutions",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          studentSpaceLines: 9,
+          solutionText:
+            "Solution (5 marks). Let $\\ell$ be the tangent.\n" +
+            "$\\angle(\\ell,AB)=\\angle ACB$. [1 mark]\n" +
+            "$\\angle(\\ell,AB)=\\angle CBA$. [1 mark]\n" +
+            "$AB=AC$. [1 mark for clear conclusion]",
+        },
+      ],
+    },
+  });
+  const solution = result.document?.questions[0].contentBlocks.find((block) => block.kind === "text" && block.visibility === "solution");
+  const text = solution?.kind === "text" ? solution.text : "";
+
+  assert.equal(result.ok, true);
+  assert.match(text, /^\*\*Solution\.\*\*\n\nLet \$\\ell\$ be the tangent\./);
+  assert(!text.includes("[1 mark]"));
+  assert(!text.includes("Solution (5 marks)"));
+  assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 3);
+});
+
 test("rejects malformed high-level authoring payloads before editing the document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {

@@ -66,7 +66,7 @@ The visible editor surface for these document settings lives under `T` in the `T
 - `mauth.actions.apply`: apply one or more document actions and return the next document.
 - `mauth.author.replaceQuestion`: replace one existing question from a compact authoring payload with question text, marks, optional diagrams, student-only answer space, and solution-only solution text.
 - `mauth.author.addDiagram`: add or replace a diagram in one existing question from a compact payload. Assistant-authored diagrams must provide a renderer-specific `graphConfig`; canned `standardDiagram` recipe payloads are not supported.
-- `mauth.author.ensureSolutions`: create or resize matched student answer spaces and add solution-only worked-solution text for one or more existing questions/parts.
+- `mauth.author.ensureSolutions`: create or resize matched student answer spaces and add solution-only worked-solution text for one or more existing questions/parts. `solutionText` should use hidden `[[marks:n]]` annotations at the end of mark-worthy lines; the renderer converts these to red check marks.
 
 The intended AI workflow is:
 
@@ -102,7 +102,7 @@ The product target is Codex-level Mauth document capability inside the app: comp
 For common follow-up prompts, high-level tools should avoid extra provider loops:
 
 - "Add/include the diagram in Question 1" should normally call `mauth.author.addDiagram` with `questionNumber: 1` and a real `diagram.graphConfig`. If the existing question is a schematic geometry/circle theorem prompt, use `graphConfig.type: "geometricConstruction"` with supported Penrose Substance in `graphConfig.options.substanceSource`. For a tangent parallel to a chord, use predicates such as `CircleThrough`, `OnCircle`, `Tangent`, `ParallelToSegment`, and `Segment`. Visible labels should match the question statement; hide auxiliary centre points unless the question names them.
-- "Write/add/fix the solution for Question 1" should normally call `mauth.author.ensureSolutions` when the current summary contains the question text. The tool owns creating or resizing the student answer space and adding solution-only text.
+- "Write/add/fix the solution for Question 1" should normally call `mauth.author.ensureSolutions` when the current summary contains the question text. The tool owns creating or resizing the student answer space and adding solution-only text. Put mark allocation in hidden `[[marks:n]]` line annotations, not visible `[1 mark]` prose.
 - These successful high-level calls are terminal from the frontend's point of view. The panel should show a local result such as "Added the diagram." or "Updated the solutions." rather than paying for another provider round to summarise the obvious.
 
 Example focused diagram payload shape:

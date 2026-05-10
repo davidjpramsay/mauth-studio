@@ -555,7 +555,7 @@ def focused_tool_hint(
         return (
             "Focused tool routing hint: this is a solution request and the compact summary already includes enough "
             f"Question {question_number} text. Your first tool call should be mauth_author_ensure_solutions with "
-            f'{{"questions":[{{"questionNumber":{question_number},"studentSpaceLines":8,"solutionText":"..."}}]}}. '
+            f'{{"questions":[{{"questionNumber":{question_number},"studentSpaceLines":8,"solutionText":"... [[marks:1]]"}}]}}. '
             "Do not call mauth.document.inspect first."
         )
     if any(term in text for term in ("diagram", "graph")) and any(
@@ -742,7 +742,9 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     "type": "string",
                     "description": (
                         "Concise worked solution in Mauthdown/MathJax. Start with a real solution, not placeholders; "
-                        "the app will add the Solution heading if omitted."
+                        "the app will add the Solution heading if omitted. Put hidden [[marks:n]] annotations at the "
+                        "end of mark-worthy lines so the solution copy renders red check marks; do not write visible "
+                        "[1 mark] notes."
                     ),
                 },
                 "includeSolution": {
@@ -778,7 +780,10 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                             "text": {"type": "string", "description": "Part prompt text without a typed '(a)' label."},
                             "marks": {"type": "integer", "minimum": 0, "maximum": 100},
                             "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-                            "solutionText": {"type": "string", "description": "Worked solution for this part."},
+                            "solutionText": {
+                                "type": "string",
+                                "description": "Worked solution for this part. End mark-worthy lines with hidden [[marks:n]] tick annotations.",
+                            },
                             "includeSolution": {"type": "boolean"},
                             "diagram": {"type": "object", "additionalProperties": True},
                             "diagrams": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
@@ -893,7 +898,11 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                             "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 60},
                             "solutionText": {
                                 "type": "string",
-                                "description": "Concise worked solution in Mauthdown/MathJax.",
+                                "description": (
+                                    "Concise worked solution in Mauthdown/MathJax. Put hidden [[marks:n]] annotations at "
+                                    "the end of mark-worthy lines so Mauth renders red check marks. Do not write visible "
+                                    "[1 mark] or (1 mark) notes."
+                                ),
                             },
                             "parts": {
                                 "type": "array",
@@ -904,7 +913,10 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                                         "label": {"type": "string"},
                                         "partId": {"type": "string"},
                                         "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 60},
-                                        "solutionText": {"type": "string"},
+                                        "solutionText": {
+                                            "type": "string",
+                                            "description": "Part solution with hidden [[marks:n]] annotations on mark-worthy lines.",
+                                        },
                                     },
                                     "required": ["solutionText"],
                                     "additionalProperties": False,
@@ -992,6 +1004,7 @@ Tool-call contract:
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, EqualLength, and LabelsAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre).
 - For focused requests to add or write a worked solution for a named question, use mauth_author_ensure_solutions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
+- In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.
 - Always call mauth_tool with this wrapper shape: {{"name":"<mauth tool name>","arguments":{{...}}}}. For low-level document action batches, use {{"name":"mauth.actions.preview","arguments":{{"actions":[...]}}}}.
 - Put action batches, file paths, and tool-specific options inside the nested arguments object, not beside name.
 - For focused requests to write or replace one existing question through the wrapper, prefer mauth.author.replaceQuestion over low-level action batches. Supply questionNumber or questionId, marks, questionText, studentSpaceLines, and solutionText when a solution is wanted.
