@@ -41,11 +41,8 @@ import {
 import {
   Bot,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Columns2,
-  Copy,
-  Download,
   Eye,
   EyeOff,
   FileText,
@@ -58,7 +55,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelRightClose,
-  Pencil,
   Plus,
   PlusCircle,
   Redo2,
@@ -70,13 +66,13 @@ import {
   Trash2,
   Type,
   Undo2,
-  Upload,
   X,
 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
 import { MauthAssistantPanel } from "@/components/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
+import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
 import {
@@ -129,7 +125,25 @@ import {
 } from "@/lib/mauthActions";
 import { type MauthAssistantAdapterHost } from "@/lib/mauthAssistantAdapter";
 import { useMauthAssistantController } from "@/hooks/useMauthAssistantController";
-import { useProjectFilesController, type ProjectFilesStatus, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import {
+  TEST_FILE_ROOT_LABEL,
+  ensureTestFileName,
+  formatProjectFileSize,
+  isProjectTestFile,
+  joinTestPath,
+  normalizeTestFolderPath,
+  parentTestPath,
+  projectPathContains,
+  projectPathForTestPath,
+  safeProjectFileName,
+  testFileDisplayName,
+  testFilePathKey,
+  testPathBasename,
+  testPathFromProjectPath,
+  topLevelProjectPaths,
+  uniqueTestPath,
+} from "@/lib/projectFiles";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
@@ -234,8 +248,6 @@ const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 const AUTOSAVE_DEBOUNCE_MS = 900;
-const TEST_FILE_ROOT = "tests";
-const TEST_FILE_ROOT_LABEL = "Documents";
 let nextInsertMenuId = 0;
 const STARTER_LOGOS: LogoAsset[] = [
   {
@@ -2743,79 +2755,6 @@ function defaultSavedTestName(frontMatter: FrontMatterConfig) {
   return name || "Untitled test";
 }
 
-function safeProjectFileName(value: string) {
-  const safeName = value
-    .replace(/[<>:"/\\|?*]+/g, " ")
-    .split("")
-    .filter((character) => character.charCodeAt(0) >= 32)
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[. ]+$/g, "");
-  return (safeName || "Untitled test").slice(0, 120);
-}
-
-function normalizeTestFolderPath(path: string) {
-  return path
-    .split("/")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => safeProjectFileName(part))
-    .filter(Boolean)
-    .join("/");
-}
-
-function joinTestPath(folderPath: string, name: string) {
-  const cleanFolder = normalizeTestFolderPath(folderPath);
-  const cleanName = safeProjectFileName(name);
-  return [cleanFolder, cleanName].filter(Boolean).join("/");
-}
-
-function projectPathForTestPath(relativePath: string) {
-  const cleanPath = normalizeTestFolderPath(relativePath);
-  return [TEST_FILE_ROOT, cleanPath].filter(Boolean).join("/");
-}
-
-function testPathFromProjectPath(path: string) {
-  if (path === TEST_FILE_ROOT) return "";
-  if (!path.startsWith(`${TEST_FILE_ROOT}/`)) return null;
-  return path.slice(TEST_FILE_ROOT.length + 1);
-}
-
-function parentTestPath(path: string) {
-  const parts = path.split("/").filter(Boolean);
-  return parts.slice(0, -1).join("/");
-}
-
-function topLevelProjectPaths(filePaths: string[]) {
-  const uniquePaths = [...new Set(filePaths)].sort((left, right) => left.localeCompare(right));
-  return uniquePaths.filter((path) => !uniquePaths.some((candidate) => candidate !== path && path.startsWith(`${candidate}/`)));
-}
-
-function projectPathContains(containerPath: string, candidatePath: string) {
-  return candidatePath === containerPath || candidatePath.startsWith(`${containerPath}/`);
-}
-
-function testPathBasename(path: string) {
-  return path.split("/").filter(Boolean).at(-1) ?? path;
-}
-
-function ensureTestFileName(name: string) {
-  const safeName = safeProjectFileName(name.replace(/\.test\.json$/i, "").replace(/\.json$/i, ""));
-  return `${safeName}.test.json`;
-}
-
-function testFileDisplayName(name: string) {
-  return name.replace(/\.test\.json$/i, "");
-}
-
-function formatProjectFileSize(size: unknown) {
-  const bytes = typeof size === "number" && Number.isFinite(size) ? size : 0;
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function formatShortDateTime(value: unknown) {
   if (typeof value !== "string" || !value) return "";
   const date = new Date(value);
@@ -2862,63 +2801,6 @@ function missingProjectRevisionConflict(filePath: string): ProjectSaveConflict {
     message: "This draft was restored without a file revision. Reload the file before saving, or use Save as to keep it as a copy.",
     localRevision: null,
   };
-}
-
-function isProjectTestFile(file: Pick<ProjectFileSummary, "kind" | "fileType" | "path">) {
-  return file.kind === "file" && (file.fileType === "test" || file.path.endsWith(".test.json"));
-}
-
-function testFilePathKey(file: ProjectFileSummary) {
-  return testPathFromProjectPath(file.path);
-}
-
-function visibleTestFiles(files: ProjectFileSummary[]) {
-  return files
-    .map((file) => {
-      const testPath = testFilePathKey(file);
-      return testPath === null ? null : { file, testPath };
-    })
-    .filter((entry): entry is { file: ProjectFileSummary; testPath: string } => {
-      if (!entry) return false;
-      if (entry.testPath === "") return false;
-      return entry.file.kind === "folder" || isProjectTestFile(entry.file);
-    });
-}
-
-function childTestFiles(files: ProjectFileSummary[], folderPath: string) {
-  const cleanFolder = normalizeTestFolderPath(folderPath);
-  return visibleTestFiles(files)
-    .filter(({ testPath }) => parentTestPath(testPath) === cleanFolder)
-    .sort((left, right) => {
-      if (left.file.kind !== right.file.kind) return left.file.kind === "folder" ? -1 : 1;
-      return testFileDisplayName(testPathBasename(left.testPath)).localeCompare(testFileDisplayName(testPathBasename(right.testPath)));
-    });
-}
-
-function testFolderOptions(files: ProjectFileSummary[]) {
-  const folders = visibleTestFiles(files)
-    .filter(({ file }) => file.kind === "folder")
-    .map(({ testPath }) => testPath)
-    .sort((left, right) => left.localeCompare(right));
-  return ["", ...folders];
-}
-
-function uniqueTestPath(files: ProjectFileSummary[], folderPath: string, baseName: string, kind: "file" | "folder") {
-  const cleanFolder = normalizeTestFolderPath(folderPath);
-  const existing = new Set(visibleTestFiles(files).map(({ testPath }) => testPath.toLowerCase()));
-  const cleanBaseName =
-    kind === "file" ? safeProjectFileName(baseName.replace(/\.test\.json$/i, "").replace(/\.json$/i, "")) : safeProjectFileName(baseName);
-  const extension = kind === "file" ? ".test.json" : "";
-
-  let suffix = "";
-  let counter = 2;
-  while (true) {
-    const candidateName = `${cleanBaseName}${suffix}${extension}`;
-    const candidatePath = [cleanFolder, candidateName].filter(Boolean).join("/");
-    if (!existing.has(candidatePath.toLowerCase())) return candidatePath;
-    suffix = ` copy${counter === 2 ? "" : ` ${counter}`}`;
-    counter += 1;
-  }
 }
 
 function normalizeDiagramAlignment(value: unknown): DiagramAlignment {
@@ -7959,619 +7841,6 @@ function StatsChartEditor({ config, onChange }: { config: GraphConfig; onChange:
   );
 }
 
-function TestFileManager({
-  files,
-  status,
-  message,
-  activeProjectFilePath,
-  onNewTest,
-  onOpenFile,
-  onCreateFolder,
-  onExportBackup,
-  onImportBackup,
-  onRenameItem,
-  onDuplicateItems,
-  onMoveItems,
-  onDeleteItems,
-  onListVersions,
-  onRestoreVersion,
-}: {
-  files: ProjectFileSummary[];
-  status: ProjectFilesStatus;
-  message: string;
-  activeProjectFilePath: string | null;
-  onNewTest: () => void;
-  onOpenFile: (filePath: string) => void;
-  onCreateFolder: (folderPath: string) => void;
-  onExportBackup: () => void;
-  onImportBackup: (file: File) => void;
-  onRenameItem: (filePath: string) => void;
-  onDuplicateItems: (filePaths: string[]) => void;
-  onMoveItems: (filePaths: string[], targetFolderPath: string) => void;
-  onDeleteItems: (filePaths: string[]) => void;
-  onListVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
-  onRestoreVersion: (filePath: string, versionId: string) => Promise<void>;
-}) {
-  const [currentFolderPath, setCurrentFolderPath] = useState("");
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set());
-  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
-  const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
-  const [dropTargetFolderPath, setDropTargetFolderPath] = useState<string | null>(null);
-  const [versionsTestPath, setVersionsTestPath] = useState<string | null>(null);
-  const [versions, setVersions] = useState<ProjectFileVersion[]>([]);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [versionStatus, setVersionStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [versionMessage, setVersionMessage] = useState("");
-  const backupImportInputRef = useRef<HTMLInputElement>(null);
-  const visibleEntries = useMemo(() => visibleTestFiles(files), [files]);
-  const folderOptions = useMemo(() => testFolderOptions(files), [files]);
-  const currentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
-  const currentItemPaths = useMemo(() => currentItems.map((item) => item.testPath), [currentItems]);
-  const selectedEntries = useMemo(
-    () => visibleEntries.filter(({ testPath }) => selectedPaths.has(testPath)),
-    [selectedPaths, visibleEntries],
-  );
-  const selectedEntry = selectedEntries.length === 1 ? selectedEntries[0] : null;
-  const selectedProjectPaths = selectedEntries.map(({ testPath }) => projectPathForTestPath(testPath));
-  const selectedCount = selectedEntries.length;
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? versions[0] ?? null;
-  const selectedVersionPreview = selectedVersion ? projectFileVersionPreview(selectedVersion) : null;
-  const activeRelativePath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
-  const busy = status === "loading" || status === "saving";
-  const breadcrumbTargets = useMemo(() => {
-    const parts = currentFolderPath.split("/").filter(Boolean);
-    return [
-      { label: TEST_FILE_ROOT_LABEL, path: "" },
-      ...parts.map((part, index) => ({
-        label: part,
-        path: parts.slice(0, index + 1).join("/"),
-      })),
-    ];
-  }, [currentFolderPath]);
-
-  useEffect(() => {
-    if (currentFolderPath && !folderOptions.includes(currentFolderPath)) {
-      setCurrentFolderPath("");
-      setSelectedPaths(new Set());
-      setLastSelectedPath(null);
-    }
-  }, [currentFolderPath, folderOptions]);
-
-  useEffect(() => {
-    const availablePaths = new Set(visibleEntries.map(({ testPath }) => testPath));
-    setSelectedPaths((current) => {
-      const next = new Set([...current].filter((testPath) => availablePaths.has(testPath)));
-      return next.size === current.size ? current : next;
-    });
-    if (lastSelectedPath && !availablePaths.has(lastSelectedPath)) {
-      setLastSelectedPath(null);
-    }
-    if (versionsTestPath && !availablePaths.has(versionsTestPath)) {
-      setVersionsTestPath(null);
-      setVersions([]);
-      setSelectedVersionId(null);
-      setVersionStatus("idle");
-      setVersionMessage("");
-    }
-  }, [lastSelectedPath, versionsTestPath, visibleEntries]);
-
-  function navigateToFolder(folderPath: string) {
-    setCurrentFolderPath(normalizeTestFolderPath(folderPath));
-    setSelectedPaths(new Set());
-    setLastSelectedPath(null);
-    setDropTargetFolderPath(null);
-  }
-
-  function clearFileSelection() {
-    setSelectedPaths(new Set());
-    setLastSelectedPath(null);
-    setVersionsTestPath(null);
-    setVersions([]);
-    setSelectedVersionId(null);
-    setVersionStatus("idle");
-    setVersionMessage("");
-  }
-
-  function editableFileManagerTarget(target: EventTarget | null) {
-    if (!(target instanceof HTMLElement)) return false;
-    return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-  }
-
-  function handleFileManagerKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (busy || editableFileManagerTarget(event.target)) return;
-    const key = event.key.toLowerCase();
-    if ((event.metaKey || event.ctrlKey) && key === "a") {
-      event.preventDefault();
-      setSelectedPaths(new Set(currentItemPaths));
-      setLastSelectedPath(currentItemPaths.at(-1) ?? null);
-      return;
-    }
-    if (event.key === "Escape") {
-      if (!selectedCount && !versionsTestPath) return;
-      event.preventDefault();
-      clearFileSelection();
-      return;
-    }
-    if (event.key === "Enter") {
-      if (!selectedEntry) return;
-      event.preventDefault();
-      openSelected();
-      return;
-    }
-    if ((event.key === "Backspace" || event.key === "Delete") && selectedCount) {
-      event.preventDefault();
-      onDeleteItems(selectedProjectPaths);
-    }
-  }
-
-  function handleItemClick(event: ReactMouseEvent<HTMLButtonElement>, testPath: string) {
-    if (event.shiftKey && lastSelectedPath) {
-      const itemPaths = currentItems.map((item) => item.testPath);
-      const startIndex = itemPaths.indexOf(lastSelectedPath);
-      const endIndex = itemPaths.indexOf(testPath);
-      if (startIndex !== -1 && endIndex !== -1) {
-        const [start, end] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-        setSelectedPaths(new Set(itemPaths.slice(start, end + 1)));
-      } else {
-        setSelectedPaths(new Set([testPath]));
-      }
-    } else if (event.metaKey || event.ctrlKey) {
-      setSelectedPaths((current) => {
-        const next = new Set(current);
-        if (next.has(testPath)) {
-          next.delete(testPath);
-        } else {
-          next.add(testPath);
-        }
-        return next;
-      });
-    } else {
-      setSelectedPaths(new Set([testPath]));
-    }
-    setLastSelectedPath(testPath);
-  }
-
-  function canMoveTestPathsToFolder(testPaths: string[], targetFolderPath: string) {
-    const cleanTargetFolder = normalizeTestFolderPath(targetFolderPath);
-    if (busy || !testPaths.length) return false;
-
-    return testPaths.every((testPath) => {
-      const entry = visibleEntries.find((candidate) => candidate.testPath === testPath);
-      if (!entry) return false;
-      if (parentTestPath(testPath) === cleanTargetFolder) return false;
-      if (entry.file.kind === "folder" && (cleanTargetFolder === testPath || cleanTargetFolder.startsWith(`${testPath}/`))) return false;
-      return true;
-    });
-  }
-
-  function dragPathsFromEvent(event: DragEvent<HTMLElement>) {
-    const raw = event.dataTransfer.getData("application/x-mauth-test-paths");
-    if (!raw) return draggedPaths;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : draggedPaths;
-    } catch {
-      return draggedPaths;
-    }
-  }
-
-  function handleItemDragStart(event: DragEvent<HTMLElement>, testPath: string) {
-    const testPaths = selectedPaths.has(testPath) ? [...selectedPaths] : [testPath];
-    setSelectedPaths(new Set(testPaths));
-    setLastSelectedPath(testPath);
-    setDraggedPaths(testPaths);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-mauth-test-paths", JSON.stringify(testPaths));
-    event.dataTransfer.setData("text/plain", testPaths.join("\n"));
-  }
-
-  function handleDragEnd() {
-    setDraggedPaths([]);
-    setDropTargetFolderPath(null);
-  }
-
-  function handleDragOverFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
-    const testPaths = dragPathsFromEvent(event);
-    if (!canMoveTestPathsToFolder(testPaths, targetFolderPath)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = "move";
-    setDropTargetFolderPath(normalizeTestFolderPath(targetFolderPath));
-  }
-
-  function handleDragLeaveFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
-    const relatedTarget = event.relatedTarget;
-    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
-    const cleanTargetFolder = normalizeTestFolderPath(targetFolderPath);
-    setDropTargetFolderPath((current) => (current === cleanTargetFolder ? null : current));
-  }
-
-  function handleDropOnFolder(event: DragEvent<HTMLElement>, targetFolderPath: string) {
-    event.preventDefault();
-    event.stopPropagation();
-    const testPaths = dragPathsFromEvent(event);
-    setDraggedPaths([]);
-    setDropTargetFolderPath(null);
-    if (!canMoveTestPathsToFolder(testPaths, targetFolderPath)) return;
-    onMoveItems(
-      testPaths.map((testPath) => projectPathForTestPath(testPath)),
-      targetFolderPath,
-    );
-    setSelectedPaths(new Set());
-    setLastSelectedPath(null);
-  }
-
-  function dropTargetClass(targetFolderPath: string) {
-    return dropTargetFolderPath === normalizeTestFolderPath(targetFolderPath)
-      ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/25"
-      : "";
-  }
-
-  function openSelected() {
-    if (!selectedEntry) return;
-    if (selectedEntry.file.kind === "folder") {
-      navigateToFolder(selectedEntry.testPath);
-      return;
-    }
-    onOpenFile(projectPathForTestPath(selectedEntry.testPath));
-  }
-
-  async function openVersionHistory() {
-    if (!selectedEntry || selectedEntry.file.kind === "folder") return;
-    const testPath = selectedEntry.testPath;
-    const filePath = projectPathForTestPath(testPath);
-    setVersionsTestPath(testPath);
-    setVersionStatus("loading");
-    setVersionMessage("Loading versions");
-    try {
-      const nextVersions = await onListVersions(filePath);
-      setVersions(nextVersions);
-      setSelectedVersionId(nextVersions[0]?.id ?? null);
-      setVersionStatus("ready");
-      setVersionMessage(
-        nextVersions.length ? `${nextVersions.length} previous version${nextVersions.length === 1 ? "" : "s"}` : "No previous versions yet",
-      );
-    } catch {
-      setVersions([]);
-      setSelectedVersionId(null);
-      setVersionStatus("error");
-      setVersionMessage("Versions unavailable");
-    }
-  }
-
-  async function restoreVersion(version: ProjectFileVersion) {
-    if (!versionsTestPath) return;
-    const filePath = projectPathForTestPath(versionsTestPath);
-    const fileName = testFileDisplayName(testPathBasename(versionsTestPath));
-    const shouldRestore = window.confirm(`Restore "${fileName}" to revision ${version.revision}? This creates a new current version.`);
-    if (!shouldRestore) return;
-    setVersionStatus("loading");
-    setVersionMessage("Restoring version");
-    try {
-      await onRestoreVersion(filePath, version.id);
-      const nextVersions = await onListVersions(filePath);
-      setVersions(nextVersions);
-      setSelectedVersionId(nextVersions[0]?.id ?? null);
-      setVersionStatus("ready");
-      setVersionMessage(`Restored revision ${version.revision}`);
-    } catch {
-      setVersionStatus("error");
-      setVersionMessage("Restore failed");
-    }
-  }
-
-  return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onNewTest} disabled={busy}>
-          <PlusCircle data-icon="inline-start" />
-          New test
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => onCreateFolder(currentFolderPath)} disabled={busy}>
-          <PlusCircle data-icon="inline-start" />
-          New folder
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={onExportBackup} disabled={busy}>
-          <Download data-icon="inline-start" />
-          Backup ZIP
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => backupImportInputRef.current?.click()} disabled={busy}>
-          <Upload data-icon="inline-start" />
-          Import ZIP
-        </Button>
-        <input
-          ref={backupImportInputRef}
-          type="file"
-          accept=".zip,application/zip"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            event.currentTarget.value = "";
-            if (file) onImportBackup(file);
-          }}
-        />
-      </div>
-
-      <div className="flex min-h-9 items-center gap-2 rounded-md border bg-background px-2 text-sm">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={!currentFolderPath}
-          title="Back"
-          aria-label="Back"
-          data-mauth-folder-back={parentTestPath(currentFolderPath)}
-          onClick={() => navigateToFolder(parentTestPath(currentFolderPath))}
-          onDragOver={(event) => {
-            if (currentFolderPath) handleDragOverFolder(event, parentTestPath(currentFolderPath));
-          }}
-          onDragLeave={(event) => {
-            if (currentFolderPath) handleDragLeaveFolder(event, parentTestPath(currentFolderPath));
-          }}
-          onDrop={(event) => {
-            if (currentFolderPath) handleDropOnFolder(event, parentTestPath(currentFolderPath));
-          }}
-          className={cn("size-7", currentFolderPath && dropTargetClass(parentTestPath(currentFolderPath)))}
-        >
-          <ChevronLeft />
-        </Button>
-        <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-          {breadcrumbTargets.map((target, index) => (
-            <Fragment key={target.path || "root"}>
-              {index ? <span className="text-muted-foreground">/</span> : null}
-              <button
-                type="button"
-                title={`Open ${target.path || TEST_FILE_ROOT_LABEL}`}
-                data-mauth-folder-breadcrumb={target.path}
-                onClick={() => navigateToFolder(target.path)}
-                onDragOver={(event) => handleDragOverFolder(event, target.path)}
-                onDragLeave={(event) => handleDragLeaveFolder(event, target.path)}
-                onDrop={(event) => handleDropOnFolder(event, target.path)}
-                className={cn(
-                  "min-w-0 truncate rounded px-2 py-1 font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                  target.path === currentFolderPath && "text-foreground",
-                  target.path !== currentFolderPath && "text-muted-foreground",
-                  dropTargetClass(target.path),
-                )}
-              >
-                {target.label}
-              </button>
-            </Fragment>
-          ))}
-        </span>
-      </div>
-
-      <div
-        data-mauth-folder-pane={currentFolderPath}
-        className={cn(
-          "min-h-0 flex-1 overflow-hidden rounded-lg border bg-background transition-colors",
-          dropTargetClass(currentFolderPath),
-        )}
-        onDragOver={(event) => handleDragOverFolder(event, currentFolderPath)}
-        onDragLeave={(event) => handleDragLeaveFolder(event, currentFolderPath)}
-        onDrop={(event) => handleDropOnFolder(event, currentFolderPath)}
-      >
-        <div className="max-h-[56vh] min-h-72 overflow-y-auto">
-          {currentItems.length ? (
-            currentItems.map(({ file, testPath }) => {
-              const active = activeRelativePath === testPath;
-              const selected = selectedPaths.has(testPath);
-              const name = file.kind === "folder" ? testPathBasename(testPath) : testFileDisplayName(testPathBasename(testPath));
-              return (
-                <button
-                  key={file.path}
-                  type="button"
-                  data-mauth-file-path={testPath}
-                  draggable={!busy}
-                  aria-selected={selected}
-                  onClick={(event) => handleItemClick(event, testPath)}
-                  onDoubleClick={() => {
-                    if (file.kind === "folder") {
-                      navigateToFolder(testPath);
-                    } else {
-                      onOpenFile(file.path);
-                    }
-                  }}
-                  onDragStart={(event) => handleItemDragStart(event, testPath)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={file.kind === "folder" ? (event) => handleDragOverFolder(event, testPath) : undefined}
-                  onDragLeave={file.kind === "folder" ? (event) => handleDragLeaveFolder(event, testPath) : undefined}
-                  onDrop={file.kind === "folder" ? (event) => handleDropOnFolder(event, testPath) : undefined}
-                  className={cn(
-                    "grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent/60",
-                    selected && "bg-primary/10 hover:bg-primary/10",
-                    file.kind === "folder" && dropTargetClass(testPath),
-                  )}
-                >
-                  {file.kind === "folder" ? (
-                    <FolderOpen className="size-4 text-primary" aria-hidden="true" />
-                  ) : (
-                    <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <span className="min-w-0">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">{name}</span>
-                      {active ? (
-                        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                          Open
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {file.kind === "folder"
-                        ? "Folder"
-                        : `${formatProjectFileSize(file.sizeBytes)} - ${new Date(file.updatedAt).toLocaleString()}`}
-                    </span>
-                  </span>
-                  <ChevronRight className={cn("size-4 text-muted-foreground", file.kind !== "folder" && "opacity-0")} aria-hidden="true" />
-                </button>
-              );
-            })
-          ) : (
-            <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-              {status === "loading" ? "Loading files..." : status === "error" ? message || "Files unavailable." : "No files here yet."}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <Button type="button" variant="outline" size="sm" disabled={!selectedEntry || busy} onClick={openSelected}>
-          Open
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!selectedEntry || busy}
-          onClick={() => selectedEntry && onRenameItem(projectPathForTestPath(selectedEntry.testPath))}
-        >
-          <Pencil data-icon="inline-start" />
-          Rename
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!selectedCount || busy}
-          onClick={() => onDuplicateItems(selectedProjectPaths)}
-        >
-          <Copy data-icon="inline-start" />
-          Duplicate
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!selectedEntry || selectedEntry.file.kind === "folder" || busy}
-          onClick={() => void openVersionHistory()}
-        >
-          Versions
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!selectedCount || busy}
-          onClick={() => onDeleteItems(selectedProjectPaths)}
-        >
-          <Trash2 data-icon="inline-start" />
-          Delete
-        </Button>
-      </div>
-
-      {versionsTestPath ? (
-        <div className="rounded-lg border bg-background p-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-semibold">Versions: {testFileDisplayName(testPathBasename(versionsTestPath))}</h3>
-              <p className="truncate text-xs text-muted-foreground">{versionMessage}</p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setVersionsTestPath(null);
-                setVersions([]);
-                setSelectedVersionId(null);
-                setVersionStatus("idle");
-                setVersionMessage("");
-              }}
-            >
-              Close
-            </Button>
-          </div>
-          {versionStatus === "loading" ? (
-            <p className="py-3 text-sm text-muted-foreground">Loading versions...</p>
-          ) : versions.length ? (
-            <div className="grid min-h-0 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-              <div className="max-h-80 overflow-y-auto rounded-md border">
-                {versions.map((version) => {
-                  const selected = selectedVersion?.id === version.id;
-                  return (
-                    <div
-                      key={version.id}
-                      className={cn(
-                        "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0",
-                        selected && "bg-primary/10",
-                      )}
-                    >
-                      <button type="button" className="min-w-0 text-left" onClick={() => setSelectedVersionId(version.id)}>
-                        <p className="truncate font-medium">Revision {version.revision}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {new Date(version.createdAt).toLocaleString()}
-                          {version.reason ? ` - ${version.reason}` : ""}
-                        </p>
-                      </button>
-                      <div className="flex items-center gap-1">
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedVersionId(version.id)}>
-                          Preview
-                        </Button>
-                        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void restoreVersion(version)}>
-                          Restore
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {selectedVersion && selectedVersionPreview ? (
-                <div className="min-w-0 rounded-md border bg-muted/20 p-3">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h4 className="truncate text-sm font-semibold">{selectedVersionPreview.title}</h4>
-                      <p className="truncate text-xs text-muted-foreground">{selectedVersionPreview.subtitle}</p>
-                    </div>
-                    <Badge variant="secondary" className="shrink-0">
-                      r{selectedVersion.revision}
-                    </Badge>
-                  </div>
-                  <div className="mb-3 flex flex-wrap gap-1.5">
-                    {selectedVersionPreview.details.map((detail) => (
-                      <span key={detail} className="rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                        {detail}
-                      </span>
-                    ))}
-                  </div>
-                  {selectedVersionPreview.questions.length ? (
-                    <ul className="mb-3 max-h-28 overflow-y-auto rounded border bg-background p-2 text-xs">
-                      {selectedVersionPreview.questions.map((question) => (
-                        <li key={question} className="truncate py-0.5">
-                          {question}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <details className="group">
-                    <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground group-open:mb-2">
-                      Raw snapshot
-                    </summary>
-                    <pre className="max-h-44 overflow-auto rounded border bg-background p-2 text-[10px] leading-snug text-muted-foreground">
-                      {selectedVersionPreview.rawPreview}
-                    </pre>
-                  </details>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <p className="py-3 text-sm text-muted-foreground">
-              {versionStatus === "error" ? versionMessage || "Versions unavailable." : "No previous versions yet."}
-            </p>
-          )}
-        </div>
-      ) : null}
-
-      <p className="min-h-4 truncate text-xs text-muted-foreground">
-        {message ||
-          (selectedCount
-            ? `${selectedCount} selected. Drag onto a folder, breadcrumb, or empty folder pane to move.`
-            : "Shift-click or Cmd/Ctrl-click to select. Drag onto folders or breadcrumbs to move.")}
-      </p>
-    </section>
-  );
-}
-
 function storageStatusTone(status: HeaderSaveStatus) {
   if (status === "saved" || status === "ready") return "bg-emerald-400";
   if (status === "draft") return "bg-amber-300";
@@ -8964,88 +8233,6 @@ function projectFileVersionPreview(version: ProjectFileVersion): VersionPreviewS
       rawPreview,
     };
   }
-}
-
-function FileManagementDrawer({
-  open,
-  projectFiles,
-  projectFilesStatus,
-  projectFilesMessage,
-  activeProjectFilePath,
-  onClose,
-  onNewTest,
-  onOpenProjectFile,
-  onCreateProjectFolder,
-  onExportProjectBackup,
-  onImportProjectBackup,
-  onRenameProjectFile,
-  onDuplicateProjectFiles,
-  onMoveProjectFiles,
-  onDeleteProjectFiles,
-  onListProjectFileVersions,
-  onRestoreProjectFileVersion,
-}: {
-  open: boolean;
-  projectFiles: ProjectFileSummary[];
-  projectFilesStatus: ProjectFilesStatus;
-  projectFilesMessage: string;
-  activeProjectFilePath: string | null;
-  onClose: () => void;
-  onNewTest: () => void;
-  onOpenProjectFile: (filePath: string) => void;
-  onCreateProjectFolder: (folderPath: string) => void;
-  onExportProjectBackup: () => void;
-  onImportProjectBackup: (file: File) => void;
-  onRenameProjectFile: (filePath: string) => void;
-  onDuplicateProjectFiles: (filePaths: string[]) => void;
-  onMoveProjectFiles: (filePaths: string[], targetFolderPath: string) => void;
-  onDeleteProjectFiles: (filePaths: string[]) => void;
-  onListProjectFileVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
-  onRestoreProjectFileVersion: (filePath: string, versionId: string) => Promise<void>;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-40 bg-slate-950/35 p-4 pt-20" onMouseDown={onClose}>
-      <aside
-        className="ml-auto flex max-h-[calc(100vh-6rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl"
-        aria-label="Files"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b p-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <FolderOpen className="size-5 text-primary" aria-hidden="true" />
-            <h2 className="truncate text-base font-semibold">Files</h2>
-          </div>
-          <Button type="button" variant="ghost" size="icon" title="Close files" aria-label="Close files" onClick={onClose}>
-            <X />
-          </Button>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-          <TestFileManager
-            files={projectFiles}
-            status={projectFilesStatus}
-            message={projectFilesMessage}
-            activeProjectFilePath={activeProjectFilePath}
-            onNewTest={onNewTest}
-            onOpenFile={(filePath) => {
-              onOpenProjectFile(filePath);
-              onClose();
-            }}
-            onCreateFolder={onCreateProjectFolder}
-            onExportBackup={onExportProjectBackup}
-            onImportBackup={onImportProjectBackup}
-            onRenameItem={onRenameProjectFile}
-            onDuplicateItems={onDuplicateProjectFiles}
-            onMoveItems={onMoveProjectFiles}
-            onDeleteItems={onDeleteProjectFiles}
-            onListVersions={onListProjectFileVersions}
-            onRestoreVersion={onRestoreProjectFileVersion}
-          />
-        </div>
-      </aside>
-    </div>
-  );
 }
 
 function NewTestDialog({
@@ -16284,6 +15471,7 @@ export default function App() {
         projectFilesStatus={projectFilesStatus}
         projectFilesMessage={projectFilesMessage}
         activeProjectFilePath={activeProjectFilePath}
+        buildVersionPreview={projectFileVersionPreview}
         onClose={() => setFileManagerOpen(false)}
         onNewTest={startNewTest}
         onOpenProjectFile={(filePath) => void openProjectFile(filePath)}
