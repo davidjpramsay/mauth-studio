@@ -112,7 +112,6 @@ import {
   saveProjectFile,
   saveStorageAutosave,
   saveStoredLogo,
-  updateProject,
 } from "@/lib/api";
 import {
   applyMauthAction,
@@ -130,6 +129,7 @@ import {
 } from "@/lib/mauthActions";
 import { type MauthAssistantAdapterHost } from "@/lib/mauthAssistantAdapter";
 import { useMauthAssistantController } from "@/hooks/useMauthAssistantController";
+import { useProjectFilesController, type ProjectFilesStatus, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
@@ -236,8 +236,6 @@ const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 const TEST_FILE_ROOT = "tests";
 const TEST_FILE_ROOT_LABEL = "Documents";
-const LEGACY_SAVED_TESTS_MIGRATED_AT_KEY = "legacySavedTestsMigratedAt";
-const LEGACY_SAVED_TESTS_IMPORTED_KEY = "legacySavedTestsImported";
 let nextInsertMenuId = 0;
 const STARTER_LOGOS: LogoAsset[] = [
   {
@@ -771,14 +769,6 @@ interface AutosavedEditorSnapshot extends EditorHistorySnapshot {
 
 type DraftAutosaveStatus = "loading" | "ready" | "saving" | "saved" | "unavailable" | "error";
 type HeaderSaveStatus = DraftAutosaveStatus | "dirty" | "draft" | "conflict";
-type ProjectFilesStatus = "idle" | "loading" | "ready" | "saving" | "error";
-
-interface ProjectSaveConflict {
-  filePath: string;
-  message: string;
-  localRevision: number | null;
-  currentRevision?: number;
-}
 
 const HISTORY_LIMIT = 80;
 const PROJECT_FILE_REVISION_MISSING_ERROR = "PROJECT_FILE_REVISION_MISSING";
@@ -12401,7 +12391,6 @@ export default function App() {
   const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
   const [showSolutions, setShowSolutions] = useState(false);
   const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
-  const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
   const [actionProposalOpen, setActionProposalOpen] = useState(false);
   const [actionProposalText, setActionProposalText] = useState("");
@@ -12411,17 +12400,45 @@ export default function App() {
     FrontMatterConfig,
     FormattingConfig
   > | null>(null);
-  const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
-  const [projectFiles, setProjectFiles] = useState<ProjectFileSummary[]>([]);
-  const [projectFilesStatus, setProjectFilesStatus] = useState<ProjectFilesStatus>("idle");
-  const [projectFilesMessage, setProjectFilesMessage] = useState("");
-  const [activeProjectFilePath, setActiveProjectFilePath] = useState<string | null>(
-    () => initialEditorDraft?.activeProjectFilePath ?? null,
-  );
-  const [activeProjectFileRevision, setActiveProjectFileRevision] = useState<number | null>(
-    () => initialEditorDraft?.activeProjectFileRevision ?? null,
-  );
-  const [projectSaveConflict, setProjectSaveConflict] = useState<ProjectSaveConflict | null>(null);
+  const buildLegacySavedTestImport = useCallback((savedTest: SavedTest, filesForImport: ProjectFileSummary[]) => {
+    const testPath = uniqueTestPath(filesForImport, "", savedTest.name, "file");
+    return {
+      path: projectPathForTestPath(testPath),
+      content: JSON.stringify(savedTest, null, 2),
+    };
+  }, []);
+  const isVisibleProjectTestFile = useCallback((file: ProjectFileSummary) => {
+    const testPath = testFilePathKey(file);
+    return testPath !== null && testPath !== "" && isProjectTestFile(file);
+  }, []);
+  const {
+    fileManagerOpen,
+    setFileManagerOpen,
+    openFileManager,
+    activeProject,
+    setActiveProject,
+    ensureProject,
+    projectFiles,
+    setProjectFiles,
+    projectFilesStatus,
+    setProjectFilesStatus,
+    projectFilesMessage,
+    setProjectFilesMessage,
+    activeProjectFilePath,
+    setActiveProjectFilePath,
+    activeProjectFileRevision,
+    setActiveProjectFileRevision,
+    projectSaveConflict,
+    setProjectSaveConflict,
+    refreshProjectFiles,
+  } = useProjectFilesController({
+    initialActiveProjectFilePath: initialEditorDraft?.activeProjectFilePath ?? null,
+    initialActiveProjectFileRevision: initialEditorDraft?.activeProjectFileRevision ?? null,
+    legacySavedTests,
+    storageHydrated,
+    buildLegacySavedTestImport,
+    isVisibleProjectFile: isVisibleProjectTestFile,
+  });
   const [lastProjectSaveFingerprint, setLastProjectSaveFingerprint] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
@@ -12448,7 +12465,6 @@ export default function App() {
   const previewZoomRef = useRef(1);
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
-  const emptyFileRefreshAttemptedRef = useRef(false);
 
   const assistantController = useMauthAssistantController({
     previewModeActive: paneMode === "preview",
@@ -12485,97 +12501,6 @@ export default function App() {
       window.removeEventListener("afterprint", handleAfterPrint);
     };
   }, []);
-
-  const refreshProjectFiles = useCallback(async () => {
-    setProjectFilesStatus("loading");
-    setProjectFilesMessage("Loading files");
-    try {
-      let project = await getDefaultProject();
-      let filesResponse = await listProjectFiles(project.id);
-      const migrationDone = typeof project.metadata?.[LEGACY_SAVED_TESTS_MIGRATED_AT_KEY] === "string";
-
-      if (!migrationDone) {
-        let projectFilesForImport = filesResponse.files;
-        let importedCount = 0;
-        for (const savedTest of legacySavedTestsRef.current) {
-          const alreadyImported = projectFilesForImport.some(
-            (file) => file.kind === "file" && file.metadata?.legacySavedTestId === savedTest.id,
-          );
-          if (alreadyImported) continue;
-
-          const testPath = uniqueTestPath(projectFilesForImport, "", savedTest.name, "file");
-          const projectPath = projectPathForTestPath(testPath);
-          const savedFile = await saveProjectFile(project.id, projectPath, {
-            content: JSON.stringify(savedTest, null, 2),
-            kind: "file",
-            fileType: "test",
-            metadata: {
-              format: "saved-test-json",
-              source: "legacy-saved-tests-migration",
-              legacySavedTestId: savedTest.id,
-            },
-          });
-          projectFilesForImport = [...projectFilesForImport, savedFile];
-          importedCount += 1;
-        }
-
-        project = await updateProject(project.id, {
-          metadata: {
-            ...project.metadata,
-            [LEGACY_SAVED_TESTS_MIGRATED_AT_KEY]: new Date().toISOString(),
-            [LEGACY_SAVED_TESTS_IMPORTED_KEY]: importedCount,
-          },
-        });
-        filesResponse = await listProjectFiles(project.id);
-        setProjectFilesMessage(importedCount ? `Imported ${importedCount} existing tests` : "");
-      } else {
-        setProjectFilesMessage("");
-      }
-
-      setActiveProject(project);
-      setProjectFiles(filesResponse.files);
-      setProjectFilesStatus("ready");
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Files unavailable");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!fileManagerOpen) {
-      emptyFileRefreshAttemptedRef.current = false;
-      return;
-    }
-    if (!storageHydrated) {
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage("Loading files");
-      return;
-    }
-    void refreshProjectFiles();
-  }, [storageHydrated, fileManagerOpen, refreshProjectFiles]);
-
-  useEffect(() => {
-    if (!fileManagerOpen || !storageHydrated || projectFilesStatus !== "ready") return;
-    if (visibleTestFiles(projectFiles).some(({ file }) => file.kind === "file")) return;
-    if (emptyFileRefreshAttemptedRef.current) return;
-
-    emptyFileRefreshAttemptedRef.current = true;
-    const timeoutId = window.setTimeout(() => {
-      void refreshProjectFiles();
-    }, 250);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [storageHydrated, fileManagerOpen, projectFiles, projectFilesStatus, refreshProjectFiles]);
-
-  function openFileManager() {
-    setFileManagerOpen(true);
-    if (!storageHydrated) {
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage("Loading files");
-      return;
-    }
-    void refreshProjectFiles();
-  }
 
   async function refreshLogoLibraryFromDisk() {
     const logosResponse = await listStoredLogos<unknown>();
@@ -12696,7 +12621,7 @@ export default function App() {
     setProjectSaveConflict(null);
     setLastProjectSaveFingerprint(null);
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
-  }, [storageHydrated, questions]);
+  }, [storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
 
   useLayoutEffect(() => {
     if (!storageHydrated) return;
@@ -13272,9 +13197,7 @@ export default function App() {
   }
 
   async function ensureAssistantProject() {
-    const project = activeProject ?? (await getDefaultProject());
-    setActiveProject(project);
-    return project;
+    return ensureProject();
   }
 
   function commitAssistantDocument(document: {
