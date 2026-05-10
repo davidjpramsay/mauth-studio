@@ -75,7 +75,7 @@ import {
 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
-import { MauthAssistantPanel, type MauthAssistantChatMessage } from "@/components/MauthAssistantPanel";
+import { MauthAssistantPanel } from "@/components/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
@@ -100,7 +100,6 @@ import {
   deleteStoredLogo,
   downloadProjectBackup,
   getDefaultProject,
-  getAssistantStatus,
   getProjectFile,
   getStorageAutosave,
   importProjectBackup,
@@ -111,14 +110,9 @@ import {
   deleteProjectFile,
   restoreProjectFileVersion,
   saveProjectFile,
-  sendAssistantChat,
   saveStorageAutosave,
   saveStoredLogo,
   updateProject,
-  type AssistantChatMessage,
-  type AssistantProviderToolCall,
-  type AssistantToolOutput,
-  type AssistantUsageSummary,
 } from "@/lib/api";
 import {
   applyMauthAction,
@@ -134,12 +128,8 @@ import {
   type MauthDocumentActionOptions,
   type MauthDocumentActionResult,
 } from "@/lib/mauthActions";
-import {
-  runMauthAssistantAdapterTool,
-  type MauthAssistantAdapterHost,
-  type MauthAssistantAdapterResult,
-  type MauthAssistantAdapterToolCall,
-} from "@/lib/mauthAssistantAdapter";
+import { type MauthAssistantAdapterHost } from "@/lib/mauthAssistantAdapter";
+import { useMauthAssistantController } from "@/hooks/useMauthAssistantController";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
@@ -231,7 +221,6 @@ const DEFAULT_SOLUTION_SLOT_LINES = 8;
 const MIN_SOLUTION_SLOT_LINES = 4;
 const MAX_SOLUTION_SLOT_LINES = 18;
 const DEFAULT_SOLUTION_SLOT_TEXT = "**Solution.**\n\n";
-const ASSISTANT_MAX_TOOL_ROUNDS = 4;
 const LOGO_LIBRARY_STORAGE_KEY = "mauth-studio.logo-library.v1";
 const LOGO_STARTER_SEED_STORAGE_KEY = "mauth-studio.logo-starter-seed.v1";
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
@@ -8783,155 +8772,6 @@ function parseMauthDocumentActionProposal(source: string): MauthDocumentAction[]
   return actions;
 }
 
-function assistantResultMessage(result: MauthAssistantAdapterResult<QuestionBlock, FrontMatterConfig, FormattingConfig>) {
-  if (!result.ok) return result.error || "Tool failed.";
-  const data = asRecord(result.data);
-  if (result.toolName === "mauth.document.inspect") {
-    const counts = asRecord(data?.counts);
-    const questionsCount = typeof counts?.questions === "number" ? counts.questions : 0;
-    const marksTotal = typeof counts?.marksTotal === "number" ? counts.marksTotal : 0;
-    return `Inspected ${questionsCount} question${questionsCount === 1 ? "" : "s"} and ${marksTotal} mark${marksTotal === 1 ? "" : "s"}.`;
-  }
-  if (result.toolName === "mauth.validation.run") {
-    return result.warnings.length
-      ? `Validation completed with ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}.`
-      : "Validation completed with no warnings.";
-  }
-  if (result.toolName === "mauth.actions.preview") {
-    const preview = asRecord(data?.preview);
-    const requested = typeof preview?.requestedActionCount === "number" ? preview.requestedActionCount : result.changedIds.length;
-    return `Previewed ${requested} action${requested === 1 ? "" : "s"}.`;
-  }
-  if (result.toolName === "mauth.actions.apply") {
-    return `Applied changes to ${result.changedIds.length} item${result.changedIds.length === 1 ? "" : "s"}.`;
-  }
-  if (result.toolName === "mauth.author.replaceQuestion") {
-    return result.changedIds.length ? "Replaced the question." : "Question authoring completed.";
-  }
-  if (result.toolName === "mauth.author.addDiagram") {
-    return result.changedIds.length ? "Added the diagram." : "Diagram authoring completed.";
-  }
-  if (result.toolName === "mauth.author.ensureSolutions") {
-    return result.changedIds.length ? "Updated the solutions." : "Solution authoring completed.";
-  }
-  if (result.toolName === "mauth.files.list") {
-    const files = Array.isArray(data?.files) ? data.files : (result.files ?? []);
-    return `Listed ${files.length} file${files.length === 1 ? "" : "s"} or folder${files.length === 1 ? "" : "s"}.`;
-  }
-  if (result.changedPaths.length) {
-    return `Changed ${result.changedPaths.length} path${result.changedPaths.length === 1 ? "" : "s"}.`;
-  }
-  return "Tool completed.";
-}
-
-function mergeAssistantUsageSummary(
-  current: AssistantUsageSummary | null | undefined,
-  next: AssistantUsageSummary | null | undefined,
-): AssistantUsageSummary | null {
-  if (!current) return next ?? null;
-  if (!next) return current;
-  const currentCost = typeof current.estimatedCostUsd === "number" ? current.estimatedCostUsd : null;
-  const nextCost = typeof next.estimatedCostUsd === "number" ? next.estimatedCostUsd : null;
-  return {
-    model: current.model === next.model ? current.model : `${current.model} + ${next.model}`,
-    inputTokens: current.inputTokens + next.inputTokens,
-    cachedInputTokens: current.cachedInputTokens + next.cachedInputTokens,
-    billableInputTokens: current.billableInputTokens + next.billableInputTokens,
-    outputTokens: current.outputTokens + next.outputTokens,
-    totalTokens: current.totalTokens + next.totalTokens,
-    estimatedCostUsd: currentCost === null || nextCost === null ? null : currentCost + nextCost,
-    pricingSource: current.pricingSource === next.pricingSource ? current.pricingSource : current.pricingSource || next.pricingSource,
-  };
-}
-
-function addUsageToLastAssistantMessage(messages: MauthAssistantChatMessage[], usage: AssistantUsageSummary): MauthAssistantChatMessage[] {
-  const nextMessages = [...messages];
-  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
-    const message = nextMessages[index];
-    if (message.role === "assistant") {
-      nextMessages[index] = { ...message, usage };
-      return nextMessages;
-    }
-  }
-  return [...messages, { id: id("assistant-message"), role: "assistant", content: "Done.", usage }];
-}
-
-interface AssistantPendingToolContinuation {
-  responseId: string | null;
-  toolCalls: AssistantProviderToolCall[];
-}
-
-interface AssistantToolLoopResult {
-  responseId: string | null;
-  usage: AssistantUsageSummary | null;
-  pending: AssistantPendingToolContinuation | null;
-}
-
-function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): MauthAssistantAdapterToolCall | null {
-  const mauthToolName =
-    typeof toolCall.mauthToolName === "string" ? toolCall.mauthToolName : toolCall.name.startsWith("mauth.") ? toolCall.name : "";
-  if (!mauthToolName) return null;
-  return {
-    name: mauthToolName as MauthAssistantAdapterToolCall["name"],
-    arguments: toolCall.mauthArguments ?? toolCall.arguments ?? {},
-  } as MauthAssistantAdapterToolCall;
-}
-
-function assistantActivityLabelForTool(name: MauthAssistantAdapterToolCall["name"]) {
-  if (name === "mauth.document.inspect") return "Inspecting document";
-  if (name === "mauth.validation.run") return "Checking document";
-  if (name === "mauth.actions.preview") return "Previewing changes";
-  if (name === "mauth.actions.apply") return "Applying changes";
-  if (name === "mauth.author.replaceQuestion") return "Writing question";
-  if (name === "mauth.author.addDiagram") return "Adding diagram";
-  if (name === "mauth.author.ensureSolutions") return "Writing solutions";
-  if (name === "mauth.files.list") return "Reading files";
-  if (name === "mauth.files.open") return "Opening file";
-  if (name === "mauth.files.save" || name === "mauth.files.saveAs") return "Saving file";
-  if (name.startsWith("mauth.files.")) return "Updating files";
-  return "Using Mauth tools";
-}
-
-function compactAssistantProviderOutput(
-  result: MauthAssistantAdapterResult<QuestionBlock, FrontMatterConfig, FormattingConfig>,
-): Record<string, unknown> {
-  const data = asRecord(result.data);
-  const preview = asRecord(data?.preview);
-  const validation = asRecord(data?.validation);
-  const files = result.files ?? (Array.isArray(data?.files) ? data.files : undefined);
-  const output: Record<string, unknown> = {
-    ok: result.ok,
-    toolName: result.toolName,
-    kind: result.kind,
-    message: assistantResultMessage(result),
-    changedIds: result.changedIds,
-    changedPaths: result.changedPaths,
-    warnings: result.warnings.map((warning) => ({ code: warning.code, message: warning.message })),
-    error: result.error ?? null,
-    committedDocument: result.committedDocument,
-    activeFilePath: result.activeFilePath ?? null,
-  };
-
-  if (result.toolName === "mauth.document.inspect") output.documentSummary = result.data ?? null;
-  if (result.toolName === "mauth.validation.run") output.validation = result.data ?? null;
-  if (Array.isArray(data?.validationIssues)) output.validationIssues = data.validationIssues;
-  if (preview) output.preview = preview;
-  if (validation) output.validation = validation;
-  if (files) {
-    output.files = files
-      .filter((file): file is ProjectFileSummary => asRecord(file) !== null)
-      .map((file) => ({
-        path: file.path,
-        name: file.name,
-        kind: file.kind,
-        fileType: file.fileType,
-        updatedAt: file.updatedAt,
-      }));
-  }
-
-  return output;
-}
-
 function shortActionPreviewList(values: readonly string[], limit = 8) {
   if (!values.length) return "";
   const visible = values.slice(0, limit);
@@ -12571,16 +12411,6 @@ export default function App() {
     FrontMatterConfig,
     FormattingConfig
   > | null>(null);
-  const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
-  const [assistantChatInput, setAssistantChatInput] = useState("");
-  const [assistantChatMessages, setAssistantChatMessages] = useState<MauthAssistantChatMessage[]>([]);
-  const [assistantChatRunning, setAssistantChatRunning] = useState(false);
-  const [assistantActivityLabel, setAssistantActivityLabel] = useState("Thinking");
-  const [assistantActivityStartedAt, setAssistantActivityStartedAt] = useState<number | null>(null);
-  const [assistantProviderConfigured, setAssistantProviderConfigured] = useState<boolean | null>(null);
-  const [assistantProviderStatusMessage, setAssistantProviderStatusMessage] = useState("Checking assistant provider");
-  const [assistantPreviousResponseId, setAssistantPreviousResponseId] = useState<string | null>(null);
-  const [assistantPendingToolContinuation, setAssistantPendingToolContinuation] = useState<AssistantPendingToolContinuation | null>(null);
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
   const [projectFiles, setProjectFiles] = useState<ProjectFileSummary[]>([]);
   const [projectFilesStatus, setProjectFilesStatus] = useState<ProjectFilesStatus>("idle");
@@ -12619,6 +12449,23 @@ export default function App() {
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
   const emptyFileRefreshAttemptedRef = useRef(false);
+
+  const assistantController = useMauthAssistantController({
+    previewModeActive: paneMode === "preview",
+    openPreviewMode: hideEditorPane,
+    createHost: assistantHost,
+    onFileToolStart: (toolName) => {
+      setProjectFilesStatus(toolName === "mauth.files.open" ? "loading" : "saving");
+      setProjectFilesMessage(`Assistant: ${toolName}`);
+    },
+    onFileToolComplete: () => {
+      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "ready" : current));
+      setProjectFilesMessage((current) => (current.startsWith("Assistant:") ? "Assistant tool completed" : current));
+    },
+    onFileToolError: () => {
+      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "error" : current));
+    },
+  });
 
   const printDocument = useCallback(() => {
     flushSync(() => setPrintPreviewMounted(true));
@@ -12719,39 +12566,6 @@ export default function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [storageHydrated, fileManagerOpen, projectFiles, projectFilesStatus, refreshProjectFiles]);
-
-  useEffect(() => {
-    if (!assistantPanelOpen) return;
-
-    let cancelled = false;
-    setAssistantProviderStatusMessage("Checking assistant provider");
-
-    getAssistantStatus()
-      .then((status) => {
-        if (cancelled) return;
-        setAssistantProviderConfigured(status.configured);
-        setAssistantProviderStatusMessage(
-          status.configured
-            ? `Connected to ${status.provider} (${status.model})`
-            : `Assistant provider missing ${status.missingSetting ?? "configuration"}`,
-        );
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setAssistantProviderConfigured(false);
-        setAssistantProviderStatusMessage(error instanceof Error ? error.message : "Assistant provider is unavailable.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [assistantPanelOpen]);
-
-  useEffect(() => {
-    if (paneMode !== "preview" && assistantPanelOpen) {
-      setAssistantPanelOpen(false);
-    }
-  }, [assistantPanelOpen, paneMode]);
 
   function openFileManager() {
     setFileManagerOpen(true);
@@ -12937,7 +12751,7 @@ export default function App() {
   const canRedo = historyVersion >= 0 && redoStackRef.current.length > 0;
   const showEditor = paneMode !== "preview";
   const showPreview = paneMode !== "editor";
-  const assistantPreviewOpen = paneMode === "preview" && assistantPanelOpen;
+  const assistantPreviewOpen = paneMode === "preview" && assistantController.panelOpen;
   const darkMode = theme === "dark";
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const previewFitScale = useMemo(() => {
@@ -13457,14 +13271,6 @@ export default function App() {
     setActionProposalResult(null);
   }
 
-  function openAssistantPanel() {
-    setAssistantPanelOpen((current) => {
-      const nextOpen = !current;
-      if (nextOpen && paneMode !== "preview") hideEditorPane();
-      return nextOpen;
-    });
-  }
-
   async function ensureAssistantProject() {
     const project = activeProject ?? (await getDefaultProject());
     setActiveProject(project);
@@ -13576,221 +13382,6 @@ export default function App() {
         setProjectFilesStatus("ready");
       },
     };
-  }
-
-  async function assistantDocumentSummary(host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>) {
-    setAssistantActivityLabel("Inspecting document");
-    const result = await runMauthAssistantAdapterTool(host, { name: "mauth.document.inspect", arguments: {} });
-    return result.ok ? (asRecord(result.data) ?? null) : null;
-  }
-
-  async function runAssistantProviderToolCall(
-    host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>,
-    toolCall: AssistantProviderToolCall,
-  ): Promise<AssistantToolOutput> {
-    const call = assistantToolCallFromProvider(toolCall);
-    if (!call) {
-      return {
-        callId: toolCall.callId,
-        name: toolCall.name,
-        output: {
-          ok: false,
-          error: `Unsupported assistant tool call: ${toolCall.name}`,
-        },
-      };
-    }
-
-    setAssistantActivityLabel(assistantActivityLabelForTool(call.name));
-    if (call.name.startsWith("mauth.files.")) {
-      setProjectFilesStatus(call.name === "mauth.files.open" ? "loading" : "saving");
-      setProjectFilesMessage(`Assistant: ${call.name}`);
-    }
-
-    const result = await runMauthAssistantAdapterTool(host, call);
-
-    return {
-      callId: toolCall.callId,
-      name: toolCall.name,
-      output: compactAssistantProviderOutput(result),
-    };
-  }
-
-  function localTerminalAssistantToolMessage(toolOutput: AssistantToolOutput) {
-    const output = asRecord(toolOutput.output);
-    const toolName = typeof output?.toolName === "string" ? output.toolName : "";
-    if (output?.ok !== true) return "";
-    if (
-      toolName !== "mauth.author.replaceQuestion" &&
-      toolName !== "mauth.author.addDiagram" &&
-      toolName !== "mauth.author.ensureSolutions"
-    ) {
-      return "";
-    }
-    return typeof output?.message === "string" && output.message.trim() ? output.message.trim() : "Completed the edit.";
-  }
-
-  async function continueAssistantToolLoop(
-    host: MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig>,
-    initialResponseId: string | null,
-    initialToolCalls: AssistantProviderToolCall[],
-  ): Promise<AssistantToolLoopResult> {
-    let responseId = initialResponseId;
-    let toolCalls = initialToolCalls;
-    let rounds = 0;
-    let totalUsage: AssistantUsageSummary | null = null;
-
-    while (toolCalls.length && rounds < ASSISTANT_MAX_TOOL_ROUNDS) {
-      rounds += 1;
-      const toolOutputs: AssistantToolOutput[] = [];
-      for (const toolCall of toolCalls) {
-        toolOutputs.push(await runAssistantProviderToolCall(host, toolCall));
-      }
-
-      const localMessages = toolOutputs.map(localTerminalAssistantToolMessage).filter(Boolean);
-      if (localMessages.length === toolOutputs.length) {
-        setAssistantChatMessages((current) => [
-          ...current,
-          ...localMessages.map((message) => ({ id: id("assistant-message"), role: "assistant" as const, content: message })),
-        ]);
-        setAssistantPendingToolContinuation(null);
-        setAssistantPreviousResponseId(null);
-        return { responseId: null, usage: totalUsage, pending: null };
-      }
-
-      const documentSummary = await assistantDocumentSummary(host);
-      setAssistantActivityLabel("Thinking");
-      const response = await sendAssistantChat({
-        previousResponseId: responseId,
-        toolOutputs,
-        documentSummary,
-      });
-
-      responseId = response.responseId ?? responseId;
-      totalUsage = mergeAssistantUsageSummary(totalUsage, response.usage);
-      if (response.message.trim()) {
-        setAssistantChatMessages((current) => [
-          ...current,
-          { id: id("assistant-message"), role: "assistant", content: response.message.trim() },
-        ]);
-      }
-      toolCalls = response.toolCalls;
-    }
-
-    if (toolCalls.length) {
-      const pending = { responseId, toolCalls };
-      setAssistantPendingToolContinuation(pending);
-      setAssistantPreviousResponseId(null);
-      setAssistantChatMessages((current) => [
-        ...current,
-        {
-          id: id("assistant-message"),
-          role: "assistant",
-          content: "I stopped after several tool rounds. Ask me to continue if you want me to keep going.",
-        },
-      ]);
-      return { responseId, usage: totalUsage, pending };
-    }
-
-    setAssistantPendingToolContinuation(null);
-    setAssistantPreviousResponseId(responseId);
-    return { responseId, usage: totalUsage, pending: null };
-  }
-
-  async function sendAssistantChatMessage() {
-    const userContent = assistantChatInput.trim();
-    if (!userContent || assistantChatRunning) return;
-
-    const pendingContinuation = assistantPendingToolContinuation;
-    const resumePendingTools = Boolean(pendingContinuation && userContent.toLowerCase().startsWith("continue"));
-    const previousResponseId = pendingContinuation ? null : assistantPreviousResponseId;
-    const priorMessages = assistantChatMessages
-      .filter((chatMessage) => !chatMessage.content.startsWith("I stopped after several tool rounds."))
-      .slice(-8)
-      .map(
-        (chatMessage): AssistantChatMessage => ({
-          role: chatMessage.role,
-          content: chatMessage.content.length > 2000 ? `${chatMessage.content.slice(0, 2000)}...` : chatMessage.content,
-        }),
-      );
-    const outgoingMessages: AssistantChatMessage[] = previousResponseId
-      ? [{ role: "user", content: userContent }]
-      : [...priorMessages, { role: "user", content: userContent }];
-
-    setAssistantChatInput("");
-    setAssistantChatMessages((current) => [...current, { id: id("assistant-message"), role: "user", content: userContent }]);
-    setAssistantChatRunning(true);
-    setAssistantActivityLabel(resumePendingTools ? "Continuing" : "Thinking");
-    setAssistantActivityStartedAt(Date.now());
-    setAssistantProviderStatusMessage((current) => current || "Assistant working");
-
-    try {
-      const host = assistantHost();
-      if (resumePendingTools && pendingContinuation) {
-        setAssistantPendingToolContinuation(null);
-        const loopResult = await continueAssistantToolLoop(host, pendingContinuation.responseId, pendingContinuation.toolCalls);
-        const resumedUsage = loopResult.usage;
-        if (resumedUsage) {
-          setAssistantChatMessages((current) => addUsageToLastAssistantMessage(current, resumedUsage));
-        }
-        setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "ready" : current));
-        setProjectFilesMessage((current) => (current.startsWith("Assistant:") ? "Assistant tool completed" : current));
-        return;
-      }
-
-      if (pendingContinuation) {
-        setAssistantPendingToolContinuation(null);
-        setAssistantPreviousResponseId(null);
-      }
-
-      const documentSummary = await assistantDocumentSummary(host);
-      setAssistantActivityLabel("Thinking");
-      const response = await sendAssistantChat({
-        previousResponseId,
-        messages: outgoingMessages,
-        documentSummary,
-      });
-
-      let requestUsage = response.usage ?? null;
-      setAssistantProviderConfigured(response.configured);
-      if (!response.configured) {
-        setAssistantProviderStatusMessage(response.error || response.message || "Assistant provider is not configured.");
-      }
-
-      const nextResponseId = response.responseId ?? previousResponseId;
-      if (response.message.trim()) {
-        setAssistantChatMessages((current) => [
-          ...current,
-          { id: id("assistant-message"), role: "assistant", content: response.message.trim() },
-        ]);
-      }
-
-      if (response.toolCalls.length) {
-        const loopResult = await continueAssistantToolLoop(host, nextResponseId, response.toolCalls);
-        requestUsage = mergeAssistantUsageSummary(requestUsage, loopResult.usage);
-      } else {
-        setAssistantPendingToolContinuation(null);
-        setAssistantPreviousResponseId(nextResponseId);
-      }
-
-      if (requestUsage) {
-        setAssistantChatMessages((current) => addUsageToLastAssistantMessage(current, requestUsage));
-      }
-
-      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "ready" : current));
-      setProjectFilesMessage((current) => (current.startsWith("Assistant:") ? "Assistant tool completed" : current));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Assistant request failed.";
-      setAssistantProviderConfigured(false);
-      setAssistantProviderStatusMessage(message);
-      setAssistantPendingToolContinuation(null);
-      setAssistantPreviousResponseId(null);
-      setAssistantChatMessages((current) => [...current, { id: id("assistant-message"), role: "assistant", content: message }]);
-      setProjectFilesStatus((current) => (current === "saving" || current === "loading" ? "error" : current));
-    } finally {
-      setAssistantChatRunning(false);
-      setAssistantActivityStartedAt(null);
-      setAssistantActivityLabel("Thinking");
-    }
   }
 
   function restoreEditorSnapshot(snapshot: EditorHistorySnapshot) {
@@ -16751,13 +16342,13 @@ export default function App() {
             type="button"
             variant="outline"
             size="icon"
-            title={assistantPanelOpen ? "Hide assistant" : "Open assistant"}
-            aria-label={assistantPanelOpen ? "Hide assistant" : "Open assistant"}
-            aria-pressed={assistantPanelOpen}
-            onClick={openAssistantPanel}
+            title={assistantController.panelOpen ? "Hide assistant" : "Open assistant"}
+            aria-label={assistantController.panelOpen ? "Hide assistant" : "Open assistant"}
+            aria-pressed={assistantController.panelOpen}
+            onClick={assistantController.togglePanel}
             className={cn(
               "fixed left-[4.25rem] top-20 z-50 size-10 border-blue-200 bg-background/95 text-primary shadow-lg backdrop-blur hover:bg-primary/10",
-              assistantPanelOpen && "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
+              assistantController.panelOpen && "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
             <Bot className="size-5" aria-hidden="true" />
@@ -16808,19 +16399,19 @@ export default function App() {
           onClear={clearActionProposal}
         />
       ) : null}
-      {assistantPanelOpen && paneMode === "preview" ? (
+      {assistantController.panelOpen && paneMode === "preview" ? (
         <MauthAssistantPanel
           placement="preview-left"
-          chatMessages={assistantChatMessages}
-          chatInput={assistantChatInput}
-          chatRunning={assistantChatRunning}
-          providerConfigured={assistantProviderConfigured}
-          providerStatusMessage={assistantProviderStatusMessage}
-          activityLabel={assistantActivityLabel}
-          activityStartedAt={assistantActivityStartedAt}
-          onChatInputChange={setAssistantChatInput}
-          onSendChat={() => void sendAssistantChatMessage()}
-          onClose={() => setAssistantPanelOpen(false)}
+          chatMessages={assistantController.chatMessages}
+          chatInput={assistantController.chatInput}
+          chatRunning={assistantController.chatRunning}
+          providerConfigured={assistantController.providerConfigured}
+          providerStatusMessage={assistantController.providerStatusMessage}
+          activityLabel={assistantController.activityLabel}
+          activityStartedAt={assistantController.activityStartedAt}
+          onChatInputChange={assistantController.setChatInput}
+          onSendChat={() => void assistantController.sendChatMessage()}
+          onClose={() => assistantController.setPanelOpen(false)}
         />
       ) : null}
       {printPreviewMounted ? (
