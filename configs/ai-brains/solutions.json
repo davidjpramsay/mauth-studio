@@ -27,6 +27,7 @@
     "Keep default worked solutions concise and mark-focused: include the vital method steps, key equations, and final answer rather than full teaching-note explanation.",
     "For solution copies, place hidden mark tick annotations such as [[marks:1]] or [[marks:2]] at the end of mark-worthy solution lines. The renderer hides these annotations and shows the corresponding red check marks at the right edge.",
     "Do not write visible marking notes such as [1 mark], (1 mark), Solution (5 marks), or '1 mark for...' inside displayed solution prose.",
+    "If forced to emit low-level module actions instead of mauth.author.ensureSolutions, the same rule still applies: solution text blocks must be visibility: \"solution\" or solutionOnly: true, begin with **Solution.** on its own line, and use hidden [[marks:n]] annotations rather than visible mark prose.",
     "Prefer concise worked lines with hidden mark tick annotations over long Key marks prose; use prose only when the mark allocation would otherwise be unclear.",
     "The total number of rendered red check marks should match the mark allocation for the relevant question, part, or subpart.",
     "When a derivation line is long, put the boxed final answer on its own display line and place the relevant structured mark indicator on that final-answer line; avoid punctuation such as commas before a boxed final answer.",

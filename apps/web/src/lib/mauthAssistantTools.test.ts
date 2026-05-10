@@ -393,6 +393,36 @@ test("normalises visible assistant mark notes into hidden solution tick annotati
   assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 3);
 });
 
+test("normalises low-level assistant solution patches before applying them", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.apply",
+    arguments: {
+      actions: [
+        {
+          type: "module.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "sol1",
+          patch: {
+            text:
+              "**Solution (5 marks).** Let $\\ell$ be the tangent.\n\n" +
+              "$$\n\\angle(\\ell,AB)=\\angle ACB. \\qquad \\text{[1 mark]}\n$$\n" +
+              "This proves the result. $\\qquad$ **[1 mark for clear conclusion]**",
+          },
+        },
+      ],
+    },
+  });
+  const solution = result.document?.questions[0].contentBlocks.find((block) => block.id === "sol1");
+  const text = solution?.kind === "text" ? solution.text : "";
+
+  assert.equal(result.ok, true);
+  assert.match(text, /^\*\*Solution\.\*\*\n\nLet \$\\ell\$ be the tangent\./);
+  assert(!text.includes("[1 mark]"));
+  assert(!text.includes("Solution (5 marks)"));
+  assert.match(text, /\$\$\n\\angle\(\\ell,AB\)=\\angle ACB\.\n\$\$ \[\[marks:1\]\]/);
+  assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 2);
+});
+
 test("rejects malformed high-level authoring payloads before editing the document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {

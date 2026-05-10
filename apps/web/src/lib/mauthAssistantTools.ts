@@ -1,4 +1,4 @@
-import type { ContentBlock, ContentBlockVisibility, GraphConfig } from "@mauth-studio/shared";
+import type { ContentBlock, ContentBlockVisibility, GraphConfig, TextContentBlock } from "@mauth-studio/shared";
 
 import {
   applyMauthDocumentActions,
@@ -7,6 +7,7 @@ import {
   MAUTH_DOCUMENT_ONLY_ACTION_TYPES,
   previewMauthDocumentActions,
   type MauthActionWarning,
+  type MauthContentScope,
   type MauthDocumentAction,
   type MauthDocumentActionOptions,
   type MauthDocumentActionResult,
@@ -579,6 +580,101 @@ function parseActionList(value: unknown): MauthDocumentAction[] | MauthAssistant
   return typedMauthDocumentActions(actionValues);
 }
 
+function contentBlocksForScope<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  scope: MauthContentScope,
+) {
+  const question = document.questions.find((item) => item.id === scope.questionId);
+  if (!question) return [];
+  if (scope.kind === "question") return question.contentBlocks;
+  const part = question.parts?.find((item) => item.id === scope.partId);
+  if (!part) return [];
+  if (scope.kind === "part") return part.contentBlocks;
+  return part.subparts?.find((item) => item.id === scope.subpartId)?.contentBlocks ?? [];
+}
+
+function existingBlockForAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  action: Extract<MauthDocumentAction, { type: "module.update" }>,
+) {
+  return contentBlocksForScope(document, action.scope).find((block) => block.id === action.blockId);
+}
+
+function sanitizePatchContentBlocks(patch: Record<string, unknown>) {
+  return Array.isArray(patch.contentBlocks)
+    ? {
+        ...patch,
+        contentBlocks: sanitizeAssistantContentBlocks(patch.contentBlocks as ContentBlock[]),
+      }
+    : patch;
+}
+
+function sanitizePatchParts(patch: Record<string, unknown>) {
+  return Array.isArray(patch.parts)
+    ? {
+        ...patch,
+        parts: (patch.parts as MauthPartLike[]).map(sanitizeAssistantPart),
+      }
+    : patch;
+}
+
+function sanitizePatchSubparts(patch: Record<string, unknown>) {
+  return Array.isArray(patch.subparts)
+    ? {
+        ...patch,
+        subparts: (patch.subparts as MauthSubpartLike[]).map(sanitizeAssistantSubpart),
+      }
+    : patch;
+}
+
+function sanitizeContainerPatch(patch: Record<string, unknown>) {
+  return sanitizePatchSubparts(sanitizePatchParts(sanitizePatchContentBlocks(patch)));
+}
+
+function sanitizeAssistantAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  action: MauthDocumentAction,
+): MauthDocumentAction {
+  if (action.type === "question.add") {
+    return { ...action, question: sanitizeAssistantQuestion(action.question) };
+  }
+  if (action.type === "question.update") {
+    return { ...action, patch: sanitizeContainerPatch(action.patch) };
+  }
+  if (action.type === "part.add") {
+    return { ...action, part: sanitizeAssistantPart(action.part) };
+  }
+  if (action.type === "part.update" || action.type === "subpart.update") {
+    return { ...action, patch: sanitizeContainerPatch(action.patch) };
+  }
+  if (action.type === "subpart.add") {
+    return { ...action, subpart: sanitizeAssistantSubpart(action.subpart) };
+  }
+  if (action.type === "module.add" || action.type === "solutionSlot.add") {
+    return { ...action, blocks: sanitizeAssistantContentBlocks(action.blocks) };
+  }
+  if (action.type === "module.update" && typeof action.patch.text === "string") {
+    const existingBlock = existingBlockForAction(document, action);
+    const nextText = action.patch.text;
+    const isSolutionPatch =
+      (existingBlock && isSolutionTextBlock(existingBlock)) ||
+      action.patch.visibility === "solution" ||
+      action.patch.solutionOnly === true ||
+      SOLUTION_HEADING_PATTERN.test(nextText);
+    if (isSolutionPatch && (hasVisibleMarkNote(nextText) || MARK_TICK_ANNOTATION_PATTERN.test(nextText))) {
+      return { ...action, patch: { ...action.patch, text: solutionBlockText(nextText) } };
+    }
+  }
+  return action;
+}
+
+function sanitizeAssistantActions<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  actions: MauthDocumentAction[],
+) {
+  return actions.map((action) => sanitizeAssistantAction(document, action));
+}
+
 function validationMode(args: unknown): MauthAssistantValidationMode {
   if (!isRecord(args) || typeof args.mode !== "string") return "both";
   return args.mode === "document" || args.mode === "solutions" || args.mode === "both" ? args.mode : "both";
@@ -623,16 +719,40 @@ function authorBlockId(questionId: string, suffix: string) {
 }
 
 const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
-const TRAILING_VISIBLE_MARK_NOTE_PATTERN = /\s*(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))\s*$/i;
+const VISIBLE_MARK_NOTE_PATTERN = /(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))/i;
+const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
+  /\s*(?:\$\\qquad\$\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?\s*$/i;
+const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
+  /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
 
+function markCountFromNote(squareCount: string | undefined, roundCount: string | undefined) {
+  return Math.max(0, Math.min(6, Math.round(Number(squareCount ?? roundCount) || 0)));
+}
+
+function normalizeDisplayMathMarkAnnotations(value: string) {
+  return value.replace(/\$\$([\s\S]+?)\$\$/g, (match, body: string) => {
+    let marks = 0;
+    const cleanedBody = body.replace(
+      DISPLAY_VISIBLE_MARK_NOTE_PATTERN,
+      (_note, squareCount: string | undefined, roundCount: string | undefined) => {
+        marks += markCountFromNote(squareCount, roundCount);
+        return "";
+      },
+    );
+    const trimmedBody = cleanedBody.trimEnd();
+    const formattedBody = trimmedBody.startsWith("\n") && !trimmedBody.endsWith("\n") ? `${trimmedBody}\n` : trimmedBody;
+    return marks ? `$$${formattedBody}$$ [[marks:${marks}]]` : match;
+  });
+}
+
 function normalizeSolutionMarkAnnotations(value: string) {
-  return value
+  return normalizeDisplayMathMarkAnnotations(value)
     .replace(MARK_TICK_ANNOTATION_PATTERN, (_, count: string) => `[[marks:${count}]]`)
     .split("\n")
     .map((line) =>
       line.replace(TRAILING_VISIBLE_MARK_NOTE_PATTERN, (_match, squareCount: string | undefined, roundCount: string | undefined) => {
-        const count = squareCount ?? roundCount;
+        const count = markCountFromNote(squareCount, roundCount);
         return count ? ` [[marks:${count}]]` : "";
       }),
     )
@@ -644,6 +764,45 @@ function solutionBlockText(value: string) {
   if (!SOLUTION_HEADING_PATTERN.test(normalized)) return `**Solution.**\n\n${normalized}`;
   const body = normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart();
   return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
+}
+
+function isSolutionTextBlock(block: ContentBlock): block is TextContentBlock {
+  return (
+    block.kind === "text" && (block.visibility === "solution" || block.solutionOnly === true || SOLUTION_HEADING_PATTERN.test(block.text))
+  );
+}
+
+function hasVisibleMarkNote(value: string) {
+  return VISIBLE_MARK_NOTE_PATTERN.test(value) || /Solution\s*\(\s*\d+\s*marks?\s*\)/i.test(value);
+}
+
+function sanitizeAssistantSolutionBlock(block: ContentBlock): ContentBlock {
+  if (!isSolutionTextBlock(block) || (!hasVisibleMarkNote(block.text) && !MARK_TICK_ANNOTATION_PATTERN.test(block.text))) return block;
+  return { ...block, text: solutionBlockText(block.text) };
+}
+
+function sanitizeAssistantContentBlocks(blocks: readonly ContentBlock[]) {
+  return blocks.map(sanitizeAssistantSolutionBlock);
+}
+
+function sanitizeAssistantSubpart<T extends MauthSubpartLike>(subpart: T): T {
+  return { ...subpart, contentBlocks: sanitizeAssistantContentBlocks(subpart.contentBlocks) } as T;
+}
+
+function sanitizeAssistantPart<T extends MauthPartLike>(part: T): T {
+  return {
+    ...part,
+    contentBlocks: sanitizeAssistantContentBlocks(part.contentBlocks),
+    ...(part.subparts ? { subparts: part.subparts.map(sanitizeAssistantSubpart) } : {}),
+  } as T;
+}
+
+function sanitizeAssistantQuestion<T extends MauthQuestionLike>(question: T): T {
+  return {
+    ...question,
+    contentBlocks: sanitizeAssistantContentBlocks(question.contentBlocks),
+    ...(question.parts ? { parts: question.parts.map(sanitizeAssistantPart) } : {}),
+  } as T;
 }
 
 function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {
@@ -1190,13 +1349,14 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
   if (!Array.isArray(actions)) {
     return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
   }
+  const sanitizedActions = sanitizeAssistantActions(document, actions);
 
   if (call.name === "mauth.actions.preview") {
-    return resultTool(call.name, previewMauthDocumentActions(document, actions, options));
+    return resultTool(call.name, previewMauthDocumentActions(document, sanitizedActions, options));
   }
 
   if (call.name === "mauth.actions.apply") {
-    return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
+    return resultTool(call.name, applyMauthDocumentActions(document, sanitizedActions, options));
   }
 
   return failTool(call.name, `Unsupported assistant tool: ${call.name}`) as MauthAssistantToolResult<Q, F, C>;
