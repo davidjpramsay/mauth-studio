@@ -10551,16 +10551,15 @@ export default function App() {
           actions={
             <>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                Page
-                <span className="flex h-8 w-28 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm font-normal">
+                New Page
+                <span className="flex h-8 w-28 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
                   <input
                     type="checkbox"
                     checked={subpart.pageBreakBefore === true}
                     onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { pageBreakBefore: event.target.checked })}
-                    className="size-3.5"
+                    className="size-4"
                     aria-label={`Start subpart ${subpartLabel} on a new page`}
                   />
-                  <span>New page</span>
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
@@ -10666,16 +10665,15 @@ export default function App() {
             actions={
               <>
                 <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                  Page
-                  <span className="flex h-8 w-28 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm font-normal">
+                  New Page
+                  <span className="flex h-8 w-28 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
                     <input
                       type="checkbox"
                       checked={part.pageBreakBefore === true}
                       onChange={(event) => updatePart(question.id, part.id, { pageBreakBefore: event.target.checked })}
-                      className="size-3.5"
+                      className="size-4"
                       aria-label={`Start part ${partLabel} on a new page`}
                     />
-                    <span>New page</span>
                   </span>
                 </label>
                 {subparts.length ? (
