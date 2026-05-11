@@ -419,6 +419,51 @@ def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
     assert "Omit diagram fields to preserve existing diagrams" in instructions
 
 
+def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content=(
+            "Can you make question 1 from the attached screenshot. Write the question with the diagram entered "
+            "underneath and then put the parts under the diagram."
+        ),
+    )
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="screenshot-1",
+            name="scalar-products.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": [{"id": "q1", "index": 0, "modules": [], "parts": []}]},
+        [message],
+        attachments=attachments,
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "include it in diagram or diagrams in the same replacement payload" in instructions
+    assert "Do not replace a visible mathematical diagram with prose" in instructions
+    assert "parts[i].text" in instructions
+    assert "Do not leave marked part text blank" in instructions
+    assert "before structured parts" in instructions
+
+
+def test_replace_question_schema_warns_against_blank_source_parts():
+    tool = openai_assistant.mauth_author_replace_question_tool_definition()
+    properties = tool["parameters"]["properties"]
+    parts = properties["parts"]
+    part_text_description = parts["items"]["properties"]["text"]["description"]
+
+    assert "diagram at question level" in parts["description"]
+    assert "never leave this blank for a marked part" in part_text_description
+    assert "$\\mathbf{a}\\cdot\\mathbf{b}$" in part_text_description
+    assert "visible mathematical diagram" in properties["diagrams"]["description"]
+
+
 def test_focused_circle_diagram_prompt_gets_penrose_renderer_hint():
     instructions = openai_assistant.assistant_instructions(
         {"questions": [{"id": "q1", "index": 0, "modules": []}]},

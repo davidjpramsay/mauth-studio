@@ -581,8 +581,21 @@ def question_summary_text(question: dict[str, Any] | None) -> str:
 def focused_tool_hint(
     compact_summary: dict[str, Any] | None,
     messages: list[AssistantChatMessage] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> str:
     text = request_text(messages)
+    has_source_attachment = bool(attachments)
+    source_prompt_mentions_diagram = any(
+        term in text
+        for term in (
+            "diagram",
+            "graph",
+            "chart",
+            "screenshot",
+            "attached image",
+            "attached screenshot",
+        )
+    )
     asks_for_marking_edit = any(
         term in text
         for term in (
@@ -619,11 +632,16 @@ def focused_tool_hint(
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
 
     if asks_to_write_question:
+        diagram_guidance = (
+            "If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in "
+            "the same replacement payload, before structured parts when the teacher asks for parts under the diagram."
+            if has_source_attachment and source_prompt_mentions_diagram
+            else "Omit diagram fields to preserve existing diagrams; use diagrams: [] only when explicitly removing diagrams."
+        )
         return (
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
             f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
-            "and solutionText when a solution is requested. Omit diagram fields to preserve existing diagrams; use "
-            "diagrams: [] only when explicitly removing diagrams."
+            f"and solutionText when a solution is requested. {diagram_guidance}"
         )
     if (
         any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
@@ -836,13 +854,18 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     "description": (
                         "Optional existing Mauth diagram block: { graphConfig, diagramAlign }. "
                         "Omit to preserve existing diagrams. Supply a valid supported graphConfig only when adding or "
-                        "replacing the question's diagrams."
+                        "replacing the question's diagrams. When converting a screenshot/source question whose visible "
+                        "diagram belongs under the stem and before the parts, supply it here or in diagrams."
                     ),
                     "additionalProperties": True,
                 },
                 "diagrams": {
                     "type": "array",
-                    "description": "Optional list of replacement Mauth diagram blocks. Use [] only when intentionally removing all existing diagrams.",
+                    "description": (
+                        "Optional list of replacement Mauth diagram blocks. Use [] only when intentionally removing all "
+                        "existing diagrams. For source conversions with a visible mathematical diagram, include the "
+                        "native diagram here instead of replacing it with prose."
+                    ),
                     "items": {"type": "object", "additionalProperties": True},
                 },
                 "preserveExistingDiagrams": {
@@ -856,7 +879,9 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     "type": "array",
                     "description": (
                         "Optional structured parts. Use this instead of typing '(a)', '(b)', '(c)' into questionText. "
-                        "Each part can have text, marks, studentSpaceLines, solutionText, and optional diagram/diagrams."
+                        "Each part can have text, marks, studentSpaceLines, solutionText, and optional diagram/diagrams. "
+                        "If the source says the diagram goes under the stem and the parts go under the diagram, put the "
+                        "diagram at question level and keep the actual visible part tasks in this parts array."
                     ),
                     "items": {
                         "type": "object",
@@ -865,7 +890,14 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                                 "type": "string",
                                 "description": "Part label such as a, b, or c. Omit to auto-label.",
                             },
-                            "text": {"type": "string", "description": "Part prompt text without a typed '(a)' label."},
+                            "text": {
+                                "type": "string",
+                                "description": (
+                                    "Part prompt text without a typed '(a)' label. Must contain the visible part task "
+                                    "from the source, for example `$\\mathbf{a}\\cdot\\mathbf{b}$`; never leave this "
+                                    "blank for a marked part."
+                                ),
+                            },
                             "marks": {"type": "integer", "minimum": 0, "maximum": 100},
                             "studentSpaceLines": {
                                 "type": "integer",
@@ -1133,7 +1165,7 @@ def assistant_instructions(
         else "No document summary supplied."
     )
     brain_text = assistant_brain_context(messages, tool_outputs, selected_brain_files, attachments)
-    tool_hint = focused_tool_hint(compact_summary, messages)
+    tool_hint = focused_tool_hint(compact_summary, messages, attachments)
     attachment_lines = [
         f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
         for attachment in attachments or []
@@ -1155,6 +1187,8 @@ Document-edit workflow:
 
 Tool-call contract:
 - For focused requests to write or replace one existing question, use the direct mauth_author_replace_question tool. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists.
+- For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
+- For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images.
@@ -1176,6 +1210,8 @@ Attachment contract:
 {attachment_text}
 - If an attachment is present, inspect it directly and use it as source material for the teacher request. Screenshots/images may contain question text, diagrams, or formatting cues. PDFs may contain source exams or assessment pages. Word and text-like files are extracted to readable text before the provider call.
 - For conversion from attached PDFs/screenshots/Word/text files, preserve original line breaks, inline-vs-display maths intent, diagrams, marks, and pagination when the teacher asks for fidelity. Keep the first pass focused if the teacher asks for only one question or one visible page.
+- When the source shows "a)", "b)", "c)" or similar, convert them to structured parts whose text contains the visible part expression or instruction. If the source diagram belongs between the stem and the parts, put it in question-level diagram/diagrams and then emit parts underneath it; do not make empty parts.
+- For source vector diagrams with only magnitudes, angles, and labelled rays from a common point, recreate the diagram as an editable native diagram. Use geometricConstruction/Penrose for schematic no-axis diagrams, and vector2d only when the source is coordinate-accurate or has Cartesian axes/components.
 - Do not claim you cannot see an attachment when the request includes one. If the content is unreadable, say exactly what was unclear and ask for a higher-resolution file only after attempting the relevant Mauth tool path.
 
 Authoring quality bar:
