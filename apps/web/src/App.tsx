@@ -10552,7 +10552,7 @@ export default function App() {
             <>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                 New Page
-                <span className="flex h-8 w-28 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
+                <span className="flex h-8 w-20 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
                   <input
                     type="checkbox"
                     checked={subpart.pageBreakBefore === true}
@@ -10569,7 +10569,7 @@ export default function App() {
                   min={0}
                   value={subpart.marks}
                   onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
-                  className="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <RemoveActionButton label={`Remove subpart ${subpartLabel}`} onRemove={() => removeSubpart(question.id, part, subpart.id)} />
@@ -10666,7 +10666,7 @@ export default function App() {
               <>
                 <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                   New Page
-                  <span className="flex h-8 w-28 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
+                  <span className="flex h-8 w-20 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
                     <input
                       type="checkbox"
                       checked={part.pageBreakBefore === true}
@@ -10679,7 +10679,7 @@ export default function App() {
                 {subparts.length ? (
                   <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                     Marks
-                    <div className="flex h-8 w-28 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
+                    <div className="flex h-8 w-20 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
                       {markLabel(partMarks(part))}
                     </div>
                   </div>
@@ -10691,7 +10691,7 @@ export default function App() {
                       min={0}
                       value={part.marks}
                       onChange={(event) => updatePart(question.id, part.id, { marks: Number(event.target.value) })}
-                      className="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
                 )}
