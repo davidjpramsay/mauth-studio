@@ -634,7 +634,8 @@ def focused_tool_hint(
     if asks_to_write_question:
         diagram_guidance = (
             "If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in "
-            "the same replacement payload, before structured parts when the teacher asks for parts under the diagram."
+            "the same replacement payload, before structured parts when the teacher asks for parts under the diagram. "
+            "For this request the direct tool schema may require diagram, so do not submit a text-only replacement."
             if has_source_attachment and source_prompt_mentions_diagram
             else "Omit diagram fields to preserve existing diagrams; use diagrams: [] only when explicitly removing diagrams."
         )
@@ -671,6 +672,35 @@ def focused_tool_hint(
             "Do not use standardDiagram recipe names; choose the renderer and emit a real graphConfig."
         )
     return "No focused high-level tool hint."
+
+
+def source_diagram_required_for_replace(
+    messages: list[AssistantChatMessage] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
+) -> bool:
+    if not attachments:
+        return False
+    text = request_text(messages)
+    asks_to_write_question = any(
+        term in text for term in ("write question", "replace question", "make question", "create question")
+    )
+    if not asks_to_write_question:
+        return False
+    return any(
+        term in text
+        for term in (
+            "diagram",
+            "graph",
+            "chart",
+            "axes",
+            "axis",
+            "venn",
+            "vector diagram",
+            "underneath",
+            "under the diagram",
+            "entered underneath",
+        )
+    )
 
 
 def model_pricing(model: str) -> dict[str, float | str] | None:
@@ -782,7 +812,24 @@ def mauth_tool_definition() -> dict[str, Any]:
     }
 
 
-def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
+def mauth_author_replace_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
+    required_fields = ["questionNumber", "marks", "questionText", "studentSpaceLines"]
+    if require_diagram:
+        required_fields.append("diagram")
+
+    diagram_description = (
+        "Required for this request because the source attachment/request asks for a visible mathematical diagram. "
+        "Supply a native editable Mauth diagram block, normally { graphConfig, diagramAlign }. Do not replace the "
+        "diagram with prose, and do not omit this field."
+        if require_diagram
+        else (
+            "Optional existing Mauth diagram block: { graphConfig, diagramAlign }. "
+            "Omit to preserve existing diagrams. Supply a valid supported graphConfig only when adding or "
+            "replacing the question's diagrams. When converting a screenshot/source question whose visible "
+            "diagram belongs under the stem and before the parts, supply it here or in diagrams."
+        )
+    )
+
     return {
         "type": "function",
         "name": "mauth_author_replace_question",
@@ -851,12 +898,7 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                 },
                 "diagram": {
                     "type": "object",
-                    "description": (
-                        "Optional existing Mauth diagram block: { graphConfig, diagramAlign }. "
-                        "Omit to preserve existing diagrams. Supply a valid supported graphConfig only when adding or "
-                        "replacing the question's diagrams. When converting a screenshot/source question whose visible "
-                        "diagram belongs under the stem and before the parts, supply it here or in diagrams."
-                    ),
+                    "description": diagram_description,
                     "additionalProperties": True,
                 },
                 "diagrams": {
@@ -926,7 +968,7 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     },
                 },
             },
-            "required": ["questionNumber", "marks", "questionText", "studentSpaceLines"],
+            "required": required_fields,
             "additionalProperties": False,
         },
     }
@@ -1102,6 +1144,7 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
 def assistant_tool_definitions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> list[dict[str, Any]]:
     text = request_text(messages, tool_outputs)
     question_numbers = question_numbers_from_request(messages)
@@ -1127,12 +1170,13 @@ def assistant_tool_definitions(
     asks_to_write_question = any(
         term in text for term in ("write question", "replace question", "make question", "create question")
     )
+    require_source_diagram = source_diagram_required_for_replace(messages, attachments)
     file_only_terms = ("open file", "save file", "rename file", "delete file", "move file", "folder", "files")
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
     if has_specific_question and asks_to_write_question:
-        return [mauth_author_replace_question_tool_definition()]
+        return [mauth_author_replace_question_tool_definition(require_diagram=require_source_diagram)]
     if has_specific_question and asks_for_diagram and asks_to_add:
         return [mauth_author_add_diagram_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
@@ -1143,7 +1187,7 @@ def assistant_tool_definitions(
         return [mauth_tool_definition()]
 
     return [
-        mauth_author_replace_question_tool_definition(),
+        mauth_author_replace_question_tool_definition(require_diagram=require_source_diagram),
         mauth_author_add_diagram_tool_definition(),
         mauth_author_ensure_solutions_tool_definition(),
         mauth_tool_definition(),
@@ -1187,7 +1231,7 @@ Document-edit workflow:
 
 Tool-call contract:
 - For focused requests to write or replace one existing question, use the direct mauth_author_replace_question tool. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists.
-- For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
+- For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
@@ -1573,7 +1617,7 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
                 request.attachments,
             ),
             "input": input_items(request),
-            "tools": assistant_tool_definitions(request.messages, request.toolOutputs),
+            "tools": assistant_tool_definitions(request.messages, request.toolOutputs, request.attachments),
             "parallel_tool_calls": False,
         }
         if request.previousResponseId:

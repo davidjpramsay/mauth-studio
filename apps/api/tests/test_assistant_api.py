@@ -437,7 +437,7 @@ def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
         )
     ]
 
-    tools = openai_assistant.assistant_tool_definitions([message])
+    tools = openai_assistant.assistant_tool_definitions([message], attachments=attachments)
     instructions = openai_assistant.assistant_instructions(
         {"questions": [{"id": "q1", "index": 0, "modules": [], "parts": []}]},
         [message],
@@ -445,11 +445,35 @@ def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
     )
 
     assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "diagram" in tools[0]["parameters"]["required"]
+    assert "Required for this request" in tools[0]["parameters"]["properties"]["diagram"]["description"]
     assert "include it in diagram or diagrams in the same replacement payload" in instructions
+    assert "do not submit a text-only replacement" in instructions
     assert "Do not replace a visible mathematical diagram with prose" in instructions
     assert "parts[i].text" in instructions
     assert "Do not leave marked part text blank" in instructions
     assert "before structured parts" in instructions
+
+
+def test_screenshot_text_only_conversion_does_not_require_diagram_when_not_requested():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Can you make question 1 from the attached screenshot.",
+    )
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="screenshot-1",
+            name="text-only.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions([message], attachments=attachments)
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "diagram" not in tools[0]["parameters"]["required"]
 
 
 def test_replace_question_schema_warns_against_blank_source_parts():
