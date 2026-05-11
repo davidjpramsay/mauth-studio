@@ -10,6 +10,7 @@
     "smoke:assistant:self": "node --experimental-strip-types scripts/assistant-self-smoke.mts",
     "smoke:file-manager": "node scripts/file-manager-smoke.mjs",
     "eval:assistant:live": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py",
+    "eval:assistant:live:core": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case core --max-cost 1.50",
     "eval:assistant:live:all": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case all",
     "test:api": "cd apps/api && uv run pytest",
     "test:web-actions": "node --experimental-strip-types --test apps/web/src/lib/*Actions.test.ts apps/web/src/lib/mauthAssistant*.test.ts",

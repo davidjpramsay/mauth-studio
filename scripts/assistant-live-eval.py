@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,8 @@ if str(API_ROOT) not in sys.path:
 
 from app.models.schemas import AssistantChatMessage, AssistantChatRequest, AssistantToolOutput  # noqa: E402
 from app.services.openai_assistant import assistant_configured, create_assistant_response  # noqa: E402
+
+BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -87,6 +90,33 @@ def sample_parallel_chord_circle_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_circle_with_diagram_solution_document_summary() -> dict[str, Any]:
+    summary = sample_parallel_chord_circle_document_summary()
+    summary["questions"][0]["modules"].extend(
+        [
+            {
+                "id": "q1-geometry-diagram",
+                "kind": "diagram",
+                "visibility": "always",
+                "graphType": "geometricConstruction",
+                "textPreview": "Penrose circle diagram with tangent at A and chord BC parallel to the tangent.",
+            },
+            {
+                "id": "q1-solution",
+                "kind": "text",
+                "visibility": "solution",
+                "textPreview": (
+                    "Solution. Let t be the tangent at A. By the tangent-chord theorem, "
+                    "\\angle(t, AB)=\\angle ACB. Since t \\parallel BC, \\angle(t, AB)=\\angle CBA. "
+                    "Hence \\angle ACB=\\angle CBA and AB=AC. [[marks:1]] [[marks:1]] [[marks:1]] [[marks:1]] [[marks:1]]"
+                ),
+            },
+        ]
+    )
+    summary["questions"][0]["solutionModuleCount"] = 1
+    return summary
+
+
 def sample_probability_document_summary() -> dict[str, Any]:
     summary = sample_document_summary()
     summary["questions"][0]["marks"] = 4
@@ -99,6 +129,34 @@ def sample_probability_document_summary() -> dict[str, Any]:
         }
     ]
     return summary
+
+
+def hidden_mark_total(text: str) -> int:
+    total = 0
+    for match in re.finditer(r"\[\[\s*marks\s*:\s*(\d+)\s*\]\]", text, flags=re.IGNORECASE):
+        total += int(match.group(1))
+    return total
+
+
+def visible_mark_note_count(text: str) -> int:
+    patterns = (
+        r"\[\s*\d+\s*marks?\s*\]",
+        r"\(\s*\d+\s*marks?\s*\)",
+        r"\b\d+\s*marks?\s+for\b",
+        r"\bsolution\s*\(\s*\d+\s*marks?\s*\)",
+    )
+    return sum(len(re.findall(pattern, text, flags=re.IGNORECASE)) for pattern in patterns)
+
+
+def call_text(call: dict[str, Any]) -> str:
+    return json.dumps(call.get("mauthArguments", {}), ensure_ascii=False)
+
+
+def control_character_issues(text: str, field_name: str) -> list[str]:
+    issues: list[str] = []
+    for match in BAD_CONTROL_CHARACTER_PATTERN.finditer(text):
+        issues.append(f"{field_name} contains control character U+{ord(match.group(0)):04X}")
+    return issues
 
 
 def usage_cost(usage: dict[str, Any] | None) -> float:
@@ -137,6 +195,8 @@ def assert_authoring_call(call: dict[str, Any]) -> list[str]:
     lower_question = question_text.lower()
     lower_solution = solution_text.lower()
 
+    issues.extend(control_character_issues(question_text, "questionText"))
+    issues.extend(control_character_issues(solution_text, "solutionText"))
     if args.get("questionNumber") != 1:
         issues.append("questionNumber should be 1")
     if not isinstance(args.get("marks"), int) or args["marks"] < 2:
@@ -277,12 +337,71 @@ def assert_solution_call(call: dict[str, Any]) -> list[str]:
     if item.get("questionNumber") != 1:
         issues.append("questions[0].questionNumber should be 1")
     solution = str(item.get("solutionText") or "")
+    issues.extend(control_character_issues(solution, "solutionText"))
     if len(solution) < 80:
         issues.append("solutionText is too short")
     if not isinstance(item.get("studentSpaceLines"), int) or item["studentSpaceLines"] < 6:
         issues.append("studentSpaceLines should be at least 6")
     if "\\[" in solution or "\\]" in solution:
         issues.append("solutionText should use $$...$$ display maths, not \\[...\\]")
+    if visible_mark_note_count(solution):
+        issues.append("solutionText should use hidden [[marks:n]] ticks, not visible [1 mark] notes")
+    return issues
+
+
+def assert_mark_edit_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.author.ensureSolutions":
+        issues.append(f"expected mauth.author.ensureSolutions, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    questions = args.get("questions")
+    if not isinstance(questions, list) or len(questions) != 1:
+        issues.append("ensureSolutions should include exactly one question payload")
+        return issues
+    item = questions[0]
+    if not isinstance(item, dict):
+        return [*issues, "questions[0] should be an object"]
+    if item.get("questionNumber") != 1:
+        issues.append("questions[0].questionNumber should be 1")
+    if item.get("marks") != 4:
+        issues.append("marks should be updated to exactly 4")
+    solution = str(item.get("solutionText") or "")
+    issues.extend(control_character_issues(solution, "solutionText"))
+    if hidden_mark_total(solution) != 4:
+        issues.append("hidden [[marks:n]] total should be exactly 4")
+    if visible_mark_note_count(solution):
+        issues.append("mark allocation should be hidden [[marks:n]] ticks, not visible [1 mark] notes")
+    if not isinstance(item.get("studentSpaceLines"), int) or item["studentSpaceLines"] < 8:
+        issues.append("studentSpaceLines should preserve generous space, at least 8")
+    serialized = call_text(call).lower()
+    if "diagram" in serialized or "graphconfig" in serialized:
+        issues.append("focused mark edits should not touch or replace diagrams")
+    return issues
+
+
+def assert_rewrite_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
+        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    question_text = str(args.get("questionText") or "")
+    solution_text = str(args.get("solutionText") or "")
+    issues.extend(control_character_issues(question_text, "questionText"))
+    issues.extend(control_character_issues(solution_text, "solutionText"))
+    if args.get("questionNumber") != 1:
+        issues.append("questionNumber should be 1")
+    if "diagram" in args and args.get("diagram") in (None, {}, []):
+        issues.append("do not send an empty diagram field when preserving an existing diagram")
+    if "diagrams" in args and args.get("diagrams") in (None, [], {}):
+        issues.append("do not send diagrams: [] when preserving an existing diagram")
+    if "tangent" not in question_text.lower() or "circle" not in question_text.lower():
+        issues.append("rewritten question should preserve the circle/tangent intent")
+    if "proof" not in question_text.lower() and "prove" not in question_text.lower() and "show" not in question_text.lower():
+        issues.append("rewritten question should remain a proof/show question")
     return issues
 
 
@@ -319,11 +438,67 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_probability_document_summary,
         "assert": assert_solution_call,
     },
+    "mark-edit-preserve-diagram": {
+        "prompt": (
+            "Reduce Question 1 to 4 marks. The final QED sentence should not receive its own mark. "
+            "Keep the existing diagram and only update the solution ticks."
+        ),
+        "summary": sample_circle_with_diagram_solution_document_summary,
+        "assert": assert_mark_edit_preserves_diagram_call,
+    },
+    "rewrite-preserve-diagram": {
+        "prompt": (
+            "Rewrite Question 1 to make the wording clearer, but keep the existing diagram exactly as it is. "
+            "Keep it as a circle theorem proof question."
+        ),
+        "summary": sample_circle_with_diagram_solution_document_summary,
+        "assert": assert_rewrite_preserves_diagram_call,
+    },
+}
+
+EVAL_GROUPS: dict[str, list[str]] = {
+    "core": [
+        "circle-question",
+        "circle-diagram",
+        "mark-edit-preserve-diagram",
+        "rewrite-preserve-diagram",
+        "multipart-probability",
+    ],
+    "all": list(EVAL_CASES),
 }
 
 
+def summarize_call(call: dict[str, Any]) -> dict[str, Any]:
+    arguments = call.get("mauthArguments")
+    compact_arguments = arguments
+    if isinstance(arguments, dict):
+        compact_arguments = {}
+        for key, value in arguments.items():
+            if key == "questions" and isinstance(value, list):
+                compact_arguments[key] = [
+                    {
+                        inner_key: (
+                            f"{inner_value[:240]}..." if isinstance(inner_value, str) and len(inner_value) > 240 else inner_value
+                        )
+                        for inner_key, inner_value in item.items()
+                    }
+                    if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            elif isinstance(value, str) and len(value) > 240:
+                compact_arguments[key] = f"{value[:240]}..."
+            else:
+                compact_arguments[key] = value
+    return {
+        "name": call.get("name"),
+        "mauthToolName": call.get("mauthToolName"),
+        "mauthArguments": compact_arguments,
+    }
+
+
 async def run_single_eval(
-    case_name: str, model: str | None = None, final_message: bool = False
+    case_name: str, model: str | None = None, final_message: bool = False, verbose: bool = False
 ) -> tuple[int, float, int]:
     case = EVAL_CASES[case_name]
     prompt = str(case["prompt"])
@@ -343,9 +518,23 @@ async def run_single_eval(
     total_tokens = usage_tokens(first.get("usage"))
 
     print("First response:")
-    print(
-        json.dumps({"message": first.get("message"), "usage": first.get("usage"), "toolCalls": first_calls}, indent=2)
-    )
+    if verbose:
+        print(
+            json.dumps(
+                {"message": first.get("message"), "usage": first.get("usage"), "toolCalls": first_calls}, indent=2
+            )
+        )
+    else:
+        print(
+            json.dumps(
+                {
+                    "message": first.get("message"),
+                    "usage": first.get("usage"),
+                    "toolCalls": [summarize_call(call) for call in first_calls],
+                },
+                indent=2,
+            )
+        )
 
     if len(first_calls) != 1:
         print(f"FAIL: expected exactly one tool call, got {len(first_calls)}", file=sys.stderr)
@@ -387,11 +576,24 @@ async def run_single_eval(
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
         print("Final response:")
-        print(
-            json.dumps(
-                {"message": second.get("message"), "usage": second.get("usage"), "toolCalls": second_calls}, indent=2
+        if verbose:
+            print(
+                json.dumps(
+                    {"message": second.get("message"), "usage": second.get("usage"), "toolCalls": second_calls},
+                    indent=2,
+                )
             )
-        )
+        else:
+            print(
+                json.dumps(
+                    {
+                        "message": second.get("message"),
+                        "usage": second.get("usage"),
+                        "toolCalls": [summarize_call(call) for call in second_calls],
+                    },
+                    indent=2,
+                )
+            )
         if second_calls:
             print("FAIL: final response should not need another tool call.", file=sys.stderr)
             return 1, total_cost, total_tokens
@@ -403,20 +605,40 @@ async def run_single_eval(
     return 0, total_cost, total_tokens
 
 
-async def run_eval(case_name: str = "circle-question", model: str | None = None, final_message: bool = False) -> int:
+async def run_eval(
+    case_name: str = "circle-question",
+    model: str | None = None,
+    final_message: bool = False,
+    max_cost: float = 1.5,
+    stop_on_failure: bool = False,
+    verbose: bool = False,
+) -> int:
     if not assistant_configured():
         print("OPENAI_API_KEY is not configured; live eval skipped.", file=sys.stderr)
         return 2
 
-    selected_cases = list(EVAL_CASES) if case_name == "all" else [case_name]
+    selected_cases = EVAL_GROUPS.get(case_name, [case_name])
     total_cost = 0.0
     total_tokens = 0
     failed = False
+    results: list[tuple[str, int, float, int]] = []
     for selected_case in selected_cases:
-        status, cost, tokens = await run_single_eval(selected_case, model=model, final_message=final_message)
+        if total_cost >= max_cost:
+            print(f"\nSTOP: estimated cost cap reached before {selected_case}. Cap: ${max_cost:.2f}.")
+            break
+        status, cost, tokens = await run_single_eval(
+            selected_case, model=model, final_message=final_message, verbose=verbose
+        )
         total_cost += cost
         total_tokens += tokens
+        results.append((selected_case, status, cost, tokens))
         failed = failed or status != 0
+        if failed and stop_on_failure:
+            break
+    print("\nSUMMARY:")
+    for selected_case, status, cost, tokens in results:
+        label = "PASS" if status == 0 else "FAIL"
+        print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens")
     print(f"\nTOTAL: ${total_cost:.4f}, {total_tokens:,} tokens.")
     return 1 if failed else 0
 
@@ -425,13 +647,31 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a live Mauth assistant eval against OpenAI.")
     parser.add_argument("--model", default=None, help="Override OPENAI_MODEL for this eval.")
     parser.add_argument(
-        "--case", choices=[*EVAL_CASES.keys(), "all"], default="circle-question", help="Eval case to run."
+        "--case",
+        choices=[*EVAL_CASES.keys(), *EVAL_GROUPS.keys()],
+        default="circle-question",
+        help="Eval case or group to run.",
     )
     parser.add_argument(
         "--final", action="store_true", help="Also test the optional final tool-output continuation call."
     )
-    args = parser.parse_args()
-    return asyncio.run(run_eval(case_name=args.case, model=args.model, final_message=args.final))
+    parser.add_argument("--max-cost", type=float, default=1.5, help="Stop before starting another case after this cost.")
+    parser.add_argument("--stop-on-failure", action="store_true", help="Stop after the first failed case.")
+    parser.add_argument("--verbose", action="store_true", help="Print full provider tool payloads.")
+    raw_args = sys.argv[1:]
+    if raw_args and raw_args[0] == "--":
+        raw_args = raw_args[1:]
+    args = parser.parse_args(raw_args)
+    return asyncio.run(
+        run_eval(
+            case_name=args.case,
+            model=args.model,
+            final_message=args.final,
+            max_cost=args.max_cost,
+            stop_on_failure=args.stop_on_failure,
+            verbose=args.verbose,
+        )
+    )
 
 
 if __name__ == "__main__":

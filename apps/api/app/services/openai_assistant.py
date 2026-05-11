@@ -752,7 +752,9 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     "type": "string",
                     "description": (
                         "Assessment-ready prompt in Mauthdown/MathJax. Do not type 'Question 1'. "
-                        "Keep source-style line breaks where useful."
+                        "Keep source-style line breaks where useful. Preserve LaTeX backslashes exactly; in JSON "
+                        "strings this means commands such as \\ell and \\frac must be emitted with escaped "
+                        "backslashes, not as control characters."
                     ),
                 },
                 "studentSpaceLines": {
@@ -771,7 +773,9 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                         "the app will add the Solution heading if omitted. Put hidden [[marks:n]] annotations at the "
                         "end of mark-worthy lines so the solution copy renders red check marks; the total hidden "
                         "marks should match the item marks. Do not write visible [1 mark], (1 mark), or "
-                        "'1 mark for ...' notes."
+                        "'1 mark for ...' notes. Preserve LaTeX backslashes exactly; in JSON strings this means "
+                        "commands such as \\ell and \\frac must be emitted with escaped backslashes, not as control "
+                        "characters."
                     ),
                 },
                 "includeSolution": {
@@ -1100,6 +1104,7 @@ Tool-call contract:
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, EqualLength, and LabelsAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre).
+- Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_author_ensure_solutions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
 - In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Make the hidden mark total match the question/part marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.
 - Always call mauth_tool with this wrapper shape: {{"name":"<mauth tool name>","arguments":{{...}}}}. For low-level document action batches, use {{"name":"mauth.actions.preview","arguments":{{"actions":[...]}}}}.
@@ -1116,7 +1121,7 @@ Authoring quality bar:
 - Include enough information for students to solve the problem and a concise worked solution when requested.
 - Mathematical validity is mandatory. Before calling a write/edit tool, internally check that every conclusion follows from the stated givens and that the solution does not assume information visible only in an imagined diagram.
 - Never emit a proof question whose worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If your first draft is invalid, change the question statement before calling the tool.
-- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \[...\] or \(...\) delimiters.
+- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\] or \\(...\\) delimiters.
 - For multipart questions, use the structured parts array on mauth_author_replace_question or mauth.author.replaceQuestion. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.
 - For circle-geometry proof prompts involving tangents and angles subtended at the circumference, prefer a symbolic theorem/proof relationship. Do not add unnecessary numerical angle givens or make the task only a one-step substitution into the tangent-chord theorem unless the teacher explicitly asks for a numerical angle question.
@@ -1174,6 +1179,7 @@ LATEX_CONTROL_CHARACTER_REPAIRS = {
     "\x0b": "\\v",
     "\x0c": "\\f",
     "\x0d": "\\r",
+    "\x13": "\\",
     "\x1b": "\\",
 }
 

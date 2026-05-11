@@ -28,6 +28,7 @@
     "Never create a proof prompt where the worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If the intended theorem path fails, revise the givens or target before committing the question.",
     "For circle-geometry proof requests involving tangents and angles subtended at the circumference, prefer symbolic relationship proofs. Do not add unnecessary numerical angle givens or make the task a one-step tangent-chord theorem substitution unless the teacher explicitly asks for a numerical angle question.",
     "Use inline maths with $...$ and display maths with $$...$$. Do not emit \\(...\\) or \\[...\\] delimiters.",
+    "When emitting tool-call JSON, preserve LaTeX backslashes with double escaping. Validate that questionText and solutionText contain real commands such as \\ell, \\frac, \\angle, and \\sum, not unintended control characters.",
     "When the in-app assistant is asked to write or replace one existing question, use mauth.author.replaceQuestion where possible so question text, marks, answer space, optional diagrams, and solution text are created as one validated authoring action.",
     "Do not use mauth.author.replaceQuestion for mark-allocation, red-tick, or solution-only edits. Those belong to mauth.author.ensureSolutions or a low-level marks/module update so existing question modules and diagrams are preserved.",
     "When mauth.author.replaceQuestion is used for a genuine question rewrite, omitted diagram fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when deliberately removing old diagrams.",
@@ -50,6 +51,7 @@
     "Marks are consistent with the amount of work required.",
     "All variables used in the question are defined.",
     "Large nested LaTeX expressions inside fraction numerators or denominators follow the shared explicit \\displaystyle convention.",
+    "Question and solution text have no unintended control characters from malformed LaTeX escaping.",
     "Every marked free-response question, part, or subpart has a matching answer/work space.",
     "Every marked multiple-choice item has a Choice List rather than relying on typed option text.",
     "Question-level content is not accidentally placed inside the wrong part or subpart."
