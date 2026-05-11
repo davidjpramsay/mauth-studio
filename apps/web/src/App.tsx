@@ -71,6 +71,9 @@ import {
 import { Latex } from "@/components/Latex";
 import { MauthAssistantPanel } from "@/components/assistant/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
+import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
+import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
+import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
@@ -152,8 +155,6 @@ const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
 const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
-const EDITOR_ACTIVE_PANEL_CLASS = "border-primary/70 bg-primary/[0.03] shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]";
-const EDITOR_ACTIVE_HEADER_CLASS = "bg-primary/10 text-primary";
 const A4_WIDTH_PX = 793.700787;
 const A4_HEIGHT_PX = 1122.519685;
 const DEFAULT_PAGE_FORMAT = {
@@ -245,9 +246,7 @@ const LEGACY_SAVED_TEST_STORAGE_KEY = "math-app.saved-tests.v1";
 const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
-const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 const AUTOSAVE_DEBOUNCE_MS = 900;
-let nextInsertMenuId = 0;
 const STARTER_LOGOS: LogoAsset[] = [
   {
     id: "acc-logo",
@@ -5912,274 +5911,6 @@ interface DiagramBlockEditorProps {
   onRemove: () => void;
 }
 
-interface CollapsiblePanelProps {
-  title: ReactNode;
-  subtitle?: ReactNode;
-  leading?: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-  defaultOpen?: boolean;
-  openSignal?: number;
-  active?: boolean;
-  className?: string;
-  bodyClassName?: string;
-}
-
-function CollapsiblePanel({
-  title,
-  subtitle,
-  leading,
-  actions,
-  children,
-  defaultOpen = true,
-  openSignal,
-  active = false,
-  className,
-  bodyClassName,
-}: CollapsiblePanelProps) {
-  const [open, setOpen] = useState(defaultOpen || openSignal !== undefined);
-
-  useEffect(() => {
-    if (openSignal === undefined) return;
-    setOpen(true);
-  }, [openSignal]);
-
-  return (
-    <section className={cn("rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
-      <div
-        data-panel-region="header"
-        className={cn("flex flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          className="size-8 shrink-0"
-        >
-          {open ? <ChevronDown /> : <ChevronRight />}
-        </Button>
-        {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
-        <button
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          className="flex min-w-36 flex-1 flex-col items-start gap-0.5 text-left"
-          aria-expanded={open}
-        >
-          <span className="block max-w-full truncate text-sm font-semibold">{title}</span>
-          {subtitle ? <span className="block max-w-full truncate text-xs text-muted-foreground">{subtitle}</span> : null}
-        </button>
-        {actions ? <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
-      </div>
-      {open ? (
-        <div data-panel-region="body" className={cn("border-t p-3", bodyClassName)}>
-          {children}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function RemoveActionButton({ label, disabled = false, onRemove }: { label: string; disabled?: boolean; onRemove: () => void }) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        onRemove();
-      }}
-      className="size-8"
-    >
-      <Trash2 />
-    </Button>
-  );
-}
-
-interface InsertionAction {
-  label: string;
-  tooltip?: string;
-  icon?: ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-}
-
-function ContentInsertionActions({
-  buttonLabel = "Add",
-  className,
-  centered = false,
-  spaceActionLabel = "Space",
-  spaceActionTooltip,
-  onAddText,
-  onAddChoices,
-  onAddTable,
-  onAddDiagram,
-  onAddSpace,
-  extraActions = [],
-}: {
-  buttonLabel?: "Add";
-  className?: string;
-  centered?: boolean;
-  spaceActionLabel?: string;
-  spaceActionTooltip?: string;
-  onAddText?: () => void;
-  onAddChoices?: () => void;
-  onAddTable?: () => void;
-  onAddDiagram?: () => void;
-  onAddSpace?: () => void;
-  extraActions?: InsertionAction[];
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const menuIdRef = useRef<string | null>(null);
-  if (!menuIdRef.current) {
-    nextInsertMenuId += 1;
-    menuIdRef.current = `insert-menu-${nextInsertMenuId}`;
-  }
-  const menuId = menuIdRef.current;
-  const [open, setOpen] = useState(false);
-  const actionVerb = buttonLabel;
-  const actions: InsertionAction[] = [
-    onAddText
-      ? {
-          label: "Text",
-          tooltip: `${actionVerb} a text block here`,
-          icon: <Type className="size-4" aria-hidden="true" />,
-          onClick: onAddText,
-        }
-      : null,
-    onAddChoices
-      ? {
-          label: "Choice list",
-          tooltip: `${actionVerb} answer choices such as i, ii, iii`,
-          icon: <ListOrdered className="size-4" aria-hidden="true" />,
-          onClick: onAddChoices,
-        }
-      : null,
-    onAddTable
-      ? {
-          label: "Table",
-          tooltip: `${actionVerb} a table with LaTeX-ready cells`,
-          icon: <Table2 className="size-4" aria-hidden="true" />,
-          onClick: onAddTable,
-        }
-      : null,
-    onAddDiagram
-      ? {
-          label: "Diagram",
-          tooltip: `${actionVerb} a diagram block here`,
-          icon: <ImagePlus className="size-4" aria-hidden="true" />,
-          onClick: onAddDiagram,
-        }
-      : null,
-    onAddSpace
-      ? {
-          label: spaceActionLabel,
-          tooltip: spaceActionTooltip ?? `${actionVerb} blank working space here`,
-          icon: <SeparatorHorizontal className="size-4" aria-hidden="true" />,
-          onClick: onAddSpace,
-        }
-      : null,
-    ...extraActions,
-  ].filter((action): action is InsertionAction => Boolean(action));
-
-  useLayoutEffect(() => {
-    const closeOtherMenus = (event: Event) => {
-      if ((event as CustomEvent<string>).detail !== menuId) {
-        setOpen(false);
-      }
-    };
-
-    window.addEventListener(INSERT_MENU_OPEN_EVENT, closeOtherMenus);
-    return () => window.removeEventListener(INSERT_MENU_OPEN_EVENT, closeOtherMenus);
-  }, [menuId]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-
-    const closeOnOutsidePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && containerRef.current?.contains(event.target)) return;
-      setOpen(false);
-    };
-
-    window.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
-    return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
-  }, [open]);
-
-  if (!actions.length) return null;
-
-  return (
-    <div className={cn("relative z-20 flex flex-wrap gap-2", centered && "justify-center", open && "z-50", className)}>
-      <div
-        ref={containerRef}
-        className="relative inline-flex"
-        onBlur={(event) => {
-          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
-          setOpen(false);
-        }}
-      >
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? menuId : undefined}
-          className="relative z-10 bg-background shadow-sm"
-          onClick={() =>
-            setOpen((current) => {
-              const nextOpen = !current;
-              if (nextOpen) {
-                window.dispatchEvent(new CustomEvent(INSERT_MENU_OPEN_EVENT, { detail: menuId }));
-              }
-              return nextOpen;
-            })
-          }
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-        >
-          <PlusCircle data-icon="inline-start" />
-          {buttonLabel}
-          <ChevronDown className="ml-1 size-4" aria-hidden="true" />
-        </Button>
-        {open ? (
-          <div
-            id={menuId}
-            role="menu"
-            className="absolute left-0 top-full z-[100] mt-2 min-w-48 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
-          >
-            {actions.map((action, index) => (
-              <button
-                key={`${action.label}-${index}`}
-                type="button"
-                role="menuitem"
-                title={action.tooltip}
-                disabled={action.disabled}
-                onClick={() => {
-                  if (action.disabled) return;
-                  setOpen(false);
-                  action.onClick();
-                }}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {action.icon ?? <PlusCircle className="size-4" aria-hidden="true" />}
-                <span>{action.label}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function GeometricConstructionEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
   const scalePercent = penroseScalePercent(config);
   const substanceSource = penroseSubstanceSource(config);
@@ -9183,20 +8914,13 @@ function TestFormatEditor({
   );
 }
 
-interface TextBlockEditorProps {
-  label: string;
-  text: string;
-  dragHandle?: ReactNode;
-  muted?: boolean;
-  active?: boolean;
-  openSignal?: number;
-  minHeightClassName: string;
-  onChange: (text: string) => void;
-  onRemove: () => void;
-}
-
 function textBlockSummary(text: string) {
   return text.trim().replace(/\s+/g, " ") || "Empty text block";
+}
+
+function spaceBlockSummary(lines: number) {
+  const normalizedLines = spaceLines(lines);
+  return `${normalizedLines} line${normalizedLines === 1 ? "" : "s"}`;
 }
 
 function choiceItemsText(choices: string[]) {
@@ -9888,39 +9612,6 @@ function DocumentNavigatorRail({
   );
 }
 
-function TextBlockEditor({
-  label,
-  text,
-  dragHandle,
-  muted = false,
-  active = false,
-  openSignal,
-  minHeightClassName,
-  onChange,
-  onRemove,
-}: TextBlockEditorProps) {
-  return (
-    <CollapsiblePanel
-      title={<InlineSummaryTitle label={label} summary={textBlockSummary(text)} />}
-      leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
-      className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="p-3"
-      active={active}
-      openSignal={openSignal}
-    >
-      <div className="flex flex-col gap-2">
-        <Textarea
-          aria-label={label}
-          value={text}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn("font-mono", minHeightClassName)}
-        />
-      </div>
-    </CollapsiblePanel>
-  );
-}
-
 interface ChoiceListBlockEditorProps {
   label: string;
   block: Extract<EditorContentBlock, { kind: "choices" }>;
@@ -10157,56 +9848,6 @@ function TableBlockEditor({
             </table>
           </div>
         </div>
-      </div>
-    </CollapsiblePanel>
-  );
-}
-
-interface SpaceBlockEditorProps {
-  label: string;
-  lines: number;
-  dragHandle?: ReactNode;
-  muted?: boolean;
-  active?: boolean;
-  openSignal?: number;
-  onChange: (lines: number) => void;
-  onRemove: () => void;
-}
-
-function SpaceBlockEditor({
-  label,
-  lines,
-  dragHandle,
-  muted = false,
-  active = false,
-  openSignal,
-  onChange,
-  onRemove,
-}: SpaceBlockEditorProps) {
-  const normalizedLines = spaceLines(lines);
-
-  return (
-    <CollapsiblePanel
-      title={<InlineSummaryTitle label={label} summary={`${normalizedLines} line${normalizedLines === 1 ? "" : "s"}`} />}
-      leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
-      className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="p-3"
-      active={active}
-      openSignal={openSignal}
-    >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,11rem)_minmax(0,10rem)]">
-        <label className="flex max-w-40 flex-col gap-2 text-xs font-medium">
-          Lines
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={normalizedLines}
-            onChange={(event) => onChange(spaceLines(event.target.value))}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
       </div>
     </CollapsiblePanel>
   );
@@ -14443,6 +14084,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
             label={`Answer space ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
             dragHandle={subsectionDragHandle(blockTarget, `Drag answer space ${blockIndex + 1}`)}
             active={blockActive}
@@ -14510,6 +14152,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TextBlockEditor
             label={`Text block ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Text block ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(blockTarget, `Drag text block ${blockIndex + 1}`)}
             active={blockActive}
@@ -14563,6 +14206,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
             label={`Part answer space ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Part answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part answer space ${blockIndex + 1}`)}
             muted
@@ -14634,6 +14278,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TextBlockEditor
             label={`Part text ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Part text ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part text ${blockIndex + 1}`)}
             muted
@@ -14685,6 +14330,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
             label={`Subpart answer space ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Subpart answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart answer space ${blockIndex + 1}`)}
             muted
@@ -14756,6 +14402,7 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TextBlockEditor
             label={`Subpart text ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Subpart text ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
             text={block.text ?? ""}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart text ${blockIndex + 1}`)}
             muted
