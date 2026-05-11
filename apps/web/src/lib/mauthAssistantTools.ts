@@ -1043,6 +1043,10 @@ function partTextFromArgs(args: Record<string, unknown>) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isOnlyPartLabel(text: string) {
+  return /^\(?\s*(?:[a-z]|[ivxlcdm]+)\s*\)?[).:]?\s*$/i.test(text);
+}
+
 function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: string, issues: MauthActionValidationIssue[]) {
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
@@ -1082,6 +1086,13 @@ function authorPartsFromArgs(args: Record<string, unknown>, questionId: string, 
     }
     const text = partTextFromArgs(entry);
     if (!text) issues.push({ path: `${path}.text`, message: "must be a non-empty string", expected: "part prompt text" });
+    else if (isOnlyPartLabel(text)) {
+      issues.push({
+        path: `${path}.text`,
+        message: "must include the actual part prompt, not only the visible part label",
+        expected: "part prompt text such as $\\mathbf{a}\\cdot\\mathbf{b}$",
+      });
+    }
     const partId = String(entry.id ?? authorBlockId(questionId, `part-${index + 1}`));
     const contentBlocks = contentBlocksForAuthorPart(entry, partId, issues);
     parts.push({

@@ -288,6 +288,35 @@ test("replaces a question with structured parts from a high-level authoring payl
   assert.equal(question?.parts[0].contentBlocks[1].visibility, "solution");
 });
 
+test("rejects high-level authoring parts with blank or label-only prompts", () => {
+  const blankResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "Evaluate the following scalar products exactly.",
+      studentSpaceLines: 1,
+      parts: [{ text: "   ", marks: 1, studentSpaceLines: 3 }],
+    },
+  });
+  const labelOnlyResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "Evaluate the following scalar products exactly.",
+      studentSpaceLines: 1,
+      parts: [{ text: "(a)", marks: 1, studentSpaceLines: 3 }],
+    },
+  });
+  const labelOnlyData = labelOnlyResult.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(blankResult.ok, false);
+  assert.match(blankResult.error ?? "", /non-empty string/);
+  assert.equal(labelOnlyResult.ok, false);
+  assert(labelOnlyData.validationIssues?.some((issue) => issue.message.includes("actual part prompt")));
+});
+
 test("adds a renderer-specific diagram graphConfig to a question", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.addDiagram",
