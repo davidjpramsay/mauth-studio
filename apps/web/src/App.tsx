@@ -72,7 +72,9 @@ import { Latex } from "@/components/Latex";
 import { MauthAssistantPanel } from "@/components/assistant/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
+import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
+import { ImageDiagramEditor } from "@/components/editor/ImageDiagramEditor";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
@@ -161,6 +163,7 @@ import {
   paddedTableRow,
   plainTableRows,
 } from "@/lib/contentBlockNormalization";
+import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName, imageDiagramAlt } from "@/lib/diagramImage";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
@@ -582,15 +585,6 @@ const DEFAULT_STATS_CHART: GraphConfig = {
   options: DEFAULT_STATS_CHART_SPEC.options,
   widthPx: DEFAULT_STATS_CHART_SPEC.options?.widthPx,
   heightPx: DEFAULT_STATS_CHART_SPEC.options?.heightPx,
-  functions: [],
-  features: [],
-  metadata: {},
-};
-const DEFAULT_IMAGE_DIAGRAM: GraphConfig = {
-  type: "image",
-  data: { src: "", name: "", alt: "" },
-  widthPx: 420,
-  heightPx: 260,
   functions: [],
   features: [],
   metadata: {},
@@ -1687,56 +1681,6 @@ function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConf
   if (normalizedType === "vector2d" && normalizeDiagramType(current.type) !== "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
   if (normalizedType === "graph3d" && normalizeDiagramType(current.type) !== "graph3d") return DEFAULT_3D_GRAPH;
   return { type: normalizedType };
-}
-
-function finiteGraphNumber(value: unknown, fallback?: number) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
-}
-
-function imageDiagramData(graphConfig?: GraphConfig | null) {
-  const data = asRecord(graphConfig?.data);
-  return {
-    src: typeof data?.src === "string" ? data.src : "",
-    name: typeof data?.name === "string" ? data.name : "",
-    alt: typeof data?.alt === "string" ? data.alt : "",
-    mimeType: typeof data?.mimeType === "string" ? data.mimeType : "",
-    naturalWidth: finiteGraphNumber(data?.naturalWidth),
-    naturalHeight: finiteGraphNumber(data?.naturalHeight),
-  };
-}
-
-function imageDiagramName(graphConfig?: GraphConfig | null) {
-  return imageDiagramData(graphConfig).name || "Uploaded image";
-}
-
-function imageDiagramAlt(graphConfig?: GraphConfig | null) {
-  const data = imageDiagramData(graphConfig);
-  return data.alt || data.name || "Uploaded diagram";
-}
-
-function imageNameFromFile(fileName: string) {
-  return (
-    fileName
-      .replace(/\.[^.]+$/, "")
-      .replace(/[-_]+/g, " ")
-      .trim() || "Image"
-  );
-}
-
-function diagramImageDimensions(naturalWidth?: number, naturalHeight?: number) {
-  if (!naturalWidth || !naturalHeight) {
-    return {
-      widthPx: DEFAULT_IMAGE_DIAGRAM.widthPx,
-      heightPx: DEFAULT_IMAGE_DIAGRAM.heightPx,
-    };
-  }
-  const maxWidth = DEFAULT_2D_GRAPH.widthPx ?? 680;
-  const widthPx = Math.min(naturalWidth, maxWidth);
-  return {
-    widthPx,
-    heightPx: Math.max(1, Math.round(widthPx * (naturalHeight / naturalWidth))),
-  };
 }
 
 function penroseScalePercent(graphConfig?: GraphConfig | null) {
@@ -9548,97 +9492,6 @@ function DocumentNavigatorRail({
   );
 }
 
-function ImageDiagramEditor({ config, onChange }: { config: GraphConfig; onChange: (patch: Partial<GraphConfig>) => void }) {
-  const data = imageDiagramData(config);
-  const previewWidth = Math.min(graphWidth(config), 520);
-
-  function uploadImage(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = typeof reader.result === "string" ? reader.result : "";
-      if (!src) return;
-
-      const name = imageNameFromFile(file.name);
-      const commitImage = (naturalWidth?: number, naturalHeight?: number) => {
-        const dimensions = diagramImageDimensions(naturalWidth, naturalHeight);
-        onChange({
-          data: {
-            src,
-            name,
-            alt: name,
-            mimeType: file.type,
-            naturalWidth,
-            naturalHeight,
-          },
-          widthPx: dimensions.widthPx,
-          heightPx: dimensions.heightPx,
-          functions: [],
-          features: [],
-        });
-      };
-
-      const image = new Image();
-      image.onload = () => commitImage(image.naturalWidth, image.naturalHeight);
-      image.onerror = () => commitImage();
-      image.src = src;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-      <div className="flex min-h-40 items-center justify-center rounded-md border bg-white p-3">
-        {data.src ? (
-          <img
-            className="max-h-72 max-w-full object-contain"
-            src={data.src}
-            alt={imageDiagramAlt(config)}
-            style={{ width: previewWidth }}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground">No image selected</span>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-2 md:w-44 md:flex-col">
-        <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-          <ImagePlus className="size-4" aria-hidden="true" />
-          Upload image
-          <input
-            type="file"
-            accept="image/*,.svg"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              if (file) uploadImage(file);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
-        {data.src ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="justify-center"
-            onClick={() =>
-              onChange({
-                data: DEFAULT_IMAGE_DIAGRAM.data,
-                widthPx: DEFAULT_IMAGE_DIAGRAM.widthPx,
-                heightPx: DEFAULT_IMAGE_DIAGRAM.heightPx,
-                functions: [],
-                features: [],
-              })
-            }
-          >
-            <Trash2 data-icon="inline-start" />
-            Remove
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function PageBreakStructurePanel({ label, active, onRemove }: { label: string; active: boolean; onRemove: () => void }) {
   return (
     <section className={cn("rounded-lg border bg-card p-4 shadow-panel transition-colors", active && EDITOR_ACTIVE_PANEL_CLASS)}>
@@ -9788,140 +9641,70 @@ function DiagramBlockEditor({
       kind,
     });
   };
-  const diagramActions = (
-    <>
-      <select
-        aria-label={`${label} type`}
-        value={config.type}
-        onChange={(event) => patchConfig(diagramTypePatch(event.target.value, config))}
-        className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
-      >
-        {DIAGRAM_TYPE_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.values.map((value) => {
-              const type = DIAGRAM_TYPES.find((diagramType) => diagramType.value === value);
-              if (!type) return null;
-              return (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              );
-            })}
-          </optgroup>
-        ))}
-      </select>
-      <select
-        aria-label={`${label} position`}
-        value={alignment}
-        onChange={(event) => onAlignmentChange(event.target.value as DiagramAlignment)}
-        className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
-      >
-        {DIAGRAM_ALIGNMENTS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
-    </>
+  const renderDiagramPanel = (summary: string, bodyClassName: string, children: ReactNode) => (
+    <DiagramBlockPanel
+      label={label}
+      title={<InlineSummaryTitle label={label} summary={summary} />}
+      type={config.type ?? "graph2d"}
+      alignment={alignment}
+      diagramTypes={DIAGRAM_TYPES}
+      diagramTypeGroups={DIAGRAM_TYPE_GROUPS}
+      diagramAlignments={DIAGRAM_ALIGNMENTS}
+      dragHandle={dragHandle}
+      muted={muted}
+      active={active}
+      openSignal={openSignal}
+      bodyClassName={bodyClassName}
+      onTypeChange={(type) => patchConfig(diagramTypePatch(type, config))}
+      onAlignmentChange={onAlignmentChange}
+      onRemove={onRemove}
+    >
+      {children}
+    </DiagramBlockPanel>
   );
   if (config.type === "image") {
     const imageSummary = imageDiagramData(config).src ? imageDiagramName(config) : "No image selected";
-    return (
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label={label} summary={imageSummary} />}
-        leading={dragHandle}
-        actions={diagramActions}
-        className={cn("bg-background", muted && "bg-muted/30")}
-        bodyClassName="p-3"
-        active={active}
-        openSignal={openSignal}
-      >
-        <ImageDiagramEditor config={config} onChange={patchConfig} />
-      </CollapsiblePanel>
-    );
+    return renderDiagramPanel(imageSummary, "p-3", <ImageDiagramEditor config={config} onChange={patchConfig} />);
   }
 
   if (isPenroseDiagramType(config.type)) {
-    return (
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
-        leading={dragHandle}
-        actions={diagramActions}
-        className={cn("bg-background", muted && "bg-muted/30")}
-        bodyClassName="p-3"
-        active={active}
-        openSignal={openSignal}
-      >
-        {config.type === "vectorRelationship" ? (
-          <VectorRelationshipEditor config={config} onChange={patchConfig} />
-        ) : config.type === "setDiagram" ? (
-          <SetDiagramEditor config={config} onChange={patchConfig} />
-        ) : (
-          <GeometricConstructionEditor config={config} onChange={patchConfig} />
-        )}
-      </CollapsiblePanel>
+    return renderDiagramPanel(
+      diagramConfigSummary(config),
+      "p-3",
+      config.type === "vectorRelationship" ? (
+        <VectorRelationshipEditor config={config} onChange={patchConfig} />
+      ) : config.type === "setDiagram" ? (
+        <SetDiagramEditor config={config} onChange={patchConfig} />
+      ) : (
+        <GeometricConstructionEditor config={config} onChange={patchConfig} />
+      ),
     );
   }
 
   if (config.type === "vector2d") {
-    return (
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
-        leading={dragHandle}
-        actions={diagramActions}
-        className={cn("bg-background", muted && "bg-muted/30")}
-        bodyClassName="graph-editor-controls p-3"
-        active={active}
-        openSignal={openSignal}
-      >
-        <Vector2DGraphEditor config={config} onChange={patchConfig} />
-      </CollapsiblePanel>
+    return renderDiagramPanel(
+      diagramConfigSummary(config),
+      "graph-editor-controls p-3",
+      <Vector2DGraphEditor config={config} onChange={patchConfig} />,
     );
   }
 
   if (config.type === "graph3d") {
-    return (
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
-        leading={dragHandle}
-        actions={diagramActions}
-        className={cn("bg-background", muted && "bg-muted/30")}
-        bodyClassName="graph-editor-controls p-3"
-        active={active}
-        openSignal={openSignal}
-      >
-        <Graph3DGraphEditor config={config} onChange={patchConfig} />
-      </CollapsiblePanel>
+    return renderDiagramPanel(
+      diagramConfigSummary(config),
+      "graph-editor-controls p-3",
+      <Graph3DGraphEditor config={config} onChange={patchConfig} />,
     );
   }
 
   if (config.type === "statsChart") {
-    return (
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label={label} summary={statsChartSummary(config)} />}
-        leading={dragHandle}
-        actions={diagramActions}
-        className={cn("bg-background", muted && "bg-muted/30")}
-        bodyClassName="p-3"
-        active={active}
-        openSignal={openSignal}
-      >
-        <StatsChartEditor config={config} onChange={patchConfig} />
-      </CollapsiblePanel>
-    );
+    return renderDiagramPanel(statsChartSummary(config), "p-3", <StatsChartEditor config={config} onChange={patchConfig} />);
   }
 
-  return (
-    <CollapsiblePanel
-      title={<InlineSummaryTitle label={label} summary={diagramConfigSummary(config)} />}
-      leading={dragHandle}
-      actions={diagramActions}
-      className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="graph-editor-controls p-3"
-      active={active}
-      openSignal={openSignal}
-    >
+  return renderDiagramPanel(
+    diagramConfigSummary(config),
+    "graph-editor-controls p-3",
+    <>
       <CollapsiblePanel
         title={<InlineSummaryTitle label="Axes and grid" summary="Domain, range, graph size, grid intervals and arrows" />}
         defaultOpen={false}
@@ -10883,7 +10666,7 @@ function DiagramBlockEditor({
           })}
         </div>
       ) : null}
-    </CollapsiblePanel>
+    </>,
   );
 }
 
