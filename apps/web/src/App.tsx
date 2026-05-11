@@ -71,8 +71,10 @@ import {
 import { Latex } from "@/components/Latex";
 import { MauthAssistantPanel } from "@/components/assistant/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
+import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
+import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
@@ -146,6 +148,19 @@ import {
   topLevelProjectPaths,
   uniqueTestPath,
 } from "@/lib/projectFiles";
+import {
+  normalizeChoiceItems,
+  normalizeChoiceListLayout,
+  normalizeChoiceNumberingStyle,
+  normalizeDiagramAlignment,
+  normalizeTableBlock,
+  normalizeTableCellAlignment,
+  normalizeTableCells,
+  normalizeTableRows,
+  normalizedTableColumnCount,
+  paddedTableRow,
+  plainTableRows,
+} from "@/lib/contentBlockNormalization";
 import { cn } from "@/lib/utils";
 
 const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
@@ -2798,76 +2813,6 @@ function missingProjectRevisionConflict(filePath: string): ProjectSaveConflict {
     filePath,
     message: "This draft was restored without a file revision. Reload the file before saving, or use Save as to keep it as a copy.",
     localRevision: null,
-  };
-}
-
-function normalizeDiagramAlignment(value: unknown): DiagramAlignment {
-  return value === "left" || value === "right" || value === "center" ? value : "center";
-}
-
-function normalizeChoiceNumberingStyle(value: unknown): ChoiceNumberingStyle {
-  return value === "upper-alpha" || value === "lower-alpha" || value === "decimal" || value === "bullet" || value === "roman"
-    ? value
-    : "roman";
-}
-
-function normalizeChoiceListLayout(value: unknown): ChoiceListLayout {
-  return value === "two-column" || value === "inline" || value === "vertical" ? value : "vertical";
-}
-
-function normalizeChoiceItems(value: unknown): string[] {
-  if (!Array.isArray(value)) return ["", "", ""];
-  const choices = value.map((choice) => (typeof choice === "string" ? choice : String(choice ?? "")));
-  return choices.length ? choices : [""];
-}
-
-function normalizeTableCellAlignment(value: unknown): TableCellAlignment {
-  return value === "left" || value === "right" || value === "center" ? value : "center";
-}
-
-function normalizeTableCells(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((cell) => (typeof cell === "string" ? cell : String(cell ?? "")));
-}
-
-function normalizedTableColumnCount(headers: string[], rows: string[][]) {
-  return Math.max(1, headers.length, ...rows.map((row) => row.length));
-}
-
-function paddedTableRow(row: string[], columnCount: number) {
-  return Array.from({ length: columnCount }, (_, index) => row[index] ?? "");
-}
-
-function normalizeTableRows(value: unknown, fallbackColumnCount = 2): string[][] {
-  if (!Array.isArray(value)) return [Array.from({ length: fallbackColumnCount }, () => "")];
-  const rows = value.filter((row): row is unknown[] => Array.isArray(row)).map((row) => normalizeTableCells(row));
-  return rows.length ? rows : [Array.from({ length: fallbackColumnCount }, () => "")];
-}
-
-function normalizeTableBlock(block: Extract<EditorContentBlock, { kind: "table" }>) {
-  const headers = normalizeTableCells(block.headers);
-  const rows = normalizeTableRows(block.rows, Math.max(2, headers.length || 0));
-  const columnCount = normalizedTableColumnCount(headers, rows);
-  return {
-    ...block,
-    headers: paddedTableRow(headers, columnCount),
-    rows: rows.map((row) => paddedTableRow(row, columnCount)),
-    showHeader: block.showHeader !== false,
-    tableAlign: normalizeDiagramAlignment(block.tableAlign),
-    cellAlignment: normalizeTableCellAlignment(block.cellAlignment),
-  };
-}
-
-function plainTableRows(table: ReturnType<typeof normalizeTableBlock>) {
-  return table.showHeader ? [table.headers, ...table.rows] : table.rows;
-}
-
-function plainTablePatch(rows: string[][]): Partial<Extract<EditorContentBlock, { kind: "table" }>> {
-  const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  return {
-    headers: Array.from({ length: columnCount }, () => ""),
-    rows: rows.map((row) => paddedTableRow(row, columnCount)),
-    showHeader: false,
   };
 }
 
@@ -8923,15 +8868,6 @@ function spaceBlockSummary(lines: number) {
   return `${normalizedLines} line${normalizedLines === 1 ? "" : "s"}`;
 }
 
-function choiceItemsText(choices: string[]) {
-  return normalizeChoiceItems(choices).join("\n");
-}
-
-function parseChoiceItemsText(value: string) {
-  const choices = value.split(/\r?\n/).map((choice) => choice.trimEnd());
-  return choices.length ? choices : [""];
-}
-
 function choiceListSummary(block: Extract<EditorContentBlock, { kind: "choices" }>) {
   const choices = normalizeChoiceItems(block.choices).filter((choice) => choice.trim());
   const style =
@@ -9609,247 +9545,6 @@ function DocumentNavigatorRail({
         </button>
       </div>
     </aside>
-  );
-}
-
-interface ChoiceListBlockEditorProps {
-  label: string;
-  block: Extract<EditorContentBlock, { kind: "choices" }>;
-  dragHandle?: ReactNode;
-  muted?: boolean;
-  active?: boolean;
-  openSignal?: number;
-  onChange: (patch: Partial<Extract<EditorContentBlock, { kind: "choices" }>>) => void;
-  onRemove: () => void;
-}
-
-function ChoiceListBlockEditor({
-  label,
-  block,
-  dragHandle,
-  muted = false,
-  active = false,
-  openSignal,
-  onChange,
-  onRemove,
-}: ChoiceListBlockEditorProps) {
-  return (
-    <CollapsiblePanel
-      title={<InlineSummaryTitle label={label} summary={choiceListSummary(block)} />}
-      leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
-      className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="p-3"
-      active={active}
-      openSignal={openSignal}
-    >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Labels
-          <select
-            value={normalizeChoiceNumberingStyle(block.numberingStyle)}
-            onChange={(event) => onChange({ numberingStyle: event.target.value as ChoiceNumberingStyle })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {CHOICE_NUMBERING_STYLES.map((style) => (
-              <option key={style.value} value={style.value}>
-                {style.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Layout
-          <select
-            value={normalizeChoiceListLayout(block.layout)}
-            onChange={(event) => onChange({ layout: event.target.value as ChoiceListLayout })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {CHOICE_LIST_LAYOUTS.map((layout) => (
-              <option key={layout.value} value={layout.value}>
-                {layout.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium md:row-span-2">
-          Choices
-          <Textarea
-            aria-label={`${label} choices`}
-            value={choiceItemsText(block.choices)}
-            onChange={(event) => onChange({ choices: parseChoiceItemsText(event.target.value) })}
-            className="min-h-[110px] font-mono"
-          />
-        </label>
-      </div>
-    </CollapsiblePanel>
-  );
-}
-
-interface TableBlockEditorProps {
-  label: string;
-  block: Extract<EditorContentBlock, { kind: "table" }>;
-  dragHandle?: ReactNode;
-  muted?: boolean;
-  active?: boolean;
-  openSignal?: number;
-  onChange: (patch: Partial<Extract<EditorContentBlock, { kind: "table" }>>) => void;
-  onRemove: () => void;
-}
-
-const MIN_TABLE_ROWS = 1;
-const MAX_TABLE_ROWS = 24;
-const MIN_TABLE_COLUMNS = 1;
-const MAX_TABLE_COLUMNS = 12;
-
-function clampedTableDimension(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, Math.round(value)));
-}
-
-function tableEditorContentLength(value: string) {
-  const readableSource = value
-    .replace(/\\[a-zA-Z]+/g, "mm")
-    .replace(/[{}_$^]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return Array.from(readableSource).length;
-}
-
-function tableEditorColumnWidthCh(table: ReturnType<typeof normalizeTableBlock>, columnIndex: number) {
-  const values = plainTableRows(table).map((row) => row[columnIndex] ?? "");
-  const longestValue = Math.max(1, ...values.map(tableEditorContentLength));
-  return Math.min(42, Math.max(6, longestValue + 3));
-}
-
-function TableBlockEditor({
-  label,
-  block,
-  dragHandle,
-  muted = false,
-  active = false,
-  openSignal,
-  onChange,
-  onRemove,
-}: TableBlockEditorProps) {
-  const table = normalizeTableBlock(block);
-  const tableRows = plainTableRows(table);
-  const columnCount = Math.max(1, ...tableRows.map((row) => row.length));
-  const columnWidths = Array.from({ length: columnCount }, (_, columnIndex) => tableEditorColumnWidthCh(table, columnIndex));
-  const patchTable = (patch: Partial<Extract<EditorContentBlock, { kind: "table" }>>) => onChange({ ...patch });
-  const updateRows = (rows: string[][]) => patchTable(plainTablePatch(rows));
-  const updateCell = (rowIndex: number, columnIndex: number, value: string) =>
-    updateRows(
-      tableRows.map((row, currentRowIndex) =>
-        currentRowIndex === rowIndex ? row.map((cell, currentColumnIndex) => (currentColumnIndex === columnIndex ? value : cell)) : row,
-      ),
-    );
-  const resizeColumns = (nextColumnCountValue: number) => {
-    const nextColumnCount = clampedTableDimension(nextColumnCountValue, MIN_TABLE_COLUMNS, MAX_TABLE_COLUMNS);
-    updateRows(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
-  };
-  const resizeRows = (nextRowCountValue: number) => {
-    const nextRowCount = clampedTableDimension(nextRowCountValue, MIN_TABLE_ROWS, MAX_TABLE_ROWS);
-    updateRows(
-      Array.from({ length: nextRowCount }, (_, rowIndex) =>
-        paddedTableRow(tableRows[rowIndex] ?? Array.from({ length: columnCount }, () => ""), columnCount),
-      ),
-    );
-  };
-
-  return (
-    <CollapsiblePanel
-      title={<InlineSummaryTitle label={label} summary={tableBlockSummary(table)} />}
-      leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
-      className={cn("bg-background", muted && "bg-muted/30")}
-      bodyClassName="p-3"
-      active={active}
-      openSignal={openSignal}
-    >
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_96px_96px]">
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Position
-            <select
-              value={table.tableAlign}
-              onChange={(event) => patchTable({ tableAlign: event.target.value as DiagramAlignment })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              {DIAGRAM_ALIGNMENTS.map((alignment) => (
-                <option key={alignment.value} value={alignment.value}>
-                  {alignment.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Cell text
-            <select
-              value={table.cellAlignment}
-              onChange={(event) => patchTable({ cellAlignment: event.target.value as TableCellAlignment })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              {TABLE_CELL_ALIGNMENTS.map((alignment) => (
-                <option key={alignment.value} value={alignment.value}>
-                  {alignment.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Rows
-            <input
-              type="number"
-              min={MIN_TABLE_ROWS}
-              max={MAX_TABLE_ROWS}
-              value={tableRows.length}
-              onChange={(event) => resizeRows(event.currentTarget.valueAsNumber)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Columns
-            <input
-              type="number"
-              min={MIN_TABLE_COLUMNS}
-              max={MAX_TABLE_COLUMNS}
-              value={columnCount}
-              onChange={(event) => resizeColumns(event.currentTarget.valueAsNumber)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-        </div>
-
-        <div className="rounded-md border bg-muted/20 p-2">
-          <div tabIndex={0} aria-label="Table editor cells" className="table-editor-scroll">
-            <table className="table-editor-table">
-              <colgroup>
-                {columnWidths.map((width, columnIndex) => (
-                  <col key={`column-width-${columnIndex}`} style={{ width: `${width}ch` }} />
-                ))}
-              </colgroup>
-              <tbody>
-                {tableRows.map((row, rowIndex) => (
-                  <tr key={`row-${rowIndex}`}>
-                    {row.map((cell, columnIndex) => (
-                      <td key={`cell-${rowIndex}-${columnIndex}`}>
-                        <input
-                          aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
-                          value={cell}
-                          onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                          className="table-editor-input"
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </CollapsiblePanel>
   );
 }
 
@@ -14120,7 +13815,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <ChoiceListBlockEditor
             label={`Choice list ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
             block={block}
+            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
+            layoutOptions={CHOICE_LIST_LAYOUTS}
             dragHandle={subsectionDragHandle(blockTarget, `Drag choice list ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -14136,7 +13834,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TableBlockEditor
             label={`Table block ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Table block ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
             block={block}
+            diagramAlignments={DIAGRAM_ALIGNMENTS}
+            cellAlignments={TABLE_CELL_ALIGNMENTS}
             dragHandle={subsectionDragHandle(blockTarget, `Drag table block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -14244,7 +13945,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <ChoiceListBlockEditor
             label={`Part choice list ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Part choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
             block={block}
+            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
+            layoutOptions={CHOICE_LIST_LAYOUTS}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part choice list ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -14261,7 +13965,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TableBlockEditor
             label={`Part table ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Part table ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
             block={block}
+            diagramAlignments={DIAGRAM_ALIGNMENTS}
+            cellAlignments={TABLE_CELL_ALIGNMENTS}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part table ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -14368,7 +14075,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <ChoiceListBlockEditor
             label={`Subpart choice list ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Subpart choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
             block={block}
+            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
+            layoutOptions={CHOICE_LIST_LAYOUTS}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart choice list ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -14385,7 +14095,10 @@ export default function App() {
         <div key={block.id} {...wrapperProps}>
           <TableBlockEditor
             label={`Subpart table ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Subpart table ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
             block={block}
+            diagramAlignments={DIAGRAM_ALIGNMENTS}
+            cellAlignments={TABLE_CELL_ALIGNMENTS}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart table ${blockIndex + 1}`)}
             muted
             active={blockActive}
