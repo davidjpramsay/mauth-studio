@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import io
 import json
 import re
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +30,11 @@ from app.models.schemas import (  # noqa: E402
     AssistantChatRequest,
     AssistantToolOutput,
 )
-from app.services.openai_assistant import assistant_configured, create_assistant_response  # noqa: E402
+from app.services.openai_assistant import (  # noqa: E402
+    DOCX_MIME_TYPE,
+    assistant_configured,
+    create_assistant_response,
+)
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -170,8 +177,6 @@ def pdf_bytes_from_text(text: str) -> bytes:
 
 
 def attachment_pdf_from_text(name: str, text: str) -> AssistantAttachment:
-    import base64
-
     payload = base64.b64encode(pdf_bytes_from_text(text)).decode("ascii")
     return AssistantAttachment(
         name=name,
@@ -193,6 +198,42 @@ def sample_probability_pdf_attachment() -> list[AssistantAttachment]:
                     "(b) Find E(X). (2 marks)",
                 ]
             ),
+        )
+    ]
+
+
+def docx_bytes_from_text(lines: list[str]) -> bytes:
+    paragraphs = "".join(f"<w:p><w:r><w:t>{line}</w:t></w:r></w:p>" for line in lines)
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>{paragraphs}</w:body>
+</w:document>""".encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+    return buffer.getvalue()
+
+
+def attachment_docx_from_lines(name: str, lines: list[str]) -> AssistantAttachment:
+    payload = base64.b64encode(docx_bytes_from_text(lines)).decode("ascii")
+    return AssistantAttachment(
+        name=name,
+        mimeType=DOCX_MIME_TYPE,
+        dataUrl=f"data:{DOCX_MIME_TYPE};base64,{payload}",
+        sizeBytes=len(payload),
+    )
+
+
+def sample_docx_attachment() -> list[AssistantAttachment]:
+    return [
+        attachment_docx_from_lines(
+            "school-source.docx",
+            [
+                "Question 1 (5 marks)",
+                "A, B and C are points on a circle. The tangent to the circle at A is drawn.",
+                "Prove that the angle between the tangent and chord AB is equal to angle ACB.",
+                "Include a clear diagram and worked solution.",
+            ],
         )
     ]
 
@@ -470,6 +511,21 @@ def assert_pdf_attachment_probability_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_docx_attachment_circle_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_authoring_call(call)
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return issues
+    serialized = json.dumps(args, ensure_ascii=False).lower()
+    if "tangent" not in serialized or "circle" not in serialized:
+        issues.append("docx-derived question should preserve the circle/tangent source")
+    if "ab" not in serialized or "acb" not in serialized:
+        issues.append("docx-derived question should preserve the AB/ACB angle proof target")
+    if args.get("marks") != 5:
+        issues.append("docx-derived question should preserve the 5 mark allocation")
+    return issues
+
+
 def assert_solution_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     if call.get("mauthToolName") != "mauth.author.ensureSolutions":
@@ -706,6 +762,12 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_probability_pdf_attachment,
         "assert": assert_pdf_attachment_probability_call,
     },
+    "docx-attachment-question": {
+        "prompt": "Create Question 1 from the attached Word document. Include the worked solution.",
+        "summary": sample_document_summary,
+        "attachments": sample_docx_attachment,
+        "assert": assert_docx_attachment_circle_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -723,7 +785,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "vector2d-routing",
     ],
     "all": list(EVAL_CASES),
-    "attachments": ["pdf-attachment-question"],
+    "attachments": ["pdf-attachment-question", "docx-attachment-question"],
 }
 
 

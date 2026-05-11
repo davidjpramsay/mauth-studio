@@ -63,7 +63,7 @@ Follow-ups for Codex-level in-app assistant parity:
 - Add more high-level assistant workflows built on the action layer: write all solutions, repair solution spaces, add/repair more diagram families, run a layout pass, run a print check, combine tests, and generate a marking key. `mauth.author.replaceQuestion`, `mauth.author.addDiagram`, and `mauth.author.ensureSolutions` are the patterns to follow for compact teacher-facing authoring requests.
 - Add visible provider settings/status beyond backend `.env`, while keeping API keys out of the frontend.
 - Add streaming progress for provider responses and long tool chains without bypassing the visible tool/action log.
-- Add paste/drop attachment intake for the Assistant shell after the provider contract is chosen. Current assistant chat is text/tool-call only; direct PDFs, Word documents, screenshots, and arbitrary image uploads need a backend-owned upload/extraction pipeline and explicit teacher consent before content is sent to a provider.
+- Extend the current Assistant attachment intake with a production upload/extraction pipeline: explicit teacher consent, persistent asset storage, extraction caching for large source files, and metadata for curriculum/source snippets. The current chat path already accepts screenshots/images, PDFs, Word `.docx`, and text-like files for provider calls.
 
 ## Solution Visibility Toggle
 
@@ -107,11 +107,11 @@ Goal:
 - The assistant should use `mauth.document.inspect`, `mauth.actions.preview`, `mauth.validation.run`, and `mauth.actions.apply` rather than reading or mutating React state directly.
 - The assistant should use `mauth.files.*` tools for file operations rather than calling drawer UI handlers or writing raw files.
 - Target capabilities should include creating tests, editing question wording, adding/removing/reordering modules, generating solutions, adjusting student space, managing diagrams/charts, changing formatting, and using the same brains/rules documented for Codex-assisted work.
-- Support paste/drop uploads in the chat. Current implementation handles images/screenshots and PDFs for provider calls with request-size limits and a cost warning; Word documents, curriculum snippets, persistent asset storage, and extraction/caching for large files remain follow-ups.
+- Support paste/drop uploads in the chat. Current implementation handles images/screenshots, PDFs, Word `.docx` files, and text-like files for provider calls with request-size limits and a cost warning; curriculum snippets with structured metadata, persistent asset storage, and extraction/caching for large files remain follow-ups.
 - Add app-native inspection tools for things Codex currently infers manually: rendered page layout, selected preview item, solution-slot fit, diagram output quality, print/PDF state, and file/version state.
 - Add high-level assistant commands that bundle the inspect -> preview -> validate -> apply loop for common teacher workflows, but keep the underlying tool calls structured and testable.
 - Add an evaluation suite of saved prompt/document pairs that checks whether the assistant can complete representative Codex-level tasks without manual intervention.
-- Add a paid live screenshot-image eval with a readable fixture for "make a question from this screenshot"; the PDF-source live eval exists as `pnpm eval:assistant:live:attachments` with a $0.50 default cap.
+- Add a paid live screenshot-image eval with a readable fixture for "make a question from this screenshot"; the PDF/Word-source live eval exists as `pnpm eval:assistant:live:attachments` with a $0.50 default cap.
 - Keep all document edits reviewable and undoable through the existing undo/history and project version system.
 - Design the API boundary carefully: the model should call explicit editor/document tools with validation, not receive unrestricted file-system or browser control.
 - Add privacy and safety controls before any production use: clear provider settings, backend-only API keys, no silent upload of documents, visible model/action logs, and an obvious way to disable AI access.

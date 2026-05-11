@@ -1,4 +1,7 @@
+import base64
+import io
 import json
+import zipfile
 
 from fastapi.testclient import TestClient
 
@@ -6,6 +9,23 @@ from app.main import app
 from app.services import openai_assistant
 
 client = TestClient(app)
+
+
+def data_url(mime_type: str, payload: bytes) -> str:
+    encoded = base64.b64encode(payload).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def minimal_docx_data_url(lines: list[str]) -> str:
+    paragraphs = "".join(f"<w:p><w:r><w:t>{line}</w:t></w:r></w:p>" for line in lines)
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>{paragraphs}</w:body>
+</w:document>""".encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+    return data_url(openai_assistant.DOCX_MIME_TYPE, buffer.getvalue())
 
 
 def test_assistant_status_reports_missing_key(monkeypatch):
@@ -503,6 +523,39 @@ def test_input_items_attach_images_and_pdfs_to_latest_user_message():
     } in latest_user_content
 
 
+def test_input_items_extract_text_and_docx_attachments_to_latest_user_message():
+    text_attachment = openai_assistant.AssistantAttachment(
+        id="text-1",
+        name="curriculum.md",
+        mimeType="text/markdown",
+        dataUrl=data_url("text/markdown", b"Create a 4 mark probability question about P(X=x)=k/x."),
+        sizeBytes=57,
+    )
+    docx_attachment = openai_assistant.AssistantAttachment(
+        id="docx-1",
+        name="school-source.docx",
+        mimeType=openai_assistant.DOCX_MIME_TYPE,
+        dataUrl=minimal_docx_data_url(["Question 1 (3 marks)", "Find the equation of the tangent at x=2."]),
+        sizeBytes=1200,
+    )
+    request = openai_assistant.AssistantChatRequest(
+        messages=[openai_assistant.AssistantChatMessage(role="user", content="Use these source files.")],
+        attachments=[text_attachment, docx_attachment],
+    )
+
+    [item] = openai_assistant.input_items(request)
+
+    latest_user_content = item["content"]
+    extracted_texts = [
+        content["text"]
+        for content in latest_user_content
+        if content["type"] == "input_text" and content["text"].startswith("Extracted text from")
+    ]
+    assert any("4 mark probability question" in text for text in extracted_texts)
+    assert any("Question 1 (3 marks)" in text and "tangent at x=2" in text for text in extracted_texts)
+    assert all("Unsupported attachment type omitted" not in text for text in extracted_texts)
+
+
 def test_attachment_only_request_creates_user_input_item():
     request = openai_assistant.AssistantChatRequest(
         attachments=[
@@ -548,6 +601,19 @@ def test_attachment_requests_select_relevant_brain_files():
 
     assert "diagram.json" in image_files
     assert {"formatting.json", "diagram.json", "solutions.json"}.issubset(pdf_files)
+
+    docx_files = openai_assistant.brain_files_for_request(
+        [openai_assistant.AssistantChatMessage(role="user", content="Create a question from this attached Word file.")],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                name="source.docx",
+                mimeType=openai_assistant.DOCX_MIME_TYPE,
+                dataUrl=minimal_docx_data_url(["Question 1", "Differentiate y=x^2."]),
+                sizeBytes=800,
+            )
+        ],
+    )
+    assert {"formatting.json", "diagram.json", "solutions.json"}.issubset(docx_files)
 
 
 def test_invalid_tool_arguments_do_not_raise():

@@ -1,8 +1,14 @@
+import base64
+import binascii
+import io
 import json
 import os
 import re
+import urllib.parse
+import zipfile
 from contextlib import suppress
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx
 
@@ -16,8 +22,11 @@ DEFAULT_BRAIN_CONTEXT_CHARS = 12000
 DEFAULT_DOCUMENT_CONTEXT_CHARS = 8000
 MAX_ASSISTANT_ATTACHMENTS = 6
 MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
+MAX_ASSISTANT_EXTRACTED_TEXT_CHARS = 80_000
 TOKENS_PER_MILLION = 1_000_000
 QUESTION_REFERENCE_PATTERN = re.compile(r"\b(?:q|question)\s*(\d{1,3})\b", re.IGNORECASE)
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_author_replace_question": "mauth.author.replaceQuestion",
     "mauth_author_add_diagram": "mauth.author.addDiagram",
@@ -298,7 +307,7 @@ def brain_files_for_request(
         for file_name in ("formatting.json", "diagram.json", "solutions.json"):
             include(file_name)
     if any(
-        attachment.name.lower().endswith(".pdf") or attachment.mimeType == "application/pdf"
+        attachment_is_pdf(attachment) or attachment_is_docx(attachment) or attachment_is_text_like(attachment)
         for attachment in attachments or []
     ):
         for file_name in ("formatting.json", "diagram.json", "solutions.json"):
@@ -372,7 +381,8 @@ Choose only the instruction packs needed for the next assistant call. Do not ans
 Selection rules:
 - Always include question when the request writes, rewrites, edits, converts, or inspects question wording.
 - Include solutions when the request asks for worked solutions, marking keys, answer keys, or solution-space repair.
-- Include diagram when the request asks for diagrams, graphs, charts, axes, Venn diagrams, vectors, Penrose geometry, uploaded images, or renderer repair.
+- Include diagram when the request asks for diagrams, graphs, charts, axes, Venn diagrams, vectors, Penrose geometry, uploaded images, source-file diagrams, or renderer repair.
+- Include formatting and solutions when the request converts or adapts attached PDFs, Word documents, or text-like source files.
 - Include formatting when the request asks for title pages, spacing, layout, print/PDF, pagination, exam templates, page breaks, or visual polish.
 - Select the fewest packs that can do the job correctly.
 
@@ -1164,8 +1174,8 @@ Tool-call contract:
 Attachment contract:
 - Current request attachments:
 {attachment_text}
-- If an attachment is present, inspect it directly and use it as source material for the teacher request. Screenshots/images may contain question text, diagrams, or formatting cues. PDFs may contain source exams or assessment pages.
-- For conversion from attached PDFs/screenshots, preserve original line breaks, inline-vs-display maths intent, diagrams, marks, and pagination when the teacher asks for fidelity. Keep the first pass focused if the teacher asks for only one question or one visible page.
+- If an attachment is present, inspect it directly and use it as source material for the teacher request. Screenshots/images may contain question text, diagrams, or formatting cues. PDFs may contain source exams or assessment pages. Word and text-like files are extracted to readable text before the provider call.
+- For conversion from attached PDFs/screenshots/Word/text files, preserve original line breaks, inline-vs-display maths intent, diagrams, marks, and pagination when the teacher asks for fidelity. Keep the first pass focused if the teacher asks for only one question or one visible page.
 - Do not claim you cannot see an attachment when the request includes one. If the content is unreadable, say exactly what was unclear and ask for a higher-resolution file only after attempting the relevant Mauth tool path.
 
 Authoring quality bar:
@@ -1184,6 +1194,108 @@ Current compact document summary:
 Mauth rule-brain context:
 {brain_text}
 """
+
+
+def attachment_extension(name: str) -> str:
+    lowered = name.lower()
+    if "." not in lowered:
+        return ""
+    return f".{lowered.rsplit('.', 1)[-1]}"
+
+
+def attachment_is_pdf(attachment: AssistantAttachment) -> bool:
+    return (attachment.mimeType or "").lower() == "application/pdf" or attachment.name.lower().endswith(".pdf")
+
+
+def attachment_is_docx(attachment: AssistantAttachment) -> bool:
+    return (attachment.mimeType or "").lower() == DOCX_MIME_TYPE or attachment.name.lower().endswith(".docx")
+
+
+def attachment_is_text_like(attachment: AssistantAttachment) -> bool:
+    mime_type = (attachment.mimeType or "").lower()
+    return (
+        mime_type.startswith("text/")
+        or mime_type in {"application/json", "application/xml", "text/csv"}
+        or attachment_extension(attachment.name) in TEXT_ATTACHMENT_EXTENSIONS
+    )
+
+
+def attachment_data_bytes(data_url: str) -> bytes:
+    text = data_url.strip()
+    if not text:
+        return b""
+    if not text.lower().startswith("data:"):
+        with suppress(binascii.Error, ValueError):
+            return base64.b64decode(text, validate=False)
+        return text.encode("utf-8", errors="replace")
+    metadata, _, payload = text.partition(",")
+    if not payload:
+        return b""
+    if ";base64" in metadata.lower():
+        with suppress(binascii.Error, ValueError):
+            return base64.b64decode(payload, validate=False)
+        return b""
+    return urllib.parse.unquote_to_bytes(payload)
+
+
+def xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def docx_node_text(node: ElementTree.Element) -> str:
+    parts: list[str] = []
+    for descendant in node.iter():
+        local = xml_local_name(descendant.tag)
+        if local == "t" and descendant.text:
+            parts.append(descendant.text)
+        elif local in {"tab"}:
+            parts.append("\t")
+        elif local in {"br", "cr"}:
+            parts.append("\n")
+    return "".join(parts)
+
+
+def extract_docx_text(data: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            xml_bytes = archive.read("word/document.xml")
+    except (KeyError, OSError, zipfile.BadZipFile):
+        return ""
+
+    with suppress(ElementTree.ParseError):
+        root = ElementTree.fromstring(xml_bytes)
+        lines: list[str] = []
+        for child in root.iter():
+            if xml_local_name(child.tag) == "body":
+                for block in list(child):
+                    local = xml_local_name(block.tag)
+                    if local == "p":
+                        text = docx_node_text(block).strip()
+                        if text:
+                            lines.append(text)
+                    elif local == "tbl":
+                        for row in [item for item in block.iter() if xml_local_name(item.tag) == "tr"]:
+                            cells = [
+                                docx_node_text(cell).strip()
+                                for cell in row
+                                if xml_local_name(cell.tag) == "tc" and docx_node_text(cell).strip()
+                            ]
+                            if cells:
+                                lines.append("\t".join(cells))
+                break
+        return "\n".join(lines)
+    return ""
+
+
+def extract_attachment_text(attachment: AssistantAttachment) -> str:
+    data = attachment_data_bytes(attachment.dataUrl)
+    if not data:
+        return ""
+    if attachment_is_docx(attachment):
+        return extract_docx_text(data)
+    if attachment_is_text_like(attachment):
+        return data.decode("utf-8", errors="replace")
+    return ""
 
 
 def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dict[str, Any]]:
@@ -1205,8 +1317,24 @@ def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dic
         items.append({"type": "input_text", "text": f"Attached file: {name} ({mime_type or 'unknown type'})."})
         if mime_type.startswith("image/"):
             items.append({"type": "input_image", "image_url": data_url, "detail": "auto"})
-        elif mime_type == "application/pdf" or name.lower().endswith(".pdf"):
+        elif attachment_is_pdf(attachment):
             items.append({"type": "input_file", "filename": name, "file_data": data_url})
+        elif attachment_is_docx(attachment) or attachment_is_text_like(attachment):
+            extracted_text = extract_attachment_text(attachment).strip()
+            if extracted_text:
+                clipped_text = extracted_text[:MAX_ASSISTANT_EXTRACTED_TEXT_CHARS]
+                omitted = len(extracted_text) - len(clipped_text)
+                suffix = f"\n\n[Omitted {omitted:,} characters from {name}.]" if omitted > 0 else ""
+                items.append(
+                    {
+                        "type": "input_text",
+                        "text": f"Extracted text from {name}:\n\n{clipped_text}{suffix}",
+                    }
+                )
+            else:
+                items.append(
+                    {"type": "input_text", "text": f"Could not extract readable text from attachment: {name}."}
+                )
         else:
             items.append({"type": "input_text", "text": f"Unsupported attachment type omitted: {name}."})
     if len(attachments) > MAX_ASSISTANT_ATTACHMENTS:

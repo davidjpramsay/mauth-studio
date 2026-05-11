@@ -23,6 +23,8 @@ const ASSISTANT_MAX_TOOL_ROUNDS = 4;
 const ASSISTANT_MAX_ATTACHMENTS = 4;
 const ASSISTANT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ASSISTANT_MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const ASSISTANT_DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const ASSISTANT_TEXT_ATTACHMENT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml"]);
 
 interface AssistantPendingToolContinuation {
   responseId: string | null;
@@ -52,8 +54,34 @@ function assistantAttachmentId() {
   return `assistant-attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function assistantFileExtension(fileName: string) {
+  const normalizedName = fileName.toLowerCase();
+  const dotIndex = normalizedName.lastIndexOf(".");
+  return dotIndex === -1 ? "" : normalizedName.slice(dotIndex);
+}
+
 function supportedAssistantAttachment(file: File) {
-  return file.type.startsWith("image/") || file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  const extension = assistantFileExtension(file.name);
+  return (
+    file.type.startsWith("image/") ||
+    file.type === "application/pdf" ||
+    file.type === ASSISTANT_DOCX_MIME_TYPE ||
+    file.type.startsWith("text/") ||
+    extension === ".pdf" ||
+    extension === ".docx" ||
+    ASSISTANT_TEXT_ATTACHMENT_EXTENSIONS.has(extension)
+  );
+}
+
+function assistantAttachmentMimeType(file: File) {
+  if (file.type) return file.type;
+  const extension = assistantFileExtension(file.name);
+  if (extension === ".pdf") return "application/pdf";
+  if (extension === ".docx") return ASSISTANT_DOCX_MIME_TYPE;
+  if (extension === ".json") return "application/json";
+  if (extension === ".csv") return "text/csv";
+  if (ASSISTANT_TEXT_ATTACHMENT_EXTENSIONS.has(extension)) return "text/plain";
+  return "application/octet-stream";
 }
 
 function readAssistantAttachment(file: File): Promise<AssistantAttachment> {
@@ -67,7 +95,7 @@ function readAssistantAttachment(file: File): Promise<AssistantAttachment> {
       resolve({
         id: assistantAttachmentId(),
         name: file.name,
-        mimeType: file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream"),
+        mimeType: assistantAttachmentMimeType(file),
         dataUrl: reader.result,
         sizeBytes: file.size,
       });
@@ -293,7 +321,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
     for (const file of files) {
       if (!supportedAssistantAttachment(file)) {
-        rejected.push(`${file.name} is not an image or PDF.`);
+        rejected.push(`${file.name} is not a supported image, PDF, Word, or text file.`);
         continue;
       }
       if (file.size > ASSISTANT_MAX_ATTACHMENT_BYTES) {

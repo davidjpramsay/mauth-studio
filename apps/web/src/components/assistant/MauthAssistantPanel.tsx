@@ -412,7 +412,7 @@ export function MauthAssistantPanel({
             type="file"
             className="hidden"
             multiple
-            accept="image/*,application/pdf,.pdf"
+            accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/*,.txt,.md,.markdown,.csv,.tsv,.json,.tex,.yaml,.yml"
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
               if (files.length) void onAddAttachments(files);
@@ -425,7 +425,7 @@ export function MauthAssistantPanel({
               type="button"
               size="icon"
               variant="outline"
-              aria-label="Attach image or PDF"
+              aria-label="Attach image, PDF, Word, or text file"
               disabled={chatRunning}
               onClick={() => fileInputRef.current?.click()}
             >
