@@ -5168,7 +5168,7 @@ function HeaderFileControls({
     <div className="flex w-auto max-w-full shrink-0 items-center gap-2 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
       <span className={cn("ml-1 size-2 shrink-0 rounded-full", storageStatusTone(saveStatus))} title={fileStatusTitle} aria-hidden="true" />
       <div
-        className="flex h-8 w-[min(42rem,42vw)] min-w-[14rem] flex-col justify-center rounded-md border border-blue-300/20 bg-[#050b1d] px-2"
+        className="flex h-8 w-[clamp(12rem,30vw,30rem)] flex-col justify-center rounded-md border border-blue-300/20 bg-[#050b1d] px-2"
         title={fileStatusTitle}
       >
         <span className="truncate text-sm font-medium leading-tight text-blue-50">{currentFileName}</span>
