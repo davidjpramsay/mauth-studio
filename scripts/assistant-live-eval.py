@@ -131,6 +131,77 @@ def sample_probability_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_function_graph_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 3
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "Sketch the graph of f(x)=x^2-4 for -3<=x<=3. Label the x-intercepts and y-intercept."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 8},
+    ]
+    return summary
+
+
+def sample_set_diagram_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 2
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "Draw a Venn diagram for two overlapping sets A and B in the universal set U. "
+                "Shade A intersect B complement."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 6},
+    ]
+    return summary
+
+
+def sample_stats_chart_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 2
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "The values 2,2,2,4,4,4,4,3,4,3,5 are observed. "
+                "Draw a column graph with relative frequency on the y-axis."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 6},
+    ]
+    return summary
+
+
+def sample_vector2d_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 3
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "On a coordinate grid, draw vectors a=(2,3) and b=(4,-3), both starting at the origin. "
+                "Label each vector using column-vector notation."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 6},
+    ]
+    return summary
+
+
 def hidden_mark_total(text: str) -> int:
     total = 0
     for match in re.finditer(r"\[\[\s*marks\s*:\s*(\d+)\s*\]\]", text, flags=re.IGNORECASE):
@@ -405,6 +476,78 @@ def assert_rewrite_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_diagram_type_call(
+    call: dict[str, Any],
+    *,
+    expected_type: str,
+    required_terms: tuple[str, ...] = (),
+    forbidden_types: tuple[str, ...] = (),
+) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.author.addDiagram":
+        issues.append(f"expected mauth.author.addDiagram, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    if args.get("questionNumber") != 1:
+        issues.append("questionNumber should be 1")
+    graph_config = diagram_graph_config(args)
+    graph_type = graph_config.get("type")
+    if graph_type != expected_type:
+        issues.append(f"expected diagram graphConfig.type {expected_type!r}, got {graph_type!r}")
+    if graph_type in forbidden_types:
+        issues.append(f"diagram should not use {graph_type!r} for this request")
+    serialized = call_text(call).lower()
+    for term in required_terms:
+        if term.lower() not in serialized:
+            issues.append(f"diagram payload should include {term!r}")
+    return issues
+
+
+def assert_graph2d_function_call(call: dict[str, Any]) -> list[str]:
+    return assert_diagram_type_call(
+        call,
+        expected_type="graph2d",
+        required_terms=("x", "4"),
+        forbidden_types=("geometricConstruction", "statsChart", "vector2d"),
+    )
+
+
+def assert_set_diagram_call(call: dict[str, Any]) -> list[str]:
+    return assert_diagram_type_call(
+        call,
+        expected_type="setDiagram",
+        required_terms=("a", "b"),
+        forbidden_types=("geometricConstruction", "graph2d", "statsChart"),
+    )
+
+
+def assert_stats_chart_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_diagram_type_call(
+        call,
+        expected_type="statsChart",
+        required_terms=("relative",),
+        forbidden_types=("graph2d", "setDiagram", "vector2d"),
+    )
+    serialized = call_text(call).lower()
+    if "histogram" not in serialized and "column" not in serialized and "bar" not in serialized:
+        issues.append("stats chart payload should indicate a histogram/column/bar style chart")
+    return issues
+
+
+def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_diagram_type_call(
+        call,
+        expected_type="vector2d",
+        required_terms=("2", "3", "4", "-3"),
+        forbidden_types=("vectorRelationship", "geometricConstruction", "graph2d"),
+    )
+    serialized = call_text(call).lower()
+    if "column" not in serialized and "\\begin{pmatrix}" not in serialized and "pmatrix" not in serialized:
+        issues.append("vector2d payload should include or imply column-vector labels")
+    return issues
+
+
 EVAL_CASES: dict[str, dict[str, Any]] = {
     "circle-question": {
         "prompt": (
@@ -454,6 +597,26 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_circle_with_diagram_solution_document_summary,
         "assert": assert_rewrite_preserves_diagram_call,
     },
+    "graph2d-function-diagram": {
+        "prompt": "Add the coordinate graph for Question 1.",
+        "summary": sample_function_graph_document_summary,
+        "assert": assert_graph2d_function_call,
+    },
+    "set-diagram-routing": {
+        "prompt": "Add the Venn diagram for Question 1.",
+        "summary": sample_set_diagram_document_summary,
+        "assert": assert_set_diagram_call,
+    },
+    "stats-chart-routing": {
+        "prompt": "Add the relative-frequency column graph for Question 1.",
+        "summary": sample_stats_chart_document_summary,
+        "assert": assert_stats_chart_call,
+    },
+    "vector2d-routing": {
+        "prompt": "Add the coordinate vector diagram for Question 1.",
+        "summary": sample_vector2d_document_summary,
+        "assert": assert_vector2d_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -463,6 +626,12 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "mark-edit-preserve-diagram",
         "rewrite-preserve-diagram",
         "multipart-probability",
+    ],
+    "diagram-routing": [
+        "graph2d-function-diagram",
+        "set-diagram-routing",
+        "stats-chart-routing",
+        "vector2d-routing",
     ],
     "all": list(EVAL_CASES),
 }
