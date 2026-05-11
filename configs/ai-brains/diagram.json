@@ -30,6 +30,7 @@
     "Do not treat graph3d as a 2D function graph. A graph3d config should normally store type, widthPx, heightPx, and metadata.view3d camera values, not graph2d functions, 2D axis controls, or vector2d metadata.",
     "Use the saved DIAGRAM AUDIT GALLERY test as the visual regression fixture when changing diagram renderers, chart defaults, or diagram editor controls. With the API and web app running, pnpm smoke:diagram-gallery captures repeatable screenshots for the key renderer examples.",
     "Use image diagrams for teacher-uploaded image files. The current editor stores uploaded images as data URLs, but future file-management work should move large images into asset storage.",
+    "When a teacher attaches a screenshot or PDF that contains a diagram, first decide whether it should be recreated as a native Mauth renderer. Use graph2d/vector2d/statsChart/setDiagram/geometricConstruction/graph3d when the diagram is mathematical and editable; use image only when the attachment itself is the intended bitmap or the diagram cannot yet be recreated accurately.",
     "Use geometricConstruction for static geometry, angle, circle theorem, tangent, parallel, perpendicular, and construction diagrams. If the prompt is relationship-based rather than coordinate-based, prefer Penrose/geometricConstruction over graph2d. For assistant-authored geometricConstruction diagrams, native means supported Penrose Substance in graphConfig.options.substanceSource. Do not invent a second geometry language unless the UI control itself supplies structured data.",
     "Visible geometric diagram labels must match the question statement. Auxiliary points needed only to construct a circle, radius, tangent, or relationship should be hidden with an invisible label and HidePoint unless the question explicitly names that point.",
     "For tangent-parallel-chord diagrams, write supported Penrose Substance directly: declare a hidden auxiliary centre plus the visible question points, for example Point centre, A, B, C; Circle omega; Line tangentA; NamedSegment AB, AC, BC; Label centre $\\,$; HidePoint(centre); then use CircleThrough(omega, centre, A), OnCircle(B, omega), OnCircle(C, omega), Tangent(tangentA, omega, A), Segment(AB, A, B), Segment(AC, A, C), Segment(BC, B, C), and ParallelToSegment(tangentA, B, C). Do not visibly label a point such as O unless the question names it. Do not use a canned diagram recipe.",
@@ -80,6 +81,7 @@
   ],
   "checks": [
     "Diagram type matches the mathematical object.",
+    "Attachment-derived diagrams use a native renderer where practical rather than defaulting to a bitmap.",
     "Labels do not cross important lines where avoidable.",
     "Graph axes, labels, and numbering are readable.",
     "LaTeX-rendered diagram labels follow the shared MathJax display-style convention without becoming oversized or cramped.",

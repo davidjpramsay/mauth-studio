@@ -4,6 +4,7 @@ import type { ProjectFileSummary } from "@mauth-studio/shared";
 import {
   getAssistantStatus,
   sendAssistantChat,
+  type AssistantAttachment,
   type AssistantChatMessage,
   type AssistantProviderToolCall,
   type AssistantToolOutput,
@@ -19,6 +20,9 @@ import type { MauthQuestionLike } from "@/lib/mauthActions";
 import type { MauthAssistantChatMessage } from "@/components/assistant/MauthAssistantPanel";
 
 const ASSISTANT_MAX_TOOL_ROUNDS = 4;
+const ASSISTANT_MAX_ATTACHMENTS = 4;
+const ASSISTANT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ASSISTANT_MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 interface AssistantPendingToolContinuation {
   responseId: string | null;
@@ -42,6 +46,35 @@ interface UseMauthAssistantControllerOptions<Q extends MauthQuestionLike, F exte
 
 function assistantMessageId() {
   return `assistant-message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function assistantAttachmentId() {
+  return `assistant-attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function supportedAssistantAttachment(file: File) {
+  return file.type.startsWith("image/") || file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function readAssistantAttachment(file: File): Promise<AssistantAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error(`Could not read ${file.name}.`));
+        return;
+      }
+      resolve({
+        id: assistantAttachmentId(),
+        name: file.name,
+        mimeType: file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream"),
+        dataUrl: reader.result,
+        sizeBytes: file.size,
+      });
+    };
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -198,6 +231,8 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 }: UseMauthAssistantControllerOptions<Q, F, C>) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  const [chatAttachments, setChatAttachments] = useState<AssistantAttachment[]>([]);
+  const [attachmentNotice, setAttachmentNotice] = useState("");
   const [chatMessages, setChatMessages] = useState<MauthAssistantChatMessage[]>([]);
   const [chatRunning, setChatRunning] = useState(false);
   const [activityLabel, setActivityLabel] = useState("Thinking");
@@ -246,6 +281,50 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       if (nextOpen && !previewModeActive) openPreviewMode();
       return nextOpen;
     });
+  }
+
+  async function addChatAttachments(files: File[]) {
+    if (!files.length || chatRunning) return;
+    setAttachmentNotice("");
+
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    let totalBytes = chatAttachments.reduce((sum, attachment) => sum + (attachment.sizeBytes ?? 0), 0);
+
+    for (const file of files) {
+      if (!supportedAssistantAttachment(file)) {
+        rejected.push(`${file.name} is not an image or PDF.`);
+        continue;
+      }
+      if (file.size > ASSISTANT_MAX_ATTACHMENT_BYTES) {
+        rejected.push(`${file.name} is larger than 10 MB.`);
+        continue;
+      }
+      if (chatAttachments.length + accepted.length >= ASSISTANT_MAX_ATTACHMENTS) {
+        rejected.push(`Only ${ASSISTANT_MAX_ATTACHMENTS} attachments can be sent at once.`);
+        break;
+      }
+      if (totalBytes + file.size > ASSISTANT_MAX_TOTAL_ATTACHMENT_BYTES) {
+        rejected.push("Attachments are limited to 20 MB per request.");
+        break;
+      }
+      accepted.push(file);
+      totalBytes += file.size;
+    }
+
+    if (rejected.length) setAttachmentNotice(rejected.join(" "));
+    if (!accepted.length) return;
+
+    try {
+      const attachments = await Promise.all(accepted.map(readAssistantAttachment));
+      setChatAttachments((current) => [...current, ...attachments]);
+    } catch (error) {
+      setAttachmentNotice(error instanceof Error ? error.message : "Could not read attachment.");
+    }
+  }
+
+  function removeChatAttachment(id: string) {
+    setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
   async function assistantDocumentSummary(host: MauthAssistantAdapterHost<Q, F, C>) {
@@ -364,10 +443,12 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
   async function sendChatMessage() {
     const userContent = chatInput.trim();
-    if (!userContent || chatRunning) return;
+    if ((!userContent && !chatAttachments.length) || chatRunning) return;
+    const requestAttachments = [...chatAttachments];
+    const displayedUserContent = userContent || "Use the attached file(s).";
 
     const pendingContinuation = pendingToolContinuation;
-    const resumePendingTools = Boolean(pendingContinuation && userContent.toLowerCase().startsWith("continue"));
+    const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
     const previousId = pendingContinuation ? null : previousResponseId;
     const priorMessages = chatMessages
       .filter((chatMessage) => !chatMessage.content.startsWith("I stopped after several tool rounds."))
@@ -379,11 +460,16 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         }),
       );
     const outgoingMessages: AssistantChatMessage[] = previousId
-      ? [{ role: "user", content: userContent }]
-      : [...priorMessages, { role: "user", content: userContent }];
+      ? [{ role: "user", content: displayedUserContent }]
+      : [...priorMessages, { role: "user", content: displayedUserContent }];
 
     setChatInput("");
-    setChatMessages((current) => [...current, { id: assistantMessageId(), role: "user", content: userContent }]);
+    setChatAttachments([]);
+    setAttachmentNotice("");
+    setChatMessages((current) => [
+      ...current,
+      { id: assistantMessageId(), role: "user", content: displayedUserContent, attachments: requestAttachments },
+    ]);
     setChatRunning(true);
     setActivityLabel(resumePendingTools ? "Continuing" : "Thinking");
     setActivityStartedAt(Date.now());
@@ -413,6 +499,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         previousResponseId: previousId,
         messages: outgoingMessages,
         documentSummary,
+        attachments: requestAttachments,
       });
 
       let requestUsage = response.usage ?? null;
@@ -458,12 +545,16 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     panelOpen,
     chatInput,
     chatMessages,
+    chatAttachments,
+    attachmentNotice,
     chatRunning,
     providerConfigured,
     providerStatusMessage,
     activityLabel,
     activityStartedAt,
     setChatInput,
+    addChatAttachments,
+    removeChatAttachment,
     setPanelOpen,
     togglePanel,
     sendChatMessage,

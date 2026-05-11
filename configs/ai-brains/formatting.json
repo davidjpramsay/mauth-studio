@@ -41,6 +41,7 @@
     "Use $...$ for inline math and $$...$$ for display math. This applies to question text, tables, labels, and title-page/front-matter text fields. Do not emit \\(...\\) or \\[...\\] delimiters because the Mauth text renderer expects dollar-delimited MathJax.",
     "When converting source exams, preserve the source math flow: if a tall vector, matrix, fraction, or equation appears inline in a sentence, keep it inline with $...$ rather than changing it to $$...$$. Use display math only for equations that are standalone blocks in the original or need a deliberate displayed layout.",
     "Preserve meaningful source line breaks and paragraph breaks in question text. If the original puts a second sentence or instruction on the next line, keep that as a newline inside the same text block unless it should be a separate structural module.",
+    "When converting attached screenshots or PDFs, treat the visible source page as the formatting source of truth. Preserve deliberate line breaks, table/diagram alignment, marks placement, and pagination when the teacher asks for fidelity, but still use structured Mauth modules rather than screenshot-like text spacing.",
     "Math is rendered through MathJax SVG. The renderer applies \\displaystyle to inline math by default, so inline formulas stay in the sentence while fractions and operators use display-style sizing.",
     "The inline \\displaystyle behaviour is a local wrapper rather than MathJax display mode; MathJax display mode creates block layout and should not be used for inline text.",
     "For vertical systems or grouped equations inside display math, use supported MathJax environments such as \\begin{aligned}...\\end{aligned}; do not emit \\begin{aligned*}. If rows look cramped, add a small optional row gap such as \\\\[2pt] or \\\\[3pt] between lines.",
@@ -91,6 +92,7 @@
     "Title page total marks are calculated from questions, not typed manually.",
     "Exam booklet structure rows that describe the current document use automated question counts and marks rather than typed values.",
     "Exam booklet preview/print output has a total page count divisible by four without content-level filler blocks; automatic extra pages should be rendered as supplementary pages.",
+    "Attachment-derived conversions preserve visible source line breaks and inline-vs-display maths unless the teacher requests a redesign.",
     "Preview and printed PDF output should use the same visible formatting rules."
   ]
 }

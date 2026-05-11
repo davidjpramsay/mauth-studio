@@ -11226,12 +11226,16 @@ export default function App() {
           placement="preview-left"
           chatMessages={assistantController.chatMessages}
           chatInput={assistantController.chatInput}
+          chatAttachments={assistantController.chatAttachments}
+          attachmentNotice={assistantController.attachmentNotice}
           chatRunning={assistantController.chatRunning}
           providerConfigured={assistantController.providerConfigured}
           providerStatusMessage={assistantController.providerStatusMessage}
           activityLabel={assistantController.activityLabel}
           activityStartedAt={assistantController.activityStartedAt}
           onChatInputChange={assistantController.setChatInput}
+          onAddAttachments={assistantController.addChatAttachments}
+          onRemoveAttachment={assistantController.removeChatAttachment}
           onSendChat={() => void assistantController.sendChatMessage()}
           onClose={() => assistantController.setPanelOpen(false)}
         />

@@ -21,7 +21,12 @@ API_ROOT = ROOT / "apps" / "api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from app.models.schemas import AssistantChatMessage, AssistantChatRequest, AssistantToolOutput  # noqa: E402
+from app.models.schemas import (  # noqa: E402
+    AssistantAttachment,
+    AssistantChatMessage,
+    AssistantChatRequest,
+    AssistantToolOutput,
+)
 from app.services.openai_assistant import assistant_configured, create_assistant_response  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
@@ -131,6 +136,67 @@ def sample_probability_document_summary() -> dict[str, Any]:
     return summary
 
 
+def pdf_bytes_from_text(text: str) -> bytes:
+    escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    lines = escaped_text.splitlines()
+    text_commands = ["BT", "/F1 12 Tf", "50 760 Td"]
+    for index, line in enumerate(lines):
+        if index:
+            text_commands.append("0 -18 Td")
+        text_commands.append(f"({line}) Tj")
+    text_commands.append("ET")
+    stream = "\n".join(text_commands).encode("latin-1", errors="replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    chunks = [b"%PDF-1.4\n"]
+    offsets: list[int] = []
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(sum(len(chunk) for chunk in chunks))
+        chunks.append(f"{index} 0 obj\n".encode())
+        chunks.append(obj)
+        chunks.append(b"\nendobj\n")
+    xref_offset = sum(len(chunk) for chunk in chunks)
+    chunks.append(f"xref\n0 {len(objects) + 1}\n".encode())
+    chunks.append(b"0000000000 65535 f \n")
+    for offset in offsets:
+        chunks.append(f"{offset:010d} 00000 n \n".encode())
+    chunks.append(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
+    return b"".join(chunks)
+
+
+def attachment_pdf_from_text(name: str, text: str) -> AssistantAttachment:
+    import base64
+
+    payload = base64.b64encode(pdf_bytes_from_text(text)).decode("ascii")
+    return AssistantAttachment(
+        name=name,
+        mimeType="application/pdf",
+        dataUrl=f"data:application/pdf;base64,{payload}",
+        sizeBytes=len(payload),
+    )
+
+
+def sample_probability_pdf_attachment() -> list[AssistantAttachment]:
+    return [
+        attachment_pdf_from_text(
+            "probability-source.pdf",
+            "\n".join(
+                [
+                    "Question 1 (4 marks)",
+                    "A discrete random variable X has probability mass function P(X=x)=k/x for x=2,3,4,5.",
+                    "(a) Determine k. (2 marks)",
+                    "(b) Find E(X). (2 marks)",
+                ]
+            ),
+        )
+    ]
+
+
 def sample_function_graph_document_summary() -> dict[str, Any]:
     summary = sample_document_summary()
     summary["questions"][0]["marks"] = 3
@@ -139,9 +205,7 @@ def sample_function_graph_document_summary() -> dict[str, Any]:
             "id": "q1-question-text",
             "kind": "text",
             "visibility": "always",
-            "textPreview": (
-                "Sketch the graph of f(x)=x^2-4 for -3<=x<=3. Label the x-intercepts and y-intercept."
-            ),
+            "textPreview": ("Sketch the graph of f(x)=x^2-4 for -3<=x<=3. Label the x-intercepts and y-intercept."),
         },
         {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 8},
     ]
@@ -391,6 +455,21 @@ def assert_multipart_probability_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_pdf_attachment_probability_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_multipart_probability_call(call)
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return issues
+    serialized = json.dumps(args, ensure_ascii=False).lower()
+    if "k/x" not in serialized and "\\frac{k}{x}" not in serialized:
+        issues.append("attachment-derived question should preserve the P(X=x)=k/x source")
+    if "e(x)" not in serialized and "expected" not in serialized:
+        issues.append("attachment-derived question should preserve the E(X) part")
+    if "2,3,4,5" not in serialized.replace(" ", ""):
+        issues.append("attachment-derived question should preserve the source x-values")
+    return issues
+
+
 def assert_solution_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     if call.get("mauthToolName") != "mauth.author.ensureSolutions":
@@ -471,7 +550,11 @@ def assert_rewrite_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
         issues.append("do not send diagrams: [] when preserving an existing diagram")
     if "tangent" not in question_text.lower() or "circle" not in question_text.lower():
         issues.append("rewritten question should preserve the circle/tangent intent")
-    if "proof" not in question_text.lower() and "prove" not in question_text.lower() and "show" not in question_text.lower():
+    if (
+        "proof" not in question_text.lower()
+        and "prove" not in question_text.lower()
+        and "show" not in question_text.lower()
+    ):
         issues.append("rewritten question should remain a proof/show question")
     return issues
 
@@ -617,6 +700,12 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_vector2d_document_summary,
         "assert": assert_vector2d_call,
     },
+    "pdf-attachment-question": {
+        "prompt": "Create Question 1 from the attached PDF. Preserve the parts, marks, and mathematical intent.",
+        "summary": sample_document_summary,
+        "attachments": sample_probability_pdf_attachment,
+        "assert": assert_pdf_attachment_probability_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -634,6 +723,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "vector2d-routing",
     ],
     "all": list(EVAL_CASES),
+    "attachments": ["pdf-attachment-question"],
 }
 
 
@@ -647,7 +737,9 @@ def summarize_call(call: dict[str, Any]) -> dict[str, Any]:
                 compact_arguments[key] = [
                     {
                         inner_key: (
-                            f"{inner_value[:240]}..." if isinstance(inner_value, str) and len(inner_value) > 240 else inner_value
+                            f"{inner_value[:240]}..."
+                            if isinstance(inner_value, str) and len(inner_value) > 240
+                            else inner_value
                         )
                         for inner_key, inner_value in item.items()
                     }
@@ -672,6 +764,8 @@ async def run_single_eval(
     case = EVAL_CASES[case_name]
     prompt = str(case["prompt"])
     summary = case["summary"]()
+    attachments_factory = case.get("attachments")
+    attachments = attachments_factory() if callable(attachments_factory) else []
     assert_call = case["assert"]
 
     print(f"\n=== {case_name} ===")
@@ -680,6 +774,7 @@ async def run_single_eval(
             model=model,
             messages=[AssistantChatMessage(role="user", content=prompt)],
             documentSummary=summary,
+            attachments=attachments,
         )
     )
     first_calls = [as_dict(call) for call in first.get("toolCalls", [])]
@@ -824,7 +919,9 @@ def main() -> int:
     parser.add_argument(
         "--final", action="store_true", help="Also test the optional final tool-output continuation call."
     )
-    parser.add_argument("--max-cost", type=float, default=1.5, help="Stop before starting another case after this cost.")
+    parser.add_argument(
+        "--max-cost", type=float, default=1.5, help="Stop before starting another case after this cost."
+    )
     parser.add_argument("--stop-on-failure", action="store_true", help="Stop after the first failed case.")
     parser.add_argument("--verbose", action="store_true", help="Print full provider tool payloads.")
     raw_args = sys.argv[1:]

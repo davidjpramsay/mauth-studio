@@ -276,6 +276,14 @@ export interface AssistantChatMessage {
   content: string;
 }
 
+export interface AssistantAttachment {
+  id?: string | null;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  sizeBytes?: number | null;
+}
+
 export interface AssistantToolOutput {
   callId: string;
   name?: string;
@@ -307,6 +315,7 @@ export interface AssistantChatRequest {
   previousResponseId?: string | null;
   toolOutputs?: AssistantToolOutput[];
   documentSummary?: Record<string, unknown> | null;
+  attachments?: AssistantAttachment[];
   model?: string | null;
 }
 

@@ -463,6 +463,93 @@ def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():
     assert "circleTangentParallelChord" not in instructions
 
 
+def test_input_items_attach_images_and_pdfs_to_latest_user_message():
+    request = openai_assistant.AssistantChatRequest(
+        messages=[
+            openai_assistant.AssistantChatMessage(role="assistant", content="What do you need?"),
+            openai_assistant.AssistantChatMessage(role="user", content="Make a question from these."),
+        ],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                id="image-1",
+                name="question.png",
+                mimeType="image/png",
+                dataUrl="data:image/png;base64,iVBORw0KGgo=",
+                sizeBytes=12,
+            ),
+            openai_assistant.AssistantAttachment(
+                id="pdf-1",
+                name="paper.pdf",
+                mimeType="application/pdf",
+                dataUrl="data:application/pdf;base64,JVBERi0x",
+                sizeBytes=8,
+            ),
+        ],
+    )
+
+    items = openai_assistant.input_items(request)
+
+    latest_user_content = items[-1]["content"]
+    assert latest_user_content[0] == {"type": "input_text", "text": "Make a question from these."}
+    assert {
+        "type": "input_image",
+        "image_url": "data:image/png;base64,iVBORw0KGgo=",
+        "detail": "auto",
+    } in latest_user_content
+    assert {
+        "type": "input_file",
+        "filename": "paper.pdf",
+        "file_data": "data:application/pdf;base64,JVBERi0x",
+    } in latest_user_content
+
+
+def test_attachment_only_request_creates_user_input_item():
+    request = openai_assistant.AssistantChatRequest(
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                name="screenshot.png",
+                mimeType="image/png",
+                dataUrl="data:image/png;base64,abc",
+                sizeBytes=3,
+            )
+        ],
+    )
+
+    items = openai_assistant.input_items(request)
+
+    assert items[0]["role"] == "user"
+    assert items[0]["content"][0] == {"type": "input_text", "text": "Use the attached file(s)."}
+    assert {"type": "input_image", "image_url": "data:image/png;base64,abc", "detail": "auto"} in items[0]["content"]
+
+
+def test_attachment_requests_select_relevant_brain_files():
+    image_files = openai_assistant.brain_files_for_request(
+        [openai_assistant.AssistantChatMessage(role="user", content="Make a question from this screenshot.")],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                name="source.png",
+                mimeType="image/png",
+                dataUrl="data:image/png;base64,abc",
+                sizeBytes=3,
+            )
+        ],
+    )
+    pdf_files = openai_assistant.brain_files_for_request(
+        [openai_assistant.AssistantChatMessage(role="user", content="Convert the attached page.")],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                name="exam.pdf",
+                mimeType="application/pdf",
+                dataUrl="data:application/pdf;base64,JVBERi0x",
+                sizeBytes=8,
+            )
+        ],
+    )
+
+    assert "diagram.json" in image_files
+    assert {"formatting.json", "diagram.json", "solutions.json"}.issubset(pdf_files)
+
+
 def test_invalid_tool_arguments_do_not_raise():
     response = {
         "output": [

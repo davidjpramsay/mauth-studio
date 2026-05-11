@@ -7,13 +7,15 @@ from typing import Any
 import httpx
 
 from app.bootstrap import CONFIG_ROOT
-from app.models.schemas import AssistantChatMessage, AssistantChatRequest, AssistantToolOutput
+from app.models.schemas import AssistantAttachment, AssistantChatMessage, AssistantChatRequest, AssistantToolOutput
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_ASSISTANT_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_PLANNER_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_CONTEXT_CHARS = 12000
 DEFAULT_DOCUMENT_CONTEXT_CHARS = 8000
+MAX_ASSISTANT_ATTACHMENTS = 6
+MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
 TOKENS_PER_MILLION = 1_000_000
 QUESTION_REFERENCE_PATTERN = re.compile(r"\b(?:q|question)\s*(\d{1,3})\b", re.IGNORECASE)
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -177,10 +179,14 @@ def compact_brain_config(data: dict[str, Any], file_name: str = "", text: str = 
 
 
 def request_text(
-    messages: list[AssistantChatMessage] | None = None, tool_outputs: list[AssistantToolOutput] | None = None
+    messages: list[AssistantChatMessage] | None = None,
+    tool_outputs: list[AssistantToolOutput] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> str:
     parts = [message.content for message in messages or []]
     parts.extend(str(tool_output.name or "") for tool_output in tool_outputs or [])
+    for attachment in attachments or []:
+        parts.append(f"attached file {attachment.name} {attachment.mimeType}")
     return "\n".join(parts).lower()
 
 
@@ -247,9 +253,11 @@ def brain_files_from_ids(brain_ids: list[str] | None) -> list[str]:
 
 
 def brain_files_for_request(
-    messages: list[AssistantChatMessage] | None = None, tool_outputs: list[AssistantToolOutput] | None = None
+    messages: list[AssistantChatMessage] | None = None,
+    tool_outputs: list[AssistantToolOutput] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> list[str]:
-    text = request_text(messages, tool_outputs)
+    text = request_text(messages, tool_outputs, attachments)
     files = ["index.json"]
 
     def include(file_name: str) -> None:
@@ -264,7 +272,21 @@ def brain_files_for_request(
         include("solutions.json")
     if any(
         term in text
-        for term in ("diagram", "graph", "chart", "circle", "tangent", "venn", "vector", "axis", "axes", "plot")
+        for term in (
+            "diagram",
+            "graph",
+            "chart",
+            "circle",
+            "tangent",
+            "venn",
+            "vector",
+            "axis",
+            "axes",
+            "plot",
+            "image",
+            "screenshot",
+            "photo",
+        )
     ):
         include("diagram.json")
     if any(
@@ -275,6 +297,12 @@ def brain_files_for_request(
     if any(term in text for term in ("whole test", "full test", "convert", "exam paper", "past exam", "all questions")):
         for file_name in ("formatting.json", "diagram.json", "solutions.json"):
             include(file_name)
+    if any(
+        attachment.name.lower().endswith(".pdf") or attachment.mimeType == "application/pdf"
+        for attachment in attachments or []
+    ):
+        for file_name in ("formatting.json", "diagram.json", "solutions.json"):
+            include(file_name)
 
     return files
 
@@ -283,14 +311,15 @@ def assistant_brain_context(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
     brain_files: list[str] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> str:
     limit = assistant_brain_context_limit()
     if limit <= 0:
         return "Brain context disabled."
 
     brain_dir = CONFIG_ROOT / "ai-brains"
-    brain_files = brain_files or brain_files_for_request(messages, tool_outputs)
-    text = request_text(messages, tool_outputs)
+    brain_files = brain_files or brain_files_for_request(messages, tool_outputs, attachments)
+    text = request_text(messages, tool_outputs, attachments)
     brains: list[dict[str, Any]] = []
     for file_name in brain_files:
         path = brain_dir / file_name
@@ -353,6 +382,7 @@ Call mauth_select_brains exactly once."""
 def brain_selection_input(
     messages: list[AssistantChatMessage] | None,
     document_summary: dict[str, Any] | None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> list[dict[str, Any]]:
     compact_summary = compact_document_summary(document_summary, messages)
     summary_limit = min(assistant_document_context_limit(), 2500)
@@ -368,6 +398,14 @@ def brain_selection_input(
             "content": json.dumps(
                 {
                     "teacherPromptAndRecentChat": prompt_text[-3000:],
+                    "attachments": [
+                        {
+                            "name": attachment.name,
+                            "mimeType": attachment.mimeType,
+                            "sizeBytes": attachment.sizeBytes,
+                        }
+                        for attachment in attachments or []
+                    ],
                     "brainMenu": assistant_brain_menu(),
                     "compactDocumentSummary": summary_text,
                 },
@@ -409,8 +447,9 @@ async def select_brain_files_for_request(
     messages: list[AssistantChatMessage] | None,
     tool_outputs: list[AssistantToolOutput] | None,
     document_summary: dict[str, Any] | None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> tuple[list[str], dict[str, Any] | None]:
-    fallback_files = brain_files_for_request(messages, tool_outputs)
+    fallback_files = brain_files_for_request(messages, tool_outputs, attachments)
     if tool_outputs or not assistant_brain_planner_enabled():
         return fallback_files, None
 
@@ -424,7 +463,7 @@ async def select_brain_files_for_request(
             json={
                 "model": assistant_brain_planner_model(),
                 "instructions": brain_selection_instructions(),
-                "input": brain_selection_input(messages, document_summary),
+                "input": brain_selection_input(messages, document_summary, attachments),
                 "tools": [brain_selection_tool_definition()],
                 "parallel_tool_calls": False,
             },
@@ -1074,6 +1113,7 @@ def assistant_instructions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
     selected_brain_files: list[str] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
 ) -> str:
     compact_summary = compact_document_summary(document_summary, messages)
     summary_limit = assistant_document_context_limit()
@@ -1082,8 +1122,13 @@ def assistant_instructions(
         if compact_summary and summary_limit > 0
         else "No document summary supplied."
     )
-    brain_text = assistant_brain_context(messages, tool_outputs, selected_brain_files)
+    brain_text = assistant_brain_context(messages, tool_outputs, selected_brain_files, attachments)
     tool_hint = focused_tool_hint(compact_summary, messages)
+    attachment_lines = [
+        f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
+        for attachment in attachments or []
+    ]
+    attachment_text = "\n".join(attachment_lines) if attachment_lines else "No attachments."
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
 Operate through the provided Mauth functions only. Never describe raw React state, DOM edits, or browser-cache edits as an implementation path.
@@ -1116,6 +1161,13 @@ Tool-call contract:
 - If a file tool output includes validationIssues paths such as arguments.path, arguments.paths[0], arguments.content, or arguments.versionId, fix those exact file-tool fields and retry once.
 - Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless they explicitly ask for implementation details.
 
+Attachment contract:
+- Current request attachments:
+{attachment_text}
+- If an attachment is present, inspect it directly and use it as source material for the teacher request. Screenshots/images may contain question text, diagrams, or formatting cues. PDFs may contain source exams or assessment pages.
+- For conversion from attached PDFs/screenshots, preserve original line breaks, inline-vs-display maths intent, diagrams, marks, and pagination when the teacher asks for fidelity. Keep the first pass focused if the teacher asks for only one question or one visible page.
+- Do not claim you cannot see an attachment when the request includes one. If the content is unreadable, say exactly what was unclear and ask for a higher-resolution file only after attempting the relevant Mauth tool path.
+
 Authoring quality bar:
 - Write complete teacher-ready mathematics, not placeholders or planning notes.
 - Include enough information for students to solve the problem and a concise worked solution when requested.
@@ -1134,10 +1186,63 @@ Mauth rule-brain context:
 """
 
 
+def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for attachment in attachments[:MAX_ASSISTANT_ATTACHMENTS]:
+        name = attachment.name or "attachment"
+        mime_type = attachment.mimeType or ""
+        data_url = attachment.dataUrl.strip()
+        if not data_url:
+            continue
+        if len(data_url) > MAX_ASSISTANT_ATTACHMENT_DATA_CHARS:
+            items.append(
+                {
+                    "type": "input_text",
+                    "text": f"Attachment omitted because it is too large for this assistant request: {name}.",
+                }
+            )
+            continue
+        items.append({"type": "input_text", "text": f"Attached file: {name} ({mime_type or 'unknown type'})."})
+        if mime_type.startswith("image/"):
+            items.append({"type": "input_image", "image_url": data_url, "detail": "auto"})
+        elif mime_type == "application/pdf" or name.lower().endswith(".pdf"):
+            items.append({"type": "input_file", "filename": name, "file_data": data_url})
+        else:
+            items.append({"type": "input_text", "text": f"Unsupported attachment type omitted: {name}."})
+    if len(attachments) > MAX_ASSISTANT_ATTACHMENTS:
+        items.append(
+            {
+                "type": "input_text",
+                "text": f"{len(attachments) - MAX_ASSISTANT_ATTACHMENTS} additional attachment(s) omitted by the assistant request limit.",
+            }
+        )
+    return items
+
+
 def input_items(request: AssistantChatRequest) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for message in request.messages:
-        items.append({"role": message.role, "content": message.content})
+    attachments = request.attachments or []
+    user_message_indexes = [index for index, message in enumerate(request.messages) if message.role == "user"]
+    attachment_message_index = user_message_indexes[-1] if user_message_indexes else None
+    for index, message in enumerate(request.messages):
+        if attachments and index == attachment_message_index:
+            content = [
+                {"type": "input_text", "text": message.content or "Use the attached file(s)."},
+                *attachment_content_items(attachments),
+            ]
+            items.append({"role": message.role, "content": content})
+        else:
+            items.append({"role": message.role, "content": message.content})
+    if attachments and attachment_message_index is None:
+        items.append(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Use the attached file(s)."},
+                    *attachment_content_items(attachments),
+                ],
+            }
+        )
     for tool_output in request.toolOutputs:
         output = (
             tool_output.output
@@ -1292,6 +1397,7 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
             messages=request.messages,
             tool_outputs=request.toolOutputs,
             document_summary=request.documentSummary,
+            attachments=request.attachments,
         )
         payload: dict[str, Any] = {
             "model": model,
@@ -1300,6 +1406,7 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
                 request.messages,
                 request.toolOutputs,
                 selected_brain_files,
+                request.attachments,
             ),
             "input": input_items(request),
             "tools": assistant_tool_definitions(request.messages, request.toolOutputs),

@@ -1,15 +1,17 @@
-import { CircleCheck, CircleX, MessageSquare, Send, X } from "lucide-react";
+import { CircleCheck, CircleX, FileText, ImageIcon, MessageSquare, Paperclip, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import type { AssistantAttachment } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface MauthAssistantChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: AssistantAttachment[];
   usage?: MauthAssistantUsageSummary | null;
 }
 
@@ -179,34 +181,78 @@ function AssistantUsageDetails({ usage }: { usage: MauthAssistantUsageSummary })
   );
 }
 
+function formatAttachmentSize(sizeBytes?: number | null) {
+  if (!sizeBytes) return "";
+  if (sizeBytes < 1024 * 1024) return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentIcon({ attachment }: { attachment: AssistantAttachment }) {
+  return attachment.mimeType.startsWith("image/") ? (
+    <ImageIcon className="size-3.5" aria-hidden="true" />
+  ) : (
+    <FileText className="size-3.5" aria-hidden="true" />
+  );
+}
+
+function AttachmentPill({ attachment, onRemove }: { attachment: AssistantAttachment; onRemove?: (id: string) => void }) {
+  const sizeLabel = formatAttachmentSize(attachment.sizeBytes);
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background/80 px-2 py-1 text-xs text-foreground">
+      <AttachmentIcon attachment={attachment} />
+      <span className="truncate">{attachment.name}</span>
+      {sizeLabel ? <span className="text-muted-foreground">{sizeLabel}</span> : null}
+      {onRemove && attachment.id ? (
+        <button
+          type="button"
+          className="ml-0.5 rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Remove ${attachment.name}`}
+          onClick={() => onRemove(attachment.id ?? "")}
+        >
+          <X className="size-3" aria-hidden="true" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 export function MauthAssistantPanel({
   placement = "floating",
   chatMessages,
   chatInput,
+  chatAttachments,
+  attachmentNotice,
   chatRunning,
   providerConfigured,
   providerStatusMessage,
   activityLabel = "Working",
   activityStartedAt = null,
   onChatInputChange,
+  onAddAttachments,
+  onRemoveAttachment,
   onSendChat,
   onClose,
 }: {
   placement?: "floating" | "preview-left";
   chatMessages: MauthAssistantChatMessage[];
   chatInput: string;
+  chatAttachments: AssistantAttachment[];
+  attachmentNotice?: string;
   chatRunning: boolean;
   providerConfigured: boolean | null;
   providerStatusMessage: string;
   activityLabel?: string;
   activityStartedAt?: number | null;
   onChatInputChange: (value: string) => void;
+  onAddAttachments: (files: File[]) => void | Promise<void>;
+  onRemoveAttachment: (id: string) => void;
   onSendChat: () => void;
   onClose: () => void;
 }) {
-  const canSend = Boolean(chatInput.trim()) && !chatRunning && providerConfigured !== false;
+  const canSend = Boolean(chatInput.trim() || chatAttachments.length) && !chatRunning && providerConfigured !== false;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const statusPopoverRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const connected = providerConfigured === true;
@@ -296,6 +342,13 @@ export function MauthAssistantPanel({
                   )}
                 >
                   {chatMessage.role === "assistant" ? <AssistantMarkdown content={chatMessage.content} /> : chatMessage.content}
+                  {chatMessage.attachments?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {chatMessage.attachments.map((attachment) => (
+                        <AttachmentPill key={attachment.id ?? attachment.name} attachment={attachment} />
+                      ))}
+                    </div>
+                  ) : null}
                   {chatMessage.role === "assistant" && chatMessage.usage ? <AssistantUsageDetails usage={chatMessage.usage} /> : null}
                 </div>
               ))
@@ -314,13 +367,39 @@ export function MauthAssistantPanel({
           </div>
         </div>
 
-        <div className="border-t p-3">
+        <div
+          className="border-t p-3"
+          onDragOver={(event) => {
+            if (chatRunning) return;
+            event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (chatRunning) return;
+            const files = Array.from(event.dataTransfer.files ?? []);
+            if (!files.length) return;
+            event.preventDefault();
+            void onAddAttachments(files);
+          }}
+        >
+          {chatAttachments.length ? (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {chatAttachments.map((attachment) => (
+                <AttachmentPill key={attachment.id ?? attachment.name} attachment={attachment} onRemove={onRemoveAttachment} />
+              ))}
+            </div>
+          ) : null}
           <Textarea
             value={chatInput}
             onChange={(event) => onChatInputChange(event.target.value)}
             rows={3}
             className="min-h-20 resize-none rounded-xl"
             placeholder="Ask Mauth to inspect, edit, validate, save, or organise this document."
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files ?? []);
+              if (!files.length) return;
+              event.preventDefault();
+              void onAddAttachments(files);
+            }}
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                 event.preventDefault();
@@ -328,7 +407,30 @@ export function MauthAssistantPanel({
               }
             }}
           />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept="image/*,application/pdf,.pdf"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              if (files.length) void onAddAttachments(files);
+              event.currentTarget.value = "";
+            }}
+          />
+          {attachmentNotice ? <p className="text-destructive mt-2 text-xs">{attachmentNotice}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              aria-label="Attach image or PDF"
+              disabled={chatRunning}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="size-4" aria-hidden="true" />
+            </Button>
             <Button type="button" size="sm" onClick={onSendChat} disabled={!canSend}>
               <Send data-icon="inline-start" />
               {chatRunning ? "Working" : "Ask"}
@@ -336,7 +438,11 @@ export function MauthAssistantPanel({
             {providerConfigured === false ? (
               <span className="text-xs text-muted-foreground">Add the backend API key, then restart the API server.</span>
             ) : (
-              <span className="text-xs text-muted-foreground">Press Cmd/Ctrl + Enter to send.</span>
+              <span className="text-xs text-muted-foreground">
+                {chatAttachments.length
+                  ? "Attachments can increase API cost. Press Cmd/Ctrl + Enter to send."
+                  : "Press Cmd/Ctrl + Enter to send."}
+              </span>
             )}
           </div>
         </div>

@@ -323,6 +323,14 @@ class AssistantChatMessage(BaseModel):
     content: str
 
 
+class AssistantAttachment(BaseModel):
+    id: str | None = None
+    name: str
+    mimeType: str = ""
+    dataUrl: str
+    sizeBytes: int | None = None
+
+
 class AssistantToolOutput(BaseModel):
     callId: str
     name: str | None = None
@@ -334,6 +342,7 @@ class AssistantChatRequest(BaseModel):
     previousResponseId: str | None = None
     toolOutputs: list[AssistantToolOutput] = Field(default_factory=list)
     documentSummary: dict[str, Any] | None = None
+    attachments: list[AssistantAttachment] = Field(default_factory=list)
     model: str | None = None
 
 

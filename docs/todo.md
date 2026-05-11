@@ -107,10 +107,11 @@ Goal:
 - The assistant should use `mauth.document.inspect`, `mauth.actions.preview`, `mauth.validation.run`, and `mauth.actions.apply` rather than reading or mutating React state directly.
 - The assistant should use `mauth.files.*` tools for file operations rather than calling drawer UI handlers or writing raw files.
 - Target capabilities should include creating tests, editing question wording, adding/removing/reordering modules, generating solutions, adjusting student space, managing diagrams/charts, changing formatting, and using the same brains/rules documented for Codex-assisted work.
-- Support paste/drop uploads in the chat, including screenshots/images, PDFs, Word documents, and other source material that can be converted into questions, diagrams, solutions, or marking keys.
+- Support paste/drop uploads in the chat. Current implementation handles images/screenshots and PDFs for provider calls with request-size limits and a cost warning; Word documents, curriculum snippets, persistent asset storage, and extraction/caching for large files remain follow-ups.
 - Add app-native inspection tools for things Codex currently infers manually: rendered page layout, selected preview item, solution-slot fit, diagram output quality, print/PDF state, and file/version state.
 - Add high-level assistant commands that bundle the inspect -> preview -> validate -> apply loop for common teacher workflows, but keep the underlying tool calls structured and testable.
 - Add an evaluation suite of saved prompt/document pairs that checks whether the assistant can complete representative Codex-level tasks without manual intervention.
+- Add a paid live screenshot-image eval with a readable fixture for "make a question from this screenshot"; the PDF-source live eval exists as `pnpm eval:assistant:live:attachments` with a $0.50 default cap.
 - Keep all document edits reviewable and undoable through the existing undo/history and project version system.
 - Design the API boundary carefully: the model should call explicit editor/document tools with validation, not receive unrestricted file-system or browser control.
 - Add privacy and safety controls before any production use: clear provider settings, backend-only API keys, no silent upload of documents, visible model/action logs, and an obvious way to disable AI access.
