@@ -21,7 +21,6 @@ import type {
   GraphFunction,
   GraphFunctionPiece,
   ProjectFileDocument,
-  ProjectFileSaveRequest,
   ProjectFileSummary,
   ProjectFileVersion,
   ProjectSummary,
@@ -70,7 +69,7 @@ import {
 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
-import { MauthAssistantPanel } from "@/components/MauthAssistantPanel";
+import { MauthAssistantPanel } from "@/components/assistant/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
@@ -123,7 +122,7 @@ import {
   type MauthDocumentActionOptions,
   type MauthDocumentActionResult,
 } from "@/lib/mauthActions";
-import { type MauthAssistantAdapterHost } from "@/lib/mauthAssistantAdapter";
+import { useMauthAssistantHost } from "@/hooks/useMauthAssistantHost";
 import { useMauthAssistantController } from "@/hooks/useMauthAssistantController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
@@ -11653,6 +11652,25 @@ export default function App() {
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
 
+  const assistantHost = useMauthAssistantHost<QuestionBlock, FrontMatterConfig, FormattingConfig>({
+    getDocument: currentEditorDocument,
+    commitDocument: (document) => commitAssistantDocument(document),
+    documentOptions: editorDocumentActionOptions,
+    ensureProject,
+    activeProjectFilePathRef,
+    activeProjectFileRevisionRef,
+    setActiveProjectFilePath,
+    setActiveProjectFileRevision,
+    setProjectSaveConflict,
+    setLastProjectSaveFingerprint,
+    currentDocumentFingerprint: currentAssistantDocumentFingerprint,
+    closeFileManager: () => setFileManagerOpen(false),
+    setProjectFiles,
+    setProjectFilesStatusReady: () => setProjectFilesStatus("ready"),
+    serializeDocument: (document) => serializeAssistantDocument(document),
+    parseProjectFileDocument: (document) => parseAssistantProjectDocument(document),
+  });
+
   const assistantController = useMauthAssistantController({
     previewModeActive: paneMode === "preview",
     openPreviewMode: hideEditorPane,
@@ -12383,10 +12401,6 @@ export default function App() {
     setActionProposalResult(null);
   }
 
-  async function ensureAssistantProject() {
-    return ensureProject();
-  }
-
   function commitAssistantDocument(document: {
     frontMatter: FrontMatterConfig;
     questions: QuestionBlock[];
@@ -12420,6 +12434,15 @@ export default function App() {
     return JSON.stringify(savedTest, null, 2);
   }
 
+  function currentAssistantDocumentFingerprint() {
+    return editorDocumentFingerprint(
+      frontMatterRef.current,
+      questionsRef.current,
+      formattingConfigRef.current,
+      selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
+    );
+  }
+
   function parseAssistantProjectDocument(document: ProjectFileDocument): EditorDocumentState {
     const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
     const savedTest = normalizeSavedTest(parsed);
@@ -12439,58 +12462,6 @@ export default function App() {
       frontMatter: cloneSerializable(savedTest.frontMatter),
       questions: normalizeQuestionBlocks(savedTest.questions),
       formattingConfig: normalizeFormattingConfig(savedTest.formattingConfig),
-    };
-  }
-
-  function assistantFileDriver() {
-    return {
-      listFiles: async (projectId: string) => (await listProjectFiles(projectId)).files,
-      getFile: (projectId: string, filePath: string) => getProjectFile(projectId, filePath),
-      saveFile: (projectId: string, filePath: string, file: ProjectFileSaveRequest) => saveProjectFile(projectId, filePath, file),
-      deleteFile: (projectId: string, filePath: string, baseRevision?: number) => deleteProjectFile(projectId, filePath, baseRevision),
-      listVersions: async (projectId: string, filePath: string) => (await listProjectFileVersions(projectId, filePath)).versions,
-      restoreVersion: (projectId: string, filePath: string, versionId: string) => restoreProjectFileVersion(projectId, filePath, versionId),
-    };
-  }
-
-  function assistantHost(): MauthAssistantAdapterHost<QuestionBlock, FrontMatterConfig, FormattingConfig> {
-    return {
-      getDocument: currentEditorDocument,
-      commitDocument: (document) => commitAssistantDocument(document),
-      documentOptions: editorDocumentActionOptions,
-      fileDriver: assistantFileDriver(),
-      getProjectId: async () => (await ensureAssistantProject()).id,
-      getActiveFilePath: () => activeProjectFilePathRef.current,
-      getActiveFileRevision: () => activeProjectFileRevisionRef.current,
-      setActiveFilePath: (filePath, context) => {
-        const contextData = asRecord(context.data);
-        const contextDocument = asRecord(contextData?.document);
-        const contextRevision = typeof contextDocument?.revision === "number" ? contextDocument.revision : null;
-        activeProjectFilePathRef.current = filePath;
-        activeProjectFileRevisionRef.current = filePath ? contextRevision : null;
-        setActiveProjectFilePath(filePath);
-        setActiveProjectFileRevision(filePath ? contextRevision : null);
-        setProjectSaveConflict(null);
-        if (filePath) {
-          setLastProjectSaveFingerprint(
-            editorDocumentFingerprint(
-              frontMatterRef.current,
-              questionsRef.current,
-              formattingConfigRef.current,
-              selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
-            ),
-          );
-          if (context.toolName === "mauth.files.open") setFileManagerOpen(false);
-        } else {
-          setLastProjectSaveFingerprint(null);
-        }
-      },
-      serializeDocument: (document) => serializeAssistantDocument(document),
-      parseProjectFileDocument: (document) => parseAssistantProjectDocument(document),
-      onFilesChanged: (files) => {
-        setProjectFiles(files);
-        setProjectFilesStatus("ready");
-      },
     };
   }
 

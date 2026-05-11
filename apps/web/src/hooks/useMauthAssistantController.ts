@@ -16,7 +16,7 @@ import {
   type MauthAssistantAdapterToolCall,
 } from "@/lib/mauthAssistantAdapter";
 import type { MauthQuestionLike } from "@/lib/mauthActions";
-import type { MauthAssistantChatMessage } from "@/components/MauthAssistantPanel";
+import type { MauthAssistantChatMessage } from "@/components/assistant/MauthAssistantPanel";
 
 const ASSISTANT_MAX_TOOL_ROUNDS = 4;
 
