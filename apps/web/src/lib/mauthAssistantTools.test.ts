@@ -282,10 +282,15 @@ test("replaces a question with structured parts from a high-level authoring payl
   assert.equal(question?.parts[0].label, "a");
   assert.equal(question?.parts[0].marks, 1);
   assert.equal(question?.parts[0].text, "State the number of trials.");
-  assert.equal(question?.parts[0].contentBlocks[0].kind, "space");
-  assert.equal(question?.parts[0].contentBlocks[0].visibility, "student");
-  assert.equal(question?.parts[0].contentBlocks[1].kind, "text");
-  assert.equal(question?.parts[0].contentBlocks[1].visibility, "solution");
+  assert.equal(question?.parts[0].contentBlocks[0].kind, "text");
+  assert.equal(
+    question?.parts[0].contentBlocks[0].kind === "text" ? question.parts[0].contentBlocks[0].text : "",
+    "State the number of trials.",
+  );
+  assert.equal(question?.parts[0].contentBlocks[1].kind, "space");
+  assert.equal(question?.parts[0].contentBlocks[1].visibility, "student");
+  assert.equal(question?.parts[0].contentBlocks[2].kind, "text");
+  assert.equal(question?.parts[0].contentBlocks[2].visibility, "solution");
 });
 
 test("rejects high-level authoring parts with blank or label-only prompts", () => {

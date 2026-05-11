@@ -1047,12 +1047,21 @@ function isOnlyPartLabel(text: string) {
   return /^\(?\s*(?:[a-z]|[ivxlcdm]+)\s*\)?[).:]?\s*$/i.test(text);
 }
 
-function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: string, issues: MauthActionValidationIssue[]) {
+function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: string, partText: string, issues: MauthActionValidationIssue[]) {
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
   const marks = positiveInteger(args.marks, 1, 0, 100);
   const studentSpaceLines = resolvedStudentSpaceLines(args.studentSpaceLines ?? args.answerLines ?? args.lines, solutionText, marks, 6, 40);
   const blocks: ContentBlock[] = [
+    ...(partText
+      ? [
+          {
+            id: authorBlockId(partId, "part-text"),
+            kind: "text" as const,
+            text: partText,
+          },
+        ]
+      : []),
     ...diagramBlocksFromArgs(args, partId, issues),
     {
       id: authorBlockId(partId, "student-space"),
@@ -1094,7 +1103,7 @@ function authorPartsFromArgs(args: Record<string, unknown>, questionId: string, 
       });
     }
     const partId = String(entry.id ?? authorBlockId(questionId, `part-${index + 1}`));
-    const contentBlocks = contentBlocksForAuthorPart(entry, partId, issues);
+    const contentBlocks = contentBlocksForAuthorPart(entry, partId, text, issues);
     parts.push({
       id: partId,
       label: authorPartLabel(index, entry.label),
