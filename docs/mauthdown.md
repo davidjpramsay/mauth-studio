@@ -194,7 +194,7 @@ When one document holds both the student copy and solution copy, keep answer spa
 
 Prefer generous answer spaces for students, especially in questions that require multi-line working. If a solution does not fit the matched slot after it has been written concisely, increase this space block rather than allowing only the solution copy to reflow.
 
-If a diagram should sit beside the answer/solution area, align the diagram left or right and place the adjacent answer-space/solution pair immediately after the diagram. The renderer automatically puts that response/solution slot on the opposite side of a left/right diagram.
+If a diagram should sit beside the answer/solution area, align the diagram left or right and place the adjacent answer-space/solution pair immediately after the diagram. The renderer treats the diagram plus paired answer/solution area as one response slot: the student copy shows one L-shaped working area beside and under the diagram, and the solution copy fills that same slot with worked solution content that wraps beside the diagram and then continues underneath.
 
 ### Page Break
 
@@ -683,7 +683,7 @@ Worked solution text appears to the left of the right-aligned diagram.
 :::
 ````
 
-This uses a stable side-and-under layout: text solutions use normal wrap beside the diagram and then continue under it, while blank answer-space blocks are rendered as an L-shaped reserved space with one segment beside the diagram and a full-width segment underneath when needed. Use it for solution copies where a student version left working room beside a diagram. Also use it for diagrams created only by the worked solution: store the diagram as a solution module, put the worked-solution text immediately after it, and align the diagram left or right so the solution wraps around the diagram instead of stacking below it or staying trapped in a narrow column.
+This uses a stable diagram response slot: the diagram is floated once, blank answer space is drawn as one L-shaped reserved area beside and under the diagram, and worked-solution text fills the same slot by wrapping beside the diagram before continuing at full width underneath. Use it for solution copies where a student version left working room beside a diagram. Also use it for diagrams created only by the worked solution: store the diagram as a solution module, put the worked-solution text immediately after it, and align the diagram left or right so the solution wraps around the diagram instead of stacking below it or staying trapped in a narrow column.
 
 ## AI Authoring Rules
 
@@ -704,7 +704,7 @@ This uses a stable side-and-under layout: text solutions use normal wrap beside 
 - Be generous with student answer space. If a concise solution needs more reserved room, increase the matching answer-space block lines so both copies keep the same pagination.
 - A worked solution should fit inside its matched student slot. Resolve overflow by tightening the solution, using side-by-side diagram placement where appropriate, or increasing the paired answer space.
 - Keep worked solutions compact and mark-focused. Do not stretch solution content to fill the full student working space; leave unused reserved space after the solution.
-- Use automatic left/right diagram placement for side-by-side solution text beside given diagrams or solution-only diagrams. Blank answer spaces beside diagrams render as L-shaped slots that use the side area first and then continue underneath. Do not fake this with separate space blocks.
+- Use automatic left/right diagram placement for side-by-side solution text beside given diagrams or solution-only diagrams. Blank answer spaces beside diagrams render as one L-shaped response slot that uses the side area first and then continues underneath. The solution copy fills that same slot. Do not fake this with separate space blocks.
 - Preserve manual user changes to space lines and diagram alignment unless they clearly break the document.
 - In solution copies, annotate mark-worthy lines with `[[marks:n]]` rather than writing visible ticks manually.
 - When generating raw JSON with code, use raw strings or double escaping for LaTeX and verify there are no unintended control characters in solution text.

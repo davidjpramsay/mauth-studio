@@ -1807,125 +1807,50 @@
     gap: calc(var(--test-inline-block-gap, 0.85rem) - 0.15rem);
   }
 
-  .test-diagram-solution-pair {
-    min-height: calc(var(--space-lines, 0) * 1.55em);
-  }
-
-  .test-diagram-solution-pair > [data-preview-module-anchor="true"] + [data-preview-module-anchor="true"] {
-    margin-top: var(--test-content-gap, 0.72rem);
-  }
-
-  .test-diagram-space-pair {
-    display: grid;
+  .test-diagram-response-slot {
+    display: flow-root;
     margin: var(--test-block-margin-block, 0.45rem 0 0.35rem);
     max-width: 100%;
     min-height: calc(var(--space-lines, 3) * 1.55em);
-    row-gap: 0;
+    position: relative;
     width: 100%;
   }
 
-  .test-diagram-space-pair.test-diagram-text-left {
-    column-gap: var(--test-inline-block-gap, 0.85rem);
-    grid-template-areas:
-      "space diagram"
-      "under-side under-diagram";
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto minmax(0, 1fr);
+  .test-diagram-response-slot > [data-preview-module-anchor="true"] + [data-preview-module-anchor="true"] {
+    margin-top: var(--test-content-gap, 0.72rem);
   }
 
-  .test-diagram-space-pair.test-diagram-text-right {
-    column-gap: var(--test-inline-block-gap, 0.85rem);
-    grid-template-areas:
-      "diagram space"
-      "under-diagram under-side";
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+  .test-diagram-response-slot .test-diagram-pair-diagram {
+    position: relative;
+    z-index: 1;
   }
 
-  .test-diagram-space-pair .test-diagram-pair-diagram {
-    float: none;
-    grid-area: diagram;
-    margin: 0;
-  }
-
-  .test-diagram-l-space-segment {
+  .test-diagram-response-space {
+    min-height: calc(var(--space-lines, 3) * 1.55em);
     min-width: 0;
     position: relative;
+    z-index: 0;
   }
 
-  .test-diagram-l-space-side {
-    align-self: stretch;
-    grid-area: space;
-  }
-
-  .test-diagram-l-space-under-side {
-    grid-area: under-side;
-    min-height: 0;
-  }
-
-  .test-diagram-l-space-under-diagram {
-    grid-area: under-diagram;
-    min-height: 0;
-  }
-
-  .preview-pane-edit-sync .test-diagram-space-pair:has(.test-diagram-l-space-segment:hover) .test-diagram-l-space-segment::after,
-  .preview-pane-edit-sync .test-diagram-l-space-segment[data-preview-selected="true"]::after {
-    content: "";
+  .test-diagram-response-outline {
     inset: 0;
+    overflow: visible;
     pointer-events: none;
     position: absolute;
     z-index: 2;
   }
 
-  .preview-pane-edit-sync .test-diagram-space-pair:has(.test-diagram-l-space-segment:hover) .test-diagram-l-space-side::after,
-  .preview-pane-edit-sync .test-diagram-l-space-side[data-preview-selected="true"]::after {
-    border-color: rgb(37 99 235 / 0.46);
-    border-style: dashed;
-    border-width: 1px 1px 0 1px;
+  .test-diagram-response-outline path {
+    fill: none;
+    stroke: transparent;
+    stroke-dasharray: 4 4;
+    stroke-linecap: butt;
+    stroke-width: 1;
   }
 
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-left:has(.test-diagram-l-space-segment:hover)
-    .test-diagram-l-space-under-side::after,
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-left
-    .test-diagram-l-space-under-side[data-preview-selected="true"]::after {
-    border-color: rgb(37 99 235 / 0.46);
-    border-style: dashed;
-    border-width: 0 0 1px 1px;
-  }
-
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-left:has(.test-diagram-l-space-segment:hover)
-    .test-diagram-l-space-under-diagram::after,
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-left
-    .test-diagram-l-space-under-diagram[data-preview-selected="true"]::after {
-    border-color: rgb(37 99 235 / 0.46);
-    border-style: dashed;
-    border-width: 1px 1px 1px 0;
-  }
-
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-right:has(.test-diagram-l-space-segment:hover)
-    .test-diagram-l-space-under-diagram::after,
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-right
-    .test-diagram-l-space-under-diagram[data-preview-selected="true"]::after {
-    border-color: rgb(37 99 235 / 0.46);
-    border-style: dashed;
-    border-width: 1px 0 1px 1px;
-  }
-
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-right:has(.test-diagram-l-space-segment:hover)
-    .test-diagram-l-space-under-side::after,
-  .preview-pane-edit-sync
-    .test-diagram-space-pair.test-diagram-text-right
-    .test-diagram-l-space-under-side[data-preview-selected="true"]::after {
-    border-color: rgb(37 99 235 / 0.46);
-    border-style: dashed;
-    border-width: 0 1px 1px 0;
+  .preview-pane-edit-sync .test-diagram-response-slot:has(.test-diagram-response-space:hover) .test-diagram-response-outline path,
+  .preview-pane-edit-sync .test-diagram-response-outline[data-preview-selected="true"] path {
+    stroke: rgb(37 99 235 / 0.46);
   }
 
   .test-space-block {

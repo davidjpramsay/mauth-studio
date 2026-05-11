@@ -427,12 +427,32 @@ function DiagramBesideContentBlocks({
   );
 }
 
-function DiagramWithBesideSolutionSlot({
+function responseSlotPath(
+  textSide: DiagramTextSide,
+  width: number,
+  height: number,
+  diagramRect: DOMRect,
+  rootRect: DOMRect,
+  marginBottom: number,
+) {
+  if (width <= 0 || height <= 0) return "";
+  const diagramTop = Math.max(0, diagramRect.top - rootRect.top);
+  const diagramBottom = Math.min(height, Math.max(diagramTop, diagramRect.bottom - rootRect.top + marginBottom));
+  if (textSide === "left") {
+    const sideRight = Math.max(0, Math.min(width, diagramRect.left - rootRect.left));
+    return `M 0 0 H ${sideRight} V ${diagramBottom} H ${width} V ${height} H 0 Z`;
+  }
+  const sideLeft = Math.max(0, Math.min(width, diagramRect.right - rootRect.left));
+  return `M ${sideLeft} 0 H ${width} V ${height} H 0 V ${diagramBottom} H ${sideLeft} Z`;
+}
+
+function DiagramWithResponseSlot({
   diagramBlock,
   diagramAnchor,
   textSide,
   studentBlock,
   solutionBlocks,
+  spaceAnchor,
   activePreviewAnchor,
   measureOnly,
   showSolutions,
@@ -444,8 +464,9 @@ function DiagramWithBesideSolutionSlot({
   diagramBlock: Extract<EditorContentBlock, { kind: "diagram" }>;
   diagramAnchor?: string;
   textSide: DiagramTextSide;
-  studentBlock: EditorContentBlock;
+  studentBlock: Extract<EditorContentBlock, { kind: "space" }>;
   solutionBlocks: EditorContentBlock[];
+  spaceAnchor?: string;
   activePreviewAnchor?: string;
   measureOnly: boolean;
   showSolutions: boolean;
@@ -454,13 +475,64 @@ function DiagramWithBesideSolutionSlot({
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
 }) {
-  const lines = studentBlock.kind === "space" ? runtime.spaceLines(studentBlock.lines) : 0;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const diagramRef = useRef<HTMLDivElement | null>(null);
+  const [outline, setOutline] = useState<{ width: number; height: number; path: string }>({ width: 0, height: 0, path: "" });
+  const lines = runtime.spaceLines(studentBlock.lines);
+  const hasReplacementSolution = showSolutions && solutionBlocks.length > 0;
+
+  useLayoutEffect(() => {
+    if (measureOnly) {
+      setOutline({ width: 0, height: 0, path: "" });
+      return;
+    }
+
+    const rootElement = rootRef.current;
+    const diagramElement = diagramRef.current;
+    if (!rootElement || !diagramElement) return;
+
+    let animationFrame = 0;
+    const updateOutline = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const rootRect = rootElement.getBoundingClientRect();
+        const diagramRect = diagramElement.getBoundingClientRect();
+        const diagramStyles = window.getComputedStyle(diagramElement);
+        const marginBottom = Number.parseFloat(diagramStyles.marginBottom) || 0;
+        const width = rootRect.width;
+        const height = rootRect.height;
+        const nextOutline = {
+          width,
+          height,
+          path: responseSlotPath(textSide, width, height, diagramRect, rootRect, marginBottom),
+        };
+        setOutline((previousOutline) => {
+          const sameWidth = Math.abs(previousOutline.width - nextOutline.width) < 0.5;
+          const sameHeight = Math.abs(previousOutline.height - nextOutline.height) < 0.5;
+          if (sameWidth && sameHeight && previousOutline.path === nextOutline.path) return previousOutline;
+          return nextOutline;
+        });
+      });
+    };
+
+    updateOutline();
+    const resizeObserver = new ResizeObserver(updateOutline);
+    resizeObserver.observe(rootElement);
+    resizeObserver.observe(diagramElement);
+    void document.fonts?.ready.then(updateOutline);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+    };
+  }, [measureOnly, textSide, lines, showSolutions, solutionBlocks.length]);
+
+  const isSpaceSelected = runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor);
+
   return (
     <div
-      className={cn(
-        "test-diagram-text-pair test-diagram-solution-pair",
-        textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right",
-      )}
+      ref={rootRef}
+      className={cn("test-diagram-response-slot", textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right")}
       style={
         {
           "--space-lines": String(lines),
@@ -468,6 +540,7 @@ function DiagramWithBesideSolutionSlot({
       }
     >
       <div
+        ref={diagramRef}
         data-scroll-anchor={diagramAnchor}
         data-preview-module-anchor={diagramAnchor ? "true" : undefined}
         data-preview-selected={runtime.previewSelectionAttr(diagramAnchor, activePreviewAnchor)}
@@ -481,89 +554,37 @@ function DiagramWithBesideSolutionSlot({
             measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(diagramBlock.id, graphConfig),
         })}
       </div>
-      <DiagramBesideContentBlocks
-        blocks={solutionBlocks}
-        measureOnly={measureOnly}
-        showSolutions={showSolutions}
-        blockAnchorFor={blockAnchorFor}
-        activePreviewAnchor={activePreviewAnchor}
-        onGraphConfigChange={onGraphConfigChange}
-        runtime={runtime}
-        renderers={renderers}
-      />
-    </div>
-  );
-}
-
-function DiagramWithBesideSpaceNode({
-  diagramBlock,
-  diagramAnchor,
-  textSide,
-  spaceBlock,
-  spaceAnchor,
-  activePreviewAnchor,
-  measureOnly,
-  showSolutions,
-  onGraphConfigChange,
-  runtime,
-  renderers,
-}: {
-  diagramBlock: Extract<EditorContentBlock, { kind: "diagram" }>;
-  diagramAnchor?: string;
-  textSide: DiagramTextSide;
-  spaceBlock: Extract<EditorContentBlock, { kind: "space" }>;
-  spaceAnchor?: string;
-  activePreviewAnchor?: string;
-  measureOnly: boolean;
-  showSolutions: boolean;
-  onGraphConfigChange?: (graphConfig: GraphConfig) => void;
-  runtime: PreviewContentRuntime;
-  renderers: PreviewContentRenderers;
-}) {
-  const lines = runtime.spaceLines(spaceBlock.lines);
-  return (
-    <div
-      className={cn("test-diagram-space-pair", textSide === "left" ? "test-diagram-text-left" : "test-diagram-text-right")}
-      style={
-        {
-          "--space-lines": String(lines),
-        } as CSSProperties & Record<`--${string}`, string>
-      }
-    >
-      <div
-        data-scroll-anchor={diagramAnchor}
-        data-preview-module-anchor={diagramAnchor ? "true" : undefined}
-        data-preview-selected={runtime.previewSelectionAttr(diagramAnchor, activePreviewAnchor)}
-        className={cn("test-diagram-pair-diagram flex min-w-0", runtime.diagramAlignmentClass(diagramBlock.diagramAlign))}
-      >
-        {renderers.renderDiagram({
-          graphConfig: diagramBlock.graphConfig,
-          measureOnly,
-          showSolutions,
-          onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
-        })}
-      </div>
-      <div
-        data-scroll-anchor={spaceAnchor}
-        data-preview-module-anchor={spaceAnchor ? "true" : undefined}
-        data-preview-module-shape="l-space"
-        data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
-        className="test-diagram-l-space-segment test-diagram-l-space-side"
-      />
-      <div
-        data-scroll-anchor={spaceAnchor}
-        data-preview-module-anchor={spaceAnchor ? "true" : undefined}
-        data-preview-module-shape="l-space"
-        data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
-        className="test-diagram-l-space-segment test-diagram-l-space-under-side"
-      />
-      <div
-        data-scroll-anchor={spaceAnchor}
-        data-preview-module-anchor={spaceAnchor ? "true" : undefined}
-        data-preview-module-shape="l-space"
-        data-preview-selected={runtime.previewSelectionAttr(spaceAnchor, activePreviewAnchor)}
-        className="test-diagram-l-space-segment test-diagram-l-space-under-diagram"
-      />
+      {hasReplacementSolution ? (
+        <DiagramBesideContentBlocks
+          blocks={solutionBlocks}
+          measureOnly={measureOnly}
+          showSolutions={showSolutions}
+          blockAnchorFor={blockAnchorFor}
+          activePreviewAnchor={activePreviewAnchor}
+          onGraphConfigChange={onGraphConfigChange}
+          runtime={runtime}
+          renderers={renderers}
+        />
+      ) : (
+        <div
+          data-scroll-anchor={spaceAnchor}
+          data-preview-module-anchor={spaceAnchor ? "true" : undefined}
+          data-preview-module-shape="l-space"
+          data-preview-selected={isSpaceSelected}
+          className="test-diagram-response-space"
+        />
+      )}
+      {!measureOnly && outline.path ? (
+        <svg
+          aria-hidden="true"
+          className="test-diagram-response-outline"
+          data-preview-selected={isSpaceSelected}
+          focusable="false"
+          viewBox={`0 0 ${outline.width} ${outline.height}`}
+        >
+          <path d={outline.path} vectorEffect="non-scaling-stroke" />
+        </svg>
+      ) : null}
     </div>
   );
 }
@@ -610,35 +631,16 @@ export function PreviewContentBlocks({
       const replacementTextSide = runtime.effectiveDiagramTextSide(block, Boolean(replacementSlotFollows));
       if (replacementTextSide !== "none" && replacementSlotFollows) {
         const { studentBlock, solutionBlocks } = replacementSlotFollows;
-        if (!showSolutions && studentBlock.kind === "space") {
+        if (studentBlock.kind === "space") {
           renderedBlocks.push(
-            <DiagramWithBesideSpaceNode
-              key={`${block.id}:${studentBlock.id}:student-space`}
-              diagramBlock={block}
-              diagramAnchor={blockAnchor}
-              textSide={replacementTextSide}
-              spaceBlock={studentBlock}
-              spaceAnchor={measureOnly ? undefined : blockAnchorFor?.(studentBlock)}
-              activePreviewAnchor={activePreviewAnchor}
-              measureOnly={measureOnly}
-              showSolutions={showSolutions}
-              onGraphConfigChange={!onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)}
-              runtime={runtime}
-              renderers={renderers}
-            />,
-          );
-          index = replacementSlotFollows.endIndex;
-          continue;
-        }
-        if (showSolutions) {
-          renderedBlocks.push(
-            <DiagramWithBesideSolutionSlot
-              key={`${block.id}:${studentBlock.id}:${solutionBlocks.map((solutionBlock) => solutionBlock.id).join(":")}:solutions`}
+            <DiagramWithResponseSlot
+              key={`${block.id}:${studentBlock.id}:${solutionBlocks.map((solutionBlock) => solutionBlock.id).join(":")}:response-slot`}
               diagramBlock={block}
               diagramAnchor={blockAnchor}
               textSide={replacementTextSide}
               studentBlock={studentBlock}
               solutionBlocks={solutionBlocks}
+              spaceAnchor={measureOnly ? undefined : blockAnchorFor?.(studentBlock)}
               activePreviewAnchor={activePreviewAnchor}
               measureOnly={measureOnly}
               showSolutions={showSolutions}
@@ -692,17 +694,19 @@ export function PreviewContentBlocks({
       if (textSide !== "none" && nextBlock && runtime.isDiagramBesideContentBlock(nextBlock, showSolutions)) {
         if (nextBlock.kind === "space") {
           renderedBlocks.push(
-            <DiagramWithBesideSpaceNode
+            <DiagramWithResponseSlot
               key={`${block.id}:${nextBlock.id}`}
               diagramBlock={block}
               diagramAnchor={blockAnchor}
               textSide={textSide}
-              spaceBlock={nextBlock}
+              studentBlock={nextBlock}
+              solutionBlocks={[]}
               spaceAnchor={measureOnly ? undefined : blockAnchorFor?.(nextBlock)}
               activePreviewAnchor={activePreviewAnchor}
               measureOnly={measureOnly}
               showSolutions={showSolutions}
-              onGraphConfigChange={!onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig)}
+              onGraphConfigChange={onGraphConfigChange}
+              blockAnchorFor={blockAnchorFor}
               runtime={runtime}
               renderers={renderers}
             />,
