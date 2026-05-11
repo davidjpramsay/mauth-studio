@@ -297,6 +297,7 @@ test("adds a renderer-specific diagram graphConfig to a question", () => {
       diagram: {
         graphConfig: {
           type: "geometricConstruction",
+          data: {},
           options: {
             substanceSource: "Point A\nLabel A $A$\n",
           },
@@ -520,6 +521,7 @@ test("normalises low-level assistant solution patches before applying them", () 
             text:
               "**Solution (5 marks).** Let $\\ell$ be the tangent.\n\n" +
               "$$\n\\angle(\\ell,AB)=\\angle ACB. \\qquad \\text{[1 mark]}\n$$\n" +
+              "$$AB=AC.$$ \\text{[1 mark]}\n" +
               "This proves the result. $\\qquad$ **[1 mark for clear conclusion]**",
           },
         },
@@ -534,7 +536,8 @@ test("normalises low-level assistant solution patches before applying them", () 
   assert(!text.includes("[1 mark]"));
   assert(!text.includes("Solution (5 marks)"));
   assert.match(text, /\$\$\n\\angle\(\\ell,AB\)=\\angle ACB\.\n\$\$ \[\[marks:1\]\]/);
-  assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 2);
+  assert.match(text, /\$\$AB=AC\.\$\$ \[\[marks:1\]\]/);
+  assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 3);
 });
 
 test("rejects malformed high-level authoring payloads before editing the document", () => {

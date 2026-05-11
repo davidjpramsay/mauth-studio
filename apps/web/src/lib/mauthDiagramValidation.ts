@@ -620,6 +620,7 @@ function validatePenroseDiagram(config: Record<string, unknown>, path: string, i
   validateCommonGraphConfig(config, path, issues);
   const hasSubstanceSource = hasPenroseSubstanceSource(config, path, issues);
   const data = hasSubstanceSource ? optionalRecord(config, "data", path, issues) : requiredRecord(config, "data", path, issues);
+  if (hasSubstanceSource && data && !hasOwn(data, "objects") && !hasOwn(data, "relationships")) return;
   if (data) validatePenrosePointData(data, `${path}.data`, issues, vectorOnly);
 }
 

@@ -75,6 +75,7 @@ The in-app assistant should be treated as the primary AI workflow, not a conveni
 - Before `mauth.files.*` tools reach the project-file driver, the assistant file-tool boundary validates file-operation payload fields. It checks required paths/names, file content for save/save-as, multi-path arrays, folder targets, rename/version fields, metadata objects, and revision fields. Validation failures return repairable `validationIssues` paths such as `arguments.path`, `arguments.paths[1]`, or `arguments.content`; no file operation runs.
 - The backend reads provider token usage and returns a per-request estimated cost summary. The frontend attaches that summary as a small footer to the assistant reply for the whole teacher prompt, including internal tool-loop calls. Keep pricing tables backend-owned, treat them as estimates, and update them from the official provider pricing page when models change.
 - `pnpm eval:assistant:live` runs a small live provider eval for the focused teacher prompt "write Question 1 with a circle-geometry proof and solution". `pnpm eval:assistant:live:all` covers representative focused cases: writing a circle-geometry question, adding the standard circle/tangent diagram, writing a multipart probability question, and ensuring a solution. These are paid real-provider checks, so use them deliberately.
+- `pnpm smoke:assistant:self` runs a free deterministic assistant self-smoke suite. It puts the assistant in realistic teacher-request situations, executes the same `mauth.author.*` and `mauth.actions.*` tools the provider uses, then grades the resulting document for behaviours such as preserving diagrams during mark edits, using native Penrose Substance for geometry follow-ups, sanitising visible mark notes, targeting multipart solutions, rejecting malformed diagrams, and running validation after authoring.
 - Provider keys are backend-only. Put `OPENAI_API_KEY` in the repo-root `.env` or `apps/api/.env`; do not expose it through Vite/frontend environment variables. `OPENAI_MODEL` is optional.
 - `pnpm test:web-actions` covers the action engine and assistant tool dispatcher.
 
@@ -116,6 +117,7 @@ The in-app chatbox UI/provider adapter must call `runMauthAssistantAdapterTool`.
 5. Add high-level authoring tools for common teacher prompts: write all solutions, repair all solution spaces, add more diagram families, layout pass, print check, combine tests, and generate marking key. The current focused examples are `mauth.author.replaceQuestion`, `mauth.author.addDiagram`, and `mauth.author.ensureSolutions`.
 6. Add project-level intelligence: search files, compare tests, duplicate/rename/move safely, and later integrate question-bank and curriculum-bank retrieval.
 7. Add an evaluation set: saved tests and prompts that compare in-app assistant outcomes against expected document changes, validation status, visual screenshots, and print behaviour.
+8. Keep the deterministic `pnpm smoke:assistant:self` suite as the first cheap gate before paid provider evals. Add scenarios whenever the assistant makes a new class of mistake, then fix the tool contract or brain rules until the scenario passes.
 
 ## Guardrails
 

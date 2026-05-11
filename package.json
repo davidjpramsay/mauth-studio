@@ -7,6 +7,7 @@
     "build:web": "pnpm --dir apps/web build",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000",
     "smoke:diagram-gallery": "node scripts/diagram-gallery-smoke.mjs",
+    "smoke:assistant:self": "node --experimental-strip-types scripts/assistant-self-smoke.mts",
     "smoke:file-manager": "node scripts/file-manager-smoke.mjs",
     "eval:assistant:live": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py",
     "eval:assistant:live:all": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case all",

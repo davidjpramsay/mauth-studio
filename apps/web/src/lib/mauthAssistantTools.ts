@@ -723,7 +723,7 @@ const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
 const VISIBLE_MARK_NOTE_PATTERN = /(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))/i;
 const VISIBLE_MARK_PROSE_PATTERN = /(?:^|\s)(\d+)\s*marks?(?:\s+for\b.*)?$/i;
 const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
-  /\s*(?:\$\\qquad\$\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\)|(\d+)\s*marks?(?:\s+for\b.*)?)(?:\*\*)?\s*$/i;
+  /\s*(?:\$\\qquad\$\s*)?(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\)|(\d+)\s*marks?(?:\s+for\b.*)?)(?:\*\*)?(?:\s*\})?\s*$/i;
 const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
