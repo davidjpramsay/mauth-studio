@@ -57,6 +57,7 @@ Current durable conventions:
 - Every worked solution should fit within its paired student slot. If it does not, first tighten the solution and use side-by-side diagram placement where helpful; if it still does not fit, increase the paired answer space.
 - Do not stretch solution working to fill the whole reserved student space. Write compact solutions first; unused slot space should remain after the solution.
 - High-level assistant solution tools normalise visible `[1 mark]`, `(1 mark)`, and `1 mark for...` notes into hidden `[[marks:n]]` ticks, add fallback ticks when a solution omits them, and raise student-space lines to the mark/solution-fit minimum. This is a safety net; future agents should still write hidden mark annotations deliberately.
+- Mark-allocation, red-tick, QED-mark, and solution-only edits should use the solution authoring path, not whole-question replacement. This preserves existing shared diagrams and question modules while updating marks and hidden `[[marks:n]]` annotations.
 - Respect manual teacher edits to space lines and diagram alignment unless they create a clear layout problem.
 - Mark solution-only graph features as `solutionOnly` so graph annotations hide on the student copy.
 - Solution text aligns with the content column for its question, part, or subpart.
@@ -86,8 +87,9 @@ In-app assistant work should use the assistant tool loop documented in `docs/ai-
 For focused teacher prompts, the in-app assistant should use high-level authoring tools before falling back to low-level action batches:
 
 - Use `mauth.author.replaceQuestion` for writing or replacing one existing question.
+- Do not use `mauth.author.replaceQuestion` for mark-allocation or solution-only edits. If it is used for a genuine question rewrite, omitted diagram fields preserve existing diagrams; use an explicit empty diagram list only when the teacher asks to remove diagrams.
 - Use `mauth.author.addDiagram` for follow-ups such as "add the diagram to Question 1". Choose the renderer first, then emit a real `graphConfig`: Penrose `geometricConstruction` for schematic geometry and circle theorem diagrams, `graph2d` for coordinate/function graphs, `vector2d` for coordinate vectors, `statsChart` for statistics, `setDiagram` for Venn diagrams, `graph3d` for 3D diagrams, and `image` for uploads. Do not use canned `standardDiagram` recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in `graphConfig.options.substanceSource`; do not invent a second geometry translation schema.
-- Use `mauth.author.ensureSolutions` for compact solution requests when the current document summary contains enough question text. The tool should create or resize the matched student answer space and add solution-only worked-solution text.
+- Use `mauth.author.ensureSolutions` for compact solution and marking-key requests when the current document summary contains enough question text. The tool should create or resize the matched student answer space, update marks when supplied, preserve shared diagrams, and add solution-only worked-solution text.
 
 In-app chatbox file operations should use the `mauth.files.*` tools documented in `docs/ai-chatbox-readiness.md` and implemented in `apps/web/src/lib/mauthAssistantFileTools.ts`. Use those tools for list/open/save/save-as/create-folder/duplicate/rename/move/delete/version operations. The chatbox adapter still owns active editor state and autosave draft updates after a file tool returns.
 

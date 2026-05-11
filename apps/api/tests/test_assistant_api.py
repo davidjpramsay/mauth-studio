@@ -352,6 +352,53 @@ def test_focused_solution_prompt_gets_direct_tool_hint():
     assert "[1 mark]" in instructions
 
 
+def test_focused_mark_allocation_prompt_uses_solution_tool_not_replace_question():
+    summary = {
+        "counts": {"questions": 1, "marksTotal": 5},
+        "questions": [
+            {
+                "id": "q1",
+                "index": 0,
+                "marks": 5,
+                "modules": [
+                    {"kind": "text", "textPreview": "A circle proof question."},
+                    {"kind": "diagram", "diagramType": "geometricConstruction"},
+                    {"kind": "text", "textPreview": "Solution. The final QED statement gets a mark."},
+                ],
+            }
+        ],
+    }
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="In question 1 reduce this to 4 marks. The QED statement at the end does not deserve a mark.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(summary, [message])
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_tool"]
+    assert "Do not use mauth_author_replace_question" in instructions
+    assert "Preserve existing diagrams" in instructions
+    assert 'marks":4' in instructions
+
+
+def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Write question 1 as a 5 mark circle geometry proof question.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": [{"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Old question."}]}]},
+        [message],
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "mauth_author_replace_question" in instructions
+    assert "Omit diagram fields to preserve existing diagrams" in instructions
+
+
 def test_focused_circle_diagram_prompt_gets_penrose_renderer_hint():
     instructions = openai_assistant.assistant_instructions(
         {"questions": [{"id": "q1", "index": 0, "modules": []}]},

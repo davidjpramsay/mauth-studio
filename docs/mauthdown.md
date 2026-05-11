@@ -137,6 +137,8 @@ Solution validation runs as assistant/editor infrastructure. It scans marked que
 
 Validator issue cards include quick fixes for common authoring mistakes: add a full student-space/solution slot, add the missing solution after an existing answer space, add the missing answer space before an existing solution, or increase the paired answer-space line count. These fixes follow the same structure expected from AI-authored solution passes.
 
+For assistant/API editing, mark-allocation and solution-only changes must not replace the whole question. Use the solution authoring path so ordinary shared modules, especially diagrams, remain untouched. If the high-level question replacement path is used for a genuine question rewrite, omitted diagram fields preserve existing diagrams; only an explicit empty diagram list or explicit preserve flag set false removes them.
+
 ```md
 :::text
 **Solution.**

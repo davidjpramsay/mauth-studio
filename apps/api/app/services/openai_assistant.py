@@ -534,6 +534,24 @@ def focused_tool_hint(
     messages: list[AssistantChatMessage] | None = None,
 ) -> str:
     text = request_text(messages)
+    asks_for_marking_edit = any(
+        term in text
+        for term in (
+            "mark",
+            "marks",
+            "mark allocation",
+            "allocation",
+            "tick",
+            "ticks",
+            "qed",
+            "deserve a mark",
+            "reduce to",
+            "increase to",
+        )
+    )
+    asks_to_write_question = any(
+        term in text for term in ("write question", "replace question", "make question", "create question")
+    )
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -551,12 +569,23 @@ def focused_tool_hint(
     has_question_text = bool(selected_question and question_summary_has_text(selected_question))
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
 
-    if any(term in text for term in ("solution", "worked", "answer key", "marking key")) and has_question_text:
+    if asks_to_write_question:
         return (
-            "Focused tool routing hint: this is a solution request and the compact summary already includes enough "
+            "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
+            f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
+            "and solutionText when a solution is requested. Omit diagram fields to preserve existing diagrams; use "
+            "diagrams: [] only when explicitly removing diagrams."
+        )
+    if (
+        any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
+    ) and has_question_text:
+        return (
+            "Focused tool routing hint: this is a solution/mark-allocation request and the compact summary already includes enough "
             f"Question {question_number} text. Your first tool call should be mauth_author_ensure_solutions with "
-            f'{{"questions":[{{"questionNumber":{question_number},"studentSpaceLines":8,"solutionText":"... [[marks:1]]"}}]}}. '
-            "Do not call mauth.document.inspect first."
+            f'{{"questions":[{{"questionNumber":{question_number},"marks":4,"studentSpaceLines":8,"solutionText":"... [[marks:1]]"}}]}} '
+            "when changing solution ticks or worked solution text. Use hidden [[marks:n]] annotations only; do not show visible "
+            "[1 mark] notes. Do not use mauth_author_replace_question for a mark allocation tweak, because it replaces the "
+            "whole question. Do not call mauth.document.inspect first."
         )
     if any(term in text for term in ("diagram", "graph")) and any(
         term in combined_text for term in ("circle", "tangent")
@@ -573,12 +602,6 @@ def focused_tool_hint(
             "question statement; any auxiliary centre point should be hidden with Label centre $\\,$ and HidePoint(centre). "
             "The tangent line must be constrained with Tangent(lineName, circleName, A), so it touches the circle only at A. "
             "Do not use standardDiagram recipe names; choose the renderer and emit a real graphConfig."
-        )
-    if any(term in text for term in ("write question", "replace question", "make question", "create question")):
-        return (
-            "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
-            f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
-            "and solutionText when a solution is requested."
         )
     return "No focused high-level tool hint."
 
@@ -698,8 +721,8 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
         "name": "mauth_author_replace_question",
         "description": (
             "Replace one existing Mauth question with high-quality teacher-ready question content. "
-            "Use for focused requests like writing or replacing one question. This is cheaper and more reliable "
-            "than low-level module action batches."
+            "Use for focused requests like writing or replacing one question. Do not use this for mark-allocation "
+            "or solution-only tweaks. This is cheaper and more reliable than low-level module action batches."
         ),
         "parameters": {
             "type": "object",
@@ -759,14 +782,22 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                     "type": "object",
                     "description": (
                         "Optional existing Mauth diagram block: { graphConfig, diagramAlign }. "
-                        "Omit unless you can produce a valid supported graphConfig."
+                        "Omit to preserve existing diagrams. Supply a valid supported graphConfig only when adding or "
+                        "replacing the question's diagrams."
                     ),
                     "additionalProperties": True,
                 },
                 "diagrams": {
                     "type": "array",
-                    "description": "Optional list of Mauth diagram blocks.",
+                    "description": "Optional list of replacement Mauth diagram blocks. Use [] only when intentionally removing all existing diagrams.",
                     "items": {"type": "object", "additionalProperties": True},
+                },
+                "preserveExistingDiagrams": {
+                    "type": "boolean",
+                    "description": (
+                        "Default true when diagram/diagrams is omitted. Set false only when the teacher explicitly asks "
+                        "to remove existing diagrams."
+                    ),
                 },
                 "parts": {
                     "type": "array",
@@ -798,7 +829,11 @@ def mauth_author_replace_question_tool_definition() -> dict[str, Any]:
                             },
                             "includeSolution": {"type": "boolean"},
                             "diagram": {"type": "object", "additionalProperties": True},
-                            "diagrams": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                            "diagrams": {
+                                "type": "array",
+                                "description": "Optional replacement diagrams for this part. Omit to leave existing diagram decisions alone.",
+                                "items": {"type": "object", "additionalProperties": True},
+                            },
                             "pageBreakBefore": {"type": "boolean"},
                         },
                         "required": ["text", "marks", "studentSpaceLines"],
@@ -894,7 +929,8 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
         "name": "mauth_author_ensure_solutions",
         "description": (
             "Add or replace solution blocks and student answer spaces for one or more existing questions. "
-            "Use for focused solution-key requests when the model has enough question context to write the solutions."
+            "Use for focused solution-key and mark-allocation requests when the model has enough question context to "
+            "write or repair the solutions. This preserves existing non-solution question content and diagrams."
         ),
         "parameters": {
             "type": "object",
@@ -907,6 +943,18 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                         "properties": {
                             "questionNumber": {"type": "integer", "minimum": 1},
                             "questionId": {"type": "string"},
+                            "marks": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "description": "Optional updated question marks for non-part questions.",
+                            },
+                            "questionMarks": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "description": "Optional updated question-level marks when parts carry separate marks. Usually omit.",
+                            },
                             "studentSpaceLines": {
                                 "type": "integer",
                                 "minimum": 1,
@@ -930,6 +978,12 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                                     "properties": {
                                         "label": {"type": "string"},
                                         "partId": {"type": "string"},
+                                        "marks": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 100,
+                                            "description": "Optional updated marks for this part.",
+                                        },
                                         "studentSpaceLines": {
                                             "type": "integer",
                                             "minimum": 1,
@@ -970,6 +1024,21 @@ def assistant_tool_definitions(
     asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
     asks_to_add = any(term in text for term in ("add", "include", "insert", "put", "place", "draw", "sketch"))
     asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
+    asks_for_marking_edit = any(
+        term in text
+        for term in (
+            "mark",
+            "marks",
+            "mark allocation",
+            "allocation",
+            "tick",
+            "ticks",
+            "qed",
+            "deserve a mark",
+            "reduce to",
+            "increase to",
+        )
+    )
     asks_to_write_question = any(
         term in text for term in ("write question", "replace question", "make question", "create question")
     )
@@ -981,8 +1050,8 @@ def assistant_tool_definitions(
         return [mauth_author_replace_question_tool_definition()]
     if has_specific_question and asks_for_diagram and asks_to_add:
         return [mauth_author_add_diagram_tool_definition()]
-    if has_specific_question and asks_for_solution:
-        return [mauth_author_ensure_solutions_tool_definition()]
+    if has_specific_question and (asks_for_solution or asks_for_marking_edit):
+        return [mauth_author_ensure_solutions_tool_definition(), mauth_tool_definition()]
     if any(term in text for term in file_only_terms) and not any(
         term in text for term in ("question", "solution", "diagram", "format", "layout", "exam")
     ):
@@ -1027,6 +1096,8 @@ Document-edit workflow:
 
 Tool-call contract:
 - For focused requests to write or replace one existing question, use the direct mauth_author_replace_question tool. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists.
+- For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
+- In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, EqualLength, and LabelsAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre).
 - For focused requests to add or write a worked solution for a named question, use mauth_author_ensure_solutions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.

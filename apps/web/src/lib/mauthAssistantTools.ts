@@ -395,7 +395,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.replaceQuestion",
         description:
-          "Replace one existing question from a compact authoring payload. The tool builds the Mauth modules, student-only answer space, solution-only solution text, validates the generated action batch, and applies it.",
+          "Replace one existing question from a compact authoring payload. The tool builds the Mauth modules, student-only answer space, solution-only solution text, validates the generated action batch, and applies it. Omitted diagram fields preserve existing diagrams.",
       },
       {
         name: "mauth.author.addDiagram",
@@ -405,7 +405,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.ensureSolutions",
         description:
-          "Add or replace solution-only worked solutions and ensure matching student-only answer spaces for existing questions or parts.",
+          "Add or replace solution-only worked solutions, optionally update marks, and ensure matching student-only answer spaces for existing questions or parts while preserving shared question modules.",
       },
     ],
     actionTypes: {
@@ -484,6 +484,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
     workflow: [
       "Inspect the current document before proposing edits.",
       "For focused one-question writing or replacement requests, prefer mauth.author.replaceQuestion.",
+      "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",
@@ -962,7 +963,34 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
   return blocks;
 }
 
-function contentBlocksForAuthorQuestion(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {
+function hasExplicitDiagramReplacement(args: Record<string, unknown>) {
+  return (
+    Object.prototype.hasOwnProperty.call(args, "diagram") ||
+    Object.prototype.hasOwnProperty.call(args, "diagrams") ||
+    args.preserveExistingDiagrams === false
+  );
+}
+
+function preservedDiagramBlocks(existingQuestion: MauthQuestionLike | undefined) {
+  return (existingQuestion?.contentBlocks ?? []).filter((block): block is ContentBlock => block.kind === "diagram");
+}
+
+function diagramBlocksForAuthorQuestion(
+  args: Record<string, unknown>,
+  questionId: string,
+  issues: MauthActionValidationIssue[],
+  existingQuestion?: MauthQuestionLike,
+) {
+  if (hasExplicitDiagramReplacement(args)) return diagramBlocksFromArgs(args, questionId, issues);
+  return preservedDiagramBlocks(existingQuestion);
+}
+
+function contentBlocksForAuthorQuestion(
+  args: Record<string, unknown>,
+  questionId: string,
+  issues: MauthActionValidationIssue[],
+  existingQuestion?: MauthQuestionLike,
+) {
   const text = textFromArgs(args);
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
@@ -981,7 +1009,7 @@ function contentBlocksForAuthorQuestion(args: Record<string, unknown>, questionI
       kind: "text",
       text,
     },
-    ...diagramBlocksFromArgs(args, questionId, issues),
+    ...diagramBlocksForAuthorQuestion(args, questionId, issues, existingQuestion),
   ];
 
   if (!hasParts) {
@@ -1095,7 +1123,7 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
   }
 
   const marks = positiveInteger(args.marks, question.marks || 1, 0, 100);
-  const contentBlocks = contentBlocksForAuthorQuestion(args, question.id, issues);
+  const contentBlocks = contentBlocksForAuthorQuestion(args, question.id, issues, question);
   const parts = authorPartsFromArgs(args, question.id, issues);
   if (issues.length) {
     return {
@@ -1324,18 +1352,21 @@ function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extend
           part.contentBlocks,
           partSolutionText,
           partPayload.studentSpaceLines,
-          part.marks,
+          positiveInteger(partPayload.marks, part.marks, 0, 100),
         );
         return {
           ...part,
+          marks: positiveInteger(partPayload.marks, part.marks, 0, 100),
           contentBlocks,
           itemOrder: blockOrder(contentBlocks),
         };
       });
+      const marks = positiveInteger(entry.questionMarks ?? entry.marks, question.marks, 0, 100);
       actions.push({
         type: "question.update",
         questionId: question.id,
         patch: {
+          marks,
           parts,
           itemOrder: questionOrder(question.contentBlocks, parts),
         },
@@ -1343,17 +1374,13 @@ function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extend
       return;
     }
 
-    const contentBlocks = blocksWithEnsuredSolution(
-      question.id,
-      question.contentBlocks,
-      solutionText,
-      entry.studentSpaceLines,
-      question.marks,
-    );
+    const marks = positiveInteger(entry.marks ?? entry.questionMarks, question.marks, 0, 100);
+    const contentBlocks = blocksWithEnsuredSolution(question.id, question.contentBlocks, solutionText, entry.studentSpaceLines, marks);
     actions.push({
       type: "question.update",
       questionId: question.id,
       patch: {
+        marks,
         contentBlocks,
         itemOrder: questionOrder(contentBlocks, question.parts ?? []),
       },

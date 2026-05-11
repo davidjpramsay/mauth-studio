@@ -204,6 +204,46 @@ test("replaces a question from a compact high-level authoring payload", () => {
   assert.equal(solution?.visibility, "solution");
 });
 
+test("preserves existing diagrams when replacing question text without diagram arguments", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 4,
+      questionText: "Find the new value of $x$.",
+      studentSpaceLines: 8,
+      solutionText: "$x=4$. [[marks:4]]",
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+  const diagram = blocks.find((block) => block.kind === "diagram");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.document?.questions[0].marks, 4);
+  assert.equal(diagram?.id, "d1");
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "statsChart");
+});
+
+test("allows explicit diagram removal when replace question supplies an empty diagram list", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 3,
+      questionText: "Find the value without a diagram.",
+      studentSpaceLines: 6,
+      diagrams: [],
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    blocks.some((block) => block.kind === "diagram"),
+    false,
+  );
+});
+
 test("replaces a question with structured parts from a high-level authoring payload", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
@@ -235,6 +275,7 @@ test("replaces a question with structured parts from a high-level authoring payl
   assert.equal(question?.parts.length, 2);
   assert.deepEqual(question?.itemOrder, [
     { kind: "block", id: "q1-question-text" },
+    { kind: "block", id: "d1" },
     { kind: "part", id: "q1-part-1" },
     { kind: "part", id: "q1-part-2" },
   ]);
@@ -364,6 +405,34 @@ test("ensures top-level solution and student space for a question", () => {
   assert.deepEqual(result.changedIds, ["q1"]);
   assert.equal(studentSpace?.kind === "space" ? studentSpace.lines : 0, 9);
   assert.match(solution?.kind === "text" ? solution.text : "", /^\*\*Solution\.\*\*/);
+});
+
+test("updates top-level marks through the solution authoring wrapper without removing diagrams", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.ensureSolutions",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          marks: 4,
+          studentSpaceLines: 10,
+          solutionText:
+            "First valid step. [[marks:1]]\nSecond valid step. [[marks:1]]\nThird valid step. [[marks:1]]\nConclusion. [[marks:1]]",
+        },
+      ],
+    },
+  });
+  const question = result.document?.questions[0];
+  const blocks = question?.contentBlocks ?? [];
+  const solution = blocks.find((block) => block.kind === "text" && block.visibility === "solution");
+
+  assert.equal(result.ok, true);
+  assert.equal(question?.marks, 4);
+  assert.equal(
+    blocks.some((block) => block.kind === "diagram" && block.id === "d1"),
+    true,
+  );
+  assert.equal(solution?.kind === "text" ? solution.text.includes("[[marks:1]]") : false, true);
 });
 
 test("normalises visible assistant mark notes into hidden solution tick annotations", () => {
