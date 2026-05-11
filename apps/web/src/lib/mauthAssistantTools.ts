@@ -661,7 +661,7 @@ function sanitizeAssistantAction<Q extends MauthQuestionLike, F extends object, 
       action.patch.visibility === "solution" ||
       action.patch.solutionOnly === true ||
       SOLUTION_HEADING_PATTERN.test(nextText);
-    if (isSolutionPatch && (hasVisibleMarkNote(nextText) || MARK_TICK_ANNOTATION_PATTERN.test(nextText))) {
+    if (isSolutionPatch && (hasVisibleMarkNote(nextText) || hasMarkAnnotation(nextText))) {
       return { ...action, patch: { ...action.patch, text: solutionBlockText(nextText) } };
     }
   }
@@ -720,14 +720,15 @@ function authorBlockId(questionId: string, suffix: string) {
 
 const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
 const VISIBLE_MARK_NOTE_PATTERN = /(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))/i;
+const VISIBLE_MARK_PROSE_PATTERN = /(?:^|\s)(\d+)\s*marks?(?:\s+for\b.*)?$/i;
 const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
-  /\s*(?:\$\\qquad\$\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?\s*$/i;
+  /\s*(?:\$\\qquad\$\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\)|(\d+)\s*marks?(?:\s+for\b.*)?)(?:\*\*)?\s*$/i;
 const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
 
-function markCountFromNote(squareCount: string | undefined, roundCount: string | undefined) {
-  return Math.max(0, Math.min(6, Math.round(Number(squareCount ?? roundCount) || 0)));
+function markCountFromNote(...counts: Array<string | undefined>) {
+  return Math.max(0, Math.min(6, Math.round(Number(counts.find(Boolean)) || 0)));
 }
 
 function normalizeDisplayMathMarkAnnotations(value: string) {
@@ -747,22 +748,135 @@ function normalizeDisplayMathMarkAnnotations(value: string) {
 }
 
 function normalizeSolutionMarkAnnotations(value: string) {
-  return normalizeDisplayMathMarkAnnotations(value)
+  const normalized = normalizeDisplayMathMarkAnnotations(value)
     .replace(MARK_TICK_ANNOTATION_PATTERN, (_, count: string) => `[[marks:${count}]]`)
     .split("\n")
     .map((line) =>
-      line.replace(TRAILING_VISIBLE_MARK_NOTE_PATTERN, (_match, squareCount: string | undefined, roundCount: string | undefined) => {
-        const count = markCountFromNote(squareCount, roundCount);
-        return count ? ` [[marks:${count}]]` : "";
-      }),
+      line.replace(
+        TRAILING_VISIBLE_MARK_NOTE_PATTERN,
+        (_match, squareCount: string | undefined, roundCount: string | undefined, proseCount: string | undefined) => {
+          const count = markCountFromNote(squareCount, roundCount, proseCount);
+          return count ? ` [[marks:${count}]]` : "";
+        },
+      ),
     )
     .join("\n");
+  return attachStandaloneMarkAnnotations(normalized);
 }
 
-function solutionBlockText(value: string) {
+function markAnnotationTotal(value: string) {
+  const matches = [...value.matchAll(MARK_TICK_ANNOTATION_PATTERN)];
+  return matches.reduce((sum, match) => sum + markCountFromNote(match[1]), 0);
+}
+
+function hasMarkAnnotation(value: string) {
+  return /\[\[\s*marks\s*:\s*\d+\s*\]\]/i.test(value);
+}
+
+function appendMarkAnnotation(line: string, marks: number) {
+  return marks > 0 ? `${line.replace(/\s+$/, "")} [[marks:${marks}]]` : line;
+}
+
+function isSolutionMarkCandidateLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (SOLUTION_HEADING_PATTERN.test(trimmed)) return false;
+  if (/^\[\[marks:\s*\d+\]\]$/i.test(trimmed)) return false;
+  if (trimmed === "$$") return false;
+  return true;
+}
+
+function attachStandaloneMarkAnnotations(value: string) {
+  const lines = value.split("\n");
+  const nextLines: string[] = [];
+  for (const line of lines) {
+    const standaloneMark = line.trim().match(/^\[\[marks:\s*(\d+)\]\]$/i);
+    if (!standaloneMark) {
+      nextLines.push(line);
+      continue;
+    }
+    const targetIndex = [...nextLines].reverse().findIndex(isSolutionMarkCandidateLine);
+    if (targetIndex < 0) {
+      nextLines.push(line.trim());
+      continue;
+    }
+    const actualIndex = nextLines.length - 1 - targetIndex;
+    nextLines[actualIndex] = appendMarkAnnotation(nextLines[actualIndex], markCountFromNote(standaloneMark[1]));
+  }
+  return nextLines.join("\n");
+}
+
+function compactSolutionText(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function addFallbackMarkAnnotations(value: string, expectedMarks = 0) {
+  const marks = positiveInteger(expectedMarks, 0, 0, 20);
+  if (!marks || markAnnotationTotal(value) >= marks) return value;
+
+  const missingMarks = marks - markAnnotationTotal(value);
+  const lines = value.split("\n");
+  const candidateIndexes = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => isSolutionMarkCandidateLine(line))
+    .map(({ index }) => index);
+  if (!candidateIndexes.length) return appendMarkAnnotation(value, missingMarks);
+
+  if (markAnnotationTotal(value) > 0) {
+    const lastCandidateIndex = [...candidateIndexes].reverse().find((index) => !hasMarkAnnotation(lines[index]));
+    const targetIndex = lastCandidateIndex ?? candidateIndexes[candidateIndexes.length - 1];
+    lines[targetIndex] = appendMarkAnnotation(lines[targetIndex], missingMarks);
+    return lines.join("\n");
+  }
+
+  let remaining = marks;
+  const selectedIndexes = candidateIndexes.slice(0, Math.min(marks, candidateIndexes.length));
+  for (const [selectedPosition, index] of selectedIndexes.entries()) {
+    const isFinalSelectedLine = selectedPosition === selectedIndexes.length - 1;
+    const marksForLine = isFinalSelectedLine ? remaining : 1;
+    lines[index] = appendMarkAnnotation(lines[index], marksForLine);
+    remaining -= marksForLine;
+  }
+  return lines.join("\n");
+}
+
+function solutionTextLineEstimate(value: string) {
+  const visibleText = value.replace(MARK_TICK_ANNOTATION_PATTERN, "").replace(SOLUTION_HEADING_PATTERN, "").trim();
+  const lines = visibleText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const displayMathCount = (visibleText.match(/\$\$[\s\S]*?\$\$/g) ?? []).length;
+  const alignedBreakCount = (visibleText.match(/\\\\/g) ?? []).length;
+  return Math.max(1, lines.length + displayMathCount + alignedBreakCount);
+}
+
+const MIN_AUTHOR_STUDENT_SPACE_LINES = 4;
+const MAX_AUTHOR_STUDENT_SPACE_LINES = 60;
+
+function defaultAuthorStudentSpaceLines(marks: unknown, fallback: number) {
+  const safeMarks = positiveInteger(marks, 0, 0, 100);
+  if (!safeMarks) return fallback;
+  return Math.max(MIN_AUTHOR_STUDENT_SPACE_LINES, Math.min(18, Math.ceil(safeMarks * 3 + 2)));
+}
+
+function resolvedStudentSpaceLines(requestedLines: unknown, solutionText: string, expectedMarks: unknown, fallback: number, max = 40) {
+  const defaultLines = defaultAuthorStudentSpaceLines(expectedMarks, fallback);
+  const requested = positiveInteger(requestedLines, defaultLines, 1, max);
+  if (!solutionText.trim()) return Math.max(requested, defaultLines);
+  const solutionLines = solutionTextLineEstimate(solutionBlockText(solutionText, positiveInteger(expectedMarks, 0, 0, 100)));
+  return Math.max(requested, defaultLines, Math.min(max, Math.max(MIN_AUTHOR_STUDENT_SPACE_LINES, solutionLines + 2)));
+}
+
+function solutionBlockText(value: string, expectedMarks = 0) {
   const normalized = normalizeSolutionMarkAnnotations(value.trim());
-  if (!SOLUTION_HEADING_PATTERN.test(normalized)) return `**Solution.**\n\n${normalized}`;
-  const body = normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart();
+  const bodySource = SOLUTION_HEADING_PATTERN.test(normalized) ? normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart() : normalized;
+  const body = compactSolutionText(addFallbackMarkAnnotations(bodySource, expectedMarks));
   return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
 }
 
@@ -773,11 +887,13 @@ function isSolutionTextBlock(block: ContentBlock): block is TextContentBlock {
 }
 
 function hasVisibleMarkNote(value: string) {
-  return VISIBLE_MARK_NOTE_PATTERN.test(value) || /Solution\s*\(\s*\d+\s*marks?\s*\)/i.test(value);
+  return (
+    VISIBLE_MARK_NOTE_PATTERN.test(value) || VISIBLE_MARK_PROSE_PATTERN.test(value) || /Solution\s*\(\s*\d+\s*marks?\s*\)/i.test(value)
+  );
 }
 
 function sanitizeAssistantSolutionBlock(block: ContentBlock): ContentBlock {
-  if (!isSolutionTextBlock(block) || (!hasVisibleMarkNote(block.text) && !MARK_TICK_ANNOTATION_PATTERN.test(block.text))) return block;
+  if (!isSolutionTextBlock(block) || (!hasVisibleMarkNote(block.text) && !hasMarkAnnotation(block.text))) return block;
   return { ...block, text: solutionBlockText(block.text) };
 }
 
@@ -851,7 +967,14 @@ function contentBlocksForAuthorQuestion(args: Record<string, unknown>, questionI
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
   const hasParts = Array.isArray(args.parts) && args.parts.length > 0;
-  const studentSpaceLines = positiveInteger(args.studentSpaceLines ?? args.answerLines ?? args.lines, 10, 1, 40);
+  const marks = positiveInteger(args.marks, 1, 0, 100);
+  const studentSpaceLines = resolvedStudentSpaceLines(
+    args.studentSpaceLines ?? args.answerLines ?? args.lines,
+    solutionText,
+    marks,
+    10,
+    40,
+  );
   const blocks: ContentBlock[] = [
     {
       id: authorBlockId(questionId, "question-text"),
@@ -874,7 +997,7 @@ function contentBlocksForAuthorQuestion(args: Record<string, unknown>, questionI
     blocks.push({
       id: authorBlockId(questionId, "solution"),
       kind: "text",
-      text: solutionBlockText(solutionText),
+      text: solutionBlockText(solutionText, marks),
       visibility: "solution",
     });
   }
@@ -895,7 +1018,8 @@ function partTextFromArgs(args: Record<string, unknown>) {
 function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: string, issues: MauthActionValidationIssue[]) {
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
-  const studentSpaceLines = positiveInteger(args.studentSpaceLines ?? args.answerLines ?? args.lines, 6, 1, 40);
+  const marks = positiveInteger(args.marks, 1, 0, 100);
+  const studentSpaceLines = resolvedStudentSpaceLines(args.studentSpaceLines ?? args.answerLines ?? args.lines, solutionText, marks, 6, 40);
   const blocks: ContentBlock[] = [
     ...diagramBlocksFromArgs(args, partId, issues),
     {
@@ -910,7 +1034,7 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
     blocks.push({
       id: authorBlockId(partId, "solution"),
       kind: "text",
-      text: solutionBlockText(solutionText),
+      text: solutionBlockText(solutionText, marks),
       visibility: "solution",
     });
   }
@@ -1116,8 +1240,14 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
   ];
 }
 
-function blocksWithEnsuredSolution(scopeId: string, blocks: readonly ContentBlock[], solutionText: string, requestedLines: unknown) {
-  const lines = positiveInteger(requestedLines, 8, 1, 60);
+function blocksWithEnsuredSolution(
+  scopeId: string,
+  blocks: readonly ContentBlock[],
+  solutionText: string,
+  requestedLines: unknown,
+  expectedMarks: unknown,
+) {
+  const lines = resolvedStudentSpaceLines(requestedLines, solutionText, expectedMarks, 8, MAX_AUTHOR_STUDENT_SPACE_LINES);
   const withoutSolutions = blocks.filter((block) => block.visibility !== "solution");
   const existingSpaceIndex = withoutSolutions.findIndex((block) => block.kind === "space" && block.visibility === "student");
   const withSpace =
@@ -1139,7 +1269,7 @@ function blocksWithEnsuredSolution(scopeId: string, blocks: readonly ContentBloc
     {
       id: authorBlockId(scopeId, "solution"),
       kind: "text" as const,
-      text: solutionBlockText(solutionText),
+      text: solutionBlockText(solutionText, positiveInteger(expectedMarks, 0, 0, 100)),
       visibility: "solution" as const,
     },
   ];
@@ -1189,7 +1319,13 @@ function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extend
           });
           return part;
         }
-        const contentBlocks = blocksWithEnsuredSolution(part.id, part.contentBlocks, partSolutionText, partPayload.studentSpaceLines);
+        const contentBlocks = blocksWithEnsuredSolution(
+          part.id,
+          part.contentBlocks,
+          partSolutionText,
+          partPayload.studentSpaceLines,
+          part.marks,
+        );
         return {
           ...part,
           contentBlocks,
@@ -1207,7 +1343,13 @@ function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extend
       return;
     }
 
-    const contentBlocks = blocksWithEnsuredSolution(question.id, question.contentBlocks, solutionText, entry.studentSpaceLines);
+    const contentBlocks = blocksWithEnsuredSolution(
+      question.id,
+      question.contentBlocks,
+      solutionText,
+      entry.studentSpaceLines,
+      question.marks,
+    );
     actions.push({
       type: "question.update",
       questionId: question.id,

@@ -198,7 +198,7 @@ test("replaces a question from a compact high-level authoring payload", () => {
   assert.equal(question?.parts.length, 0);
   assert.equal(text?.kind === "text" ? text.text : "", "A circle has centre $O$ and tangent $AT$. Prove the required angle result.");
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "statsChart");
-  assert.equal(space?.kind === "space" ? space.lines : 0, 12);
+  assert.equal(space?.kind === "space" ? space.lines : 0, 14);
   assert.equal(space?.visibility, "student");
   assert.match(solution?.kind === "text" ? solution.text : "", /^\*\*Solution\.\*\*/);
   assert.equal(solution?.visibility, "solution");
@@ -391,6 +391,51 @@ test("normalises visible assistant mark notes into hidden solution tick annotati
   assert(!text.includes("[1 mark]"));
   assert(!text.includes("Solution (5 marks)"));
   assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 3);
+});
+
+test("moves standalone visible mark notes onto solution lines", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.ensureSolutions",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          solutionText: "First theorem step.\n[1 mark]\n\nSecond theorem step.\n1 mark for conclusion",
+        },
+      ],
+    },
+  });
+  const solution = result.document?.questions[0].contentBlocks.find((block) => block.kind === "text" && block.visibility === "solution");
+  const text = solution?.kind === "text" ? solution.text : "";
+
+  assert.equal(result.ok, true);
+  assert.match(text, /First theorem step\. \[\[marks:1\]\]/);
+  assert.match(text, /Second theorem step\. \[\[marks:1\]\]/);
+  assert(!text.includes("[1 mark]"));
+  assert(!text.includes("1 mark for"));
+});
+
+test("adds fallback hidden mark ticks when high-level solution text omits mark annotations", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.ensureSolutions",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          studentSpaceLines: 4,
+          solutionText: "Use the tangent theorem.\nConclude the required result.",
+        },
+      ],
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+  const studentSpace = blocks.find((block) => block.kind === "space");
+  const solution = blocks.find((block) => block.kind === "text" && block.visibility === "solution");
+  const text = solution?.kind === "text" ? solution.text : "";
+
+  assert.equal(result.ok, true);
+  assert.equal((text.match(/\[\[marks:1\]\]/g) ?? []).length, 2);
+  assert.equal(studentSpace?.kind === "space" ? studentSpace.lines : 0, 8);
 });
 
 test("normalises low-level assistant solution patches before applying them", () => {

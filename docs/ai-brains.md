@@ -56,6 +56,7 @@ Current durable conventions:
 - Be generous with student answer space. If a concise worked solution needs more room than the original space, increase the adjacent answer `space` block so the student and solution copies keep matching pagination. When that space follows a left- or right-aligned diagram, the renderer uses one diagram response slot: an L-shaped side-and-under answer space for students, filled by wrapped solution content in the solution copy.
 - Every worked solution should fit within its paired student slot. If it does not, first tighten the solution and use side-by-side diagram placement where helpful; if it still does not fit, increase the paired answer space.
 - Do not stretch solution working to fill the whole reserved student space. Write compact solutions first; unused slot space should remain after the solution.
+- High-level assistant solution tools normalise visible `[1 mark]`, `(1 mark)`, and `1 mark for...` notes into hidden `[[marks:n]]` ticks, add fallback ticks when a solution omits them, and raise student-space lines to the mark/solution-fit minimum. This is a safety net; future agents should still write hidden mark annotations deliberately.
 - Respect manual teacher edits to space lines and diagram alignment unless they create a clear layout problem.
 - Mark solution-only graph features as `solutionOnly` so graph annotations hide on the student copy.
 - Solution text aligns with the content column for its question, part, or subpart.

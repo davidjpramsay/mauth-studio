@@ -348,6 +348,7 @@ def test_focused_solution_prompt_gets_direct_tool_hint():
     assert "mauth_author_ensure_solutions" in instructions
     assert "Do not call mauth.document.inspect first" in instructions
     assert "[[marks:n]]" in instructions
+    assert "hidden mark total match" in instructions
     assert "[1 mark]" in instructions
 
 
