@@ -205,6 +205,110 @@ test("includes browser-rendered preview metrics when supplied by the host", () =
   }
 });
 
+function circleGeometryDocument(source: string): MauthDocumentLike<MauthQuestionLike, TestFrontMatter, TestFormattingConfig> {
+  return {
+    frontMatter: {
+      schoolName: "Mauth School",
+      assessmentTitle: "Circle Test",
+    },
+    formattingConfig: {
+      showMarks: true,
+    },
+    questions: [
+      {
+        id: "circle-q",
+        marks: 5,
+        text: "A, B and C are points on a circle. The tangent to the circle at A is parallel to the chord BC. Prove that AB = AC.",
+        contentBlocks: [
+          diagramBlock("circle-d", {
+            type: "geometricConstruction",
+            data: {},
+            options: { substanceSource: source },
+          }),
+          spaceBlock("circle-space", 10),
+        ],
+        parts: [],
+        itemOrder: [
+          { kind: "block", id: "circle-d" },
+          { kind: "block", id: "circle-space" },
+        ],
+      },
+    ],
+  };
+}
+
+test("inspects Penrose circle geometry semantics for obvious theorem mismatches", () => {
+  const result = runMauthAssistantTool(
+    circleGeometryDocument(
+      [
+        "Point O, A, B, C",
+        "Circle omega",
+        "Line drawnLine",
+        "NamedSegment AB, AC",
+        "Label O $O$",
+        "Label A $A$",
+        "Label B $B$",
+        "Label C $C$",
+        "CircleThrough(omega, O, A)",
+        "OnCircle(B, omega)",
+        "Segment(AB, A, B)",
+        "Segment(AC, A, C)",
+      ].join("\n"),
+    ),
+    {
+      name: "mauth.preview.inspect",
+      arguments: { questionNumber: 1 },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+  const warningCodes = (inspection.question?.diagrams[0].semanticWarnings ?? []).map((warning) => warning.code);
+
+  assert.equal(result.ok, true);
+  assert(inspection.question?.diagrams[0].semanticChecks.includes("penrose-circle-geometry"));
+  assert(warningCodes.includes("penrose-circle-tangent-missing"));
+  assert(warningCodes.includes("penrose-circle-parallel-chord-missing"));
+  assert(warningCodes.includes("penrose-chord-segment-missing"));
+  assert(warningCodes.includes("penrose-circle-points-missing"));
+  assert(warningCodes.includes("penrose-visible-auxiliary-label"));
+  assert(inspection.warnings.some((warning) => warning.code === "penrose-circle-tangent-missing"));
+});
+
+test("accepts a Penrose tangent-parallel-chord diagram semantically", () => {
+  const result = runMauthAssistantTool(
+    circleGeometryDocument(
+      [
+        "Point O, A, B, C",
+        "Circle omega",
+        "Line tangentA",
+        "NamedSegment AB, AC, BC",
+        "Label O $\\,$",
+        "Label A $A$",
+        "Label B $B$",
+        "Label C $C$",
+        "HidePoint(O)",
+        "CircleThrough(omega, O, A)",
+        "OnCircle(B, omega)",
+        "OnCircle(C, omega)",
+        "Tangent(tangentA, omega, A)",
+        "ParallelToSegment(tangentA, B, C)",
+        "Segment(AB, A, B)",
+        "Segment(AC, A, C)",
+        "Segment(BC, B, C)",
+      ].join("\n"),
+    ),
+    {
+      name: "mauth.preview.inspect",
+      arguments: { questionNumber: 1 },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+  const semanticWarnings = inspection.question?.diagrams[0].semanticWarnings ?? [];
+
+  assert.equal(result.ok, true);
+  assert(inspection.question?.diagrams[0].semanticChecks.includes("penrose-circle-geometry"));
+  assert.deepEqual(semanticWarnings, []);
+});
+
 test("previews actions without mutating the original document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {

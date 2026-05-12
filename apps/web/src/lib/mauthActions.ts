@@ -29,6 +29,7 @@ export interface MauthPartLike {
 
 export interface MauthQuestionLike {
   id: string;
+  text?: string;
   marks: number;
   contentBlocks: ContentBlock[];
   parts?: MauthPartLike[];
