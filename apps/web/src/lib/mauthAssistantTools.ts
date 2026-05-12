@@ -145,8 +145,81 @@ export interface MauthDocumentInspection {
   questions: MauthQuestionInspection[];
 }
 
+export interface MauthRenderedPreviewRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
+export interface MauthRenderedPreviewPageMetrics {
+  pageIndex: number;
+  pageNumber: number;
+  usedHeightPx: number;
+  totalHeightPx: number;
+  remainingHeightPx: number;
+  usedPercent: number;
+  anchorCount: number;
+  overflow: boolean;
+}
+
+export interface MauthRenderedPreviewAnchorMetrics {
+  anchor: string;
+  kind: MauthPreviewTargetInspection["kind"];
+  role: "module" | "structure" | "unknown";
+  pageIndex: number | null;
+  pageNumber?: number;
+  selected: boolean;
+  viewportRect: MauthRenderedPreviewRect;
+  pageRelativeRect?: MauthRenderedPreviewRect;
+  textPreview?: string;
+  diagram?: {
+    found: boolean;
+    rendered: boolean;
+    errorText?: string;
+    viewportRect?: MauthRenderedPreviewRect;
+  };
+  solutionSlot?: {
+    found: boolean;
+    studentHeightPx: number;
+    solutionHeightPx: number;
+    solutionFitsStudentSpace: boolean;
+    warningText?: string;
+  };
+  responseSpace?: {
+    found: boolean;
+    outlineAvailable: boolean;
+    slotRect: MauthRenderedPreviewRect;
+    diagramRect?: MauthRenderedPreviewRect;
+    spaceRect?: MauthRenderedPreviewRect;
+  };
+  warnings: MauthPreviewInspectionWarning[];
+}
+
+export interface MauthRenderedPreviewMetricsAvailable {
+  available: true;
+  source: "browser-preview";
+  activeAnchor?: string | null;
+  pageCount: number;
+  pages: MauthRenderedPreviewPageMetrics[];
+  anchors: MauthRenderedPreviewAnchorMetrics[];
+  warnings: MauthPreviewInspectionWarning[];
+}
+
+export type MauthPreviewRenderedMetrics =
+  | MauthRenderedPreviewMetricsAvailable
+  | {
+      available: false;
+      reason: string;
+    };
+
 export interface MauthAssistantToolContext {
   activeAnchor?: string | null;
+  renderedMetrics?: MauthPreviewRenderedMetrics | null;
 }
 
 export interface MauthAssistantToolOptions<
@@ -222,10 +295,7 @@ export interface MauthPreviewInspection {
     Pick<MauthPreviewQuestionInspection, "id" | "questionNumber" | "totalMarks" | "studentSpaceLines" | "solutionModuleCount" | "warnings">
   >;
   warnings: MauthPreviewInspectionWarning[];
-  renderedMetrics: {
-    available: false;
-    reason: string;
-  };
+  renderedMetrics: MauthPreviewRenderedMetrics;
 }
 
 export interface MauthAssistantToolDescription {
@@ -862,6 +932,61 @@ function inspectPreviewQuestion(question: MauthQuestionLike, questionIndex: numb
   };
 }
 
+function renderedAnchorCandidates(target: MauthPreviewTargetInspection) {
+  const anchors = new Set<string>();
+  if (target.anchor) anchors.add(target.anchor);
+  if (target.questionId) anchors.add(questionAnchor(target.questionId));
+  if (target.questionId && target.blockId) anchors.add(questionBlockAnchor(target.questionId, target.blockId));
+  if (target.questionId && target.partId) anchors.add(partAnchor(target.questionId, target.partId));
+  if (target.questionId && target.partId && target.blockId) {
+    anchors.add(partBlockAnchor(target.questionId, target.partId, target.blockId));
+  }
+  if (target.questionId && target.partId && target.subpartId)
+    anchors.add(subpartAnchor(target.questionId, target.partId, target.subpartId));
+  if (target.questionId && target.partId && target.subpartId && target.blockId) {
+    anchors.add(subpartBlockAnchor(target.questionId, target.partId, target.subpartId, target.blockId));
+  }
+  return Array.from(anchors);
+}
+
+function anchorRelatedToCandidates(anchor: string, candidates: readonly string[]) {
+  return candidates.some((candidate) => anchor === candidate || anchor.startsWith(`${candidate}/`) || candidate.startsWith(`${anchor}/`));
+}
+
+function renderedMetricsForInspection(
+  metrics: MauthPreviewRenderedMetrics | null | undefined,
+  scope: MauthPreviewInspection["scope"],
+  target: MauthPreviewTargetInspection,
+  activeAnchor?: string | null,
+): MauthPreviewRenderedMetrics {
+  if (!metrics?.available) {
+    return {
+      available: false,
+      reason:
+        metrics?.available === false
+          ? metrics.reason
+          : "Browser-rendered preview metrics were not available, usually because the preview pane is closed or not mounted yet.",
+    };
+  }
+
+  const candidates = new Set(renderedAnchorCandidates(target));
+  if (activeAnchor) candidates.add(activeAnchor);
+  const candidateList = Array.from(candidates);
+  const anchors =
+    scope === "document"
+      ? metrics.anchors.filter((anchor) => anchor.kind === "question" || anchor.warnings.length > 0).slice(0, 80)
+      : metrics.anchors.filter((anchor) => anchorRelatedToCandidates(anchor.anchor, candidateList)).slice(0, 30);
+  const warnings = [...metrics.warnings, ...anchors.flatMap((anchor) => anchor.warnings)].filter(
+    (warning, index, all) => all.findIndex((item) => item.code === warning.code && item.anchor === warning.anchor) === index,
+  );
+
+  return {
+    ...metrics,
+    anchors,
+    warnings,
+  };
+}
+
 export function inspectMauthPreview<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   document: MauthDocumentLike<Q, F, C>,
   args: unknown,
@@ -887,6 +1012,7 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
   }
 
   const inspectedQuestion = question ? inspectPreviewQuestion(question, questionIndex, target) : undefined;
+  const renderedMetrics = renderedMetricsForInspection(context.renderedMetrics, scope, target, context.activeAnchor);
   return {
     scope,
     activeAnchor: context.activeAnchor ?? null,
@@ -911,11 +1037,7 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
           })
         : undefined,
     warnings: [...warnings, ...(inspectedQuestion?.warnings ?? [])],
-    renderedMetrics: {
-      available: false,
-      reason:
-        "This assistant tool inspects the same document structure used by the preview. Browser DOM pixel measurements are intentionally not exposed to the model.",
-    },
+    renderedMetrics,
   };
 }
 

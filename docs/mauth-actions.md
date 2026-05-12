@@ -61,7 +61,7 @@ The visible editor surface for these document settings lives under `T` in the `T
 
 - `mauth.tools.describe`: list assistant tools and supported action types.
 - `mauth.document.inspect`: return a compact document outline, module counts, visibility counts, student-space lines, diagram types, marks, front-matter fields, and formatting fields.
-- `mauth.preview.inspect`: return focused context for the current/selected or requested question, including module anchors, selected block, diagram types/alignment, answer-space/solution replacement scopes, hidden `[[marks:n]]` totals, visible mark-note warnings, blank part warnings, and left/right diagram beside-content hints.
+- `mauth.preview.inspect`: return focused context for the current/selected or requested question, including module anchors, selected block, diagram types/alignment, answer-space/solution replacement scopes, hidden `[[marks:n]]` totals, visible mark-note warnings, blank part warnings, left/right diagram beside-content hints, and browser-rendered page/anchor metrics when the preview pane is mounted.
 - `mauth.validation.run`: run document validation, solution validation, or both without changing the document.
 - `mauth.actions.preview`: dry-run one or more document actions and return the proposed document plus preview summary.
 - `mauth.actions.apply`: apply one or more document actions and return the next document.
@@ -74,7 +74,7 @@ High-level diagram authoring also performs a cheap deterministic intent check be
 The intended AI workflow is:
 
 1. Use focused high-level tools where they fit: `mauth.author.replaceQuestion`, `mauth.author.addDiagram`, or `mauth.author.ensureSolutions`.
-2. Use `mauth.preview.inspect` for one-question or selected-module checks, especially before/after diagram, answer-space, or solution-tick edits. Use `mauth.document.inspect` only for broader whole-document context or when the compact context is insufficient.
+2. Use `mauth.preview.inspect` for one-question or selected-module checks, especially before/after diagram, answer-space, or solution-tick edits. When rendered metrics are available, use the reported page occupancy, selected-anchor boxes, diagram render status, solution-slot fit, and L-shaped response-space metrics as evidence before claiming a layout is fixed. Use `mauth.document.inspect` only for broader whole-document context or when the compact context is insufficient.
 3. For broader edits, generate structured Mauth actions.
 4. Preview the action batch.
 5. Run the relevant validation.

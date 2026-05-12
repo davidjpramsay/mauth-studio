@@ -136,6 +136,75 @@ test("inspects focused preview context for the selected module", () => {
   assert(inspection.question?.warnings.some((warning) => warning.code === "solution-hidden-mark-total-mismatch"));
 });
 
+test("includes browser-rendered preview metrics when supplied by the host", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    { name: "mauth.preview.inspect", arguments: { scope: "selection" } },
+    {
+      assistantContext: {
+        activeAnchor: "q:q1/b:s1",
+        renderedMetrics: {
+          available: true,
+          source: "browser-preview",
+          activeAnchor: "q:q1/b:s1",
+          pageCount: 1,
+          pages: [
+            {
+              pageIndex: 0,
+              pageNumber: 1,
+              usedHeightPx: 520,
+              totalHeightPx: 1000,
+              remainingHeightPx: 480,
+              usedPercent: 52,
+              anchorCount: 4,
+              overflow: false,
+            },
+          ],
+          anchors: [
+            {
+              anchor: "q:q1/b:s1",
+              kind: "questionBlock",
+              role: "module",
+              pageIndex: 0,
+              pageNumber: 1,
+              selected: true,
+              viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+              solutionSlot: {
+                found: true,
+                studentHeightPx: 100,
+                solutionHeightPx: 92,
+                solutionFitsStudentSpace: true,
+              },
+              warnings: [],
+            },
+            {
+              anchor: "q:other",
+              kind: "question",
+              role: "structure",
+              pageIndex: 0,
+              pageNumber: 1,
+              selected: false,
+              viewportRect: { left: 0, top: 0, right: 1, bottom: 1, width: 1, height: 1, x: 0, y: 0 },
+              warnings: [],
+            },
+          ],
+          warnings: [],
+        },
+      },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+
+  assert.equal(result.ok, true);
+  assert.equal(inspection.renderedMetrics.available, true);
+  if (inspection.renderedMetrics.available) {
+    assert.equal(inspection.renderedMetrics.pageCount, 1);
+    assert.equal(inspection.renderedMetrics.anchors.length, 1);
+    assert.equal(inspection.renderedMetrics.anchors[0].anchor, "q:q1/b:s1");
+    assert.equal(inspection.renderedMetrics.anchors[0].solutionSlot?.solutionFitsStudentSpace, true);
+  }
+});
+
 test("previews actions without mutating the original document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {

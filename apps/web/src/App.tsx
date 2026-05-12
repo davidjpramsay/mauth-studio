@@ -137,6 +137,7 @@ import {
   topLevelProjectPaths,
   uniqueTestPath,
 } from "@/lib/projectFiles";
+import { collectRenderedPreviewMetrics } from "@/lib/mauthPreviewMetrics";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -7388,6 +7389,7 @@ export default function App() {
     activeProjectFilePathRef,
     activeProjectFileRevisionRef,
     getActiveAnchor: () => activeTocItemId,
+    getRenderedPreviewMetrics: () => collectRenderedPreviewMetrics(previewPaneRef.current, activeTocItemId),
     setActiveProjectFilePath,
     setActiveProjectFileRevision,
     setProjectSaveConflict,

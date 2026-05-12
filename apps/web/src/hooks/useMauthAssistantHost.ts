@@ -27,6 +27,7 @@ import {
   validateAssistantDiagramPreservationBeforeCommit,
   validateAssistantSolutionMarkingBeforeCommit,
 } from "@/lib/mauthAssistantPreflight";
+import type { MauthPreviewRenderedMetrics } from "@/lib/mauthAssistantTools";
 import type { MauthDocumentActionOptions, MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "@/lib/mauthActions";
 
 type RefValue<T> = {
@@ -41,6 +42,7 @@ interface UseMauthAssistantHostOptions<Q extends MauthQuestionLike, F extends ob
   activeProjectFilePathRef: RefValue<string | null>;
   activeProjectFileRevisionRef: RefValue<number | null>;
   getActiveAnchor?: () => string | null;
+  getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
   setActiveProjectFilePath: (filePath: string | null) => void;
   setActiveProjectFileRevision: (revision: number | null) => void;
   setProjectSaveConflict: (conflict: null) => void;
@@ -189,6 +191,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
   activeProjectFilePathRef,
   activeProjectFileRevisionRef,
   getActiveAnchor,
+  getRenderedPreviewMetrics,
   setActiveProjectFilePath,
   setActiveProjectFileRevision,
   setProjectSaveConflict,
@@ -210,6 +213,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getActiveFilePath: () => activeProjectFilePathRef.current,
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
       getActiveAnchor,
+      getRenderedPreviewMetrics,
       validateDocumentBeforeCommit: validateAssistantDocumentBeforeCommit,
       setActiveFilePath: (filePath, context) => {
         const revision = filePath ? revisionFromToolContext(context) : null;
@@ -238,6 +242,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
     ensureProject,
     getDocument,
     getActiveAnchor,
+    getRenderedPreviewMetrics,
     parseProjectFileDocument,
     serializeDocument,
     setActiveProjectFilePath,

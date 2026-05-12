@@ -8,6 +8,7 @@ import {
   type MauthAssistantToolName,
   type MauthAssistantToolOptions,
   type MauthAssistantToolResult,
+  type MauthPreviewRenderedMetrics,
 } from "./mauthAssistantTools.ts";
 import {
   MAUTH_ASSISTANT_FILE_TOOL_NAMES,
@@ -75,6 +76,7 @@ export interface MauthAssistantAdapterHost<
   getActiveFilePath?: () => string | null;
   getActiveFileRevision?: () => number | null;
   getActiveAnchor?: () => string | null;
+  getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
   validateDocumentBeforeCommit?: (
     document: MauthDocumentLike<Q, F, C>,
     context: MauthAssistantToolCommitContext,
@@ -207,11 +209,13 @@ async function documentToolOptions<Q extends MauthQuestionLike, F extends object
 ): Promise<MauthAssistantToolOptions<Q, F, C>> {
   const options = await documentOptions(host);
   const activeAnchor = host.getActiveAnchor?.();
+  const renderedMetrics = host.getRenderedPreviewMetrics?.();
   return {
     ...options,
     assistantContext: {
       ...(options.assistantContext ?? {}),
       activeAnchor: activeAnchor ?? options.assistantContext?.activeAnchor ?? null,
+      renderedMetrics: renderedMetrics ?? options.assistantContext?.renderedMetrics ?? null,
     },
   };
 }
