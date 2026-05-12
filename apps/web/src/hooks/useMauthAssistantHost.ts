@@ -23,6 +23,10 @@ import type {
   MauthAssistantDocumentPreflightResult,
   MauthAssistantToolCommitContext,
 } from "@/lib/mauthAssistantAdapter";
+import {
+  validateAssistantDiagramPreservationBeforeCommit,
+  validateAssistantSolutionMarkingBeforeCommit,
+} from "@/lib/mauthAssistantPreflight";
 import type { MauthDocumentActionOptions, MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "@/lib/mauthActions";
 
 type RefValue<T> = {
@@ -157,6 +161,25 @@ async function validatePenroseDiagramsBeforeCommit<
   return { ok: true };
 }
 
+async function validateAssistantDocumentBeforeCommit<
+  Q extends MauthQuestionLike,
+  F extends object,
+  C extends object = Record<string, unknown>,
+>(
+  document: MauthDocumentLike<Q, F, C>,
+  context: MauthAssistantToolCommitContext,
+  changedIds: string[],
+  previousDocument: MauthDocumentLike<Q, F, C>,
+): Promise<MauthAssistantDocumentPreflightResult> {
+  const diagramPreservation = validateAssistantDiagramPreservationBeforeCommit(previousDocument, document, context, changedIds);
+  if (!diagramPreservation.ok) return diagramPreservation;
+
+  const solutionMarking = validateAssistantSolutionMarkingBeforeCommit(document, context, changedIds);
+  if (!solutionMarking.ok) return solutionMarking;
+
+  return validatePenroseDiagramsBeforeCommit(document, context, changedIds);
+}
+
 export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>({
   getDocument,
   commitDocument,
@@ -184,7 +207,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getProjectId: async () => (await ensureProject()).id,
       getActiveFilePath: () => activeProjectFilePathRef.current,
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
-      validateDocumentBeforeCommit: validatePenroseDiagramsBeforeCommit,
+      validateDocumentBeforeCommit: validateAssistantDocumentBeforeCommit,
       setActiveFilePath: (filePath, context) => {
         const revision = filePath ? revisionFromToolContext(context) : null;
         activeProjectFilePathRef.current = filePath;

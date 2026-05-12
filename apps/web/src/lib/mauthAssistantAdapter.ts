@@ -77,6 +77,7 @@ export interface MauthAssistantAdapterHost<
     document: MauthDocumentLike<Q, F, C>,
     context: MauthAssistantToolCommitContext,
     changedIds: string[],
+    previousDocument: MauthDocumentLike<Q, F, C>,
   ) => MauthAssistantDocumentPreflightResult | Promise<MauthAssistantDocumentPreflightResult>;
   setActiveFilePath?: (path: string | null, context: MauthAssistantToolCommitContext) => void | Promise<void>;
   serializeDocument?: (document: MauthDocumentLike<Q, F, C>, context: MauthAssistantToolCommitContext) => string | Promise<string>;
@@ -230,7 +231,8 @@ export async function runMauthAssistantAdapterTool<
   C extends object = Record<string, unknown>,
 >(host: MauthAssistantAdapterHost<Q, F, C>, call: MauthAssistantAdapterToolCall): Promise<MauthAssistantAdapterResult<Q, F, C>> {
   if (documentToolName(call.name)) {
-    const result = runMauthAssistantTool(host.getDocument(), call as MauthAssistantToolCall, await documentOptions(host));
+    const previousDocument = host.getDocument();
+    const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentOptions(host));
     let committedDocument = false;
     if (
       result.ok &&
@@ -241,7 +243,7 @@ export async function runMauthAssistantAdapterTool<
     ) {
       const context = { toolName: call.name, reason: "assistant-document-apply", data: result.data };
       if (host.validateDocumentBeforeCommit) {
-        const preflight = await host.validateDocumentBeforeCommit(result.document, context, result.changedIds);
+        const preflight = await host.validateDocumentBeforeCommit(result.document, context, result.changedIds, previousDocument);
         if (!preflight.ok) return documentPreflightFailureResult(result, preflight);
       }
       await host.commitDocument(result.document, context);

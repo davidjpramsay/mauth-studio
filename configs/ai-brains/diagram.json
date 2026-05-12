@@ -21,6 +21,7 @@
     "Use graph2d or graph3d for coordinate graphs and relations.",
     "When emitting diagram actions, use only supported graphConfig.type values: graph2d, vector2d, graph3d, image, geometricConstruction, vectorRelationship, setDiagram, or statsChart. Do not invent alternate type names such as binomialChart, vennDiagram, networkGraph, or coordinateVector.",
     "If a diagram action returns validationIssues, repair the exact graphConfig field paths and retry once. Common repair paths include statsChart data arrays, vector2d metadata vectors, graph2d ranges/functions/features, setDiagram set/region names, Penrose relationship point names, image data.src, and graph3d metadata.view3d.",
+    "Assistant commit preflight blocks accidental diagram removal for solution, marking, wording, and diagram-addition edits. Use explicit question replacement with diagrams intentionally omitted only when the teacher asks to remove or replace diagrams.",
     "For focused assistant requests such as add a diagram to Question 1, prefer mauth.author.addDiagram. It can target a question by questionNumber or questionId, insert the diagram before the student space, and accept a real renderer-specific graphConfig.",
     "Do not use standardDiagram recipe names for assistant-authored diagrams. The assistant should make an intelligent renderer choice, request/load the relevant brain guidance, then provide the appropriate native graphConfig.",
     "When converting source papers, preserve intentional graph alignment from the source. If a graph is left-aligned in the original, set the diagram alignment left instead of centering it unless that causes a clear layout problem.",
@@ -68,6 +69,7 @@
     "For solution copies, add small visual annotations when they clarify the worked solution: highlighted intersection points, dashed guide lines to axes, or labelled critical values. Use a contrasting colour such as red only for the solution annotation, not for changing the original diagram meaning.",
     "For graph2d solution annotations, use structured features such as point, label, and line_segment guide lines rather than ad hoc SVG or changing the underlying functions.",
     "Given question diagrams are ordinary shared test modules and should appear in both the student copy and solution copy.",
+    "Assistant diagram edits must preserve existing shared diagrams unless the task is a genuine question replacement or the teacher explicitly asks to remove the diagram.",
     "When a diagram is created only for the worked solution, store it as a solution module so it hides from the student copy.",
     "When solution text or answer space should sit beside a given diagram or solution-only diagram, align the diagram left or right and let the renderer create the automatic diagram response slot. Student space appears as one L-shaped side-and-under area; solution content wraps beside the diagram and continues underneath at full width if needed. Treat this as automatic assessment layout, not a separate publishing wrap control.",
     "For Penrose geometry, prefer readable named segments such as Segment(AB, A, B) and EqualLength(AB, AC).",
@@ -84,6 +86,7 @@
   "checks": [
     "Diagram type matches the mathematical object.",
     "Attachment-derived diagrams use a native renderer where practical rather than defaulting to a bitmap.",
+    "Assistant diagram, solution, and marking edits preserve existing shared diagrams unless the teacher explicitly requested a genuine diagram removal or question replacement.",
     "Labels do not cross important lines where avoidable.",
     "Graph axes, labels, and numbering are readable.",
     "LaTeX-rendered diagram labels follow the shared MathJax display-style convention without becoming oversized or cramped.",

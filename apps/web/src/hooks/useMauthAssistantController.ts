@@ -249,6 +249,30 @@ function compactAssistantProviderOutput<Q extends MauthQuestionLike, F extends o
   return output;
 }
 
+function toolOutputRecord(toolOutput: AssistantToolOutput) {
+  return asRecord(toolOutput.output);
+}
+
+function failedToolOutputs(toolOutputs: readonly AssistantToolOutput[]) {
+  return toolOutputs.filter((toolOutput) => toolOutputRecord(toolOutput)?.ok === false);
+}
+
+function failedToolOutputMessage(toolOutput: AssistantToolOutput) {
+  const output = toolOutputRecord(toolOutput);
+  const message = typeof output?.message === "string" ? output.message : "";
+  const error = typeof output?.error === "string" ? output.error : "";
+  return error || message || `The ${toolOutput.name} tool call failed.`;
+}
+
+function terminalFailedToolMessage(toolOutputs: readonly AssistantToolOutput[]) {
+  const failed = failedToolOutputs(toolOutputs);
+  if (!failed.length) return "";
+  const firstMessage = failedToolOutputMessage(failed[0]);
+  const remaining = failed.length - 1;
+  const suffix = remaining > 0 ? ` ${remaining} other tool call${remaining === 1 ? "" : "s"} also failed.` : "";
+  return `I could not apply that edit after one repair attempt. ${firstMessage}${suffix}`;
+}
+
 export function useMauthAssistantController<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>({
   previewModeActive,
   openPreviewMode,
@@ -414,6 +438,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     let toolCalls = initialToolCalls;
     let rounds = 0;
     let totalUsage: AssistantUsageSummary | null = null;
+    let repairAttemptUsed = false;
 
     while (toolCalls.length && rounds < ASSISTANT_MAX_TOOL_ROUNDS) {
       rounds += 1;
@@ -431,6 +456,19 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         setPendingToolContinuation(null);
         setPreviousResponseId(null);
         return { responseId: null, usage: totalUsage, pending: null };
+      }
+
+      if (failedToolOutputs(toolOutputs).length) {
+        if (repairAttemptUsed) {
+          setPendingToolContinuation(null);
+          setPreviousResponseId(null);
+          setChatMessages((current) => [
+            ...current,
+            { id: assistantMessageId(), role: "assistant", content: terminalFailedToolMessage(toolOutputs) },
+          ]);
+          return { responseId: null, usage: totalUsage, pending: null };
+        }
+        repairAttemptUsed = true;
       }
 
       const documentSummary = await assistantDocumentSummary(host);
