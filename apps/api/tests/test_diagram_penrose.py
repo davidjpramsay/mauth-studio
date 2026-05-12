@@ -202,6 +202,34 @@ def test_penrose_source_inputs_drive_generated_layout_helpers():
     assert "Point `B`; Point `C`" not in data["metadata"]["styleSource"]
 
 
+def test_penrose_geometry_preset_accepts_inline_angle_label_between_named_segments():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "geometricConstruction",
+            "data": {},
+            "style": "geometry",
+            "options": {
+                "scalePercent": 100,
+                "substanceSource": (
+                    "Point O, C, D\n"
+                    "NamedSegment OC, OD\n"
+                    "Segment(OC, O, C)\n"
+                    "Segment(OD, O, D)\n"
+                    "LabelsAngle(OC, OD, $45^\\circ$)\n"
+                ),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    substance = response.json()["metadata"]["substance"]
+    assert "Label angleLabel1 $45^\\circ$" in substance
+    assert "LengthLabel angleLabel1" in substance
+    assert "LabelsAngle(angleLabel1, C, O, D)" in substance
+    assert "LengthLabel OC" not in substance
+
+
 def test_penrose_geometry_preset_supports_common_constructions():
     response = client.post(
         "/api/diagram/penrose",

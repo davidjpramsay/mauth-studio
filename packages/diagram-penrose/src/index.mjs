@@ -722,6 +722,20 @@ function substanceArgs(source) {
     .filter(Boolean);
 }
 
+function anglePointsFromNamedSegments(firstSegment, secondSegment) {
+  if (!Array.isArray(firstSegment) || !Array.isArray(secondSegment)) return null;
+  const common = firstSegment.find((point) => secondSegment.includes(point));
+  if (!common) return null;
+  const firstOuter = firstSegment.find((point) => point !== common);
+  const secondOuter = secondSegment.find((point) => point !== common);
+  if (!firstOuter || !secondOuter) return null;
+  return [firstOuter, common, secondOuter];
+}
+
+function isInlineLabelValue(value) {
+  return typeof value === "string" && (!IDENTIFIER_RE.test(value) || value.startsWith("$") || value.endsWith("$"));
+}
+
 function substanceObjectLabels(spec) {
   const labels = new Map();
   for (const object of spec?.data?.objects ?? []) {
@@ -855,7 +869,17 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
 
     const labelConsumerMatch = line.match(/^(LabelsSegment|LabelsAngle|LabelsCircle|LabelsLine)\(([^)]+)\)$/);
     if (labelConsumerMatch) {
-      const [labelName] = substanceArgs(labelConsumerMatch[2]);
+      const args = substanceArgs(labelConsumerMatch[2]);
+      if (
+        labelConsumerMatch[1] === "LabelsAngle" &&
+        args.length === 3 &&
+        isInlineLabelValue(args[2]) &&
+        namedSegmentEndpoints.has(args[0]) &&
+        namedSegmentEndpoints.has(args[1])
+      ) {
+        continue;
+      }
+      const [labelName] = args;
       if (labelName) {
         const lengthLabelName = assertIdentifier(labelName, "LengthLabel name");
         usedLengthLabels.add(lengthLabelName);
@@ -874,6 +898,7 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
   const labelUseIndexes = new Map();
   const generatedLengthLabelNames = new Set();
   const generatedLengthLabelLines = [];
+  let generatedInlineAngleLabelIndex = 1;
   const reservedLabelNames = new Set([
     ...objectNames,
     ...declaredNamedSegments,
@@ -904,6 +929,20 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
     labelUseIndexes.set(sourceName, useIndex);
     if (useIndex === 1) return sourceName;
     return generatedRepeatedLengthLabelName(sourceName, useIndex);
+  }
+
+  function generatedInlineAngleLabelName(labelValue) {
+    let candidate = `angleLabel${generatedInlineAngleLabelIndex}`;
+    while (reservedLabelNames.has(candidate) || generatedLengthLabelNames.has(candidate)) {
+      generatedInlineAngleLabelIndex += 1;
+      candidate = `angleLabel${generatedInlineAngleLabelIndex}`;
+    }
+    generatedInlineAngleLabelIndex += 1;
+    reservedLabelNames.add(candidate);
+    generatedLengthLabelNames.add(candidate);
+    usedLengthLabels.add(candidate);
+    generatedLengthLabelLines.push(labelStatement(candidate, labelValue));
+    return candidate;
   }
 
   const rewrittenLines = lines.map((rawLine) => {
@@ -953,6 +992,16 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
     const predicate = labelConsumerMatch[1];
     const args = substanceArgs(labelConsumerMatch[2]);
     if (!args.length) return rawLine;
+
+    if (predicate === "LabelsAngle" && args.length === 3 && isInlineLabelValue(args[2])) {
+      const firstSegment = namedSegmentEndpoints.get(assertIdentifier(args[0], "Angle segment name"));
+      const secondSegment = namedSegmentEndpoints.get(assertIdentifier(args[1], "Angle segment name"));
+      const anglePoints = anglePointsFromNamedSegments(firstSegment, secondSegment);
+      if (anglePoints) {
+        const labelName = generatedInlineAngleLabelName(args[2]);
+        return `LabelsAngle(${labelName}, ${anglePoints.join(", ")})`;
+      }
+    }
 
     const labelName = placedLengthLabelName(assertIdentifier(args[0], "LengthLabel name"));
     if (predicate === "LabelsSegment" && args.length === 2) {
