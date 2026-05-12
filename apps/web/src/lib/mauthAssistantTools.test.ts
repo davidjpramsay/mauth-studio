@@ -285,6 +285,94 @@ test("rejects unwrapped high-level diagram payloads before applying", () => {
   assert(aliasData.validationIssues?.some((issue) => issue.message.includes("must be named graphConfig")));
 });
 
+test("rejects obvious diagram renderer mismatches before applying", () => {
+  const scalarProductResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 5,
+      questionText: "Evaluate the following scalar products exactly.",
+      parts: [
+        { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, studentSpaceLines: 3 },
+        { text: "$\\mathbf{a}\\cdot\\mathbf{d}$", marks: 2, studentSpaceLines: 4 },
+      ],
+      diagram: {
+        graphConfig: {
+          type: "vectorRelationship",
+          data: { nodes: [], edges: [] },
+        },
+      },
+    },
+  });
+  const coordinateVectorResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 2,
+      questionText: "Draw vector $\\mathbf{a}=(2,3)$ from the origin on the coordinate axes.",
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: { substanceSource: "Point O, A\nSegment(OA, O, A)\n" },
+        },
+      },
+    },
+  });
+  const statsChartResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 2,
+      questionText: "The probability graph below shows $P(X=x)$ for a discrete random variable.",
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          functions: [],
+        },
+      },
+    },
+  });
+  const circleGeometryResult = runMauthAssistantTool(
+    {
+      ...documentFixture(),
+      questions: [
+        question("q1", [textBlock("t1", "$A$, $B$ and $C$ are points on a circle. The tangent at $A$ is parallel to chord $BC$.")]),
+      ],
+    },
+    {
+      name: "mauth.author.addDiagram",
+      arguments: {
+        questionNumber: 1,
+        diagram: {
+          graphConfig: {
+            type: "graph2d",
+            functions: [],
+          },
+        },
+      },
+    },
+  );
+  const scalarData = scalarProductResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const vectorData = coordinateVectorResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const statsData = statsChartResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const circleData = circleGeometryResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+
+  assert.equal(scalarProductResult.ok, false);
+  assert(scalarData.validationIssues?.some((issue) => issue.path === "arguments.diagram.graphConfig.type"));
+  assert(scalarData.validationIssues?.some((issue) => issue.expected === "geometricConstruction"));
+  assert.match(scalarProductResult.error ?? "", /scalar-product ray diagram/);
+  assert.equal(coordinateVectorResult.ok, false);
+  assert(vectorData.validationIssues?.some((issue) => issue.expected === "vector2d"));
+  assert.match(coordinateVectorResult.error ?? "", /coordinate vector diagram/);
+  assert.equal(statsChartResult.ok, false);
+  assert(statsData.validationIssues?.some((issue) => issue.expected === "statsChart"));
+  assert.match(statsChartResult.error ?? "", /statistics chart/);
+  assert.equal(circleGeometryResult.ok, false);
+  assert(circleData.validationIssues?.some((issue) => issue.expected === "geometricConstruction"));
+  assert.match(circleGeometryResult.error ?? "", /schematic geometry diagram/);
+});
+
 test("replaces a question with structured parts from a high-level authoring payload", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",

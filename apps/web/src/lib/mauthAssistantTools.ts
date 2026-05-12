@@ -487,6 +487,8 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
+      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style geometry and scalar-product ray diagrams, graph2d for coordinate/function graphs, vector2d for component vectors on axes, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
+      "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",
       "Run validation for solution or whole-document passes.",
@@ -923,7 +925,175 @@ function sanitizeAssistantQuestion<T extends MauthQuestionLike>(question: T): T 
   } as T;
 }
 
-function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {
+interface AssistantDiagramIntent {
+  id: string;
+  expectedType: string;
+  label: string;
+  reason: string;
+}
+
+function rawAssistantTextFragmentsFromBlocks(blocks: readonly ContentBlock[] | undefined) {
+  return (blocks ?? [])
+    .filter((block): block is TextContentBlock => block.kind === "text" && block.visibility !== "solution")
+    .map((block) => block.text);
+}
+
+function rawAssistantTextFragmentsFromPart(part: MauthPartLike | MauthSubpartLike): string[] {
+  const subparts = "subparts" in part && Array.isArray(part.subparts) ? part.subparts : [];
+  return [
+    typeof part.text === "string" ? part.text : "",
+    ...rawAssistantTextFragmentsFromBlocks(part.contentBlocks),
+    ...subparts.flatMap(rawAssistantTextFragmentsFromPart),
+  ];
+}
+
+function rawAssistantTextFragmentsFromQuestion(question: MauthQuestionLike | undefined) {
+  if (!question) return [];
+  return [
+    ...rawAssistantTextFragmentsFromBlocks(question.contentBlocks),
+    ...(question.parts ?? []).flatMap(rawAssistantTextFragmentsFromPart),
+  ];
+}
+
+function rawAssistantTextFragmentsFromAuthorArgs(args: Record<string, unknown>): string[] {
+  const fragments = [textFromArgs(args)];
+  if (Array.isArray(args.parts)) {
+    for (const part of args.parts) {
+      if (!isRecord(part)) continue;
+      fragments.push(partTextFromArgs(part));
+      if (Array.isArray(part.subparts)) {
+        for (const subpart of part.subparts) {
+          if (isRecord(subpart)) fragments.push(partTextFromArgs(subpart));
+        }
+      }
+    }
+  }
+  return fragments;
+}
+
+function normalizedAssistantIntentText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\\mathbf\s*\{([a-z])\}/g, "$1")
+    .replace(/\\vec\s*\{([a-z])\}/g, "$1")
+    .replace(/\\overrightarrow\s*\{([^}]+)\}/g, "$1")
+    .replace(/[{}$]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function diagramIntentFromText(rawText: string): AssistantDiagramIntent | undefined {
+  const text = normalizedAssistantIntentText(rawText);
+  if (!text) return undefined;
+
+  const hasSetLanguage =
+    /\bvenn\b|\bset diagram\b|\buniversal set\b|\bset notation\b|\\cap|\\cup|∩|∪|a\s*['’]?\s*\\?\s*cap|a\s*['’]?\s*∩/i.test(rawText) ||
+    /\bsets?\b.*\b(intersection|union|complement)\b/.test(text);
+  if (hasSetLanguage) {
+    return {
+      id: "set-diagram",
+      expectedType: "setDiagram",
+      label: "Venn/set diagram",
+      reason: "Venn and set-region diagrams should use the setDiagram Penrose renderer.",
+    };
+  }
+
+  const hasStatsLanguage =
+    /\bhistogram\b|\bcolumn graph\b|\bbar chart\b|\brelative frequenc(?:y|ies)\b|\bmanual probabilities\b|\bprobability mass\b|\bp\s*\(\s*x\s*=\s*x\s*\)|\bp\s*\(\s*x\s*\)/i.test(
+      rawText,
+    ) || /\bprobability graph\b|\bfrequency graph\b|\bpmf\b/.test(text);
+  if (hasStatsLanguage) {
+    return {
+      id: "statistics-chart",
+      expectedType: "statsChart",
+      label: "statistics chart",
+      reason: "histograms, column graphs, probability graphs, and relative-frequency charts should use statsChart.",
+    };
+  }
+
+  const hasNetworkLanguage =
+    /\bnetwork\b|\bnodes?\b|\bedges?\b|\bvertices\b|\badjacency\b|\bshortest path\b|\bcritical path\b|\bminimum spanning\b/i.test(rawText);
+  if (hasNetworkLanguage) {
+    return {
+      id: "network",
+      expectedType: "vectorRelationship",
+      label: "network diagram",
+      reason: "network diagrams should use vectorRelationship, which is the Penrose network renderer.",
+    };
+  }
+
+  const hasSchematicGeometryLanguage =
+    /\bpoints?\s+on\s+a\s+circle\b|\bchords?\b|\bcircle theorem\b|\bangle subtended\b|\bcircumference\b|\btangent\s+at\s+[a-z]\b|\bparallel\s+to\s+(?:the\s+)?chord\b/i.test(
+      rawText,
+    );
+  if (hasSchematicGeometryLanguage) {
+    return {
+      id: "schematic-geometry",
+      expectedType: "geometricConstruction",
+      label: "schematic geometry diagram",
+      reason: "circle, tangent, chord, and theorem-style geometry diagrams should use geometricConstruction.",
+    };
+  }
+
+  const hasScalarProductLanguage =
+    /\bscalar products?\b|\bdot products?\b|(?:\\mathbf\s*\{[a-z]\}|[a-z])\s*(?:\\cdot|·|•)\s*(?:\\mathbf\s*\{[a-z]\}|[a-z])/i.test(
+      rawText,
+    ) || /\b(?:a|b|c|d)\s*\.\s*(?:a|b|c|d)\b/.test(text);
+  const hasCoordinateVectorLanguage =
+    /\bcoordinate vectors?\b|\bcomponent vectors?\b|\bcomponents?\b|\bstarting at\b|\bfrom the origin\b|\bfrom origin\b|\bgrid\b|\baxes?\b|\\begin\s*\{\s*(?:pmatrix|bmatrix|matrix)\s*\}|\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)/i.test(
+      rawText,
+    ) || /\bvector\s+[a-z]\s*=\s*\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?/.test(text);
+  if (hasCoordinateVectorLanguage) {
+    return {
+      id: "coordinate-vector",
+      expectedType: "vector2d",
+      label: "coordinate vector diagram",
+      reason: "coordinate/component vectors on axes should use vector2d, not Penrose geometry or networks.",
+    };
+  }
+  if (hasScalarProductLanguage) {
+    return {
+      id: "scalar-product-rays",
+      expectedType: "geometricConstruction",
+      label: "scalar-product ray diagram",
+      reason: "scalar-product ray diagrams without coordinate axes should use geometricConstruction.",
+    };
+  }
+
+  const hasFunctionGraphLanguage =
+    /\bgraph of\b|\bsketch(?: the)? graph\b|\bfunction\b|\basymptote\b|\bx-axis\b|\by-axis\b|\bcoordinate plane\b|f\s*\(\s*x\s*\)|g\s*\(\s*x\s*\)/i.test(
+      rawText,
+    );
+  if (hasFunctionGraphLanguage) {
+    return {
+      id: "function-graph",
+      expectedType: "graph2d",
+      label: "2D function/coordinate graph",
+      reason: "coordinate-plane function graphs should use graph2d.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateAssistantDiagramIntent(
+  graphConfig: Record<string, unknown>,
+  entryPath: string,
+  issues: MauthActionValidationIssue[],
+  intentText: string,
+) {
+  const intent = diagramIntentFromText(intentText);
+  if (!intent) return;
+  const actualType = typeof graphConfig.type === "string" ? graphConfig.type : "";
+  if (!actualType || actualType === intent.expectedType) return;
+  issues.push({
+    path: `${entryPath}.graphConfig.type`,
+    message: `${intent.label} appears to be using ${actualType}; ${intent.reason}`,
+    expected: intent.expectedType,
+  });
+}
+
+function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[], intentText = "") {
   const rawDiagrams = Array.isArray(args.diagrams) ? args.diagrams : args.diagram ? [args.diagram] : [];
   const blocks: ContentBlock[] = [];
   const defaultDiagramAlign =
@@ -979,6 +1149,8 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
       });
       return;
     }
+    validateAssistantDiagramIntent(graphConfig, entryPath, issues, intentText);
+    if (issues.length) return;
     const diagramAlign =
       entry.diagramAlign === "left" || entry.diagramAlign === "center" || entry.diagramAlign === "right"
         ? entry.diagramAlign
@@ -1017,7 +1189,12 @@ function diagramBlocksForAuthorQuestion(
   issues: MauthActionValidationIssue[],
   existingQuestion?: MauthQuestionLike,
 ) {
-  if (hasExplicitDiagramReplacement(args)) return diagramBlocksFromArgs(args, questionId, issues);
+  if (hasExplicitDiagramReplacement(args)) {
+    const intentText = [...rawAssistantTextFragmentsFromAuthorArgs(args), ...rawAssistantTextFragmentsFromQuestion(existingQuestion)].join(
+      "\n",
+    );
+    return diagramBlocksFromArgs(args, questionId, issues, intentText);
+  }
   return preservedDiagramBlocks(existingQuestion);
 }
 
@@ -1098,7 +1275,7 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
           },
         ]
       : []),
-    ...diagramBlocksFromArgs(args, partId, issues),
+    ...diagramBlocksFromArgs(args, partId, issues, [partText, ...rawAssistantTextFragmentsFromAuthorArgs(args)].join("\n")),
     {
       id: authorBlockId(partId, "student-space"),
       kind: "space",
@@ -1268,7 +1445,12 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
     };
   }
 
-  const customBlocks = diagramBlocksFromArgs(args, question.id, issues);
+  const customBlocks = diagramBlocksFromArgs(
+    args,
+    question.id,
+    issues,
+    [...rawAssistantTextFragmentsFromAuthorArgs(args), ...rawAssistantTextFragmentsFromQuestion(question)].join("\n"),
+  );
   const diagramBlock = customBlocks[0];
   if (!diagramBlock) {
     issues.push({

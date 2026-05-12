@@ -418,6 +418,66 @@ const scenarios: SmokeScenario[] = [
     },
   },
   {
+    id: "scalar-product-diagram-wrong-renderer-is-rejected",
+    prompt: "Make Question 1 from a screenshot: evaluate scalar products with a four-vector ray diagram.",
+    assistantPlan:
+      "The intent validator should reject graph2d/vectorRelationship here and ask for a native geometricConstruction ray diagram.",
+    start: () => documentFixture([question("q1", 5, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 8)])]),
+    expectToolFailure: true,
+    calls: [
+      {
+        name: "mauth.author.replaceQuestion",
+        arguments: {
+          questionNumber: 1,
+          marks: 5,
+          questionText: "Evaluate the following scalar products exactly.",
+          parts: [
+            { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, studentSpaceLines: 4 },
+            { text: "$\\mathbf{a}\\cdot\\mathbf{d}$", marks: 2, studentSpaceLines: 4 },
+            { text: "$\\mathbf{c}\\cdot\\mathbf{d}$", marks: 2, studentSpaceLines: 4 },
+          ],
+          diagram: {
+            graphConfig: {
+              type: "vectorRelationship",
+              data: { nodes: [], edges: [] },
+            },
+          },
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => [
+      ...failIf(results[0]?.ok !== false, "wrong scalar-product renderer should fail validation"),
+      ...failIf(document.questions[0].contentBlocks[0]?.kind !== "text", "failed action should leave original question untouched"),
+      ...failIf(diagrams(document).length !== 0, "failed action should not add the wrong diagram"),
+    ],
+  },
+  {
+    id: "coordinate-vector-diagram-wrong-renderer-is-rejected",
+    prompt: "Draw vector a=(2,3) and b=(4,-3) from the origin on coordinate axes.",
+    assistantPlan: "The intent validator should require vector2d for coordinate/component vectors on axes.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Draw vector $\\mathbf{a}=(2,3)$ from the origin.")])]),
+    expectToolFailure: true,
+    calls: [
+      {
+        name: "mauth.author.addDiagram",
+        arguments: {
+          questionNumber: 1,
+          diagram: {
+            graphConfig: {
+              type: "geometricConstruction",
+              data: {},
+              options: { substanceSource: "Point O, A\nSegment(OA, O, A)\n" },
+            },
+          },
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => [
+      ...failIf(results[0]?.ok !== false, "wrong coordinate-vector renderer should fail validation"),
+      ...failIf(diagrams(document).length !== 0, "failed action should not add the wrong diagram"),
+    ],
+  },
+  {
     id: "malformed-diagram-is-rejected",
     prompt: "The assistant tries to create a manual-probability chart with mismatched data arrays.",
     assistantPlan: "The tool boundary should reject malformed diagram config before mutating the document.",
