@@ -14,7 +14,9 @@ import base64
 import io
 import json
 import re
+import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,7 @@ from app.services.openai_assistant import (  # noqa: E402
     assistant_configured,
     create_assistant_response,
 )
+from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -200,6 +203,158 @@ def sample_probability_pdf_attachment() -> list[AssistantAttachment]:
             ),
         )
     ]
+
+
+def png_bytes_from_html(html: str, *, width: int = 1400, height: int = 900) -> bytes:
+    script = """
+const fs = require("fs");
+const { chromium } = require("@playwright/test");
+
+const [, htmlPath, outputPath, widthRaw, heightRaw] = process.argv;
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({
+    viewport: { width: Number(widthRaw), height: Number(heightRaw) },
+    deviceScaleFactor: 1,
+  });
+  await page.setContent(fs.readFileSync(htmlPath, "utf8"), { waitUntil: "load" });
+  await page.screenshot({ path: outputPath, type: "png", fullPage: true });
+  await browser.close();
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+"""
+    with tempfile.TemporaryDirectory(prefix="mauth-assistant-eval-") as tmpdir:
+        html_path = Path(tmpdir) / "fixture.html"
+        output_path = Path(tmpdir) / "fixture.png"
+        html_path.write_text(html, encoding="utf-8")
+        result = subprocess.run(
+            ["node", "-e", script, str(html_path), str(output_path), str(width), str(height)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode:
+            details = (result.stderr or result.stdout or "unknown Playwright screenshot failure").strip()
+            raise RuntimeError(f"Could not render screenshot fixture with Playwright: {details}")
+        return output_path.read_bytes()
+
+
+def attachment_png_from_html(name: str, html: str, *, width: int = 1400, height: int = 900) -> AssistantAttachment:
+    image_bytes = png_bytes_from_html(html, width=width, height=height)
+    payload = base64.b64encode(image_bytes).decode("ascii")
+    return AssistantAttachment(
+        name=name,
+        mimeType="image/png",
+        dataUrl=f"data:image/png;base64,{payload}",
+        sizeBytes=len(image_bytes),
+    )
+
+
+def sample_scalar_product_screenshot_attachment() -> list[AssistantAttachment]:
+    html = """<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body {
+        margin: 0;
+        width: 1400px;
+        height: 900px;
+        background: white;
+        color: black;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      .page {
+        box-sizing: border-box;
+        width: 1400px;
+        height: 900px;
+        padding: 36px 48px;
+        position: relative;
+      }
+      .marks {
+        font-size: 31px;
+        font-weight: 700;
+        margin-bottom: 22px;
+      }
+      .stem {
+        margin-left: 80px;
+        font-size: 32px;
+        margin-bottom: 42px;
+      }
+      .part {
+        margin-left: 80px;
+        font-size: 34px;
+        font-weight: 700;
+        position: absolute;
+      }
+      .part .label {
+        display: inline-block;
+        width: 46px;
+        font-weight: 500;
+      }
+      .p-a { top: 185px; }
+      .p-b { top: 455px; }
+      .p-c { top: 725px; }
+      svg {
+        position: absolute;
+        left: 720px;
+        top: 88px;
+        width: 610px;
+        height: 650px;
+      }
+      .diagram-label {
+        font-size: 28px;
+        font-weight: 700;
+      }
+      .unit-label {
+        font-size: 25px;
+        font-weight: 700;
+      }
+      .angle-label {
+        font-size: 26px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="marks">1. &nbsp; (1, 2, 2 = 5 marks)</div>
+      <div class="stem">Evaluate the following scalar products exactly.</div>
+      <div class="part p-a"><span class="label">a)</span> a . b</div>
+      <div class="part p-b"><span class="label">b)</span> a . d</div>
+      <div class="part p-c"><span class="label">c)</span> c . d</div>
+      <svg viewBox="0 0 610 650" aria-label="four labelled vectors from a common point">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
+          </marker>
+        </defs>
+        <g stroke="black" stroke-width="4" fill="none" marker-end="url(#arrow)">
+          <line x1="270" y1="390" x2="80" y2="580" />
+          <line x1="270" y1="390" x2="115" y2="150" />
+          <line x1="270" y1="390" x2="315" y2="50" />
+          <line x1="270" y1="390" x2="535" y2="190" />
+        </g>
+        <text x="45" y="615" class="diagram-label">a</text>
+        <text x="80" y="145" class="diagram-label">b</text>
+        <text x="313" y="22" class="diagram-label">c</text>
+        <text x="552" y="185" class="diagram-label">d</text>
+        <text x="125" y="520" class="unit-label">2 units</text>
+        <text x="97" y="275" class="unit-label">2 units</text>
+        <text x="324" y="210" class="unit-label">3 units</text>
+        <text x="438" y="350" class="unit-label">2 units</text>
+        <path d="M 246 352 L 282 325 L 306 363" stroke="black" stroke-width="4" fill="none" />
+        <path d="M 285 359 Q 303 341 319 316" stroke="black" stroke-width="4" fill="none" />
+        <text x="305" y="363" class="angle-label">45°</text>
+      </svg>
+    </div>
+  </body>
+</html>"""
+    return [attachment_png_from_html("scalar-product-vectors.png", html)]
 
 
 def docx_bytes_from_text(lines: list[str]) -> bytes:
@@ -422,8 +577,42 @@ def diagram_graph_config(args: dict[str, Any]) -> dict[str, Any]:
         graph_config = diagram.get("graphConfig", diagram.get("config"))
         if isinstance(graph_config, dict):
             return graph_config
+        if isinstance(diagram.get("type"), str):
+            return diagram
+    diagrams = args.get("diagrams")
+    if isinstance(diagrams, list):
+        for diagram_item in diagrams:
+            if not isinstance(diagram_item, dict):
+                continue
+            graph_config = diagram_item.get("graphConfig", diagram_item.get("config"))
+            if isinstance(graph_config, dict):
+                return graph_config
+            if isinstance(diagram_item.get("type"), str):
+                return diagram_item
     graph_config = args.get("graphConfig")
     return graph_config if isinstance(graph_config, dict) else {}
+
+
+def compact_math_text(text: str) -> str:
+    compact = re.sub(r"\s+", "", text.lower())
+    replacements = {
+        "\\cdot": ".",
+        "·": ".",
+        "\\mathbf": "",
+        "\\boldsymbol": "",
+        "\\vec": "",
+        "{": "",
+        "}": "",
+        "$": "",
+    }
+    for source, replacement in replacements.items():
+        compact = compact.replace(source, replacement)
+    return compact
+
+
+def part_math_text(part: dict[str, Any]) -> str:
+    text = str(part.get("text") or part.get("questionText") or "")
+    return compact_math_text(text)
 
 
 def assert_diagram_call(call: dict[str, Any]) -> list[str]:
@@ -687,6 +876,97 @@ def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
+        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+
+    if args.get("questionNumber") != 1:
+        issues.append("questionNumber should be 1")
+    if args.get("includeSolution") is True:
+        issues.append("do not set includeSolution true when the screenshot prompt did not ask for solutions")
+    if str(args.get("solutionText") or "").strip():
+        issues.append("do not include question-level solutionText when the screenshot prompt did not ask for solutions")
+    question_text = str(args.get("questionText") or "")
+    if "scalar product" not in question_text.lower():
+        issues.append("questionText should preserve the scalar-products stem")
+    if "diagram shows" in question_text.lower():
+        issues.append("source diagram should be recreated as a native diagram, not moved into prose")
+
+    graph_config = diagram_graph_config(args)
+    graph_type = graph_config.get("type")
+    if graph_type != "geometricConstruction":
+        issues.append(f"screenshot ray/vector source should use geometricConstruction, got {graph_type!r}")
+    diagrams = args.get("diagrams")
+    if isinstance(diagrams, list) and any(
+        isinstance(item, dict) and "type" in item and "graphConfig" not in item for item in diagrams
+    ):
+        issues.append("diagram items should be wrapped as { graphConfig: ... }, not top-level { type, data }")
+    serialized_diagram = json.dumps(graph_config, ensure_ascii=False).lower()
+    for term in ("a", "b", "c", "d", "45"):
+        if term not in serialized_diagram:
+            issues.append(f"native diagram should preserve visible diagram label/value {term!r}")
+    if "image" == graph_type or "data:image" in serialized_diagram:
+        issues.append("do not paste the screenshot back as an image; recreate an editable native diagram")
+    substance = str(graph_config.get("options", {}).get("substanceSource") or "")
+    if "LabelSegment(" in substance or "\nRay(" in substance:
+        issues.append("Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment")
+    compact_substance = compact_math_text(substance)
+    valid_right_angle_terms = ("rightangle(", "90")
+    if not any(term in compact_substance for term in valid_right_angle_terms):
+        issues.append("native diagram should preserve the visible right-angle marker")
+    if "SegmentLength(" in substance:
+        issues.append("Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths")
+    if graph_type == "geometricConstruction":
+        try:
+            render_penrose_diagram(
+                {
+                    **graph_config,
+                    "style": graph_config.get("style") or "geometry",
+                    "options": {
+                        "penrosePreset": "geometry",
+                        "scalePercent": 100,
+                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
+                    },
+                }
+            )
+        except Exception as exc:
+            issues.append(f"geometricConstruction graphConfig should render through Penrose: {exc}")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 3:
+        issues.append("screenshot source should become exactly three structured parts")
+        return issues
+
+    expected_marks = [1, 2, 2]
+    expected_terms = [("a", "b"), ("a", "d"), ("c", "d")]
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        if str(part.get("solutionText") or "").strip() or part.get("includeSolution") is True:
+            issues.append(f"parts[{index}] should not include a solution unless the prompt asks for one")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+        text = part_math_text(part)
+        first, second = expected_terms[index]
+        if first not in text or second not in text or "." not in text:
+            issues.append(f"parts[{index}].text should preserve {first} · {second}")
+        if str(part.get("text") or "").strip().lower() in {"a", "b", "c", "(a)", "(b)", "(c)"}:
+            issues.append(f"parts[{index}].text should contain the visible scalar product, not just the label")
+
+    if args.get("marks") not in (0, 5, None):
+        issues.append("question-level marks should be omitted/0 or 5 when part marks total 5")
+    if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 5:
+        issues.append("structured part marks should total 5")
+    return issues
+
+
 EVAL_CASES: dict[str, dict[str, Any]] = {
     "circle-question": {
         "prompt": (
@@ -768,6 +1048,15 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_docx_attachment,
         "assert": assert_docx_attachment_circle_call,
     },
+    "screenshot-scalar-products": {
+        "prompt": (
+            "Can you make question 1 from the attached screenshot. Write the question with the diagram entered "
+            "underneath and then put the parts under the diagram."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_scalar_product_screenshot_attachment,
+        "assert": assert_screenshot_scalar_products_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -785,7 +1074,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "vector2d-routing",
     ],
     "all": list(EVAL_CASES),
-    "attachments": ["pdf-attachment-question", "docx-attachment-question"],
+    "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
 }
 
 
