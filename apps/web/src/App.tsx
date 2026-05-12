@@ -5149,12 +5149,12 @@ function ManualModeIcon({ className }: { className?: string }) {
       <path d="M7 7.5v9" strokeWidth="2" />
       <path d="M13 7.5v9" strokeWidth="2" />
       <path d="M7 12h12" strokeWidth="2" />
-      <path d="M19 12V8" strokeWidth="2" />
+      <path d="M19 12V7.6" strokeWidth="2" />
       <circle cx="7" cy="5.5" r="2.1" strokeWidth="2" />
       <circle cx="7" cy="18.5" r="2.1" strokeWidth="2" />
       <circle cx="13" cy="5.5" r="2.1" strokeWidth="2" />
       <circle cx="13" cy="18.5" r="2.1" strokeWidth="2" />
-      <circle cx="19" cy="6.7" r="2.25" strokeWidth="2" fill="currentColor" />
+      <circle cx="19" cy="5.5" r="2.1" strokeWidth="2" fill="currentColor" />
     </svg>
   );
 }
