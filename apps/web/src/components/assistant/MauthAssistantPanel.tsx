@@ -233,7 +233,7 @@ export function MauthAssistantPanel({
   onSendChat,
   onClose,
 }: {
-  placement?: "floating" | "preview-left";
+  placement?: "floating" | "preview-left" | "workspace";
   chatMessages: MauthAssistantChatMessage[];
   chatInput: string;
   chatAttachments: AssistantAttachment[];
@@ -260,6 +260,7 @@ export function MauthAssistantPanel({
   const elapsedSeconds = activityStartedAt ? Math.max(0, Math.floor((now - activityStartedAt) / 1000)) : 0;
   const elapsedLabel =
     elapsedSeconds >= 60 ? `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, "0")}s` : `${elapsedSeconds}s`;
+  const workspacePlacement = placement === "workspace";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
@@ -286,10 +287,15 @@ export function MauthAssistantPanel({
   return (
     <aside
       className={cn(
-        "fixed z-50 flex flex-col overflow-hidden rounded-xl border bg-background shadow-2xl",
-        placement === "preview-left"
-          ? "bottom-4 left-[4.25rem] top-32 w-[min(38rem,calc(100vw-6rem))]"
-          : "bottom-4 right-4 max-h-[min(44rem,calc(100vh-6rem))] w-[min(42rem,calc(100vw-2rem))]",
+        "flex flex-col overflow-hidden rounded-xl border bg-background",
+        workspacePlacement
+          ? "h-full min-h-0 w-full shadow-panel"
+          : cn(
+              "fixed bottom-4 z-50 shadow-2xl",
+              placement === "preview-left"
+                ? "left-[4.25rem] top-32 w-[min(38rem,calc(100vw-6rem))]"
+                : "right-4 max-h-[min(44rem,calc(100vh-6rem))] w-[min(42rem,calc(100vw-2rem))]",
+            ),
       )}
     >
       <div className="flex items-center justify-between gap-3 border-b px-3 py-2">

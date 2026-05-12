@@ -30,7 +30,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  Columns2,
   Eye,
   EyeOff,
   FileText,
@@ -41,8 +40,6 @@ import {
   ListTree,
   ListOrdered,
   Moon,
-  PanelLeftClose,
-  PanelRightClose,
   Plus,
   PlusCircle,
   Redo2,
@@ -250,7 +247,6 @@ const MIN_PREVIEW_SCALE = 0.55;
 const MAX_PREVIEW_FIT_SCALE = 1;
 const MIN_PREVIEW_ZOOM = 0.7;
 const MAX_PREVIEW_ZOOM = 3;
-const ASSISTANT_PREVIEW_RESERVED_WIDTH_PX = 640;
 const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0018;
 const PREVIEW_ZOOM_STATE_SYNC_DELAY_MS = 160;
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
@@ -590,7 +586,7 @@ interface DocumentTocItem {
   previewAnchor: string;
 }
 
-type PaneMode = "split" | "editor" | "preview";
+type PaneMode = "split" | "assistant" | "preview";
 type ThemeMode = "light" | "dark";
 
 interface EditorHistorySnapshot {
@@ -5147,6 +5143,22 @@ function storageStatusTone(status: HeaderSaveStatus) {
   return "bg-red-400";
 }
 
+function ManualModeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 7.5v9" strokeWidth="2" />
+      <path d="M13 7.5v9" strokeWidth="2" />
+      <path d="M7 12h12" strokeWidth="2" />
+      <path d="M19 12V8" strokeWidth="2" />
+      <circle cx="7" cy="5.5" r="2.1" strokeWidth="2" />
+      <circle cx="7" cy="18.5" r="2.1" strokeWidth="2" />
+      <circle cx="13" cy="5.5" r="2.1" strokeWidth="2" />
+      <circle cx="13" cy="18.5" r="2.1" strokeWidth="2" />
+      <circle cx="19" cy="6.7" r="2.25" strokeWidth="2" fill="currentColor" />
+    </svg>
+  );
+}
+
 function HeaderFileControls({
   currentFileName,
   fileStatusMessage,
@@ -7286,7 +7298,7 @@ export default function App() {
   const [dragOverPageBreak, setDragOverPageBreak] = useState<PageBreakDropPreview | null>(null);
   const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
   const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
-  const [paneMode, setPaneMode] = useState<PaneMode>("split");
+  const [paneMode, setPaneMode] = useState<PaneMode>("preview");
   const [tocOpen, setTocOpen] = useState(false);
   const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
   const [activeRailItemId, setActiveRailItemId] = useState(() => firstQuestionAnchor(initialQuestions));
@@ -7388,8 +7400,8 @@ export default function App() {
   });
 
   const assistantController = useMauthAssistantController({
-    previewModeActive: paneMode === "preview",
-    openPreviewMode: hideEditorPane,
+    previewModeActive: paneMode === "assistant",
+    openPreviewMode: showAssistantPane,
     createHost: assistantHost,
     onFileToolStart: (toolName) => {
       setProjectFilesStatus(toolName === "mauth.files.open" ? "loading" : "saving");
@@ -7595,9 +7607,9 @@ export default function App() {
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
   const canUndo = historyVersion >= 0 && undoStackRef.current.length > 0;
   const canRedo = historyVersion >= 0 && redoStackRef.current.length > 0;
-  const showEditor = paneMode !== "preview";
-  const showPreview = paneMode !== "editor";
-  const assistantPreviewOpen = paneMode === "preview" && assistantController.panelOpen;
+  const showEditor = paneMode === "split";
+  const showAssistant = paneMode === "assistant";
+  const showPreview = true;
   const darkMode = theme === "dark";
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const previewFitScale = useMemo(() => {
@@ -7613,13 +7625,9 @@ export default function App() {
   const previewLayoutScale = previewFitScale * previewZoomRef.current;
   const workspaceStyle = useMemo(
     () => ({
-      gridTemplateColumns: paneMode === "split" ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+      gridTemplateColumns: paneMode === "preview" ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(0, 1fr)",
     }),
     [paneMode],
-  );
-  const previewPaneStyle = useMemo<CSSProperties | undefined>(
-    () => (assistantPreviewOpen ? { paddingLeft: ASSISTANT_PREVIEW_RESERVED_WIDTH_PX } : undefined),
-    [assistantPreviewOpen],
   );
   const appShellStyle = useMemo(
     () => ({
@@ -7775,7 +7783,7 @@ export default function App() {
     const observer = new ResizeObserver(updatePreviewViewport);
     observer.observe(previewPane);
     return () => observer.disconnect();
-  }, [assistantPreviewOpen, showPreview]);
+  }, [showPreview]);
 
   useLayoutEffect(() => {
     const previewPane = previewPaneRef.current;
@@ -9115,14 +9123,14 @@ export default function App() {
 
   function jumpToSolutionValidationIssue(anchor: string) {
     setSolutionValidationOpen(false);
-    if (paneMode === "preview") setPaneMode("split");
+    if (!showEditor) setPaneMode("split");
     activateEditorAnchor(anchor);
     revealEditorAnchor(anchor);
     queueDocumentJump(anchor, anchor, { preservePaneMode: true });
   }
 
   function focusSolutionValidationAnchor(anchor: string) {
-    if (paneMode === "preview") setPaneMode("split");
+    if (!showEditor) setPaneMode("split");
     activateEditorAnchor(anchor);
     revealEditorAnchor(anchor);
     queueDocumentJump(anchor, anchor, { preservePaneMode: true });
@@ -9428,9 +9436,26 @@ export default function App() {
     });
   }
 
-  function showSplitPane() {
+  function toggleManualPane() {
+    const nextPaneMode: PaneMode = paneMode === "split" ? "preview" : "split";
+    assistantController.setPanelOpen(false);
     resetPreviewZoom();
-    setPaneMode("split");
+    setPaneMode(nextPaneMode);
+  }
+
+  function showAssistantPane() {
+    assistantController.setPanelOpen(true);
+    resetPreviewZoom();
+    setPaneMode("assistant");
+  }
+
+  function toggleAssistantPane() {
+    if (paneMode === "assistant") {
+      hideEditorPane();
+      return;
+    }
+
+    showAssistantPane();
   }
 
   function resetPreviewZoom() {
@@ -9456,11 +9481,8 @@ export default function App() {
 
   function hideEditorPane() {
     resetPreviewZoom();
+    assistantController.setPanelOpen(false);
     setPaneMode("preview");
-  }
-
-  function hidePreviewPane() {
-    setPaneMode("editor");
   }
 
   function reorderQuestion(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
@@ -10753,6 +10775,32 @@ export default function App() {
                 alt="Mauth Studio"
                 className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
               />
+              <div className="flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={paneMode === "assistant" ? "Hide assistant" : "Assistant mode"}
+                  aria-label={paneMode === "assistant" ? "Hide assistant" : "Assistant mode"}
+                  aria-pressed={paneMode === "assistant"}
+                  onClick={toggleAssistantPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "assistant" && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  <Bot />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={paneMode === "split" ? "Hide editor" : "Manual editor mode"}
+                  aria-label={paneMode === "split" ? "Hide editor" : "Manual editor mode"}
+                  aria-pressed={paneMode === "split"}
+                  onClick={toggleManualPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "split" && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  <ManualModeIcon className="size-5" />
+                </Button>
+              </div>
             </div>
             <div className="flex items-center gap-2 md:hidden">
               <Button
@@ -10869,44 +10917,6 @@ export default function App() {
                   <Redo2 />
                 </Button>
               </div>
-              <div className={HEADER_GROUP_CLASS}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Show editor and display"
-                  aria-label="Show editor and display"
-                  aria-pressed={paneMode === "split"}
-                  onClick={showSplitPane}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "split" && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  <Columns2 />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Editor only"
-                  aria-label="Editor only"
-                  aria-pressed={paneMode === "editor"}
-                  onClick={hidePreviewPane}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "editor" && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  <PanelRightClose />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Display only"
-                  aria-label="Display only"
-                  aria-pressed={paneMode === "preview"}
-                  onClick={hideEditorPane}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "preview" && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  <PanelLeftClose />
-                </Button>
-              </div>
             </div>
           </div>
         </header>
@@ -10945,6 +10955,27 @@ export default function App() {
           />
           {tocOpen ? <DocumentNavigator items={documentTocItems} activeItemId={activeTocItemId} onJump={jumpToTocItem} /> : null}
           <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
+            {showAssistant ? (
+              <section className="assistant-pane min-h-0 overflow-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r">
+                <MauthAssistantPanel
+                  placement="workspace"
+                  chatMessages={assistantController.chatMessages}
+                  chatInput={assistantController.chatInput}
+                  chatAttachments={assistantController.chatAttachments}
+                  attachmentNotice={assistantController.attachmentNotice}
+                  chatRunning={assistantController.chatRunning}
+                  providerConfigured={assistantController.providerConfigured}
+                  providerStatusMessage={assistantController.providerStatusMessage}
+                  activityLabel={assistantController.activityLabel}
+                  activityStartedAt={assistantController.activityStartedAt}
+                  onChatInputChange={assistantController.setChatInput}
+                  onAddAttachments={assistantController.addChatAttachments}
+                  onRemoveAttachment={assistantController.removeChatAttachment}
+                  onSendChat={() => void assistantController.sendChatMessage()}
+                  onClose={hideEditorPane}
+                />
+              </section>
+            ) : null}
             {showEditor ? (
               <section
                 ref={editorPaneRef}
@@ -11138,7 +11169,6 @@ export default function App() {
                   "preview-pane min-h-0 overflow-auto bg-muted/70 p-4",
                   paneMode === "split" && "preview-pane-edit-sync split-pane-scroll",
                 )}
-                style={previewPaneStyle}
                 onPointerDown={handlePreviewPointerDown}
                 onClick={handlePreviewClick}
               >
@@ -11156,23 +11186,6 @@ export default function App() {
             ) : null}
           </div>
         </main>
-        {paneMode === "preview" ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            title={assistantController.panelOpen ? "Hide assistant" : "Open assistant"}
-            aria-label={assistantController.panelOpen ? "Hide assistant" : "Open assistant"}
-            aria-pressed={assistantController.panelOpen}
-            onClick={assistantController.togglePanel}
-            className={cn(
-              "fixed left-[4.25rem] top-20 z-50 size-10 border-blue-200 bg-background/95 text-primary shadow-lg backdrop-blur hover:bg-primary/10",
-              assistantController.panelOpen && "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
-            )}
-          >
-            <Bot className="size-5" aria-hidden="true" />
-          </Button>
-        ) : null}
       </div>
       <FileManagementDrawer
         open={fileManagerOpen}
@@ -11217,25 +11230,6 @@ export default function App() {
           onApply={applyActionProposal}
           onClose={() => setActionProposalOpen(false)}
           onClear={clearActionProposal}
-        />
-      ) : null}
-      {assistantController.panelOpen && paneMode === "preview" ? (
-        <MauthAssistantPanel
-          placement="preview-left"
-          chatMessages={assistantController.chatMessages}
-          chatInput={assistantController.chatInput}
-          chatAttachments={assistantController.chatAttachments}
-          attachmentNotice={assistantController.attachmentNotice}
-          chatRunning={assistantController.chatRunning}
-          providerConfigured={assistantController.providerConfigured}
-          providerStatusMessage={assistantController.providerStatusMessage}
-          activityLabel={assistantController.activityLabel}
-          activityStartedAt={assistantController.activityStartedAt}
-          onChatInputChange={assistantController.setChatInput}
-          onAddAttachments={assistantController.addChatAttachments}
-          onRemoveAttachment={assistantController.removeChatAttachment}
-          onSendChat={() => void assistantController.sendChatMessage()}
-          onClose={() => assistantController.setPanelOpen(false)}
         />
       ) : null}
       {printPreviewMounted ? (
