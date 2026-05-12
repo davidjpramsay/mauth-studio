@@ -244,6 +244,47 @@ test("allows explicit diagram removal when replace question supplies an empty di
   );
 });
 
+test("rejects unwrapped high-level diagram payloads before applying", () => {
+  const topLevelResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 5,
+      questionText: "Evaluate the following scalar products exactly.",
+      studentSpaceLines: 8,
+      diagram: {
+        type: "geometricConstruction",
+        options: {
+          substanceSource: "Point O, A\nLabel O $O$\nLabel A $A$\n",
+        },
+      },
+    },
+  });
+  const aliasResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        config: {
+          type: "geometricConstruction",
+          options: {
+            substanceSource: "Point O, A\nLabel O $O$\nLabel A $A$\n",
+          },
+        },
+      },
+    },
+  });
+  const topLevelData = topLevelResult.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const aliasData = aliasResult.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(topLevelResult.ok, false);
+  assert.equal(aliasResult.ok, false);
+  assert(topLevelData.validationIssues?.some((issue) => issue.path === "arguments.diagram.graphConfig"));
+  assert(topLevelData.validationIssues?.some((issue) => issue.message.includes("wrap renderer field type")));
+  assert(aliasData.validationIssues?.some((issue) => issue.path === "arguments.diagram.graphConfig"));
+  assert(aliasData.validationIssues?.some((issue) => issue.message.includes("must be named graphConfig")));
+});
+
 test("replaces a question with structured parts from a high-level authoring payload", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
@@ -728,6 +769,41 @@ test("rejects malformed diagram configs before they reach the action engine", ()
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.options.widthPx"));
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.probabilities[1]"));
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.probabilities"));
+});
+
+test("rejects unsupported Penrose Substance predicates before applying diagrams", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: [
+              "Point O, A, B",
+              "NamedSegment OA, OB",
+              "LabelsPoint(A, $A$)",
+              "SegmentLength(OA, 2)",
+              "OppositeRays(A, O, B)",
+              "Ray(rayA, O, A)",
+              "PerpendicularToSegment(OB, OC)",
+            ].join("\n"),
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const messages = (data.validationIssues ?? []).map((issue) => issue.message).join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(messages, /LabelsPoint/);
+  assert.match(messages, /SegmentLength/);
+  assert.match(messages, /OppositeRays/);
+  assert.match(messages, /Ray\(\.\.\.\)/);
+  assert.match(messages, /PerpendicularToSegment must receive/);
 });
 
 test("rejects malformed coordinate vector and set diagram action payloads", () => {

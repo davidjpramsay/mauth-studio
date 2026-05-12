@@ -77,6 +77,17 @@ MAUTH_TOOL_NAMES = [
     "mauth.files.versions.restore",
 ]
 
+SUPPORTED_DIAGRAM_TYPES = [
+    "graph2d",
+    "vector2d",
+    "graph3d",
+    "image",
+    "geometricConstruction",
+    "vectorRelationship",
+    "setDiagram",
+    "statsChart",
+]
+
 
 def assistant_model() -> str:
     return os.environ.get("OPENAI_MODEL", DEFAULT_ASSISTANT_MODEL)
@@ -822,6 +833,42 @@ def mauth_tool_definition() -> dict[str, Any]:
     }
 
 
+def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": description,
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "Optional stable block id. Usually omit and let Mauth generate it.",
+            },
+            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "diagramTextSide": {
+                "type": "string",
+                "enum": ["none", "left", "right"],
+                "description": "Usually omit. Use only when a diagram intentionally shares horizontal space with text/solutions.",
+            },
+            "graphConfig": {
+                "type": "object",
+                "description": (
+                    "Native Mauth renderer payload. Put renderer type/data/options here; never put type/data directly "
+                    "on the diagram block."
+                ),
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": SUPPORTED_DIAGRAM_TYPES,
+                    }
+                },
+                "required": ["type"],
+                "additionalProperties": True,
+            },
+        },
+        "required": ["graphConfig"],
+        "additionalProperties": False,
+    }
+
+
 def mauth_author_replace_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
     required_fields = ["questionNumber", "marks", "questionText", "studentSpaceLines"]
     if require_diagram:
@@ -909,11 +956,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "type": "boolean",
                     "description": "Set true only when the teacher requested a solution/answer key or the source visibly contains one.",
                 },
-                "diagram": {
-                    "type": "object",
-                    "description": diagram_description,
-                    "additionalProperties": True,
-                },
+                "diagram": assistant_diagram_block_schema(diagram_description),
                 "diagrams": {
                     "type": "array",
                     "description": (
@@ -922,7 +965,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "native diagram here instead of replacing it with prose. Each item should be shaped as "
                         "{ graphConfig: { type: ... }, diagramAlign?: ... }; do not put type/data directly on the item."
                     ),
-                    "items": {"type": "object", "additionalProperties": True},
+                    "items": assistant_diagram_block_schema("One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."),
                 },
                 "preserveExistingDiagrams": {
                     "type": "boolean",
@@ -970,11 +1013,15 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                 ),
                             },
                             "includeSolution": {"type": "boolean"},
-                            "diagram": {"type": "object", "additionalProperties": True},
+                            "diagram": assistant_diagram_block_schema(
+                                "Optional native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
+                            ),
                             "diagrams": {
                                 "type": "array",
                                 "description": "Optional replacement diagrams for this part. Omit to leave existing diagram decisions alone.",
-                                "items": {"type": "object", "additionalProperties": True},
+                                "items": assistant_diagram_block_schema(
+                                    "One native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
+                                ),
                             },
                             "pageBreakBefore": {"type": "boolean"},
                         },
@@ -1012,42 +1059,14 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
                     "type": "string",
                     "description": "Existing question id to receive the diagram. Use only when known.",
                 },
-                "diagram": {
-                    "type": "object",
-                    "description": (
-                        "Mauth diagram block. Provide { graphConfig, diagramAlign? }. For Penrose geometry, use "
-                        '{ "graphConfig": { "type":"geometricConstruction", "options": { "substanceSource": '
-                        '"Point A, B\\nCircle omega\\n..." } } }. Write supported Mauth Penrose Substance directly. '
-                        "For tangent-parallel-chord diagrams, use predicates such as CircleThrough, OnCircle, "
-                        "Tangent, Segment, and ParallelToSegment. Do not visibly label auxiliary centre points "
-                        "unless the question names them."
-                    ),
-                    "properties": {
-                        "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
-                        "graphConfig": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "graph2d",
-                                        "vector2d",
-                                        "graph3d",
-                                        "image",
-                                        "geometricConstruction",
-                                        "vectorRelationship",
-                                        "setDiagram",
-                                        "statsChart",
-                                    ],
-                                }
-                            },
-                            "required": ["type"],
-                            "additionalProperties": True,
-                        },
-                    },
-                    "required": ["graphConfig"],
-                    "additionalProperties": True,
-                },
+                "diagram": assistant_diagram_block_schema(
+                    "Mauth diagram block. Provide { graphConfig, diagramAlign? }. For Penrose geometry, use "
+                    '{ "graphConfig": { "type":"geometricConstruction", "options": { "substanceSource": '
+                    '"Point A, B\\nCircle omega\\n..." } } }. Write supported Mauth Penrose Substance directly. '
+                    "For tangent-parallel-chord diagrams, use predicates such as CircleThrough, OnCircle, "
+                    "Tangent, Segment, and ParallelToSegment. Do not visibly label auxiliary centre points "
+                    "unless the question names them."
+                ),
                 "diagramAlign": {
                     "type": "string",
                     "enum": ["left", "center", "right"],
@@ -1252,8 +1271,8 @@ Tool-call contract:
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images.
-- Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, and LabelsAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To label an angle, use `LabelsAngle(OC, OD, $45^\\circ$)` between named segments or declare `Label angleCD $45^\\circ$` then `LabelsAngle(angleCD, C, O, D)`.
-- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, and no coordinate axes should use diagram.graphConfig.type = "geometricConstruction" with supported Penrose Substance. Do not use vectorRelationship for these; vectorRelationship is for conceptual network/link diagrams only. Preserve visible right-angle markers with the same two rays shown in the source, and preserve numeric angle labels such as $45^\\circ$. Do not invent unsupported measurement predicates such as SegmentLength; show given magnitudes with Label plus LabelsSegment. In replaceQuestion diagrams, always wrap renderer payloads inside graphConfig.
+- Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To label an angle, use `LabelsAngle(OC, OD, $45^\\circ$)` between named segments or declare `Label angleCD $45^\\circ$` then `LabelsAngle(angleCD, C, O, D)`. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
+- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, and no coordinate axes should use diagram.graphConfig.type = "geometricConstruction" with supported Penrose Substance. Do not use vectorRelationship for these; vectorRelationship is for conceptual network/link diagrams only. Preserve visible right-angle markers with the same two rays shown in the source, and preserve numeric angle labels such as $45^\\circ$. Draw right-angle markers with RightAngle(pointOnFirstRay, vertex, pointOnSecondRay); do not use PerpendicularToSegment for that marker. Do not invent unsupported predicates such as SegmentLength, LabelsPoint, or OppositeRays; show given magnitudes with Label plus LabelsSegment. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_author_ensure_solutions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
 - In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Make the hidden mark total match the question/part marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.

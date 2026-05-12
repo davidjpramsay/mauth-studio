@@ -400,7 +400,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add a diagram to one existing question from a real Mauth graphConfig. Choose graphConfig.type first: geometricConstruction for Penrose geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add a diagram to one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Choose graphConfig.type first: geometricConstruction for Penrose geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -486,6 +486,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For focused one-question writing or replacement requests, prefer mauth.author.replaceQuestion.",
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
+      "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
       "For solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",
       "Run validation for solution or whole-document passes.",
@@ -927,6 +928,24 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
   const blocks: ContentBlock[] = [];
   const defaultDiagramAlign =
     args.diagramAlign === "left" || args.diagramAlign === "center" || args.diagramAlign === "right" ? args.diagramAlign : undefined;
+  const rendererKeys = [
+    "type",
+    "data",
+    "options",
+    "metadata",
+    "style",
+    "functions",
+    "features",
+    "xMin",
+    "xMax",
+    "yMin",
+    "yMax",
+    "scalePercent",
+    "width",
+    "height",
+    "widthPx",
+    "heightPx",
+  ];
 
   rawDiagrams.forEach((entry, index) => {
     const entryPath = rawDiagrams.length === 1 && args.diagram ? "arguments.diagram" : `arguments.diagrams[${index}]`;
@@ -934,7 +953,24 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
       issues.push({ path: entryPath, message: "must be a diagram object", expected: "{ graphConfig, diagramAlign? }" });
       return;
     }
-    const graphConfig = isRecord(entry.graphConfig) ? entry.graphConfig : isRecord(entry.config) ? entry.config : entry;
+    const misplacedRendererKey = rendererKeys.find((key) => Object.prototype.hasOwnProperty.call(entry, key));
+    if (misplacedRendererKey) {
+      issues.push({
+        path: `${entryPath}.graphConfig`,
+        message: `must wrap renderer field ${misplacedRendererKey} inside graphConfig instead of placing it directly on the diagram block`,
+        expected: "{ graphConfig: { type: ... }, diagramAlign? }",
+      });
+      return;
+    }
+    if (isRecord(entry.config) && !isRecord(entry.graphConfig)) {
+      issues.push({
+        path: `${entryPath}.graphConfig`,
+        message: "must be named graphConfig; config is not accepted for assistant-authored diagrams",
+        expected: "{ graphConfig: { type: ... }, diagramAlign? }",
+      });
+      return;
+    }
+    const graphConfig = isRecord(entry.graphConfig) ? entry.graphConfig : undefined;
     if (!isRecord(graphConfig) || typeof graphConfig.type !== "string") {
       issues.push({
         path: `${entryPath}.graphConfig`,

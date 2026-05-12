@@ -59,6 +59,37 @@ const PENROSE_RELATIONSHIP_TYPES = new Set([
 const PENROSE_OBJECT_TYPES = new Set(["point"]);
 const SET_REGION_NAMES = new Set(["onlyA", "intersection", "onlyB", "outside"]);
 const PENROSE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const COMMON_UNSUPPORTED_PENROSE_PREDICATES: Array<{
+  pattern: RegExp;
+  message: string;
+  expected: string;
+}> = [
+  {
+    pattern: /\bLabelsPoint\s*\(/,
+    message: "uses unsupported LabelsPoint predicate",
+    expected: "Label the existing point directly, e.g. `Label A $A$` or `Label A $\\mathbf{a}$`.",
+  },
+  {
+    pattern: /\bSegmentLength\s*\(/,
+    message: "uses unsupported SegmentLength predicate",
+    expected: "Declare a Label and attach it with LabelsSegment(labelName, A, B).",
+  },
+  {
+    pattern: /\bOppositeRays\s*\(/,
+    message: "uses unsupported OppositeRays predicate",
+    expected: "Draw the visible rays or vectors directly with RayFrom or VectorSegment.",
+  },
+  {
+    pattern: /\bLabelSegment\s*\(/,
+    message: "uses unsupported LabelSegment predicate",
+    expected: "Use LabelsSegment(labelName, A, B).",
+  },
+  {
+    pattern: /(^|\n)\s*Ray\s*\(/,
+    message: "uses unsupported Ray(...) syntax",
+    expected: "Declare `Ray rayName` and draw it with RayFrom(rayName, startPoint, throughPoint).",
+  },
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -604,7 +635,44 @@ function validatePenrosePointData(data: Record<string, unknown>, path: string, i
   });
 }
 
-function hasPenroseSubstanceSource(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+function penroseCallArguments(source: string, predicateName: string) {
+  const matches: string[] = [];
+  const pattern = new RegExp(`\\b${predicateName}\\s*\\(([^)]*)\\)`, "g");
+  for (const match of source.matchAll(pattern)) matches.push(match[1] ?? "");
+  return matches;
+}
+
+function countSimplePenroseArgs(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean).length;
+}
+
+function validatePenroseSubstanceSource(source: string, path: string, issues: MauthActionValidationIssue[]) {
+  for (const item of COMMON_UNSUPPORTED_PENROSE_PREDICATES) {
+    if (item.pattern.test(source)) addIssue(issues, path, item.message, item.expected);
+  }
+
+  for (const args of penroseCallArguments(source, "RightAngle")) {
+    if (countSimplePenroseArgs(args) !== 3) {
+      addIssue(issues, path, "RightAngle must receive exactly three point names", "RightAngle(pointOnFirstRay, vertex, pointOnSecondRay)");
+    }
+  }
+
+  for (const args of penroseCallArguments(source, "PerpendicularToSegment")) {
+    if (countSimplePenroseArgs(args) !== 3) {
+      addIssue(
+        issues,
+        path,
+        "PerpendicularToSegment must receive a line name and two point names",
+        "PerpendicularToSegment(lineName, A, B)",
+      );
+    }
+  }
+}
+
+function penroseSubstanceSource(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   if (!hasOwn(config, "options")) return false;
   const options = isRecord(config.options) ? config.options : undefined;
   if (!options) return false;
@@ -613,12 +681,13 @@ function hasPenroseSubstanceSource(config: Record<string, unknown>, path: string
     addIssue(issues, `${path}.options.substanceSource`, "must be a non-empty Penrose Substance string", "Point A, B");
     return false;
   }
+  validatePenroseSubstanceSource(options.substanceSource, `${path}.options.substanceSource`, issues);
   return true;
 }
 
 function validatePenroseDiagram(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[], vectorOnly = false) {
   validateCommonGraphConfig(config, path, issues);
-  const hasSubstanceSource = hasPenroseSubstanceSource(config, path, issues);
+  const hasSubstanceSource = penroseSubstanceSource(config, path, issues);
   const data = hasSubstanceSource ? optionalRecord(config, "data", path, issues) : requiredRecord(config, "data", path, issues);
   if (hasSubstanceSource && data && !hasOwn(data, "objects") && !hasOwn(data, "relationships")) return;
   if (data) validatePenrosePointData(data, `${path}.data`, issues, vectorOnly);

@@ -25,6 +25,8 @@ const ASSISTANT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ASSISTANT_MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const ASSISTANT_DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const ASSISTANT_TEXT_ATTACHMENT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml"]);
+const ASSISTANT_PAUSED_MESSAGE = "I paused before applying more changes. Ask me to continue if you want me to keep going.";
+const ASSISTANT_OLD_PAUSED_MESSAGE_PREFIX = "I stopped after several tool rounds.";
 
 interface AssistantPendingToolContinuation {
   responseId: string | null;
@@ -261,7 +263,7 @@ function failedToolOutputMessage(toolOutput: AssistantToolOutput) {
   const output = toolOutputRecord(toolOutput);
   const message = typeof output?.message === "string" ? output.message : "";
   const error = typeof output?.error === "string" ? output.error : "";
-  return error || message || `The ${toolOutput.name} tool call failed.`;
+  return error || message || "That edit step failed.";
 }
 
 function terminalFailedToolMessage(toolOutputs: readonly AssistantToolOutput[]) {
@@ -269,7 +271,7 @@ function terminalFailedToolMessage(toolOutputs: readonly AssistantToolOutput[]) 
   if (!failed.length) return "";
   const firstMessage = failedToolOutputMessage(failed[0]);
   const remaining = failed.length - 1;
-  const suffix = remaining > 0 ? ` ${remaining} other tool call${remaining === 1 ? "" : "s"} also failed.` : "";
+  const suffix = remaining > 0 ? ` ${remaining} other edit step${remaining === 1 ? "" : "s"} also failed.` : "";
   return `I could not apply that edit after one repair attempt. ${firstMessage}${suffix}`;
 }
 
@@ -496,7 +498,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         {
           id: assistantMessageId(),
           role: "assistant",
-          content: "I stopped after several tool rounds. Ask me to continue if you want me to keep going.",
+          content: ASSISTANT_PAUSED_MESSAGE,
         },
       ]);
       return { responseId, usage: totalUsage, pending };
@@ -517,7 +519,10 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
     const previousId = pendingContinuation ? null : previousResponseId;
     const priorMessages = chatMessages
-      .filter((chatMessage) => !chatMessage.content.startsWith("I stopped after several tool rounds."))
+      .filter(
+        (chatMessage) =>
+          !chatMessage.content.startsWith(ASSISTANT_PAUSED_MESSAGE) && !chatMessage.content.startsWith(ASSISTANT_OLD_PAUSED_MESSAGE_PREFIX),
+      )
       .slice(-8)
       .map(
         (chatMessage): AssistantChatMessage => ({
