@@ -632,6 +632,16 @@ def focused_tool_hint(
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
 
     if asks_to_write_question:
+        circle_proof_guidance = ""
+        if all(term in text for term in ("circle", "tangent")) and any(
+            term in text for term in ("proof", "prove", "show", "subtended", "circumference")
+        ):
+            circle_proof_guidance = (
+                " For a generic tangent/circle proof request, use a robust tangent-radius/central-angle theorem path: "
+                "for example define the centre, use radius perpendicular tangent, equal radii, and the central-angle/"
+                "angle-at-circumference relationship to prove the tangent-chord angle result. Do not add extra "
+                "parallel chords or parallel-line scaffolding unless the teacher explicitly requested parallel lines."
+            )
         diagram_guidance = (
             "If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in "
             "the same replacement payload, before structured parts when the teacher asks for parts under the diagram. "
@@ -642,7 +652,7 @@ def focused_tool_hint(
         return (
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
             f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
-            f"and solutionText when a solution is requested. {diagram_guidance}"
+            f"and solutionText when a solution is requested.{circle_proof_guidance} {diagram_guidance}"
         )
     if (
         any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
@@ -1266,7 +1276,7 @@ Authoring quality bar:
 - Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\] or \\(...\\) delimiters.
 - For multipart questions, use the structured parts array on mauth_author_replace_question or mauth.author.replaceQuestion. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.
-- For circle-geometry proof prompts involving tangents and angles subtended at the circumference, prefer a symbolic theorem/proof relationship. Do not add unnecessary numerical angle givens or make the task only a one-step substitution into the tangent-chord theorem unless the teacher explicitly asks for a numerical angle question.
+- For circle-geometry proof prompts involving tangents and angles subtended at the circumference, prefer a symbolic theorem/proof relationship. A robust default is to use the centre, radius perpendicular to tangent, equal radii, and the central-angle/angle-at-circumference relationship to prove the tangent-chord angle result. Do not add unnecessary numerical angle givens, and do not add parallel chords or parallel-line scaffolding unless the teacher explicitly asks for parallel lines.
 
 Current compact document summary:
 {summary_text}
