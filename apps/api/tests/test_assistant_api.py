@@ -517,6 +517,53 @@ def test_focused_diagram_prompt_exposes_only_add_diagram_tool():
     assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
 
 
+def test_repair_continuation_stays_on_direct_authoring_tool():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_author_add_diagram",
+            output={
+                "ok": False,
+                "toolName": "mauth.author.addDiagram",
+                "validationIssues": [
+                    {
+                        "path": "arguments.diagram.graphConfig.type",
+                        "message": "Use graphConfig.type 'geometricConstruction', not 'graph2d'.",
+                    }
+                ],
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
+
+
+def test_replace_question_repair_keeps_required_diagram_when_validation_mentions_diagram():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_tool",
+            output={
+                "ok": False,
+                "toolName": "mauth.author.replaceQuestion",
+                "validationIssues": [
+                    {
+                        "path": "arguments.diagram",
+                        "message": "The source screenshot prompt requires a native diagram graphConfig.",
+                    }
+                ],
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "diagram" in tools[0]["parameters"]["required"]
+
+
 def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():
     instructions = openai_assistant.assistant_instructions(
         {

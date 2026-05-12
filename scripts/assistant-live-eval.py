@@ -462,6 +462,27 @@ def sample_vector2d_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_scalar_product_diagram_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 5
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "Evaluate the scalar products a dot b, a dot d, and c dot d from the diagram. "
+                "The source diagram has four common-origin labelled vectors a, b, c, and d; "
+                "|a|=2, |b|=2, |c|=3, |d|=2; a and d lie on the same straight line in opposite "
+                "directions; b is perpendicular to d; and the angle between c and d is 45 degrees."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 10},
+    ]
+    summary["questions"][0]["studentSpaceLines"] = 10
+    return summary
+
+
 def hidden_mark_total(text: str) -> int:
     total = 0
     for match in re.finditer(r"\[\[\s*marks\s*:\s*(\d+)\s*\]\]", text, flags=re.IGNORECASE):
@@ -876,6 +897,46 @@ def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_scalar_product_add_diagram_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_diagram_type_call(
+        call,
+        expected_type="geometricConstruction",
+        required_terms=("a", "b", "c", "d", "45"),
+        forbidden_types=("vectorRelationship", "vector2d", "graph2d"),
+    )
+    graph_config = diagram_graph_config(
+        call.get("mauthArguments") if isinstance(call.get("mauthArguments"), dict) else {}
+    )
+    substance = str(graph_config.get("options", {}).get("substanceSource") or "")
+    if "LabelSegment(" in substance or "\nRay(" in substance:
+        issues.append(
+            "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
+        )
+    if "SegmentLength(" in substance:
+        issues.append(
+            "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
+        )
+    compact_substance = compact_math_text(substance)
+    if "rightangle(" not in compact_substance and "90" not in compact_substance:
+        issues.append("scalar-product diagram should preserve the right-angle marker")
+    if graph_config.get("type") == "geometricConstruction":
+        try:
+            render_penrose_diagram(
+                {
+                    **graph_config,
+                    "style": graph_config.get("style") or "geometry",
+                    "options": {
+                        "penrosePreset": "geometry",
+                        "scalePercent": 100,
+                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
+                    },
+                }
+            )
+        except Exception as exc:
+            issues.append(f"geometricConstruction graphConfig should render through Penrose: {exc}")
+    return issues
+
+
 def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     if call.get("mauthToolName") != "mauth.author.replaceQuestion":
@@ -909,17 +970,21 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     for term in ("a", "b", "c", "d", "45"):
         if term not in serialized_diagram:
             issues.append(f"native diagram should preserve visible diagram label/value {term!r}")
-    if "image" == graph_type or "data:image" in serialized_diagram:
+    if graph_type == "image" or "data:image" in serialized_diagram:
         issues.append("do not paste the screenshot back as an image; recreate an editable native diagram")
     substance = str(graph_config.get("options", {}).get("substanceSource") or "")
     if "LabelSegment(" in substance or "\nRay(" in substance:
-        issues.append("Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment")
+        issues.append(
+            "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
+        )
     compact_substance = compact_math_text(substance)
     valid_right_angle_terms = ("rightangle(", "90")
     if not any(term in compact_substance for term in valid_right_angle_terms):
         issues.append("native diagram should preserve the visible right-angle marker")
     if "SegmentLength(" in substance:
-        issues.append("Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths")
+        issues.append(
+            "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
+        )
     if graph_type == "geometricConstruction":
         try:
             render_penrose_diagram(
@@ -965,6 +1030,40 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 5:
         issues.append("structured part marks should total 5")
     return issues
+
+
+def validation_failure_output(
+    *,
+    tool_name: str | None,
+    validation_issues: list[dict[str, Any]],
+    message: str = "Mauth action validation failed.",
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "toolName": tool_name,
+        "kind": "document",
+        "message": message,
+        "error": message,
+        "validationIssues": validation_issues,
+        "warnings": [{"code": "assistant-tool-not-applied", "message": message}],
+        "changedIds": [],
+        "changedPaths": [],
+        "committedDocument": False,
+    }
+
+
+def wrong_renderer_failure_output(call: dict[str, Any], *, actual: str, expected: str, reason: str) -> dict[str, Any]:
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=[
+            {
+                "path": "arguments.diagram.graphConfig.type",
+                "message": f"{reason} Use graphConfig.type {expected!r}, not {actual!r}.",
+                "actual": actual,
+                "expected": expected,
+            }
+        ],
+    )
 
 
 EVAL_CASES: dict[str, dict[str, Any]] = {
@@ -1057,6 +1156,32 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_scalar_product_screenshot_attachment,
         "assert": assert_screenshot_scalar_products_call,
     },
+    "repair-circle-diagram": {
+        "prompt": "Please add the diagram to question 1 that goes along with the question.",
+        "summary": sample_parallel_chord_circle_document_summary,
+        "assert": assert_parallel_chord_diagram_call,
+        "repairFailure": lambda call: wrong_renderer_failure_output(
+            call,
+            actual="graph2d",
+            expected="geometricConstruction",
+            reason=(
+                "This is a schematic circle theorem diagram with a tangent and chord, not a coordinate function graph."
+            ),
+        ),
+        "repairAssert": assert_parallel_chord_diagram_call,
+    },
+    "repair-scalar-product-diagram": {
+        "prompt": "Add the native diagram for Question 1.",
+        "summary": sample_scalar_product_diagram_document_summary,
+        "assert": assert_scalar_product_add_diagram_call,
+        "repairFailure": lambda call: wrong_renderer_failure_output(
+            call,
+            actual="vectorRelationship",
+            expected="geometricConstruction",
+            reason=("This is a scalar-product ray diagram with magnitudes and angle markers, not a network diagram."),
+        ),
+        "repairAssert": assert_scalar_product_add_diagram_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -1073,6 +1198,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "stats-chart-routing",
         "vector2d-routing",
     ],
+    "repair": ["repair-circle-diagram", "repair-scalar-product-diagram"],
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
 }
@@ -1109,6 +1235,30 @@ def summarize_call(call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def print_provider_response(
+    label: str, response: dict[str, Any], calls: list[dict[str, Any]], *, verbose: bool = False
+) -> None:
+    print(f"{label}:")
+    if verbose:
+        print(
+            json.dumps(
+                {"message": response.get("message"), "usage": response.get("usage"), "toolCalls": calls},
+                indent=2,
+            )
+        )
+        return
+    print(
+        json.dumps(
+            {
+                "message": response.get("message"),
+                "usage": response.get("usage"),
+                "toolCalls": [summarize_call(call) for call in calls],
+            },
+            indent=2,
+        )
+    )
+
+
 async def run_single_eval(
     case_name: str, model: str | None = None, final_message: bool = False, verbose: bool = False
 ) -> tuple[int, float, int]:
@@ -1132,28 +1282,48 @@ async def run_single_eval(
     total_cost = usage_cost(first.get("usage"))
     total_tokens = usage_tokens(first.get("usage"))
 
-    print("First response:")
-    if verbose:
-        print(
-            json.dumps(
-                {"message": first.get("message"), "usage": first.get("usage"), "toolCalls": first_calls}, indent=2
-            )
-        )
-    else:
-        print(
-            json.dumps(
-                {
-                    "message": first.get("message"),
-                    "usage": first.get("usage"),
-                    "toolCalls": [summarize_call(call) for call in first_calls],
-                },
-                indent=2,
-            )
-        )
+    print_provider_response("First response", first, first_calls, verbose=verbose)
 
     if len(first_calls) != 1:
         print(f"FAIL: expected exactly one tool call, got {len(first_calls)}", file=sys.stderr)
         return 1, total_cost, total_tokens
+
+    repair_failure = case.get("repairFailure")
+    if callable(repair_failure):
+        tool_output = repair_failure(first_calls[0])
+        second = await create_assistant_response(
+            AssistantChatRequest(
+                model=model,
+                previousResponseId=first.get("responseId"),
+                toolOutputs=[
+                    AssistantToolOutput(
+                        callId=first_calls[0]["callId"],
+                        name=first_calls[0]["name"],
+                        output=tool_output,
+                    )
+                ],
+                documentSummary=summary,
+            )
+        )
+        second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
+        total_cost += usage_cost(second.get("usage"))
+        total_tokens += usage_tokens(second.get("usage"))
+        print_provider_response("Repair response", second, second_calls, verbose=verbose)
+
+        if len(second_calls) != 1:
+            print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
+            return 1, total_cost, total_tokens
+
+        repair_assert = case.get("repairAssert", assert_call)
+        repair_issues = repair_assert(second_calls[0])
+        if repair_issues:
+            print("FAIL:")
+            for issue in repair_issues:
+                print(f"- {issue}")
+            return 1, total_cost, total_tokens
+
+        print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
+        return 0, total_cost, total_tokens
 
     issues = assert_call(first_calls[0])
     if issues:
@@ -1190,25 +1360,7 @@ async def run_single_eval(
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
-        print("Final response:")
-        if verbose:
-            print(
-                json.dumps(
-                    {"message": second.get("message"), "usage": second.get("usage"), "toolCalls": second_calls},
-                    indent=2,
-                )
-            )
-        else:
-            print(
-                json.dumps(
-                    {
-                        "message": second.get("message"),
-                        "usage": second.get("usage"),
-                        "toolCalls": [summarize_call(call) for call in second_calls],
-                    },
-                    indent=2,
-                )
-            )
+        print_provider_response("Final response", second, second_calls, verbose=verbose)
         if second_calls:
             print("FAIL: final response should not need another tool call.", file=sys.stderr)
             return 1, total_cost, total_tokens

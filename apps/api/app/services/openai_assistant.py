@@ -210,6 +210,29 @@ def request_text(
     return "\n".join(parts).lower()
 
 
+def tool_output_target_names(tool_outputs: list[AssistantToolOutput] | None = None) -> set[str]:
+    names: set[str] = set()
+    for tool_output in tool_outputs or []:
+        if isinstance(tool_output.name, str) and tool_output.name.strip():
+            names.add(tool_output.name.strip())
+        output = tool_output.output
+        if isinstance(output, dict):
+            for key in ("toolName", "name"):
+                value = output.get(key)
+                if isinstance(value, str) and value.strip():
+                    names.add(value.strip())
+    return names
+
+
+def tool_outputs_mention(tool_outputs: list[AssistantToolOutput] | None, terms: tuple[str, ...]) -> bool:
+    for tool_output in tool_outputs or []:
+        output = tool_output.output
+        text = json.dumps(output, ensure_ascii=False).lower() if isinstance(output, dict) else str(output).lower()
+        if any(term in text for term in terms):
+            return True
+    return False
+
+
 def assistant_brain_menu() -> list[dict[str, Any]]:
     brain_dir = CONFIG_ROOT / "ai-brains"
     index_path = brain_dir / "index.json"
@@ -965,7 +988,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "native diagram here instead of replacing it with prose. Each item should be shaped as "
                         "{ graphConfig: { type: ... }, diagramAlign?: ... }; do not put type/data directly on the item."
                     ),
-                    "items": assistant_diagram_block_schema("One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."),
+                    "items": assistant_diagram_block_schema(
+                        "One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."
+                    ),
                 },
                 "preserveExistingDiagrams": {
                     "type": "boolean",
@@ -1181,6 +1206,7 @@ def assistant_tool_definitions(
     attachments: list[AssistantAttachment] | None = None,
 ) -> list[dict[str, Any]]:
     text = request_text(messages, tool_outputs)
+    repair_targets = tool_output_target_names(tool_outputs)
     question_numbers = question_numbers_from_request(messages)
     has_specific_question = bool(question_numbers) or "current question" in text or "selected question" in text
     asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
@@ -1206,6 +1232,21 @@ def assistant_tool_definitions(
     )
     require_source_diagram = source_diagram_required_for_replace(messages, attachments)
     file_only_terms = ("open file", "save file", "rename file", "delete file", "move file", "folder", "files")
+
+    # Repair continuations should stay on the same narrow authoring surface
+    # that produced the failed tool output. This avoids reopening the broad
+    # wrapper tool just to fix a precise validationIssue path.
+    if repair_targets & {"mauth_author_replace_question", "mauth.author.replaceQuestion"}:
+        return [
+            mauth_author_replace_question_tool_definition(
+                require_diagram=require_source_diagram
+                or tool_outputs_mention(tool_outputs, ("diagram", "graphconfig", "graph config"))
+            )
+        ]
+    if repair_targets & {"mauth_author_add_diagram", "mauth.author.addDiagram"}:
+        return [mauth_author_add_diagram_tool_definition()]
+    if repair_targets & {"mauth_author_ensure_solutions", "mauth.author.ensureSolutions"}:
+        return [mauth_author_ensure_solutions_tool_definition()]
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
