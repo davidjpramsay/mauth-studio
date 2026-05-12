@@ -1,16 +1,29 @@
 import { useCallback } from "react";
-import type { ProjectFileDocument, ProjectFileSaveRequest, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
+import type {
+  ContentBlock,
+  GraphConfig,
+  ProjectFileDocument,
+  ProjectFileSaveRequest,
+  ProjectFileSummary,
+  ProjectSummary,
+} from "@mauth-studio/shared";
 
 import {
   deleteProjectFile,
   getProjectFile,
   listProjectFiles,
   listProjectFileVersions,
+  renderPenroseDiagram,
   restoreProjectFileVersion,
   saveProjectFile,
 } from "@/lib/api";
-import type { MauthAssistantAdapterHost, MauthAssistantToolCommitContext } from "@/lib/mauthAssistantAdapter";
-import type { MauthDocumentActionOptions, MauthDocumentLike, MauthQuestionLike } from "@/lib/mauthActions";
+import { penroseRenderRequest } from "@/lib/diagramPenrose";
+import type {
+  MauthAssistantAdapterHost,
+  MauthAssistantDocumentPreflightResult,
+  MauthAssistantToolCommitContext,
+} from "@/lib/mauthAssistantAdapter";
+import type { MauthDocumentActionOptions, MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "@/lib/mauthActions";
 
 type RefValue<T> = {
   current: T;
@@ -54,6 +67,96 @@ function revisionFromToolContext(context: MauthAssistantToolCommitContext) {
   return typeof contextDocument?.revision === "number" ? contextDocument.revision : null;
 }
 
+function isPenroseGraphConfig(graphConfig: GraphConfig) {
+  return graphConfig.type === "geometricConstruction" || graphConfig.type === "setDiagram" || graphConfig.type === "vectorRelationship";
+}
+
+interface PenrosePreflightCandidate {
+  graphConfig: GraphConfig;
+  path: string;
+  targetId: string;
+}
+
+function collectChangedPenroseBlocks<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  changedIds: readonly string[],
+) {
+  const changedIdSet = new Set(changedIds);
+  const validateAll = changedIdSet.size === 0;
+  const candidates: PenrosePreflightCandidate[] = [];
+
+  function collectBlocks(blocks: readonly ContentBlock[], pathPrefix: string, inheritedChanged: boolean) {
+    blocks.forEach((block, blockIndex) => {
+      const blockChanged = inheritedChanged || changedIdSet.has(block.id);
+      if (block.kind !== "diagram" || !blockChanged || !isPenroseGraphConfig(block.graphConfig)) return;
+      candidates.push({
+        graphConfig: block.graphConfig,
+        path: `${pathPrefix}.contentBlocks[${blockIndex}].graphConfig`,
+        targetId: block.id,
+      });
+    });
+  }
+
+  function collectSubpart(subpart: MauthSubpartLike, pathPrefix: string, inheritedChanged: boolean) {
+    const subpartChanged = inheritedChanged || changedIdSet.has(subpart.id);
+    collectBlocks(subpart.contentBlocks, pathPrefix, subpartChanged);
+  }
+
+  function collectPart(part: MauthPartLike, pathPrefix: string, inheritedChanged: boolean) {
+    const partChanged = inheritedChanged || changedIdSet.has(part.id);
+    collectBlocks(part.contentBlocks, pathPrefix, partChanged);
+    part.subparts?.forEach((subpart, subpartIndex) => {
+      collectSubpart(subpart, `${pathPrefix}.subparts[${subpartIndex}]`, partChanged);
+    });
+  }
+
+  document.questions.forEach((question, questionIndex) => {
+    const questionChanged = validateAll || changedIdSet.has(question.id);
+    const questionPath = `questions[${questionIndex}]`;
+    collectBlocks(question.contentBlocks, questionPath, questionChanged);
+    question.parts?.forEach((part, partIndex) => {
+      collectPart(part, `${questionPath}.parts[${partIndex}]`, questionChanged);
+    });
+  });
+
+  return candidates;
+}
+
+async function validatePenroseDiagramsBeforeCommit<
+  Q extends MauthQuestionLike,
+  F extends object,
+  C extends object = Record<string, unknown>,
+>(
+  document: MauthDocumentLike<Q, F, C>,
+  _context: MauthAssistantToolCommitContext,
+  changedIds: string[],
+): Promise<MauthAssistantDocumentPreflightResult> {
+  const candidates = collectChangedPenroseBlocks(document, changedIds);
+  for (const candidate of candidates) {
+    try {
+      await renderPenroseDiagram(penroseRenderRequest(candidate.graphConfig));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const message = `Penrose diagram did not render for ${candidate.path}. Fix graphConfig.options.substanceSource and retry.`;
+      return {
+        ok: false,
+        error: `${message} ${detail}`,
+        warnings: [{ code: "assistant-penrose-render-failed", message, targetId: candidate.targetId }],
+        validationIssues: [
+          {
+            path: candidate.path,
+            message: `Penrose diagram did not render. ${detail}`,
+            expected:
+              "A renderable Penrose graphConfig. For angle labels, define `Label angleName $...$` and then call `LabelsAngle(angleName, A, B, C)`.",
+            targetId: candidate.targetId,
+          },
+        ],
+      };
+    }
+  }
+  return { ok: true };
+}
+
 export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>({
   getDocument,
   commitDocument,
@@ -81,6 +184,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getProjectId: async () => (await ensureProject()).id,
       getActiveFilePath: () => activeProjectFilePathRef.current,
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
+      validateDocumentBeforeCommit: validatePenroseDiagramsBeforeCommit,
       setActiveFilePath: (filePath, context) => {
         const revision = filePath ? revisionFromToolContext(context) : null;
         activeProjectFilePathRef.current = filePath;

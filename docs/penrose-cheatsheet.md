@@ -121,6 +121,8 @@ Label theta $\theta$
 LabelsAngle(theta, B, A, C)
 ```
 
+Do not write `LabelsAngle(B, A, C, $45^\circ$)` or put raw TeX directly inside `LabelsAngle`. Always declare a `Label` first, then attach that label object to the three angle points.
+
 Angle marks:
 
 ```penrose

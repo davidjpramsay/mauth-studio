@@ -1,5 +1,7 @@
 import type {
+  DiagramSpec,
   GeneratedTest,
+  PenroseDiagramResponse,
   ProjectFileDocument,
   ProjectFileSaveRequest,
   ProjectFileSummary,
@@ -70,6 +72,21 @@ async function postJson<TResponse>(path: string, body: unknown): Promise<TRespon
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+
+  return response.json() as Promise<TResponse>;
+}
+
+async function postJsonWithSignal<TResponse>(path: string, body: unknown, signal?: AbortSignal): Promise<TResponse> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -335,4 +352,8 @@ export function getAssistantStatus() {
 
 export function sendAssistantChat(request: AssistantChatRequest) {
   return postJson<AssistantChatResponse>("/api/assistant/chat", request);
+}
+
+export function renderPenroseDiagram(spec: DiagramSpec, signal?: AbortSignal) {
+  return postJsonWithSignal<PenroseDiagramResponse>("/api/diagram/penrose", spec, signal);
 }

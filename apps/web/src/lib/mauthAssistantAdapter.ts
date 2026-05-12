@@ -27,6 +27,21 @@ export interface MauthAssistantToolCommitContext {
   data?: unknown;
 }
 
+export interface MauthAssistantDocumentPreflightIssue {
+  path: string;
+  message: string;
+  expected?: string;
+  targetId?: string;
+}
+
+export interface MauthAssistantDocumentPreflightResult {
+  ok: boolean;
+  error?: string;
+  warnings?: MauthActionWarning[];
+  validationIssues?: MauthAssistantDocumentPreflightIssue[];
+  data?: unknown;
+}
+
 export interface MauthAssistantAdapterResult<
   Q extends MauthQuestionLike = MauthQuestionLike,
   F extends object = Record<string, unknown>,
@@ -58,6 +73,11 @@ export interface MauthAssistantAdapterHost<
   getProjectId?: () => string | null | Promise<string | null>;
   getActiveFilePath?: () => string | null;
   getActiveFileRevision?: () => number | null;
+  validateDocumentBeforeCommit?: (
+    document: MauthDocumentLike<Q, F, C>,
+    context: MauthAssistantToolCommitContext,
+    changedIds: string[],
+  ) => MauthAssistantDocumentPreflightResult | Promise<MauthAssistantDocumentPreflightResult>;
   setActiveFilePath?: (path: string | null, context: MauthAssistantToolCommitContext) => void | Promise<void>;
   serializeDocument?: (document: MauthDocumentLike<Q, F, C>, context: MauthAssistantToolCommitContext) => string | Promise<string>;
   parseProjectFileDocument?: (
@@ -107,6 +127,37 @@ function documentToolResult<Q extends MauthQuestionLike, F extends object, C ext
     warnings: result.warnings,
     error: result.error,
     committedDocument,
+  };
+}
+
+function preflightFailureData(resultData: unknown, preflight: MauthAssistantDocumentPreflightResult) {
+  const resultRecord = isRecord(resultData) ? resultData : {};
+  const preflightRecord = isRecord(preflight.data) ? preflight.data : {};
+  const validationIssues =
+    preflight.validationIssues ?? (Array.isArray(preflightRecord.validationIssues) ? preflightRecord.validationIssues : []);
+  return {
+    ...resultRecord,
+    ...preflightRecord,
+    validationIssues,
+  };
+}
+
+function documentPreflightFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  result: MauthAssistantToolResult<Q, F, C>,
+  preflight: MauthAssistantDocumentPreflightResult,
+): MauthAssistantAdapterResult<Q, F, C> {
+  const error = preflight.error ?? "Assistant document preflight failed.";
+  return {
+    ok: false,
+    toolName: result.toolName,
+    kind: "document",
+    data: preflightFailureData(result.data, preflight),
+    document: result.document,
+    changedIds: result.changedIds,
+    changedPaths: [],
+    warnings: [...result.warnings, ...(preflight.warnings ?? [{ code: "assistant-document-preflight-failed", message: error }])],
+    error,
+    committedDocument: false,
   };
 }
 
@@ -188,7 +239,12 @@ export async function runMauthAssistantAdapterTool<
       ).includes(call.name) &&
       result.document
     ) {
-      await host.commitDocument(result.document, { toolName: call.name, reason: "assistant-document-apply", data: result.data });
+      const context = { toolName: call.name, reason: "assistant-document-apply", data: result.data };
+      if (host.validateDocumentBeforeCommit) {
+        const preflight = await host.validateDocumentBeforeCommit(result.document, context, result.changedIds);
+        if (!preflight.ok) return documentPreflightFailureResult(result, preflight);
+      }
+      await host.commitDocument(result.document, context);
       committedDocument = true;
     }
     return documentToolResult(result, committedDocument);

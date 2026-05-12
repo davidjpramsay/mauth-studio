@@ -247,6 +247,49 @@ test("commits high-level diagram and solution authoring results through editor h
   assert(harness.document.questions[0].contentBlocks.some((block) => block.kind === "text" && block.visibility === "solution"));
 });
 
+test("does not commit assistant document changes when preflight rejects them", async () => {
+  const harness = adapterHost({
+    validateDocumentBeforeCommit: () => ({
+      ok: false,
+      error: "Penrose diagram did not render.",
+      warnings: [{ code: "assistant-penrose-render-failed", message: "Fix graphConfig.options.substanceSource and retry." }],
+      validationIssues: [
+        {
+          path: "questions[0].contentBlocks[1].graphConfig",
+          message: "Penrose diagram did not render.",
+          expected: "A renderable Penrose graphConfig.",
+        },
+      ],
+    }),
+  });
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          options: {
+            substanceSource: "Point A\nLabel A $A$\n",
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, false);
+  assert.equal(harness.commits.length, 0);
+  assert.match(result.error ?? "", /Penrose diagram did not render/);
+  assert.equal(data.validationIssues?.[0]?.path, "questions[0].contentBlocks[1].graphConfig");
+  assert.equal(
+    harness.document.questions[0].contentBlocks.some((block) => block.kind === "diagram"),
+    false,
+  );
+});
+
 test("injects serialized current document when saving through file tools", async () => {
   const driver = createMemoryDriver([{ summary: fileSummary("tests", "folder"), content: null, versions: [] }]);
   const harness = adapterHost({ fileDriver: driver });
