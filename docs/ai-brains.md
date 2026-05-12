@@ -87,7 +87,9 @@ For exam conversions, the AI should use the school-exam front-matter recipe expo
 
 For large AI-authored edits, run a document-action dry run first. Inspect the preview summary for validity, touched ids, added/deleted/moved/reordered counts, changed front-matter/page-format fields, warnings, and validation output before applying the same batch as a committed edit.
 
-In-app assistant work should use the assistant tool loop documented in `docs/ai-chatbox-readiness.md`: inspect the current document with `mauth.document.inspect`, preview edits with `mauth.actions.preview`, validate with `mauth.validation.run`, apply accepted actions with `mauth.actions.apply`, then commit the returned document through editor history/autosave. Do not teach AI workflows to mutate React state, DOM nodes, browser cache, or raw project files directly.
+In-app assistant work should use the assistant tool loop documented in `docs/ai-chatbox-readiness.md`: inspect focused current/selected question context with `mauth.preview.inspect` when working on one question/module, inspect the whole document with `mauth.document.inspect` when needed, preview edits with `mauth.actions.preview`, validate with `mauth.validation.run`, apply accepted actions with `mauth.actions.apply`, then commit the returned document through editor history/autosave. Do not teach AI workflows to mutate React state, DOM nodes, browser cache, or raw project files directly.
+
+Use `mauth.preview.inspect` before or after focused edits that can otherwise lose important context: changing a solution/mark allocation, adding a diagram, repairing answer-space layout, checking why selected content moved, or converting one source question from an attachment. The tool reports module anchors, selected block, diagram renderer/alignment, left/right beside-content hints, solution scopes, hidden tick totals, visible mark-note warnings, and blank part/subpart warnings. Treat those warnings as repair targets before telling the teacher the edit is finished.
 
 For focused teacher prompts, the in-app assistant should use high-level authoring tools before falling back to low-level action batches:
 

@@ -26,6 +26,7 @@ import {
 export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.tools.describe",
   "mauth.document.inspect",
+  "mauth.preview.inspect",
   "mauth.validation.run",
   "mauth.actions.preview",
   "mauth.actions.apply",
@@ -142,6 +143,89 @@ export interface MauthDocumentInspection {
     studentSpaceLines: number;
   };
   questions: MauthQuestionInspection[];
+}
+
+export interface MauthAssistantToolContext {
+  activeAnchor?: string | null;
+}
+
+export interface MauthAssistantToolOptions<
+  Q extends MauthQuestionLike = MauthQuestionLike,
+  F extends object = Record<string, unknown>,
+  C extends object = Record<string, unknown>,
+> extends MauthDocumentActionOptions<Q, F, C> {
+  assistantContext?: MauthAssistantToolContext;
+}
+
+export interface MauthPreviewInspectionWarning {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  anchor?: string;
+  targetId?: string;
+  path?: string;
+}
+
+export interface MauthPreviewTargetInspection {
+  kind: "frontMatter" | "pageBreak" | "question" | "questionBlock" | "part" | "partBlock" | "subpart" | "subpartBlock" | "unknown";
+  anchor?: string;
+  questionId?: string;
+  questionNumber?: number;
+  partId?: string;
+  subpartId?: string;
+  blockId?: string;
+}
+
+export interface MauthSolutionScopeInspection {
+  kind: "question" | "part" | "subpart";
+  anchor: string;
+  label: string;
+  marks: number;
+  studentSpaceLines: number;
+  solutionModuleCount: number;
+  hiddenMarkTotal: number;
+  visibleMarkNoteCount: number;
+}
+
+export interface MauthPreviewDiagramInspection {
+  id: string;
+  anchor: string;
+  graphType: string;
+  align?: string;
+  textSide?: string;
+  visibility: ContentBlockVisibility;
+  besideCandidate?: {
+    blockId: string;
+    anchor: string;
+    kind: ContentBlock["kind"];
+    expectedSide: "left" | "right";
+    replacementSlot: boolean;
+  };
+}
+
+export interface MauthPreviewQuestionInspection extends MauthQuestionInspection {
+  questionNumber: number;
+  totalMarks: number;
+  selectedBlock?: MauthBlockInspection & { anchor: string; owner: string };
+  allModules: Array<MauthBlockInspection & { anchor: string; owner: string }>;
+  diagrams: MauthPreviewDiagramInspection[];
+  solutionScopes: MauthSolutionScopeInspection[];
+  warnings: MauthPreviewInspectionWarning[];
+}
+
+export interface MauthPreviewInspection {
+  scope: "selection" | "question" | "document";
+  activeAnchor?: string | null;
+  target: MauthPreviewTargetInspection;
+  question?: MauthPreviewQuestionInspection;
+  questions?: Array<
+    Pick<MauthPreviewQuestionInspection, "id" | "questionNumber" | "totalMarks" | "studentSpaceLines" | "solutionModuleCount" | "warnings">
+  >;
+  warnings: MauthPreviewInspectionWarning[];
+  renderedMetrics: {
+    available: false;
+    reason: string;
+  };
 }
 
 export interface MauthAssistantToolDescription {
@@ -369,6 +453,472 @@ export function inspectMauthDocument<Q extends MauthQuestionLike, F extends obje
   };
 }
 
+const ASSISTANT_FRONT_MATTER_ANCHOR = "front-matter";
+
+function questionAnchor(questionId: string) {
+  return `q:${questionId}`;
+}
+
+function questionBlockAnchor(questionId: string, blockId: string) {
+  return `${questionAnchor(questionId)}/b:${blockId}`;
+}
+
+function partAnchor(questionId: string, partId: string) {
+  return `${questionAnchor(questionId)}/p:${partId}`;
+}
+
+function partBlockAnchor(questionId: string, partId: string, blockId: string) {
+  return `${partAnchor(questionId, partId)}/b:${blockId}`;
+}
+
+function subpartAnchor(questionId: string, partId: string, subpartId: string) {
+  return `${partAnchor(questionId, partId)}/s:${subpartId}`;
+}
+
+function subpartBlockAnchor(questionId: string, partId: string, subpartId: string, blockId: string) {
+  return `${subpartAnchor(questionId, partId, subpartId)}/b:${blockId}`;
+}
+
+function parseAssistantAnchor(anchor: string | null | undefined): MauthPreviewTargetInspection {
+  if (!anchor) return { kind: "unknown" };
+  if (anchor === ASSISTANT_FRONT_MATTER_ANCHOR) return { kind: "frontMatter", anchor };
+  if (anchor.startsWith("pb:")) return { kind: "pageBreak", anchor, questionId: anchor.slice(3) };
+
+  const [questionSegment, ...segments] = anchor.split("/");
+  if (!questionSegment?.startsWith("q:")) return { kind: "unknown", anchor };
+  const target: MauthPreviewTargetInspection = { kind: "question", anchor, questionId: questionSegment.slice(2) };
+
+  for (const segment of segments) {
+    if (segment.startsWith("p:")) target.partId = segment.slice(2);
+    if (segment.startsWith("s:")) target.subpartId = segment.slice(2);
+    if (segment.startsWith("b:")) target.blockId = segment.slice(2);
+  }
+
+  if (target.partId && target.subpartId && target.blockId) return { ...target, kind: "subpartBlock" };
+  if (target.partId && target.subpartId) return { ...target, kind: "subpart" };
+  if (target.partId && target.blockId) return { ...target, kind: "partBlock" };
+  if (target.partId) return { ...target, kind: "part" };
+  if (target.blockId) return { ...target, kind: "questionBlock" };
+  return target;
+}
+
+interface PreviewBlockEntry {
+  block: ContentBlock;
+  anchor: string;
+  owner: string;
+  ownerKind: "question" | "part" | "subpart";
+  questionId: string;
+  partId?: string;
+  subpartId?: string;
+}
+
+function previewBlockEntries(question: MauthQuestionLike): PreviewBlockEntry[] {
+  const entries: PreviewBlockEntry[] = question.contentBlocks.map((block) => ({
+    block,
+    anchor: questionBlockAnchor(question.id, block.id),
+    owner: "question",
+    ownerKind: "question",
+    questionId: question.id,
+  }));
+
+  for (const part of question.parts ?? []) {
+    entries.push(
+      ...part.contentBlocks.map((block) => ({
+        block,
+        anchor: partBlockAnchor(question.id, part.id, block.id),
+        owner: `part:${part.id}`,
+        ownerKind: "part" as const,
+        questionId: question.id,
+        partId: part.id,
+      })),
+    );
+    for (const subpart of part.subparts ?? []) {
+      entries.push(
+        ...subpart.contentBlocks.map((block) => ({
+          block,
+          anchor: subpartBlockAnchor(question.id, part.id, subpart.id, block.id),
+          owner: `subpart:${subpart.id}`,
+          ownerKind: "subpart" as const,
+          questionId: question.id,
+          partId: part.id,
+          subpartId: subpart.id,
+        })),
+      );
+    }
+  }
+
+  return entries;
+}
+
+function previewTargetFromArgs<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+  activeAnchor?: string | null,
+) {
+  const record = isRecord(args) ? args : {};
+  const explicitAnchor = typeof record.anchor === "string" ? record.anchor : "";
+  const scope: MauthPreviewInspection["scope"] =
+    record.scope === "document" || record.scope === "question" || record.scope === "selection" ? record.scope : "selection";
+  const parsedAnchor = parseAssistantAnchor(explicitAnchor || (scope === "selection" ? activeAnchor : null));
+  const questionNumberValue = record.questionNumber ?? record.question;
+  const questionNumber = Number(questionNumberValue);
+  const requestedQuestion =
+    typeof record.questionId === "string"
+      ? document.questions.find((question) => question.id === record.questionId)
+      : Number.isInteger(questionNumber) && questionNumber > 0
+        ? document.questions[questionNumber - 1]
+        : undefined;
+  const questionFromAnchor = parsedAnchor.questionId
+    ? document.questions.find((question) => question.id === parsedAnchor.questionId)
+    : undefined;
+  const questionFromModule =
+    typeof record.moduleId === "string"
+      ? document.questions.find((question) => previewBlockEntries(question).some((entry) => entry.block.id === record.moduleId))
+      : undefined;
+  const question =
+    requestedQuestion ?? questionFromAnchor ?? questionFromModule ?? (scope === "document" ? undefined : document.questions[0]);
+  const questionIndex = question ? document.questions.findIndex((item) => item.id === question.id) : -1;
+  const target: MauthPreviewTargetInspection = {
+    ...parsedAnchor,
+    ...(question ? { questionId: question.id, questionNumber: questionIndex + 1 } : {}),
+    ...(typeof record.moduleId === "string" ? { blockId: record.moduleId } : {}),
+  };
+  return { scope, target, question, questionIndex };
+}
+
+function compactBlockInspectionWithAnchor(entry: PreviewBlockEntry): MauthBlockInspection & { anchor: string; owner: string } {
+  return {
+    ...inspectBlock(entry.block),
+    anchor: entry.anchor,
+    owner: entry.owner,
+  };
+}
+
+function textBlocks(blocks: readonly ContentBlock[]) {
+  return blocks.filter((block): block is TextContentBlock => block.kind === "text");
+}
+
+function hiddenMarksInBlocks(blocks: readonly ContentBlock[]) {
+  return textBlocks(blocks)
+    .filter((block) => blockVisibility(block) === "solution" || isLikelySolutionText(block))
+    .reduce((sum, block) => sum + markAnnotationTotal(block.text), 0);
+}
+
+function visibleMarkNotesInBlocks(blocks: readonly ContentBlock[]) {
+  return textBlocks(blocks).filter(
+    (block) => (blockVisibility(block) === "solution" || isLikelySolutionText(block)) && hasVisibleMarkNote(block.text),
+  ).length;
+}
+
+function studentSpaceLinesInBlocks(blocks: readonly ContentBlock[]) {
+  return blocks.reduce((sum, block) => (block.kind === "space" && blockVisibility(block) === "student" ? sum + block.lines : sum), 0);
+}
+
+function solutionModulesInBlocks(blocks: readonly ContentBlock[]) {
+  return blocks.filter((block) => blockVisibility(block) === "solution" || isLikelySolutionText(block));
+}
+
+function nonSolutionTextPresent(blocks: readonly ContentBlock[]) {
+  return textBlocks(blocks).some((block) => blockVisibility(block) !== "solution" && block.text.trim());
+}
+
+function solutionScopeInspection(
+  kind: MauthSolutionScopeInspection["kind"],
+  anchor: string,
+  label: string,
+  marks: number,
+  blocks: readonly ContentBlock[],
+) {
+  return {
+    kind,
+    anchor,
+    label,
+    marks,
+    studentSpaceLines: studentSpaceLinesInBlocks(blocks),
+    solutionModuleCount: solutionModulesInBlocks(blocks).length,
+    hiddenMarkTotal: hiddenMarksInBlocks(blocks),
+    visibleMarkNoteCount: visibleMarkNotesInBlocks(blocks),
+  };
+}
+
+function addSolutionScopeWarnings(scope: MauthSolutionScopeInspection, warnings: MauthPreviewInspectionWarning[]) {
+  if (scope.marks > 0 && scope.solutionModuleCount === 0) {
+    warnings.push({
+      code: "solution-missing",
+      severity: "info",
+      anchor: scope.anchor,
+      message: `${scope.label} has ${scope.marks} mark${scope.marks === 1 ? "" : "s"} but no solution-only module yet.`,
+    });
+  }
+  if (scope.solutionModuleCount > 0 && scope.studentSpaceLines === 0) {
+    warnings.push({
+      code: "student-space-missing",
+      severity: "warning",
+      anchor: scope.anchor,
+      message: `${scope.label} has a solution but no student-only answer space to preserve pagination.`,
+    });
+  }
+  if (scope.solutionModuleCount > 0 && scope.marks > 0 && scope.hiddenMarkTotal !== scope.marks) {
+    warnings.push({
+      code: "solution-hidden-mark-total-mismatch",
+      severity: "warning",
+      anchor: scope.anchor,
+      message: `${scope.label} solution has ${scope.hiddenMarkTotal} hidden tick mark${scope.hiddenMarkTotal === 1 ? "" : "s"} for ${scope.marks} mark${scope.marks === 1 ? "" : "s"}.`,
+    });
+  }
+  if (scope.visibleMarkNoteCount > 0) {
+    warnings.push({
+      code: "solution-visible-mark-note",
+      severity: "warning",
+      anchor: scope.anchor,
+      message: `${scope.label} contains visible mark notes. Use hidden [[marks:n]] annotations so the preview renders ticks.`,
+    });
+  }
+}
+
+function questionSolutionScopes(question: MauthQuestionLike, questionIndex: number) {
+  const scopes: MauthSolutionScopeInspection[] = [];
+  const questionDirectScope = solutionScopeInspection(
+    "question",
+    questionAnchor(question.id),
+    `Question ${questionIndex + 1}`,
+    question.marks,
+    question.contentBlocks,
+  );
+  if (questionDirectScope.marks > 0 || questionDirectScope.studentSpaceLines > 0 || questionDirectScope.solutionModuleCount > 0) {
+    scopes.push(questionDirectScope);
+  }
+
+  for (const [partIndex, part] of (question.parts ?? []).entries()) {
+    const partDirectScope = solutionScopeInspection(
+      "part",
+      partAnchor(question.id, part.id),
+      `Question ${questionIndex + 1} part ${part.label ?? String.fromCharCode(97 + partIndex)}`,
+      part.marks,
+      part.contentBlocks,
+    );
+    if (partDirectScope.marks > 0 || partDirectScope.studentSpaceLines > 0 || partDirectScope.solutionModuleCount > 0) {
+      scopes.push(partDirectScope);
+    }
+
+    for (const [subpartIndex, subpart] of (part.subparts ?? []).entries()) {
+      scopes.push(
+        solutionScopeInspection(
+          "subpart",
+          subpartAnchor(question.id, part.id, subpart.id),
+          `Question ${questionIndex + 1} part ${part.label ?? String.fromCharCode(97 + partIndex)} subpart ${
+            subpart.label ?? subpartIndex + 1
+          }`,
+          subpart.marks,
+          subpart.contentBlocks,
+        ),
+      );
+    }
+  }
+
+  return scopes;
+}
+
+function nextBesideCandidate(entries: readonly PreviewBlockEntry[], index: number, diagram: Extract<ContentBlock, { kind: "diagram" }>) {
+  if (diagram.diagramAlign !== "left" && diagram.diagramAlign !== "right") return undefined;
+  const nextEntry = entries[index + 1];
+  if (!nextEntry) return undefined;
+  const nextVisibility = blockVisibility(nextEntry.block);
+  if (nextVisibility === "solution") return undefined;
+  if (nextEntry.block.kind !== "space" && nextEntry.block.kind !== "text") return undefined;
+  const solutionAfterSpace =
+    nextEntry.block.kind === "space" &&
+    entries
+      .slice(index + 2)
+      .some(
+        (entry) => entry.owner === nextEntry.owner && (blockVisibility(entry.block) === "solution" || isLikelySolutionText(entry.block)),
+      );
+  return {
+    blockId: nextEntry.block.id,
+    anchor: nextEntry.anchor,
+    kind: nextEntry.block.kind,
+    expectedSide: diagram.diagramAlign === "right" ? ("left" as const) : ("right" as const),
+    replacementSlot: solutionAfterSpace,
+  };
+}
+
+function inspectPreviewDiagrams(entries: readonly PreviewBlockEntry[]) {
+  return entries
+    .map((entry, index): MauthPreviewDiagramInspection | null => {
+      if (entry.block.kind !== "diagram") return null;
+      return {
+        id: entry.block.id,
+        anchor: entry.anchor,
+        graphType: entry.block.graphConfig.type,
+        align: entry.block.diagramAlign,
+        textSide: entry.block.diagramTextSide,
+        visibility: blockVisibility(entry.block),
+        besideCandidate: nextBesideCandidate(entries, index, entry.block),
+      };
+    })
+    .filter((entry): entry is MauthPreviewDiagramInspection => Boolean(entry));
+}
+
+function questionIntentText(question: MauthQuestionLike) {
+  return rawAssistantTextFragmentsFromQuestion(question).join("\n");
+}
+
+function addQuestionPreviewWarnings(
+  question: MauthQuestionLike,
+  questionIndex: number,
+  entries: readonly PreviewBlockEntry[],
+  diagrams: readonly MauthPreviewDiagramInspection[],
+  warnings: MauthPreviewInspectionWarning[],
+) {
+  for (const [partIndex, part] of (question.parts ?? []).entries()) {
+    if (!part.text?.trim() && !nonSolutionTextPresent(part.contentBlocks)) {
+      warnings.push({
+        code: "part-prompt-missing",
+        severity: "warning",
+        anchor: partAnchor(question.id, part.id),
+        targetId: part.id,
+        message: `Question ${questionIndex + 1} part ${part.label ?? String.fromCharCode(97 + partIndex)} has marks/modules but no visible part prompt text.`,
+      });
+    }
+    for (const [subpartIndex, subpart] of (part.subparts ?? []).entries()) {
+      if (!subpart.text?.trim() && !nonSolutionTextPresent(subpart.contentBlocks)) {
+        warnings.push({
+          code: "subpart-prompt-missing",
+          severity: "warning",
+          anchor: subpartAnchor(question.id, part.id, subpart.id),
+          targetId: subpart.id,
+          message: `Question ${questionIndex + 1} subpart ${subpart.label ?? subpartIndex + 1} has no visible prompt text.`,
+        });
+      }
+    }
+  }
+
+  const expectedIntent = diagramIntentFromText(questionIntentText(question));
+  if (expectedIntent) {
+    for (const diagram of diagrams) {
+      if (diagram.graphType !== expectedIntent.expectedType) {
+        warnings.push({
+          code: "diagram-renderer-mismatch",
+          severity: "warning",
+          anchor: diagram.anchor,
+          targetId: diagram.id,
+          message: `${expectedIntent.label} appears to use ${diagram.graphType}; ${expectedIntent.reason}`,
+        });
+      }
+    }
+  }
+
+  for (const diagram of diagrams) {
+    if ((diagram.align === "left" || diagram.align === "right") && !diagram.besideCandidate) {
+      warnings.push({
+        code: "diagram-beside-content-missing",
+        severity: "info",
+        anchor: diagram.anchor,
+        targetId: diagram.id,
+        message:
+          "Left/right diagram has no immediate text or student-space block after it, so the preview cannot use adjacent answer space.",
+      });
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry.block.kind === "diagram" && entry.block.graphConfig.type === "image") {
+      const data = isRecord(entry.block.graphConfig.data) ? entry.block.graphConfig.data : {};
+      if (typeof data.src !== "string" || !data.src.trim()) {
+        warnings.push({
+          code: "image-diagram-missing-source",
+          severity: "warning",
+          anchor: entry.anchor,
+          targetId: entry.block.id,
+          message: "Image diagram has no uploaded image source.",
+        });
+      }
+    }
+  }
+}
+
+function inspectPreviewQuestion(question: MauthQuestionLike, questionIndex: number, target: MauthPreviewTargetInspection) {
+  const entries = previewBlockEntries(question);
+  const diagrams = inspectPreviewDiagrams(entries);
+  const solutionScopes = questionSolutionScopes(question, questionIndex);
+  const warnings: MauthPreviewInspectionWarning[] = [];
+
+  for (const scope of solutionScopes) addSolutionScopeWarnings(scope, warnings);
+  addQuestionPreviewWarnings(question, questionIndex, entries, diagrams, warnings);
+
+  const selectedBlock = target.blockId
+    ? entries.find((entry) => entry.block.id === target.blockId || entry.anchor === target.anchor)
+    : undefined;
+
+  return {
+    ...inspectMauthDocument({ frontMatter: {}, formattingConfig: {}, questions: [question] }).questions[0],
+    questionNumber: questionIndex + 1,
+    totalMarks: sumQuestionMarks(question),
+    selectedBlock: selectedBlock ? compactBlockInspectionWithAnchor(selectedBlock) : undefined,
+    allModules: entries.map(compactBlockInspectionWithAnchor),
+    diagrams,
+    solutionScopes,
+    warnings,
+  };
+}
+
+export function inspectMauthPreview<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+  context: MauthAssistantToolContext = {},
+): MauthPreviewInspection {
+  const { scope, target, question, questionIndex } = previewTargetFromArgs(document, args, context.activeAnchor);
+  const warnings: MauthPreviewInspectionWarning[] = [];
+
+  if (scope === "selection" && !context.activeAnchor && !isRecord(args)) {
+    warnings.push({
+      code: "selection-anchor-unavailable",
+      severity: "info",
+      message: "No active editor/preview selection was supplied, so the first question was inspected.",
+    });
+  }
+
+  if (scope !== "document" && !question) {
+    warnings.push({
+      code: "preview-target-not-found",
+      severity: "warning",
+      message: "Requested preview target was not found in the current document.",
+    });
+  }
+
+  const inspectedQuestion = question ? inspectPreviewQuestion(question, questionIndex, target) : undefined;
+  return {
+    scope,
+    activeAnchor: context.activeAnchor ?? null,
+    target,
+    question: inspectedQuestion,
+    questions:
+      scope === "document"
+        ? document.questions.map((item, index) => {
+            const questionInspection = inspectPreviewQuestion(item, index, {
+              kind: "question",
+              questionId: item.id,
+              questionNumber: index + 1,
+            });
+            return {
+              id: questionInspection.id,
+              questionNumber: questionInspection.questionNumber,
+              totalMarks: questionInspection.totalMarks,
+              studentSpaceLines: questionInspection.studentSpaceLines,
+              solutionModuleCount: questionInspection.solutionModuleCount,
+              warnings: questionInspection.warnings,
+            };
+          })
+        : undefined,
+    warnings: [...warnings, ...(inspectedQuestion?.warnings ?? [])],
+    renderedMetrics: {
+      available: false,
+      reason:
+        "This assistant tool inspects the same document structure used by the preview. Browser DOM pixel measurements are intentionally not exposed to the model.",
+    },
+  };
+}
+
 export function describeMauthAssistantTools(): MauthAssistantToolDescription {
   return {
     tools: [
@@ -379,6 +929,11 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.document.inspect",
         description: "Return a compact structural summary of the currently open Mauth document.",
+      },
+      {
+        name: "mauth.preview.inspect",
+        description:
+          "Return a focused preview-oriented inspection for the selected/current question or a requested question, including modules, diagrams, answer-space/solution pairing, hidden solution marks, and layout warnings.",
       },
       {
         name: "mauth.validation.run",
@@ -483,6 +1038,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
     ],
     workflow: [
       "Inspect the current document before proposing edits.",
+      "Use mauth.preview.inspect instead of broad document inspection when you need the current/selected question, its diagrams, answer-space layout, or solution/tick status.",
       "For focused one-question writing or replacement requests, prefer mauth.author.replaceQuestion.",
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
@@ -1659,7 +2215,7 @@ function resultTool<Q extends MauthQuestionLike, F extends object, C extends obj
 function validationToolResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   document: MauthDocumentLike<Q, F, C>,
   mode: MauthAssistantValidationMode,
-  options: MauthDocumentActionOptions<Q, F, C>,
+  options: MauthAssistantToolOptions<Q, F, C>,
 ): MauthAssistantToolResult<Q, F, C> {
   const warnings: MauthActionWarning[] = [];
   const data: { document?: unknown; solutions?: unknown } = {};
@@ -1696,7 +2252,7 @@ function validationToolResult<Q extends MauthQuestionLike, F extends object, C e
 export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   document: MauthDocumentLike<Q, F, C>,
   call: MauthAssistantToolCall,
-  options: MauthDocumentActionOptions<Q, F, C> = {},
+  options: MauthAssistantToolOptions<Q, F, C> = {},
 ): MauthAssistantToolResult<Q, F, C> {
   if (!MAUTH_ASSISTANT_TOOL_NAMES.includes(call.name)) {
     return failTool(call.name, `Unsupported assistant tool: ${call.name}`) as MauthAssistantToolResult<Q, F, C>;
@@ -1718,6 +2274,17 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
       ok: true,
       toolName: call.name,
       data: inspectMauthDocument(document),
+      document,
+      changedIds: [],
+      warnings: [],
+    };
+  }
+
+  if (call.name === "mauth.preview.inspect") {
+    return {
+      ok: true,
+      toolName: call.name,
+      data: inspectMauthPreview(document, call.arguments, options.assistantContext),
       document,
       changedIds: [],
       warnings: [],

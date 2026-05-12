@@ -40,6 +40,7 @@ interface UseMauthAssistantHostOptions<Q extends MauthQuestionLike, F extends ob
   ensureProject: () => ProjectSummary | Promise<ProjectSummary>;
   activeProjectFilePathRef: RefValue<string | null>;
   activeProjectFileRevisionRef: RefValue<number | null>;
+  getActiveAnchor?: () => string | null;
   setActiveProjectFilePath: (filePath: string | null) => void;
   setActiveProjectFileRevision: (revision: number | null) => void;
   setProjectSaveConflict: (conflict: null) => void;
@@ -187,6 +188,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
   ensureProject,
   activeProjectFilePathRef,
   activeProjectFileRevisionRef,
+  getActiveAnchor,
   setActiveProjectFilePath,
   setActiveProjectFileRevision,
   setProjectSaveConflict,
@@ -207,6 +209,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getProjectId: async () => (await ensureProject()).id,
       getActiveFilePath: () => activeProjectFilePathRef.current,
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
+      getActiveAnchor,
       validateDocumentBeforeCommit: validateAssistantDocumentBeforeCommit,
       setActiveFilePath: (filePath, context) => {
         const revision = filePath ? revisionFromToolContext(context) : null;
@@ -234,6 +237,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
     documentOptions,
     ensureProject,
     getDocument,
+    getActiveAnchor,
     parseProjectFileDocument,
     serializeDocument,
     setActiveProjectFilePath,

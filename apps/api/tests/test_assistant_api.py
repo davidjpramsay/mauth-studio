@@ -399,6 +399,7 @@ def test_focused_mark_allocation_prompt_uses_solution_tool_not_replace_question(
     assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_tool"]
     assert "Do not use mauth_author_replace_question" in instructions
     assert "Preserve existing diagrams" in instructions
+    assert "mauth.preview.inspect" in instructions
     assert 'marks":4' in instructions
 
 

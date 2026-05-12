@@ -9,6 +9,7 @@ import {
   inspectMauthDocument,
   runMauthAssistantTool,
   type MauthAssistantToolDescription,
+  type MauthPreviewInspection,
 } from "./mauthAssistantTools.ts";
 
 interface TestFrontMatter {
@@ -66,6 +67,7 @@ test("describes the assistant tool surface and supported action types", () => {
   const description = describeMauthAssistantTools();
 
   assert(description.tools.some((tool) => tool.name === "mauth.actions.preview"));
+  assert(description.tools.some((tool) => tool.name === "mauth.preview.inspect"));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
@@ -112,6 +114,26 @@ test("inspects a document with compact counts and question summaries", () => {
   assert.equal(inspection.counts.studentSpaceLines, 4);
   assert.equal(inspection.questions[0].modules[0].textPreview, "Find the value of $x$.");
   assert.equal(inspection.questions[0].modules[1].diagramType, "statsChart");
+});
+
+test("inspects focused preview context for the selected module", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    { name: "mauth.preview.inspect", arguments: { scope: "selection" } },
+    { assistantContext: { activeAnchor: "q:q1/b:s1" } },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+
+  assert.equal(result.ok, true);
+  assert.equal(inspection.scope, "selection");
+  assert.equal(inspection.target.questionId, "q1");
+  assert.equal(inspection.target.blockId, "s1");
+  assert.equal(inspection.question?.questionNumber, 1);
+  assert.equal(inspection.question?.selectedBlock?.id, "s1");
+  assert.equal(inspection.question?.diagrams[0].graphType, "statsChart");
+  assert.equal(inspection.question?.solutionScopes[0].studentSpaceLines, 4);
+  assert.equal(inspection.question?.solutionScopes[0].solutionModuleCount, 1);
+  assert(inspection.question?.warnings.some((warning) => warning.code === "solution-hidden-mark-total-mismatch"));
 });
 
 test("previews actions without mutating the original document", () => {

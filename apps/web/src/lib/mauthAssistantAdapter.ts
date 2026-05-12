@@ -6,6 +6,7 @@ import {
   runMauthAssistantTool,
   type MauthAssistantToolCall,
   type MauthAssistantToolName,
+  type MauthAssistantToolOptions,
   type MauthAssistantToolResult,
 } from "./mauthAssistantTools.ts";
 import {
@@ -73,6 +74,7 @@ export interface MauthAssistantAdapterHost<
   getProjectId?: () => string | null | Promise<string | null>;
   getActiveFilePath?: () => string | null;
   getActiveFileRevision?: () => number | null;
+  getActiveAnchor?: () => string | null;
   validateDocumentBeforeCommit?: (
     document: MauthDocumentLike<Q, F, C>,
     context: MauthAssistantToolCommitContext,
@@ -196,8 +198,22 @@ function nextActiveFilePath(result: MauthAssistantFileToolResult) {
 
 async function documentOptions<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   host: MauthAssistantAdapterHost<Q, F, C>,
-) {
+): Promise<MauthAssistantToolOptions<Q, F, C>> {
   return typeof host.documentOptions === "function" ? host.documentOptions() : (host.documentOptions ?? {});
+}
+
+async function documentToolOptions<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  host: MauthAssistantAdapterHost<Q, F, C>,
+): Promise<MauthAssistantToolOptions<Q, F, C>> {
+  const options = await documentOptions(host);
+  const activeAnchor = host.getActiveAnchor?.();
+  return {
+    ...options,
+    assistantContext: {
+      ...(options.assistantContext ?? {}),
+      activeAnchor: activeAnchor ?? options.assistantContext?.activeAnchor ?? null,
+    },
+  };
 }
 
 async function projectId<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
@@ -232,7 +248,7 @@ export async function runMauthAssistantAdapterTool<
 >(host: MauthAssistantAdapterHost<Q, F, C>, call: MauthAssistantAdapterToolCall): Promise<MauthAssistantAdapterResult<Q, F, C>> {
   if (documentToolName(call.name)) {
     const previousDocument = host.getDocument();
-    const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentOptions(host));
+    const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentToolOptions(host));
     let committedDocument = false;
     if (
       result.ok &&

@@ -30,6 +30,7 @@ The in-app assistant should be treated as the primary AI workflow, not a conveni
 - The assistant tool layer in `apps/web/src/lib/mauthAssistantTools.ts` exposes the stable tool boundary:
   - `mauth.tools.describe`
   - `mauth.document.inspect`
+  - `mauth.preview.inspect`
   - `mauth.validation.run`
   - `mauth.actions.preview`
   - `mauth.actions.apply`
@@ -99,7 +100,7 @@ The in-app assistant should be treated as the primary AI workflow, not a conveni
 
 1. Load the relevant brains for the request: question, formatting, diagram, and/or solutions.
 2. Use focused high-level tools when they fit the request: `mauth.author.replaceQuestion` for one-question writing, `mauth.author.addDiagram` for diagram follow-ups, and `mauth.author.ensureSolutions` for compact solution-writing tasks.
-3. Call `mauth.document.inspect` before broader edits or whenever the current compact summary lacks enough context.
+3. Call `mauth.preview.inspect` for current/selected question work, especially when checking diagrams, answer-space layout, solution replacement slots, hidden tick totals, or blank part warnings. Call `mauth.document.inspect` before broader edits or whenever the current compact summary lacks enough whole-document context.
 4. For broader edits, generate an atomic batch of structured Mauth actions.
 5. Call `mauth.actions.preview`.
 6. If preview or commit preflight fails, repair the action batch using the returned `validationIssues` rather than patching raw state.
@@ -116,7 +117,7 @@ The in-app chatbox UI/provider adapter must call `runMauthAssistantAdapterTool`.
 - Expand deterministic diagram-intent validation cautiously. Add a no-cost smoke scenario first whenever the assistant repeats a wrong renderer choice, then add only conservative intent checks that can produce a precise expected `graphConfig.type`.
 - Expand diagram-type-specific validation into renderer feedback and repair. Current action validation catches malformed diagram payload fields before preview/apply reaches the renderer, and assistant commits preflight-render changed Penrose diagrams, but it does not yet inspect final visual output, label collisions, bad graph extents, Plotly/JSXGraph rendered screenshots, or whether a valid Penrose diagram is pedagogically correct.
 - Extend attachment intake beyond current image/PDF/Word/text provider inputs: curriculum snippets with structured metadata, persistent asset storage, explicit document-upload consent, and extraction/caching for large source files.
-- A richer document inspector that can return the selected question/module subtree, surrounding context, marks, solution slots, diagrams, and relevant file metadata when the user asks about a specific part of the test.
+- Expand `mauth.preview.inspect` into the richer selected-context inspector over time. It now returns selected/requested question structure, module anchors, diagrams, solution scopes, and deterministic warnings; future work should add file metadata, solution visibility, print mode, and actual rendered metrics.
 - A renderer inspection tool for page/fit problems: page count, page occupancy, overflows, selected-anchor bounding boxes, solution-slot fit, print visibility state, and browser print mode assumptions.
 - A diagram inspection and repair tool that can return structured renderer output for JSXGraph, Penrose, Plotly, image blocks, and 3D diagrams, then apply targeted diagram patches without hand-editing full graph JSON.
 - Expand screenshot-image live eval coverage beyond the current scalar-product fixture. The existing attachment eval now fails if the assistant replaces the source diagram with prose, emits empty part prompts, invents solutions, or produces a Penrose diagram that cannot render.
@@ -128,7 +129,7 @@ The in-app chatbox UI/provider adapter must call `runMauthAssistantAdapterTool`.
 ## Parity Roadmap
 
 1. Harden the current chat loop: progress labels, robust continuation, clean provider errors, schema validation, retry/repair loops, and usage/cost summaries.
-2. Make document inspection closer to what Codex sees: selected item, nearby modules, document structure, rendered page metrics, validation state, and file state in one compact tool result.
+2. Make preview/document inspection closer to what Codex sees: selected item, nearby modules, document structure, rendered page metrics, validation state, and file state in compact tool results.
 3. Add renderer tools: page/layout inspection, solution-slot fit inspection, diagram screenshot/metadata inspection, and print/PDF-specific checks.
 4. Add attachment tools: pasted images/screenshots, PDFs, Word documents, and text-like source files are now routed through backend-owned provider calls; next add persistent storage, extraction caching, source metadata, and explicit upload/retention controls.
 5. Add high-level authoring tools for common teacher prompts: write all solutions, repair all solution spaces, add more diagram families, layout pass, print check, combine tests, and generate marking key. The current focused examples are `mauth.author.replaceQuestion`, `mauth.author.addDiagram`, and `mauth.author.ensureSolutions`.

@@ -7387,6 +7387,7 @@ export default function App() {
     ensureProject,
     activeProjectFilePathRef,
     activeProjectFileRevisionRef,
+    getActiveAnchor: () => activeTocItemId,
     setActiveProjectFilePath,
     setActiveProjectFileRevision,
     setProjectSaveConflict,
