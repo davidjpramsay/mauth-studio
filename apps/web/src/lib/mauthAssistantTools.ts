@@ -184,6 +184,10 @@ export interface MauthRenderedPreviewAnchorMetrics {
     rendered: boolean;
     errorText?: string;
     viewportRect?: MauthRenderedPreviewRect;
+    clipped?: boolean;
+    labelCollisionCount?: number;
+    tooSmall?: boolean;
+    tooLarge?: boolean;
   };
   solutionSlot?: {
     found: boolean;
@@ -835,7 +839,7 @@ function renderedDiagramInspection(anchor: string, renderedMetrics?: MauthPrevie
   if (!renderedMetrics?.available) return undefined;
   const renderedAnchor = renderedMetrics.anchors.find((item) => item.anchor === anchor);
   if (!renderedAnchor?.diagram) return undefined;
-  const warnings = renderedAnchor.warnings.filter((warning) => warning.code === "rendered-diagram-failed");
+  const warnings = renderedAnchor.warnings.filter((warning) => warning.code.startsWith("rendered-diagram-"));
   return {
     available: true,
     rendered: renderedAnchor.diagram.rendered,
@@ -1012,6 +1016,16 @@ function anchorRelatedToCandidates(anchor: string, candidates: readonly string[]
   return candidates.some((candidate) => anchor === candidate || anchor.startsWith(`${candidate}/`) || candidate.startsWith(`${anchor}/`));
 }
 
+function dedupePreviewInspectionWarnings(warnings: readonly MauthPreviewInspectionWarning[]) {
+  const seen = new Set<string>();
+  return warnings.filter((warning) => {
+    const key = `${warning.code}:${warning.anchor ?? ""}:${warning.targetId ?? ""}:${warning.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function renderedMetricsForInspection(
   metrics: MauthPreviewRenderedMetrics | null | undefined,
   scope: MauthPreviewInspection["scope"],
@@ -1072,6 +1086,11 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
 
   const renderedMetrics = renderedMetricsForInspection(context.renderedMetrics, scope, target, context.activeAnchor);
   const inspectedQuestion = question ? inspectPreviewQuestion(question, questionIndex, target, renderedMetrics) : undefined;
+  const inspectionWarnings = dedupePreviewInspectionWarnings([
+    ...warnings,
+    ...(inspectedQuestion?.warnings ?? []),
+    ...(renderedMetrics.available ? renderedMetrics.warnings : []),
+  ]);
   return {
     scope,
     activeAnchor: context.activeAnchor ?? null,
@@ -1100,7 +1119,7 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
             };
           })
         : undefined,
-    warnings: [...warnings, ...(inspectedQuestion?.warnings ?? [])],
+    warnings: inspectionWarnings,
     renderedMetrics,
   };
 }

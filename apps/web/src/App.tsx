@@ -7381,6 +7381,24 @@ export default function App() {
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
 
+  const collectCurrentRenderedPreviewMetrics = useCallback(
+    () => collectRenderedPreviewMetrics(previewPaneRef.current, activeTocItemId),
+    [activeTocItemId],
+  );
+
+  const waitForRenderedPreviewMetrics = useCallback(async () => {
+    await new Promise<void>((resolve) => {
+      if (typeof window.requestAnimationFrame !== "function") {
+        window.setTimeout(resolve, 0);
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    });
+    return collectCurrentRenderedPreviewMetrics();
+  }, [collectCurrentRenderedPreviewMetrics]);
+
   const assistantHost = useMauthAssistantHost<QuestionBlock, FrontMatterConfig, FormattingConfig>({
     getDocument: currentEditorDocument,
     commitDocument: (document) => commitAssistantDocument(document),
@@ -7389,7 +7407,8 @@ export default function App() {
     activeProjectFilePathRef,
     activeProjectFileRevisionRef,
     getActiveAnchor: () => activeTocItemId,
-    getRenderedPreviewMetrics: () => collectRenderedPreviewMetrics(previewPaneRef.current, activeTocItemId),
+    getRenderedPreviewMetrics: collectCurrentRenderedPreviewMetrics,
+    waitForRenderedPreviewMetrics,
     setActiveProjectFilePath,
     setActiveProjectFileRevision,
     setProjectSaveConflict,

@@ -44,6 +44,7 @@ interface UseMauthAssistantHostOptions<Q extends MauthQuestionLike, F extends ob
   activeProjectFileRevisionRef: RefValue<number | null>;
   getActiveAnchor?: () => string | null;
   getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
+  waitForRenderedPreviewMetrics?: (context: MauthAssistantToolCommitContext) => Promise<MauthPreviewRenderedMetrics | null>;
   setActiveProjectFilePath: (filePath: string | null) => void;
   setActiveProjectFileRevision: (revision: number | null) => void;
   setProjectSaveConflict: (conflict: null) => void;
@@ -196,6 +197,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
   activeProjectFileRevisionRef,
   getActiveAnchor,
   getRenderedPreviewMetrics,
+  waitForRenderedPreviewMetrics,
   setActiveProjectFilePath,
   setActiveProjectFileRevision,
   setProjectSaveConflict,
@@ -218,6 +220,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
       getActiveAnchor,
       getRenderedPreviewMetrics,
+      waitForRenderedPreviewMetrics,
       validateDocumentBeforeCommit: validateAssistantDocumentBeforeCommit,
       setActiveFilePath: (filePath, context) => {
         const revision = filePath ? revisionFromToolContext(context) : null;
@@ -247,6 +250,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
     getDocument,
     getActiveAnchor,
     getRenderedPreviewMetrics,
+    waitForRenderedPreviewMetrics,
     parseProjectFileDocument,
     serializeDocument,
     setActiveProjectFilePath,

@@ -12,6 +12,7 @@ import type {
 import type { MauthDocumentLike, MauthQuestionLike } from "./mauthActions.ts";
 import { runMauthAssistantAdapterTool, type MauthAssistantAdapterHost } from "./mauthAssistantAdapter.ts";
 import type { MauthProjectFileDriver } from "./mauthAssistantFileTools.ts";
+import type { MauthPreviewRenderedMetrics } from "./mauthAssistantTools.ts";
 
 interface TestFrontMatter {
   assessmentTitle: string;
@@ -340,6 +341,87 @@ test("commits diagram edits then reports preview inspection warnings for one rep
   assert(data.validationIssues?.some((issue) => issue.expected?.includes("mauth.author.addDiagram")));
   assert(data.validationIssues?.some((issue) => issue.expected?.includes("diagramId")));
   assert(data.validationIssues?.some((issue) => issue.message.includes("$\\mathbf{c}$")));
+});
+
+test("waits for painted preview metrics before accepting diagram edits", async () => {
+  let waitedForPaint = false;
+  const paintedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:d1",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 300,
+        totalHeightPx: 1000,
+        remainingHeightPx: 700,
+        usedPercent: 30,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1/b:d1",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+        diagram: {
+          found: true,
+          rendered: false,
+          errorText: "Geometry diagram could not render.",
+          viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+        },
+        warnings: [
+          {
+            code: "rendered-diagram-failed",
+            severity: "error",
+            anchor: "q:q1/b:d1",
+            message: "The selected diagram failed to render: Geometry diagram could not render.",
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+  const harness = adapterHost({
+    waitForRenderedPreviewMetrics: async () => {
+      waitedForPaint = true;
+      return paintedMetrics;
+    },
+  });
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        id: "d1",
+        graphConfig: {
+          type: "statsChart",
+          data: {
+            chartType: "histogram",
+            dataMode: "manualProbabilities",
+            xValues: [1, 2],
+            probabilities: [0.4, 0.6],
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string; targetId?: string }> };
+
+  assert.equal(waitedForPaint, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.match(result.error ?? "", /post-edit .*inspection/i);
+  assert(data.validationIssues?.some((issue) => issue.targetId === "d1"));
+  assert(data.validationIssues?.some((issue) => issue.message.includes("failed to render")));
 });
 
 test("injects serialized current document when saving through file tools", async () => {

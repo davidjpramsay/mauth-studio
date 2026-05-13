@@ -67,6 +67,38 @@ function parseRenderedAnchorKind(anchor: string): MauthPreviewTargetInspection["
   return "question";
 }
 
+function metricElementVisible(element: Element) {
+  if (!element.getClientRects().length) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
+function collisionArea(a: DOMRect, b: DOMRect) {
+  const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return width * height;
+}
+
+function countLikelyLabelCollisions(diagramRoot: HTMLElement) {
+  const selectors = "svg text, .jxg-latex-label, mjx-container[jax='SVG']";
+  const rawCandidates = Array.from(diagramRoot.querySelectorAll<Element>(selectors)).filter((element) => {
+    const text = compactText(element.textContent ?? "", 40);
+    const rect = element.getBoundingClientRect();
+    return Boolean(text) && metricElementVisible(element) && rect.width > 4 && rect.height > 4;
+  });
+  const candidates = rawCandidates.filter(
+    (candidate, index) => !rawCandidates.some((other, otherIndex) => otherIndex !== index && other.contains(candidate)),
+  );
+  const rects = candidates.map((candidate) => candidate.getBoundingClientRect());
+  let collisions = 0;
+  for (let i = 0; i < rects.length; i += 1) {
+    for (let j = i + 1; j < rects.length; j += 1) {
+      if (collisionArea(rects[i], rects[j]) > 8) collisions += 1;
+    }
+  }
+  return collisions;
+}
+
 function anchorRole(element: HTMLElement): MauthRenderedPreviewAnchorMetrics["role"] {
   if (element.getAttribute("data-preview-module-anchor") === "true") return "module";
   if (element.getAttribute("data-preview-structure-anchor") === "true") return "structure";
@@ -113,11 +145,17 @@ function findDiagramMetrics(element: HTMLElement): MauthRenderedPreviewAnchorMet
   const errorMatch = text.match(/(?:diagram|chart|graph) could not render|no image selected/i);
   const renderedGraphic = Boolean(diagramRoot.querySelector("svg, canvas, img, .penrose-diagram, .js-plotly-plot, .jxgbox"));
   const rect = diagramRoot.getBoundingClientRect();
+  const clipped = diagramRoot.scrollWidth > diagramRoot.clientWidth + 1 || diagramRoot.scrollHeight > diagramRoot.clientHeight + 1;
+  const tooSmall = renderedGraphic && !errorMatch && (rect.width < 80 || rect.height < 60);
+  const labelCollisionCount = renderedGraphic && !errorMatch ? countLikelyLabelCollisions(diagramRoot) : 0;
   return {
     found: true,
     rendered: renderedGraphic && !errorMatch,
     ...(errorMatch ? { errorText: errorMatch[0] } : {}),
     viewportRect: rectMetrics(rect),
+    ...(clipped ? { clipped: true } : {}),
+    ...(tooSmall ? { tooSmall: true } : {}),
+    ...(labelCollisionCount ? { labelCollisionCount } : {}),
   };
 }
 
@@ -177,6 +215,58 @@ function anchorMetrics(
         ? `The selected diagram failed to render: ${diagram.errorText}.`
         : "The selected diagram failed to render.",
     });
+  }
+  if (diagram?.found && diagram.rendered && diagram.clipped) {
+    warnings.push({
+      code: "rendered-diagram-clipped",
+      severity: "warning",
+      anchor,
+      message: "The selected diagram appears clipped inside its rendered container.",
+    });
+  }
+  if (diagram?.found && diagram.rendered && diagram.labelCollisionCount) {
+    warnings.push({
+      code: "rendered-diagram-label-collision",
+      severity: "warning",
+      anchor,
+      message: `The selected diagram has ${diagram.labelCollisionCount} likely overlapping label pair${
+        diagram.labelCollisionCount === 1 ? "" : "s"
+      }.`,
+    });
+  }
+  if (diagram?.found && diagram.rendered && diagram.tooSmall) {
+    warnings.push({
+      code: "rendered-diagram-too-small",
+      severity: "info",
+      anchor,
+      message: "The selected diagram rendered very small compared with normal test-diagram size.",
+    });
+  }
+  if (diagram?.found && diagram.rendered && diagram.viewportRect && page) {
+    const pageRect = page.getBoundingClientRect();
+    const diagramRect = diagram.viewportRect;
+    if (
+      diagramRect.left < pageRect.left - 1 ||
+      diagramRect.right > pageRect.right + 1 ||
+      diagramRect.top < pageRect.top - 1 ||
+      diagramRect.bottom > pageRect.bottom + 1
+    ) {
+      warnings.push({
+        code: "rendered-diagram-clipped-by-page",
+        severity: "warning",
+        anchor,
+        message: "The selected diagram extends outside the rendered A4 page box.",
+      });
+    }
+    if (diagramRect.width > pageRect.width * 0.95 || diagramRect.height > pageRect.height * 0.8) {
+      diagram.tooLarge = true;
+      warnings.push({
+        code: "rendered-diagram-too-large",
+        severity: "info",
+        anchor,
+        message: "The selected diagram occupies almost the whole rendered page.",
+      });
+    }
   }
   if (solutionSlot?.found && !solutionSlot.solutionFitsStudentSpace) {
     warnings.push({

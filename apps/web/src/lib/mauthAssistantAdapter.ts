@@ -79,6 +79,7 @@ export interface MauthAssistantAdapterHost<
   getActiveFileRevision?: () => number | null;
   getActiveAnchor?: () => string | null;
   getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
+  waitForRenderedPreviewMetrics?: (context: MauthAssistantToolCommitContext) => Promise<MauthPreviewRenderedMetrics | null>;
   validateDocumentBeforeCommit?: (
     document: MauthDocumentLike<Q, F, C>,
     context: MauthAssistantToolCommitContext,
@@ -189,7 +190,7 @@ function postEditDiagramInspectionArgs(call: MauthAssistantAdapterToolCall): Rec
 }
 
 function repairableDiagramWarnings(inspection: MauthPreviewInspection): MauthPreviewInspectionWarning[] {
-  return (
+  const diagramWarnings =
     inspection.question?.diagrams.flatMap((diagram) =>
       diagram.warnings
         .filter((warning) => warning.severity === "warning" || warning.severity === "error")
@@ -198,8 +199,53 @@ function repairableDiagramWarnings(inspection: MauthPreviewInspection): MauthPre
           anchor: warning.anchor ?? diagram.anchor,
           targetId: warning.targetId ?? diagram.id,
         })),
-    ) ?? []
-  );
+    ) ?? [];
+  const renderedWarnings =
+    inspection.renderedMetrics.available === true
+      ? inspection.renderedMetrics.warnings
+          .filter((warning) => warning.code.startsWith("rendered-"))
+          .filter((warning) => warning.severity === "warning" || warning.severity === "error")
+          .map((warning) => ({
+            ...warning,
+            targetId: warning.targetId ?? blockIdFromAnchor(warning.anchor),
+          }))
+      : [];
+
+  const seen = new Set<string>();
+  return [...diagramWarnings, ...renderedWarnings].filter((warning) => {
+    const key = `${warning.code}:${warning.anchor ?? ""}:${warning.targetId ?? ""}:${warning.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function blockIdFromAnchor(anchor?: string) {
+  const match = anchor?.match(/\/b:([^/]+)/);
+  return match?.[1];
+}
+
+function postEditInspectionExpected(warning: MauthPreviewInspectionWarning) {
+  if (warning.code === "rendered-diagram-failed" || warning.code.startsWith("penrose-")) {
+    return warning.targetId
+      ? `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.`
+      : "Repair the diagram with a corrected native graphConfig.";
+  }
+  if (!warning.code.startsWith("rendered-") && warning.targetId) {
+    return `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.`;
+  }
+  if (warning.code === "rendered-response-space-outline-missing") {
+    return "Repair the adjacent diagram and answer-space layout so it renders as one L-shaped response slot.";
+  }
+  if (warning.code === "rendered-solution-space-overflow") {
+    return "Repair the paired student-space and solution layout so the solution fits inside the allocated student space.";
+  }
+  if (warning.code === "rendered-page-overflow") {
+    return "Repair the page layout so the edited content fits inside the rendered A4 page box.";
+  }
+  return warning.targetId
+    ? `Repair the affected module by calling the appropriate high-level Mauth authoring tool with target id "${warning.targetId}".`
+    : "Repair the affected preview layout and rerun preview inspection.";
 }
 
 function postEditDiagramInspectionFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
@@ -208,14 +254,16 @@ function postEditDiagramInspectionFailureResult<Q extends MauthQuestionLike, F e
   repairWarnings: readonly MauthPreviewInspectionWarning[],
 ): MauthAssistantAdapterResult<Q, F, C> {
   const validationIssues = repairWarnings.map((warning, index) => ({
-    path: `postEditInspection.question.diagrams[${index}].${warning.path ?? "graphConfig"}`,
+    path: warning.path
+      ? `postEditInspection.${warning.path}`
+      : warning.code.startsWith("rendered-")
+        ? `postEditInspection.renderedMetrics.warnings[${index}]`
+        : `postEditInspection.question.diagrams[${index}].graphConfig`,
     message: warning.message,
-    expected: warning.targetId
-      ? `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.`
-      : "Repair the diagram with a corrected native graphConfig.",
+    expected: postEditInspectionExpected(warning),
     targetId: warning.targetId,
   }));
-  const error = "Assistant diagram post-edit inspection found repairable warnings.";
+  const error = "Assistant post-edit inspection found repairable preview warnings.";
   return {
     ok: false,
     toolName: result.toolName,
@@ -291,10 +339,11 @@ async function documentOptions<Q extends MauthQuestionLike, F extends object, C 
 
 async function documentToolOptions<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   host: MauthAssistantAdapterHost<Q, F, C>,
+  renderedMetricsOverride?: MauthPreviewRenderedMetrics | null,
 ): Promise<MauthAssistantToolOptions<Q, F, C>> {
   const options = await documentOptions(host);
   const activeAnchor = host.getActiveAnchor?.();
-  const renderedMetrics = host.getRenderedPreviewMetrics?.();
+  const renderedMetrics = renderedMetricsOverride !== undefined ? renderedMetricsOverride : host.getRenderedPreviewMetrics?.();
   return {
     ...options,
     assistantContext: {
@@ -355,10 +404,11 @@ export async function runMauthAssistantAdapterTool<
       committedDocument = true;
       const inspectionArgs = postEditDiagramInspectionArgs(call);
       if (inspectionArgs) {
+        const renderedMetrics = host.waitForRenderedPreviewMetrics ? await host.waitForRenderedPreviewMetrics(context) : undefined;
         const inspection = runMauthAssistantTool(
           result.document,
           { name: "mauth.preview.inspect", arguments: inspectionArgs },
-          await documentToolOptions(host),
+          await documentToolOptions(host, renderedMetrics),
         );
         const inspectionData = inspection.data as MauthPreviewInspection;
         const repairWarnings = repairableDiagramWarnings(inspectionData);
