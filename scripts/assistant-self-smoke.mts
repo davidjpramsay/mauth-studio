@@ -275,6 +275,66 @@ const scenarios: SmokeScenario[] = [
     },
   },
   {
+    id: "penrose-circle-semantic-inspection-flags-wrong-diagram",
+    prompt: "The assistant draws a circle theorem diagram that renders but forgets the actual tangent/chord relationship.",
+    assistantPlan:
+      "Preview inspection should report semantic warnings so the provider can repair the native Penrose Substance before claiming success.",
+    start: () =>
+      documentFixture([
+        question("q1", 5, [
+          textBlock(
+            "q1-text",
+            "$A$, $B$ and $C$ are points on a circle. The tangent to the circle at $A$ is parallel to chord $BC$. Prove that $AB=AC$.",
+          ),
+          spaceBlock("q1-space", 14),
+        ]),
+      ]),
+    calls: [
+      {
+        name: "mauth.author.addDiagram",
+        arguments: {
+          questionNumber: 1,
+          diagram: {
+            id: "q1-bad-circle-diagram",
+            graphConfig: {
+              type: "geometricConstruction",
+              data: {},
+              options: {
+                substanceSource: [
+                  "Point O, A, B, C",
+                  "Circle omega",
+                  "Line drawnLine",
+                  "NamedSegment AB, AC",
+                  "Label O $O$",
+                  "Label A $A$",
+                  "Label B $B$",
+                  "Label C $C$",
+                  "CircleThrough(omega, O, A)",
+                  "OnCircle(B, omega)",
+                  "Segment(AB, A, B)",
+                  "Segment(AC, A, C)",
+                ].join("\n"),
+              },
+            },
+          },
+        },
+      },
+      { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    ],
+    evaluate: ({ results }) => {
+      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ semanticWarnings?: Array<{ code: string }> }> } };
+      const warningCodes = inspection.question?.diagrams?.[0]?.semanticWarnings?.map((warning) => warning.code) ?? [];
+      return [
+        ...failIf(!warningCodes.includes("penrose-circle-tangent-missing"), "semantic inspection should flag the missing tangent"),
+        ...failIf(
+          !warningCodes.includes("penrose-circle-parallel-chord-missing"),
+          "semantic inspection should flag the missing parallel-to-chord predicate",
+        ),
+        ...failIf(!warningCodes.includes("penrose-chord-segment-missing"), "semantic inspection should flag the missing chord segment"),
+      ];
+    },
+  },
+  {
     id: "question-rewrite-preserves-diagram-when-omitted",
     prompt: "Rewrite the wording of Question 1 but keep the existing diagram.",
     assistantPlan: "Use mauth.author.replaceQuestion and omit diagram fields so existing shared diagrams are preserved.",

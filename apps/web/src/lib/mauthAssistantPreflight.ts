@@ -6,6 +6,7 @@ import type {
   MauthAssistantToolCommitContext,
 } from "./mauthAssistantAdapter.ts";
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike } from "./mauthActions.ts";
+import { inspectDiagramSemantics } from "./mauthDiagramSemanticInspection.ts";
 
 const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
 const VISIBLE_MARK_NOTE_PATTERN =
@@ -203,6 +204,82 @@ function collectDiagramPreservationIssues<Q extends MauthQuestionLike>(
   return issues;
 }
 
+function visibleTextFromBlocks(blocks: readonly ContentBlock[]) {
+  return blocks
+    .filter((block): block is Extract<ContentBlock, { kind: "text" }> => block.kind === "text" && blockVisibility(block) !== "solution")
+    .map((block) => block.text);
+}
+
+function partTextFragments(part: MauthPartLike): string[] {
+  return [
+    typeof part.text === "string" ? part.text : "",
+    ...visibleTextFromBlocks(part.contentBlocks),
+    ...(part.subparts ?? []).flatMap((subpart) => [
+      typeof subpart.text === "string" ? subpart.text : "",
+      ...visibleTextFromBlocks(subpart.contentBlocks),
+    ]),
+  ];
+}
+
+function questionTextFragments(question: MauthQuestionLike) {
+  return [
+    typeof question.text === "string" ? question.text : "",
+    ...visibleTextFromBlocks(question.contentBlocks),
+    ...(question.parts ?? []).flatMap(partTextFragments),
+  ];
+}
+
+function collectDiagramSemanticIssues<Q extends MauthQuestionLike>(questions: readonly Q[], changedIds: readonly string[]) {
+  const ids = changedSet(changedIds);
+  const validateAll = ids.size === 0;
+  const issues: MauthAssistantDocumentPreflightIssue[] = [];
+
+  function collectBlocks(blocks: readonly ContentBlock[], pathPrefix: string, inheritedChanged: boolean, questionText: string) {
+    blocks.forEach((block, blockIndex) => {
+      const blockChanged = inheritedChanged || ids.has(block.id);
+      if (block.kind !== "diagram" || !blockChanged) return;
+      const semantic = inspectDiagramSemantics(block.graphConfig, questionText);
+      for (const warning of semantic.warnings) {
+        issues.push({
+          path: `${pathPrefix}.contentBlocks[${blockIndex}].graphConfig.options.substanceSource`,
+          message: warning.message,
+          expected:
+            "A native Penrose diagram whose declared geometry matches the question prompt: correct Tangent, ParallelToSegment, chord Segment, circle membership, visible named labels, and hidden auxiliary labels.",
+          targetId: block.id,
+        });
+      }
+    });
+  }
+
+  questions.forEach((question, questionIndex) => {
+    const questionChanged = validateAll || ids.has(question.id);
+    const questionPath = `questions[${questionIndex}]`;
+    const questionText = questionTextFragments(question).join("\n");
+    collectBlocks(question.contentBlocks, questionPath, questionChanged, questionText);
+
+    question.parts?.forEach((part, partIndex) => {
+      const partChanged = questionChanged || ids.has(part.id);
+      const partPath = `${questionPath}.parts[${partIndex}]`;
+      const partText = [questionText, ...partTextFragments(part)].join("\n");
+      collectBlocks(part.contentBlocks, partPath, partChanged, partText);
+
+      part.subparts?.forEach((subpart, subpartIndex) => {
+        const subpartChanged = partChanged || ids.has(subpart.id);
+        const subpartPath = `${partPath}.subparts[${subpartIndex}]`;
+        const subpartText = [
+          questionText,
+          typeof part.text === "string" ? part.text : "",
+          typeof subpart.text === "string" ? subpart.text : "",
+          ...visibleTextFromBlocks(subpart.contentBlocks),
+        ].join("\n");
+        collectBlocks(subpart.contentBlocks, subpartPath, subpartChanged, subpartText);
+      });
+    });
+  });
+
+  return issues;
+}
+
 function failureResult(code: string, error: string, issues: MauthAssistantDocumentPreflightIssue[]): MauthAssistantDocumentPreflightResult {
   return {
     ok: false,
@@ -246,6 +323,24 @@ export function validateAssistantDiagramPreservationBeforeCommit<
   return failureResult(
     "assistant-diagram-preservation-failed",
     "Assistant edit would remove existing diagrams outside an explicit question replacement.",
+    issues,
+  );
+}
+
+export function validateAssistantDiagramSemanticsBeforeCommit<
+  Q extends MauthQuestionLike,
+  F extends object,
+  C extends object = Record<string, unknown>,
+>(
+  document: MauthDocumentLike<Q, F, C>,
+  _context: MauthAssistantToolCommitContext,
+  changedIds: readonly string[],
+): MauthAssistantDocumentPreflightResult {
+  const issues = collectDiagramSemanticIssues(document.questions, changedIds);
+  if (!issues.length) return { ok: true };
+  return failureResult(
+    "assistant-diagram-semantic-invalid",
+    "Assistant diagram semantic preflight failed. Repair the diagram so its declared geometry matches the question before applying.",
     issues,
   );
 }

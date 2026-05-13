@@ -1325,6 +1325,7 @@ Tool-call contract:
 - If a tool output reports malformed arguments or malformed actions, repair the same structured call once before explaining the failure.
 - If a tool output includes validationIssues paths such as actions[0].blocks[0].lines or actions[0].patch, fix those exact action payload fields and retry once.
 - Diagram action validation is renderer-specific. Prefer explicit structured graphConfig fields over invented renderer JSON, and repair the exact validationIssue paths if the tool rejects a diagram.
+- Assistant commit preflight can also reject renderable Penrose circle diagrams when the declared geometry does not match the question prompt. If validationIssues mention missing Tangent, ParallelToSegment, chord Segment, visible auxiliary labels, or points not on the intended circle, repair graphConfig.options.substanceSource and retry once.
 - If a file tool output includes validationIssues paths such as arguments.path, arguments.paths[0], arguments.content, or arguments.versionId, fix those exact file-tool fields and retry once.
 - Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless they explicitly ask for implementation details.
 

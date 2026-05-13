@@ -6,6 +6,7 @@ import type { ContentBlock } from "@mauth-studio/shared";
 import type { MauthDocumentLike, MauthQuestionLike } from "./mauthActions.ts";
 import {
   validateAssistantDiagramPreservationBeforeCommit,
+  validateAssistantDiagramSemanticsBeforeCommit,
   validateAssistantSolutionMarkingBeforeCommit,
 } from "./mauthAssistantPreflight.ts";
 
@@ -19,6 +20,18 @@ function spaceBlock(id: string, lines = 8): ContentBlock {
 
 function diagramBlock(id: string): ContentBlock {
   return { id, kind: "diagram", graphConfig: { type: "statsChart", data: { chartType: "histogram" } } };
+}
+
+function penroseDiagramBlock(id: string, substanceSource: string): ContentBlock {
+  return {
+    id,
+    kind: "diagram",
+    graphConfig: {
+      type: "geometricConstruction",
+      data: {},
+      options: { substanceSource },
+    },
+  };
 }
 
 function question(id: string, blocks: ContentBlock[], marks = 2): MauthQuestionLike {
@@ -96,6 +109,90 @@ test("assistant preflight allows explicit question replacement to remove diagram
     { toolName: "mauth.author.replaceQuestion", reason: "test" },
     ["q1"],
   );
+
+  assert.equal(result.ok, true);
+});
+
+test("assistant semantic preflight rejects changed Penrose circle diagrams that do not match the prompt", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock(
+          "t1",
+          "A, B and C are points on a circle. The tangent to the circle at A is parallel to the chord BC. Prove that AB = AC.",
+        ),
+        penroseDiagramBlock(
+          "d1",
+          [
+            "Point O, A, B, C",
+            "Circle omega",
+            "Line drawnLine",
+            "NamedSegment AB, AC",
+            "Label O $O$",
+            "Label A $A$",
+            "Label B $B$",
+            "Label C $C$",
+            "CircleThrough(omega, O, A)",
+            "OnCircle(B, omega)",
+            "Segment(AB, A, B)",
+            "Segment(AC, A, C)",
+          ].join("\n"),
+        ),
+        spaceBlock("s1"),
+      ],
+      5,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+  const messages = (result.validationIssues ?? []).map((issue) => issue.message).join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /semantic preflight failed/i);
+  assert.match(messages, /Tangent/);
+  assert.match(messages, /ParallelToSegment/);
+  assert.match(messages, /Segment/);
+});
+
+test("assistant semantic preflight accepts changed Penrose circle diagrams that match the prompt", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock(
+          "t1",
+          "A, B and C are points on a circle. The tangent to the circle at A is parallel to the chord BC. Prove that AB = AC.",
+        ),
+        penroseDiagramBlock(
+          "d1",
+          [
+            "Point O, A, B, C",
+            "Circle omega",
+            "Line tangentA",
+            "NamedSegment AB, AC, BC",
+            "Label O $\\,$",
+            "Label A $A$",
+            "Label B $B$",
+            "Label C $C$",
+            "HidePoint(O)",
+            "CircleThrough(omega, O, A)",
+            "OnCircle(B, omega)",
+            "OnCircle(C, omega)",
+            "Tangent(tangentA, omega, A)",
+            "ParallelToSegment(tangentA, B, C)",
+            "Segment(AB, A, B)",
+            "Segment(AC, A, C)",
+            "Segment(BC, B, C)",
+          ].join("\n"),
+        ),
+        spaceBlock("s1"),
+      ],
+      5,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
 
   assert.equal(result.ok, true);
 });

@@ -25,6 +25,7 @@ import type {
 } from "@/lib/mauthAssistantAdapter";
 import {
   validateAssistantDiagramPreservationBeforeCommit,
+  validateAssistantDiagramSemanticsBeforeCommit,
   validateAssistantSolutionMarkingBeforeCommit,
 } from "@/lib/mauthAssistantPreflight";
 import type { MauthPreviewRenderedMetrics } from "@/lib/mauthAssistantTools";
@@ -180,7 +181,10 @@ async function validateAssistantDocumentBeforeCommit<
   const solutionMarking = validateAssistantSolutionMarkingBeforeCommit(document, context, changedIds);
   if (!solutionMarking.ok) return solutionMarking;
 
-  return validatePenroseDiagramsBeforeCommit(document, context, changedIds);
+  const penroseRender = await validatePenroseDiagramsBeforeCommit(document, context, changedIds);
+  if (!penroseRender.ok) return penroseRender;
+
+  return validateAssistantDiagramSemanticsBeforeCommit(document, context, changedIds);
 }
 
 export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>({
