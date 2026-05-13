@@ -83,7 +83,7 @@ Use `marks` on a question only when the question has no parts. If parts exist, t
 :::/part
 ```
 
-Part labels are automatic. Do not write `(a)`, `(b)`, etc. as stored labels. Set `pageBreakBefore=true` when this part should deliberately start on a fresh page inside a question.
+Part labels are automatic. Do not write `(a)`, `(b)`, etc. as stored labels. Set `pageBreakBefore=true` when this part should deliberately start on a fresh page inside a question. In the editor this is shown as an explicit `Page break` divider row immediately before the part, not as a checkbox on the part row.
 
 ### Subpart
 
@@ -93,7 +93,7 @@ Part labels are automatic. Do not write `(a)`, `(b)`, etc. as stored labels. Set
 :::/subpart
 ```
 
-Subpart labels are automatic. Do not write `(i)`, `(ii)`, etc. as stored labels. Set `pageBreakBefore=true` when this subpart should deliberately start on a fresh page inside a longer question.
+Subpart labels are automatic. Do not write `(i)`, `(ii)`, etc. as stored labels. Set `pageBreakBefore=true` when this subpart should deliberately start on a fresh page inside a longer question. In the editor this is shown as an explicit `Page break` divider row immediately before the subpart, not as a checkbox on the subpart row.
 
 ### Text
 
@@ -207,7 +207,7 @@ If a diagram should sit beside the answer/solution area, align the diagram left 
 :::
 ```
 
-Page breaks are attached after the current question. To split a long question at a deliberate point, use `pageBreakBefore=true` on the relevant part or subpart instead of inserting a standalone page-break block inside the question.
+Page breaks between questions are attached after the current question and are managed in the mini TOC. To split a long question at a deliberate point, use the question editor's `Page break` divider row before the relevant part or subpart; this stores as `pageBreakBefore=true` on the following part/subpart. Do not insert standalone page-break blocks inside a question.
 
 ## Diagrams
 

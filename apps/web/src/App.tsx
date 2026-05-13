@@ -552,6 +552,8 @@ const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
 const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
 const PAGE_BREAK_DRAG_MIME = "application/x-mauth-page-break";
 const PAGE_BREAK_DRAG_TEXT_PREFIX = "mauth-page-break:";
+const EDITOR_PAGE_BREAK_DRAG_MIME = "application/x-mauth-editor-page-break";
+const EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX = "mauth-editor-page-break:";
 
 interface SubsectionDropPreview {
   targetKey: string;
@@ -567,6 +569,16 @@ interface QuestionDropPreview {
 interface PageBreakDropPreview {
   questionId: string;
   placement: Exclude<DropPlacement, "inside">;
+}
+
+type EditorPageBreakTarget =
+  | { kind: "part"; questionId: string; partId: string }
+  | { kind: "subpart"; questionId: string; partId: string; subpartId: string };
+
+interface EditorPageBreakDropPreview {
+  targetKey: string;
+  placement: Exclude<DropPlacement, "inside">;
+  destination: EditorPageBreakTarget;
 }
 
 type SafariGestureEvent = Event & { scale?: number; clientX?: number; clientY?: number };
@@ -2976,6 +2988,38 @@ function parsePageBreakDrag(payload: string, allowRaw = false) {
   if (!payload) return "";
   if (payload.startsWith(PAGE_BREAK_DRAG_TEXT_PREFIX)) return payload.slice(PAGE_BREAK_DRAG_TEXT_PREFIX.length);
   return allowRaw ? payload : "";
+}
+
+function editorPageBreakKey(target?: EditorPageBreakTarget | null) {
+  if (!target) return "";
+  return target.kind === "part"
+    ? `part:${target.questionId}:${target.partId}`
+    : `subpart:${target.questionId}:${target.partId}:${target.subpartId}`;
+}
+
+function editorPageBreakTargetKey(target: SubsectionDragTarget) {
+  return `editor-page-break-target:${subsectionKey(target)}`;
+}
+
+function serializeEditorPageBreakDrag(target: EditorPageBreakTarget) {
+  return JSON.stringify(target);
+}
+
+function parseEditorPageBreakDrag(payload: string): EditorPageBreakTarget | null {
+  if (!payload) return null;
+  const json = payload.startsWith(EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX) ? payload.slice(EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX.length) : payload;
+  try {
+    const parsed = JSON.parse(json) as Partial<EditorPageBreakTarget>;
+    if (parsed.kind === "part" && parsed.questionId && parsed.partId) {
+      return { kind: "part", questionId: parsed.questionId, partId: parsed.partId };
+    }
+    if (parsed.kind === "subpart" && parsed.questionId && parsed.partId && parsed.subpartId) {
+      return { kind: "subpart", questionId: parsed.questionId, partId: parsed.partId, subpartId: parsed.subpartId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function keyboardMoveDirection(event: KeyboardEvent<HTMLElement>): MoveDirection | null {
@@ -7338,6 +7382,8 @@ export default function App() {
   const [dragOverPageBreak, setDragOverPageBreak] = useState<PageBreakDropPreview | null>(null);
   const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
   const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
+  const [draggedEditorPageBreak, setDraggedEditorPageBreak] = useState<EditorPageBreakTarget | null>(null);
+  const [dragOverEditorPageBreak, setDragOverEditorPageBreak] = useState<EditorPageBreakDropPreview | null>(null);
   const [paneMode, setPaneMode] = useState<PaneMode>("preview");
   const [tocOpen, setTocOpen] = useState(false);
   const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
@@ -8290,6 +8336,8 @@ export default function App() {
     setDragOverPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function undoEdit() {
@@ -8438,6 +8486,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
     setDraggedSubsection(null);
     setDragOverSubsection(null);
     setNewTestDialogOpen(false);
@@ -9597,6 +9647,187 @@ export default function App() {
     pendingPreviewJumpAnchorRef.current = null;
   }
 
+  function mauthTargetFromEditorPageBreak(target: EditorPageBreakTarget): Extract<MauthAction, { type: "pageBreak.set" }>["target"] {
+    if (target.kind === "part") {
+      return { kind: "part", questionId: target.questionId, partId: target.partId };
+    }
+    return { kind: "subpart", questionId: target.questionId, partId: target.partId, subpartId: target.subpartId };
+  }
+
+  function setEditorPageBreak(target: EditorPageBreakTarget, enabled: boolean) {
+    applyEditorAction({ type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(target), enabled });
+  }
+
+  function editorPageBreakDestinationHasBreak(target: EditorPageBreakTarget) {
+    const question = questionsRef.current.find((current) => current.id === target.questionId);
+    if (!question) return false;
+    if (target.kind === "part") {
+      return question.parts.find((part) => part.id === target.partId)?.pageBreakBefore === true;
+    }
+    return (
+      question.parts.find((part) => part.id === target.partId)?.subparts.find((subpart) => subpart.id === target.subpartId)
+        ?.pageBreakBefore === true
+    );
+  }
+
+  function moveEditorPageBreak(source: EditorPageBreakTarget, destination: EditorPageBreakTarget) {
+    if (editorPageBreakKey(source) === editorPageBreakKey(destination)) return;
+    if (editorPageBreakDestinationHasBreak(destination)) return;
+    applyEditorActions([
+      { type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(source), enabled: false },
+      { type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(destination), enabled: true },
+    ]);
+  }
+
+  function orderedPartTargets(question: QuestionBlock): EditorPageBreakTarget[] {
+    return orderedQuestionItems(question)
+      .filter((item): item is Extract<OrderedQuestionItem, { kind: "part" }> => item.kind === "part")
+      .map((item) => ({ kind: "part" as const, questionId: question.id, partId: item.part.id }));
+  }
+
+  function orderedSubpartTargets(questionId: string, part: EditorPart): EditorPageBreakTarget[] {
+    return orderedPartItems(part)
+      .filter((item): item is Extract<OrderedPartItem, { kind: "subpart" }> => item.kind === "subpart")
+      .map((item) => ({ kind: "subpart" as const, questionId, partId: part.id, subpartId: item.subpart.id }));
+  }
+
+  function editorPageBreakDestinationAfter(
+    targets: EditorPageBreakTarget[],
+    target: EditorPageBreakTarget,
+    placement: Exclude<DropPlacement, "inside">,
+  ) {
+    if (placement === "before") return target;
+    const index = targets.findIndex((current) => editorPageBreakKey(current) === editorPageBreakKey(target));
+    return index >= 0 ? targets[index + 1] : undefined;
+  }
+
+  function editorPageBreakDestinationForTarget(
+    source: EditorPageBreakTarget,
+    target: SubsectionDragTarget,
+    placement: Exclude<DropPlacement, "inside">,
+  ): EditorPageBreakTarget | null {
+    if (source.kind === "part" && target.kind === "part" && source.questionId === target.questionId) {
+      const question = questionsRef.current.find((current) => current.id === target.questionId);
+      if (!question) return null;
+      return (
+        editorPageBreakDestinationAfter(
+          orderedPartTargets(question),
+          { kind: "part", questionId: target.questionId, partId: target.id },
+          placement,
+        ) ?? null
+      );
+    }
+
+    if (
+      source.kind === "subpart" &&
+      target.kind === "subpart" &&
+      source.questionId === target.questionId &&
+      source.partId === target.partId
+    ) {
+      const part = findPartInQuestions(questionsRef.current, target.questionId, target.partId);
+      if (!part) return null;
+      return (
+        editorPageBreakDestinationAfter(
+          orderedSubpartTargets(target.questionId, part),
+          { kind: "subpart", questionId: target.questionId, partId: target.partId, subpartId: target.id },
+          placement,
+        ) ?? null
+      );
+    }
+
+    return null;
+  }
+
+  function moveEditorPageBreakByKeyboard(target: EditorPageBreakTarget, direction: MoveDirection) {
+    const question = questionsRef.current.find((current) => current.id === target.questionId);
+    if (!question) return;
+    const targets =
+      target.kind === "part"
+        ? orderedPartTargets(question)
+        : (() => {
+            const part = question.parts.find((current) => current.id === target.partId);
+            return part ? orderedSubpartTargets(question.id, part) : [];
+          })();
+    const sourceIndex = targets.findIndex((current) => editorPageBreakKey(current) === editorPageBreakKey(target));
+    const destination = sourceIndex >= 0 ? targets[sourceIndex + direction] : undefined;
+    if (destination) moveEditorPageBreak(target, destination);
+  }
+
+  function readEditorPageBreakDrag(event: DragEvent<HTMLElement>) {
+    return (
+      draggedEditorPageBreak ??
+      parseEditorPageBreakDrag(event.dataTransfer.getData(EDITOR_PAGE_BREAK_DRAG_MIME)) ??
+      parseEditorPageBreakDrag(event.dataTransfer.getData("text/plain"))
+    );
+  }
+
+  function handleEditorPageBreakDragStart(event: DragEvent<HTMLElement>, target: EditorPageBreakTarget) {
+    event.stopPropagation();
+    const payload = serializeEditorPageBreakDrag(target);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX}${payload}`);
+    try {
+      event.dataTransfer.setData(EDITOR_PAGE_BREAK_DRAG_MIME, payload);
+    } catch {
+      // The prefixed text/plain payload above is the cross-browser fallback.
+    }
+    setModuleDragImage(event);
+    setDraggedEditorPageBreak(target);
+    setDragOverEditorPageBreak(null);
+    setDraggedQuestionId(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
+  }
+
+  function handleEditorPageBreakDragOver(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const placement = dragPlacementFromEvent(event);
+    const destination = editorPageBreakDestinationForTarget(source, target, placement);
+    if (!destination || editorPageBreakKey(source) === editorPageBreakKey(destination) || editorPageBreakDestinationHasBreak(destination)) {
+      setDragOverEditorPageBreak((current) => (current?.targetKey === editorPageBreakTargetKey(target) ? null : current));
+      return true;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverEditorPageBreak({ targetKey: editorPageBreakTargetKey(target), placement, destination });
+    return true;
+  }
+
+  function handleEditorPageBreakDragLeave(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    setDragOverEditorPageBreak((current) => (current?.targetKey === editorPageBreakTargetKey(target) ? null : current));
+  }
+
+  function handleEditorPageBreakDrop(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const placement =
+      dragOverEditorPageBreak?.targetKey === editorPageBreakTargetKey(target)
+        ? dragOverEditorPageBreak.placement
+        : dragPlacementFromEvent(event);
+    const destination =
+      dragOverEditorPageBreak?.targetKey === editorPageBreakTargetKey(target)
+        ? dragOverEditorPageBreak.destination
+        : editorPageBreakDestinationForTarget(source, target, placement);
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+    if (destination) moveEditorPageBreak(source, destination);
+    return true;
+  }
+
+  function handleEditorPageBreakDragEnd() {
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+  }
+
   function setModuleDragImage(event: DragEvent<HTMLElement>) {
     const preview = event.currentTarget.closest("[data-drag-preview]");
     if (preview instanceof HTMLElement) {
@@ -9669,6 +9900,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function handlePageBreakDragStart(event: DragEvent<HTMLElement>, questionId: string) {
@@ -9687,6 +9920,8 @@ export default function App() {
     setDragOverSubsection(null);
     setDraggedPageBreakQuestionId(questionId);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function handlePageBreakDragOver(event: DragEvent<HTMLElement>, questionId: string) {
@@ -9717,6 +9952,8 @@ export default function App() {
     const targetQuestionId = pageBreakDropBoundaryQuestionId(questionId, placement);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
     if (!targetQuestionId || targetQuestionId === sourceQuestionId || pageBreakQuestionIds.has(targetQuestionId)) return;
     movePageBreakAfterQuestion(sourceQuestionId, targetQuestionId);
     const anchor = pageBreakScrollAnchor(targetQuestionId);
@@ -9728,6 +9965,8 @@ export default function App() {
   function handlePageBreakDragEnd() {
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function contentScopeFromContainer(container: SubsectionContainerRef): MauthContentScope | null {
@@ -9829,6 +10068,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function handleSubsectionDragOver(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
@@ -9860,6 +10101,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
     moveSubsection(active, intent);
   }
 
@@ -9869,6 +10112,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
   }
 
   function handleContainerDropZoneDragOver(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, placement: "start" | "end") {
@@ -9909,6 +10154,8 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
     moveSubsection(active, intent);
   }
 
@@ -9950,11 +10197,18 @@ export default function App() {
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
     moveSubsection(active, intent);
   }
 
   function subsectionDragClasses(target: SubsectionDragTarget) {
-    const dropPlacement = dragOverSubsection?.targetKey === subsectionKey(target) ? dragOverSubsection.placement : null;
+    const dropPlacement =
+      dragOverSubsection?.targetKey === subsectionKey(target)
+        ? dragOverSubsection.placement
+        : dragOverEditorPageBreak?.targetKey === editorPageBreakTargetKey(target)
+          ? dragOverEditorPageBreak.placement
+          : null;
     return cn(
       "relative",
       draggedSubsection && subsectionKey(draggedSubsection) === subsectionKey(target) && "scale-[0.995] opacity-70 shadow-2xl",
@@ -10149,6 +10403,14 @@ export default function App() {
     applyEditorAction({ type: "part.add", questionId: question.id, part });
   }
 
+  function addPartPageBreak(questionId: string) {
+    const question = questions.find((current) => current.id === questionId);
+    if (!question) return;
+    const part = { ...createPart(), pageBreakBefore: true };
+    applyEditorAction({ type: "part.add", questionId: question.id, part });
+    revealEditorAnchor(partScrollAnchor(question.id, part.id));
+  }
+
   function removePart(questionId: string, partId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
@@ -10170,6 +10432,13 @@ export default function App() {
     const subparts = part.subparts ?? [];
     const subpart = createSubpart(subparts.length);
     applyEditorAction({ type: "subpart.add", questionId, partId: part.id, subpart });
+  }
+
+  function addSubpartPageBreak(questionId: string, part: EditorPart) {
+    const subparts = part.subparts ?? [];
+    const subpart = { ...createSubpart(subparts.length), pageBreakBefore: true };
+    applyEditorAction({ type: "subpart.add", questionId, partId: part.id, subpart });
+    revealEditorAnchor(subpartScrollAnchor(questionId, part.id, subpart.id));
   }
 
   function removeSubpart(questionId: string, part: EditorPart, subpartId: string) {
@@ -10668,6 +10937,74 @@ export default function App() {
     return null;
   }
 
+  function renderEditorPageBreakRow(target: EditorPageBreakTarget) {
+    const moving = editorPageBreakKey(draggedEditorPageBreak) === editorPageBreakKey(target);
+    const contextLabel = target.kind === "part" ? "next part" : "next subpart";
+    return (
+      <div
+        key={`page-break-row-${editorPageBreakKey(target)}`}
+        data-drag-preview
+        tabIndex={0}
+        title={`Page break. The ${contextLabel} starts on a new page. Drag or press Alt+Up/Alt+Down to move it. Delete removes it.`}
+        aria-label={`Page break. The ${contextLabel} starts on a new page.`}
+        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Delete Backspace"
+        onKeyDown={(event) => {
+          if (keyboardDeleteRequested(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            setEditorPageBreak(target, false);
+            return;
+          }
+          const direction = keyboardMoveDirection(event);
+          if (!direction) return;
+          event.preventDefault();
+          event.stopPropagation();
+          moveEditorPageBreakByKeyboard(target, direction);
+        }}
+        className={cn(
+          "flex items-center gap-2 rounded-md border border-dashed border-primary/45 bg-primary/[0.035] px-2 py-1.5 text-sm text-primary transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45",
+          moving && "scale-[0.995] opacity-70 shadow-2xl",
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          draggable
+          title="Drag page break"
+          aria-label="Drag page break"
+          onClick={(event) => event.stopPropagation()}
+          onDragStart={(event) => handleEditorPageBreakDragStart(event, target)}
+          onDragEnd={handleEditorPageBreakDragEnd}
+          className="size-7 cursor-grab text-primary/75 active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" aria-hidden="true" />
+        </Button>
+        <FileText className="size-4 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold leading-tight">Page break</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {contextLabel[0].toUpperCase() + contextLabel.slice(1)} starts on a new page
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title="Remove page break"
+          aria-label="Remove page break"
+          onClick={(event) => {
+            event.stopPropagation();
+            setEditorPageBreak(target, false);
+          }}
+          className="hover:text-destructive size-7 text-muted-foreground"
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+    );
+  }
+
   function renderSubpartPanel(question: QuestionBlock, part: EditorPart, subpart: EditorSubpart) {
     const subpartIndex = Math.max(
       0,
@@ -10697,27 +11034,24 @@ export default function App() {
         data-drag-preview
         data-scroll-anchor={subpartAnchor}
         className={cn("rounded-md transition-all", subsectionDragClasses(subpartTarget))}
-        onDragOver={(event) => handleSubsectionDragOver(event, subpartTarget)}
-        onDragLeave={(event) => handleSubsectionDragLeave(event, subpartTarget)}
-        onDrop={(event) => handleSubsectionDrop(event, subpartTarget)}
+        onDragOver={(event) => {
+          if (handleEditorPageBreakDragOver(event, subpartTarget)) return;
+          handleSubsectionDragOver(event, subpartTarget);
+        }}
+        onDragLeave={(event) => {
+          handleEditorPageBreakDragLeave(event, subpartTarget);
+          handleSubsectionDragLeave(event, subpartTarget);
+        }}
+        onDrop={(event) => {
+          if (handleEditorPageBreakDrop(event, subpartTarget)) return;
+          handleSubsectionDrop(event, subpartTarget);
+        }}
       >
         <CollapsiblePanel
           title={<InlineSummaryTitle label={`Subpart (${subpartLabel})`} summary={partPanelSummary(subpart.contentBlocks)} />}
           leading={subsectionDragHandle(subpartTarget, `Drag subpart ${subpartLabel}`)}
           actions={
             <>
-              <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                New Page
-                <span className="flex h-8 w-20 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
-                  <input
-                    type="checkbox"
-                    checked={subpart.pageBreakBefore === true}
-                    onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { pageBreakBefore: event.target.checked })}
-                    className="size-4"
-                    aria-label={`Start subpart ${subpartLabel} on a new page`}
-                  />
-                </span>
-              </label>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                 Marks
                 <input
@@ -10800,6 +11134,12 @@ export default function App() {
       icon: <GitBranch className="size-4" aria-hidden="true" />,
       onClick: () => addSubpart(question.id, part),
     };
+    const partPageBreakInsertAction = {
+      label: "Page break",
+      tooltip: "Add a page-break row before a new subpart",
+      icon: <FileText className="size-4" aria-hidden="true" />,
+      onClick: () => addSubpartPageBreak(question.id, part),
+    };
     const partSolutionSlotAction = {
       label: "Solution slot",
       tooltip: "Add paired answer space and solution text",
@@ -10812,27 +11152,24 @@ export default function App() {
         <div
           data-drag-preview
           className={cn("rounded-md transition-all", subsectionDragClasses(partTarget))}
-          onDragOver={(event) => handleSubsectionDragOver(event, partTarget)}
-          onDragLeave={(event) => handleSubsectionDragLeave(event, partTarget)}
-          onDrop={(event) => handleSubsectionDrop(event, partTarget)}
+          onDragOver={(event) => {
+            if (handleEditorPageBreakDragOver(event, partTarget)) return;
+            handleSubsectionDragOver(event, partTarget);
+          }}
+          onDragLeave={(event) => {
+            handleEditorPageBreakDragLeave(event, partTarget);
+            handleSubsectionDragLeave(event, partTarget);
+          }}
+          onDrop={(event) => {
+            if (handleEditorPageBreakDrop(event, partTarget)) return;
+            handleSubsectionDrop(event, partTarget);
+          }}
         >
           <CollapsiblePanel
             title={<InlineSummaryTitle label={`Part (${partLabel})`} summary={partPanelSummary(part.contentBlocks)} />}
             leading={subsectionDragHandle(partTarget, `Drag part ${partLabel}`)}
             actions={
               <>
-                <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                  New Page
-                  <span className="flex h-8 w-20 items-center justify-center rounded-md border border-input bg-background px-2 text-sm font-normal">
-                    <input
-                      type="checkbox"
-                      checked={part.pageBreakBefore === true}
-                      onChange={(event) => updatePart(question.id, part.id, { pageBreakBefore: event.target.checked })}
-                      className="size-4"
-                      aria-label={`Start part ${partLabel} on a new page`}
-                    />
-                  </span>
-                </label>
                 {subparts.length ? (
                   <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                     Marks
@@ -10879,7 +11216,17 @@ export default function App() {
                 return (
                   <Fragment key={item.id}>
                     {beforeDropZone}
-                    <div className="ml-6 border-l-2 border-blue-200 pl-4">{renderSubpartPanel(question, part, item.subpart)}</div>
+                    <div className="ml-6 space-y-2 border-l-2 border-blue-200 pl-4">
+                      {item.subpart.pageBreakBefore
+                        ? renderEditorPageBreakRow({
+                            kind: "subpart",
+                            questionId: question.id,
+                            partId: part.id,
+                            subpartId: item.subpart.id,
+                          })
+                        : null}
+                      {renderSubpartPanel(question, part, item.subpart)}
+                    </div>
                   </Fragment>
                 );
               })}
@@ -10898,7 +11245,7 @@ export default function App() {
               spaceActionTooltip={
                 partUsesSolutionSpace ? "Add the default paired student answer space and solution block for this marked part" : undefined
               }
-              extraActions={[...(partUsesSolutionSpace ? [] : [partSolutionSlotAction]), partInsertAction]}
+              extraActions={[...(partUsesSolutionSpace ? [] : [partSolutionSlotAction]), partInsertAction, partPageBreakInsertAction]}
             />
           </CollapsiblePanel>
         </div>
@@ -11261,9 +11608,16 @@ export default function App() {
                                 : null}
                               <div className="flex flex-col gap-3">
                                 {questionItems.map((item, itemIndex) =>
-                                  item.kind === "block"
-                                    ? renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
-                                    : renderPartPanel(question, item.part),
+                                  item.kind === "block" ? (
+                                    renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
+                                  ) : (
+                                    <Fragment key={item.id}>
+                                      {item.part.pageBreakBefore
+                                        ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
+                                        : null}
+                                      {renderPartPanel(question, item.part)}
+                                    </Fragment>
+                                  ),
                                 )}
                               </div>
                               {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
@@ -11291,6 +11645,12 @@ export default function App() {
                                     tooltip: "Add a lettered question part, such as (a), (b), (c)",
                                     icon: <GitBranch className="size-4" aria-hidden="true" />,
                                     onClick: () => addPart(question.id),
+                                  },
+                                  {
+                                    label: "Page break",
+                                    tooltip: "Add a page-break row before a new part",
+                                    icon: <FileText className="size-4" aria-hidden="true" />,
+                                    onClick: () => addPartPageBreak(question.id),
                                   },
                                 ]}
                               />
