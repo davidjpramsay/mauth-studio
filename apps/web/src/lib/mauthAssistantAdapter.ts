@@ -179,31 +179,111 @@ function containsDiagramPayload(value: unknown): boolean {
   });
 }
 
-function postEditDiagramInspectionArgs(call: MauthAssistantAdapterToolCall): Record<string, unknown> | null {
-  if (call.name === "mauth.author.addDiagram") {
-    return { ...(isRecord(call.arguments) ? call.arguments : {}), scope: "question" };
+type PostEditInspectionMode = "diagram" | "solutionLayout";
+
+interface PostEditInspectionPlan {
+  args: Record<string, unknown>;
+  modes: PostEditInspectionMode[];
+}
+
+function containsSolutionPayload(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value.solutionText === "string" || typeof value.solution === "string" || value.includeSolution === true) return true;
+  return Object.values(value).some((item) => {
+    if (Array.isArray(item)) return item.some(containsSolutionPayload);
+    return isRecord(item) && containsSolutionPayload(item);
+  });
+}
+
+function containsResponseSpacePayload(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    value.lines !== undefined ||
+    value.studentSpaceLines !== undefined ||
+    value.answerLines !== undefined ||
+    value.responseSpaceLines !== undefined
+  ) {
+    return true;
   }
-  if (call.name === "mauth.author.replaceQuestion" && containsDiagramPayload(call.arguments)) {
-    return { ...(isRecord(call.arguments) ? call.arguments : {}), scope: "question" };
+  return Object.values(value).some((item) => {
+    if (Array.isArray(item)) return item.some(containsResponseSpacePayload);
+    return isRecord(item) && containsResponseSpacePayload(item);
+  });
+}
+
+function firstRecordFromArray(value: unknown) {
+  return Array.isArray(value) ? value.find(isRecord) : undefined;
+}
+
+function postEditQuestionInspectionArgs(call: MauthAssistantAdapterToolCall): Record<string, unknown> {
+  if (!isRecord(call.arguments)) return { scope: "question" };
+  const source = firstRecordFromArray(call.arguments.questions) ?? firstRecordFromArray(call.arguments.targets) ?? call.arguments;
+  return { ...source, scope: "question" };
+}
+
+function postEditInspectionPlan(call: MauthAssistantAdapterToolCall): PostEditInspectionPlan | null {
+  if (call.name === "mauth.author.addDiagram") {
+    return { args: postEditQuestionInspectionArgs(call), modes: ["diagram", "solutionLayout"] };
+  }
+  if (call.name === "mauth.author.replaceQuestion") {
+    const modes: PostEditInspectionMode[] = [];
+    if (containsDiagramPayload(call.arguments)) modes.push("diagram");
+    if (containsSolutionPayload(call.arguments) || containsResponseSpacePayload(call.arguments)) modes.push("solutionLayout");
+    return modes.length ? { args: postEditQuestionInspectionArgs(call), modes } : null;
+  }
+  if (call.name === "mauth.author.ensureSolutions" || call.name === "mauth.author.adjustResponseSpaces") {
+    const targetArray = isRecord(call.arguments)
+      ? Array.isArray(call.arguments.questions)
+        ? call.arguments.questions
+        : Array.isArray(call.arguments.targets)
+          ? call.arguments.targets
+          : undefined
+      : undefined;
+    const targetCount = targetArray?.filter(isRecord).length ?? 1;
+    return {
+      args: targetCount > 1 ? { scope: "document" } : postEditQuestionInspectionArgs(call),
+      modes: ["solutionLayout"],
+    };
   }
   return null;
 }
 
-function repairableDiagramWarnings(inspection: MauthPreviewInspection): MauthPreviewInspectionWarning[] {
-  const diagramWarnings =
-    inspection.question?.diagrams.flatMap((diagram) =>
-      diagram.warnings
-        .filter((warning) => warning.severity === "warning" || warning.severity === "error")
-        .map((warning) => ({
-          ...warning,
-          anchor: warning.anchor ?? diagram.anchor,
-          targetId: warning.targetId ?? diagram.id,
-        })),
-    ) ?? [];
+function repairablePostEditWarnings(
+  inspection: MauthPreviewInspection,
+  modes: readonly PostEditInspectionMode[],
+): MauthPreviewInspectionWarning[] {
+  const modeSet = new Set(modes);
+  const solutionWarningCodes = new Set([
+    "student-space-missing",
+    "solution-hidden-mark-total-mismatch",
+    "solution-visible-mark-note",
+    "rendered-solution-space-overflow",
+    "rendered-response-space-outline-missing",
+    "rendered-page-overflow",
+  ]);
+  const questionWarnings = modeSet.has("solutionLayout")
+    ? [...(inspection.question?.warnings ?? []), ...(inspection.questions?.flatMap((question) => question.warnings) ?? [])].filter(
+        (warning) => solutionWarningCodes.has(warning.code),
+      )
+    : [];
+  const diagramWarnings = modeSet.has("diagram")
+    ? (inspection.question?.diagrams.flatMap((diagram) =>
+        diagram.warnings
+          .filter((warning) => warning.severity === "warning" || warning.severity === "error")
+          .map((warning) => ({
+            ...warning,
+            anchor: warning.anchor ?? diagram.anchor,
+            targetId: warning.targetId ?? diagram.id,
+          })),
+      ) ?? [])
+    : [];
   const renderedWarnings =
     inspection.renderedMetrics.available === true
       ? inspection.renderedMetrics.warnings
-          .filter((warning) => warning.code.startsWith("rendered-"))
+          .filter((warning) => {
+            if (modeSet.has("diagram") && warning.code.startsWith("rendered-diagram-")) return true;
+            return modeSet.has("solutionLayout") && solutionWarningCodes.has(warning.code);
+          })
           .filter((warning) => warning.severity === "warning" || warning.severity === "error")
           .map((warning) => ({
             ...warning,
@@ -212,7 +292,8 @@ function repairableDiagramWarnings(inspection: MauthPreviewInspection): MauthPre
       : [];
 
   const seen = new Set<string>();
-  return [...diagramWarnings, ...renderedWarnings].filter((warning) => {
+  return [...questionWarnings, ...diagramWarnings, ...renderedWarnings].filter((warning) => {
+    if (warning.severity !== "warning" && warning.severity !== "error") return false;
     const key = `${warning.code}:${warning.anchor ?? ""}:${warning.targetId ?? ""}:${warning.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -238,7 +319,15 @@ function postEditInspectionExpected(warning: MauthPreviewInspectionWarning) {
     return "Repair the adjacent diagram and answer-space layout so it renders as one L-shaped response slot.";
   }
   if (warning.code === "rendered-solution-space-overflow") {
-    return "Repair the paired student-space and solution layout so the solution fits inside the allocated student space.";
+    return "Repair by using mauth.author.adjustResponseSpaces to increase the paired student space, or by tightening the solution text while preserving mark ticks.";
+  }
+  if (warning.code === "student-space-missing")
+    return "Repair by adding a student-only answer space for the same question, part, or subpart.";
+  if (warning.code === "solution-hidden-mark-total-mismatch") {
+    return "Repair the solution with hidden [[marks:n]] annotations whose total matches the relevant marks.";
+  }
+  if (warning.code === "solution-visible-mark-note") {
+    return "Repair the solution by replacing visible mark notes with hidden [[marks:n]] annotations.";
   }
   if (warning.code === "rendered-page-overflow") {
     return "Repair the page layout so the edited content fits inside the rendered A4 page box.";
@@ -248,7 +337,7 @@ function postEditInspectionExpected(warning: MauthPreviewInspectionWarning) {
     : "Repair the affected preview layout and rerun preview inspection.";
 }
 
-function postEditDiagramInspectionFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   result: MauthAssistantToolResult<Q, F, C>,
   inspection: MauthPreviewInspection,
   repairWarnings: readonly MauthPreviewInspectionWarning[],
@@ -258,7 +347,9 @@ function postEditDiagramInspectionFailureResult<Q extends MauthQuestionLike, F e
       ? `postEditInspection.${warning.path}`
       : warning.code.startsWith("rendered-")
         ? `postEditInspection.renderedMetrics.warnings[${index}]`
-        : `postEditInspection.question.diagrams[${index}].graphConfig`,
+        : warning.code.startsWith("solution-") || warning.code.startsWith("student-space-")
+          ? `postEditInspection.question.solutionScopes[${index}]`
+          : `postEditInspection.question.diagrams[${index}].graphConfig`,
     message: warning.message,
     expected: postEditInspectionExpected(warning),
     targetId: warning.targetId,
@@ -408,17 +499,17 @@ export async function runMauthAssistantAdapterTool<
       }
       await host.commitDocument(result.document, context);
       committedDocument = true;
-      const inspectionArgs = postEditDiagramInspectionArgs(call);
-      if (inspectionArgs) {
+      const inspectionPlan = postEditInspectionPlan(call);
+      if (inspectionPlan) {
         const renderedMetrics = host.waitForRenderedPreviewMetrics ? await host.waitForRenderedPreviewMetrics(context) : undefined;
         const inspection = runMauthAssistantTool(
           result.document,
-          { name: "mauth.preview.inspect", arguments: inspectionArgs },
+          { name: "mauth.preview.inspect", arguments: inspectionPlan.args },
           await documentToolOptions(host, renderedMetrics),
         );
         const inspectionData = inspection.data as MauthPreviewInspection;
-        const repairWarnings = repairableDiagramWarnings(inspectionData);
-        if (repairWarnings.length) return postEditDiagramInspectionFailureResult(result, inspectionData, repairWarnings);
+        const repairWarnings = repairablePostEditWarnings(inspectionData, inspectionPlan.modes);
+        if (repairWarnings.length) return postEditInspectionFailureResult(result, inspectionData, repairWarnings);
       }
     }
     return documentToolResult(result, committedDocument);

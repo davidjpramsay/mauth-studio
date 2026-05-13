@@ -441,6 +441,57 @@ def test_focused_response_space_prompt_uses_response_space_tool():
     assert "preserve existing question text, solutions, and diagrams" in instructions
 
 
+def test_solution_overflow_repair_exposes_solution_and_space_tools():
+    tool_output = openai_assistant.AssistantToolOutput(
+        callId="call_1",
+        name="mauth_author_ensure_solutions",
+        output={
+            "ok": False,
+            "toolName": "mauth.author.ensureSolutions",
+            "validationIssues": [
+                {
+                    "path": "postEditInspection.renderedMetrics.warnings[0]",
+                    "message": "Solution needs about 5 more lines than the student space.",
+                    "expected": "Repair by using mauth.author.adjustResponseSpaces.",
+                }
+            ],
+            "warnings": [{"code": "rendered-solution-space-overflow", "message": "Solution needs about 5 more lines."}],
+        },
+    )
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=[tool_output])
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_author_adjust_response_spaces"]
+
+
+def test_response_space_outline_repair_from_replace_question_exposes_solution_and_space_tools():
+    tool_output = openai_assistant.AssistantToolOutput(
+        callId="call_1",
+        name="mauth_author_replace_question",
+        output={
+            "ok": False,
+            "toolName": "mauth.author.replaceQuestion",
+            "validationIssues": [
+                {
+                    "path": "postEditInspection.renderedMetrics.warnings[0]",
+                    "message": "The diagram answer-space outline did not render as a single L-shaped slot.",
+                    "expected": "Repair by using mauth.author.adjustResponseSpaces.",
+                }
+            ],
+            "warnings": [
+                {
+                    "code": "rendered-response-space-outline-missing",
+                    "message": "The diagram answer-space outline did not render as a single L-shaped slot.",
+                }
+            ],
+        },
+    )
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=[tool_output])
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_author_adjust_response_spaces"]
+
+
 def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
     message = openai_assistant.AssistantChatMessage(
         role="user",

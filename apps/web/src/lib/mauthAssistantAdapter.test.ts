@@ -424,6 +424,150 @@ test("waits for painted preview metrics before accepting diagram edits", async (
   assert(data.validationIssues?.some((issue) => issue.message.includes("failed to render")));
 });
 
+test("waits for painted preview metrics before accepting solution layout edits", async () => {
+  let waitedForPaint = false;
+  const paintedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:q1-student-space",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 900,
+        totalHeightPx: 1000,
+        remainingHeightPx: 100,
+        usedPercent: 90,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1/b:q1-student-space",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 10, top: 20, right: 610, bottom: 220, width: 600, height: 200, x: 10, y: 20 },
+        solutionSlot: {
+          found: true,
+          studentHeightPx: 120,
+          solutionHeightPx: 220,
+          solutionFitsStudentSpace: false,
+          warningText: "Solution needs about 5 more lines than the student space.",
+        },
+        warnings: [
+          {
+            code: "rendered-solution-space-overflow",
+            severity: "warning",
+            anchor: "q:q1/b:q1-student-space",
+            message: "Solution needs about 5 more lines than the student space.",
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+  const harness = adapterHost({
+    waitForRenderedPreviewMetrics: async () => {
+      waitedForPaint = true;
+      return paintedMetrics;
+    },
+  });
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.ensureSolutions",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          studentSpaceLines: 2,
+          solutionText: "Line one.\nLine two.\nLine three.\nLine four.\nLine five.",
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string; targetId?: string }> };
+
+  assert.equal(waitedForPaint, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.match(result.error ?? "", /post-edit .*inspection/i);
+  assert(data.validationIssues?.some((issue) => issue.targetId === "q1-student-space"));
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("mauth.author.adjustResponseSpaces")));
+});
+
+test("waits for painted preview metrics before accepting response-space edits", async () => {
+  let waitedForPaint = false;
+  const paintedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:s1",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 1040,
+        totalHeightPx: 1000,
+        remainingHeightPx: 0,
+        usedPercent: 104,
+        anchorCount: 1,
+        overflow: true,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1/b:s1",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 10, top: 20, right: 610, bottom: 920, width: 600, height: 900, x: 10, y: 20 },
+        warnings: [],
+      },
+    ],
+    warnings: [
+      {
+        code: "rendered-page-overflow",
+        severity: "warning",
+        message: "Preview page 1 appears to overflow its A4 page box.",
+      },
+    ],
+  };
+  const harness = adapterHost(
+    {
+      waitForRenderedPreviewMetrics: async () => {
+        waitedForPaint = true;
+        return paintedMetrics;
+      },
+    },
+    {
+      frontMatter: { assessmentTitle: "Original" },
+      formattingConfig: { showMarks: true },
+      questions: [question("q1", [textBlock("t1", "Original wording."), { id: "s1", kind: "space", lines: 4, visibility: "student" }])],
+    },
+  );
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.adjustResponseSpaces",
+    arguments: {
+      targets: [{ questionNumber: 1, lines: 20, mode: "set" }],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string }> };
+
+  assert.equal(waitedForPaint, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.match(result.error ?? "", /post-edit .*inspection/i);
+  assert(data.validationIssues?.some((issue) => issue.message.includes("overflow")));
+});
+
 test("injects serialized current document when saving through file tools", async () => {
   const driver = createMemoryDriver([{ summary: fileSummary("tests", "folder"), content: null, versions: [] }]);
   const harness = adapterHost({ fileDriver: driver });

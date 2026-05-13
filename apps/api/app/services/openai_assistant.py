@@ -1348,8 +1348,39 @@ def assistant_tool_definitions(
     # Repair continuations should stay on the same narrow authoring surface
     # that produced the failed tool output. This avoids reopening the broad
     # wrapper tool just to fix a precise validationIssue path.
+    solution_layout_repair_terms = (
+        "rendered-solution-space-overflow",
+        "rendered-response-space-outline-missing",
+        "rendered-page-overflow",
+        "student-space-missing",
+        "solution-hidden-mark-total-mismatch",
+        "solution-visible-mark-note",
+    )
     if repair_targets & {"mauth_author_replace_question", "mauth.author.replaceQuestion"}:
-        if tool_outputs_mention(tool_outputs, ("posteditinspection", "post-edit inspection", "diagramid", "targetid")):
+        if tool_outputs_mention(tool_outputs, solution_layout_repair_terms):
+            return [
+                mauth_author_ensure_solutions_tool_definition(),
+                mauth_author_adjust_response_spaces_tool_definition(),
+            ]
+        if tool_outputs_mention(
+            tool_outputs,
+            (
+                "diagramid",
+                "targetid",
+                "diagram-renderer",
+                "renderer-mismatch",
+                "missing tangent",
+                "paralleltosegment",
+                "chord segment",
+                "vector labels",
+                "rendered-diagram",
+                "graph2d",
+                "set-diagram",
+                "stats-chart",
+                "vector2d",
+                "penrose-",
+            ),
+        ):
             return [mauth_author_add_diagram_tool_definition()]
         return [
             mauth_author_replace_question_tool_definition(
@@ -1360,6 +1391,11 @@ def assistant_tool_definitions(
     if repair_targets & {"mauth_author_add_diagram", "mauth.author.addDiagram"}:
         return [mauth_author_add_diagram_tool_definition()]
     if repair_targets & {"mauth_author_ensure_solutions", "mauth.author.ensureSolutions"}:
+        if tool_outputs_mention(tool_outputs, solution_layout_repair_terms):
+            return [
+                mauth_author_ensure_solutions_tool_definition(),
+                mauth_author_adjust_response_spaces_tool_definition(),
+            ]
         return [mauth_author_ensure_solutions_tool_definition()]
     if repair_targets & {"mauth_author_adjust_response_spaces", "mauth.author.adjustResponseSpaces"}:
         return [mauth_author_adjust_response_spaces_tool_definition()]
