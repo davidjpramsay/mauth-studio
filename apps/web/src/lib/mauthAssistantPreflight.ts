@@ -6,7 +6,7 @@ import type {
   MauthAssistantToolCommitContext,
 } from "./mauthAssistantAdapter.ts";
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike } from "./mauthActions.ts";
-import { inspectDiagramSemantics } from "./mauthDiagramSemanticInspection.ts";
+import { inspectMauthDiagram, isAssistantDiagramInspectionWarningBlocking } from "./mauthDiagramInspection.ts";
 
 const MARK_TICK_ANNOTATION_PATTERN = /\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi;
 const VISIBLE_MARK_NOTE_PATTERN =
@@ -229,7 +229,16 @@ function questionTextFragments(question: MauthQuestionLike) {
   ];
 }
 
-function collectDiagramSemanticIssues<Q extends MauthQuestionLike>(questions: readonly Q[], changedIds: readonly string[]) {
+function diagramInspectionExpected(code: string) {
+  if (code === "diagram-renderer-mismatch") return "Use the renderer expected by the prompt and write that renderer's native graphConfig.";
+  if (code === "image-diagram-missing-source") return "Attach an uploaded image source in graphConfig.data.src.";
+  if (code === "scalar-product-vector-labels-missing") {
+    return "Add visible vector labels in Penrose Substance, e.g. `Label A $\\mathbf{a}$`, for every vector named in the scalar products.";
+  }
+  return "A native diagram whose renderer choice, labels, and declared geometry match the question prompt.";
+}
+
+function collectDiagramInspectionIssues<Q extends MauthQuestionLike>(questions: readonly Q[], changedIds: readonly string[]) {
   const ids = changedSet(changedIds);
   const validateAll = ids.size === 0;
   const issues: MauthAssistantDocumentPreflightIssue[] = [];
@@ -238,13 +247,12 @@ function collectDiagramSemanticIssues<Q extends MauthQuestionLike>(questions: re
     blocks.forEach((block, blockIndex) => {
       const blockChanged = inheritedChanged || ids.has(block.id);
       if (block.kind !== "diagram" || !blockChanged) return;
-      const semantic = inspectDiagramSemantics(block.graphConfig, questionText);
-      for (const warning of semantic.warnings) {
+      const inspection = inspectMauthDiagram(block.graphConfig, questionText);
+      for (const warning of inspection.warnings.filter(isAssistantDiagramInspectionWarningBlocking)) {
         issues.push({
-          path: `${pathPrefix}.contentBlocks[${blockIndex}].graphConfig.options.substanceSource`,
+          path: `${pathPrefix}.contentBlocks[${blockIndex}].${warning.path ?? "graphConfig"}`,
           message: warning.message,
-          expected:
-            "A native Penrose diagram whose declared geometry matches the question prompt: correct Tangent, ParallelToSegment, chord Segment, circle membership, visible named labels, and hidden auxiliary labels.",
+          expected: diagramInspectionExpected(warning.code),
           targetId: block.id,
         });
       }
@@ -336,11 +344,11 @@ export function validateAssistantDiagramSemanticsBeforeCommit<
   _context: MauthAssistantToolCommitContext,
   changedIds: readonly string[],
 ): MauthAssistantDocumentPreflightResult {
-  const issues = collectDiagramSemanticIssues(document.questions, changedIds);
+  const issues = collectDiagramInspectionIssues(document.questions, changedIds);
   if (!issues.length) return { ok: true };
   return failureResult(
-    "assistant-diagram-semantic-invalid",
-    "Assistant diagram semantic preflight failed. Repair the diagram so its declared geometry matches the question before applying.",
+    "assistant-diagram-inspection-invalid",
+    "Assistant diagram preflight failed. Repair the diagram so its renderer, labels, and declared geometry match the question before applying.",
     issues,
   );
 }

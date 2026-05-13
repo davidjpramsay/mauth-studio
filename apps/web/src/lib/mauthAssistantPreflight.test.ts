@@ -149,10 +149,42 @@ test("assistant semantic preflight rejects changed Penrose circle diagrams that 
   const messages = (result.validationIssues ?? []).map((issue) => issue.message).join("\n");
 
   assert.equal(result.ok, false);
-  assert.match(result.error ?? "", /semantic preflight failed/i);
+  assert.match(result.error ?? "", /diagram preflight failed/i);
   assert.match(messages, /Tangent/);
   assert.match(messages, /ParallelToSegment/);
   assert.match(messages, /Segment/);
+});
+
+test("assistant diagram preflight rejects scalar-product Penrose diagrams with missing vector labels", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock("t1", "Evaluate the scalar products $\\mathbf{a}\\cdot\\mathbf{b}$ and $\\mathbf{c}\\cdot\\mathbf{d}$ exactly."),
+        penroseDiagramBlock(
+          "d1",
+          [
+            "Point O, A, B, C, D",
+            "NamedSegment OA, OB, OC, OD",
+            "Segment(OA, O, A)",
+            "Segment(OB, O, B)",
+            "Segment(OC, O, C)",
+            "Segment(OD, O, D)",
+            "Label A $\\mathbf{a}$",
+            "Label B $\\mathbf{b}$",
+          ].join("\n"),
+        ),
+        spaceBlock("s1"),
+      ],
+      5,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+
+  assert.equal(result.ok, false);
+  assert(result.validationIssues?.some((issue) => issue.message.includes("$\\mathbf{c}$")));
+  assert(result.validationIssues?.some((issue) => issue.path.endsWith("graphConfig.options.substanceSource")));
 });
 
 test("assistant semantic preflight accepts changed Penrose circle diagrams that match the prompt", () => {

@@ -512,6 +512,59 @@ const scenarios: SmokeScenario[] = [
     ],
   },
   {
+    id: "scalar-product-diagram-inspection-flags-missing-vector-labels",
+    prompt: "The assistant draws a scalar-product ray diagram but forgets labels for two vectors.",
+    assistantPlan:
+      "Preview inspection should flag missing vector labels so the provider repairs the native Penrose Substance before claiming success.",
+    start: () =>
+      documentFixture([
+        question(
+          "q1",
+          5,
+          [textBlock("q1-text", "Evaluate the following scalar products exactly.")],
+          [part("q1-a", "a", 1, "$\\mathbf{a}\\cdot\\mathbf{b}$"), part("q1-b", "b", 2, "$\\mathbf{c}\\cdot\\mathbf{d}$")],
+        ),
+      ]),
+    calls: [
+      {
+        name: "mauth.author.addDiagram",
+        arguments: {
+          questionNumber: 1,
+          diagram: {
+            graphConfig: {
+              type: "geometricConstruction",
+              data: {},
+              options: {
+                substanceSource: [
+                  "Point O, A, B, C, D",
+                  "NamedSegment OA, OB, OC, OD",
+                  "Segment(OA, O, A)",
+                  "Segment(OB, O, B)",
+                  "Segment(OC, O, C)",
+                  "Segment(OD, O, D)",
+                  "Label A $\\mathbf{a}$",
+                  "Label B $\\mathbf{b}$",
+                ].join("\n"),
+              },
+            },
+          },
+        },
+      },
+      { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    ],
+    evaluate: ({ results }) => {
+      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string; message: string }> }> } };
+      const warnings = inspection.question?.diagrams?.[0]?.warnings ?? [];
+      return [
+        ...failIf(
+          !warnings.some((warning) => warning.code === "scalar-product-vector-labels-missing"),
+          "diagram inspection should flag missing vector labels",
+        ),
+        ...failIf(!warnings.some((warning) => warning.message.includes("$\\mathbf{c}$")), "warning should name the missing vector labels"),
+      ];
+    },
+  },
+  {
     id: "coordinate-vector-diagram-wrong-renderer-is-rejected",
     prompt: "Draw vector a=(2,3) and b=(4,-3) from the origin on coordinate axes.",
     assistantPlan: "The intent validator should require vector2d for coordinate/component vectors on axes.",

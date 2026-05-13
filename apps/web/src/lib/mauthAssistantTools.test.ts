@@ -309,6 +309,147 @@ test("accepts a Penrose tangent-parallel-chord diagram semantically", () => {
   assert.deepEqual(semanticWarnings, []);
 });
 
+test("inspects scalar-product ray diagram labels", () => {
+  const result = runMauthAssistantTool(
+    {
+      frontMatter: {
+        schoolName: "Mauth School",
+        assessmentTitle: "Vector Test",
+      },
+      formattingConfig: {
+        showMarks: true,
+      },
+      questions: [
+        {
+          id: "vector-q",
+          marks: 5,
+          text: "Evaluate the following scalar products exactly.",
+          contentBlocks: [
+            diagramBlock("vector-d", {
+              type: "geometricConstruction",
+              data: {},
+              options: {
+                substanceSource: [
+                  "Point O, A, B, C, D",
+                  "NamedSegment OA, OB, OC, OD",
+                  "Segment(OA, O, A)",
+                  "Segment(OB, O, B)",
+                  "Segment(OC, O, C)",
+                  "Segment(OD, O, D)",
+                  "Label A $\\mathbf{a}$",
+                  "Label B $\\mathbf{b}$",
+                ].join("\n"),
+              },
+            }),
+            spaceBlock("vector-space", 10),
+          ],
+          parts: [
+            {
+              id: "part-a",
+              label: "a",
+              marks: 1,
+              text: "$\\mathbf{a}\\cdot\\mathbf{b}$",
+              contentBlocks: [],
+              subparts: [],
+              itemOrder: [],
+            },
+            {
+              id: "part-b",
+              label: "b",
+              marks: 2,
+              text: "$\\mathbf{c}\\cdot\\mathbf{d}$",
+              contentBlocks: [],
+              subparts: [],
+              itemOrder: [],
+            },
+          ],
+          itemOrder: [
+            { kind: "block", id: "vector-d" },
+            { kind: "block", id: "vector-space" },
+            { kind: "part", id: "part-a" },
+            { kind: "part", id: "part-b" },
+          ],
+        },
+      ],
+    },
+    {
+      name: "mauth.preview.inspect",
+      arguments: { questionNumber: 1 },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+  const diagram = inspection.question?.diagrams[0];
+  const warningCodes = diagram?.warnings.map((warning) => warning.code) ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(diagram?.expectedIntent?.id, "scalar-product-rays");
+  assert(warningCodes.includes("scalar-product-vector-labels-missing"));
+  assert(diagram?.warnings.some((warning) => warning.message.includes("$\\mathbf{c}$")));
+  assert(inspection.warnings.some((warning) => warning.code === "scalar-product-vector-labels-missing"));
+});
+
+test("attaches rendered diagram failures to diagram inspection", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    {
+      assistantContext: {
+        renderedMetrics: {
+          available: true,
+          source: "browser-preview",
+          activeAnchor: "q:q1/b:d1",
+          pageCount: 1,
+          pages: [
+            {
+              pageIndex: 0,
+              pageNumber: 1,
+              usedHeightPx: 200,
+              totalHeightPx: 1000,
+              remainingHeightPx: 800,
+              usedPercent: 20,
+              anchorCount: 1,
+              overflow: false,
+            },
+          ],
+          anchors: [
+            {
+              anchor: "q:q1/b:d1",
+              kind: "questionBlock",
+              role: "module",
+              pageIndex: 0,
+              pageNumber: 1,
+              selected: false,
+              viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+              diagram: {
+                found: true,
+                rendered: false,
+                errorText: "Geometry diagram could not render.",
+                viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+              },
+              warnings: [
+                {
+                  code: "rendered-diagram-failed",
+                  severity: "error",
+                  anchor: "q:q1/b:d1",
+                  message: "The selected diagram failed to render: Geometry diagram could not render.",
+                },
+              ],
+            },
+          ],
+          warnings: [],
+        },
+      },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+  const diagram = inspection.question?.diagrams[0];
+
+  assert.equal(result.ok, true);
+  assert.equal(diagram?.rendered?.available, true);
+  assert.equal(diagram?.rendered?.rendered, false);
+  assert(diagram?.warnings.some((warning) => warning.code === "rendered-diagram-failed"));
+});
+
 test("previews actions without mutating the original document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {

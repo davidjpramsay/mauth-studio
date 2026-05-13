@@ -22,7 +22,8 @@ import {
   validateMauthDocumentActionPayloads,
   type MauthActionValidationIssue,
 } from "./mauthActionValidation.ts";
-import { inspectDiagramSemantics } from "./mauthDiagramSemanticInspection.ts";
+import { inspectMauthDiagram } from "./mauthDiagramInspection.ts";
+import { diagramIntentFromText } from "./mauthDiagramIntent.ts";
 
 export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.tools.describe",
@@ -268,8 +269,23 @@ export interface MauthPreviewDiagramInspection {
   align?: string;
   textSide?: string;
   visibility: ContentBlockVisibility;
+  expectedIntent?: {
+    id: string;
+    expectedType: string;
+    label: string;
+    reason: string;
+  };
   semanticChecks: string[];
   semanticWarnings: MauthPreviewInspectionWarning[];
+  warnings: MauthPreviewInspectionWarning[];
+  rendered?: {
+    available: boolean;
+    rendered?: boolean;
+    errorText?: string;
+    pageNumber?: number;
+    viewportRect?: MauthRenderedPreviewRect;
+    warnings: MauthPreviewInspectionWarning[];
+  };
   besideCandidate?: {
     blockId: string;
     anchor: string;
@@ -815,24 +831,66 @@ function nextBesideCandidate(entries: readonly PreviewBlockEntry[], index: numbe
   };
 }
 
-function diagramSemanticInspection(entry: PreviewBlockEntry, questionText: string) {
-  if (entry.block.kind !== "diagram") return { checks: [] as string[], warnings: [] as MauthPreviewInspectionWarning[] };
-  const semantic = inspectDiagramSemantics(entry.block.graphConfig, questionText);
+function renderedDiagramInspection(anchor: string, renderedMetrics?: MauthPreviewRenderedMetrics) {
+  if (!renderedMetrics?.available) return undefined;
+  const renderedAnchor = renderedMetrics.anchors.find((item) => item.anchor === anchor);
+  if (!renderedAnchor?.diagram) return undefined;
+  const warnings = renderedAnchor.warnings.filter((warning) => warning.code === "rendered-diagram-failed");
   return {
-    checks: semantic.checks,
-    warnings: semantic.warnings.map((warning) => ({
+    available: true,
+    rendered: renderedAnchor.diagram.rendered,
+    ...(renderedAnchor.diagram.errorText ? { errorText: renderedAnchor.diagram.errorText } : {}),
+    ...(renderedAnchor.pageNumber ? { pageNumber: renderedAnchor.pageNumber } : {}),
+    ...(renderedAnchor.diagram.viewportRect ? { viewportRect: renderedAnchor.diagram.viewportRect } : {}),
+    warnings,
+  };
+}
+
+function diagramInspection(entry: PreviewBlockEntry, questionText: string, renderedMetrics?: MauthPreviewRenderedMetrics) {
+  if (entry.block.kind !== "diagram") {
+    return {
+      checks: [] as string[],
+      semanticChecks: [] as string[],
+      semanticWarnings: [] as MauthPreviewInspectionWarning[],
+      warnings: [] as MauthPreviewInspectionWarning[],
+    };
+  }
+  const inspection = inspectMauthDiagram(entry.block.graphConfig, questionText);
+  const rendered = renderedDiagramInspection(entry.anchor, renderedMetrics);
+  const structuralWarnings = inspection.warnings.map((warning) => ({
+    ...warning,
+    anchor: entry.anchor,
+    targetId: entry.block.id,
+  }));
+  const renderedWarnings =
+    rendered?.warnings.map((warning) => ({
+      ...warning,
+      anchor: entry.anchor,
+      targetId: entry.block.id,
+    })) ?? [];
+  return {
+    checks: inspection.checks,
+    expectedIntent: inspection.expectedIntent,
+    semanticChecks: inspection.semanticChecks,
+    semanticWarnings: inspection.semanticWarnings.map((warning) => ({
       ...warning,
       anchor: entry.anchor,
       targetId: entry.block.id,
     })),
+    warnings: [...structuralWarnings, ...renderedWarnings],
+    rendered,
   };
 }
 
-function inspectPreviewDiagrams(entries: readonly PreviewBlockEntry[], questionText: string) {
+function inspectPreviewDiagrams(
+  entries: readonly PreviewBlockEntry[],
+  questionText: string,
+  renderedMetrics?: MauthPreviewRenderedMetrics,
+) {
   return entries
     .map((entry, index): MauthPreviewDiagramInspection | null => {
       if (entry.block.kind !== "diagram") return null;
-      const semantic = diagramSemanticInspection(entry, questionText);
+      const inspection = diagramInspection(entry, questionText, renderedMetrics);
       return {
         id: entry.block.id,
         anchor: entry.anchor,
@@ -840,8 +898,11 @@ function inspectPreviewDiagrams(entries: readonly PreviewBlockEntry[], questionT
         align: entry.block.diagramAlign,
         textSide: entry.block.diagramTextSide,
         visibility: blockVisibility(entry.block),
-        semanticChecks: semantic.checks,
-        semanticWarnings: semantic.warnings,
+        ...(inspection.expectedIntent ? { expectedIntent: inspection.expectedIntent } : {}),
+        semanticChecks: inspection.semanticChecks,
+        semanticWarnings: inspection.semanticWarnings,
+        warnings: inspection.warnings,
+        ...(inspection.rendered ? { rendered: inspection.rendered } : {}),
         besideCandidate: nextBesideCandidate(entries, index, entry.block),
       };
     })
@@ -855,7 +916,6 @@ function questionIntentText(question: MauthQuestionLike) {
 function addQuestionPreviewWarnings(
   question: MauthQuestionLike,
   questionIndex: number,
-  entries: readonly PreviewBlockEntry[],
   diagrams: readonly MauthPreviewDiagramInspection[],
   warnings: MauthPreviewInspectionWarning[],
 ) {
@@ -882,23 +942,8 @@ function addQuestionPreviewWarnings(
     }
   }
 
-  const expectedIntent = diagramIntentFromText(questionIntentText(question));
-  if (expectedIntent) {
-    for (const diagram of diagrams) {
-      if (diagram.graphType !== expectedIntent.expectedType) {
-        warnings.push({
-          code: "diagram-renderer-mismatch",
-          severity: "warning",
-          anchor: diagram.anchor,
-          targetId: diagram.id,
-          message: `${expectedIntent.label} appears to use ${diagram.graphType}; ${expectedIntent.reason}`,
-        });
-      }
-    }
-  }
-
   for (const diagram of diagrams) {
-    warnings.push(...diagram.semanticWarnings);
+    warnings.push(...diagram.warnings);
   }
 
   for (const diagram of diagrams) {
@@ -913,32 +958,22 @@ function addQuestionPreviewWarnings(
       });
     }
   }
-
-  for (const entry of entries) {
-    if (entry.block.kind === "diagram" && entry.block.graphConfig.type === "image") {
-      const data = isRecord(entry.block.graphConfig.data) ? entry.block.graphConfig.data : {};
-      if (typeof data.src !== "string" || !data.src.trim()) {
-        warnings.push({
-          code: "image-diagram-missing-source",
-          severity: "warning",
-          anchor: entry.anchor,
-          targetId: entry.block.id,
-          message: "Image diagram has no uploaded image source.",
-        });
-      }
-    }
-  }
 }
 
-function inspectPreviewQuestion(question: MauthQuestionLike, questionIndex: number, target: MauthPreviewTargetInspection) {
+function inspectPreviewQuestion(
+  question: MauthQuestionLike,
+  questionIndex: number,
+  target: MauthPreviewTargetInspection,
+  renderedMetrics?: MauthPreviewRenderedMetrics,
+) {
   const entries = previewBlockEntries(question);
   const intentText = questionIntentText(question);
-  const diagrams = inspectPreviewDiagrams(entries, intentText);
+  const diagrams = inspectPreviewDiagrams(entries, intentText, renderedMetrics);
   const solutionScopes = questionSolutionScopes(question, questionIndex);
   const warnings: MauthPreviewInspectionWarning[] = [];
 
   for (const scope of solutionScopes) addSolutionScopeWarnings(scope, warnings);
-  addQuestionPreviewWarnings(question, questionIndex, entries, diagrams, warnings);
+  addQuestionPreviewWarnings(question, questionIndex, diagrams, warnings);
 
   const selectedBlock = target.blockId
     ? entries.find((entry) => entry.block.id === target.blockId || entry.anchor === target.anchor)
@@ -1035,8 +1070,8 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
     });
   }
 
-  const inspectedQuestion = question ? inspectPreviewQuestion(question, questionIndex, target) : undefined;
   const renderedMetrics = renderedMetricsForInspection(context.renderedMetrics, scope, target, context.activeAnchor);
+  const inspectedQuestion = question ? inspectPreviewQuestion(question, questionIndex, target, renderedMetrics) : undefined;
   return {
     scope,
     activeAnchor: context.activeAnchor ?? null,
@@ -1045,11 +1080,16 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
     questions:
       scope === "document"
         ? document.questions.map((item, index) => {
-            const questionInspection = inspectPreviewQuestion(item, index, {
-              kind: "question",
-              questionId: item.id,
-              questionNumber: index + 1,
-            });
+            const questionInspection = inspectPreviewQuestion(
+              item,
+              index,
+              {
+                kind: "question",
+                questionId: item.id,
+                questionNumber: index + 1,
+              },
+              renderedMetrics,
+            );
             return {
               id: questionInspection.id,
               questionNumber: questionInspection.questionNumber,
@@ -1627,13 +1667,6 @@ function sanitizeAssistantQuestion<T extends MauthQuestionLike>(question: T): T 
   } as T;
 }
 
-interface AssistantDiagramIntent {
-  id: string;
-  expectedType: string;
-  label: string;
-  reason: string;
-}
-
 function rawAssistantTextFragmentsFromBlocks(blocks: readonly ContentBlock[] | undefined) {
   return (blocks ?? [])
     .filter((block): block is TextContentBlock => block.kind === "text" && block.visibility !== "solution")
@@ -1672,111 +1705,6 @@ function rawAssistantTextFragmentsFromAuthorArgs(args: Record<string, unknown>):
     }
   }
   return fragments;
-}
-
-function normalizedAssistantIntentText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/\\mathbf\s*\{([a-z])\}/g, "$1")
-    .replace(/\\vec\s*\{([a-z])\}/g, "$1")
-    .replace(/\\overrightarrow\s*\{([^}]+)\}/g, "$1")
-    .replace(/[{}$]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function diagramIntentFromText(rawText: string): AssistantDiagramIntent | undefined {
-  const text = normalizedAssistantIntentText(rawText);
-  if (!text) return undefined;
-
-  const hasSetLanguage =
-    /\bvenn\b|\bset diagram\b|\buniversal set\b|\bset notation\b|\\cap|\\cup|∩|∪|a\s*['’]?\s*\\?\s*cap|a\s*['’]?\s*∩/i.test(rawText) ||
-    /\bsets?\b.*\b(intersection|union|complement)\b/.test(text);
-  if (hasSetLanguage) {
-    return {
-      id: "set-diagram",
-      expectedType: "setDiagram",
-      label: "Venn/set diagram",
-      reason: "Venn and set-region diagrams should use the setDiagram Penrose renderer.",
-    };
-  }
-
-  const hasStatsLanguage =
-    /\bhistogram\b|\bcolumn graph\b|\bbar chart\b|\brelative frequenc(?:y|ies)\b|\bmanual probabilities\b|\bprobability mass\b|\bp\s*\(\s*x\s*=\s*x\s*\)|\bp\s*\(\s*x\s*\)/i.test(
-      rawText,
-    ) || /\bprobability graph\b|\bfrequency graph\b|\bpmf\b/.test(text);
-  if (hasStatsLanguage) {
-    return {
-      id: "statistics-chart",
-      expectedType: "statsChart",
-      label: "statistics chart",
-      reason: "histograms, column graphs, probability graphs, and relative-frequency charts should use statsChart.",
-    };
-  }
-
-  const hasNetworkLanguage =
-    /\bnetwork\b|\bnodes?\b|\bedges?\b|\bvertices\b|\badjacency\b|\bshortest path\b|\bcritical path\b|\bminimum spanning\b/i.test(rawText);
-  if (hasNetworkLanguage) {
-    return {
-      id: "network",
-      expectedType: "vectorRelationship",
-      label: "network diagram",
-      reason: "network diagrams should use vectorRelationship, which is the Penrose network renderer.",
-    };
-  }
-
-  const hasSchematicGeometryLanguage =
-    /\bpoints?\s+on\s+a\s+circle\b|\bchords?\b|\bcircle theorem\b|\bangle subtended\b|\bcircumference\b|\btangent\s+at\s+[a-z]\b|\bparallel\s+to\s+(?:the\s+)?chord\b/i.test(
-      rawText,
-    );
-  if (hasSchematicGeometryLanguage) {
-    return {
-      id: "schematic-geometry",
-      expectedType: "geometricConstruction",
-      label: "schematic geometry diagram",
-      reason: "circle, tangent, chord, and theorem-style geometry diagrams should use geometricConstruction.",
-    };
-  }
-
-  const hasScalarProductLanguage =
-    /\bscalar products?\b|\bdot products?\b|(?:\\mathbf\s*\{[a-z]\}|[a-z])\s*(?:\\cdot|·|•)\s*(?:\\mathbf\s*\{[a-z]\}|[a-z])/i.test(
-      rawText,
-    ) || /\b(?:a|b|c|d)\s*\.\s*(?:a|b|c|d)\b/.test(text);
-  const hasCoordinateVectorLanguage =
-    /\bcoordinate vectors?\b|\bcomponent vectors?\b|\bcomponents?\b|\bstarting at\b|\bfrom the origin\b|\bfrom origin\b|\bgrid\b|\baxes?\b|\\begin\s*\{\s*(?:pmatrix|bmatrix|matrix)\s*\}|\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)/i.test(
-      rawText,
-    ) || /\bvector\s+[a-z]\s*=\s*\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?/.test(text);
-  if (hasCoordinateVectorLanguage) {
-    return {
-      id: "coordinate-vector",
-      expectedType: "vector2d",
-      label: "coordinate vector diagram",
-      reason: "coordinate/component vectors on axes should use vector2d, not Penrose geometry or networks.",
-    };
-  }
-  if (hasScalarProductLanguage) {
-    return {
-      id: "scalar-product-rays",
-      expectedType: "geometricConstruction",
-      label: "scalar-product ray diagram",
-      reason: "scalar-product ray diagrams without coordinate axes should use geometricConstruction.",
-    };
-  }
-
-  const hasFunctionGraphLanguage =
-    /\bgraph of\b|\bsketch(?: the)? graph\b|\bfunction\b|\basymptote\b|\bx-axis\b|\by-axis\b|\bcoordinate plane\b|f\s*\(\s*x\s*\)|g\s*\(\s*x\s*\)/i.test(
-      rawText,
-    );
-  if (hasFunctionGraphLanguage) {
-    return {
-      id: "function-graph",
-      expectedType: "graph2d",
-      label: "2D function/coordinate graph",
-      reason: "coordinate-plane function graphs should use graph2d.",
-    };
-  }
-
-  return undefined;
 }
 
 function validateAssistantDiagramIntent(
