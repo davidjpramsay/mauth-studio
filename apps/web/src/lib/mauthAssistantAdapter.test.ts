@@ -251,6 +251,37 @@ test("commits high-level diagram and solution authoring results through editor h
   assert(harness.document.questions[0].contentBlocks.some((block) => block.kind === "text" && block.visibility === "solution"));
 });
 
+test("successful diagram edits return compact semantic review context", async () => {
+  const harness = adapterHost();
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          functions: [{ expression: "x^2 - 4*x + 4", label: "f" }],
+          xMin: -5,
+          xMax: 5,
+          yMin: -2,
+          yMax: 8,
+          showAxes: true,
+          showGrid: true,
+        },
+      },
+    },
+  });
+  const data = result.data as {
+    semanticReview?: { required?: boolean };
+    postEditInspection?: { question?: { diagrams?: Array<{ summary?: { functions?: Array<{ expression?: string }> } }> } };
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(data.semanticReview?.required, true);
+  assert.equal(data.postEditInspection?.question?.diagrams?.[0]?.summary?.functions?.[0]?.expression, "x^2 - 4*x + 4");
+});
+
 test("does not commit assistant document changes when preflight rejects them", async () => {
   const harness = adapterHost({
     validateDocumentBeforeCommit: () => ({

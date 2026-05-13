@@ -276,6 +276,7 @@ export interface MauthPreviewDiagramInspection {
   id: string;
   anchor: string;
   graphType: string;
+  summary: MauthPreviewDiagramSummary;
   align?: string;
   textSide?: string;
   visibility: ContentBlockVisibility;
@@ -303,6 +304,44 @@ export interface MauthPreviewDiagramInspection {
     expectedSide: "left" | "right";
     replacementSlot: boolean;
   };
+}
+
+export interface MauthPreviewDiagramSummary {
+  renderer: string;
+  size?: {
+    widthPx?: number;
+    heightPx?: number;
+    scalePercent?: number;
+  };
+  axes?: {
+    xMin?: number;
+    xMax?: number;
+    yMin?: number;
+    yMax?: number;
+    showAxes?: boolean;
+    showGrid?: boolean;
+  };
+  functions?: Array<{
+    expression?: string;
+    latex?: string;
+    label?: string;
+    kind?: string;
+    show?: boolean;
+  }>;
+  features?: Array<{
+    kind?: string;
+    label?: string;
+    x?: number;
+    y?: number;
+    x1?: number;
+    y1?: number;
+    x2?: number;
+    y2?: number;
+    show?: boolean;
+  }>;
+  data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  substancePreview?: string;
 }
 
 export interface MauthPreviewQuestionInspection extends MauthQuestionInspection {
@@ -355,6 +394,139 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function compactText(value: string, maxLength = 140) {
   const compacted = value.replace(/\s+/g, " ").trim();
   return compacted.length <= maxLength ? compacted : `${compacted.slice(0, maxLength - 1)}...`;
+}
+
+function compactMultilineText(value: string, maxLength = 1600) {
+  const compacted = value
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+  return compacted.length <= maxLength ? compacted : `${compacted.slice(0, maxLength - 1)}...`;
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function numberField(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanField(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function stringField(value: unknown, maxLength = 180) {
+  return typeof value === "string" && value.trim() ? compactText(value, maxLength) : undefined;
+}
+
+function compactPlainRecord(value: unknown, keys: readonly string[], maxArrayItems = 10) {
+  if (!isRecord(value)) return undefined;
+  const output: Record<string, unknown> = {};
+  for (const key of keys) {
+    const item = value[key];
+    if (typeof item === "string") output[key] = compactText(item, 220);
+    else if (typeof item === "number" && Number.isFinite(item)) output[key] = item;
+    else if (typeof item === "boolean") output[key] = item;
+    else if (Array.isArray(item)) output[key] = item.slice(0, maxArrayItems);
+  }
+  return Object.keys(output).length ? output : undefined;
+}
+
+function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary {
+  const summary: MauthPreviewDiagramSummary = {
+    renderer: config.type,
+  };
+  const size = {
+    widthPx: numberField(config.widthPx),
+    heightPx: numberField(config.heightPx),
+    scalePercent: numberField(config.scalePercent),
+  };
+  if (Object.values(size).some((value) => value !== undefined)) summary.size = size;
+
+  if (config.type === "graph2d") {
+    summary.axes = {
+      xMin: numberField(config.xMin),
+      xMax: numberField(config.xMax),
+      yMin: numberField(config.yMin),
+      yMax: numberField(config.yMax),
+      showAxes: booleanField(config.showAxes),
+      showGrid: booleanField(config.showGrid),
+    };
+    const functions = recordArray(config.functions)
+      .slice(0, 8)
+      .map((entry) => ({
+        expression: stringField(entry.expression),
+        latex: stringField(entry.latex),
+        label: stringField(entry.label, 80),
+        kind: stringField(entry.kind, 60),
+        show: entry.show === undefined ? undefined : booleanField(entry.show),
+      }));
+    if (functions.length) summary.functions = functions;
+    else if (typeof config.expression === "string" && config.expression.trim()) {
+      summary.functions = [{ expression: compactText(config.expression) }];
+    }
+    const features = recordArray(config.features)
+      .slice(0, 12)
+      .map((entry) => ({
+        kind: stringField(entry.kind, 80),
+        label: stringField(entry.label, 100),
+        x: numberField(entry.x),
+        y: numberField(entry.y),
+        x1: numberField(entry.x1),
+        y1: numberField(entry.y1),
+        x2: numberField(entry.x2),
+        y2: numberField(entry.y2),
+        show: entry.show === undefined ? undefined : booleanField(entry.show),
+      }));
+    if (features.length) summary.features = features;
+    return summary;
+  }
+
+  if (config.type === "geometricConstruction") {
+    const source = isRecord(config.options) && typeof config.options.substanceSource === "string" ? config.options.substanceSource : "";
+    if (source.trim()) summary.substancePreview = compactMultilineText(source);
+    summary.data = compactPlainRecord(config.data, ["objects", "relationships", "style"]);
+    return summary;
+  }
+
+  if (config.type === "statsChart") {
+    summary.data = compactPlainRecord(config.data, [
+      "chartType",
+      "dataMode",
+      "yAxisMode",
+      "title",
+      "xAxisLabel",
+      "yAxisLabel",
+      "dataValues",
+      "xValues",
+      "probabilities",
+      "bins",
+      "binSize",
+    ]);
+    return summary;
+  }
+
+  if (config.type === "vector2d") {
+    summary.axes = {
+      xMin: numberField(config.xMin),
+      xMax: numberField(config.xMax),
+      yMin: numberField(config.yMin),
+      yMax: numberField(config.yMax),
+      showAxes: booleanField(config.showAxes),
+      showGrid: booleanField(config.showGrid),
+    };
+    summary.metadata = compactPlainRecord(config.metadata, ["vector2d"]);
+    return summary;
+  }
+
+  if (config.type === "setDiagram" || config.type === "graph3d" || config.type === "image" || config.type === "vectorRelationship") {
+    summary.data = compactPlainRecord(config.data, ["sets", "regions", "nodes", "edges", "src", "caption", "objects", "relationships"]);
+    summary.metadata = compactPlainRecord(config.metadata, ["vectors", "labels", "view"]);
+  }
+
+  return summary;
 }
 
 function slugPart(value: string) {
@@ -905,6 +1077,7 @@ function inspectPreviewDiagrams(
         id: entry.block.id,
         anchor: entry.anchor,
         graphType: entry.block.graphConfig.type,
+        summary: compactDiagramSummary(entry.block.graphConfig),
         align: entry.block.diagramAlign,
         textSide: entry.block.diagramTextSide,
         visibility: blockVisibility(entry.block),

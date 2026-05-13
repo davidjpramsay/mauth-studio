@@ -1348,6 +1348,12 @@ def assistant_tool_definitions(
     # Repair continuations should stay on the same narrow authoring surface
     # that produced the failed tool output. This avoids reopening the broad
     # wrapper tool just to fix a precise validationIssue path.
+    if tool_outputs_mention(tool_outputs, ("semanticreview", "semantic review")):
+        return [
+            mauth_author_add_diagram_tool_definition(),
+            mauth_author_replace_question_tool_definition(require_diagram=False),
+        ]
+
     solution_layout_repair_terms = (
         "rendered-solution-space-overflow",
         "rendered-response-space-outline-missing",
@@ -1462,6 +1468,7 @@ Document-edit workflow:
 Tool-call contract:
 - For focused requests to write or replace one existing question, use the direct mauth_author_replace_question tool. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists.
 - Use mauth.preview.inspect when you need focused context for the current/selected question, its diagrams, answer-space layout, solution modules, hidden tick totals, or warnings. Prefer it over mauth.document.inspect for one-question editing checks and after edits that affect diagrams/solutions/layout. For diagrams, inspect question.diagrams[].warnings and repair renderer mismatches, missing image sources, missing scalar-product vector labels, rendered diagram failures, and Penrose semantic warnings before saying the diagram is correct. For Penrose circle-theorem diagrams, inspect semanticWarnings and repair missing Tangent, missing ParallelToSegment to the named chord, missing chord Segment, visible auxiliary labels, or points not on the intended circle before saying the diagram is correct. When rendered metrics are available, use them to check page occupancy, selected-anchor boxes, diagram render failure, solution-slot fit, and L-shaped diagram/answer-space layout before saying the layout is fixed.
+- If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.

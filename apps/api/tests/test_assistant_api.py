@@ -689,6 +689,35 @@ def test_replace_question_post_edit_diagram_warning_repairs_with_add_diagram():
     assert "diagramId" in tools[0]["parameters"]["properties"]
 
 
+def test_successful_diagram_edit_semantic_review_exposes_repair_tools():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_author_replace_question",
+            output={
+                "ok": True,
+                "toolName": "mauth.author.replaceQuestion",
+                "semanticReview": {"required": True},
+                "postEditInspection": {
+                    "question": {
+                        "modules": [{"kind": "text", "textPreview": "The graph shows y=2x+1 and y=-x+7."}],
+                        "diagrams": [
+                            {
+                                "graphType": "graph2d",
+                                "summary": {"functions": [{"expression": "x^2-4*x+4"}]},
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram", "mauth_author_replace_question"]
+
+
 def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():
     instructions = openai_assistant.assistant_instructions(
         {

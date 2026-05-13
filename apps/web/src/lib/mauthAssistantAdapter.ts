@@ -123,12 +123,13 @@ function failAdapterTool(toolName: string, kind: MauthAssistantAdapterToolKind, 
 function documentToolResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   result: MauthAssistantToolResult<Q, F, C>,
   committedDocument: boolean,
+  dataOverride?: unknown,
 ): MauthAssistantAdapterResult<Q, F, C> {
   return {
     ok: result.ok,
     toolName: result.toolName,
     kind: "document",
-    data: result.data,
+    data: dataOverride ?? result.data,
     document: result.document,
     changedIds: result.changedIds,
     changedPaths: [],
@@ -390,6 +391,57 @@ function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends 
   };
 }
 
+function postEditInspectionSuccessData(resultData: unknown, inspection: MauthPreviewInspection, modes: readonly PostEditInspectionMode[]) {
+  const resultRecord = isRecord(resultData) ? resultData : {};
+  const diagramReviewRequired = modes.includes("diagram");
+  return {
+    ...resultRecord,
+    ...(diagramReviewRequired
+      ? {
+          semanticReview: {
+            required: true,
+            reason:
+              "A diagram-bearing edit was applied. Before reporting success, compare the teacher request, question text, and diagram summary to confirm the diagram semantically matches the question.",
+            expected:
+              "If the diagram/question mismatch, repair with a focused high-level tool. If they match, respond with a short teacher-facing confirmation.",
+          },
+        }
+      : {}),
+    postEditInspection: {
+      target: inspection.target,
+      question: inspection.question
+        ? {
+            id: inspection.question.id,
+            questionNumber: inspection.question.questionNumber,
+            totalMarks: inspection.question.totalMarks,
+            textPreview: inspection.question.modules.flatMap((module) => (module.textPreview ? [module.textPreview] : [])).join(" "),
+            parts: inspection.question.parts,
+            modules: inspection.question.allModules.map((module) => ({
+              anchor: module.anchor,
+              kind: module.kind,
+              visibility: module.visibility,
+              textPreview: module.textPreview,
+              diagramType: module.diagramType,
+              lines: module.lines,
+            })),
+            diagrams: inspection.question.diagrams.map((diagram) => ({
+              id: diagram.id,
+              anchor: diagram.anchor,
+              graphType: diagram.graphType,
+              align: diagram.align,
+              textSide: diagram.textSide,
+              summary: diagram.summary,
+              warnings: diagram.warnings,
+              rendered: diagram.rendered,
+            })),
+            warnings: inspection.question.warnings,
+          }
+        : undefined,
+      warnings: inspection.warnings,
+    },
+  };
+}
+
 function fileToolResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   result: MauthAssistantFileToolResult,
   document: MauthDocumentLike<Q, F, C> | undefined,
@@ -479,6 +531,7 @@ export async function runMauthAssistantAdapterTool<
     const previousDocument = host.getDocument();
     const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentToolOptions(host));
     let committedDocument = false;
+    let postInspectionData: unknown;
     if (
       result.ok &&
       (
@@ -510,9 +563,10 @@ export async function runMauthAssistantAdapterTool<
         const inspectionData = inspection.data as MauthPreviewInspection;
         const repairWarnings = repairablePostEditWarnings(inspectionData, inspectionPlan.modes);
         if (repairWarnings.length) return postEditInspectionFailureResult(result, inspectionData, repairWarnings);
+        postInspectionData = postEditInspectionSuccessData(result.data, inspectionData, inspectionPlan.modes);
       }
     }
-    return documentToolResult(result, committedDocument);
+    return documentToolResult(result, committedDocument, postInspectionData);
   }
 
   if (!fileToolName(call.name)) {

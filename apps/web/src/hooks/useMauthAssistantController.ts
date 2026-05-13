@@ -238,6 +238,10 @@ function compactAssistantProviderOutput<Q extends MauthQuestionLike, F extends o
   if (result.toolName === "mauth.document.inspect") output.documentSummary = result.data ?? null;
   if (result.toolName === "mauth.validation.run") output.validation = result.data ?? null;
   if (Array.isArray(data?.validationIssues)) output.validationIssues = data.validationIssues;
+  const semanticReview = asRecord(data?.semanticReview);
+  const postEditInspection = asRecord(data?.postEditInspection);
+  if (semanticReview) output.semanticReview = semanticReview;
+  if (postEditInspection) output.postEditInspection = postEditInspection;
   if (preview) output.preview = preview;
   if (validation) output.validation = validation;
   if (files) {
@@ -425,6 +429,8 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     const output = asRecord(toolOutput.output);
     const toolName = typeof output?.toolName === "string" ? output.toolName : "";
     if (output?.ok !== true) return "";
+    const semanticReview = asRecord(output.semanticReview);
+    if (semanticReview?.required === true) return "";
     if (
       toolName !== "mauth.author.replaceQuestion" &&
       toolName !== "mauth.author.addDiagram" &&
