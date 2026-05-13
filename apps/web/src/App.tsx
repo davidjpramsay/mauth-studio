@@ -7462,6 +7462,7 @@ export default function App() {
     previewModeActive: paneMode === "assistant",
     openPreviewMode: showAssistantPane,
     createHost: assistantHost,
+    conversationKey: activeProjectFilePath ?? "unsaved-document",
     onFileToolStart: (toolName) => {
       setProjectFilesStatus(toolName === "mauth.files.open" ? "loading" : "saving");
       setProjectFilesMessage(`Assistant: ${toolName}`);

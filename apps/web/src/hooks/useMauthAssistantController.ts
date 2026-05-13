@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ProjectFileSummary } from "@mauth-studio/shared";
 
 import {
@@ -43,9 +43,30 @@ interface UseMauthAssistantControllerOptions<Q extends MauthQuestionLike, F exte
   previewModeActive: boolean;
   openPreviewMode: () => void;
   createHost: () => MauthAssistantAdapterHost<Q, F, C>;
+  conversationKey: string;
   onFileToolStart?: (toolName: string) => void;
   onFileToolComplete?: () => void;
   onFileToolError?: () => void;
+}
+
+interface MauthAssistantConversationSession {
+  chatInput: string;
+  chatMessages: MauthAssistantChatMessage[];
+  chatAttachments: AssistantAttachment[];
+  attachmentNotice: string;
+  previousResponseId: string | null;
+  pendingToolContinuation: AssistantPendingToolContinuation | null;
+}
+
+function emptyAssistantConversationSession(): MauthAssistantConversationSession {
+  return {
+    chatInput: "",
+    chatMessages: [],
+    chatAttachments: [],
+    attachmentNotice: "",
+    previousResponseId: null,
+    pendingToolContinuation: null,
+  };
 }
 
 function assistantMessageId() {
@@ -287,6 +308,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
   previewModeActive,
   openPreviewMode,
   createHost,
+  conversationKey,
   onFileToolStart,
   onFileToolComplete,
   onFileToolError,
@@ -303,6 +325,30 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
   const [providerStatusMessage, setProviderStatusMessage] = useState("Checking assistant provider");
   const [previousResponseId, setPreviousResponseId] = useState<string | null>(null);
   const [pendingToolContinuation, setPendingToolContinuation] = useState<AssistantPendingToolContinuation | null>(null);
+  const conversationKeyRef = useRef(conversationKey);
+  const conversationSessionsRef = useRef(new Map<string, MauthAssistantConversationSession>());
+
+  useEffect(() => {
+    if (conversationKeyRef.current === conversationKey) return;
+
+    conversationSessionsRef.current.set(conversationKeyRef.current, {
+      chatInput,
+      chatMessages,
+      chatAttachments,
+      attachmentNotice,
+      previousResponseId,
+      pendingToolContinuation,
+    });
+
+    const nextSession = conversationSessionsRef.current.get(conversationKey) ?? emptyAssistantConversationSession();
+    conversationKeyRef.current = conversationKey;
+    setChatInput(nextSession.chatInput);
+    setChatMessages(nextSession.chatMessages);
+    setChatAttachments(nextSession.chatAttachments);
+    setAttachmentNotice(nextSession.attachmentNotice);
+    setPreviousResponseId(nextSession.previousResponseId);
+    setPendingToolContinuation(nextSession.pendingToolContinuation);
+  }, [attachmentNotice, chatAttachments, chatInput, chatMessages, conversationKey, pendingToolContinuation, previousResponseId]);
 
   useEffect(() => {
     if (!panelOpen) return;
