@@ -31,6 +31,7 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_author_replace_question": "mauth.author.replaceQuestion",
     "mauth_author_add_diagram": "mauth.author.addDiagram",
     "mauth_author_ensure_solutions": "mauth.author.ensureSolutions",
+    "mauth_author_adjust_response_spaces": "mauth.author.adjustResponseSpaces",
 }
 
 MODEL_PRICING_USD_PER_1M = {
@@ -64,6 +65,7 @@ MAUTH_TOOL_NAMES = [
     "mauth.author.replaceQuestion",
     "mauth.author.addDiagram",
     "mauth.author.ensureSolutions",
+    "mauth.author.adjustResponseSpaces",
     "mauth.files.describe",
     "mauth.files.list",
     "mauth.files.open",
@@ -649,6 +651,21 @@ def focused_tool_hint(
     asks_to_write_question = any(
         term in text for term in ("write question", "replace question", "make question", "create question")
     )
+    asks_for_response_space = any(
+        term in text
+        for term in (
+            "answer space",
+            "response space",
+            "working space",
+            "student space",
+            "more space",
+            "less space",
+            "space lines",
+            "extra lines",
+            "line count",
+            "layout space",
+        )
+    )
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -688,6 +705,14 @@ def focused_tool_hint(
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
             f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
             f"and solutionText when a solution is requested.{circle_proof_guidance} {diagram_guidance}"
+        )
+    if asks_for_response_space and not (
+        any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
+    ):
+        return (
+            "Focused tool routing hint: this is a response-space/layout request. Your first tool call should be "
+            f'mauth_author_adjust_response_spaces with {{"targets":[{{"questionNumber":{question_number},"lines":10,"mode":"set"}}]}}. '
+            "Use this for answer-space changes that should preserve existing question text, solutions, and diagrams."
         )
     if (
         any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
@@ -1208,6 +1233,70 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
     }
 
 
+def mauth_author_adjust_response_spaces_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": "mauth_author_adjust_response_spaces",
+        "description": (
+            "Resize or add student-only answer/working spaces for existing questions, parts, or subparts. "
+            "Use for focused layout/space requests such as 'give Question 1 more working space' when the "
+            "teacher is not asking for a rewritten worked solution. This preserves existing question text, "
+            "solutions, and diagrams."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "description": "Response-space targets keyed by question number/id and optional part/subpart.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "questionNumber": {"type": "integer", "minimum": 1},
+                            "questionId": {"type": "string"},
+                            "partId": {"type": "string"},
+                            "partLabel": {
+                                "type": "string",
+                                "description": "Existing part label such as a or b. Use only when targeting a part.",
+                            },
+                            "partNumber": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "1-based part number. Use only when targeting a part.",
+                            },
+                            "subpartId": {"type": "string"},
+                            "subpartLabel": {
+                                "type": "string",
+                                "description": "Existing subpart label such as i or ii. Use only when targeting a subpart.",
+                            },
+                            "subpartNumber": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "1-based subpart number. Use only when targeting a subpart.",
+                            },
+                            "lines": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 60,
+                                "description": "Target number of student response-space lines.",
+                            },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["set", "atLeast"],
+                                "description": "Use set to make the space exactly this size; use atLeast to only grow it.",
+                            },
+                        },
+                        "required": ["questionNumber", "lines"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["targets"],
+            "additionalProperties": False,
+        },
+    }
+
+
 def assistant_tool_definitions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
@@ -1220,6 +1309,21 @@ def assistant_tool_definitions(
     asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
     asks_to_add = any(term in text for term in ("add", "include", "insert", "put", "place", "draw", "sketch"))
     asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
+    asks_for_response_space = any(
+        term in text
+        for term in (
+            "answer space",
+            "response space",
+            "working space",
+            "student space",
+            "more space",
+            "less space",
+            "space lines",
+            "extra lines",
+            "line count",
+            "layout space",
+        )
+    )
     asks_for_marking_edit = any(
         term in text
         for term in (
@@ -1257,6 +1361,8 @@ def assistant_tool_definitions(
         return [mauth_author_add_diagram_tool_definition()]
     if repair_targets & {"mauth_author_ensure_solutions", "mauth.author.ensureSolutions"}:
         return [mauth_author_ensure_solutions_tool_definition()]
+    if repair_targets & {"mauth_author_adjust_response_spaces", "mauth.author.adjustResponseSpaces"}:
+        return [mauth_author_adjust_response_spaces_tool_definition()]
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
@@ -1264,6 +1370,8 @@ def assistant_tool_definitions(
         return [mauth_author_replace_question_tool_definition(require_diagram=require_source_diagram)]
     if has_specific_question and asks_for_diagram and asks_to_add:
         return [mauth_author_add_diagram_tool_definition()]
+    if has_specific_question and asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
+        return [mauth_author_adjust_response_spaces_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
         return [mauth_author_ensure_solutions_tool_definition(), mauth_tool_definition()]
     if any(term in text for term in file_only_terms) and not any(
@@ -1275,6 +1383,7 @@ def assistant_tool_definitions(
         mauth_author_replace_question_tool_definition(require_diagram=require_source_diagram),
         mauth_author_add_diagram_tool_definition(),
         mauth_author_ensure_solutions_tool_definition(),
+        mauth_author_adjust_response_spaces_tool_definition(),
         mauth_tool_definition(),
     ]
 
@@ -1321,6 +1430,7 @@ Tool-call contract:
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
+- For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_author_add_diagram again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To label an angle, use `LabelsAngle(OC, OD, $45^\\circ$)` between named segments or declare `Label angleCD $45^\\circ$` then `LabelsAngle(angleCD, C, O, D)`. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.

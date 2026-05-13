@@ -259,6 +259,27 @@ def test_extracts_direct_ensure_solutions_tool_arguments_from_openai_response():
     assert call["mauthArguments"] == arguments
 
 
+def test_extracts_direct_adjust_response_spaces_tool_arguments_from_openai_response():
+    arguments = {"targets": [{"questionNumber": 1, "partLabel": "a", "lines": 8, "mode": "set"}]}
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_author_adjust_response_spaces",
+                "arguments": json.dumps(arguments),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["name"] == "mauth_author_adjust_response_spaces"
+    assert call["mauthToolName"] == "mauth.author.adjustResponseSpaces"
+    assert call["mauthArguments"] == arguments
+
+
 def test_repairs_common_latex_control_characters_in_tool_arguments():
     response = {
         "output": [
@@ -401,6 +422,23 @@ def test_focused_mark_allocation_prompt_uses_solution_tool_not_replace_question(
     assert "Preserve existing diagrams" in instructions
     assert "mauth.preview.inspect" in instructions
     assert 'marks":4' in instructions
+
+
+def test_focused_response_space_prompt_uses_response_space_tool():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Can you give question 1 more working space? Make the answer space 12 lines.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": [{"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Old question."}]}]},
+        [message],
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_adjust_response_spaces"]
+    assert "mauth_author_adjust_response_spaces" in instructions
+    assert "preserve existing question text, solutions, and diagrams" in instructions
 
 
 def test_focused_write_question_prompt_with_marks_still_uses_replace_question():

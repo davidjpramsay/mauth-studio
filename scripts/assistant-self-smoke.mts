@@ -165,6 +165,10 @@ function diagrams(document: TestDocument, questionIndex = 0) {
   return questionBlocks(document, questionIndex).filter((block) => block.kind === "diagram");
 }
 
+function studentSpaces(document: TestDocument, questionIndex = 0) {
+  return questionBlocks(document, questionIndex).filter((block) => block.kind === "space" && block.visibility === "student");
+}
+
 function solutionTexts(document: TestDocument) {
   return allBlocks(document)
     .filter((block): block is Extract<ContentBlock, { kind: "text" }> => block.kind === "text" && block.visibility === "solution")
@@ -224,6 +228,29 @@ const scenarios: SmokeScenario[] = [
       ...failIf(diagrams(document)[0]?.id !== "q1-diagram", "existing diagram id should be preserved"),
       ...failIf(markAnnotationTotal(firstSolutionText(document)) !== 4, "solution should have exactly 4 hidden mark ticks"),
       ...failIf(hasVisibleMarkLanguage(firstSolutionText(document)), "solution should not contain visible [1 mark] style notes"),
+    ],
+  },
+  {
+    id: "response-space-edit-preserves-shared-content",
+    prompt: "Give Question 1 more working space. Make the answer space 12 lines and keep the existing diagram and solution.",
+    assistantPlan: "Use mauth.author.adjustResponseSpaces because this is a layout/space edit, not a question rewrite or solution rewrite.",
+    start: () => documentFixture([question("q1", 5, circleQuestionBlocks())]),
+    calls: [
+      {
+        name: "mauth.author.adjustResponseSpaces",
+        arguments: {
+          targets: [{ questionNumber: 1, lines: 12, mode: "set" }],
+        },
+      },
+    ],
+    evaluate: ({ document }) => [
+      ...failIf(studentSpaces(document)[0]?.kind !== "space", "question should still have a student space"),
+      ...failIf(
+        studentSpaces(document)[0]?.kind === "space" && studentSpaces(document)[0].lines !== 12,
+        "student space should be 12 lines",
+      ),
+      ...failIf(diagrams(document).length !== 1, "existing diagram should be preserved"),
+      ...failIf(solutionTexts(document).length !== 1, "existing solution should be preserved"),
     ],
   },
   {

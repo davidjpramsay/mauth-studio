@@ -1155,6 +1155,67 @@ test("adds fallback hidden mark ticks when high-level solution text omits mark a
   assert.equal(studentSpace?.kind === "space" ? studentSpace.lines : 0, 8);
 });
 
+test("adjusts response spaces without rewriting diagrams or solutions", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.adjustResponseSpaces",
+    arguments: {
+      targets: [{ questionNumber: 1, lines: 12 }],
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+  const studentSpace = blocks.find((block) => block.kind === "space");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.changedIds, ["q1"]);
+  assert.equal(studentSpace?.kind === "space" ? studentSpace.lines : 0, 12);
+  assert.equal(
+    blocks.some((block) => block.kind === "diagram" && block.id === "d1"),
+    true,
+  );
+  assert.equal(
+    blocks.some((block) => block.kind === "text" && block.visibility === "solution" && block.id === "sol1"),
+    true,
+  );
+});
+
+test("adds part response space through the high-level response-space tool", () => {
+  const document = documentFixture();
+  document.questions[0] = {
+    ...document.questions[0],
+    contentBlocks: [textBlock("t1", "Use the diagram.")],
+    parts: [
+      {
+        id: "p1",
+        label: "a",
+        text: "Find $x$.",
+        marks: 2,
+        contentBlocks: [textBlock("pt1", "Find $x$.")],
+        subparts: [],
+        itemOrder: [{ kind: "block", id: "pt1" }],
+      },
+    ],
+    itemOrder: [
+      { kind: "block", id: "t1" },
+      { kind: "part", id: "p1" },
+    ],
+  };
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.author.adjustResponseSpaces",
+    arguments: {
+      targets: [{ questionNumber: 1, partLabel: "a", lines: 6 }],
+    },
+  });
+  const part = result.document?.questions[0].parts?.[0];
+
+  assert.equal(result.ok, true);
+  assert.equal(part?.contentBlocks[1]?.kind, "space");
+  assert.equal(part?.contentBlocks[1]?.kind === "space" ? part.contentBlocks[1].lines : 0, 6);
+  assert.deepEqual(part?.itemOrder, [
+    { kind: "block", id: "pt1" },
+    { kind: "block", id: "p1-student-space" },
+  ]);
+});
+
 test("normalises low-level assistant solution patches before applying them", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.apply",

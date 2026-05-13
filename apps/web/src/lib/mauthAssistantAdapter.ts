@@ -391,7 +391,13 @@ export async function runMauthAssistantAdapterTool<
     if (
       result.ok &&
       (
-        ["mauth.actions.apply", "mauth.author.replaceQuestion", "mauth.author.addDiagram", "mauth.author.ensureSolutions"] as string[]
+        [
+          "mauth.actions.apply",
+          "mauth.author.replaceQuestion",
+          "mauth.author.addDiagram",
+          "mauth.author.ensureSolutions",
+          "mauth.author.adjustResponseSpaces",
+        ] as string[]
       ).includes(call.name) &&
       result.document
     ) {
