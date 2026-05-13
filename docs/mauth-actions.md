@@ -61,6 +61,7 @@ The visible editor surface for these document settings lives under `T` in the `T
 
 - `mauth.tools.describe`: list assistant tools and supported action types.
 - `mauth.document.inspect`: return a compact document outline, module counts, visibility counts, student-space lines, diagram types, marks, front-matter fields, and formatting fields.
+- `mauth.author.replaceQuestion`: supports normal free-response slots and artifact answer surfaces. Use `answerSurface: "diagram"` or `"table"` for tasks where students complete the graph/table/diagram itself, paired with `solutionDiagram` or `solutionTable` for the completed solution copy. In these modes the authoring layer does not create a separate answer-space block.
 - `mauth.preview.inspect`: return focused context for the current/selected or requested question, including module anchors, selected block, diagram types/alignment, per-diagram warning arrays, answer-space/solution replacement scopes, hidden `[[marks:n]]` totals, visible mark-note warnings, blank part warnings, left/right diagram beside-content hints, conservative diagram semantic warnings, and browser-rendered page/anchor metrics when the preview pane is mounted.
 - `mauth.validation.run`: run document validation, solution validation, or both without changing the document.
 - `mauth.actions.preview`: dry-run one or more document actions and return the proposed document plus preview summary.

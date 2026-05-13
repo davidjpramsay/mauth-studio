@@ -121,6 +121,8 @@ Ordinary question modules are shared automatically between the student copy and 
 
 Blank answer/completion tables are different from given-data tables. A table with empty cells for students to complete is a response surface, so it may be marked student-only and paired with an adjacent solution module. A table that gives values or information for the question should stay shared.
 
+Graph grids, charts, and diagrams can also be response surfaces. If the task is to sketch a graph, label a diagram, shade a region, draw a function, or complete values directly on a visual surface, the student copy should show the blank or partial surface and the solution copy should show the completed surface in the same position and size. In high-level assistant authoring this is `answerSurface: "diagram"` or `answerSurface: "table"` with a matching `solutionDiagram` or `solutionTable`; no separate large `:::space` block is created unless the question also asks for written working.
+
 In raw test JSON, solution modules are encoded with `visibility: "solution"` or the legacy `solutionOnly` compatibility field. Ordinary question modules should not be given a copy setting; they stay shared by default. `space` blocks are treated as student answer/work space by default.
 
 When raw test JSON is generated or patched with code, preserve LaTeX backslashes carefully. In JavaScript, use `String.raw` template literals or double escaping for solution text; otherwise commands such as `\frac`, `\boxed`, `\right`, and `\text` can turn into control characters before the JSON is written. After a coded solution pass, validate that solution text contains no unintended control characters and that the sum of all `[[marks:n]]` annotations matches the test total.

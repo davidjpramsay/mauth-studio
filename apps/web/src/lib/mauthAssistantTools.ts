@@ -1429,6 +1429,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "Inspect the current document before proposing edits.",
       "Use mauth.preview.inspect instead of broad document inspection when you need the current/selected question, its diagrams, answer-space layout, or solution/tick status.",
       "For focused one-question writing or replacement requests, prefer mauth.author.replaceQuestion.",
+      'For sketch/label/shade/draw-on-diagram or completion-table answers, use mauth.author.replaceQuestion with answerSurface: "diagram" or "table" plus a matching solutionDiagram/solutionTable instead of adding a separate answer-space block.',
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
@@ -1875,6 +1876,7 @@ function solutionTextLineEstimate(value: string) {
 
 const MIN_AUTHOR_STUDENT_SPACE_LINES = 4;
 const MAX_AUTHOR_STUDENT_SPACE_LINES = 60;
+type AuthorAnswerSurface = "space" | "diagram" | "table" | "none";
 
 function defaultAuthorStudentSpaceLines(marks: unknown, fallback: number) {
   const safeMarks = positiveInteger(marks, 0, 0, 100);
@@ -1895,6 +1897,34 @@ function solutionBlockText(value: string, expectedMarks = 0) {
   const bodySource = SOLUTION_HEADING_PATTERN.test(normalized) ? normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart() : normalized;
   const body = compactSolutionText(addFallbackMarkAnnotations(bodySource, expectedMarks));
   return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
+}
+
+function hasOwn(args: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(args, key);
+}
+
+function hasAuthorDiagramArgs(args: Record<string, unknown>, diagramKey = "diagram", diagramsKey = "diagrams") {
+  return hasOwn(args, diagramKey) || hasOwn(args, diagramsKey);
+}
+
+function hasAuthorTableArgs(args: Record<string, unknown>, tableKey = "table", tablesKey = "tables") {
+  return hasOwn(args, tableKey) || hasOwn(args, tablesKey);
+}
+
+function answerSurfaceFromArgs(args: Record<string, unknown>): AuthorAnswerSurface {
+  const rawValue = args.answerSurface ?? args.responseSurface ?? args.responseMode;
+  if (rawValue === "space" || rawValue === "freeResponse" || rawValue === "free-response" || rawValue === "written") return "space";
+  if (rawValue === "diagram" || rawValue === "graph" || rawValue === "sketch") return "diagram";
+  if (rawValue === "table" || rawValue === "completionTable" || rawValue === "completion-table") return "table";
+  if (rawValue === "none" || rawValue === "noSpace" || rawValue === "no-space") return "none";
+  if (rawValue === "artifact" || rawValue === "answerSurface") {
+    if (hasAuthorTableArgs(args) || hasAuthorTableArgs(args, "solutionTable", "solutionTables")) return "table";
+    if (hasAuthorDiagramArgs(args) || hasAuthorDiagramArgs(args, "solutionDiagram", "solutionDiagrams")) return "diagram";
+    return "none";
+  }
+  if (hasAuthorTableArgs(args, "solutionTable", "solutionTables")) return "table";
+  if (hasAuthorDiagramArgs(args, "solutionDiagram", "solutionDiagrams")) return "diagram";
+  return "space";
 }
 
 function isSolutionTextBlock(block: ContentBlock): block is TextContentBlock {
@@ -1995,8 +2025,25 @@ function validateAssistantDiagramIntent(
   });
 }
 
-function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[], intentText = "") {
-  const rawDiagrams = Array.isArray(args.diagrams) ? args.diagrams : args.diagram ? [args.diagram] : [];
+interface DiagramBlocksFromArgsOptions {
+  diagramKey?: string;
+  diagramsKey?: string;
+  idSuffix?: string;
+  visibility?: ContentBlockVisibility;
+}
+
+function diagramBlocksFromArgs(
+  args: Record<string, unknown>,
+  questionId: string,
+  issues: MauthActionValidationIssue[],
+  intentText = "",
+  options: DiagramBlocksFromArgsOptions = {},
+) {
+  const diagramKey = options.diagramKey ?? "diagram";
+  const diagramsKey = options.diagramsKey ?? "diagrams";
+  const idSuffix = options.idSuffix ?? "diagram";
+  const singleDiagram = args[diagramKey];
+  const rawDiagrams = Array.isArray(args[diagramsKey]) ? args[diagramsKey] : singleDiagram ? [singleDiagram] : [];
   const blocks: ContentBlock[] = [];
   const defaultDiagramAlign =
     args.diagramAlign === "left" || args.diagramAlign === "center" || args.diagramAlign === "right" ? args.diagramAlign : undefined;
@@ -2020,7 +2067,7 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
   ];
 
   rawDiagrams.forEach((entry, index) => {
-    const entryPath = rawDiagrams.length === 1 && args.diagram ? "arguments.diagram" : `arguments.diagrams[${index}]`;
+    const entryPath = rawDiagrams.length === 1 && singleDiagram ? `arguments.${diagramKey}` : `arguments.${diagramsKey}[${index}]`;
     if (!isRecord(entry)) {
       issues.push({ path: entryPath, message: "must be a diagram object", expected: "{ graphConfig, diagramAlign? }" });
       return;
@@ -2062,11 +2109,12 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
         ? entry.diagramTextSide
         : undefined;
     blocks.push({
-      id: String(entry.id ?? authorBlockId(questionId, `diagram-${index + 1}`)),
+      id: String(entry.id ?? authorBlockId(questionId, `${idSuffix}-${index + 1}`)),
       kind: "diagram",
       graphConfig: graphConfig as unknown as GraphConfig,
       ...(diagramAlign ? { diagramAlign } : {}),
       ...(diagramTextSide ? { diagramTextSide } : {}),
+      ...(options.visibility ? { visibility: options.visibility } : {}),
     } as ContentBlock);
   });
 
@@ -2074,15 +2122,86 @@ function diagramBlocksFromArgs(args: Record<string, unknown>, questionId: string
 }
 
 function hasExplicitDiagramReplacement(args: Record<string, unknown>) {
-  return (
-    Object.prototype.hasOwnProperty.call(args, "diagram") ||
-    Object.prototype.hasOwnProperty.call(args, "diagrams") ||
-    args.preserveExistingDiagrams === false
-  );
+  return hasOwn(args, "diagram") || hasOwn(args, "diagrams") || args.preserveExistingDiagrams === false;
 }
 
 function preservedDiagramBlocks(existingQuestion: MauthQuestionLike | undefined) {
   return (existingQuestion?.contentBlocks ?? []).filter((block): block is ContentBlock => block.kind === "diagram");
+}
+
+interface TableBlocksFromArgsOptions {
+  tableKey?: string;
+  tablesKey?: string;
+  idSuffix?: string;
+  visibility?: ContentBlockVisibility;
+}
+
+function stringArrayFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => (entry === null || entry === undefined ? "" : String(entry)));
+}
+
+function tableRowsFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((row) => (Array.isArray(row) ? row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))) : []));
+}
+
+function tableBlocksFromArgs(
+  args: Record<string, unknown>,
+  questionId: string,
+  issues: MauthActionValidationIssue[],
+  options: TableBlocksFromArgsOptions = {},
+) {
+  const tableKey = options.tableKey ?? "table";
+  const tablesKey = options.tablesKey ?? "tables";
+  const idSuffix = options.idSuffix ?? "table";
+  const singleTable = args[tableKey];
+  const rawTables = Array.isArray(args[tablesKey]) ? args[tablesKey] : singleTable ? [singleTable] : [];
+  const blocks: ContentBlock[] = [];
+
+  rawTables.forEach((entry, index) => {
+    const entryPath = rawTables.length === 1 && singleTable ? `arguments.${tableKey}` : `arguments.${tablesKey}[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path: entryPath, message: "must be a table object", expected: "{ headers?, rows }" });
+      return;
+    }
+
+    const rows = tableRowsFromUnknown(entry.rows);
+    if (!rows.length) {
+      issues.push({ path: `${entryPath}.rows`, message: "must contain at least one table row", expected: "string[][]" });
+      return;
+    }
+
+    const headers = stringArrayFromUnknown(entry.headers ?? entry.columns);
+    const tableAlign =
+      entry.tableAlign === "left" || entry.tableAlign === "center" || entry.tableAlign === "right" ? entry.tableAlign : undefined;
+    const cellAlignment =
+      entry.cellAlignment === "left" || entry.cellAlignment === "center" || entry.cellAlignment === "right"
+        ? entry.cellAlignment
+        : undefined;
+
+    blocks.push({
+      id: String(entry.id ?? authorBlockId(questionId, `${idSuffix}-${index + 1}`)),
+      kind: "table",
+      headers,
+      rows,
+      ...(typeof entry.showHeader === "boolean" ? { showHeader: entry.showHeader } : {}),
+      ...(tableAlign ? { tableAlign } : {}),
+      ...(cellAlignment ? { cellAlignment } : {}),
+      ...(options.visibility ? { visibility: options.visibility } : {}),
+    } as ContentBlock);
+  });
+
+  return blocks;
+}
+
+function hasExplicitTableReplacement(args: Record<string, unknown>) {
+  return hasOwn(args, "table") || hasOwn(args, "tables");
+}
+
+function tableBlocksForAuthorQuestion(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {
+  if (!hasExplicitTableReplacement(args)) return [];
+  return tableBlocksFromArgs(args, questionId, issues);
 }
 
 function diagramBlocksForAuthorQuestion(
@@ -2100,6 +2219,47 @@ function diagramBlocksForAuthorQuestion(
   return preservedDiagramBlocks(existingQuestion);
 }
 
+function withBlockVisibility(block: ContentBlock, visibility: ContentBlockVisibility): ContentBlock {
+  return { ...block, visibility } as ContentBlock;
+}
+
+function appendAnswerSurfaceReplacementSlot(
+  blocks: ContentBlock[],
+  studentBlocks: ContentBlock[],
+  solutionBlocks: ContentBlock[],
+  issues: MauthActionValidationIssue[],
+  path: string,
+) {
+  if (!solutionBlocks.length) {
+    blocks.push(...studentBlocks.map((block) => withBlockVisibility(block, "student")));
+    return;
+  }
+
+  if (!studentBlocks.length) {
+    issues.push({
+      path,
+      message: "needs a student answer surface to pair with the solution answer surface",
+      expected: "student diagram/table plus solution diagram/table/text",
+    });
+    blocks.push(...solutionBlocks.map((block) => withBlockVisibility(block, "solution")));
+    return;
+  }
+
+  const [firstStudentBlock, ...remainingStudentBlocks] = studentBlocks;
+  blocks.push(withBlockVisibility(firstStudentBlock, "student"));
+  blocks.push(...solutionBlocks.map((block) => withBlockVisibility(block, "solution")));
+  blocks.push(...remainingStudentBlocks.map((block) => withBlockVisibility(block, "student")));
+}
+
+function solutionTextContentBlock(scopeId: string, solutionText: string, marks: number): ContentBlock {
+  return {
+    id: authorBlockId(scopeId, "solution"),
+    kind: "text",
+    text: solutionBlockText(solutionText, marks),
+    visibility: "solution",
+  };
+}
+
 function contentBlocksForAuthorQuestion(
   args: Record<string, unknown>,
   questionId: string,
@@ -2111,6 +2271,7 @@ function contentBlocksForAuthorQuestion(
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
   const hasParts = Array.isArray(args.parts) && args.parts.length > 0;
   const marks = positiveInteger(args.marks, 1, 0, 100);
+  const answerSurface = answerSurfaceFromArgs(args);
   const studentSpaceLines = resolvedStudentSpaceLines(
     args.studentSpaceLines ?? args.answerLines ?? args.lines,
     solutionText,
@@ -2118,16 +2279,55 @@ function contentBlocksForAuthorQuestion(
     10,
     40,
   );
+  const questionDiagrams = diagramBlocksForAuthorQuestion(args, questionId, issues, existingQuestion);
+  const questionTables = tableBlocksForAuthorQuestion(args, questionId, issues);
+  const solutionDiagrams = diagramBlocksFromArgs(args, questionId, issues, "", {
+    diagramKey: "solutionDiagram",
+    diagramsKey: "solutionDiagrams",
+    idSuffix: "solution-diagram",
+    visibility: "solution",
+  });
+  const solutionTables = tableBlocksFromArgs(args, questionId, issues, {
+    tableKey: "solutionTable",
+    tablesKey: "solutionTables",
+    idSuffix: "solution-table",
+    visibility: "solution",
+  });
+  const solutionTextBlock = includeSolution ? solutionTextContentBlock(questionId, solutionText, marks) : null;
   const blocks: ContentBlock[] = [
     {
       id: authorBlockId(questionId, "question-text"),
       kind: "text",
       text,
     },
-    ...diagramBlocksForAuthorQuestion(args, questionId, issues, existingQuestion),
   ];
 
-  if (!hasParts) {
+  if (answerSurface === "diagram") {
+    appendAnswerSurfaceReplacementSlot(
+      blocks,
+      questionDiagrams,
+      [...solutionDiagrams, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      issues,
+      "arguments.solutionDiagram",
+    );
+    blocks.push(...questionTables);
+  } else {
+    blocks.push(...questionDiagrams);
+  }
+
+  if (answerSurface === "table") {
+    appendAnswerSurfaceReplacementSlot(
+      blocks,
+      questionTables,
+      [...solutionTables, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      issues,
+      "arguments.solutionTable",
+    );
+  } else if (answerSurface !== "diagram") {
+    blocks.push(...questionTables);
+  }
+
+  if (!hasParts && answerSurface === "space") {
     blocks.push({
       id: authorBlockId(questionId, "student-space"),
       kind: "space",
@@ -2136,13 +2336,8 @@ function contentBlocksForAuthorQuestion(
     });
   }
 
-  if (includeSolution && !hasParts) {
-    blocks.push({
-      id: authorBlockId(questionId, "solution"),
-      kind: "text",
-      text: solutionBlockText(solutionText, marks),
-      visibility: "solution",
-    });
+  if (solutionTextBlock && !hasParts && answerSurface === "space") {
+    blocks.push(solutionTextBlock);
   }
 
   return blocks;
@@ -2166,7 +2361,29 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
   const marks = positiveInteger(args.marks, 1, 0, 100);
+  const answerSurface = answerSurfaceFromArgs(args);
   const studentSpaceLines = resolvedStudentSpaceLines(args.studentSpaceLines ?? args.answerLines ?? args.lines, solutionText, marks, 6, 40);
+  const partDiagrams = diagramBlocksFromArgs(args, partId, issues, [partText, ...rawAssistantTextFragmentsFromAuthorArgs(args)].join("\n"));
+  const partTables = tableBlocksFromArgs(args, partId, issues);
+  const solutionDiagrams = diagramBlocksFromArgs(
+    args,
+    partId,
+    issues,
+    [partText, ...rawAssistantTextFragmentsFromAuthorArgs(args)].join("\n"),
+    {
+      diagramKey: "solutionDiagram",
+      diagramsKey: "solutionDiagrams",
+      idSuffix: "solution-diagram",
+      visibility: "solution",
+    },
+  );
+  const solutionTables = tableBlocksFromArgs(args, partId, issues, {
+    tableKey: "solutionTable",
+    tablesKey: "solutionTables",
+    idSuffix: "solution-table",
+    visibility: "solution",
+  });
+  const solutionTextBlock = includeSolution ? solutionTextContentBlock(partId, solutionText, marks) : null;
   const blocks: ContentBlock[] = [
     ...(partText
       ? [
@@ -2177,22 +2394,44 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
           },
         ]
       : []),
-    ...diagramBlocksFromArgs(args, partId, issues, [partText, ...rawAssistantTextFragmentsFromAuthorArgs(args)].join("\n")),
-    {
+  ];
+
+  if (answerSurface === "diagram") {
+    appendAnswerSurfaceReplacementSlot(
+      blocks,
+      partDiagrams,
+      [...solutionDiagrams, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      issues,
+      "arguments.parts[].solutionDiagram",
+    );
+    blocks.push(...partTables);
+  } else {
+    blocks.push(...partDiagrams);
+  }
+
+  if (answerSurface === "table") {
+    appendAnswerSurfaceReplacementSlot(
+      blocks,
+      partTables,
+      [...solutionTables, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      issues,
+      "arguments.parts[].solutionTable",
+    );
+  } else if (answerSurface !== "diagram") {
+    blocks.push(...partTables);
+  }
+
+  if (answerSurface === "space") {
+    blocks.push({
       id: authorBlockId(partId, "student-space"),
       kind: "space",
       lines: studentSpaceLines,
       visibility: "student",
-    },
-  ];
-
-  if (includeSolution) {
-    blocks.push({
-      id: authorBlockId(partId, "solution"),
-      kind: "text",
-      text: solutionBlockText(solutionText, marks),
-      visibility: "solution",
     });
+  }
+
+  if (solutionTextBlock && answerSurface === "space") {
+    blocks.push(solutionTextBlock);
   }
 
   return blocks;

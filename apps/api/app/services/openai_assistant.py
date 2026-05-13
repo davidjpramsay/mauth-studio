@@ -941,8 +941,33 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
     }
 
 
+def assistant_table_block_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": description,
+        "properties": {
+            "id": {"type": "string", "description": "Optional stable Mauth module id. Usually omit."},
+            "headers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional header row labels. Use [] for no header row.",
+            },
+            "rows": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "string"}},
+                "description": "Table body cells as strings. Use blank strings for student-completion cells.",
+            },
+            "showHeader": {"type": "boolean"},
+            "tableAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "cellAlignment": {"type": "string", "enum": ["left", "center", "right"]},
+        },
+        "required": ["rows"],
+        "additionalProperties": False,
+    }
+
+
 def mauth_author_replace_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
-    required_fields = ["questionNumber", "marks", "questionText", "studentSpaceLines"]
+    required_fields = ["questionNumber", "marks", "questionText"]
     if require_diagram:
         required_fields.append("diagram")
 
@@ -1010,8 +1035,19 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "minimum": 1,
                     "maximum": 40,
                     "description": (
-                        "Generous student answer/work space lines. The app may raise this to the mark-based or "
-                        "solution-fit minimum, so do not use small values to force compact layout."
+                        "Generous student answer/work space lines for free-response questions. The app may raise this to "
+                        "the mark-based or solution-fit minimum, so do not use small values to force compact layout. "
+                        "For answerSurface diagram/table tasks, this is ignored unless extra working space is later added."
+                    ),
+                },
+                "answerSurface": {
+                    "type": "string",
+                    "enum": ["space", "diagram", "table", "none"],
+                    "description": (
+                        "Use space for normal free-response working. Use diagram when the answer is a sketch/label/shade/draw-on-graph "
+                        "surface, and table when the answer is a completed table. In diagram/table modes, do not add a separate "
+                        "studentSpaceLines answer block; provide the student surface and, for solutions, the matching solutionDiagram "
+                        "or solutionTable."
                     ),
                 },
                 "solutionText": {
@@ -1044,6 +1080,34 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."
                     ),
                 },
+                "solutionDiagram": assistant_diagram_block_schema(
+                    "Optional completed solution-copy diagram for answerSurface: diagram. Pair it with the student blank/partial "
+                    "diagram so the solution copy shows the completed graph/labelled diagram in the same position and size."
+                ),
+                "solutionDiagrams": {
+                    "type": "array",
+                    "description": (
+                        "Optional completed solution-copy diagrams for answerSurface: diagram. Usually supply one solution diagram "
+                        "matching the one student diagram."
+                    ),
+                    "items": assistant_diagram_block_schema("One completed solution-copy Mauth diagram block."),
+                },
+                "table": assistant_table_block_schema(
+                    "Optional student table. Use blank strings for cells the student should complete."
+                ),
+                "tables": {
+                    "type": "array",
+                    "description": "Optional student tables. Use blank strings for cells the student should complete.",
+                    "items": assistant_table_block_schema("One student table."),
+                },
+                "solutionTable": assistant_table_block_schema(
+                    "Optional completed solution-copy table for answerSurface: table. It replaces the student completion table."
+                ),
+                "solutionTables": {
+                    "type": "array",
+                    "description": "Optional completed solution-copy tables for answerSurface: table.",
+                    "items": assistant_table_block_schema("One completed solution-copy table."),
+                },
                 "preserveExistingDiagrams": {
                     "type": "boolean",
                     "description": (
@@ -1055,7 +1119,8 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "type": "array",
                     "description": (
                         "Optional structured parts. Use this instead of typing '(a)', '(b)', '(c)' into questionText. "
-                        "Each part can have text, marks, studentSpaceLines, solutionText, and optional diagram/diagrams. "
+                        "Each part can have text, marks, answerSurface, studentSpaceLines, solutionText, optional diagram/diagrams, "
+                        "and optional table/solutionTable answer surfaces. "
                         "If the source says the diagram goes under the stem and the parts go under the diagram, put the "
                         "diagram at question level and keep the actual visible part tasks in this parts array."
                     ),
@@ -1079,7 +1144,14 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                 "type": "integer",
                                 "minimum": 1,
                                 "maximum": 40,
-                                "description": "Generous part answer/work space; the app may raise this to fit the solution.",
+                                "description": (
+                                    "Generous part answer/work space for free-response parts; ignored for answerSurface diagram/table."
+                                ),
+                            },
+                            "answerSurface": {
+                                "type": "string",
+                                "enum": ["space", "diagram", "table", "none"],
+                                "description": "Use diagram/table when the part answer is drawn/completed directly on that surface.",
                             },
                             "solutionText": {
                                 "type": "string",
@@ -1100,9 +1172,30 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                     "One native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
                                 ),
                             },
+                            "solutionDiagram": assistant_diagram_block_schema(
+                                "Optional completed solution-copy diagram for this part when answerSurface is diagram."
+                            ),
+                            "solutionDiagrams": {
+                                "type": "array",
+                                "items": assistant_diagram_block_schema("One completed solution-copy diagram for this part."),
+                            },
+                            "table": assistant_table_block_schema(
+                                "Optional student completion table for this part. Use blank strings for empty answer cells."
+                            ),
+                            "tables": {
+                                "type": "array",
+                                "items": assistant_table_block_schema("One student completion table for this part."),
+                            },
+                            "solutionTable": assistant_table_block_schema(
+                                "Optional completed solution-copy table for this part."
+                            ),
+                            "solutionTables": {
+                                "type": "array",
+                                "items": assistant_table_block_schema("One completed solution-copy table for this part."),
+                            },
                             "pageBreakBefore": {"type": "boolean"},
                         },
-                        "required": ["text", "marks", "studentSpaceLines"],
+                        "required": ["text", "marks"],
                         "additionalProperties": False,
                     },
                 },
@@ -1495,6 +1588,7 @@ Tool-call contract:
 - If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
+- For tasks where the answer is the surface itself, such as complete the table, sketch the graph, draw the function, shade the region, or label the diagram, set answerSurface to table or diagram. Provide the blank/partial student table or diagram plus a completed solutionTable or solutionDiagram when solutions are requested. Do not create a separate large student working-space block for these artifact-answer tasks unless the teacher also asks for written working.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
@@ -1530,6 +1624,7 @@ Authoring quality bar:
 - Mathematical validity is mandatory. Before calling a write/edit tool, internally check that every conclusion follows from the stated givens and that the solution does not assume information visible only in an imagined diagram.
 - Never emit a proof question whose worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If your first draft is invalid, change the question statement before calling the tool.
 - Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\] or \\(...\\) delimiters.
+- A student answer surface must keep the same layout in both copies. For sketch/label/table tasks, the solution copy should replace the blank student diagram/table with a completed solution diagram/table in the same document position, not add a separate solution below it.
 - For multipart questions, use the structured parts array on mauth_author_replace_question or mauth.author.replaceQuestion. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.
 - For circle-geometry proof prompts involving tangents and angles subtended at the circumference, prefer a symbolic theorem/proof relationship. A robust default is to use the centre, radius perpendicular to tangent, equal radii, and the central-angle/angle-at-circumference relationship to prove the tangent-chord angle result. Do not add unnecessary numerical angle givens, and do not add parallel chords or parallel-line scaffolding unless the teacher explicitly asks for parallel lines.

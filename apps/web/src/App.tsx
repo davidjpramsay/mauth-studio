@@ -3627,6 +3627,7 @@ function solutionBlockLineEstimate(block: EditorContentBlock) {
 
 function replacementSlotLineCapacity(studentBlock: EditorContentBlock) {
   if (studentBlock.kind === "space") return spaceLines(studentBlock.lines);
+  if (studentBlock.kind === "diagram") return Math.max(4, Math.ceil(graphHeight(withGraphDefaults(studentBlock.graphConfig)) / 26));
   if (studentBlock.kind === "table") return Math.max(2, plainTableRows(normalizeTableBlock(studentBlock)).length + 1);
   if (studentBlock.kind === "choices") return Math.max(1, normalizeChoiceItems(studentBlock.choices).length);
   return 0;

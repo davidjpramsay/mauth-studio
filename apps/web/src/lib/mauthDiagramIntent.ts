@@ -74,7 +74,7 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
       rawText,
     ) || /\b(?:a|b|c|d)\s*\.\s*(?:a|b|c|d)\b/.test(text);
   const hasCoordinateVectorLanguage =
-    /\bcoordinate vectors?\b|\bcomponent vectors?\b|\bcomponents?\b|\bstarting at\b|\bfrom the origin\b|\bfrom origin\b|\bgrid\b|\baxes?\b|\\begin\s*\{\s*(?:pmatrix|bmatrix|matrix)\s*\}|\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)/i.test(
+    /\bcoordinate vectors?\b|\bcomponent vectors?\b|\bvectors?\b.{0,40}\b(?:components?|starting at|from the origin|from origin)\b|\b(?:components?|starting at|from the origin|from origin)\b.{0,40}\bvectors?\b|\\begin\s*\{\s*(?:pmatrix|bmatrix|matrix)\s*\}/i.test(
       rawText,
     ) || /\bvector\s+[a-z]\s*=\s*\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?/.test(text);
   if (hasCoordinateVectorLanguage) {

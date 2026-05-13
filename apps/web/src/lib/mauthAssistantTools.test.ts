@@ -673,6 +673,96 @@ test("high-level question authoring appends the next missing question", () => {
   assert.equal(appended.contentBlocks[2].visibility, "student");
 });
 
+test("high-level question authoring can pair diagram answer surfaces without separate working space", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 2,
+      questionText: "Sketch the graph on the grid and identify all intercepts.",
+      answerSurface: "diagram",
+      studentSpaceLines: 8,
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -4,
+          xMax: 4,
+          yMin: -12,
+          yMax: 10,
+          functions: [],
+        },
+      },
+      solutionDiagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -4,
+          xMax: 4,
+          yMin: -12,
+          yMax: 10,
+          functions: [{ expression: "-2*(x+2)*(x-2)", label: "$y=-2(x+2)(x-2)$", show: true }],
+        },
+      },
+      solutionText: "Intercepts are $(-2,0)$, $(2,0)$ and $(0,8)$. [[marks:2]]",
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    blocks.some((block) => block.kind === "space"),
+    false,
+  );
+  assert.equal(blocks[1].kind, "diagram");
+  assert.equal(blocks[1].visibility, "student");
+  assert.equal(blocks[2].kind, "diagram");
+  assert.equal(blocks[2].visibility, "solution");
+  assert.equal(blocks[3].kind, "text");
+  assert.equal(blocks[3].visibility, "solution");
+  assert.match(blocks[3].kind === "text" ? blocks[3].text : "", /^\*\*Solution\.\*\*/);
+});
+
+test("high-level part authoring can pair completion tables as answer surfaces", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "Complete the table.",
+      parts: [
+        {
+          text: "Fill in the missing values.",
+          marks: 2,
+          answerSurface: "table",
+          table: {
+            headers: ["$x$", "1", "2", "3"],
+            rows: [["$P(X=x)$", "", "", ""]],
+            showHeader: false,
+          },
+          solutionTable: {
+            headers: ["$x$", "1", "2", "3"],
+            rows: [["$P(X=x)$", "$\\\\frac{1}{6}$", "$\\\\frac{1}{3}$", "$\\\\frac{1}{2}$"]],
+            showHeader: false,
+          },
+          solutionText: "The probabilities sum to $1$. [[marks:2]]",
+        },
+      ],
+    },
+  });
+  const partBlocks = result.document?.questions[0].parts[0].contentBlocks ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    partBlocks.some((block) => block.kind === "space"),
+    false,
+  );
+  assert.equal(partBlocks[1].kind, "table");
+  assert.equal(partBlocks[1].visibility, "student");
+  assert.equal(partBlocks[2].kind, "table");
+  assert.equal(partBlocks[2].visibility, "solution");
+  assert.equal(partBlocks[3].kind, "text");
+  assert.equal(partBlocks[3].visibility, "solution");
+});
+
 test("high-level question authoring rejects skipped question numbers", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
