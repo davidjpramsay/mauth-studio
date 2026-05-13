@@ -1626,9 +1626,19 @@ function containerDropKey(container: SubsectionContainerRef, placement: "start" 
   return `container:${containerKey(container)}:${placement}`;
 }
 
+function itemDropKey(container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+  return `container:${containerKey(container)}:before:${orderItemKey(beforeItem)}`;
+}
+
 function containerDropZoneLabel(container: SubsectionContainerRef, placement: "start" | "end") {
   const scope = container.kind === "question" ? "question" : container.kind;
   return placement === "start" ? `Drop at start of ${scope}` : `Drop at end of ${scope}`;
+}
+
+function itemDropZoneLabel(beforeItem: ContainerOrderItem) {
+  if (beforeItem.kind === "part") return "Drop above part";
+  if (beforeItem.kind === "subpart") return "Drop above subpart";
+  return "Drop above module";
 }
 
 function normalizeItemOrder(value: unknown, allowedItems: ContainerOrderItem[]) {
@@ -2857,6 +2867,24 @@ function dropIntentForContainer(
   return { container, beforeItem };
 }
 
+function dropIntentBeforeOrderItem(
+  active: SubsectionDragTarget,
+  container: SubsectionContainerRef,
+  beforeItem: ContainerOrderItem,
+  questions: QuestionBlock[],
+): SubsectionDropIntent | null {
+  if (!canDropIntoContainer(active, container)) return null;
+  const activeItem = subsectionOrderItem(active);
+  const orderedItems = withoutOrderItem(orderItemsForContainer(questions, container), activeItem);
+  if (!orderedItems.some((item) => orderItemKey(item) === orderItemKey(beforeItem))) return null;
+
+  if (container.kind === "subpart") {
+    return beforeItem.kind === "block" ? { container, beforeBlockId: beforeItem.id } : null;
+  }
+
+  return { container, beforeItem };
+}
+
 function subsectionDropIntent(
   active: SubsectionDragTarget,
   target: SubsectionDragTarget,
@@ -2904,14 +2932,6 @@ function panelInsideDropIntent(
   const activeKind = subsectionItemKind(active);
   if (target.kind === "part" && (activeKind === "block" || activeKind === "subpart")) {
     return dropIntentForContainer(active, { kind: "part", questionId: target.questionId, partId: target.id }, questions, "end");
-  }
-  if (target.kind === "subpart" && activeKind === "block") {
-    return dropIntentForContainer(
-      active,
-      { kind: "subpart", questionId: target.questionId, partId: target.partId, subpartId: target.id },
-      questions,
-      "end",
-    );
   }
   return null;
 }
@@ -3207,6 +3227,19 @@ function compactSolutionTextSegment(
   return compacted.replace(/\n{2,}/g, "\n");
 }
 
+function compactDisplayBoundaryTextSegment(
+  content: string,
+  previousType?: "text" | "inline" | "display",
+  nextType?: "text" | "inline" | "display",
+) {
+  let compacted = content;
+
+  if (previousType === "display") compacted = compacted.replace(/^[\t ]*\r?\n[\t ]*/, "");
+  if (nextType === "display") compacted = compacted.replace(/[\t ]*\r?\n[\t ]*$/, "");
+
+  return compacted;
+}
+
 function mixedMathLayoutType(type?: MixedMathSegmentType): "text" | "inline" | "display" | undefined {
   if (!type) return undefined;
   if (type === "marked-display") return "display";
@@ -3243,7 +3276,9 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
           );
         }
         if (segment.type === "marked-text") {
-          const textContent = showSolutionMarks ? compactSolutionTextSegment(segment.content, previousType, nextType) : segment.content;
+          const textContent = showSolutionMarks
+            ? compactSolutionTextSegment(segment.content, previousType, nextType)
+            : compactDisplayBoundaryTextSegment(segment.content, previousType, nextType);
           if (showSolutionMarks && !textContent.trim()) return null;
           if (marks) {
             return (
@@ -3269,7 +3304,9 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
           }
           return <span key={`${segment.content}-${index}`}>{inlineMath}</span>;
         }
-        const textContent = showSolutionMarks ? compactSolutionTextSegment(segment.content, previousType, nextType) : segment.content;
+        const textContent = showSolutionMarks
+          ? compactSolutionTextSegment(segment.content, previousType, nextType)
+          : compactDisplayBoundaryTextSegment(segment.content, previousType, nextType);
         if (showSolutionMarks && !textContent.trim()) {
           if (textContent.includes("\n")) return <span key={`${segment.content}-${index}`}>{textContent}</span>;
           return null;
@@ -9872,6 +9909,47 @@ export default function App() {
     moveSubsection(active, intent);
   }
 
+  function handleItemDropZoneDragOver(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+    const active = readSubsectionDrag(event);
+    const intent = active ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current) : null;
+    if (!active || !intent) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverSubsection({
+      targetKey: itemDropKey(container, beforeItem),
+      placement: "before",
+      intent,
+    });
+  }
+
+  function handleItemDropZoneDragLeave(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    const targetKey = itemDropKey(container, beforeItem);
+    setDragOverSubsection((current) => (current?.targetKey === targetKey ? null : current));
+  }
+
+  function handleItemDropZoneDrop(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+    const active = readSubsectionDrag(event);
+    const targetKey = itemDropKey(container, beforeItem);
+    const intent =
+      dragOverSubsection?.targetKey === targetKey
+        ? dragOverSubsection.intent
+        : active
+          ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current)
+          : null;
+    if (!active || !intent) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    moveSubsection(active, intent);
+  }
+
   function subsectionDragClasses(target: SubsectionDragTarget) {
     const dropPlacement = dragOverSubsection?.targetKey === subsectionKey(target) ? dragOverSubsection.placement : null;
     return cn(
@@ -9909,6 +9987,37 @@ export default function App() {
           className={cn(
             "absolute inset-0 flex items-center justify-center text-[11px] font-semibold",
             active ? "opacity-100" : "opacity-55",
+          )}
+        >
+          {label}
+        </div>
+      </div>
+    );
+  }
+
+  function itemDropZone(container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible = true) {
+    const targetKey = itemDropKey(container, beforeItem);
+    const active = dragOverSubsection?.targetKey === targetKey;
+    const canDrop = Boolean(
+      visible && draggedSubsection && dropIntentBeforeOrderItem(draggedSubsection, container, beforeItem, questionsRef.current),
+    );
+    if (!canDrop) return null;
+    const label = itemDropZoneLabel(beforeItem);
+    return (
+      <div
+        key={targetKey}
+        onDragOver={(event) => handleItemDropZoneDragOver(event, container, beforeItem)}
+        onDragLeave={(event) => handleItemDropZoneDragLeave(event, container, beforeItem)}
+        onDrop={(event) => handleItemDropZoneDrop(event, container, beforeItem)}
+        className={cn(
+          "relative my-1 h-9 rounded-md border border-dashed border-border/80 bg-background/60 text-muted-foreground transition-all",
+          active && "my-2 h-12 border-primary bg-primary/10 text-primary shadow-inner",
+        )}
+      >
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center text-[11px] font-semibold",
+            active ? "opacity-100" : "opacity-65",
           )}
         >
           {label}
@@ -10681,6 +10790,7 @@ export default function App() {
     const partOpenSignal = openSignalForAnchor(partAnchor);
     const partActive = isActiveEditorAnchor(partAnchor);
     const partUsesSolutionSpace = !subparts.length && safeMarkValue(part.marks) > 0;
+    const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
     const partInsertAction = {
       label: "Subpart",
       tooltip: "Add a roman-numbered item, such as (i), inside this part",
@@ -10748,23 +10858,30 @@ export default function App() {
             active={partActive}
             openSignal={partOpenSignal}
           >
-            {partItems.length
-              ? containerDropZone({ kind: "part", questionId: question.id, partId: part.id }, "start", Boolean(draggedSubsection))
-              : null}
             <div className="flex flex-col gap-3">
               {partItems.map((item, partItemIndex) => {
+                const beforeItem: ContainerOrderItem =
+                  item.kind === "block" ? { kind: "block", id: item.id } : { kind: "subpart", id: item.id };
+                const beforeDropZone = itemDropZone(partContainer, beforeItem, Boolean(draggedSubsection));
+
                 if (item.kind === "block") {
-                  return renderPartContentBlock(question, part, item.block, partItemIndex, partItems.length);
+                  return (
+                    <Fragment key={item.id}>
+                      {beforeDropZone}
+                      {renderPartContentBlock(question, part, item.block, partItemIndex, partItems.length)}
+                    </Fragment>
+                  );
                 }
 
                 return (
-                  <div key={item.id} className="ml-6 border-l-2 border-blue-200 pl-4">
-                    {renderSubpartPanel(question, part, item.subpart)}
-                  </div>
+                  <Fragment key={item.id}>
+                    {beforeDropZone}
+                    <div className="ml-6 border-l-2 border-blue-200 pl-4">{renderSubpartPanel(question, part, item.subpart)}</div>
+                  </Fragment>
                 );
               })}
             </div>
-            {containerDropZone({ kind: "part", questionId: question.id, partId: part.id }, "end", Boolean(draggedSubsection))}
+            {containerDropZone(partContainer, "end", Boolean(draggedSubsection))}
             <ContentInsertionActions
               buttonLabel="Add"
               centered
