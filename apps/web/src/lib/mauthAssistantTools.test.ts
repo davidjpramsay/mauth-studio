@@ -823,6 +823,59 @@ test("adds a renderer-specific diagram graphConfig to a question", () => {
   assert(diagramIndex < spaceIndex);
 });
 
+test("replaces an existing diagram through high-level addDiagram when diagramId is supplied", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagramId: "d1",
+      diagramAlign: "left",
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: "Point A\nLabel A $A$\n",
+          },
+        },
+      },
+    },
+  });
+  const diagrams = result.document?.questions[0].contentBlocks.filter((block) => block.kind === "diagram") ?? [];
+  const diagram = diagrams[0];
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.changedIds, ["q1"]);
+  assert.equal(diagrams.length, 1);
+  assert.equal(diagram.id, "d1");
+  assert.equal(diagram.kind === "diagram" ? diagram.graphConfig.type : "", "geometricConstruction");
+  assert.equal(diagram.kind === "diagram" ? diagram.diagramAlign : "", "left");
+});
+
+test("rejects high-level diagram replacement when the diagramId is not in the target question", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagramId: "missing-diagram",
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: "Point A\nLabel A $A$\n",
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(data.validationIssues?.[0]?.path, "arguments.diagramId");
+  assert.match(data.validationIssues?.[0]?.message ?? "", /existing top-level diagram/);
+});
+
 test("adds a custom Penrose tangent-parallel-chord diagram", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.addDiagram",

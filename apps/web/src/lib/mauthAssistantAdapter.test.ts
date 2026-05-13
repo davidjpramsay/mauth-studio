@@ -130,8 +130,11 @@ function createMemoryDriver(seed: StoredFile[] = []): MauthProjectFileDriver {
   };
 }
 
-function adapterHost(overrides: Partial<MauthAssistantAdapterHost<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>> = {}) {
-  let document = documentFixture();
+function adapterHost(
+  overrides: Partial<MauthAssistantAdapterHost<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>> = {},
+  initialDocument: TestDocument = documentFixture(),
+) {
+  let document = initialDocument;
   let activeFilePath: string | null = "tests/Open.test.json";
   const commits: TestDocument[] = [];
   const activePaths: Array<string | null> = [];
@@ -288,6 +291,55 @@ test("does not commit assistant document changes when preflight rejects them", a
     harness.document.questions[0].contentBlocks.some((block) => block.kind === "diagram"),
     false,
   );
+});
+
+test("commits diagram edits then reports preview inspection warnings for one repair pass", async () => {
+  const harness = adapterHost(
+    {},
+    {
+      frontMatter: { assessmentTitle: "Vector Test" },
+      formattingConfig: { showMarks: true },
+      questions: [question("q1", [textBlock("t1", "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$ and $\\mathbf{c}\\cdot\\mathbf{d}$ exactly.")])],
+    },
+  );
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: [
+              "Point O, A, B, C, D",
+              "NamedSegment OA, OB, OC, OD",
+              "Segment(OA, O, A)",
+              "Segment(OB, O, B)",
+              "Segment(OC, O, C)",
+              "Segment(OD, O, D)",
+              "Label A $\\mathbf{a}$",
+              "Label B $\\mathbf{b}$",
+            ].join("\n"),
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string; targetId?: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.equal(harness.commits.length, 1);
+  assert.equal(
+    harness.document.questions[0].contentBlocks.some((block) => block.kind === "diagram"),
+    true,
+  );
+  assert.match(result.error ?? "", /post-edit inspection/i);
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("mauth.author.addDiagram")));
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("diagramId")));
+  assert(data.validationIssues?.some((issue) => issue.message.includes("$\\mathbf{c}$")));
 });
 
 test("injects serialized current document when saving through file tools", async () => {

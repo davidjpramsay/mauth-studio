@@ -541,6 +541,14 @@ def test_repair_continuation_stays_on_direct_authoring_tool():
     assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
 
 
+def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
+    tool = openai_assistant.mauth_author_add_diagram_tool_definition()
+    properties = tool["parameters"]["properties"]
+
+    assert "diagramId" in properties
+    assert "replace" in properties["diagramId"]["description"]
+
+
 def test_replace_question_repair_keeps_required_diagram_when_validation_mentions_diagram():
     outputs = [
         openai_assistant.AssistantToolOutput(
@@ -563,6 +571,33 @@ def test_replace_question_repair_keeps_required_diagram_when_validation_mentions
 
     assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
     assert "diagram" in tools[0]["parameters"]["required"]
+
+
+def test_replace_question_post_edit_diagram_warning_repairs_with_add_diagram():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_author_replace_question",
+            output={
+                "ok": False,
+                "toolName": "mauth.author.replaceQuestion",
+                "error": "Assistant diagram post-edit inspection found repairable warnings.",
+                "validationIssues": [
+                    {
+                        "path": "postEditInspection.question.diagrams[0].graphConfig",
+                        "message": "Missing label $\\mathbf{c}$.",
+                        "expected": 'Repair this diagram by calling mauth.author.addDiagram with diagramId: "q1-diagram-1".',
+                        "targetId": "q1-diagram-1",
+                    }
+                ],
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
+    assert "diagramId" in tools[0]["parameters"]["properties"]
 
 
 def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():

@@ -1141,7 +1141,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add a diagram to one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Choose graphConfig.type first: geometricConstruction for Penrose geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -2056,6 +2056,11 @@ function diagramInsertionIndex(blocks: readonly ContentBlock[], placement: unkno
   return textIndex >= 0 ? textIndex + 1 : blocks.length;
 }
 
+function diagramReplacementIdFromArgs(args: Record<string, unknown>) {
+  const value = args.diagramId ?? args.blockId ?? args.moduleId ?? args.replaceDiagramId;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
 function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   args: unknown,
@@ -2104,8 +2109,37 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
   }
 
   const sourceBlocks = [...question.contentBlocks];
+  const replacementDiagramId = diagramReplacementIdFromArgs(args);
+  const replacementIndex = replacementDiagramId
+    ? sourceBlocks.findIndex((block) => block.kind === "diagram" && block.id === replacementDiagramId)
+    : -1;
+  if (replacementDiagramId && replacementIndex === -1) {
+    return {
+      error: "mauth.author.addDiagram could not find the diagram to replace.",
+      issues: [
+        {
+          path: "arguments.diagramId",
+          message: "must reference an existing top-level diagram in the target question",
+          expected: "existing diagram block id",
+        },
+      ],
+    };
+  }
   const insertIndex = diagramInsertionIndex(sourceBlocks, args.placement);
-  const contentBlocks = [...sourceBlocks.slice(0, insertIndex), diagramBlock, ...sourceBlocks.slice(insertIndex)];
+  const contentBlocks =
+    replacementIndex >= 0
+      ? sourceBlocks.map((block, index) =>
+          index === replacementIndex && block.kind === "diagram"
+            ? ({
+                ...block,
+                ...diagramBlock,
+                id: replacementDiagramId,
+                diagramAlign: diagramBlock.diagramAlign ?? block.diagramAlign,
+                diagramTextSide: diagramBlock.diagramTextSide ?? block.diagramTextSide,
+              } as ContentBlock)
+            : block,
+        )
+      : [...sourceBlocks.slice(0, insertIndex), diagramBlock, ...sourceBlocks.slice(insertIndex)];
   const parts = question.parts ?? [];
   const generatedQuestion = {
     ...question,
