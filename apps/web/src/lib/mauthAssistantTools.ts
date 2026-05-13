@@ -1334,7 +1334,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.replaceQuestion",
         description:
-          "Replace one existing question from a compact authoring payload. The tool builds the Mauth modules, student-only answer space, solution-only solution text, validates the generated action batch, and applies it. Omitted diagram fields preserve existing diagrams.",
+          "Replace one existing question, or append the next missing question, from a compact authoring payload. The tool builds the Mauth modules, student-only answer space, solution-only solution text, validates the generated action batch, and applies it. Omitted diagram fields preserve existing diagrams.",
       },
       {
         name: "mauth.author.addDiagram",
@@ -1652,6 +1652,73 @@ function replaceQuestionTarget<Q extends MauthQuestionLike>(
     issues.push({ path: "arguments.questionNumber", message: "must reference an existing question", expected: `1 to ${questions.length}` });
   }
   return question;
+}
+
+interface AuthorReplaceQuestionTarget {
+  question: MauthQuestionLike;
+  mode: "replace" | "append";
+  afterQuestionId?: string;
+}
+
+function collectQuestionIds(questions: readonly MauthQuestionLike[]) {
+  return new Set(questions.map((question) => question.id));
+}
+
+function uniqueQuestionId(questions: readonly MauthQuestionLike[], questionNumber: number) {
+  const existingIds = collectQuestionIds(questions);
+  const base = `assistant-question-${questionNumber}`;
+  if (!existingIds.has(base)) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}-${index}`;
+    if (!existingIds.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+function replaceOrAppendQuestionTarget<Q extends MauthQuestionLike>(
+  questions: readonly Q[],
+  args: Record<string, unknown>,
+  issues: MauthActionValidationIssue[],
+): AuthorReplaceQuestionTarget | undefined {
+  if (typeof args.questionId === "string" && args.questionId.trim()) {
+    const question = questions.find((item) => item.id === args.questionId);
+    if (!question) {
+      issues.push({ path: "arguments.questionId", message: "must reference an existing question", expected: "question id" });
+      return undefined;
+    }
+    return { question, mode: "replace" };
+  }
+
+  const questionNumber = typeof args.questionNumber === "number" ? args.questionNumber : Number(args.questionNumber ?? 1);
+  if (!Number.isInteger(questionNumber) || questionNumber < 1) {
+    issues.push({ path: "arguments.questionNumber", message: "must be a positive integer", expected: "1-based question number" });
+    return undefined;
+  }
+
+  const existingQuestion = questions[questionNumber - 1];
+  if (existingQuestion) return { question: existingQuestion, mode: "replace" };
+
+  const nextQuestionNumber = questions.length + 1;
+  if (questionNumber === nextQuestionNumber) {
+    return {
+      question: {
+        id: uniqueQuestionId(questions, questionNumber),
+        marks: 0,
+        contentBlocks: [],
+        parts: [],
+        itemOrder: [],
+      },
+      mode: "append",
+      afterQuestionId: questions[questions.length - 1]?.id,
+    };
+  }
+
+  issues.push({
+    path: "arguments.questionNumber",
+    message: "must reference an existing question or the next question to append",
+    expected: questions.length ? `1 to ${nextQuestionNumber}` : "1",
+  });
+  return undefined;
 }
 
 function textFromArgs(args: Record<string, unknown>) {
@@ -2179,17 +2246,18 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
     };
   }
 
-  const question = replaceQuestionTarget(document.questions, args, issues);
+  const target = replaceOrAppendQuestionTarget(document.questions, args, issues);
   const text = textFromArgs(args);
   if (!text) issues.push({ path: "arguments.questionText", message: "must be a non-empty string", expected: "question text" });
 
-  if (issues.length || !question) {
+  if (issues.length || !target) {
     return {
       error: formatMauthActionValidationIssues(issues),
       issues,
     };
   }
 
+  const { question } = target;
   const marks = positiveInteger(args.marks, question.marks || 1, 0, 100);
   const contentBlocks = contentBlocksForAuthorQuestion(args, question.id, issues, question);
   const parts = authorPartsFromArgs(args, question.id, issues);
@@ -2220,18 +2288,27 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
     };
   }
 
-  const actions: MauthDocumentAction[] = [
-    {
-      type: "question.update",
-      questionId: question.id,
-      patch: {
-        marks: generatedQuestion.marks,
-        contentBlocks,
-        parts,
-        itemOrder: generatedQuestion.itemOrder,
-      },
-    },
-  ];
+  const actions: MauthDocumentAction[] =
+    target.mode === "append"
+      ? [
+          {
+            type: "question.add",
+            question: generatedQuestion,
+            ...(target.afterQuestionId ? { afterQuestionId: target.afterQuestionId } : {}),
+          },
+        ]
+      : [
+          {
+            type: "question.update",
+            questionId: question.id,
+            patch: {
+              marks: generatedQuestion.marks,
+              contentBlocks,
+              parts,
+              itemOrder: generatedQuestion.itemOrder,
+            },
+          },
+        ];
   const validation = validateMauthDocumentActionPayloads(actions);
   if (!validation.ok) {
     return {

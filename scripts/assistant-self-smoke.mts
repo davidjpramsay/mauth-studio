@@ -195,6 +195,52 @@ function failIf(condition: boolean, message: string) {
 
 const scenarios: SmokeScenario[] = [
   {
+    id: "next-missing-question-is-appended",
+    prompt: "Make me a Year 9 linear equations point-of-intersection question with a diagram for Question 2.",
+    assistantPlan:
+      "Use mauth.author.replaceQuestion for Question 2. Because the document currently ends at Question 1, the high-level tool should append Question 2 rather than refusing or falling back to broad actions.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Question 1."), spaceBlock("q1-space", 6)])]),
+    calls: [
+      {
+        name: "mauth.author.replaceQuestion",
+        arguments: {
+          questionNumber: 2,
+          marks: 4,
+          questionText:
+            "The graph below shows two straight lines, $y=x+1$ and $y=-2x+7$.\n\nUse the graph to estimate the point of intersection, then verify your answer algebraically.",
+          studentSpaceLines: 10,
+          diagram: {
+            graphConfig: {
+              type: "graph2d",
+              xMin: -1,
+              xMax: 6,
+              yMin: -1,
+              yMax: 9,
+              functions: [
+                { expression: "x+1", label: "$y=x+1$", show: true },
+                { expression: "-2*x+7", label: "$y=-2x+7$", show: true },
+              ],
+            },
+          },
+        },
+      },
+    ],
+    evaluate: ({ document }) => {
+      const questionTwo = document.questions[1];
+      const diagram = diagrams(document, 1)[0];
+      const graphConfig = diagram?.kind === "diagram" ? (diagram.graphConfig as GraphConfig & { functions?: Array<{ expression?: string }> }) : null;
+      const expressions = graphConfig?.functions?.map((entry) => entry.expression) ?? [];
+      return [
+        ...failIf(document.questions.length !== 2, "Question 2 should be appended"),
+        ...failIf(questionTwo?.id !== "assistant-question-2", "appended question should use a deterministic assistant id"),
+        ...failIf(questionTwo?.marks !== 4, "appended question should keep requested marks"),
+        ...failIf(graphConfig?.type !== "graph2d", "linear intersection question should use graph2d"),
+        ...failIf(expressions.length !== 2, "graph2d diagram should contain two functions"),
+        ...failIf(expressions.some((expression) => /x\^2|pow|quadratic/i.test(expression ?? "")), "graph2d functions should not be quadratic"),
+      ];
+    },
+  },
+  {
     id: "mark-edit-preserves-shared-diagram",
     prompt: "Reduce Question 1 to 4 marks and remove the QED/conclusion mark. Keep the diagram.",
     assistantPlan:

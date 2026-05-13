@@ -509,6 +509,22 @@ def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
     assert "Omit diagram fields to preserve existing diagrams" in instructions
 
 
+def test_focused_write_next_missing_question_does_not_refuse():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Make me a year 9 linear equations point of intersection question with a diagram for question 2.",
+    )
+    summary = {"questions": [{"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Question 1."}]}]}
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(summary, [message])
+
+    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert "this tool can append it; do not refuse" in instructions
+    assert "exactly the next missing question" in tools[0]["description"]
+    assert "one past the current question count" in tools[0]["parameters"]["properties"]["questionNumber"]["description"]
+
+
 def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
     message = openai_assistant.AssistantChatMessage(
         role="user",

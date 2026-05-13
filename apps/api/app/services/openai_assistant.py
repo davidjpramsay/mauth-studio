@@ -25,6 +25,10 @@ MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
 MAX_ASSISTANT_EXTRACTED_TEXT_CHARS = 80_000
 TOKENS_PER_MILLION = 1_000_000
 QUESTION_REFERENCE_PATTERN = re.compile(r"\b(?:q|question)\s*(\d{1,3})\b", re.IGNORECASE)
+QUESTION_AUTHORING_PATTERN = re.compile(
+    r"\b(?:write|replace|make|create|generate|build)\b[\s\S]{0,180}\bquestion\b",
+    re.IGNORECASE,
+)
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -538,6 +542,27 @@ def question_numbers_from_request(messages: list[AssistantChatMessage] | None = 
     return numbers
 
 
+def asks_to_author_question(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "write question",
+            "write a question",
+            "write me a question",
+            "replace question",
+            "make question",
+            "make a question",
+            "make me a question",
+            "create question",
+            "create a question",
+            "generate question",
+            "generate a question",
+            "build question",
+            "build a question",
+        )
+    ) or bool(QUESTION_AUTHORING_PATTERN.search(text))
+
+
 def compact_document_summary(
     document_summary: dict[str, Any] | None,
     messages: list[AssistantChatMessage] | None = None,
@@ -648,9 +673,7 @@ def focused_tool_hint(
             "increase to",
         )
     )
-    asks_to_write_question = any(
-        term in text for term in ("write question", "replace question", "make question", "create question")
-    )
+    asks_to_write_question = asks_to_author_question(text)
     asks_for_response_space = any(
         term in text
         for term in (
@@ -704,7 +727,9 @@ def focused_tool_hint(
         return (
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
             f"mauth_author_replace_question for Question {question_number}, with marks, questionText, studentSpaceLines, "
-            f"and solutionText when a solution is requested.{circle_proof_guidance} {diagram_guidance}"
+            f"and solutionText when a solution is requested. If Question {question_number} is exactly the next missing "
+            "question, this tool can append it; do not refuse just because it does not exist yet."
+            f"{circle_proof_guidance} {diagram_guidance}"
         )
     if asks_for_response_space and not (
         any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
@@ -751,9 +776,7 @@ def source_diagram_required_for_replace(
     if not attachments:
         return False
     text = request_text(messages)
-    asks_to_write_question = any(
-        term in text for term in ("write question", "replace question", "make question", "create question")
-    )
+    asks_to_write_question = asks_to_author_question(text)
     if not asks_to_write_question:
         return False
     return any(
@@ -942,7 +965,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
         "type": "function",
         "name": "mauth_author_replace_question",
         "description": (
-            "Replace one existing Mauth question with high-quality teacher-ready question content. "
+            "Replace one existing Mauth question, or append exactly the next missing question, with high-quality teacher-ready question content. "
             "Use for focused requests like writing or replacing one question. Do not use this for mark-allocation "
             "or solution-only tweaks. This is cheaper and more reliable than low-level module action batches."
         ),
@@ -952,7 +975,10 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                 "questionNumber": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "1-based question number to replace.",
+                    "description": (
+                        "1-based question number to replace. If this is exactly one past the current question count, "
+                        "the Mauth tool appends it as a new question."
+                    ),
                 },
                 "questionId": {
                     "type": "string",
@@ -1339,9 +1365,7 @@ def assistant_tool_definitions(
             "increase to",
         )
     )
-    asks_to_write_question = any(
-        term in text for term in ("write question", "replace question", "make question", "create question")
-    )
+    asks_to_write_question = asks_to_author_question(text)
     require_source_diagram = source_diagram_required_for_replace(messages, attachments)
     file_only_terms = ("open file", "save file", "rename file", "delete file", "move file", "folder", "files")
 
@@ -1466,7 +1490,7 @@ Document-edit workflow:
 {tool_hint}
 
 Tool-call contract:
-- For focused requests to write or replace one existing question, use the direct mauth_author_replace_question tool. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists.
+- For focused requests to write or replace one question, use the direct mauth_author_replace_question tool. If the requested question number is exactly the next missing question, the frontend tool can append it; do not refuse because it does not exist yet. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists or is the next append position.
 - Use mauth.preview.inspect when you need focused context for the current/selected question, its diagrams, answer-space layout, solution modules, hidden tick totals, or warnings. Prefer it over mauth.document.inspect for one-question editing checks and after edits that affect diagrams/solutions/layout. For diagrams, inspect question.diagrams[].warnings and repair renderer mismatches, missing image sources, missing scalar-product vector labels, rendered diagram failures, and Penrose semantic warnings before saying the diagram is correct. For Penrose circle-theorem diagrams, inspect semanticWarnings and repair missing Tangent, missing ParallelToSegment to the named chord, missing chord Segment, visible auxiliary labels, or points not on the intended circle before saying the diagram is correct. When rendered metrics are available, use them to check page occupancy, selected-anchor boxes, diagram render failure, solution-slot fit, and L-shaped diagram/answer-space layout before saying the layout is fixed.
 - If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
@@ -1483,7 +1507,7 @@ Tool-call contract:
 - In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Make the hidden mark total match the question/part marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.
 - Always call mauth_tool with this wrapper shape: {{"name":"<mauth tool name>","arguments":{{...}}}}. For low-level document action batches, use {{"name":"mauth.actions.preview","arguments":{{"actions":[...]}}}}.
 - Put action batches, file paths, and tool-specific options inside the nested arguments object, not beside name.
-- For focused requests to write or replace one existing question through the wrapper, prefer mauth.author.replaceQuestion over low-level action batches. Supply questionNumber or questionId, marks, questionText, studentSpaceLines, and solutionText only when a solution is wanted.
+- For focused requests to write or replace one question through the wrapper, prefer mauth.author.replaceQuestion over low-level action batches. It can replace an existing question or append the next missing question. Supply questionNumber or questionId, marks, questionText, studentSpaceLines, and solutionText only when a solution is wanted.
 - If a tool output reports malformed arguments or malformed actions, repair the same structured call once before explaining the failure.
 - If a tool output includes validationIssues paths such as actions[0].blocks[0].lines or actions[0].patch, fix those exact action payload fields and retry once.
 - Diagram action validation is renderer-specific. Prefer explicit structured graphConfig fields over invented renderer JSON, and repair the exact validationIssue paths if the tool rejects a diagram.

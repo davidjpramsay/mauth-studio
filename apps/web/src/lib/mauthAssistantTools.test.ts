@@ -635,6 +635,61 @@ test("replaces a question from a compact high-level authoring payload", () => {
   assert.equal(solution?.visibility, "solution");
 });
 
+test("high-level question authoring appends the next missing question", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 2,
+      marks: 4,
+      questionText: "The graph below shows two straight lines, $y=x+1$ and $y=-2x+7$.",
+      studentSpaceLines: 10,
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -1,
+          xMax: 6,
+          yMin: -1,
+          yMax: 9,
+          functions: [
+            { expression: "x+1", label: "$y=x+1$", show: true },
+            { expression: "-2*x+7", label: "$y=-2x+7$", show: true },
+          ],
+        },
+      },
+    },
+  });
+  const questions = result.document?.questions ?? [];
+  const appended = questions[1];
+
+  assert.equal(result.ok, true);
+  assert.equal(questions.length, 2);
+  assert.equal(questions[0].id, "q1");
+  assert.equal(appended.id, "assistant-question-2");
+  assert.equal(appended.marks, 4);
+  assert.equal(appended.contentBlocks[0].kind, "text");
+  assert.equal(appended.contentBlocks[1].kind, "diagram");
+  assert.equal(appended.contentBlocks[1].kind === "diagram" ? appended.contentBlocks[1].graphConfig.type : "", "graph2d");
+  assert.equal(appended.contentBlocks[2].kind, "space");
+  assert.equal(appended.contentBlocks[2].visibility, "student");
+});
+
+test("high-level question authoring rejects skipped question numbers", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 4,
+      marks: 2,
+      questionText: "Find $x$.",
+      studentSpaceLines: 6,
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.document, undefined);
+  assert(data.validationIssues?.some((issue) => issue.path === "arguments.questionNumber" && issue.expected === "1 to 2"));
+});
+
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
