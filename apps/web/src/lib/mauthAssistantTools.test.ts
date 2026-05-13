@@ -11,6 +11,7 @@ import {
   type MauthAssistantToolDescription,
   type MauthPreviewInspection,
 } from "./mauthAssistantTools.ts";
+import { inspectMauthDiagram, isAssistantDiagramInspectionWarningBlocking } from "./mauthDiagramInspection.ts";
 
 interface TestFrontMatter {
   schoolName: string;
@@ -114,6 +115,100 @@ test("inspects a document with compact counts and question summaries", () => {
   assert.equal(inspection.counts.studentSpaceLines, 4);
   assert.equal(inspection.questions[0].modules[0].textPreview, "Find the value of $x$.");
   assert.equal(inspection.questions[0].modules[1].diagramType, "statsChart");
+});
+
+test("inspects diagram-specific semantic issues for assistant repair", () => {
+  const statsWarnings = inspectMauthDiagram(
+    {
+      type: "statsChart",
+      data: {
+        chartType: "histogram",
+        dataMode: "manualProbabilities",
+        xValues: [1, 2, 3],
+        probabilities: [0.2, 0.2, 0.2],
+      },
+    },
+    "The following probability mass function $P(X=x)$ is shown.",
+  ).warnings;
+  assert(statsWarnings.some((warning) => warning.code === "stats-chart-probabilities-not-normalised"));
+
+  const vectorWarnings = inspectMauthDiagram(
+    {
+      type: "vector2d",
+      metadata: {
+        vector2d: {
+          vectors: [{ id: "a", name: "a", start: [0, 0], components: [2, 3], showComponents: false }],
+        },
+      },
+    },
+    "Draw vectors a=(2,3) and b=(4,-3) from the origin.",
+  ).warnings;
+  assert(vectorWarnings.some((warning) => warning.code === "vector2d-labels-missing"));
+
+  const setWarnings = inspectMauthDiagram(
+    {
+      type: "setDiagram",
+      data: {
+        universe: { name: "U", label: "U" },
+        sets: [
+          { name: "A", label: "A" },
+          { name: "B", label: "B" },
+        ],
+        regions: [
+          { name: "onlyA", label: "A \\cap B'" },
+          { name: "intersection", label: "A \\cap B" },
+          { name: "onlyB", label: "A' \\cap B" },
+          { name: "outside", label: "(A \\cup B)'" },
+        ],
+      },
+    },
+    "Shade the region $A \\cap B'$ on the Venn diagram.",
+  ).warnings;
+  assert(setWarnings.some((warning) => warning.code === "set-diagram-shading-missing"));
+
+  const graphWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      functions: [{ expression: "1 / (x - 2)", label: "f", show: true }],
+      features: [],
+    },
+    "Sketch the graph of $f(x)$ and show the vertical asymptote.",
+  ).warnings;
+  assert(graphWarnings.some((warning) => warning.code === "graph2d-asymptote-feature-missing"));
+
+  const scalarWarnings = inspectMauthDiagram(
+    {
+      type: "geometricConstruction",
+      options: {
+        substanceSource: [
+          "Point O, A, B",
+          "Ray rayA, rayB",
+          "RayFrom(rayA, O, A)",
+          "RayFrom(rayB, O, B)",
+          "Label A $\\mathbf{a}$",
+          "Label B $\\mathbf{b}$",
+        ].join("\n"),
+      },
+    },
+    "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$ when the angle between them is $45^\\circ$.",
+  ).warnings;
+  assert(scalarWarnings.some((warning) => warning.code === "scalar-product-angle-marker-missing"));
+  assert(
+    statsWarnings.some(
+      (warning) => warning.code === "stats-chart-probabilities-not-normalised" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    vectorWarnings.some((warning) => warning.code === "vector2d-labels-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
+  );
+  assert(
+    setWarnings.some((warning) => warning.code === "set-diagram-shading-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
+  );
+  assert(
+    scalarWarnings.some(
+      (warning) => warning.code === "scalar-product-angle-marker-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
 });
 
 test("inspects focused preview context for the selected module", () => {
