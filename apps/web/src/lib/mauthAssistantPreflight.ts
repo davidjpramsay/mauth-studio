@@ -27,6 +27,17 @@ function markAnnotationTotal(text: string) {
   return [...text.matchAll(MARK_TICK_ANNOTATION_PATTERN)].reduce((sum, match) => sum + Math.max(0, Number(match[1]) || 0), 0);
 }
 
+function blockMarkTickTotal(block: ContentBlock) {
+  const surfaceTicks =
+    blockVisibility(block) === "solution" ? Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0))) : 0;
+  if (block.kind !== "text") return surfaceTicks;
+  return surfaceTicks + markAnnotationTotal(block.text);
+}
+
+function isSolutionMarkedBlock(block: ContentBlock) {
+  return blockVisibility(block) === "solution" || isSolutionTextBlock(block);
+}
+
 function hasVisibleMarkNote(text: string) {
   return VISIBLE_MARK_NOTE_PATTERN.test(text);
 }
@@ -55,13 +66,16 @@ function solutionMarkingIssuesForContainer({
   path: string;
 }) {
   const issues: MauthAssistantDocumentPreflightIssue[] = [];
-  const solutionBlocks = blocks.filter(isSolutionTextBlock);
+  const solutionBlocks = blocks.filter(isSolutionMarkedBlock);
   if (!solutionBlocks.length) return issues;
 
   let hiddenMarkTotal = 0;
   solutionBlocks.forEach((block, blockIndex) => {
-    const textPath = `${path}.contentBlocks[${blocks.indexOf(block)}].text`;
-    hiddenMarkTotal += markAnnotationTotal(block.text);
+    const blockPath = `${path}.contentBlocks[${blocks.indexOf(block)}]`;
+    hiddenMarkTotal += blockMarkTickTotal(block);
+    if (block.kind !== "text") return;
+
+    const textPath = `${blockPath}.text`;
     if (!SOLUTION_HEADING_PATTERN.test(block.text)) {
       issues.push({
         path: textPath,

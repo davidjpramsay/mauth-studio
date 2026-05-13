@@ -1545,6 +1545,18 @@
     margin: 0;
   }
 
+  .test-marked-surface {
+    align-items: center;
+    column-gap: 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    width: 100%;
+  }
+
+  .test-marked-surface-content {
+    min-width: 0;
+  }
+
   .solution-mark-ticks {
     color: #c1121f;
     display: inline-flex;

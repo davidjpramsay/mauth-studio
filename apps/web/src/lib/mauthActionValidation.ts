@@ -108,6 +108,19 @@ function validateVisibilityFields(record: Record<string, unknown>, path: string,
   enumField(record, "visibility", path, CONTENT_VISIBILITY, issues, true);
   booleanField(record, "solutionOnly", path, issues, true);
   booleanField(record, "studentOnly", path, issues, true);
+  numberField(record, "markTicks", path, issues, true);
+  if (
+    record.markTicks !== undefined &&
+    (typeof record.markTicks !== "number" ||
+      !Number.isInteger(record.markTicks) ||
+      record.markTicks < 0 ||
+      record.markTicks > 20)
+  ) {
+    addIssue(issues, `${path}.markTicks`, "must be an integer between 0 and 20", "integer 0..20");
+  }
+  if (record.markTicks !== undefined && record.visibility !== "solution" && record.solutionOnly !== true) {
+    addIssue(issues, `${path}.markTicks`, "mark ticks are only allowed on solution-only blocks", 'visibility: "solution"');
+  }
 }
 
 function isSolutionOnlyTextBlock(value: Record<string, unknown>) {

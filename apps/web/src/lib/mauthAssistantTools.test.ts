@@ -716,9 +716,11 @@ test("high-level question authoring can pair diagram answer surfaces without sep
   assert.equal(blocks[1].visibility, "student");
   assert.equal(blocks[2].kind, "diagram");
   assert.equal(blocks[2].visibility, "solution");
+  assert.equal(blocks[2].markTicks, 2);
   assert.equal(blocks[3].kind, "text");
   assert.equal(blocks[3].visibility, "solution");
   assert.match(blocks[3].kind === "text" ? blocks[3].text : "", /^\*\*Solution\.\*\*/);
+  assert.equal(blocks[3].kind === "text" ? blocks[3].text.includes("[[marks:") : true, false);
 });
 
 test("high-level part authoring can pair completion tables as answer surfaces", () => {
@@ -759,8 +761,10 @@ test("high-level part authoring can pair completion tables as answer surfaces", 
   assert.equal(partBlocks[1].visibility, "student");
   assert.equal(partBlocks[2].kind, "table");
   assert.equal(partBlocks[2].visibility, "solution");
+  assert.equal(partBlocks[2].markTicks, 2);
   assert.equal(partBlocks[3].kind, "text");
   assert.equal(partBlocks[3].visibility, "solution");
+  assert.equal(partBlocks[3].kind === "text" ? partBlocks[3].text.includes("[[marks:") : true, false);
 });
 
 test("high-level question authoring rejects skipped question numbers", () => {

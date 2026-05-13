@@ -338,6 +338,7 @@ export interface ContentBlockVisibilityOptions {
   visibility?: ContentBlockVisibility;
   solutionOnly?: boolean;
   studentOnly?: boolean;
+  markTicks?: number;
 }
 
 export interface TextContentBlock extends ContentBlockVisibilityOptions {

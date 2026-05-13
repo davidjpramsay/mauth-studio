@@ -22,6 +22,17 @@ function diagramBlock(id: string): ContentBlock {
   return { id, kind: "diagram", graphConfig: { type: "statsChart", data: { chartType: "histogram" } } };
 }
 
+function solutionTableBlock(id: string, markTicks: number): ContentBlock {
+  return {
+    id,
+    kind: "table",
+    headers: ["$x$", "1"],
+    rows: [["$P(X=x)$", "$1$"]],
+    visibility: "solution",
+    markTicks,
+  };
+}
+
 function penroseDiagramBlock(id: string, substanceSource: string): ContentBlock {
   return {
     id,
@@ -62,6 +73,18 @@ test("assistant solution preflight accepts hidden ticks that match item marks", 
 
   const result = validateAssistantSolutionMarkingBeforeCommit(document, { toolName: "mauth.author.ensureSolutions", reason: "test" }, [
     "q1",
+  ]);
+
+  assert.equal(result.ok, true);
+});
+
+test("assistant solution preflight accepts table surface ticks that match item marks", () => {
+  const document = documentFixture(
+    question("q1", [textBlock("t1", "Complete the table."), spaceBlock("s1"), solutionTableBlock("table-solution", 2)], 2),
+  );
+
+  const result = validateAssistantSolutionMarkingBeforeCommit(document, { toolName: "mauth.author.replaceQuestion", reason: "test" }, [
+    "table-solution",
   ]);
 
   assert.equal(result.ok, true);

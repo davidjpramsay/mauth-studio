@@ -55,6 +55,7 @@ export interface PreviewContentRenderers {
     onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   }) => ReactNode;
   renderMath: (source: string, options?: { showSolutionMarks?: boolean }) => ReactNode;
+  renderSolutionMarkTicks: (count: number) => ReactNode;
 }
 
 export interface PreviewContentBlocksProps {
@@ -125,6 +126,35 @@ function TablePreview({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function solutionSurfaceMarkTicks(block: EditorContentBlock, showSolutions: boolean) {
+  if (!showSolutions) return 0;
+  if (block.visibility !== "solution" && block.solutionOnly !== true) return 0;
+  return Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0)));
+}
+
+function SolutionMarkedSurface({
+  block,
+  showSolutions,
+  renderers,
+  contentClassName,
+  children,
+}: {
+  block: EditorContentBlock;
+  showSolutions: boolean;
+  renderers: PreviewContentRenderers;
+  contentClassName?: string;
+  children: ReactNode;
+}) {
+  const markTicks = solutionSurfaceMarkTicks(block, showSolutions);
+  if (!markTicks) return <>{children}</>;
+  return (
+    <div className="test-marked-surface">
+      <div className={cn("test-marked-surface-content", contentClassName)}>{children}</div>
+      {renderers.renderSolutionMarkTicks(markTicks)}
     </div>
   );
 }
@@ -361,7 +391,9 @@ function DiagramBesideContentBlock({
         data-preview-module-anchor={blockAnchor ? "true" : undefined}
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
-        <TablePreview block={block} runtime={runtime} renderers={renderers} />
+        <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+          <TablePreview block={block} runtime={runtime} renderers={renderers} />
+        </SolutionMarkedSurface>
       </div>
     );
   }
@@ -374,12 +406,19 @@ function DiagramBesideContentBlock({
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         className={cn("test-diagram-wrap flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
       >
-        {renderers.renderDiagram({
-          graphConfig: block.graphConfig,
-          measureOnly,
-          showSolutions,
-          onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
-        })}
+        <SolutionMarkedSurface
+          block={block}
+          showSolutions={showSolutions}
+          renderers={renderers}
+          contentClassName={cn("flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
+        >
+          {renderers.renderDiagram({
+            graphConfig: block.graphConfig,
+            measureOnly,
+            showSolutions,
+            onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
+          })}
+        </SolutionMarkedSurface>
       </div>
     );
   }
@@ -770,13 +809,20 @@ export function PreviewContentBlocks({
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
           className={cn("test-diagram-wrap flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
         >
-          {renderers.renderDiagram({
-            graphConfig: block.graphConfig,
-            measureOnly,
-            showSolutions,
-            onGraphConfigChange:
-              measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig),
-          })}
+          <SolutionMarkedSurface
+            block={block}
+            showSolutions={showSolutions}
+            renderers={renderers}
+            contentClassName={cn("flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
+          >
+            {renderers.renderDiagram({
+              graphConfig: block.graphConfig,
+              measureOnly,
+              showSolutions,
+              onGraphConfigChange:
+                measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig),
+            })}
+          </SolutionMarkedSurface>
         </div>,
       );
       continue;
@@ -802,7 +848,9 @@ export function PreviewContentBlocks({
           data-preview-module-anchor={blockAnchor ? "true" : undefined}
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
-          <TablePreview block={block} runtime={runtime} renderers={renderers} />
+          <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+            <TablePreview block={block} runtime={runtime} renderers={renderers} />
+          </SolutionMarkedSurface>
         </div>,
       );
       continue;

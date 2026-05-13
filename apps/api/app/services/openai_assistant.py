@@ -1057,7 +1057,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "Concise worked solution in Mauthdown/MathJax. Start with a real solution, not placeholders; "
                         "the app will add the Solution heading if omitted. Put hidden [[marks:n]] annotations at the "
                         "end of mark-worthy lines so the solution copy renders red check marks; the total hidden "
-                        "marks should match the item marks. Do not write visible [1 mark], (1 mark), or "
+                        "marks should match the item marks. For answerSurface diagram/table tasks, the completed "
+                        "solutionDiagram/solutionTable receives the red ticks from the item marks automatically, so "
+                        "use solutionText only for a short unmarked note if needed. Do not write visible [1 mark], (1 mark), or "
                         "'1 mark for ...' notes. Preserve LaTeX backslashes exactly; in JSON strings this means "
                         "commands such as \\ell and \\frac must be emitted with escaped backslashes, not as control "
                         "characters."
@@ -1158,7 +1160,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                 "description": (
                                     "Only include when the teacher requested solutions or the source visibly contains one. "
                                     "Worked solution for this part. End mark-worthy lines with hidden [[marks:n]] tick "
-                                    "annotations and make the hidden mark total match this part's marks."
+                                    "annotations and make the hidden mark total match this part's marks. For answerSurface "
+                                    "diagram/table parts, the completed solution surface receives the ticks automatically, "
+                                    "so use this only for a short unmarked note if needed."
                                 ),
                             },
                             "includeSolution": {"type": "boolean"},
@@ -1588,7 +1592,7 @@ Tool-call contract:
 - If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_author_replace_question payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
-- For tasks where the answer is the surface itself, such as complete the table, sketch the graph, draw the function, shade the region, or label the diagram, set answerSurface to table or diagram. Provide the blank/partial student table or diagram plus a completed solutionTable or solutionDiagram when solutions are requested. Do not create a separate large student working-space block for these artifact-answer tasks unless the teacher also asks for written working.
+- For tasks where the answer is the surface itself, such as complete the table, sketch the graph, draw the function, shade the region, or label the diagram, set answerSurface to table or diagram. Provide the blank/partial student table or diagram plus a completed solutionTable or solutionDiagram when solutions are requested. Do not create a separate large student working-space block for these artifact-answer tasks unless the teacher also asks for written working. The authoring layer places red ticks beside completed solution tables/diagrams automatically from the item marks, so do not duplicate those marks in solutionText.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.

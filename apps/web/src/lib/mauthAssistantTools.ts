@@ -89,6 +89,7 @@ export interface MauthBlockInspection {
   id: string;
   kind: ContentBlock["kind"];
   visibility: ContentBlockVisibility;
+  markTicks?: number;
   textPreview?: string;
   choiceCount?: number;
   tableRows?: number;
@@ -267,6 +268,7 @@ export interface MauthSolutionScopeInspection {
   label: string;
   marks: number;
   studentSpaceLines: number;
+  studentAnswerSurfaceCount: number;
   solutionModuleCount: number;
   hiddenMarkTotal: number;
   visibleMarkNoteCount: number;
@@ -561,14 +563,22 @@ function blockVisibility(block: ContentBlock): ContentBlockVisibility {
   return "always";
 }
 
+function blockMarkTicks(block: ContentBlock) {
+  if (blockVisibility(block) !== "solution") return 0;
+  return positiveInteger(block.markTicks, 0, 0, 20);
+}
+
 function isLikelySolutionText(block: ContentBlock) {
   return block.kind === "text" && /^\s*(?:\*\*)?Solution\.?/i.test(block.text);
 }
 
 function inspectBlock(block: ContentBlock): MauthBlockInspection {
   const visibility = blockVisibility(block);
+  const markTicks = blockMarkTicks(block);
+  const base = markTicks ? { markTicks } : {};
   if (block.kind === "text") {
     return {
+      ...base,
       id: block.id,
       kind: block.kind,
       visibility,
@@ -577,6 +587,7 @@ function inspectBlock(block: ContentBlock): MauthBlockInspection {
   }
   if (block.kind === "choices") {
     return {
+      ...base,
       id: block.id,
       kind: block.kind,
       visibility,
@@ -585,6 +596,7 @@ function inspectBlock(block: ContentBlock): MauthBlockInspection {
   }
   if (block.kind === "table") {
     return {
+      ...base,
       id: block.id,
       kind: block.kind,
       visibility,
@@ -594,6 +606,7 @@ function inspectBlock(block: ContentBlock): MauthBlockInspection {
   }
   if (block.kind === "diagram") {
     return {
+      ...base,
       id: block.id,
       kind: block.kind,
       visibility,
@@ -603,13 +616,14 @@ function inspectBlock(block: ContentBlock): MauthBlockInspection {
   }
   if (block.kind === "space") {
     return {
+      ...base,
       id: block.id,
       kind: block.kind,
       visibility,
       lines: block.lines,
     };
   }
-  return { id: block.id, kind: block.kind, visibility };
+  return { ...base, id: block.id, kind: block.kind, visibility };
 }
 
 function inspectSubpart(subpart: MauthSubpartLike): MauthSubpartInspection {
@@ -870,9 +884,12 @@ function textBlocks(blocks: readonly ContentBlock[]) {
 }
 
 function hiddenMarksInBlocks(blocks: readonly ContentBlock[]) {
-  return textBlocks(blocks)
-    .filter((block) => blockVisibility(block) === "solution" || isLikelySolutionText(block))
-    .reduce((sum, block) => sum + markAnnotationTotal(block.text), 0);
+  return blocks.reduce((sum, block) => {
+    const surfaceTicks = blockMarkTicks(block);
+    if (block.kind !== "text") return sum + surfaceTicks;
+    if (blockVisibility(block) !== "solution" && !isLikelySolutionText(block)) return sum;
+    return sum + surfaceTicks + markAnnotationTotal(block.text);
+  }, 0);
 }
 
 function visibleMarkNotesInBlocks(blocks: readonly ContentBlock[]) {
@@ -883,6 +900,13 @@ function visibleMarkNotesInBlocks(blocks: readonly ContentBlock[]) {
 
 function studentSpaceLinesInBlocks(blocks: readonly ContentBlock[]) {
   return blocks.reduce((sum, block) => (block.kind === "space" && blockVisibility(block) === "student" ? sum + block.lines : sum), 0);
+}
+
+function studentAnswerSurfaceCountInBlocks(blocks: readonly ContentBlock[]) {
+  return blocks.filter(
+    (block) =>
+      blockVisibility(block) === "student" && (block.kind === "space" || block.kind === "table" || block.kind === "diagram"),
+  ).length;
 }
 
 function solutionModulesInBlocks(blocks: readonly ContentBlock[]) {
@@ -906,6 +930,7 @@ function solutionScopeInspection(
     label,
     marks,
     studentSpaceLines: studentSpaceLinesInBlocks(blocks),
+    studentAnswerSurfaceCount: studentAnswerSurfaceCountInBlocks(blocks),
     solutionModuleCount: solutionModulesInBlocks(blocks).length,
     hiddenMarkTotal: hiddenMarksInBlocks(blocks),
     visibleMarkNoteCount: visibleMarkNotesInBlocks(blocks),
@@ -921,12 +946,12 @@ function addSolutionScopeWarnings(scope: MauthSolutionScopeInspection, warnings:
       message: `${scope.label} has ${scope.marks} mark${scope.marks === 1 ? "" : "s"} but no solution-only module yet.`,
     });
   }
-  if (scope.solutionModuleCount > 0 && scope.studentSpaceLines === 0) {
+  if (scope.solutionModuleCount > 0 && scope.studentAnswerSurfaceCount === 0) {
     warnings.push({
       code: "student-space-missing",
       severity: "warning",
       anchor: scope.anchor,
-      message: `${scope.label} has a solution but no student-only answer space to preserve pagination.`,
+      message: `${scope.label} has a solution but no student-only answer surface to preserve pagination.`,
     });
   }
   if (scope.solutionModuleCount > 0 && scope.marks > 0 && scope.hiddenMarkTotal !== scope.marks) {
@@ -1899,6 +1924,13 @@ function solutionBlockText(value: string, expectedMarks = 0) {
   return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
 }
 
+function solutionBlockTextWithoutMarkAnnotations(value: string) {
+  const normalized = normalizeSolutionMarkAnnotations(value.trim()).replace(MARK_TICK_ANNOTATION_PATTERN, "");
+  const bodySource = SOLUTION_HEADING_PATTERN.test(normalized) ? normalized.replace(SOLUTION_HEADING_PATTERN, "").trimStart() : normalized;
+  const body = compactSolutionText(bodySource);
+  return body ? `**Solution.**\n\n${body}` : "**Solution.**\n\n";
+}
+
 function hasOwn(args: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(args, key);
 }
@@ -2223,6 +2255,18 @@ function withBlockVisibility(block: ContentBlock, visibility: ContentBlockVisibi
   return { ...block, visibility } as ContentBlock;
 }
 
+function withSolutionSurfaceMarkTicks(blocks: ContentBlock[], marks: number) {
+  const markTicks = positiveInteger(marks, 0, 0, 20);
+  if (!markTicks) return blocks;
+
+  let applied = false;
+  return blocks.map((block) => {
+    if (applied || (block.kind !== "diagram" && block.kind !== "table")) return block;
+    applied = true;
+    return { ...block, markTicks } as ContentBlock;
+  });
+}
+
 function appendAnswerSurfaceReplacementSlot(
   blocks: ContentBlock[],
   studentBlocks: ContentBlock[],
@@ -2251,11 +2295,16 @@ function appendAnswerSurfaceReplacementSlot(
   blocks.push(...remainingStudentBlocks.map((block) => withBlockVisibility(block, "student")));
 }
 
-function solutionTextContentBlock(scopeId: string, solutionText: string, marks: number): ContentBlock {
+function solutionTextContentBlock(
+  scopeId: string,
+  solutionText: string,
+  marks: number,
+  options: { stripMarkAnnotations?: boolean } = {},
+): ContentBlock {
   return {
     id: authorBlockId(scopeId, "solution"),
     kind: "text",
-    text: solutionBlockText(solutionText, marks),
+    text: options.stripMarkAnnotations ? solutionBlockTextWithoutMarkAnnotations(solutionText) : solutionBlockText(solutionText, marks),
     visibility: "solution",
   };
 }
@@ -2293,7 +2342,13 @@ function contentBlocksForAuthorQuestion(
     idSuffix: "solution-table",
     visibility: "solution",
   });
-  const solutionTextBlock = includeSolution ? solutionTextContentBlock(questionId, solutionText, marks) : null;
+  const hasSolutionAnswerSurface =
+    (answerSurface === "diagram" && solutionDiagrams.length > 0) || (answerSurface === "table" && solutionTables.length > 0);
+  const solutionTextBlock = includeSolution
+    ? solutionTextContentBlock(questionId, solutionText, hasSolutionAnswerSurface ? 0 : marks, {
+        stripMarkAnnotations: hasSolutionAnswerSurface,
+      })
+    : null;
   const blocks: ContentBlock[] = [
     {
       id: authorBlockId(questionId, "question-text"),
@@ -2306,7 +2361,7 @@ function contentBlocksForAuthorQuestion(
     appendAnswerSurfaceReplacementSlot(
       blocks,
       questionDiagrams,
-      [...solutionDiagrams, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      [...withSolutionSurfaceMarkTicks(solutionDiagrams, marks), ...(solutionTextBlock ? [solutionTextBlock] : [])],
       issues,
       "arguments.solutionDiagram",
     );
@@ -2319,7 +2374,7 @@ function contentBlocksForAuthorQuestion(
     appendAnswerSurfaceReplacementSlot(
       blocks,
       questionTables,
-      [...solutionTables, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      [...withSolutionSurfaceMarkTicks(solutionTables, marks), ...(solutionTextBlock ? [solutionTextBlock] : [])],
       issues,
       "arguments.solutionTable",
     );
@@ -2383,7 +2438,13 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
     idSuffix: "solution-table",
     visibility: "solution",
   });
-  const solutionTextBlock = includeSolution ? solutionTextContentBlock(partId, solutionText, marks) : null;
+  const hasSolutionAnswerSurface =
+    (answerSurface === "diagram" && solutionDiagrams.length > 0) || (answerSurface === "table" && solutionTables.length > 0);
+  const solutionTextBlock = includeSolution
+    ? solutionTextContentBlock(partId, solutionText, hasSolutionAnswerSurface ? 0 : marks, {
+        stripMarkAnnotations: hasSolutionAnswerSurface,
+      })
+    : null;
   const blocks: ContentBlock[] = [
     ...(partText
       ? [
@@ -2400,7 +2461,7 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
     appendAnswerSurfaceReplacementSlot(
       blocks,
       partDiagrams,
-      [...solutionDiagrams, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      [...withSolutionSurfaceMarkTicks(solutionDiagrams, marks), ...(solutionTextBlock ? [solutionTextBlock] : [])],
       issues,
       "arguments.parts[].solutionDiagram",
     );
@@ -2413,7 +2474,7 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
     appendAnswerSurfaceReplacementSlot(
       blocks,
       partTables,
-      [...solutionTables, ...(solutionTextBlock ? [solutionTextBlock] : [])],
+      [...withSolutionSurfaceMarkTicks(solutionTables, marks), ...(solutionTextBlock ? [solutionTextBlock] : [])],
       issues,
       "arguments.parts[].solutionTable",
     );

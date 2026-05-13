@@ -3868,6 +3868,7 @@ const previewContentRuntime: PreviewContentRuntime = {
 const previewContentRenderers: PreviewContentRenderers = {
   renderDiagram: (props) => <DiagramPreview {...props} />,
   renderMath: (source, options) => <MixedMath source={source} showSolutionMarks={Boolean(options?.showSolutionMarks)} />,
+  renderSolutionMarkTicks: (count) => <SolutionMarkTicks count={count} />,
 };
 
 function PreviewContentBlocks(props: AppPreviewContentBlocksProps) {
