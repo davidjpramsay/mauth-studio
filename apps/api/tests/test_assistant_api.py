@@ -386,7 +386,7 @@ def test_focused_solution_prompt_gets_direct_tool_hint():
         [openai_assistant.AssistantChatMessage(role="user", content="Write the worked solution for question 1.")],
     )
 
-    assert "mauth_author_ensure_solutions" in instructions
+    assert "mauth_write_solutions_for_questions" in instructions
     assert "Do not call mauth.document.inspect first" in instructions
     assert "[[marks:n]]" in instructions
     assert "hidden mark total match" in instructions
@@ -417,8 +417,8 @@ def test_focused_mark_allocation_prompt_uses_solution_tool_not_replace_question(
     tools = openai_assistant.assistant_tool_definitions([message])
     instructions = openai_assistant.assistant_instructions(summary, [message])
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_tool"]
-    assert "Do not use mauth_author_replace_question" in instructions
+    assert [tool["name"] for tool in tools] == ["mauth_write_solutions_for_questions", "mauth_tool"]
+    assert "Do not use mauth_question_upsert" in instructions
     assert "Preserve existing diagrams" in instructions
     assert "mauth.preview.inspect" in instructions
     assert 'marks":4' in instructions
@@ -461,7 +461,10 @@ def test_solution_overflow_repair_exposes_solution_and_space_tools():
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=[tool_output])
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_author_adjust_response_spaces"]
+    assert [tool["name"] for tool in tools] == [
+        "mauth_write_solutions_for_questions",
+        "mauth_author_adjust_response_spaces",
+    ]
 
 
 def test_response_space_outline_repair_from_replace_question_exposes_solution_and_space_tools():
@@ -489,7 +492,10 @@ def test_response_space_outline_repair_from_replace_question_exposes_solution_an
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=[tool_output])
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_ensure_solutions", "mauth_author_adjust_response_spaces"]
+    assert [tool["name"] for tool in tools] == [
+        "mauth_write_solutions_for_questions",
+        "mauth_author_adjust_response_spaces",
+    ]
 
 
 def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
@@ -504,8 +510,8 @@ def test_focused_write_question_prompt_with_marks_still_uses_replace_question():
         [message],
     )
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
-    assert "mauth_author_replace_question" in instructions
+    assert [tool["name"] for tool in tools] == ["mauth_question_upsert"]
+    assert "mauth_question_upsert" in instructions
     assert "Omit diagram fields to preserve existing diagrams" in instructions
 
 
@@ -519,7 +525,7 @@ def test_focused_write_next_missing_question_does_not_refuse():
     tools = openai_assistant.assistant_tool_definitions([message])
     instructions = openai_assistant.assistant_instructions(summary, [message])
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert [tool["name"] for tool in tools] == ["mauth_question_upsert"]
     assert "this tool can append it; do not refuse" in instructions
     assert "exactly the next missing question" in tools[0]["description"]
     assert "one past the current question count" in tools[0]["parameters"]["properties"]["questionNumber"]["description"]
@@ -550,7 +556,7 @@ def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
         attachments=attachments,
     )
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
     assert "diagram" in tools[0]["parameters"]["required"]
     assert "Required for this request" in tools[0]["parameters"]["properties"]["diagram"]["description"]
     assert "include it in diagram or diagrams in the same replacement payload" in instructions
@@ -578,7 +584,7 @@ def test_screenshot_text_only_conversion_does_not_require_diagram_when_not_reque
 
     tools = openai_assistant.assistant_tool_definitions([message], attachments=attachments)
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
     assert "diagram" not in tools[0]["parameters"]["required"]
 
 
@@ -604,7 +610,7 @@ def test_focused_circle_diagram_prompt_gets_penrose_renderer_hint():
         ],
     )
 
-    assert "mauth_author_add_diagram" in instructions
+    assert "mauth_make_diagram_for_question" in instructions
     assert 'graphConfig.type="geometricConstruction"' in instructions
     assert "graphConfig.options.substanceSource" in instructions
     assert "Do not use standardDiagram recipe names" in instructions
@@ -620,7 +626,7 @@ def test_focused_diagram_prompt_exposes_only_add_diagram_tool():
         ]
     )
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
+    assert [tool["name"] for tool in tools] == ["mauth_make_diagram_for_question"]
 
 
 def test_repair_continuation_stays_on_direct_authoring_tool():
@@ -643,7 +649,7 @@ def test_repair_continuation_stays_on_direct_authoring_tool():
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
+    assert [tool["name"] for tool in tools] == ["mauth_make_diagram_for_question"]
 
 
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
@@ -674,7 +680,7 @@ def test_replace_question_repair_keeps_required_diagram_when_validation_mentions
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_replace_question"]
+    assert [tool["name"] for tool in tools] == ["mauth_question_upsert"]
     assert "diagram" in tools[0]["parameters"]["required"]
 
 
@@ -701,7 +707,7 @@ def test_replace_question_post_edit_diagram_warning_repairs_with_add_diagram():
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram"]
+    assert [tool["name"] for tool in tools] == ["mauth_make_diagram_for_question"]
     assert "diagramId" in tools[0]["parameters"]["properties"]
 
 
@@ -731,7 +737,7 @@ def test_successful_diagram_edit_semantic_review_exposes_repair_tools():
 
     tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
 
-    assert [tool["name"] for tool in tools] == ["mauth_author_add_diagram", "mauth_author_replace_question"]
+    assert [tool["name"] for tool in tools] == ["mauth_make_diagram_for_question", "mauth_question_upsert"]
 
 
 def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():
@@ -761,7 +767,7 @@ def test_focused_parallel_chord_diagram_prompt_uses_penrose_predicate_hint():
         ],
     )
 
-    assert "mauth_author_add_diagram" in instructions
+    assert "mauth_make_diagram_for_question" in instructions
     assert 'graphConfig.type="geometricConstruction"' in instructions
     assert "ParallelToSegment" in instructions
     assert "supported Substance is the normal AI geometry path" in instructions

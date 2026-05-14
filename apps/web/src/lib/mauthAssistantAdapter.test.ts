@@ -305,12 +305,13 @@ test("successful diagram edits return compact semantic review context", async ()
     },
   });
   const data = result.data as {
-    semanticReview?: { required?: boolean };
+    semanticReview?: { required?: boolean; checklist?: string[] };
     postEditInspection?: { question?: { diagrams?: Array<{ summary?: { functions?: Array<{ expression?: string }> } }> } };
   };
 
   assert.equal(result.ok, true);
   assert.equal(data.semanticReview?.required, true);
+  assert.ok(data.semanticReview?.checklist?.some((item) => item.includes("graph2d")));
   assert.equal(data.postEditInspection?.question?.diagrams?.[0]?.summary?.functions?.[0]?.expression, "x^2 - 4*x + 4");
 });
 

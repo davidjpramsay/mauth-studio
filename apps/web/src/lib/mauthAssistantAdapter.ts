@@ -420,6 +420,12 @@ function postEditInspectionSuccessData(resultData: unknown, inspection: MauthPre
               "A diagram-bearing edit was applied. Before reporting success, compare the teacher request, question text, and diagram summary to confirm the diagram semantically matches the question.",
             expected:
               "If the diagram/question mismatch, repair with a focused high-level tool. If they match, respond with a short teacher-facing confirmation.",
+            checklist: [
+              "Check every equation, function, vector, set, label, and geometric relationship named in the teacher request or question text appears in the diagram summary.",
+              "For graph2d diagrams, compare the written equations/functions with question.diagrams[].summary.functions; a linear question must not have a quadratic/parabola graph unless explicitly requested.",
+              "For geometry diagrams, check required tangents, chords, parallel/perpendicular relations, points, and hidden auxiliary labels against question.diagrams[].warnings and summary.",
+              "For source conversions, check the diagram placement and structured parts match the screenshot/PDF source instead of replacing a visible diagram with prose.",
+            ],
           },
         }
       : {}),

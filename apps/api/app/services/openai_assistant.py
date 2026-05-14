@@ -33,11 +33,15 @@ DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_question_upsert": "mauth.question.upsert",
+    "mauth_convert_source_question": "mauth.question.upsert",
     "mauth_author_replace_question": "mauth.author.replaceQuestion",
     "mauth_author_add_diagram": "mauth.author.addDiagram",
+    "mauth_make_diagram_for_question": "mauth.author.addDiagram",
     "mauth_author_ensure_solutions": "mauth.author.ensureSolutions",
+    "mauth_write_solutions_for_questions": "mauth.author.ensureSolutions",
     "mauth_author_adjust_response_spaces": "mauth.author.adjustResponseSpaces",
     "mauth_format_apply": "mauth.format.apply",
+    "mauth_fix_question_formatting": "mauth.format.apply",
 }
 
 MODEL_PRICING_USD_PER_1M = {
@@ -747,9 +751,10 @@ def focused_tool_hint(
             if has_source_attachment and source_prompt_mentions_diagram
             else "Omit diagram fields to preserve existing diagrams; use diagrams: [] only when explicitly removing diagrams."
         )
+        focused_tool_name = "mauth_convert_source_question" if has_source_attachment else "mauth_question_upsert"
         return (
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
-            f"mauth_question_upsert for Question {question_number}, with marks, questionText, studentSpaceLines, "
+            f"{focused_tool_name} for Question {question_number}, with marks, questionText, studentSpaceLines, "
             f"and solutionText when a solution is requested. If Question {question_number} is exactly the next missing "
             "question, this tool can append it; do not refuse just because it does not exist yet."
             f"{circle_proof_guidance} {diagram_guidance}"
@@ -765,7 +770,7 @@ def focused_tool_hint(
     if asks_for_formatting:
         return (
             "Focused tool routing hint: this is a formatting/layout request. Your first tool call should be "
-            f'mauth_format_apply with {{"operations":[{{"type":"tidyQuestionSpacing","target":{{"questionNumber":{question_number}}}}}]}} '
+            f'mauth_fix_question_formatting with {{"operations":[{{"type":"tidyQuestionSpacing","target":{{"questionNumber":{question_number}}}}}]}} '
             "adapted to the teacher's request. Use setPageBreakBefore/removePageBreakBefore for page breaks before "
             "parts/subparts, setDiagramAlignment for diagram left/center/right, adjustAnswerSpace for answer-space "
             "line counts, fitSolutionToSpace when solutions need to fit, and moveModule only when moving one known module."
@@ -775,7 +780,7 @@ def focused_tool_hint(
     ) and has_question_text:
         return (
             "Focused tool routing hint: this is a solution/mark-allocation request and the compact summary already includes enough "
-            f"Question {question_number} text. Your first tool call should be mauth_author_ensure_solutions with "
+            f"Question {question_number} text. Your first tool call should be mauth_write_solutions_for_questions with "
             f'{{"questions":[{{"questionNumber":{question_number},"marks":4,"studentSpaceLines":8,"solutionText":"... [[marks:1]]"}}]}} '
             "when changing solution ticks or worked solution text. Use hidden [[marks:n]] annotations only; do not show visible "
             "[1 mark] notes. Do not use mauth_question_upsert for a mark allocation tweak, because it replaces the "
@@ -789,7 +794,7 @@ def focused_tool_hint(
             penrose_predicates = "CircleThrough, OnCircle, Tangent, ParallelToSegment, Segment"
         return (
             "Focused tool routing hint: this is a static circle-geometry diagram follow-up. Your first tool call "
-            f"should be mauth_author_add_diagram for Question {question_number} with placement beforeStudentSpace "
+            f"should be mauth_make_diagram_for_question for Question {question_number} with placement beforeStudentSpace "
             'and diagram.graphConfig.type="geometricConstruction". For Penrose geometry, write supported Penrose '
             f"Substance in graphConfig.options.substanceSource using predicates such as {penrose_predicates}. "
             "For a line parallel to chord BC, use ParallelToSegment(lineName, B, C). Match visible labels to the "
@@ -1257,6 +1262,19 @@ def mauth_question_upsert_tool_definition(*, require_diagram: bool = False) -> d
     return definition
 
 
+def mauth_convert_source_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
+    definition = mauth_question_upsert_tool_definition(require_diagram=require_diagram)
+    definition["name"] = "mauth_convert_source_question"
+    definition["description"] = (
+        "Convert one question from an attached screenshot, PDF page, Word/text source, or pasted source into native "
+        "editable Mauth content. Use this for source-fidelity requests. Preserve the visible stem, marks, line breaks, "
+        "inline-vs-display maths intent, source diagram placement, and structured parts. If the source includes a visible "
+        "mathematical diagram and the teacher asks to include/enter it, provide a native diagram/diagrams payload in this "
+        "same call rather than replacing the diagram with prose."
+    )
+    return definition
+
+
 def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
     return {
         "type": "function",
@@ -1310,6 +1328,19 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
             "additionalProperties": False,
         },
     }
+
+
+def mauth_make_diagram_for_question_tool_definition() -> dict[str, Any]:
+    definition = mauth_author_add_diagram_tool_definition()
+    definition["name"] = "mauth_make_diagram_for_question"
+    definition["description"] = (
+        "Create or repair a native editable diagram for one existing question. Use for focused diagram follow-ups and "
+        "post-edit semantic repairs. Read the question text, choose the correct renderer, and make the graphConfig match "
+        "the stated mathematical relationships. Prefer geometricConstruction/Penrose for schematic geometry, graph2d for "
+        "coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn/set "
+        "diagrams, graph3d for 3D diagrams, and image only when an uploaded bitmap is explicitly required."
+    )
+    return definition
 
 
 def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
@@ -1401,6 +1432,17 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
             "additionalProperties": False,
         },
     }
+
+
+def mauth_write_solutions_for_questions_tool_definition() -> dict[str, Any]:
+    definition = mauth_author_ensure_solutions_tool_definition()
+    definition["name"] = "mauth_write_solutions_for_questions"
+    definition["description"] = (
+        "Write or repair concise marking-key solutions for existing questions while preserving the original student "
+        "question content and diagrams. Use hidden [[marks:n]] annotations for red check marks, match the hidden mark "
+        "total to each question/part, keep solutions concise, and adjust student space only as needed to fit the solution."
+    )
+    return definition
 
 
 def mauth_author_adjust_response_spaces_tool_definition() -> dict[str, Any]:
@@ -1548,6 +1590,17 @@ def mauth_format_apply_tool_definition() -> dict[str, Any]:
     }
 
 
+def mauth_fix_question_formatting_tool_definition() -> dict[str, Any]:
+    definition = mauth_format_apply_tool_definition()
+    definition["name"] = "mauth_fix_question_formatting"
+    definition["description"] = (
+        "Apply safe high-level formatting/layout fixes to one or more existing question locations without rewriting "
+        "question content. Use for page breaks, diagram alignment, answer-space sizing, solution-fit adjustments, module "
+        "moves, and conservative spacing tidy requests. Prefer this task-specific tool over low-level action JSON."
+    )
+    return definition
+
+
 def assistant_tool_definitions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
@@ -1611,6 +1664,7 @@ def assistant_tool_definitions(
     )
     asks_to_write_question = asks_to_author_question(text)
     require_source_diagram = source_diagram_required_for_replace(messages, attachments)
+    asks_to_convert_source_question = bool(attachments) and asks_to_write_question
     file_only_terms = ("open file", "save file", "rename file", "delete file", "move file", "folder", "files")
 
     # Repair continuations should stay on the same narrow authoring surface
@@ -1618,7 +1672,7 @@ def assistant_tool_definitions(
     # wrapper tool just to fix a precise validationIssue path.
     if tool_outputs_mention(tool_outputs, ("semanticreview", "semantic review")):
         return [
-            mauth_author_add_diagram_tool_definition(),
+            mauth_make_diagram_for_question_tool_definition(),
             mauth_question_upsert_tool_definition(require_diagram=False),
         ]
 
@@ -1632,13 +1686,14 @@ def assistant_tool_definitions(
     )
     if repair_targets & {
         "mauth_question_upsert",
+        "mauth_convert_source_question",
         "mauth.question.upsert",
         "mauth_author_replace_question",
         "mauth.author.replaceQuestion",
     }:
         if tool_outputs_mention(tool_outputs, solution_layout_repair_terms):
             return [
-                mauth_author_ensure_solutions_tool_definition(),
+                mauth_write_solutions_for_questions_tool_definition(),
                 mauth_author_adjust_response_spaces_tool_definition(),
             ]
         if tool_outputs_mention(
@@ -1660,50 +1715,58 @@ def assistant_tool_definitions(
                 "penrose-",
             ),
         ):
-            return [mauth_author_add_diagram_tool_definition()]
+            return [mauth_make_diagram_for_question_tool_definition()]
         return [
             mauth_question_upsert_tool_definition(
                 require_diagram=require_source_diagram
                 or tool_outputs_mention(tool_outputs, ("diagram", "graphconfig", "graph config"))
             )
         ]
-    if repair_targets & {"mauth_author_add_diagram", "mauth.author.addDiagram"}:
-        return [mauth_author_add_diagram_tool_definition()]
-    if repair_targets & {"mauth_author_ensure_solutions", "mauth.author.ensureSolutions"}:
+    if repair_targets & {"mauth_author_add_diagram", "mauth_make_diagram_for_question", "mauth.author.addDiagram"}:
+        return [mauth_make_diagram_for_question_tool_definition()]
+    if repair_targets & {
+        "mauth_author_ensure_solutions",
+        "mauth_write_solutions_for_questions",
+        "mauth.author.ensureSolutions",
+    }:
         if tool_outputs_mention(tool_outputs, solution_layout_repair_terms):
             return [
-                mauth_author_ensure_solutions_tool_definition(),
+                mauth_write_solutions_for_questions_tool_definition(),
                 mauth_author_adjust_response_spaces_tool_definition(),
             ]
-        return [mauth_author_ensure_solutions_tool_definition()]
+        return [mauth_write_solutions_for_questions_tool_definition()]
     if repair_targets & {"mauth_author_adjust_response_spaces", "mauth.author.adjustResponseSpaces"}:
         return [mauth_author_adjust_response_spaces_tool_definition()]
-    if repair_targets & {"mauth_format_apply", "mauth.format.apply"}:
-        return [mauth_format_apply_tool_definition()]
+    if repair_targets & {"mauth_format_apply", "mauth_fix_question_formatting", "mauth.format.apply"}:
+        return [mauth_fix_question_formatting_tool_definition()]
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
+    if has_specific_question and asks_to_convert_source_question:
+        return [mauth_convert_source_question_tool_definition(require_diagram=require_source_diagram)]
     if has_specific_question and asks_to_write_question:
         return [mauth_question_upsert_tool_definition(require_diagram=require_source_diagram)]
     if has_specific_question and asks_for_diagram and asks_to_add:
-        return [mauth_author_add_diagram_tool_definition()]
+        return [mauth_make_diagram_for_question_tool_definition()]
     if has_specific_question and asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
         return [mauth_author_adjust_response_spaces_tool_definition()]
     if has_specific_question and asks_for_formatting and not asks_to_write_question:
-        return [mauth_format_apply_tool_definition()]
+        return [mauth_fix_question_formatting_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
-        return [mauth_author_ensure_solutions_tool_definition(), mauth_tool_definition()]
+        return [mauth_write_solutions_for_questions_tool_definition(), mauth_tool_definition()]
     if any(term in text for term in file_only_terms) and not any(
         term in text for term in ("question", "solution", "diagram", "format", "layout", "exam")
     ):
         return [mauth_tool_definition()]
 
     return [
-        mauth_question_upsert_tool_definition(require_diagram=require_source_diagram),
-        mauth_author_add_diagram_tool_definition(),
-        mauth_author_ensure_solutions_tool_definition(),
+        mauth_convert_source_question_tool_definition(require_diagram=require_source_diagram)
+        if asks_to_convert_source_question
+        else mauth_question_upsert_tool_definition(require_diagram=require_source_diagram),
+        mauth_make_diagram_for_question_tool_definition(),
+        mauth_write_solutions_for_questions_tool_definition(),
         mauth_author_adjust_response_spaces_tool_definition(),
-        mauth_format_apply_tool_definition(),
+        mauth_fix_question_formatting_tool_definition(),
         mauth_tool_definition(),
     ]
 
@@ -1746,20 +1809,20 @@ Document-edit workflow:
 Tool-call contract:
 - For focused requests to write, create, replace, or upsert one question, use the direct mauth_question_upsert tool. If the requested question number is exactly the next missing question, the frontend tool appends it; do not refuse because it does not exist yet. Do not call mauth.document.inspect first if the supplied document summary already tells you the question number exists or is the next append position.
 - Use mauth.preview.inspect when you need focused context for the current/selected question, its diagrams, answer-space layout, solution modules, hidden tick totals, or warnings. Prefer it over mauth.document.inspect for one-question editing checks and after edits that affect diagrams/solutions/layout. For diagrams, inspect question.diagrams[].warnings and repair renderer mismatches, missing image sources, missing scalar-product vector labels, rendered diagram failures, and Penrose semantic warnings before saying the diagram is correct. For Penrose circle-theorem diagrams, inspect semanticWarnings and repair missing Tangent, missing ParallelToSegment to the named chord, missing chord Segment, visible auxiliary labels, or points not on the intended circle before saying the diagram is correct. When rendered metrics are available, use them to check page occupancy, selected-anchor boxes, diagram render failure, solution-slot fit, and L-shaped diagram/answer-space layout before saying the layout is fixed.
-- If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
-- For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, include the native diagram in the same mauth_question_upsert payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
+- If a successful authoring tool output includes semanticReview.required=true, do not simply say the edit is done. Use the compact postEditInspection question text/module previews plus question.diagrams[].summary to semantically compare the teacher's request, the written question, and the actual diagram payload. Check that every mathematical object named in the question appears in the diagram summary, that graph functions/equations match exactly, that the diagram renderer fits the task, and that labels/relationships used by the solution are present. If the question says straight lines but the diagram summary shows a quadratic curve, or if any other diagram/question mismatch is visible, repair with the focused high-level tool available in that round. Only report success once the artifact is semantically coherent.
+- For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, use mauth_convert_source_question and include the native diagram in the same payload using diagram or diagrams. Do not submit a text-only replacement for these requests; the direct tool schema may require diagram. Do not replace a visible mathematical diagram with prose such as "The diagram shows...". Keep diagram prose only when it is part of the original written prompt.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - For tasks where the answer is the surface itself, such as complete the table, sketch the graph, draw the function, shade the region, or label the diagram, set answerSurface to table or diagram. Provide the blank/partial student table or diagram plus a completed solutionTable or solutionDiagram when solutions are requested. Do not create a separate large student working-space block for these artifact-answer tasks unless the teacher also asks for written working. The authoring layer places red ticks beside completed solution tables/diagrams automatically from the item marks, so do not duplicate those marks in solutionText.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
-- For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_question_upsert. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
+- For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_question_upsert. Use mauth_write_solutions_for_questions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
-- For focused formatting/layout requests, use mauth_format_apply rather than low-level action JSON. Supported operations are setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, and tidyQuestionSpacing. This is the safe path for requests like "put part (c) on a new page", "move the diagram right", "make the solution fit", or "remove unnecessary blank space".
+- For focused formatting/layout requests, use mauth_fix_question_formatting rather than low-level action JSON. Supported operations are setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, and tidyQuestionSpacing. This is the safe path for requests like "put part (c) on a new page", "move the diagram right", "make the solution fit", or "remove unnecessary blank space".
 - In mauth_question_upsert, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
-- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_author_add_diagram again with that diagramId so the existing diagram is replaced rather than appending another diagram.
+- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To label an angle, use `LabelsAngle(OC, OD, $45^\\circ$)` between named segments or declare `Label angleCD $45^\\circ$` then `LabelsAngle(angleCD, C, O, D)`. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
 - Source scalar-product/vector-ray diagrams with magnitudes, angle markers, and no coordinate axes should use diagram.graphConfig.type = "geometricConstruction" with supported Penrose Substance. Do not use vectorRelationship for these; vectorRelationship is for conceptual network/link diagrams only. Preserve visible right-angle markers with the same two rays shown in the source, and preserve numeric angle labels such as $45^\\circ$. Draw right-angle markers with RightAngle(pointOnFirstRay, vertex, pointOnSecondRay); do not use PerpendicularToSegment for that marker. Do not invent unsupported predicates such as SegmentLength, LabelsPoint, or OppositeRays; show given magnitudes with Label plus LabelsSegment. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
-- For focused requests to add or write a worked solution for a named question, use mauth_author_ensure_solutions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
+- For focused requests to add or write a worked solution for a named question, use mauth_write_solutions_for_questions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
 - In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Make the hidden mark total match the question/part marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.
 - Always call mauth_tool with this wrapper shape: {{"name":"<mauth tool name>","arguments":{{...}}}}. For low-level document action batches, use {{"name":"mauth.actions.preview","arguments":{{"actions":[...]}}}}.
 - Put action batches, file paths, and tool-specific options inside the nested arguments object, not beside name.

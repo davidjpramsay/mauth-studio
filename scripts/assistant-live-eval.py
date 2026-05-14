@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextlib
 import io
 import json
 import re
@@ -20,6 +21,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = ROOT / "apps" / "api"
@@ -1354,6 +1357,30 @@ def print_provider_response(
     )
 
 
+def provider_error_message(error: httpx.HTTPError) -> str:
+    if isinstance(error, httpx.HTTPStatusError):
+        status = error.response.status_code
+        detail = error.response.text
+        with contextlib.suppress(Exception):
+            payload = error.response.json()
+            if isinstance(payload, dict):
+                detail_value = payload.get("error") or payload.get("detail")
+                if isinstance(detail_value, dict):
+                    detail = str(detail_value.get("message") or detail_value)
+                elif detail_value:
+                    detail = str(detail_value)
+        trimmed = detail.strip()
+        return f"BLOCKED: assistant provider returned HTTP {status}: {trimmed}"
+    return f"BLOCKED: assistant provider request failed: {error}"
+
+
+async def safe_create_assistant_response(request: AssistantChatRequest) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        return await create_assistant_response(request), None
+    except httpx.HTTPError as error:
+        return None, provider_error_message(error)
+
+
 async def run_single_eval(
     case_name: str, model: str | None = None, final_message: bool = False, verbose: bool = False
 ) -> tuple[int, float, int]:
@@ -1365,7 +1392,7 @@ async def run_single_eval(
     assert_call = case["assert"]
 
     print(f"\n=== {case_name} ===")
-    first = await create_assistant_response(
+    first, provider_error = await safe_create_assistant_response(
         AssistantChatRequest(
             model=model,
             messages=[AssistantChatMessage(role="user", content=prompt)],
@@ -1373,6 +1400,9 @@ async def run_single_eval(
             attachments=attachments,
         )
     )
+    if provider_error or first is None:
+        print(provider_error or "BLOCKED: assistant provider returned no response.", file=sys.stderr)
+        return 2, 0.0, 0
     first_calls = [as_dict(call) for call in first.get("toolCalls", [])]
     total_cost = usage_cost(first.get("usage"))
     total_tokens = usage_tokens(first.get("usage"))
@@ -1386,7 +1416,7 @@ async def run_single_eval(
     repair_failure = case.get("repairFailure")
     if callable(repair_failure):
         tool_output = repair_failure(first_calls[0])
-        second = await create_assistant_response(
+        second, provider_error = await safe_create_assistant_response(
             AssistantChatRequest(
                 model=model,
                 previousResponseId=first.get("responseId"),
@@ -1400,6 +1430,9 @@ async def run_single_eval(
                 documentSummary=summary,
             )
         )
+        if provider_error or second is None:
+            print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
+            return 2, total_cost, total_tokens
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
@@ -1438,7 +1471,7 @@ async def run_single_eval(
             "warnings": [],
             "committedDocument": True,
         }
-        second = await create_assistant_response(
+        second, provider_error = await safe_create_assistant_response(
             AssistantChatRequest(
                 model=model,
                 previousResponseId=first.get("responseId"),
@@ -1452,6 +1485,9 @@ async def run_single_eval(
                 documentSummary=summary,
             )
         )
+        if provider_error or second is None:
+            print(provider_error or "BLOCKED: assistant provider returned no final response.", file=sys.stderr)
+            return 2, total_cost, total_tokens
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
@@ -1483,6 +1519,7 @@ async def run_eval(
     total_cost = 0.0
     total_tokens = 0
     failed = False
+    blocked = False
     results: list[tuple[str, int, float, int]] = []
     for selected_case in selected_cases:
         if total_cost >= max_cost:
@@ -1494,15 +1531,21 @@ async def run_eval(
         total_cost += cost
         total_tokens += tokens
         results.append((selected_case, status, cost, tokens))
-        failed = failed or status != 0
+        failed = failed or status == 1
+        blocked = blocked or status == 2
+        if status == 2:
+            print("\nSTOP: provider blocked the live eval; remaining cases were skipped.")
+            break
         if failed and stop_on_failure:
             break
     print("\nSUMMARY:")
     for selected_case, status, cost, tokens in results:
-        label = "PASS" if status == 0 else "FAIL"
+        label = "PASS" if status == 0 else "BLOCKED" if status == 2 else "FAIL"
         print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens")
     print(f"\nTOTAL: ${total_cost:.4f}, {total_tokens:,} tokens.")
-    return 1 if failed else 0
+    if failed:
+        return 1
+    return 2 if blocked else 0
 
 
 def main() -> int:
