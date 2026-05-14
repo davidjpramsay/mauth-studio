@@ -28,8 +28,7 @@ function markAnnotationTotal(text: string) {
 }
 
 function blockMarkTickTotal(block: ContentBlock) {
-  const surfaceTicks =
-    blockVisibility(block) === "solution" ? Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0))) : 0;
+  const surfaceTicks = blockVisibility(block) === "solution" ? Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0))) : 0;
   if (block.kind !== "text") return surfaceTicks;
   return surfaceTicks + markAnnotationTotal(block.text);
 }

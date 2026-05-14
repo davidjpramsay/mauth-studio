@@ -506,6 +506,140 @@ def sample_scalar_product_diagram_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_whole_test_solution_document_summary() -> dict[str, Any]:
+    return {
+        "frontMatter": {"assessmentTitle": "Whole solution confidence eval"},
+        "counts": {
+            "questions": 2,
+            "marksTotal": 5,
+            "modules": 6,
+            "studentSpaceLines": 12,
+            "solutionOnlyModules": 0,
+        },
+        "questions": [
+            {
+                "id": "q1",
+                "index": 0,
+                "marks": 2,
+                "pageBreakAfter": False,
+                "modules": [
+                    {
+                        "id": "q1-question-text",
+                        "kind": "text",
+                        "visibility": "always",
+                        "textPreview": "Use the probability column graph to state P(X=4) and explain why it is a valid distribution.",
+                    },
+                    {
+                        "id": "q1-chart",
+                        "kind": "diagram",
+                        "visibility": "always",
+                        "graphType": "statsChart",
+                        "textPreview": "Probability column graph with bars for x=1,2,3,4.",
+                    },
+                    {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 6},
+                ],
+                "parts": [],
+                "studentSpaceLines": 6,
+                "solutionModuleCount": 0,
+            },
+            {
+                "id": "q2",
+                "index": 1,
+                "marks": 0,
+                "pageBreakAfter": False,
+                "modules": [
+                    {
+                        "id": "q2-question-text",
+                        "kind": "text",
+                        "visibility": "always",
+                        "textPreview": "A discrete random variable X has probability function P(X=x)=k/x for x=2,3,4,5.",
+                    }
+                ],
+                "parts": [
+                    {
+                        "id": "q2-a",
+                        "label": "a",
+                        "marks": 2,
+                        "textPreview": "Find k.",
+                        "modules": [{"id": "q2-a-space", "kind": "space", "visibility": "student", "lines": 4}],
+                        "studentSpaceLines": 4,
+                        "subparts": [],
+                    },
+                    {
+                        "id": "q2-b",
+                        "label": "b",
+                        "marks": 1,
+                        "textPreview": "Find E(X).",
+                        "modules": [{"id": "q2-b-space", "kind": "space", "visibility": "student", "lines": 4}],
+                        "studentSpaceLines": 4,
+                        "subparts": [],
+                    },
+                ],
+                "studentSpaceLines": 8,
+                "solutionModuleCount": 0,
+            },
+        ],
+    }
+
+
+def sample_layout_problem_document_summary() -> dict[str, Any]:
+    return {
+        "frontMatter": {"assessmentTitle": "Layout confidence eval"},
+        "counts": {
+            "questions": 2,
+            "marksTotal": 5,
+            "modules": 5,
+            "studentSpaceLines": 8,
+            "solutionOnlyModules": 1,
+        },
+        "questions": [
+            {
+                "id": "q1",
+                "index": 0,
+                "marks": 2,
+                "pageBreakAfter": False,
+                "modules": [
+                    {"id": "q1-text", "kind": "text", "visibility": "always", "textPreview": "Find x."},
+                    {
+                        "id": "q1-solution",
+                        "kind": "text",
+                        "visibility": "solution",
+                        "textPreview": "Solution. x=3. [[marks:2]]",
+                    },
+                ],
+                "parts": [],
+                "studentSpaceLines": 0,
+                "solutionModuleCount": 1,
+            },
+            {
+                "id": "q2",
+                "index": 1,
+                "marks": 3,
+                "pageBreakAfter": False,
+                "modules": [
+                    {
+                        "id": "q2-text",
+                        "kind": "text",
+                        "visibility": "always",
+                        "textPreview": "Use the oversized graph.",
+                    },
+                    {
+                        "id": "q2-graph",
+                        "kind": "diagram",
+                        "visibility": "always",
+                        "graphType": "graph2d",
+                        "textPreview": "Oversized coordinate graph occupying most of the printed page.",
+                    },
+                    {"id": "q2-space", "kind": "space", "visibility": "student", "lines": 8},
+                ],
+                "parts": [],
+                "studentSpaceLines": 8,
+                "solutionModuleCount": 0,
+            },
+        ],
+    }
+
+
 def hidden_mark_total(text: str) -> int:
     total = 0
     for match in re.finditer(r"\[\[\s*marks\s*:\s*(\d+)\s*\]\]", text, flags=re.IGNORECASE):
@@ -1124,6 +1258,166 @@ def assert_linear_intersection_question_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def collect_solution_texts(value: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(value, dict):
+        for key, inner_value in value.items():
+            if key == "solutionText" and isinstance(inner_value, str):
+                texts.append(inner_value)
+            else:
+                texts.extend(collect_solution_texts(inner_value))
+    elif isinstance(value, list):
+        for item in value:
+            texts.extend(collect_solution_texts(item))
+    return texts
+
+
+def assert_write_all_solutions_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.solutions.writeAll":
+        issues.append(f"expected mauth.solutions.writeAll, got {call.get('mauthToolName')!r}")
+    if call.get("name") != "mauth_write_all_solutions":
+        issues.append(f"expected provider alias mauth_write_all_solutions, got {call.get('name')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+
+    questions = args.get("questions")
+    if not isinstance(questions, list) or len(questions) != 2:
+        issues.append("writeAll should cover both marked questions in one questions array")
+        return issues
+
+    serialized = call_text(call).lower()
+    if "diagram" in serialized and ("remove" in serialized or "delete" in serialized):
+        issues.append("whole-test solution writing must preserve diagrams, not remove/delete them")
+    if "diagrams" in args and args.get("diagrams") in ([], None, {}):
+        issues.append("writeAll should not send empty diagrams fields")
+
+    question_numbers = {
+        item.get("questionNumber") for item in questions if isinstance(item, dict) and item.get("questionNumber")
+    }
+    if question_numbers != {1, 2}:
+        issues.append(f"writeAll should target question numbers 1 and 2, got {sorted(question_numbers)!r}")
+
+    solution_texts = collect_solution_texts(args)
+    if len(solution_texts) < 3:
+        issues.append("writeAll should include solution text for q1 and both marked parts of q2")
+    hidden_total = sum(hidden_mark_total(text) for text in solution_texts)
+    if hidden_total != 5:
+        issues.append(f"hidden [[marks:n]] annotations should total 5, got {hidden_total}")
+    for index, solution in enumerate(solution_texts):
+        issues.extend(control_character_issues(solution, f"solutionText[{index}]"))
+        if visible_mark_note_count(solution):
+            issues.append(f"solutionText[{index}] should use hidden [[marks:n]] ticks, not visible mark notes")
+        if len(solution.strip()) < 20:
+            issues.append(f"solutionText[{index}] is too short to be teacher-ready")
+
+    for item in questions:
+        if not isinstance(item, dict):
+            continue
+        if item.get("questionNumber") == 1 and not isinstance(item.get("studentSpaceLines"), int):
+            issues.append("free-response q1 should include studentSpaceLines so solution and student copies match")
+        if item.get("questionNumber") == 2:
+            parts = item.get("parts")
+            if not isinstance(parts, list) or len(parts) != 2:
+                issues.append("q2 should include both part solutions")
+            elif any(not isinstance(part.get("studentSpaceLines"), int) for part in parts if isinstance(part, dict)):
+                issues.append("part solution payloads should keep or size matching student spaces")
+    return issues
+
+
+def assert_layout_check_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.layout.check":
+        issues.append(f"expected mauth.layout.check, got {call.get('mauthToolName')!r}")
+    if call.get("name") != "mauth_check_document_layout":
+        issues.append(f"expected provider alias mauth_check_document_layout, got {call.get('name')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    mode = args.get("mode")
+    if mode not in ("student", "solutions", "both"):
+        issues.append(f"layout check mode should be student, solutions, or both; got {mode!r}")
+    return issues
+
+
+def assert_layout_repair_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    valid_tools = {
+        "mauth.format.apply",
+        "mauth.author.adjustResponseSpaces",
+        "mauth.author.ensureSolutions",
+        "mauth.solutions.writeAll",
+        "mauth.author.addDiagram",
+    }
+    if call.get("mauthToolName") not in valid_tools:
+        issues.append(
+            f"layout warnings should be repaired with a focused high-level tool, got {call.get('mauthToolName')!r}"
+        )
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    serialized = call_text(call).lower()
+    if "low-level" in serialized or "raw json" in serialized:
+        issues.append("layout repair should use native high-level Mauth tools, not raw low-level JSON")
+    if call.get("mauthToolName") == "mauth.format.apply":
+        operations = args.get("operations")
+        if not isinstance(operations, list) or not operations:
+            issues.append("format repair should contain at least one operation")
+    if call.get("mauthToolName") == "mauth.author.adjustResponseSpaces":
+        targets = args.get("targets")
+        if not isinstance(targets, list) or not targets:
+            issues.append("response-space repair should contain at least one target")
+    return issues
+
+
+def layout_warning_output() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "toolName": "mauth.layout.check",
+        "kind": "document",
+        "message": "Layout check found repairable issues.",
+        "data": {
+            "mode": "both",
+            "ok": False,
+            "issues": [
+                {
+                    "code": "student-answer-surface-missing",
+                    "severity": "warning",
+                    "anchor": "q1",
+                    "targetId": "q1",
+                    "message": "Question 1 has a solution but no matching student answer surface.",
+                    "repair": "Add or resize a student-only answer space for Question 1.",
+                },
+                {
+                    "code": "solution-missing",
+                    "severity": "warning",
+                    "anchor": "q2",
+                    "targetId": "q2",
+                    "message": "Question 2 is marked but has no solution.",
+                    "repair": "Write a concise solution for Question 2 with hidden [[marks:n]] ticks.",
+                },
+                {
+                    "code": "diagram-oversized-print-risk",
+                    "severity": "warning",
+                    "anchor": "q2-graph",
+                    "targetId": "q2-graph",
+                    "message": "The Question 2 diagram is oversized for print.",
+                    "repair": "Reduce the diagram size or adjust its layout.",
+                },
+            ],
+        },
+        "warnings": [
+            {"code": "student-answer-surface-missing", "message": "Question 1 needs a student answer surface."},
+            {"code": "solution-missing", "message": "Question 2 needs a solution."},
+            {"code": "diagram-oversized-print-risk", "message": "Question 2 diagram is oversized."},
+        ],
+        "changedIds": [],
+        "changedPaths": [],
+        "committedDocument": False,
+    }
+
+
 def validation_failure_output(
     *,
     tool_name: str | None,
@@ -1279,6 +1573,29 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         ),
         "repairAssert": assert_scalar_product_add_diagram_call,
     },
+    "write-all-solutions-confidence": {
+        "prompt": (
+            "Write the full solutions marking key for the whole test. Preserve existing diagrams, use hidden "
+            "mark ticks, and make sure the student spaces still match the solution copy."
+        ),
+        "summary": sample_whole_test_solution_document_summary,
+        "assert": assert_write_all_solutions_call,
+    },
+    "layout-check-confidence": {
+        "prompt": (
+            "Check the whole document layout before printing. Look for missing answer spaces, missing solutions, "
+            "solution-space mismatch, oversized diagrams, weird blank pages, and print risks."
+        ),
+        "summary": sample_layout_problem_document_summary,
+        "assert": assert_layout_check_call,
+    },
+    "layout-repair-confidence": {
+        "prompt": "Check the whole document layout, then repair the obvious issues before telling me it is done.",
+        "summary": sample_layout_problem_document_summary,
+        "assert": assert_layout_check_call,
+        "repairFailure": lambda call: layout_warning_output(),
+        "repairAssert": assert_layout_repair_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -1297,6 +1614,11 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "vector2d-routing",
     ],
     "repair": ["repair-circle-diagram", "repair-scalar-product-diagram"],
+    "confidence": [
+        "write-all-solutions-confidence",
+        "layout-check-confidence",
+        "layout-repair-confidence",
+    ],
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
 }

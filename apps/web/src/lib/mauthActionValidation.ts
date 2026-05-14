@@ -111,10 +111,7 @@ function validateVisibilityFields(record: Record<string, unknown>, path: string,
   numberField(record, "markTicks", path, issues, true);
   if (
     record.markTicks !== undefined &&
-    (typeof record.markTicks !== "number" ||
-      !Number.isInteger(record.markTicks) ||
-      record.markTicks < 0 ||
-      record.markTicks > 20)
+    (typeof record.markTicks !== "number" || !Number.isInteger(record.markTicks) || record.markTicks < 0 || record.markTicks > 20)
   ) {
     addIssue(issues, `${path}.markTicks`, "must be an integer between 0 and 20", "integer 0..20");
   }
