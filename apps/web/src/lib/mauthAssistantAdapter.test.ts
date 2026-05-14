@@ -191,7 +191,7 @@ test("commits high-level authoring results through the same editor history path"
   const harness = adapterHost();
 
   const result = await runMauthAssistantAdapterTool(harness.host, {
-    name: "mauth.author.replaceQuestion",
+    name: "mauth.question.upsert",
     arguments: {
       questionNumber: 1,
       marks: 3,
@@ -209,7 +209,39 @@ test("commits high-level authoring results through the same editor history path"
     harness.document.questions[0].contentBlocks[0].kind === "text" ? harness.document.questions[0].contentBlocks[0].text : "",
     "Write a circle geometry proof using a tangent.",
   );
-  assert.equal(result.toolName, "mauth.author.replaceQuestion");
+  assert.equal(result.toolName, "mauth.question.upsert");
+});
+
+test("question upserts report semantic graph and question mismatches after commit", async () => {
+  const harness = adapterHost();
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 4,
+      questionText: "The graph below shows two straight lines, $y=2x+1$ and $y=-x+7$.",
+      studentSpaceLines: 8,
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -5,
+          xMax: 5,
+          yMin: -2,
+          yMax: 10,
+          functions: [{ expression: "x^2 - 4*x + 4", label: "$y=x^2-4x+4$", show: true }],
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string; targetId?: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.equal(harness.commits.length, 1);
+  assert.match(result.error ?? "", /post-edit inspection/i);
+  assert(data.validationIssues?.some((issue) => issue.message.includes("straight lines")));
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("mauth.author.addDiagram")));
 });
 
 test("commits high-level diagram and solution authoring results through editor history", async () => {

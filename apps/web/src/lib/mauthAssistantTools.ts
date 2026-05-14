@@ -32,6 +32,7 @@ export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.validation.run",
   "mauth.actions.preview",
   "mauth.actions.apply",
+  "mauth.question.upsert",
   "mauth.author.replaceQuestion",
   "mauth.author.addDiagram",
   "mauth.author.ensureSolutions",
@@ -1366,9 +1367,14 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
         description: "Apply one or more Mauth document actions. The caller must commit the returned document through editor history.",
       },
       {
+        name: "mauth.question.upsert",
+        description:
+          "Create the requested question when it is the next missing question, or replace it when it already exists, from a compact authoring payload. This is the preferred high-level question authoring tool. Omitted diagram fields preserve existing diagrams; answerSurface diagram/table supports sketch, label, shade, and completion-table answer surfaces.",
+      },
+      {
         name: "mauth.author.replaceQuestion",
         description:
-          "Replace one existing question, or append the next missing question, from a compact authoring payload. The tool builds the Mauth modules, student-only answer space, solution-only solution text, validates the generated action batch, and applies it. Omitted diagram fields preserve existing diagrams.",
+          "Legacy alias for mauth.question.upsert. Replace one existing question, or append the next missing question, from a compact authoring payload. Omitted diagram fields preserve existing diagrams.",
       },
       {
         name: "mauth.author.addDiagram",
@@ -1467,8 +1473,8 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
     workflow: [
       "Inspect the current document before proposing edits.",
       "Use mauth.preview.inspect instead of broad document inspection when you need the current/selected question, its diagrams, answer-space layout, or solution/tick status.",
-      "For focused one-question writing or replacement requests, prefer mauth.author.replaceQuestion.",
-      'For sketch/label/shade/draw-on-diagram or completion-table answers, use mauth.author.replaceQuestion with answerSurface: "diagram" or "table" plus a matching solutionDiagram/solutionTable instead of adding a separate answer-space block.',
+      "For focused one-question writing or replacement requests, prefer mauth.question.upsert.",
+      'For sketch/label/shade/draw-on-diagram or completion-table answers, use mauth.question.upsert with answerSurface: "diagram" or "table" plus a matching solutionDiagram/solutionTable instead of adding a separate answer-space block.',
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
@@ -2552,11 +2558,12 @@ function authorPartsFromArgs(args: Record<string, unknown>, questionId: string, 
 function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   args: unknown,
+  toolLabel = "mauth.author.replaceQuestion",
 ): MauthDocumentAction[] | MauthAuthorReplaceQuestionValidationFailure {
   const issues: MauthActionValidationIssue[] = [];
   if (!isRecord(args)) {
     return {
-      error: "mauth.author.replaceQuestion arguments must be an object.",
+      error: `${toolLabel} arguments must be an object.`,
       issues: [{ path: "arguments", message: "must be an object", expected: "replace-question payload" }],
     };
   }
@@ -3773,8 +3780,8 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
     return validationToolResult(document, validationMode(call.arguments), options);
   }
 
-  if (call.name === "mauth.author.replaceQuestion") {
-    const actions = parseAuthorReplaceQuestionActions(document, call.arguments);
+  if (call.name === "mauth.question.upsert" || call.name === "mauth.author.replaceQuestion") {
+    const actions = parseAuthorReplaceQuestionActions(document, call.arguments, call.name);
     if (!Array.isArray(actions)) {
       return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
     }

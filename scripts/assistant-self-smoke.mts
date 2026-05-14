@@ -198,11 +198,11 @@ const scenarios: SmokeScenario[] = [
     id: "next-missing-question-is-appended",
     prompt: "Make me a Year 9 linear equations point-of-intersection question with a diagram for Question 2.",
     assistantPlan:
-      "Use mauth.author.replaceQuestion for Question 2. Because the document currently ends at Question 1, the high-level tool should append Question 2 rather than refusing or falling back to broad actions.",
+      "Use mauth.question.upsert for Question 2. Because the document currently ends at Question 1, the high-level tool should append Question 2 rather than refusing or falling back to broad actions.",
     start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Question 1."), spaceBlock("q1-space", 6)])]),
     calls: [
       {
-        name: "mauth.author.replaceQuestion",
+        name: "mauth.question.upsert",
         arguments: {
           questionNumber: 2,
           marks: 4,
@@ -237,6 +237,49 @@ const scenarios: SmokeScenario[] = [
         ...failIf(graphConfig?.type !== "graph2d", "linear intersection question should use graph2d"),
         ...failIf(expressions.length !== 2, "graph2d diagram should contain two functions"),
         ...failIf(expressions.some((expression) => /x\^2|pow|quadratic/i.test(expression ?? "")), "graph2d functions should not be quadratic"),
+      ];
+    },
+  },
+  {
+    id: "linear-question-graph-mismatch-is-flagged",
+    prompt: "The assistant writes a linear-intersection question but accidentally draws a quadratic graph.",
+    assistantPlan:
+      "Use mauth.question.upsert, then preview-inspect the question. The diagram warnings should flag that the prompt asks for straight lines while the graph2d functions are nonlinear.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Question 1."), spaceBlock("q1-space", 6)])]),
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 1,
+          marks: 4,
+          questionText:
+            "The graph below shows two straight lines, $y=2x+1$ and $y=-x+7$.\n\nUse the graph to estimate the point of intersection, then verify your answer algebraically.",
+          studentSpaceLines: 10,
+          diagram: {
+            graphConfig: {
+              type: "graph2d",
+              xMin: -5,
+              xMax: 5,
+              yMin: -2,
+              yMax: 10,
+              functions: [
+                { expression: "2*x + 1", label: "$y=2x+1$", show: true },
+                { expression: "x^2 - 4*x + 4", label: "$y=x^2-4x+4$", show: true },
+              ],
+            },
+          },
+        },
+      },
+      { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    ],
+    evaluate: ({ results }) => {
+      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string; message: string }> }> } };
+      const warnings = inspection.question?.diagrams?.[0]?.warnings ?? [];
+      return [
+        ...failIf(
+          !warnings.some((warning) => warning.code === "graph2d-straight-line-mismatch"),
+          "preview inspection should flag nonlinear graph2d functions for a straight-line prompt",
+        ),
       ];
     },
   },
@@ -410,7 +453,7 @@ const scenarios: SmokeScenario[] = [
   {
     id: "question-rewrite-preserves-diagram-when-omitted",
     prompt: "Rewrite the wording of Question 1 but keep the existing diagram.",
-    assistantPlan: "Use mauth.author.replaceQuestion and omit diagram fields so existing shared diagrams are preserved.",
+    assistantPlan: "Use mauth.question.upsert and omit diagram fields so existing shared diagrams are preserved.",
     start: () =>
       documentFixture([
         question("q1", 3, [
@@ -421,7 +464,7 @@ const scenarios: SmokeScenario[] = [
       ]),
     calls: [
       {
-        name: "mauth.author.replaceQuestion",
+        name: "mauth.question.upsert",
         arguments: {
           questionNumber: 1,
           marks: 3,
@@ -441,7 +484,7 @@ const scenarios: SmokeScenario[] = [
   {
     id: "explicit-empty-diagrams-removes-diagram",
     prompt: "Rewrite Question 1 and remove the diagram.",
-    assistantPlan: "Use mauth.author.replaceQuestion with diagrams: [] only because the teacher explicitly asked to remove diagrams.",
+    assistantPlan: "Use mauth.question.upsert with diagrams: [] only because the teacher explicitly asked to remove diagrams.",
     start: () =>
       documentFixture([
         question("q1", 2, [
@@ -452,7 +495,7 @@ const scenarios: SmokeScenario[] = [
       ]),
     calls: [
       {
-        name: "mauth.author.replaceQuestion",
+        name: "mauth.question.upsert",
         arguments: {
           questionNumber: 1,
           marks: 2,
@@ -559,7 +602,7 @@ const scenarios: SmokeScenario[] = [
     expectToolFailure: true,
     calls: [
       {
-        name: "mauth.author.replaceQuestion",
+        name: "mauth.question.upsert",
         arguments: {
           questionNumber: 1,
           marks: 5,

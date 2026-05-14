@@ -40,6 +40,7 @@ from app.services.openai_assistant import (  # noqa: E402
 from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -408,6 +409,25 @@ def sample_function_graph_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_linear_intersection_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["questions"][0]["marks"] = 4
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": (
+                "Question 1 is already present. The next requested question should be appended as Question 2."
+            ),
+        },
+        {"id": "q1-student-space", "kind": "space", "visibility": "student", "lines": 6},
+    ]
+    summary["counts"]["questions"] = 1
+    summary["counts"]["marksTotal"] = 4
+    return summary
+
+
 def sample_set_diagram_document_summary() -> dict[str, Any]:
     summary = sample_document_summary()
     summary["questions"][0]["marks"] = 2
@@ -535,8 +555,8 @@ def as_dict(value: Any) -> dict[str, Any]:
 
 def assert_authoring_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
-    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
-        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
 
     args = call.get("mauthArguments")
     if not isinstance(args, dict):
@@ -676,8 +696,8 @@ def assert_parallel_chord_diagram_call(call: dict[str, Any]) -> list[str]:
 
 def assert_multipart_probability_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
-    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
-        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
     args = call.get("mauthArguments")
     if not isinstance(args, dict):
         return [*issues, "mauthArguments was not an object"]
@@ -799,8 +819,8 @@ def assert_mark_edit_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
 
 def assert_rewrite_preserves_diagram_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
-    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
-        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
     args = call.get("mauthArguments")
     if not isinstance(args, dict):
         return [*issues, "mauthArguments was not an object"]
@@ -939,8 +959,8 @@ def assert_scalar_product_add_diagram_call(call: dict[str, Any]) -> list[str]:
 
 def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     issues: list[str] = []
-    if call.get("mauthToolName") != "mauth.author.replaceQuestion":
-        issues.append(f"expected mauth.author.replaceQuestion, got {call.get('mauthToolName')!r}")
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
     args = call.get("mauthArguments")
     if not isinstance(args, dict):
         return [*issues, "mauthArguments was not an object"]
@@ -1032,6 +1052,75 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def graph2d_function_expressions(graph_config: dict[str, Any]) -> list[str]:
+    functions = graph_config.get("functions")
+    if isinstance(functions, list):
+        expressions = [
+            str(item.get("expression") or "").strip()
+            for item in functions
+            if isinstance(item, dict) and item.get("show") is not False and str(item.get("expression") or "").strip()
+        ]
+        if expressions:
+            return expressions
+    expression = str(graph_config.get("expression") or "").strip()
+    return [expression] if expression else []
+
+
+def expression_looks_linear(expression: str) -> bool:
+    compact = expression.replace(" ", "").lower()
+    nonlinear_patterns = (
+        "x^2",
+        "x**2",
+        "x*x",
+        "sin",
+        "cos",
+        "tan",
+        "sqrt",
+        "log",
+        "ln",
+        "exp",
+        "1/x",
+        "/x",
+    )
+    return bool(compact) and not any(pattern in compact for pattern in nonlinear_patterns)
+
+
+def assert_linear_intersection_question_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    if args.get("questionNumber") != 2:
+        issues.append("questionNumber should be 2 so the next missing question is appended")
+    if not isinstance(args.get("marks"), int) or args["marks"] < 3:
+        issues.append("linear intersection question should have a sensible mark allocation")
+    question_text = str(args.get("questionText") or "")
+    lower_question = question_text.lower()
+    issues.extend(control_character_issues(question_text, "questionText"))
+    if "linear" not in lower_question and "straight line" not in lower_question:
+        issues.append("questionText should clearly be a linear/straight-line question")
+    if "intersection" not in lower_question and "simultaneous" not in lower_question:
+        issues.append("questionText should ask for the point of intersection or simultaneous solution")
+    graph_config = diagram_graph_config(args)
+    if graph_config.get("type") != "graph2d":
+        issues.append(
+            f"linear intersection question should include a graph2d diagram, got {graph_config.get('type')!r}"
+        )
+        return issues
+    expressions = graph2d_function_expressions(graph_config)
+    if len(expressions) < 2:
+        issues.append("graph2d diagram should include at least two visible line functions")
+    nonlinear = [expression for expression in expressions if not expression_looks_linear(expression)]
+    if nonlinear:
+        issues.append(f"graph2d diagram should use straight-line expressions only, got nonlinear {nonlinear!r}")
+    serialized = call_text(call).lower()
+    if "x^2" in serialized or "parabola" in serialized or "quadratic" in serialized:
+        issues.append("linear intersection request should not produce a quadratic/parabola diagram")
+    return issues
+
+
 def validation_failure_output(
     *,
     tool_name: str | None,
@@ -1115,6 +1204,11 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_circle_with_diagram_solution_document_summary,
         "assert": assert_rewrite_preserves_diagram_call,
     },
+    "linear-intersection-question": {
+        "prompt": "Make me a Year 9 linear equations point-of-intersection question with a diagram for Question 2.",
+        "summary": sample_linear_intersection_document_summary,
+        "assert": assert_linear_intersection_question_call,
+    },
     "graph2d-function-diagram": {
         "prompt": "Add the coordinate graph for Question 1.",
         "summary": sample_function_graph_document_summary,
@@ -1191,6 +1285,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "mark-edit-preserve-diagram",
         "rewrite-preserve-diagram",
         "multipart-probability",
+        "linear-intersection-question",
     ],
     "diagram-routing": [
         "graph2d-function-diagram",

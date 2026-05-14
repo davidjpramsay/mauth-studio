@@ -156,8 +156,8 @@ function assistantResultMessage<Q extends MauthQuestionLike, F extends object, C
   if (result.toolName === "mauth.actions.apply") {
     return `Applied changes to ${result.changedIds.length} item${result.changedIds.length === 1 ? "" : "s"}.`;
   }
-  if (result.toolName === "mauth.author.replaceQuestion") {
-    return result.changedIds.length ? "Replaced the question." : "Question authoring completed.";
+  if (result.toolName === "mauth.question.upsert" || result.toolName === "mauth.author.replaceQuestion") {
+    return result.changedIds.length ? "Updated the question." : "Question authoring completed.";
   }
   if (result.toolName === "mauth.author.addDiagram") {
     return result.changedIds.length ? "Added the diagram." : "Diagram authoring completed.";
@@ -228,7 +228,7 @@ function assistantActivityLabelForTool(name: MauthAssistantAdapterToolCall["name
   if (name === "mauth.validation.run") return "Checking document";
   if (name === "mauth.actions.preview") return "Previewing changes";
   if (name === "mauth.actions.apply") return "Applying changes";
-  if (name === "mauth.author.replaceQuestion") return "Writing question";
+  if (name === "mauth.question.upsert" || name === "mauth.author.replaceQuestion") return "Writing question";
   if (name === "mauth.author.addDiagram") return "Adding diagram";
   if (name === "mauth.author.ensureSolutions") return "Writing solutions";
   if (name === "mauth.author.adjustResponseSpaces") return "Adjusting answer space";
@@ -482,6 +482,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     const semanticReview = asRecord(output.semanticReview);
     if (semanticReview?.required === true) return "";
     if (
+      toolName !== "mauth.question.upsert" &&
       toolName !== "mauth.author.replaceQuestion" &&
       toolName !== "mauth.author.addDiagram" &&
       toolName !== "mauth.author.ensureSolutions" &&

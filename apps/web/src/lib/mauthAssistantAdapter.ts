@@ -229,7 +229,7 @@ function postEditInspectionPlan(call: MauthAssistantAdapterToolCall): PostEditIn
   if (call.name === "mauth.author.addDiagram") {
     return { args: postEditQuestionInspectionArgs(call), modes: ["diagram", "solutionLayout"] };
   }
-  if (call.name === "mauth.author.replaceQuestion") {
+  if (call.name === "mauth.question.upsert" || call.name === "mauth.author.replaceQuestion") {
     const modes: PostEditInspectionMode[] = [];
     if (containsDiagramPayload(call.arguments)) modes.push("diagram");
     if (containsSolutionPayload(call.arguments) || containsResponseSpacePayload(call.arguments)) modes.push("solutionLayout");
@@ -553,6 +553,7 @@ export async function runMauthAssistantAdapterTool<
       (
         [
           "mauth.actions.apply",
+          "mauth.question.upsert",
           "mauth.author.replaceQuestion",
           "mauth.author.addDiagram",
           "mauth.author.ensureSolutions",

@@ -196,7 +196,7 @@ function collectDiagramPreservationIssues<Q extends MauthQuestionLike>(
   changedIds: readonly string[],
   context: MauthAssistantToolCommitContext,
 ) {
-  if (context.toolName === "mauth.author.replaceQuestion") return [];
+  if (context.toolName === "mauth.question.upsert" || context.toolName === "mauth.author.replaceQuestion") return [];
 
   const ids = changedSet(changedIds);
   const issues: MauthAssistantDocumentPreflightIssue[] = [];
@@ -211,7 +211,7 @@ function collectDiagramPreservationIssues<Q extends MauthQuestionLike>(
       path: `questions[${questionIndex}].contentBlocks`,
       message: `Assistant edit removed ${previousCount - nextCount} existing diagram${previousCount - nextCount === 1 ? "" : "s"} from Question ${questionIndex + 1}.`,
       expected:
-        "Solution, marking, and diagram-addition edits must preserve existing shared diagrams. Use mauth.author.replaceQuestion with an explicit empty diagrams list only when the teacher asks to remove diagrams.",
+        "Solution, marking, and diagram-addition edits must preserve existing shared diagrams. Use mauth.question.upsert with an explicit empty diagrams list only when the teacher asks to remove diagrams.",
       targetId: nextQuestion.id,
     });
   });

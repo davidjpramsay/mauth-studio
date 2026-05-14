@@ -69,6 +69,7 @@ test("describes the assistant tool surface and supported action types", () => {
 
   assert(description.tools.some((tool) => tool.name === "mauth.actions.preview"));
   assert(description.tools.some((tool) => tool.name === "mauth.preview.inspect"));
+  assert(description.tools.some((tool) => tool.name === "mauth.question.upsert"));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
@@ -144,6 +145,20 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     "Draw vectors a=(2,3) and b=(4,-3) from the origin.",
   ).warnings;
   assert(vectorWarnings.some((warning) => warning.code === "vector2d-labels-missing"));
+
+  const lineMismatchWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      functions: [
+        { expression: "2*x + 1", label: "$y=2x+1$" },
+        { expression: "x^2 - 4*x + 4", label: "$y=x^2-4x+4$" },
+      ],
+    },
+    "The graph below shows two straight lines, $y=2x+1$ and $y=-x+7$.",
+  ).warnings;
+  const lineMismatch = lineMismatchWarnings.find((warning) => warning.code === "graph2d-straight-line-mismatch");
+  assert(lineMismatch);
+  assert.equal(isAssistantDiagramInspectionWarningBlocking(lineMismatch), true);
 
   const setWarnings = inspectMauthDiagram(
     {
@@ -730,7 +745,7 @@ test("replaces a question from a compact high-level authoring payload", () => {
 
 test("high-level question authoring appends the next missing question", () => {
   const result = runMauthAssistantTool(documentFixture(), {
-    name: "mauth.author.replaceQuestion",
+    name: "mauth.question.upsert",
     arguments: {
       questionNumber: 2,
       marks: 4,
@@ -768,7 +783,7 @@ test("high-level question authoring appends the next missing question", () => {
 
 test("high-level question authoring can pair diagram answer surfaces without separate working space", () => {
   const result = runMauthAssistantTool(documentFixture(), {
-    name: "mauth.author.replaceQuestion",
+    name: "mauth.question.upsert",
     arguments: {
       questionNumber: 1,
       marks: 2,
@@ -818,7 +833,7 @@ test("high-level question authoring can pair diagram answer surfaces without sep
 
 test("high-level part authoring can pair completion tables as answer surfaces", () => {
   const result = runMauthAssistantTool(documentFixture(), {
-    name: "mauth.author.replaceQuestion",
+    name: "mauth.question.upsert",
     arguments: {
       questionNumber: 1,
       marks: 0,
@@ -879,7 +894,7 @@ test("high-level question authoring rejects skipped question numbers", () => {
 
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
   const result = runMauthAssistantTool(documentFixture(), {
-    name: "mauth.author.replaceQuestion",
+    name: "mauth.question.upsert",
     arguments: {
       questionNumber: 1,
       marks: 4,

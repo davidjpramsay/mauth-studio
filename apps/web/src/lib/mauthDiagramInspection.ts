@@ -109,10 +109,38 @@ function hasVisibleGraphFunction(config: GraphConfig) {
   return typeof config.expression === "string" && config.expression.trim().length > 0;
 }
 
+function visibleGraphFunctionExpressions(config: GraphConfig) {
+  const expressions = recordArray(config.functions)
+    .filter((entry) => entry.show !== false)
+    .flatMap((entry) => {
+      const expression = typeof entry.expression === "string" ? entry.expression.trim() : "";
+      return expression ? [expression] : [];
+    });
+  if (expressions.length) return expressions;
+  return typeof config.expression === "string" && config.expression.trim() ? [config.expression.trim()] : [];
+}
+
+function straightLineGraphExpectation(contextText: string) {
+  if (/\btwo\s+(?:straight\s+)?lines?\b|\btwo\s+linear\s+(?:equations?|functions?)\b/i.test(contextText)) return 2;
+  if (/\bstraight\s+line\b|\blinear\s+(?:equation|function|graph)\b/i.test(contextText)) return 1;
+  return 0;
+}
+
+function graphExpressionLooksLinear(expression: string) {
+  const compact = expression.replace(/\s+/g, "").toLowerCase();
+  if (!compact) return false;
+  if (/(?:sin|cos|tan|log|ln|sqrt|abs|exp)\s*\(/.test(compact)) return false;
+  if (/x\s*(?:\^|\*\*)\s*[-+]?\d/.test(compact)) return false;
+  if (/x\s*\*\s*x|x[)]?\s*x/.test(compact)) return false;
+  return true;
+}
+
 function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
   if (config.type !== "graph2d") return [];
   const features = recordArray(config.features);
   const warnings: MauthDiagramInspectionWarning[] = [];
+  const visibleExpressions = visibleGraphFunctionExpressions(config);
+  const expectedStraightLineCount = straightLineGraphExpectation(contextText);
 
   if (!hasVisibleGraphFunction(config) && explicitFunctionGraphIntent(contextText)) {
     warnings.push({
@@ -122,6 +150,25 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
         "The prompt describes a function or curve, but the 2D graph has no visible function. This may be fine for a student-drawn blank grid.",
       path: "graphConfig.functions",
     });
+  }
+
+  if (expectedStraightLineCount > 0) {
+    const linearCount = visibleExpressions.filter(graphExpressionLooksLinear).length;
+    if (visibleExpressions.length < expectedStraightLineCount) {
+      warnings.push({
+        code: "graph2d-straight-line-functions-missing",
+        severity: "warning",
+        message: `The prompt describes ${expectedStraightLineCount === 1 ? "a straight line" : `${expectedStraightLineCount} straight lines`}, but the graph has only ${visibleExpressions.length} visible function${visibleExpressions.length === 1 ? "" : "s"}.`,
+        path: "graphConfig.functions",
+      });
+    } else if (linearCount < expectedStraightLineCount) {
+      warnings.push({
+        code: "graph2d-straight-line-mismatch",
+        severity: "warning",
+        message: `The prompt describes ${expectedStraightLineCount === 1 ? "a straight line" : `${expectedStraightLineCount} straight lines`}, but at least one visible graph expression appears nonlinear.`,
+        path: "graphConfig.functions",
+      });
+    }
   }
 
   if (/\btangent\b/i.test(contextText) && !features.some((feature) => feature.kind === "tangent" && feature.show !== false)) {
@@ -462,6 +509,8 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
   return (
     warning.code === "diagram-renderer-mismatch" ||
     warning.code === "image-diagram-missing-source" ||
+    warning.code === "graph2d-straight-line-functions-missing" ||
+    warning.code === "graph2d-straight-line-mismatch" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||
