@@ -145,6 +145,47 @@ function statsChartConfig(): GraphConfig {
   } as unknown as GraphConfig;
 }
 
+function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean; includeAngleMarkers?: boolean } = {}): GraphConfig {
+  const includeAllLabels = options.includeAllLabels ?? true;
+  const includeAngleMarkers = options.includeAngleMarkers ?? true;
+  return {
+    type: "vector2d",
+    widthPx: 520,
+    heightPx: 340,
+    xMin: -2.6,
+    xMax: 2.6,
+    yMin: -2.1,
+    yMax: 3.4,
+    showAxes: false,
+    showGrid: false,
+    showAxisLabels: false,
+    showAxisNumbers: false,
+    metadata: {
+      vector2d: {
+        labelStyle: "custom",
+        vectors: [
+          { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4] },
+          { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.1, 1.8] },
+          ...(includeAllLabels ? [{ id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9] }] : []),
+          ...(includeAllLabels ? [{ id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.65, 1.4] }] : []),
+        ],
+        segmentLabels: [
+          { vectorId: "a", label: "2\\ \\text{units}", position: 0.55, offsetPx: 18 },
+          { vectorId: "b", label: "2\\ \\text{units}", position: 0.55, offsetPx: 18 },
+          { vectorId: "c", label: "3\\ \\text{units}", position: 0.55, offsetPx: 18 },
+          { vectorId: "d", label: "2\\ \\text{units}", position: 0.55, offsetPx: 18 },
+        ],
+        angleMarkers: includeAngleMarkers
+          ? [
+              { from: "b", to: "c", rightAngle: true, radius: 0.48 },
+              { from: "c", to: "d", label: "45^\\circ", radius: 0.64 },
+            ]
+          : [],
+      },
+    },
+  } as unknown as GraphConfig;
+}
+
 function allBlocks(document: TestDocument) {
   const blocks: ContentBlock[] = [];
   for (const item of document.questions) {
@@ -664,7 +705,7 @@ const scenarios: SmokeScenario[] = [
     id: "scalar-product-diagram-wrong-renderer-is-rejected",
     prompt: "Make Question 1 from a screenshot: evaluate scalar products with a four-vector ray diagram.",
     assistantPlan:
-      "The intent validator should reject graph2d/vectorRelationship here and ask for a native geometricConstruction ray diagram.",
+      "The intent validator should reject graph2d/vectorRelationship/geometricConstruction here and ask for a native hidden-axis vector2d ray diagram.",
     start: () => documentFixture([question("q1", 5, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 8)])]),
     expectToolFailure: true,
     calls: [
@@ -698,7 +739,7 @@ const scenarios: SmokeScenario[] = [
     id: "source-conversion-includes-native-diagram-and-real-part-text",
     prompt: "Make Question 1 from the attached screenshot, include the diagram underneath, then put the parts under the diagram.",
     assistantPlan:
-      "Use mauth.question.upsert/convert-source with a native geometricConstruction diagram and non-empty part prompts; do not replace the diagram with prose.",
+      "Use mauth.question.upsert/convert-source with a native hidden-axis vector2d source diagram and non-empty part prompts; do not replace the diagram with prose.",
     start: () => documentFixture([question("q1", 5, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 8)])]),
     calls: [
       {
@@ -708,39 +749,7 @@ const scenarios: SmokeScenario[] = [
           marks: 0,
           questionText: "Evaluate the following scalar products exactly.",
           diagram: {
-            graphConfig: {
-              type: "geometricConstruction",
-              data: {},
-              options: {
-                substanceSource: [
-                  "Point O, A, B, C, D",
-                  "NamedSegment OA, OB, OC, OD",
-                  "Line lineAD",
-                  "LineThrough(lineAD, A, D)",
-                  "On(O, lineAD)",
-                  "Label A $\\mathbf{a}$",
-                  "Label B $\\mathbf{b}$",
-                  "Label C $\\mathbf{c}$",
-                  "Label D $\\mathbf{d}$",
-                  "Label lenA $2\\ \\text{units}$",
-                  "Label lenB $2\\ \\text{units}$",
-                  "Label lenC $3\\ \\text{units}$",
-                  "Label lenD $2\\ \\text{units}$",
-                  "VectorSegment(OA, O, A)",
-                  "VectorSegment(OB, O, B)",
-                  "VectorSegment(OC, O, C)",
-                  "VectorSegment(OD, O, D)",
-                  "LabelsSegment(lenA, O, A)",
-                  "LabelsSegment(lenB, O, B)",
-                  "LabelsSegment(lenC, O, C)",
-                  "LabelsSegment(lenD, O, D)",
-                  "RightAngle(B, O, C)",
-                  "Label angleCD $45^\\circ$",
-                  "LabelsAngle(angleCD, C, O, D)",
-                ].join("\n"),
-              },
-              metadata: { renderer: "penrose" },
-            },
+            graphConfig: scalarProductVector2dGraphConfig(),
           },
           parts: [
             { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, studentSpaceLines: 4 },
@@ -753,7 +762,9 @@ const scenarios: SmokeScenario[] = [
     evaluate: ({ document }) => {
       const parts = document.questions[0].parts ?? [];
       const graphConfig = diagrams(document)[0]?.kind === "diagram" ? diagrams(document)[0].graphConfig : undefined;
-      const substanceSource = String(graphConfig?.options?.substanceSource ?? "");
+      const vector2d = graphConfig?.metadata?.vector2d as
+        | { vectors?: unknown[]; segmentLabels?: unknown[]; angleMarkers?: Array<{ rightAngle?: boolean; label?: string }> }
+        | undefined;
       return [
         ...failIf(document.questions[0].marks !== 0, "converted source question should put marks on parts"),
         ...failIf(parts.length !== 3, "converted screenshot should create the three visible parts"),
@@ -761,10 +772,18 @@ const scenarios: SmokeScenario[] = [
           parts.some((item) => !item.text.trim()),
           "converted parts should not be blank",
         ),
-        ...failIf(graphConfig?.type !== "geometricConstruction", "scalar-product screenshot should use native geometricConstruction"),
-        ...failIf(!/VectorSegment\(OA,\s*O,\s*A\)/.test(substanceSource), "native diagram should include vector rays"),
-        ...failIf(!/RightAngle\(B,\s*O,\s*C\)/.test(substanceSource), "native diagram should preserve right-angle marker"),
-        ...failIf(!/LabelsAngle/.test(substanceSource), "native diagram should preserve angle labels"),
+        ...failIf(graphConfig?.type !== "vector2d", "scalar-product screenshot should use native vector2d"),
+        ...failIf(graphConfig?.showAxes !== false || graphConfig?.showGrid !== false, "source vector2d diagram should hide axes and grid"),
+        ...failIf((vector2d?.vectors?.length ?? 0) < 4, "native vector2d diagram should include all four labelled vectors"),
+        ...failIf((vector2d?.segmentLabels?.length ?? 0) < 4, "native vector2d diagram should preserve magnitude labels"),
+        ...failIf(
+          !vector2d?.angleMarkers?.some((marker) => marker.rightAngle === true),
+          "native vector2d diagram should preserve right-angle marker",
+        ),
+        ...failIf(
+          !vector2d?.angleMarkers?.some((marker) => typeof marker.label === "string"),
+          "native vector2d diagram should preserve angle labels",
+        ),
       ];
     },
   },
@@ -772,45 +791,22 @@ const scenarios: SmokeScenario[] = [
     id: "scalar-product-diagram-inspection-flags-missing-vector-labels",
     prompt: "The assistant draws a scalar-product ray diagram but forgets labels for two vectors.",
     assistantPlan:
-      "Preview inspection should flag missing vector labels so the provider repairs the native Penrose Substance before claiming success.",
+      "Preview inspection should flag missing vector labels so the provider repairs the native vector2d metadata before claiming success.",
     start: () =>
       documentFixture([
         question(
           "q1",
           5,
-          [textBlock("q1-text", "Evaluate the following scalar products exactly.")],
+          [
+            textBlock("q1-text", "Evaluate the following scalar products exactly."),
+            diagramBlock("q1-diagram", scalarProductVector2dGraphConfig({ includeAllLabels: false })),
+          ],
           [part("q1-a", "a", 1, "$\\mathbf{a}\\cdot\\mathbf{b}$"), part("q1-b", "b", 2, "$\\mathbf{c}\\cdot\\mathbf{d}$")],
         ),
       ]),
-    calls: [
-      {
-        name: "mauth.author.addDiagram",
-        arguments: {
-          questionNumber: 1,
-          diagram: {
-            graphConfig: {
-              type: "geometricConstruction",
-              data: {},
-              options: {
-                substanceSource: [
-                  "Point O, A, B, C, D",
-                  "NamedSegment OA, OB, OC, OD",
-                  "Segment(OA, O, A)",
-                  "Segment(OB, O, B)",
-                  "Segment(OC, O, C)",
-                  "Segment(OD, O, D)",
-                  "Label A $\\mathbf{a}$",
-                  "Label B $\\mathbf{b}$",
-                ].join("\n"),
-              },
-            },
-          },
-        },
-      },
-      { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
-    ],
+    calls: [{ name: "mauth.preview.inspect", arguments: { questionNumber: 1 } }],
     evaluate: ({ results }) => {
-      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string; message: string }> }> } };
+      const inspection = results[0]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string; message: string }> }> } };
       const warnings = inspection.question?.diagrams?.[0]?.warnings ?? [];
       return [
         ...failIf(

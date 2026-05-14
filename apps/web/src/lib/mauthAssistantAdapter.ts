@@ -327,35 +327,79 @@ function blockIdFromAnchor(anchor?: string) {
   return match?.[1];
 }
 
-function postEditInspectionExpected(warning: MauthPreviewInspectionWarning) {
+function postEditInspectionExpected(warning: MauthPreviewInspectionWarning, repairTarget?: PostEditRepairTarget) {
+  const targetInstruction = repairTarget
+    ? ` Repair the already-committed Question ${repairTarget.questionNumber ?? "target"}${
+        repairTarget.questionId ? ` (questionId: "${repairTarget.questionId}")` : ""
+      }; do not append a new question.`
+    : "";
   if (warning.code === "rendered-diagram-failed" || warning.code.startsWith("penrose-")) {
     return warning.targetId
-      ? `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.`
-      : "Repair the diagram with a corrected native graphConfig.";
+      ? `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.${targetInstruction}`
+      : `Repair the diagram with a corrected native graphConfig.${targetInstruction}`;
   }
   if (!warning.code.startsWith("rendered-") && warning.targetId) {
-    return `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.`;
+    return `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.${targetInstruction}`;
   }
   if (warning.code === "rendered-response-space-outline-missing") {
-    return "Repair the adjacent diagram and answer-space layout so it renders as one L-shaped response slot.";
+    return `Repair the adjacent diagram and answer-space layout so it renders as one L-shaped response slot.${targetInstruction}`;
   }
   if (warning.code === "rendered-solution-space-overflow") {
-    return "Repair by using mauth.author.adjustResponseSpaces to increase the paired student space, or by tightening the solution text while preserving mark ticks.";
+    return `Repair by using mauth.author.adjustResponseSpaces to increase the paired student space, or by tightening the solution text while preserving mark ticks.${targetInstruction}`;
   }
   if (warning.code === "student-space-missing")
-    return "Repair by adding a student-only answer space for the same question, part, or subpart.";
+    return `Repair by adding a student-only answer space for the same question, part, or subpart.${targetInstruction}`;
   if (warning.code === "solution-hidden-mark-total-mismatch") {
-    return "Repair the solution with hidden [[marks:n]] annotations whose total matches the relevant marks.";
+    return `Repair the solution with hidden [[marks:n]] annotations whose total matches the relevant marks.${targetInstruction}`;
   }
   if (warning.code === "solution-visible-mark-note") {
-    return "Repair the solution by replacing visible mark notes with hidden [[marks:n]] annotations.";
+    return `Repair the solution by replacing visible mark notes with hidden [[marks:n]] annotations.${targetInstruction}`;
   }
   if (warning.code === "rendered-page-overflow") {
-    return "Repair the page layout so the edited content fits inside the rendered A4 page box.";
+    return `Repair the page layout so the edited content fits inside the rendered A4 page box.${targetInstruction}`;
   }
   return warning.targetId
-    ? `Repair the affected module by calling the appropriate high-level Mauth authoring tool with target id "${warning.targetId}".`
-    : "Repair the affected preview layout and rerun preview inspection.";
+    ? `Repair the affected module by calling the appropriate high-level Mauth authoring tool with target id "${warning.targetId}".${targetInstruction}`
+    : `Repair the affected preview layout and rerun preview inspection.${targetInstruction}`;
+}
+
+interface PostEditRepairTarget {
+  scope: "question" | "document" | "selection";
+  questionId?: string;
+  questionNumber?: number;
+  diagramId?: string;
+  targetId?: string;
+  changedIds: string[];
+  committedDocument: true;
+  instruction: string;
+}
+
+function postEditRepairTarget<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  result: MauthAssistantToolResult<Q, F, C>,
+  inspection: MauthPreviewInspection,
+  repairWarnings: readonly MauthPreviewInspectionWarning[],
+): PostEditRepairTarget {
+  const firstDiagramTarget = repairWarnings.find((warning) => warning.targetId)?.targetId;
+  const questionId = inspection.question?.id ?? inspection.target.questionId;
+  const questionNumber = inspection.question?.questionNumber ?? inspection.target.questionNumber;
+  const scope = questionId || questionNumber ? "question" : inspection.scope === "document" ? "document" : "selection";
+  const label =
+    questionNumber !== undefined
+      ? `Question ${questionNumber}`
+      : questionId
+        ? `questionId "${questionId}"`
+        : scope === "document"
+          ? "the current document"
+          : "the selected target";
+  return {
+    scope,
+    ...(questionId ? { questionId } : {}),
+    ...(questionNumber !== undefined ? { questionNumber } : {}),
+    ...(firstDiagramTarget ? { diagramId: firstDiagramTarget, targetId: firstDiagramTarget } : {}),
+    changedIds: [...result.changedIds],
+    committedDocument: true,
+    instruction: `This edit has already been committed. Repair ${label} in place; do not append another question or duplicate existing content.`,
+  };
 }
 
 function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
@@ -363,6 +407,7 @@ function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends 
   inspection: MauthPreviewInspection,
   repairWarnings: readonly MauthPreviewInspectionWarning[],
 ): MauthAssistantAdapterResult<Q, F, C> {
+  const repairTarget = postEditRepairTarget(result, inspection, repairWarnings);
   const validationIssues = repairWarnings.map((warning, index) => ({
     path: warning.path
       ? `postEditInspection.${warning.path}`
@@ -372,7 +417,7 @@ function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends 
           ? `postEditInspection.question.solutionScopes[${index}]`
           : `postEditInspection.question.diagrams[${index}].graphConfig`,
     message: warning.message,
-    expected: postEditInspectionExpected(warning),
+    expected: postEditInspectionExpected(warning, repairTarget),
     targetId: warning.targetId,
   }));
   const error = "Assistant post-edit inspection found repairable preview warnings.";
@@ -384,6 +429,7 @@ function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends 
       ...(isRecord(result.data) ? result.data : {}),
       postEditInspection: {
         target: inspection.target,
+        repairTarget,
         repairWarnings: repairWarnings.map((warning) => ({
           code: warning.code,
           severity: warning.severity,
@@ -393,6 +439,7 @@ function postEditInspectionFailureResult<Q extends MauthQuestionLike, F extends 
           path: warning.path,
         })),
       },
+      repairTarget,
       validationIssues,
     },
     document: result.document,

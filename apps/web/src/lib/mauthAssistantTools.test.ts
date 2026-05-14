@@ -1070,7 +1070,7 @@ test("rejects obvious diagram renderer mismatches before applying", () => {
 
   assert.equal(scalarProductResult.ok, false);
   assert(scalarData.validationIssues?.some((issue) => issue.path === "arguments.diagram.graphConfig.type"));
-  assert(scalarData.validationIssues?.some((issue) => issue.expected === "geometricConstruction"));
+  assert(scalarData.validationIssues?.some((issue) => issue.expected === "vector2d"));
   assert.match(scalarProductResult.error ?? "", /scalar-product ray diagram/);
   assert.equal(coordinateVectorResult.ok, false);
   assert(vectorData.validationIssues?.some((issue) => issue.expected === "vector2d"));

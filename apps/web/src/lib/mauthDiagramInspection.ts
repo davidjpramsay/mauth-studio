@@ -76,6 +76,28 @@ function hasLatexLabel(source: string, label: string) {
   ).test(source);
 }
 
+function vector2dConfiguredLabels(config: GraphConfig) {
+  const metadataVector2d = graphMetadata(config).vector2d;
+  const vector2d: Record<string, unknown> = isRecord(metadataVector2d) ? metadataVector2d : {};
+  return new Set(
+    recordArray(vector2d.vectors)
+      .flatMap((entry) => [entry.id, entry.name, entry.label])
+      .flatMap((value) => {
+        if (typeof value !== "string") return [];
+        const normalized = normalizedMathText(value)
+          .replace(/[^A-Za-z0-9]+/g, "")
+          .toLowerCase();
+        return normalized ? [normalized] : [];
+      }),
+  );
+}
+
+function vector2dAngleMarkers(config: GraphConfig) {
+  const metadataVector2d = graphMetadata(config).vector2d;
+  const vector2d: Record<string, unknown> = isRecord(metadataVector2d) ? metadataVector2d : {};
+  return recordArray(vector2d.angleMarkers);
+}
+
 function normalizedMathText(rawText: string) {
   return rawText
     .replace(/\\mathbf\s*\{\s*([^}]+)\s*\}/g, "$1")
@@ -218,12 +240,19 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
 }
 
 function inspectScalarProductLabels(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
-  if (config.type !== "geometricConstruction") return [];
-  const source = graphSubstanceSource(config);
-  if (!source.trim()) return [];
   const expectedLabels = expectedScalarVectorLabels(contextText);
   if (!expectedLabels.length) return [];
-  const missing = expectedLabels.filter((label) => !hasLatexLabel(source, label));
+  let missing: string[] = [];
+  if (config.type === "geometricConstruction") {
+    const source = graphSubstanceSource(config);
+    if (!source.trim()) return [];
+    missing = expectedLabels.filter((label) => !hasLatexLabel(source, label));
+  } else if (config.type === "vector2d") {
+    const configuredLabels = vector2dConfiguredLabels(config);
+    missing = expectedLabels.filter((label) => !configuredLabels.has(label));
+  } else {
+    return [];
+  }
   if (!missing.length) return [];
   return [
     {
@@ -238,26 +267,56 @@ function inspectScalarProductLabels(config: GraphConfig, contextText: string): M
 }
 
 function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
-  if (config.type !== "geometricConstruction") return [];
   if (!expectedScalarVectorLabels(contextText).length) return [];
-  const source = graphSubstanceSource(config);
-  if (!source.trim()) return [];
   const warnings: MauthDiagramInspectionWarning[] = [];
-  if (/(?:90\s*(?:°|degrees?)|right angle|perpendicular)/i.test(contextText) && !/\bRightAngle\s*\(/.test(source)) {
+  if (config.type === "geometricConstruction") {
+    const source = graphSubstanceSource(config);
+    if (!source.trim()) return [];
+    if (/(?:90\s*(?:°|degrees?)|right angle|perpendicular)/i.test(contextText) && !/\bRightAngle\s*\(/.test(source)) {
+      warnings.push({
+        code: "scalar-product-right-angle-missing",
+        severity: "warning",
+        message:
+          "Scalar-product ray diagram mentions a right angle or perpendicular vectors, but the Penrose substance has no RightAngle(...).",
+        path: "graphConfig.options.substanceSource",
+      });
+    }
+    if (/(?:\b\d+\s*(?:°|degrees?)|\bangle between\b)/i.test(contextText) && !/\b(?:LabelsAngle|AngleMark|RightAngle)\s*\(/.test(source)) {
+      warnings.push({
+        code: "scalar-product-angle-marker-missing",
+        severity: "warning",
+        message: "Scalar-product ray diagram mentions an angle, but the Penrose substance has no visible angle marker or angle label.",
+        path: "graphConfig.options.substanceSource",
+      });
+    }
+    return warnings;
+  }
+
+  if (config.type !== "vector2d") return [];
+  const angleMarkers = vector2dAngleMarkers(config);
+  if (/(?:90\s*(?:°|degrees?)|right angle|perpendicular)/i.test(contextText) && !angleMarkers.some((entry) => entry.rightAngle === true)) {
     warnings.push({
       code: "scalar-product-right-angle-missing",
       severity: "warning",
       message:
-        "Scalar-product ray diagram mentions a right angle or perpendicular vectors, but the Penrose substance has no RightAngle(...).",
-      path: "graphConfig.options.substanceSource",
+        "Scalar-product ray diagram mentions a right angle or perpendicular vectors, but the vector2d diagram has no rightAngle marker.",
+      path: "graphConfig.metadata.vector2d.angleMarkers",
     });
   }
-  if (/(?:\b\d+\s*(?:°|degrees?)|\bangle between\b)/i.test(contextText) && !/\b(?:LabelsAngle|AngleMark|RightAngle)\s*\(/.test(source)) {
+  if (/(?:\b\d+\s*(?:°|degrees?)|\bangle between\b)/i.test(contextText) && !angleMarkers.length) {
     warnings.push({
       code: "scalar-product-angle-marker-missing",
       severity: "warning",
-      message: "Scalar-product ray diagram mentions an angle, but the Penrose substance has no visible angle marker or angle label.",
-      path: "graphConfig.options.substanceSource",
+      message: "Scalar-product ray diagram mentions an angle, but the vector2d diagram has no angle marker.",
+      path: "graphConfig.metadata.vector2d.angleMarkers",
+    });
+  }
+  if ((config.showAxes !== false || config.showGrid !== false) && /\bscalar products?\b|\bdot products?\b/i.test(contextText)) {
+    warnings.push({
+      code: "scalar-product-vector2d-axes-visible",
+      severity: "warning",
+      message: "Scalar-product source ray diagrams should normally hide vector2d axes and grid unless the source shows axes.",
+      path: "graphConfig.showAxes",
     });
   }
   return warnings;
@@ -514,6 +573,7 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||
+    warning.code === "scalar-product-vector2d-axes-visible" ||
     warning.code === "vector2d-labels-missing" ||
     warning.code === "stats-chart-probabilities-not-normalised" ||
     warning.code === "stats-chart-probability-out-of-range" ||

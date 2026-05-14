@@ -246,8 +246,13 @@ function diagramInspectionExpected(code: string) {
   if (code === "diagram-renderer-mismatch") return "Use the renderer expected by the prompt and write that renderer's native graphConfig.";
   if (code === "image-diagram-missing-source") return "Attach an uploaded image source in graphConfig.data.src.";
   if (code === "scalar-product-vector-labels-missing") {
-    return "Add visible vector labels in Penrose Substance, e.g. `Label A $\\mathbf{a}$`, for every vector named in the scalar products.";
+    return "Add visible vector labels for every vector named in the scalar products. For vector2d, use metadata.vector2d.vectors names/labels; for Penrose, use direct `Label A $\\mathbf{a}$` statements.";
   }
+  if (code === "scalar-product-right-angle-missing" || code === "scalar-product-angle-marker-missing") {
+    return "Add the missing angle marker. For vector2d, use metadata.vector2d.angleMarkers; for Penrose, use RightAngle or LabelsAngle.";
+  }
+  if (code === "scalar-product-vector2d-axes-visible")
+    return "Set graphConfig.showAxes and graphConfig.showGrid to false for no-axis scalar-product ray diagrams.";
   return "A native diagram whose renderer choice, labels, and declared geometry match the question prompt.";
 }
 

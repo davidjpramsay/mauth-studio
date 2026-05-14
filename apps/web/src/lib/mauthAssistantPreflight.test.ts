@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ContentBlock } from "@mauth-studio/shared";
+import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import type { MauthDocumentLike, MauthQuestionLike } from "./mauthActions.ts";
 import {
@@ -42,6 +42,14 @@ function penroseDiagramBlock(id: string, substanceSource: string): ContentBlock 
       data: {},
       options: { substanceSource },
     },
+  };
+}
+
+function vector2dDiagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
+  return {
+    id,
+    kind: "diagram",
+    graphConfig,
   };
 }
 
@@ -178,7 +186,7 @@ test("assistant semantic preflight rejects changed Penrose circle diagrams that 
   assert.match(messages, /Segment/);
 });
 
-test("assistant diagram preflight rejects scalar-product Penrose diagrams with missing vector labels", () => {
+test("assistant diagram preflight rejects scalar-product Penrose diagrams in favour of vector2d source rays", () => {
   const document = documentFixture(
     question(
       "q1",
@@ -208,6 +216,60 @@ test("assistant diagram preflight rejects scalar-product Penrose diagrams with m
   assert.equal(result.ok, false);
   assert(result.validationIssues?.some((issue) => issue.message.includes("$\\mathbf{c}$")));
   assert(result.validationIssues?.some((issue) => issue.path.endsWith("graphConfig.options.substanceSource")));
+});
+
+test("assistant diagram preflight accepts source-faithful scalar-product vector2d diagrams", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock(
+          "t1",
+          "Evaluate the following scalar products exactly: $\\mathbf{a}\\cdot\\mathbf{b}$, $\\mathbf{a}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$.",
+        ),
+        vector2dDiagramBlock("d1", {
+          type: "vector2d",
+          widthPx: 520,
+          heightPx: 340,
+          xMin: -2.6,
+          xMax: 2.6,
+          yMin: -2.1,
+          yMax: 3.4,
+          showAxes: false,
+          showGrid: false,
+          showAxisLabels: false,
+          showAxisNumbers: false,
+          metadata: {
+            vector2d: {
+              labelStyle: "custom",
+              vectors: [
+                { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4] },
+                { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.1, 1.8] },
+                { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9] },
+                { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.65, 1.4] },
+              ],
+              segmentLabels: [
+                { vectorId: "a", label: "2\\ \\text{units}" },
+                { vectorId: "b", label: "2\\ \\text{units}" },
+                { vectorId: "c", label: "3\\ \\text{units}" },
+                { vectorId: "d", label: "2\\ \\text{units}" },
+              ],
+              angleMarkers: [
+                { from: "b", to: "d", rightAngle: true, radius: 0.35 },
+                { from: "c", to: "d", label: "45^\\circ", radius: 0.55 },
+              ],
+            },
+          },
+        }),
+        spaceBlock("s1"),
+      ],
+      5,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+
+  assert.equal(result.ok, true);
 });
 
 test("assistant semantic preflight accepts changed Penrose circle diagrams that match the prompt", () => {

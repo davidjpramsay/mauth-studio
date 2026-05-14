@@ -167,6 +167,53 @@ function adapterHost(
   };
 }
 
+function failedDiagramMetrics(anchor: string, errorText = "Diagram could not render."): MauthPreviewRenderedMetrics {
+  return {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: anchor,
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 300,
+        totalHeightPx: 1000,
+        remainingHeightPx: 700,
+        usedPercent: 30,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor,
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+        diagram: {
+          found: true,
+          rendered: false,
+          errorText,
+          viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+        },
+        warnings: [
+          {
+            code: "rendered-diagram-failed",
+            severity: "error",
+            anchor,
+            message: `The selected diagram failed to render: ${errorText}`,
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+}
+
 test("commits only accepted document apply results", async () => {
   const harness = adapterHost();
 
@@ -234,7 +281,10 @@ test("question upserts report semantic graph and question mismatches after commi
       },
     },
   });
-  const data = result.data as { validationIssues?: Array<{ expected?: string; message: string; targetId?: string }> };
+  const data = result.data as {
+    repairTarget?: { questionNumber?: number; questionId?: string; diagramId?: string; instruction?: string };
+    validationIssues?: Array<{ expected?: string; message: string; targetId?: string }>;
+  };
 
   assert.equal(result.ok, false);
   assert.equal(result.committedDocument, true);
@@ -360,11 +410,13 @@ test("does not commit assistant document changes when preflight rejects them", a
 
 test("commits diagram edits then reports preview inspection warnings for one repair pass", async () => {
   const harness = adapterHost(
-    {},
+    {
+      waitForRenderedPreviewMetrics: async () => failedDiagramMetrics("q:q1/b:d1", "Stats chart could not render."),
+    },
     {
       frontMatter: { assessmentTitle: "Vector Test" },
       formattingConfig: { showMarks: true },
-      questions: [question("q1", [textBlock("t1", "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$ and $\\mathbf{c}\\cdot\\mathbf{d}$ exactly.")])],
+      questions: [question("q1", [textBlock("t1", "Use the chart to answer the question.")])],
     },
   );
 
@@ -373,20 +425,14 @@ test("commits diagram edits then reports preview inspection warnings for one rep
     arguments: {
       questionNumber: 1,
       diagram: {
+        id: "d1",
         graphConfig: {
-          type: "geometricConstruction",
-          data: {},
-          options: {
-            substanceSource: [
-              "Point O, A, B, C, D",
-              "NamedSegment OA, OB, OC, OD",
-              "Segment(OA, O, A)",
-              "Segment(OB, O, B)",
-              "Segment(OC, O, C)",
-              "Segment(OD, O, D)",
-              "Label A $\\mathbf{a}$",
-              "Label B $\\mathbf{b}$",
-            ].join("\n"),
+          type: "statsChart",
+          data: {
+            chartType: "histogram",
+            dataMode: "manualProbabilities",
+            xValues: [1, 2],
+            probabilities: [0.4, 0.6],
           },
         },
       },
@@ -402,9 +448,66 @@ test("commits diagram edits then reports preview inspection warnings for one rep
     true,
   );
   assert.match(result.error ?? "", /post-edit inspection/i);
+  assert.equal(data.repairTarget?.questionNumber, 1);
+  assert.equal(data.repairTarget?.questionId, "q1");
+  assert.match(data.repairTarget?.instruction ?? "", /do not append/i);
   assert(data.validationIssues?.some((issue) => issue.expected?.includes("mauth.author.addDiagram")));
   assert(data.validationIssues?.some((issue) => issue.expected?.includes("diagramId")));
-  assert(data.validationIssues?.some((issue) => issue.message.includes("$\\mathbf{c}$")));
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("do not append")));
+  assert(data.validationIssues?.some((issue) => issue.message.includes("failed to render")));
+});
+
+test("post-edit repair target pins failed appended question instead of allowing duplicate append", async () => {
+  const harness = adapterHost(
+    {
+      waitForRenderedPreviewMetrics: async () =>
+        failedDiagramMetrics("q:assistant-question-2/b:source-diagram", "Source diagram could not render."),
+    },
+    {
+      frontMatter: { assessmentTitle: "Vector Test" },
+      formattingConfig: { showMarks: true },
+      questions: [question("q1", [textBlock("t1", "Existing question.")])],
+    },
+  );
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 5,
+      questionText: "Use the chart to answer the question.",
+      diagram: {
+        id: "source-diagram",
+        graphConfig: {
+          type: "statsChart",
+          data: {
+            chartType: "histogram",
+            dataMode: "manualProbabilities",
+            xValues: [1, 2],
+            probabilities: [0.4, 0.6],
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as {
+    repairTarget?: { questionNumber?: number; questionId?: string; diagramId?: string; instruction?: string };
+    postEditInspection?: { repairTarget?: { questionNumber?: number; diagramId?: string } };
+    validationIssues?: Array<{ expected?: string; targetId?: string }>;
+  };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.committedDocument, true);
+  assert.equal(harness.commits.length, 1);
+  assert.equal(harness.document.questions.length, 2);
+  assert.equal(harness.document.questions[1].id, "assistant-question-2");
+  assert.equal(data.repairTarget?.questionNumber, 2);
+  assert.equal(data.repairTarget?.questionId, "assistant-question-2");
+  assert.equal(data.repairTarget?.diagramId, "source-diagram");
+  assert.equal(data.postEditInspection?.repairTarget?.questionNumber, 2);
+  assert.match(data.repairTarget?.instruction ?? "", /do not append another question/i);
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("Question 2")));
+  assert(data.validationIssues?.some((issue) => issue.expected?.includes("do not append")));
 });
 
 test("waits for painted preview metrics before accepting diagram edits", async () => {

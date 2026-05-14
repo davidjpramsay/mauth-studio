@@ -46,6 +46,27 @@ interface Vector2DEntry {
   labelY?: number;
 }
 
+interface Vector2DSegmentLabel {
+  id: string;
+  vectorId: string;
+  label: string;
+  position: number;
+  offsetPx: number;
+  color: string;
+}
+
+interface Vector2DAngleMarker {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  rightAngle: boolean;
+  radius: number;
+  color: string;
+  labelX?: number;
+  labelY?: number;
+}
+
 type JXGElement = {
   X?: () => number;
   Y?: () => number;
@@ -212,6 +233,51 @@ function vector2dEntries(graphConfig?: GraphConfig | null): Vector2DEntry[] {
   return DEFAULT_VECTORS;
 }
 
+function vector2dAnnotationData(graphConfig?: GraphConfig | null) {
+  const metadata = graphConfig?.metadata ?? {};
+  const vectorData =
+    typeof metadata.vector2d === "object" && metadata.vector2d !== null ? (metadata.vector2d as Record<string, unknown>) : {};
+  const rawSegmentLabels = Array.isArray(vectorData.segmentLabels) ? vectorData.segmentLabels : [];
+  const rawAngleMarkers = Array.isArray(vectorData.angleMarkers) ? vectorData.angleMarkers : [];
+  return {
+    segmentLabels: rawSegmentLabels
+      .map((entry, index): Vector2DSegmentLabel | null => {
+        const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {};
+        const vectorId = String(record.vectorId ?? record.vector ?? "");
+        const label = String(record.label ?? "");
+        if (!vectorId || !label.trim()) return null;
+        return {
+          id: String(record.id ?? `segment-label-${index + 1}`),
+          vectorId,
+          label,
+          position: Math.max(0.05, Math.min(0.95, finiteNumber(record.position, 0.55))),
+          offsetPx: finiteNumber(record.offsetPx ?? record.offset, 18),
+          color: String(record.color ?? AXIS_COLOR),
+        };
+      })
+      .filter((entry): entry is Vector2DSegmentLabel => !!entry),
+    angleMarkers: rawAngleMarkers
+      .map((entry, index): Vector2DAngleMarker | null => {
+        const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {};
+        const from = String(record.from ?? record.vectorA ?? "");
+        const to = String(record.to ?? record.vectorB ?? "");
+        if (!from || !to) return null;
+        return {
+          id: String(record.id ?? `angle-marker-${index + 1}`),
+          from,
+          to,
+          label: String(record.label ?? ""),
+          rightAngle: record.rightAngle === true || record.kind === "rightAngle" || record.type === "rightAngle",
+          radius: positiveNumber(record.radius, 0.45),
+          color: String(record.color ?? AXIS_COLOR),
+          labelX: finiteOptionalNumber(record.labelX),
+          labelY: finiteOptionalNumber(record.labelY),
+        };
+      })
+      .filter((entry): entry is Vector2DAngleMarker => !!entry),
+  };
+}
+
 function vectorGraphSizing(graphConfig?: GraphConfig | null) {
   const xMin = graphConfig?.xMin ?? -6;
   const xMax = graphConfig?.xMax ?? 6;
@@ -349,6 +415,108 @@ function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number
       visible: false,
     },
   } as Record<string, unknown>);
+}
+
+function vectorEnd(vector: Vector2DEntry): [number, number] {
+  return [vector.start[0] + vector.components[0], vector.start[1] + vector.components[1]];
+}
+
+function vectorLookupKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function vectorByReference(vectors: readonly Vector2DEntry[], reference: string) {
+  const key = vectorLookupKey(reference);
+  return vectors.find(
+    (vector) =>
+      vectorLookupKey(vector.id) === key ||
+      vectorLookupKey(vector.name) === key ||
+      vectorLookupKey(vector.label.replace(/\\mathbf\s*\{([^}]*)\}/g, "$1").replace(/[{}$\\]/g, "")) === key,
+  );
+}
+
+function unitVector(vector: Vector2DEntry): [number, number] {
+  const length = Math.hypot(vector.components[0], vector.components[1]);
+  return length > 1e-9 ? [vector.components[0] / length, vector.components[1] / length] : [1, 0];
+}
+
+function shortestAngleDelta(from: number, to: number) {
+  let delta = to - from;
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  return delta;
+}
+
+function drawSegmentLabel(board: JXG.Board, vector: Vector2DEntry, label: Vector2DSegmentLabel) {
+  const end = vectorEnd(vector);
+  const baseX = vector.start[0] + (end[0] - vector.start[0]) * label.position;
+  const baseY = vector.start[1] + (end[1] - vector.start[1]) * label.position;
+  const direction = unitVector(vector);
+  const offsetX = -direction[1] * label.offsetPx;
+  const offsetY = -direction[0] * label.offsetPx;
+  const [x, y] = offsetUserByPixels(board, baseX, baseY, offsetX, offsetY);
+  createVectorLabelText(board, x, y, label.label, label.color);
+}
+
+function drawRightAngleMarker(board: JXG.Board, marker: Vector2DAngleMarker, first: Vector2DEntry, second: Vector2DEntry) {
+  const vertex = first.start;
+  const firstUnit = unitVector(first);
+  const secondUnit = unitVector(second);
+  const radius = marker.radius;
+  const p1: [number, number] = [vertex[0] + firstUnit[0] * radius, vertex[1] + firstUnit[1] * radius];
+  const p3: [number, number] = [vertex[0] + secondUnit[0] * radius, vertex[1] + secondUnit[1] * radius];
+  const p2: [number, number] = [p1[0] + secondUnit[0] * radius, p1[1] + secondUnit[1] * radius];
+  const attrs = {
+    strokeColor: marker.color,
+    highlightStrokeColor: marker.color,
+    strokeWidth: 1.6,
+    fixed: true,
+    highlight: false,
+    straightFirst: false,
+    straightLast: false,
+    withLabel: false,
+    layer: GRAPH_LAYERS.vectorGuide,
+  } as Record<string, unknown>;
+  board.create("segment", [p1, p2], attrs);
+  board.create("segment", [p2, p3], attrs);
+}
+
+function drawAngleArc(board: JXG.Board, marker: Vector2DAngleMarker, first: Vector2DEntry, second: Vector2DEntry) {
+  const vertex = first.start;
+  const startAngle = Math.atan2(first.components[1], first.components[0]);
+  const delta = shortestAngleDelta(startAngle, Math.atan2(second.components[1], second.components[0]));
+  const steps = Math.max(8, Math.ceil(Math.abs(delta) / (Math.PI / 24)));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const angle = startAngle + (delta * index) / steps;
+    xs.push(vertex[0] + Math.cos(angle) * marker.radius);
+    ys.push(vertex[1] + Math.sin(angle) * marker.radius);
+  }
+  board.create("curve", [xs, ys], {
+    strokeColor: marker.color,
+    highlightStrokeColor: marker.color,
+    strokeWidth: 1.6,
+    fixed: true,
+    highlight: false,
+    layer: GRAPH_LAYERS.vectorGuide,
+  } as Record<string, unknown>);
+}
+
+function drawAngleMarker(board: JXG.Board, vectors: readonly Vector2DEntry[], marker: Vector2DAngleMarker) {
+  const first = vectorByReference(vectors, marker.from);
+  const second = vectorByReference(vectors, marker.to);
+  if (!first || !second) return;
+  if (marker.rightAngle) drawRightAngleMarker(board, marker, first, second);
+  else drawAngleArc(board, marker, first, second);
+  if (!marker.label.trim()) return;
+  const vertex = first.start;
+  const startAngle = Math.atan2(first.components[1], first.components[0]);
+  const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second.components[1], second.components[0])) / 2;
+  const labelRadius = marker.radius * 1.45;
+  const labelX = Number.isFinite(marker.labelX) ? (marker.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius;
+  const labelY = Number.isFinite(marker.labelY) ? (marker.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius;
+  createVectorLabelText(board, labelX, labelY, marker.label, marker.color);
 }
 
 function createVectorLabelText(
@@ -663,7 +831,7 @@ export function Vector2DGraph({
     }
 
     vectors.forEach((vector, vectorIndex) => {
-      const end: [number, number] = [vector.start[0] + vector.components[0], vector.start[1] + vector.components[1]];
+      const end = vectorEnd(vector);
       const elbow: [number, number] = [end[0], vector.start[1]];
       if (vector.showComponents) {
         board.create("segment", [vector.start, elbow], {
@@ -702,6 +870,12 @@ export function Vector2DGraph({
         );
       }
     });
+    const annotationData = vector2dAnnotationData(graphConfig);
+    annotationData.segmentLabels.forEach((label) => {
+      const vector = vectorByReference(vectors, label.vectorId);
+      if (vector) drawSegmentLabel(board, vector, label);
+    });
+    annotationData.angleMarkers.forEach((marker) => drawAngleMarker(board, vectors, marker));
     return () => JXG.JSXGraph.freeBoard(board);
   }, [boardId, graphConfig, onGraphConfigChange]);
 

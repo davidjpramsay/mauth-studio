@@ -478,6 +478,43 @@ function compactPlainRecord(value: unknown, keys: readonly string[], maxArrayIte
   return Object.keys(output).length ? output : undefined;
 }
 
+function compactVector2dMetadata(metadata: unknown) {
+  if (!isRecord(metadata) || !isRecord(metadata.vector2d)) return undefined;
+  const vector2d = metadata.vector2d;
+  const vectors = recordArray(vector2d.vectors)
+    .slice(0, 8)
+    .map((entry) => ({
+      id: stringField(entry.id, 40),
+      name: stringField(entry.name, 40),
+      label: stringField(entry.label, 80),
+      start: Array.isArray(entry.start) ? entry.start.slice(0, 2) : undefined,
+      components: Array.isArray(entry.components) ? entry.components.slice(0, 2) : undefined,
+      showComponents: booleanField(entry.showComponents),
+    }));
+  const angleMarkers = recordArray(vector2d.angleMarkers)
+    .slice(0, 8)
+    .map((entry) => ({
+      from: stringField(entry.from, 40),
+      to: stringField(entry.to, 40),
+      label: stringField(entry.label, 80),
+      rightAngle: booleanField(entry.rightAngle),
+      radius: numberField(entry.radius),
+    }));
+  const segmentLabels = recordArray(vector2d.segmentLabels)
+    .slice(0, 8)
+    .map((entry) => ({
+      vectorId: stringField(entry.vectorId, 40),
+      label: stringField(entry.label, 80),
+      position: numberField(entry.position),
+    }));
+  return {
+    labelStyle: stringField(vector2d.labelStyle, 40),
+    ...(vectors.length ? { vectors } : {}),
+    ...(angleMarkers.length ? { angleMarkers } : {}),
+    ...(segmentLabels.length ? { segmentLabels } : {}),
+  };
+}
+
 function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary {
   const summary: MauthPreviewDiagramSummary = {
     renderer: config.type,
@@ -561,7 +598,8 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
       showAxes: booleanField(config.showAxes),
       showGrid: booleanField(config.showGrid),
     };
-    summary.metadata = compactPlainRecord(config.metadata, ["vector2d"]);
+    const vector2d = compactVector2dMetadata(config.metadata);
+    if (vector2d) summary.metadata = { vector2d };
     return summary;
   }
 
@@ -1648,7 +1686,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -1761,7 +1799,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
-      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style geometry and scalar-product ray diagrams, graph2d for coordinate/function graphs, vector2d for component vectors on axes, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
+      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",

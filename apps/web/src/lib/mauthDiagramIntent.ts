@@ -88,9 +88,10 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
   if (hasScalarProductLanguage) {
     return {
       id: "scalar-product-rays",
-      expectedType: "geometricConstruction",
+      expectedType: "vector2d",
       label: "scalar-product ray diagram",
-      reason: "scalar-product ray diagrams without coordinate axes should use geometricConstruction.",
+      reason:
+        "scalar-product ray diagrams need geometry-preserving labelled vectors, lengths, and angle markers; use vector2d with axes/grid hidden for no-axis source diagrams.",
     };
   }
 

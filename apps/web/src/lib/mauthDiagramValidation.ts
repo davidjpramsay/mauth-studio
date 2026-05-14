@@ -484,6 +484,47 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
   });
+
+  const segmentLabels = optionalArray(vector2d, "segmentLabels", `${path}.metadata.vector2d`, issues);
+  segmentLabels?.forEach((entry, index) => {
+    const entryPath = `${path}.metadata.vector2d.segmentLabels[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be a segment label object", "{ vectorId, label }");
+      return;
+    }
+    optionalString(entry, "id", entryPath, issues);
+    const vectorRef = typeof entry.vectorId === "string" ? entry.vectorId : typeof entry.vector === "string" ? entry.vector : "";
+    if (!vectorRef.trim()) {
+      addIssue(issues, `${entryPath}.vectorId`, "must be a non-empty string", "a");
+    }
+    requiredString(entry, "label", entryPath, issues);
+    optionalNumber(entry, "position", entryPath, issues, { min: 0, max: 1 });
+    optionalNumber(entry, "offsetPx", entryPath, issues);
+    optionalNumber(entry, "offset", entryPath, issues);
+    optionalString(entry, "color", entryPath, issues);
+  });
+
+  const angleMarkers = optionalArray(vector2d, "angleMarkers", `${path}.metadata.vector2d`, issues);
+  angleMarkers?.forEach((entry, index) => {
+    const entryPath = `${path}.metadata.vector2d.angleMarkers[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be an angle marker object", "{ from, to, label?, rightAngle? }");
+      return;
+    }
+    optionalString(entry, "id", entryPath, issues);
+    const fromRef = typeof entry.from === "string" ? entry.from : typeof entry.vectorA === "string" ? entry.vectorA : "";
+    const toRef = typeof entry.to === "string" ? entry.to : typeof entry.vectorB === "string" ? entry.vectorB : "";
+    if (!fromRef.trim()) addIssue(issues, `${entryPath}.from`, "must be a non-empty string", "a");
+    if (!toRef.trim()) addIssue(issues, `${entryPath}.to`, "must be a non-empty string", "b");
+    optionalString(entry, "label", entryPath, issues);
+    optionalBoolean(entry, "rightAngle", entryPath, issues);
+    optionalString(entry, "kind", entryPath, issues);
+    optionalString(entry, "type", entryPath, issues);
+    optionalNumber(entry, "radius", entryPath, issues, { positive: true });
+    optionalNumber(entry, "labelX", entryPath, issues);
+    optionalNumber(entry, "labelY", entryPath, issues);
+    optionalString(entry, "color", entryPath, issues);
+  });
 }
 
 function validateGraph3D(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
