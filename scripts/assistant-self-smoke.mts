@@ -228,7 +228,8 @@ const scenarios: SmokeScenario[] = [
     evaluate: ({ document }) => {
       const questionTwo = document.questions[1];
       const diagram = diagrams(document, 1)[0];
-      const graphConfig = diagram?.kind === "diagram" ? (diagram.graphConfig as GraphConfig & { functions?: Array<{ expression?: string }> }) : null;
+      const graphConfig =
+        diagram?.kind === "diagram" ? (diagram.graphConfig as GraphConfig & { functions?: Array<{ expression?: string }> }) : null;
       const expressions = graphConfig?.functions?.map((entry) => entry.expression) ?? [];
       return [
         ...failIf(document.questions.length !== 2, "Question 2 should be appended"),
@@ -236,7 +237,10 @@ const scenarios: SmokeScenario[] = [
         ...failIf(questionTwo?.marks !== 4, "appended question should keep requested marks"),
         ...failIf(graphConfig?.type !== "graph2d", "linear intersection question should use graph2d"),
         ...failIf(expressions.length !== 2, "graph2d diagram should contain two functions"),
-        ...failIf(expressions.some((expression) => /x\^2|pow|quadratic/i.test(expression ?? "")), "graph2d functions should not be quadratic"),
+        ...failIf(
+          expressions.some((expression) => /x\^2|pow|quadratic/i.test(expression ?? "")),
+          "graph2d functions should not be quadratic",
+        ),
       ];
     },
   },
@@ -594,6 +598,69 @@ const scenarios: SmokeScenario[] = [
     },
   },
   {
+    id: "whole-test-solutions-write-all-preserves-diagrams",
+    prompt: "Write the full solution key for this whole test.",
+    assistantPlan:
+      "Use mauth.solutions.writeAll with payload coverage for every marked question/part/subpart, then let the tool validate hidden ticks and layout.",
+    start: () =>
+      documentFixture([
+        question("q1", 2, [textBlock("q1-text", "Use the probability chart."), diagramBlock("q1-chart", statsChartConfig())]),
+        question(
+          "q2",
+          0,
+          [textBlock("q2-text", "A discrete random variable has probability function $P(X=x)=k/x$.")],
+          [
+            part("q2-a", "a", 2, "Find $k$.", [spaceBlock("q2-a-space", 6)]),
+            part("q2-b", "b", 1, "Find $E(X)$.", [spaceBlock("q2-b-space", 5)]),
+          ],
+        ),
+      ]),
+    calls: [
+      {
+        name: "mauth.solutions.writeAll",
+        arguments: {
+          questions: [
+            {
+              questionNumber: 1,
+              marks: 2,
+              studentSpaceLines: 7,
+              solutionText: "Read the probability value from the chart. [[marks:1]] State the answer clearly. [[marks:1]]",
+            },
+            {
+              questionNumber: 2,
+              questionMarks: 0,
+              parts: [
+                {
+                  label: "a",
+                  marks: 2,
+                  solutionText: "$$k\\sum \\frac1x=1.$$ [[marks:1]] Therefore $k=\\frac{30}{11}$. [[marks:1]]",
+                },
+                {
+                  label: "b",
+                  marks: 1,
+                  solutionText: "$$E(X)=\\sum x\\frac{k}{x}=\\frac{90}{11}.$$ [[marks:1]]",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => {
+      const inspection = inspectMauthDocument(document);
+      return [
+        ...failIf(results[0]?.ok !== true, "writeAll tool should pass"),
+        ...failIf(diagrams(document).length !== 1, "whole-test solution pass should preserve the existing diagram"),
+        ...failIf(solutionTexts(document).length !== 3, "each marked scope should receive one solution block"),
+        ...failIf(inspection.counts.studentOnlyModules < 3, "each marked scope should retain or receive a student answer space"),
+        ...failIf(
+          solutionTexts(document).reduce((sum, text) => sum + markAnnotationTotal(text), 0) !== 5,
+          "hidden solution ticks should total the document marks",
+        ),
+      ];
+    },
+  },
+  {
     id: "scalar-product-diagram-wrong-renderer-is-rejected",
     prompt: "Make Question 1 from a screenshot: evaluate scalar products with a four-vector ray diagram.",
     assistantPlan:
@@ -626,6 +693,76 @@ const scenarios: SmokeScenario[] = [
       ...failIf(document.questions[0].contentBlocks[0]?.kind !== "text", "failed action should leave original question untouched"),
       ...failIf(diagrams(document).length !== 0, "failed action should not add the wrong diagram"),
     ],
+  },
+  {
+    id: "source-conversion-includes-native-diagram-and-real-part-text",
+    prompt: "Make Question 1 from the attached screenshot, include the diagram underneath, then put the parts under the diagram.",
+    assistantPlan:
+      "Use mauth.question.upsert/convert-source with a native geometricConstruction diagram and non-empty part prompts; do not replace the diagram with prose.",
+    start: () => documentFixture([question("q1", 5, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 8)])]),
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 1,
+          marks: 0,
+          questionText: "Evaluate the following scalar products exactly.",
+          diagram: {
+            graphConfig: {
+              type: "geometricConstruction",
+              data: {},
+              options: {
+                substanceSource: [
+                  "Point O, A, B, C, D",
+                  "NamedSegment OA, OB, OC, OD",
+                  "Label A $\\mathbf{a}$",
+                  "Label B $\\mathbf{b}$",
+                  "Label C $\\mathbf{c}$",
+                  "Label D $\\mathbf{d}$",
+                  "Label lenA $2\\ \\text{units}$",
+                  "Label lenB $2\\ \\text{units}$",
+                  "Label lenC $3\\ \\text{units}$",
+                  "Label lenD $2\\ \\text{units}$",
+                  "VectorSegment(OA, O, A)",
+                  "VectorSegment(OB, O, B)",
+                  "VectorSegment(OC, O, C)",
+                  "VectorSegment(OD, O, D)",
+                  "LabelsSegment(lenA, O, A)",
+                  "LabelsSegment(lenB, O, B)",
+                  "LabelsSegment(lenC, O, C)",
+                  "LabelsSegment(lenD, O, D)",
+                  "RightAngle(B, O, C)",
+                  "LabelsAngle(OC, OD, $45^\\circ$)",
+                ].join("\n"),
+              },
+              metadata: { renderer: "penrose" },
+            },
+          },
+          parts: [
+            { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, studentSpaceLines: 4 },
+            { text: "$\\mathbf{a}\\cdot\\mathbf{d}$", marks: 2, studentSpaceLines: 4 },
+            { text: "$\\mathbf{c}\\cdot\\mathbf{d}$", marks: 2, studentSpaceLines: 4 },
+          ],
+        },
+      },
+    ],
+    evaluate: ({ document }) => {
+      const parts = document.questions[0].parts ?? [];
+      const graphConfig = diagrams(document)[0]?.kind === "diagram" ? diagrams(document)[0].graphConfig : undefined;
+      const substanceSource = String(graphConfig?.options?.substanceSource ?? "");
+      return [
+        ...failIf(document.questions[0].marks !== 0, "converted source question should put marks on parts"),
+        ...failIf(parts.length !== 3, "converted screenshot should create the three visible parts"),
+        ...failIf(
+          parts.some((item) => !item.text.trim()),
+          "converted parts should not be blank",
+        ),
+        ...failIf(graphConfig?.type !== "geometricConstruction", "scalar-product screenshot should use native geometricConstruction"),
+        ...failIf(!/VectorSegment\(OA,\s*O,\s*A\)/.test(substanceSource), "native diagram should include vector rays"),
+        ...failIf(!/RightAngle\(B,\s*O,\s*C\)/.test(substanceSource), "native diagram should preserve right-angle marker"),
+        ...failIf(!/LabelsAngle/.test(substanceSource), "native diagram should preserve angle labels"),
+      ];
+    },
   },
   {
     id: "scalar-product-diagram-inspection-flags-missing-vector-labels",
@@ -783,6 +920,35 @@ const scenarios: SmokeScenario[] = [
         ...failIf(inspection.counts.solutionOnlyModules !== 1, "inspection should see one solution-only module"),
         ...failIf(inspection.counts.studentOnlyModules < 1, "inspection should see a student-only answer space"),
         ...failIf(markAnnotationTotal(firstSolutionText(document)) !== 2, "solution ticks should match marks"),
+      ];
+    },
+  },
+  {
+    id: "layout-check-flags-missing-answer-surface-and-oversized-diagram",
+    prompt: "Check the whole document layout before printing.",
+    assistantPlan:
+      "Use mauth.layout.check to catch missing student answer surfaces, missing solutions, oversized diagrams, page overflow, and print-risk warnings.",
+    start: () =>
+      documentFixture([
+        question("q1", 2, [textBlock("q1-text", "Find $x$."), textBlock("q1-solution", "**Solution.**\n$x=3$. [[marks:2]]", "solution")]),
+        question("q2", 3, [
+          textBlock("q2-text", "Use the diagram."),
+          diagramBlock("q2-graph", {
+            type: "graph2d",
+            functions: [],
+            options: { widthPx: 760, heightPx: 720 },
+          } as unknown as GraphConfig),
+          spaceBlock("q2-space", 8),
+        ]),
+      ]),
+    calls: [{ name: "mauth.layout.check", arguments: { mode: "both" } }],
+    evaluate: ({ results }) => {
+      const check = results[0]?.data as { issues?: Array<{ code: string }> };
+      const warningCodes = check.issues?.map((warning) => warning.code) ?? [];
+      return [
+        ...failIf(!warningCodes.includes("student-answer-surface-missing"), "layout check should flag a solution with no student surface"),
+        ...failIf(!warningCodes.includes("solution-missing"), "layout check should flag marked scopes with no solution"),
+        ...failIf(!warningCodes.includes("diagram-oversized-print-risk"), "layout check should flag oversized diagrams"),
       ];
     },
   },

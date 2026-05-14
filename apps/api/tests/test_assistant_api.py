@@ -259,6 +259,56 @@ def test_extracts_direct_ensure_solutions_tool_arguments_from_openai_response():
     assert call["mauthArguments"] == arguments
 
 
+def test_extracts_direct_write_all_solutions_tool_arguments_from_openai_response():
+    arguments = {
+        "questions": [
+            {
+                "questionNumber": 1,
+                "studentSpaceLines": 8,
+                "solutionText": "Use the theorem. [[marks:2]]",
+            }
+        ]
+    }
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_write_all_solutions",
+                "arguments": json.dumps(arguments),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["name"] == "mauth_write_all_solutions"
+    assert call["mauthToolName"] == "mauth.solutions.writeAll"
+    assert call["mauthArguments"] == arguments
+
+
+def test_extracts_direct_layout_check_tool_arguments_from_openai_response():
+    arguments = {"mode": "both"}
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_check_document_layout",
+                "arguments": json.dumps(arguments),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["name"] == "mauth_check_document_layout"
+    assert call["mauthToolName"] == "mauth.layout.check"
+    assert call["mauthArguments"] == arguments
+
+
 def test_extracts_direct_adjust_response_spaces_tool_arguments_from_openai_response():
     arguments = {"targets": [{"questionNumber": 1, "partLabel": "a", "lines": 8, "mode": "set"}]}
     response = {
@@ -393,6 +443,57 @@ def test_focused_solution_prompt_gets_direct_tool_hint():
     assert "[1 mark]" in instructions
 
 
+def test_whole_test_solution_prompt_gets_write_all_and_layout_tools():
+    summary = {
+        "counts": {"questions": 2, "marksTotal": 7},
+        "questions": [
+            {"id": "q1", "index": 0, "marks": 3, "modules": [{"kind": "text", "textPreview": "Find k."}]},
+            {
+                "id": "q2",
+                "index": 1,
+                "marks": 0,
+                "parts": [{"id": "p1", "label": "a", "marks": 4, "textPreview": "Find E(X)."}],
+                "modules": [],
+            },
+        ],
+    }
+    message = openai_assistant.AssistantChatMessage(role="user", content="Write the solutions for the whole test.")
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(summary, [message])
+
+    assert [tool["name"] for tool in tools] == [
+        "mauth_write_all_solutions",
+        "mauth_check_document_layout",
+        "mauth_tool",
+    ]
+    assert "mauth_write_all_solutions" in instructions
+    assert "every marked question, part, and subpart" in instructions
+    assert "mauth_check_document_layout" in instructions
+
+
+def test_layout_check_prompt_gets_layout_and_repair_tools():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Please check the whole document layout for print risks, weird blank pages and solution spacing.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": [{"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Find x."}]}]},
+        [message],
+    )
+
+    assert [tool["name"] for tool in tools] == [
+        "mauth_check_document_layout",
+        "mauth_fix_question_formatting",
+        "mauth_author_adjust_response_spaces",
+        "mauth_write_solutions_for_questions",
+    ]
+    assert "mauth_check_document_layout" in instructions
+    assert "repair page overflow" in instructions
+
+
 def test_focused_mark_allocation_prompt_uses_solution_tool_not_replace_question():
     summary = {
         "counts": {"questions": 1, "marksTotal": 5},
@@ -463,6 +564,7 @@ def test_solution_overflow_repair_exposes_solution_and_space_tools():
 
     assert [tool["name"] for tool in tools] == [
         "mauth_write_solutions_for_questions",
+        "mauth_check_document_layout",
         "mauth_author_adjust_response_spaces",
     ]
 
@@ -528,7 +630,9 @@ def test_focused_write_next_missing_question_does_not_refuse():
     assert [tool["name"] for tool in tools] == ["mauth_question_upsert"]
     assert "this tool can append it; do not refuse" in instructions
     assert "exactly the next missing question" in tools[0]["description"]
-    assert "one past the current question count" in tools[0]["parameters"]["properties"]["questionNumber"]["description"]
+    assert (
+        "one past the current question count" in tools[0]["parameters"]["properties"]["questionNumber"]["description"]
+    )
 
 
 def test_screenshot_question_conversion_requires_native_diagram_and_part_text():

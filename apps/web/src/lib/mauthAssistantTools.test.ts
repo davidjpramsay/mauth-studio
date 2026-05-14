@@ -9,6 +9,7 @@ import {
   inspectMauthDocument,
   runMauthAssistantTool,
   type MauthAssistantToolDescription,
+  type MauthLayoutCheck,
   type MauthPreviewInspection,
 } from "./mauthAssistantTools.ts";
 import { inspectMauthDiagram, isAssistantDiagramInspectionWarningBlocking } from "./mauthDiagramInspection.ts";
@@ -30,8 +31,27 @@ function spaceBlock(id: string, lines: number): ContentBlock {
   return { id, kind: "space", lines, visibility: "student" };
 }
 
+function hiddenMarkTotal(text: string) {
+  return [...text.matchAll(/\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi)].reduce((sum, match) => sum + Number(match[1] ?? 0), 0);
+}
+
 function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
   return { id, kind: "diagram", graphConfig };
+}
+
+function statsChartConfig(): GraphConfig {
+  return {
+    type: "statsChart",
+    data: {
+      chartType: "histogram",
+      dataMode: "manualProbabilities",
+      xValues: [1, 2, 3],
+      probabilities: [0.2, 0.5, 0.3],
+      barType: "discrete",
+      yAxisMode: "relativeFrequency",
+    },
+    options: { widthPx: 260, heightPx: 220 },
+  } as unknown as GraphConfig;
 }
 
 function question(id: string, blocks: ContentBlock[] = []): MauthQuestionLike {
@@ -70,6 +90,8 @@ test("describes the assistant tool surface and supported action types", () => {
   assert(description.tools.some((tool) => tool.name === "mauth.actions.preview"));
   assert(description.tools.some((tool) => tool.name === "mauth.preview.inspect"));
   assert(description.tools.some((tool) => tool.name === "mauth.question.upsert"));
+  assert(description.tools.some((tool) => tool.name === "mauth.solutions.writeAll"));
+  assert(description.tools.some((tool) => tool.name === "mauth.layout.check"));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
@@ -1338,6 +1360,171 @@ test("updates top-level marks through the solution authoring wrapper without rem
     true,
   );
   assert.equal(solution?.kind === "text" ? solution.text.includes("[[marks:1]]") : false, true);
+});
+
+test("writes all marked solutions and preserves existing diagrams", () => {
+  const document = documentFixture();
+  document.questions = [
+    question("q1", [textBlock("q1-text", "Use the chart to calculate the probability."), diagramBlock("q1-diagram", statsChartConfig())]),
+    {
+      id: "q2",
+      marks: 0,
+      contentBlocks: [textBlock("q2-text", "A discrete random variable has probability function $P(X=x)=k/x$.")],
+      parts: [
+        {
+          id: "q2-a",
+          label: "a",
+          marks: 1,
+          text: "Find $k$.",
+          contentBlocks: [],
+          subparts: [],
+          itemOrder: [],
+        },
+        {
+          id: "q2-b",
+          label: "b",
+          marks: 0,
+          text: "Use your value of $k$.",
+          contentBlocks: [],
+          subparts: [
+            {
+              id: "q2-b-i",
+              label: "i",
+              marks: 2,
+              text: "Find $E(X)$.",
+              contentBlocks: [],
+              itemOrder: [],
+            },
+          ],
+          itemOrder: [{ kind: "subpart", id: "q2-b-i" }],
+        },
+      ],
+      itemOrder: [
+        { kind: "block", id: "q2-text" },
+        { kind: "part", id: "q2-a" },
+        { kind: "part", id: "q2-b" },
+      ],
+    },
+  ];
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.solutions.writeAll",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          marks: 2,
+          studentSpaceLines: 8,
+          solutionText: "Read the chart value. [[marks:1]] State the probability clearly. [[marks:1]]",
+        },
+        {
+          questionNumber: 2,
+          questionMarks: 0,
+          parts: [
+            {
+              label: "a",
+              marks: 1,
+              solutionText: "$$k\\sum \\frac1x=1.$$ [[marks:1]]",
+            },
+            {
+              label: "b",
+              marks: 0,
+              subparts: [
+                {
+                  label: "i",
+                  marks: 2,
+                  solutionText: "$$E(X)=\\sum x\\frac{k}{x}.$$ [[marks:1]] Substitute $k$. [[marks:1]]",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const next = result.document;
+  const q1Blocks = next?.questions[0].contentBlocks ?? [];
+  const q2Parts = next?.questions[1].parts ?? [];
+  const q1Solution = q1Blocks.find((block) => block.kind === "text" && block.visibility === "solution");
+  const q2PartSolution = q2Parts[0]?.contentBlocks.find((block) => block.kind === "text" && block.visibility === "solution");
+  const q2SubpartSolution = q2Parts[1]?.subparts?.[0]?.contentBlocks.find(
+    (block) => block.kind === "text" && block.visibility === "solution",
+  );
+  const allSolutionText = [q1Solution, q2PartSolution, q2SubpartSolution]
+    .map((block) => (block?.kind === "text" ? block.text : ""))
+    .join("\n");
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    q1Blocks.some((block) => block.kind === "diagram" && block.id === "q1-diagram"),
+    true,
+  );
+  assert.equal(
+    q1Blocks.some((block) => block.kind === "space" && block.visibility === "student" && block.lines >= 8),
+    true,
+  );
+  assert.equal(
+    q2Parts[0]?.contentBlocks.some((block) => block.kind === "space" && block.visibility === "student"),
+    true,
+  );
+  assert.equal(
+    q2Parts[1]?.subparts?.[0]?.contentBlocks.some((block) => block.kind === "space" && block.visibility === "student"),
+    true,
+  );
+  assert.equal(hiddenMarkTotal(allSolutionText), 5);
+  assert.equal(result.data && typeof result.data === "object" && "layout" in result.data, true);
+});
+
+test("requires whole-test solution payload coverage for every marked scope", () => {
+  const document = documentFixture();
+  document.questions.push(question("q2", [textBlock("q2-text", "Find $E(X)$.")]));
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.solutions.writeAll",
+    arguments: {
+      questions: [
+        {
+          questionNumber: 1,
+          solutionText: "First solution. [[marks:2]]",
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /every marked question/);
+  assert(data.validationIssues?.some((issue) => issue.path === "questions[1]" && issue.message.includes("Question 2")));
+});
+
+test("runs a document-wide layout check for missing solution and answer-space risks", () => {
+  const document = documentFixture();
+  document.questions = [
+    question("q1", [textBlock("q1-text", "Find $x$."), textBlock("q1-solution", "**Solution.**\n$x=3$. [[marks:2]]", "solution")]),
+    question("q2", [
+      textBlock("q2-text", "Use the oversized diagram."),
+      diagramBlock("q2-diagram", {
+        type: "graph2d",
+        xMin: -10,
+        xMax: 10,
+        yMin: -10,
+        yMax: 10,
+        functions: [],
+        options: { widthPx: 760, heightPx: 720 },
+      } as unknown as GraphConfig),
+      spaceBlock("q2-space", 6),
+    ]),
+  ];
+
+  const result = runMauthAssistantTool(document, { name: "mauth.layout.check", arguments: { mode: "both" } });
+  const check = result.data as MauthLayoutCheck;
+  const warningCodes = check.issues.map((warning) => warning.code);
+
+  assert.equal(result.ok, true);
+  assert.equal(check.ok, false);
+  assert(warningCodes.includes("student-answer-surface-missing"));
+  assert(warningCodes.includes("diagram-oversized-print-risk"));
+  assert(warningCodes.includes("solution-missing"));
 });
 
 test("normalises visible assistant mark notes into hidden solution tick annotations", () => {

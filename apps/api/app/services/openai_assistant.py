@@ -39,9 +39,11 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_make_diagram_for_question": "mauth.author.addDiagram",
     "mauth_author_ensure_solutions": "mauth.author.ensureSolutions",
     "mauth_write_solutions_for_questions": "mauth.author.ensureSolutions",
+    "mauth_write_all_solutions": "mauth.solutions.writeAll",
     "mauth_author_adjust_response_spaces": "mauth.author.adjustResponseSpaces",
     "mauth_format_apply": "mauth.format.apply",
     "mauth_fix_question_formatting": "mauth.format.apply",
+    "mauth_check_document_layout": "mauth.layout.check",
 }
 
 MODEL_PRICING_USD_PER_1M = {
@@ -76,8 +78,10 @@ MAUTH_TOOL_NAMES = [
     "mauth.author.replaceQuestion",
     "mauth.author.addDiagram",
     "mauth.author.ensureSolutions",
+    "mauth.solutions.writeAll",
     "mauth.author.adjustResponseSpaces",
     "mauth.format.apply",
+    "mauth.layout.check",
     "mauth.files.describe",
     "mauth.files.list",
     "mauth.files.open",
@@ -716,6 +720,36 @@ def focused_tool_hint(
             "blank space",
         )
     )
+    asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
+    asks_for_whole_solution_key = asks_for_solution and any(
+        term in text
+        for term in (
+            "all questions",
+            "every question",
+            "whole test",
+            "whole document",
+            "entire test",
+            "all solutions",
+            "full solution",
+            "solution key",
+            "marking key",
+        )
+    )
+    asks_for_layout_check = any(
+        term in text
+        for term in (
+            "layout check",
+            "check layout",
+            "document-wide layout",
+            "print risk",
+            "page overflow",
+            "blank page",
+            "missing answer space",
+            "solution-space mismatch",
+            "ready to print",
+            "print-ready",
+        )
+    )
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -732,6 +766,21 @@ def focused_tool_hint(
     question_number = sorted(question_numbers)[0] if question_numbers else 1
     has_question_text = bool(selected_question and question_summary_has_text(selected_question))
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
+
+    if asks_for_layout_check:
+        return (
+            "Focused tool routing hint: this is a document-wide layout/print check. Your first tool call should be "
+            'mauth_check_document_layout with {"mode":"both"}. Repair warnings with mauth_fix_question_formatting, '
+            "mauth_author_adjust_response_spaces, or mauth_write_solutions_for_questions as appropriate."
+        )
+    if asks_for_whole_solution_key:
+        return (
+            "Focused tool routing hint: this is a whole-test solution-key request. Inspect the document first with "
+            "mauth.document.inspect if the compact summary does not contain enough question text for every marked "
+            "scope. Then call mauth_write_all_solutions with one payload covering every marked question, part, and "
+            "subpart. Preserve diagrams, use hidden [[marks:n]] ticks only, make tick totals match marks, and finish "
+            "with mauth_check_document_layout in solutions mode before reporting success."
+        )
 
     if asks_to_write_question:
         circle_proof_guidance = ""
@@ -759,9 +808,7 @@ def focused_tool_hint(
             "question, this tool can append it; do not refuse just because it does not exist yet."
             f"{circle_proof_guidance} {diagram_guidance}"
         )
-    if asks_for_response_space and not (
-        any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
-    ):
+    if asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
         return (
             "Focused tool routing hint: this is a response-space/layout request. Your first tool call should be "
             f'mauth_author_adjust_response_spaces with {{"targets":[{{"questionNumber":{question_number},"lines":10,"mode":"set"}}]}}. '
@@ -775,9 +822,7 @@ def focused_tool_hint(
             "parts/subparts, setDiagramAlignment for diagram left/center/right, adjustAnswerSpace for answer-space "
             "line counts, fitSolutionToSpace when solutions need to fit, and moveModule only when moving one known module."
         )
-    if (
-        any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
-    ) and has_question_text:
+    if (asks_for_solution or asks_for_marking_edit) and has_question_text:
         return (
             "Focused tool routing hint: this is a solution/mark-allocation request and the compact summary already includes enough "
             f"Question {question_number} text. Your first tool call should be mauth_write_solutions_for_questions with "
@@ -1417,13 +1462,47 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                                                 "Make the hidden mark total match the part marks."
                                             ),
                                         },
+                                        "subparts": {
+                                            "type": "array",
+                                            "description": "Optional per-subpart solutions when the existing part has structured subparts.",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "label": {"type": "string"},
+                                                    "subpartId": {"type": "string"},
+                                                    "marks": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "maximum": 100,
+                                                        "description": "Optional updated marks for this subpart.",
+                                                    },
+                                                    "studentSpaceLines": {
+                                                        "type": "integer",
+                                                        "minimum": 1,
+                                                        "maximum": 60,
+                                                        "description": (
+                                                            "Generous subpart answer/work space; the app may raise this to fit the solution."
+                                                        ),
+                                                    },
+                                                    "solutionText": {
+                                                        "type": "string",
+                                                        "description": (
+                                                            "Subpart solution with hidden [[marks:n]] annotations on mark-worthy lines. "
+                                                            "Make the hidden mark total match the subpart marks."
+                                                        ),
+                                                    },
+                                                },
+                                                "required": ["solutionText"],
+                                                "additionalProperties": False,
+                                            },
+                                        },
                                     },
-                                    "required": ["solutionText"],
+                                    "required": [],
                                     "additionalProperties": False,
                                 },
                             },
                         },
-                        "required": ["solutionText"],
+                        "required": [],
                         "additionalProperties": False,
                     },
                 }
@@ -1443,6 +1522,41 @@ def mauth_write_solutions_for_questions_tool_definition() -> dict[str, Any]:
         "total to each question/part, keep solutions concise, and adjust student space only as needed to fit the solution."
     )
     return definition
+
+
+def mauth_write_all_solutions_tool_definition() -> dict[str, Any]:
+    definition = mauth_author_ensure_solutions_tool_definition()
+    definition["name"] = "mauth_write_all_solutions"
+    definition["description"] = (
+        "Write or replace the full marking-key solutions for the whole current test. Use only when covering every "
+        "marked question, part, and subpart. Preserve existing diagrams and student question content, use hidden "
+        "[[marks:n]] annotations only, match every hidden tick total to the corresponding marks, and choose generous "
+        "studentSpaceLines so the solution copy fits without layout movement."
+    )
+    return definition
+
+
+def mauth_check_document_layout_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": "mauth_check_document_layout",
+        "description": (
+            "Run a document-wide Mauth layout/print check without changing the document. Use for broad checks of page "
+            "overflow, missing answer spaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram "
+            "render/semantic warnings, and print-risk items before reporting that a document is ready."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["student", "solutions", "both"],
+                    "description": "student checks student copy surfaces, solutions checks solution-key fit/ticks, both checks both.",
+                }
+            },
+            "additionalProperties": False,
+        },
+    }
 
 
 def mauth_author_adjust_response_spaces_tool_definition() -> dict[str, Any]:
@@ -1613,6 +1727,36 @@ def assistant_tool_definitions(
     asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
     asks_to_add = any(term in text for term in ("add", "include", "insert", "put", "place", "draw", "sketch"))
     asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
+    asks_for_whole_solution_key = asks_for_solution and any(
+        term in text
+        for term in (
+            "all questions",
+            "every question",
+            "whole test",
+            "whole document",
+            "entire test",
+            "all solutions",
+            "full solution",
+            "solution key",
+            "marking key",
+        )
+    )
+    asks_for_layout_check = any(
+        term in text
+        for term in (
+            "layout check",
+            "check layout",
+            "document-wide layout",
+            "print risk",
+            "page overflow",
+            "blank page",
+            "weird blank",
+            "missing answer space",
+            "solution-space mismatch",
+            "ready to print",
+            "print-ready",
+        )
+    )
     asks_for_response_space = any(
         term in text
         for term in (
@@ -1727,14 +1871,33 @@ def assistant_tool_definitions(
     if repair_targets & {
         "mauth_author_ensure_solutions",
         "mauth_write_solutions_for_questions",
+        "mauth_write_all_solutions",
+        "mauth.solutions.writeAll",
         "mauth.author.ensureSolutions",
     }:
         if tool_outputs_mention(tool_outputs, solution_layout_repair_terms):
+            solution_repair_tool = (
+                mauth_write_all_solutions_tool_definition()
+                if repair_targets & {"mauth_write_all_solutions", "mauth.solutions.writeAll"}
+                else mauth_write_solutions_for_questions_tool_definition()
+            )
             return [
-                mauth_write_solutions_for_questions_tool_definition(),
+                solution_repair_tool,
+                mauth_check_document_layout_tool_definition(),
                 mauth_author_adjust_response_spaces_tool_definition(),
             ]
-        return [mauth_write_solutions_for_questions_tool_definition()]
+        return [
+            mauth_write_all_solutions_tool_definition()
+            if repair_targets & {"mauth_write_all_solutions", "mauth.solutions.writeAll"}
+            else mauth_write_solutions_for_questions_tool_definition()
+        ]
+    if repair_targets & {"mauth_check_document_layout", "mauth.layout.check"}:
+        return [
+            mauth_check_document_layout_tool_definition(),
+            mauth_fix_question_formatting_tool_definition(),
+            mauth_author_adjust_response_spaces_tool_definition(),
+            mauth_write_solutions_for_questions_tool_definition(),
+        ]
     if repair_targets & {"mauth_author_adjust_response_spaces", "mauth.author.adjustResponseSpaces"}:
         return [mauth_author_adjust_response_spaces_tool_definition()]
     if repair_targets & {"mauth_format_apply", "mauth_fix_question_formatting", "mauth.format.apply"}:
@@ -1754,6 +1917,19 @@ def assistant_tool_definitions(
         return [mauth_fix_question_formatting_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
         return [mauth_write_solutions_for_questions_tool_definition(), mauth_tool_definition()]
+    if asks_for_layout_check:
+        return [
+            mauth_check_document_layout_tool_definition(),
+            mauth_fix_question_formatting_tool_definition(),
+            mauth_author_adjust_response_spaces_tool_definition(),
+            mauth_write_solutions_for_questions_tool_definition(),
+        ]
+    if asks_for_whole_solution_key:
+        return [
+            mauth_write_all_solutions_tool_definition(),
+            mauth_check_document_layout_tool_definition(),
+            mauth_tool_definition(),
+        ]
     if any(term in text for term in file_only_terms) and not any(
         term in text for term in ("question", "solution", "diagram", "format", "layout", "exam")
     ):
@@ -1765,8 +1941,10 @@ def assistant_tool_definitions(
         else mauth_question_upsert_tool_definition(require_diagram=require_source_diagram),
         mauth_make_diagram_for_question_tool_definition(),
         mauth_write_solutions_for_questions_tool_definition(),
+        mauth_write_all_solutions_tool_definition(),
         mauth_author_adjust_response_spaces_tool_definition(),
         mauth_fix_question_formatting_tool_definition(),
+        mauth_check_document_layout_tool_definition(),
         mauth_tool_definition(),
     ]
 
@@ -1823,6 +2001,8 @@ Tool-call contract:
 - Source scalar-product/vector-ray diagrams with magnitudes, angle markers, and no coordinate axes should use diagram.graphConfig.type = "geometricConstruction" with supported Penrose Substance. Do not use vectorRelationship for these; vectorRelationship is for conceptual network/link diagrams only. Preserve visible right-angle markers with the same two rays shown in the source, and preserve numeric angle labels such as $45^\\circ$. Draw right-angle markers with RightAngle(pointOnFirstRay, vertex, pointOnSecondRay); do not use PerpendicularToSegment for that marker. Do not invent unsupported predicates such as SegmentLength, LabelsPoint, or OppositeRays; show given magnitudes with Label plus LabelsSegment. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_write_solutions_for_questions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
+- For whole-test solution-key requests, use mauth_write_all_solutions after you have enough question text for every marked question, part, and subpart. It must include payload coverage for every marked scope, preserve diagrams, size studentSpaceLines generously, and use hidden [[marks:n]] annotations whose totals match each scope. After it succeeds, call mauth_check_document_layout with mode "solutions" and repair any returned solution-space or hidden-mark warnings before saying the solution key is complete.
+- For broad layout or print-readiness checks, call mauth_check_document_layout with mode "both" or the requested mode. Do not treat returned warnings as done; repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow formatting/space/solution tool that owns the issue.
 - In solutionText, put hidden mark ticks at the end of mark-worthy lines using [[marks:n]]. Mauth hides this annotation and renders n red check marks. Make the hidden mark total match the question/part marks. Do not write visible bracket notes such as [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." in the displayed solution prose.
 - Always call mauth_tool with this wrapper shape: {{"name":"<mauth tool name>","arguments":{{...}}}}. For low-level document action batches, use {{"name":"mauth.actions.preview","arguments":{{"actions":[...]}}}}.
 - Put action batches, file paths, and tool-specific options inside the nested arguments object, not beside name.

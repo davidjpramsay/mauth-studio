@@ -235,7 +235,11 @@ function postEditInspectionPlan(call: MauthAssistantAdapterToolCall): PostEditIn
     if (containsSolutionPayload(call.arguments) || containsResponseSpacePayload(call.arguments)) modes.push("solutionLayout");
     return modes.length ? { args: postEditQuestionInspectionArgs(call), modes } : null;
   }
-  if (call.name === "mauth.author.ensureSolutions" || call.name === "mauth.author.adjustResponseSpaces") {
+  if (
+    call.name === "mauth.author.ensureSolutions" ||
+    call.name === "mauth.solutions.writeAll" ||
+    call.name === "mauth.author.adjustResponseSpaces"
+  ) {
     const targetArray = isRecord(call.arguments)
       ? Array.isArray(call.arguments.questions)
         ? call.arguments.questions
@@ -563,6 +567,7 @@ export async function runMauthAssistantAdapterTool<
           "mauth.author.replaceQuestion",
           "mauth.author.addDiagram",
           "mauth.author.ensureSolutions",
+          "mauth.solutions.writeAll",
           "mauth.author.adjustResponseSpaces",
           "mauth.format.apply",
         ] as string[]

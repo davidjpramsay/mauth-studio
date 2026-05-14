@@ -34,6 +34,7 @@
     "When mauth.question.upsert is used for a genuine question rewrite, omitted diagram fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when deliberately removing old diagrams.",
     "When the in-app assistant is asked to add a diagram to an existing question, use mauth.author.addDiagram with a real renderer-specific graphConfig. Do not rewrite the whole question just to add the diagram unless the wording is mathematically broken. Hand diagram intent to the Diagram Brain for renderer choice and graphConfig details.",
     "When the in-app assistant is asked to write solutions for an existing question and the current summary contains the needed question text, use mauth.author.ensureSolutions rather than repeatedly inspecting or manually building low-level module edits.",
+    "When the in-app assistant is asked to write solutions for every question, make a full marking key, or check the whole test's solution coverage, use mauth.solutions.writeAll rather than repeated low-level solution edits. It covers marked questions, parts, and subparts, preserves diagrams, and validates hidden mark totals.",
     "When the in-app assistant is asked only to add, reduce, or resize answer/working space for an existing question, part, or subpart, use mauth.author.adjustResponseSpaces. Do not use mauth.question.upsert for response-space-only edits, because the existing wording, diagrams, solutions, ids, and ordering should remain intact.",
     "When the in-app assistant is asked only to format an existing question, part, subpart, diagram, module, or answer space, use mauth.format.apply. Do not use mauth.question.upsert for page-break, diagram-alignment, module-move, solution-fit, or spacing-only edits because the existing mathematical content should remain intact.",
     "When a high-level authoring payload needs parts, use its structured parts array. Do not type visible labels such as (a), (b), or (i) into plain question text.",
@@ -49,6 +50,7 @@
     "For structured probability or data values, use a Table block rather than spacing text manually.",
     "Every marked item must have a student response surface. For multiple-choice questions the Choice List is the response surface; for free-response questions, parts, and subparts, include an intentional Space block at the same structural level as the mark allocation.",
     "When authoring free-response items, assume students need room for working, not just a final answer. Leave final sizing to the Formatting Brain, but do not create a marked free-response item with no answer/work area.",
+    "After broad question-generation or solution-generation work, use mauth.layout.check when the teacher asks for print/layout readiness or when many answer spaces, diagrams, or solution slots were changed.",
     "If a generated question needs a diagram, create a diagram block and pass the diagram details to the Diagram Brain."
   ],
   "checks": [

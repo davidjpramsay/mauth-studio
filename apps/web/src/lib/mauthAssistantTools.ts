@@ -36,8 +36,10 @@ export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.author.replaceQuestion",
   "mauth.author.addDiagram",
   "mauth.author.ensureSolutions",
+  "mauth.solutions.writeAll",
   "mauth.author.adjustResponseSpaces",
   "mauth.format.apply",
+  "mauth.layout.check",
 ] as const;
 
 export type MauthAssistantToolName = (typeof MAUTH_ASSISTANT_TOOL_NAMES)[number];
@@ -88,6 +90,11 @@ export interface MauthAuthorResponseSpaceValidationFailure {
 }
 
 export interface MauthFormatApplyValidationFailure {
+  error: string;
+  issues: MauthActionValidationIssue[];
+}
+
+export interface MauthSolutionsWriteAllValidationFailure {
   error: string;
   issues: MauthActionValidationIssue[];
 }
@@ -373,6 +380,34 @@ export interface MauthPreviewInspection {
   >;
   warnings: MauthPreviewInspectionWarning[];
   renderedMetrics: MauthPreviewRenderedMetrics;
+}
+
+export type MauthLayoutCheckMode = "student" | "solutions" | "both";
+
+export interface MauthLayoutCheckIssue extends MauthPreviewInspectionWarning {
+  source: "document" | "preview" | "rendered";
+  expected?: string;
+}
+
+export interface MauthLayoutCheck {
+  mode: MauthLayoutCheckMode;
+  ok: boolean;
+  summary: {
+    questions: number;
+    marksTotal: number;
+    pages?: number;
+    issueCount: number;
+    warningCount: number;
+    errorCount: number;
+    missingAnswerSurfaceCount: number;
+    missingSolutionCount: number;
+    solutionMismatchCount: number;
+    diagramIssueCount: number;
+    printRiskCount: number;
+  };
+  issues: MauthLayoutCheckIssue[];
+  preview: Pick<MauthPreviewInspection, "scope" | "target" | "warnings" | "renderedMetrics" | "questions">;
+  document: MauthDocumentInspection;
 }
 
 export interface MauthAssistantToolDescription {
@@ -1338,6 +1373,240 @@ export function inspectMauthPreview<Q extends MauthQuestionLike, F extends objec
   };
 }
 
+function layoutCheckMode(args: unknown): MauthLayoutCheckMode {
+  if (!isRecord(args) || typeof args.mode !== "string") return "both";
+  return args.mode === "student" || args.mode === "solutions" || args.mode === "both" ? args.mode : "both";
+}
+
+function layoutIssueKey(issue: Pick<MauthLayoutCheckIssue, "code" | "anchor" | "targetId" | "message">) {
+  return `${issue.code}:${issue.anchor ?? ""}:${issue.targetId ?? ""}:${issue.message}`;
+}
+
+function layoutIssueFromPreview(warning: MauthPreviewInspectionWarning): MauthLayoutCheckIssue {
+  const source: MauthLayoutCheckIssue["source"] = warning.code.startsWith("rendered-") ? "rendered" : "preview";
+  return { ...warning, source };
+}
+
+function layoutPrintRiskCode(code: string) {
+  return (
+    code.includes("overflow") ||
+    code.includes("clipped") ||
+    code.includes("blank-page") ||
+    code.includes("too-large") ||
+    code === "final-page-break"
+  );
+}
+
+function numericGraphSizeValue(config: GraphConfig, key: "widthPx" | "heightPx" | "width" | "height") {
+  const directValue = (config as unknown as Record<string, unknown>)[key];
+  if (typeof directValue === "number" && Number.isFinite(directValue)) return directValue;
+  const options = isRecord(config.options) ? config.options : undefined;
+  const optionValue = options?.[key];
+  return typeof optionValue === "number" && Number.isFinite(optionValue) ? optionValue : undefined;
+}
+
+function addOversizedDiagramIssues(
+  blocks: readonly ContentBlock[],
+  anchorForBlock: (blockId: string) => string,
+  issues: MauthLayoutCheckIssue[],
+) {
+  for (const block of blocks) {
+    if (block.kind !== "diagram") continue;
+    const width = numericGraphSizeValue(block.graphConfig, "widthPx") ?? numericGraphSizeValue(block.graphConfig, "width");
+    const height = numericGraphSizeValue(block.graphConfig, "heightPx") ?? numericGraphSizeValue(block.graphConfig, "height");
+    if ((width !== undefined && width > 760) || (height !== undefined && height > 680)) {
+      issues.push({
+        code: "diagram-oversized-print-risk",
+        severity: "warning",
+        source: "document",
+        anchor: anchorForBlock(block.id),
+        targetId: block.id,
+        message: `Diagram ${block.id} is large enough to risk clipping or awkward pagination.`,
+        expected: "Keep diagrams within the printable page area, or use left/right layout with matching answer space.",
+      });
+    }
+  }
+}
+
+function addStructuralLayoutIssues<Q extends MauthQuestionLike>(
+  questions: readonly Q[],
+  mode: MauthLayoutCheckMode,
+  issues: MauthLayoutCheckIssue[],
+) {
+  questions.forEach((question, questionIndex) => {
+    const questionNumber = questionIndex + 1;
+    const questionDirect = solutionScopeInspection(
+      "question",
+      questionAnchor(question.id),
+      `Question ${questionNumber}`,
+      question.marks,
+      question.contentBlocks,
+    );
+    const shouldCheckQuestionDirect = !question.parts?.length && questionDirect.marks > 0;
+    if (shouldCheckQuestionDirect && mode !== "solutions" && questionDirect.studentAnswerSurfaceCount === 0) {
+      issues.push({
+        code: "student-answer-surface-missing",
+        severity: "warning",
+        source: "document",
+        anchor: questionAnchor(question.id),
+        targetId: question.id,
+        message: `Question ${questionNumber} has marks but no student-only answer surface.`,
+        expected: "Add a student-only answer space, table, or diagram answer surface unless the answer is entirely multiple choice.",
+      });
+    }
+    if (shouldCheckQuestionDirect && mode !== "student" && questionDirect.solutionModuleCount === 0) {
+      issues.push({
+        code: "solution-missing",
+        severity: "warning",
+        source: "document",
+        anchor: questionAnchor(question.id),
+        targetId: question.id,
+        message: `Question ${questionNumber} has marks but no solution-only module yet.`,
+        expected: "Add a solution-only text/table/diagram answer surface with hidden [[marks:n]] ticks.",
+      });
+    }
+
+    addOversizedDiagramIssues(question.contentBlocks, (blockId) => questionBlockAnchor(question.id, blockId), issues);
+    question.parts?.forEach((part, partIndex) => {
+      const partLabel = part.label ?? String.fromCharCode(97 + partIndex);
+      const partScope = solutionScopeInspection(
+        "part",
+        partAnchor(question.id, part.id),
+        `Question ${questionNumber} part ${partLabel}`,
+        part.marks,
+        part.contentBlocks,
+      );
+      if (!part.subparts?.length && partScope.marks > 0 && mode !== "solutions" && partScope.studentAnswerSurfaceCount === 0) {
+        issues.push({
+          code: "student-answer-surface-missing",
+          severity: "warning",
+          source: "document",
+          anchor: partAnchor(question.id, part.id),
+          targetId: part.id,
+          message: `Question ${questionNumber} part ${partLabel} has marks but no student-only answer surface.`,
+          expected: "Add a student-only answer surface unless the part answer is the visible table/diagram itself.",
+        });
+      }
+      if (!part.subparts?.length && partScope.marks > 0 && mode !== "student" && partScope.solutionModuleCount === 0) {
+        issues.push({
+          code: "solution-missing",
+          severity: "warning",
+          source: "document",
+          anchor: partAnchor(question.id, part.id),
+          targetId: part.id,
+          message: `Question ${questionNumber} part ${partLabel} has marks but no solution-only module yet.`,
+          expected: "Add a solution-only text/table/diagram answer surface with hidden [[marks:n]] ticks.",
+        });
+      }
+      addOversizedDiagramIssues(part.contentBlocks, (blockId) => partBlockAnchor(question.id, part.id, blockId), issues);
+      part.subparts?.forEach((subpart, subpartIndex) => {
+        const subpartLabel = subpart.label ?? String(subpartIndex + 1);
+        const subpartScope = solutionScopeInspection(
+          "subpart",
+          subpartAnchor(question.id, part.id, subpart.id),
+          `Question ${questionNumber} part ${partLabel} subpart ${subpartLabel}`,
+          subpart.marks,
+          subpart.contentBlocks,
+        );
+        if (subpartScope.marks > 0 && mode !== "solutions" && subpartScope.studentAnswerSurfaceCount === 0) {
+          issues.push({
+            code: "student-answer-surface-missing",
+            severity: "warning",
+            source: "document",
+            anchor: subpartAnchor(question.id, part.id, subpart.id),
+            targetId: subpart.id,
+            message: `Question ${questionNumber} part ${partLabel} subpart ${subpartLabel} has marks but no student-only answer surface.`,
+            expected: "Add a student-only answer surface unless the subpart answer is the visible table/diagram itself.",
+          });
+        }
+        if (subpartScope.marks > 0 && mode !== "student" && subpartScope.solutionModuleCount === 0) {
+          issues.push({
+            code: "solution-missing",
+            severity: "warning",
+            source: "document",
+            anchor: subpartAnchor(question.id, part.id, subpart.id),
+            targetId: subpart.id,
+            message: `Question ${questionNumber} part ${partLabel} subpart ${subpartLabel} has marks but no solution-only module yet.`,
+            expected: "Add a solution-only text/table/diagram answer surface with hidden [[marks:n]] ticks.",
+          });
+        }
+        addOversizedDiagramIssues(
+          subpart.contentBlocks,
+          (blockId) => subpartBlockAnchor(question.id, part.id, subpart.id, blockId),
+          issues,
+        );
+      });
+    });
+
+    if (questionIndex === questions.length - 1 && question.pageBreakAfter) {
+      issues.push({
+        code: "final-page-break",
+        severity: "warning",
+        source: "document",
+        anchor: questionAnchor(question.id),
+        targetId: question.id,
+        message: `Question ${questionNumber} has a page break after the final question, which can create a blank final page.`,
+        expected: "Remove the final page break unless an intentional supplementary/blank page is required.",
+      });
+    }
+  });
+}
+
+export function inspectMauthLayout<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown = {},
+  options: MauthAssistantToolOptions<Q, F, C> = {},
+): MauthLayoutCheck {
+  const mode = layoutCheckMode(args);
+  const documentInspection = inspectMauthDocument(document);
+  const preview = inspectMauthPreview(document, { scope: "document" }, options.assistantContext);
+  const issues: MauthLayoutCheckIssue[] = [];
+
+  addStructuralLayoutIssues(document.questions, mode, issues);
+  for (const warning of preview.warnings) {
+    if (mode === "student" && warning.code.startsWith("solution-")) continue;
+    if (mode === "solutions" && warning.code === "solution-missing") continue;
+    if (mode === "solutions" && warning.code === "student-answer-surface-missing") continue;
+    issues.push(layoutIssueFromPreview(warning));
+  }
+
+  const dedupedIssues = issues.filter(
+    (issue, index, all) => all.findIndex((item) => layoutIssueKey(item) === layoutIssueKey(issue)) === index,
+  );
+  const errorCount = dedupedIssues.filter((issue) => issue.severity === "error").length;
+  const warningCount = dedupedIssues.filter((issue) => issue.severity === "warning").length;
+  return {
+    mode,
+    ok: errorCount === 0 && warningCount === 0,
+    summary: {
+      questions: documentInspection.counts.questions,
+      marksTotal: documentInspection.counts.marksTotal,
+      ...(preview.renderedMetrics.available ? { pages: preview.renderedMetrics.pageCount } : {}),
+      issueCount: dedupedIssues.length,
+      warningCount,
+      errorCount,
+      missingAnswerSurfaceCount: dedupedIssues.filter(
+        (issue) => issue.code === "student-space-missing" || issue.code === "student-answer-surface-missing",
+      ).length,
+      missingSolutionCount: dedupedIssues.filter((issue) => issue.code === "solution-missing").length,
+      solutionMismatchCount: dedupedIssues.filter(
+        (issue) => issue.code === "solution-hidden-mark-total-mismatch" || issue.code === "solution-visible-mark-note",
+      ).length,
+      diagramIssueCount: dedupedIssues.filter((issue) => issue.code.includes("diagram") || issue.code.startsWith("graph2d-")).length,
+      printRiskCount: dedupedIssues.filter((issue) => layoutPrintRiskCode(issue.code)).length,
+    },
+    issues: dedupedIssues,
+    preview: {
+      scope: preview.scope,
+      target: preview.target,
+      warnings: preview.warnings,
+      renderedMetrics: preview.renderedMetrics,
+      questions: preview.questions,
+    },
+    document: documentInspection,
+  };
+}
+
 export function describeMauthAssistantTools(): MauthAssistantToolDescription {
   return {
     tools: [
@@ -1387,6 +1656,11 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
           "Add or replace solution-only worked solutions, optionally update marks, and ensure matching student-only answer spaces for existing questions or parts while preserving shared question modules.",
       },
       {
+        name: "mauth.solutions.writeAll",
+        description:
+          "Write or replace a full solution key for every marked question, part, and subpart in the current test. Requires coverage for all marked scopes, preserves diagrams, adds hidden [[marks:n]] ticks, sizes student spaces, and validates solution layout before commit.",
+      },
+      {
         name: "mauth.author.adjustResponseSpaces",
         description:
           "Resize or add student-only answer spaces for existing questions, parts, or subparts without rewriting question content, solutions, or diagrams.",
@@ -1395,6 +1669,11 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
         name: "mauth.format.apply",
         description:
           "Apply safe high-level formatting operations such as page breaks before parts/subparts, diagram alignment, response-space sizing, module moves, solution-fit spacing, and tidy spacing without rewriting question content.",
+      },
+      {
+        name: "mauth.layout.check",
+        description:
+          "Run a document-wide structural and rendered-layout check for page overflow, missing answer surfaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram warnings, and print-risk items.",
       },
     ],
     actionTypes: {
@@ -1479,10 +1758,12 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
       "For focused formatting requests such as page breaks before a part/subpart, diagram alignment, moving one module, fitting a solution to its student space, or tidying excess spacing, prefer mauth.format.apply.",
+      "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
+      "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style geometry and scalar-product ray diagrams, graph2d for coordinate/function graphs, vector2d for component vectors on axes, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
-      "For solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
+      "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",
       "Run validation for solution or whole-document passes.",
       "Apply the same validated action batch with mauth.actions.apply.",
@@ -2815,6 +3096,120 @@ function partSolutionTarget(part: MauthPartLike, entry: Record<string, unknown>,
   return index === 0;
 }
 
+function subpartSolutionTarget(subpart: MauthSubpartLike, entry: Record<string, unknown>, index: number) {
+  if (typeof entry.subpartId === "string" && entry.subpartId.trim()) return subpart.id === entry.subpartId;
+  if (typeof entry.label === "string" && entry.label.trim())
+    return (subpart.label ?? "").toLowerCase() === entry.label.trim().toLowerCase();
+  return index === 0;
+}
+
+function questionSolutionPayloadTarget<Q extends MauthQuestionLike>(
+  questions: readonly Q[],
+  entry: Record<string, unknown>,
+): Q | undefined {
+  if (typeof entry.questionId === "string" && entry.questionId.trim())
+    return questions.find((question) => question.id === entry.questionId);
+  const questionNumber = typeof entry.questionNumber === "number" ? entry.questionNumber : Number(entry.questionNumber ?? 1);
+  return Number.isInteger(questionNumber) && questionNumber > 0 ? questions[questionNumber - 1] : undefined;
+}
+
+function solutionTargetKey(kind: "question" | "part" | "subpart", id: string) {
+  return `${kind}:${id}`;
+}
+
+function collectMarkedSolutionTargets<Q extends MauthQuestionLike>(questions: readonly Q[]) {
+  const targets: Array<{ key: string; label: string; path: string }> = [];
+  questions.forEach((question, questionIndex) => {
+    const questionPath = `questions[${questionIndex}]`;
+    if (question.marks > 0 && !question.parts?.length) {
+      targets.push({ key: solutionTargetKey("question", question.id), label: `Question ${questionIndex + 1}`, path: questionPath });
+    }
+    if (question.marks > 0 && question.parts?.length) {
+      targets.push({
+        key: solutionTargetKey("question", question.id),
+        label: `Question ${questionIndex + 1} direct marks`,
+        path: questionPath,
+      });
+    }
+    question.parts?.forEach((part, partIndex) => {
+      const partLabel = part.label ?? String.fromCharCode(97 + partIndex);
+      const partPath = `${questionPath}.parts[${partIndex}]`;
+      if (part.marks > 0) {
+        targets.push({
+          key: solutionTargetKey("part", part.id),
+          label: `Question ${questionIndex + 1} part ${partLabel}`,
+          path: partPath,
+        });
+      }
+      part.subparts?.forEach((subpart, subpartIndex) => {
+        if (subpart.marks <= 0) return;
+        targets.push({
+          key: solutionTargetKey("subpart", subpart.id),
+          label: `Question ${questionIndex + 1} part ${partLabel} subpart ${subpart.label ?? subpartIndex + 1}`,
+          path: `${partPath}.subparts[${subpartIndex}]`,
+        });
+      });
+    });
+  });
+  return targets;
+}
+
+function collectSolutionPayloadCoverage<Q extends MauthQuestionLike>(
+  questions: readonly Q[],
+  payloads: readonly Record<string, unknown>[],
+) {
+  const covered = new Set<string>();
+  payloads.forEach((entry) => {
+    const question = questionSolutionPayloadTarget(questions, entry);
+    if (!question) return;
+    const solutionText = optionalTextArg(entry, "solutionText") || optionalTextArg(entry, "solution");
+    if (solutionText) covered.add(solutionTargetKey("question", question.id));
+    const partPayloads = Array.isArray(entry.parts) ? entry.parts.filter(isRecord) : [];
+    partPayloads.forEach((partPayload, partPayloadIndex) => {
+      const part = question.parts?.find((candidate) => partSolutionTarget(candidate, partPayload, partPayloadIndex));
+      if (!part) return;
+      const partSolutionText = optionalTextArg(partPayload, "solutionText") || optionalTextArg(partPayload, "solution");
+      if (partSolutionText) covered.add(solutionTargetKey("part", part.id));
+      const subpartPayloads = Array.isArray(partPayload.subparts) ? partPayload.subparts.filter(isRecord) : [];
+      subpartPayloads.forEach((subpartPayload, subpartPayloadIndex) => {
+        const subpart = part.subparts?.find((candidate) => subpartSolutionTarget(candidate, subpartPayload, subpartPayloadIndex));
+        if (!subpart) return;
+        const subpartSolutionText = optionalTextArg(subpartPayload, "solutionText") || optionalTextArg(subpartPayload, "solution");
+        if (subpartSolutionText) covered.add(solutionTargetKey("subpart", subpart.id));
+      });
+    });
+  });
+  return covered;
+}
+
+function parseSolutionsWriteAllActions<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+): MauthDocumentAction[] | MauthSolutionsWriteAllValidationFailure {
+  if (!isRecord(args) || !Array.isArray(args.questions)) {
+    return {
+      error: "mauth.solutions.writeAll arguments must contain a questions array.",
+      issues: [{ path: "arguments.questions", message: "must be an array", expected: "solution payload for every marked scope" }],
+    };
+  }
+  const payloads = args.questions.filter(isRecord);
+  const expectedTargets = collectMarkedSolutionTargets(document.questions);
+  const coverage = collectSolutionPayloadCoverage(document.questions, payloads);
+  const missingTargets = expectedTargets.filter((target) => !coverage.has(target.key));
+  if (missingTargets.length) {
+    return {
+      error: "mauth.solutions.writeAll must include solution payloads for every marked question, part, and subpart.",
+      issues: missingTargets.map((target) => ({
+        path: target.path,
+        message: `${target.label} is missing from the whole-test solution payload.`,
+        expected: "Add a matching question/part/subpart solutionText with hidden [[marks:n]] ticks.",
+      })),
+    };
+  }
+  const actions = parseAuthorEnsureSolutionsActions(document, args);
+  return actions;
+}
+
 function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   args: unknown,
@@ -2836,15 +3231,65 @@ function parseAuthorEnsureSolutionsActions<Q extends MauthQuestionLike, F extend
     }
     const question = replaceQuestionTarget(document.questions, entry, issues);
     const solutionText = optionalTextArg(entry, "solutionText") || optionalTextArg(entry, "solution");
-    if (!solutionText) issues.push({ path: `${path}.solutionText`, message: "must be a non-empty string", expected: "solution text" });
-    if (!question || !solutionText) return;
-
     const partPayloads = Array.isArray(entry.parts) ? entry.parts.filter(isRecord) : [];
+    if (!solutionText && !partPayloads.length) {
+      issues.push({ path: `${path}.solutionText`, message: "must be a non-empty string", expected: "solution text" });
+    }
+    if (!question || (!solutionText && !partPayloads.length)) return;
+
     if (partPayloads.length && question.parts?.length) {
       const parts = question.parts.map((part) => {
         const partPayload = partPayloads.find((candidate, candidateIndex) => partSolutionTarget(part, candidate, candidateIndex));
         if (!partPayload) return part;
         const partSolutionText = optionalTextArg(partPayload, "solutionText") || optionalTextArg(partPayload, "solution");
+        const subpartPayloads = Array.isArray(partPayload.subparts) ? partPayload.subparts.filter(isRecord) : [];
+        if (subpartPayloads.length && part.subparts?.length) {
+          let contentBlocks = part.contentBlocks;
+          if (partSolutionText) {
+            contentBlocks = blocksWithEnsuredSolution(
+              part.id,
+              part.contentBlocks,
+              partSolutionText,
+              partPayload.studentSpaceLines,
+              positiveInteger(partPayload.marks, part.marks, 0, 100),
+            );
+          }
+          const subparts = part.subparts.map((subpart) => {
+            const subpartPayload = subpartPayloads.find((candidate, candidateIndex) =>
+              subpartSolutionTarget(subpart, candidate, candidateIndex),
+            );
+            if (!subpartPayload) return subpart;
+            const subpartSolutionText = optionalTextArg(subpartPayload, "solutionText") || optionalTextArg(subpartPayload, "solution");
+            if (!subpartSolutionText) {
+              issues.push({
+                path: `${path}.parts[${partPayloads.indexOf(partPayload)}].subparts[${subpartPayloads.indexOf(subpartPayload)}].solutionText`,
+                message: "must be a non-empty string",
+                expected: "solution text",
+              });
+              return subpart;
+            }
+            const subpartContentBlocks = blocksWithEnsuredSolution(
+              subpart.id,
+              subpart.contentBlocks,
+              subpartSolutionText,
+              subpartPayload.studentSpaceLines,
+              positiveInteger(subpartPayload.marks, subpart.marks, 0, 100),
+            );
+            return {
+              ...subpart,
+              marks: positiveInteger(subpartPayload.marks, subpart.marks, 0, 100),
+              contentBlocks: subpartContentBlocks,
+              itemOrder: blockOrder(subpartContentBlocks),
+            };
+          });
+          return {
+            ...part,
+            marks: positiveInteger(partPayload.marks, part.marks, 0, 100),
+            contentBlocks,
+            subparts,
+            itemOrder: partOrder(contentBlocks, subparts),
+          };
+        }
         if (!partSolutionText) {
           issues.push({
             path: `${path}.parts[${partPayloads.indexOf(partPayload)}].solutionText`,
@@ -3734,6 +4179,73 @@ function validationToolResult<Q extends MauthQuestionLike, F extends object, C e
   };
 }
 
+function issueWarning(issue: MauthLayoutCheckIssue): MauthActionWarning {
+  return {
+    code: issue.code,
+    message: issue.message,
+    ...(issue.targetId ? { targetId: issue.targetId } : {}),
+  };
+}
+
+function writeAllSolutionBlockingIssues(layout: MauthLayoutCheck) {
+  const blockingCodes = new Set([
+    "student-space-missing",
+    "solution-hidden-mark-total-mismatch",
+    "solution-visible-mark-note",
+    "rendered-solution-space-overflow",
+    "rendered-response-space-outline-missing",
+  ]);
+  return layout.issues.filter((issue) => blockingCodes.has(issue.code));
+}
+
+function writeAllSolutionsToolResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+  options: MauthAssistantToolOptions<Q, F, C>,
+): MauthAssistantToolResult<Q, F, C> {
+  const actions = parseSolutionsWriteAllActions(document, args);
+  if (!Array.isArray(actions)) {
+    return failTool("mauth.solutions.writeAll", actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
+  }
+  const result = applyMauthDocumentActions(document, actions, options);
+  if (!result.ok || !result.document) return resultTool("mauth.solutions.writeAll", result);
+
+  const layout = inspectMauthLayout(result.document, { mode: "solutions" }, options);
+  const blockingIssues = writeAllSolutionBlockingIssues(layout);
+  if (blockingIssues.length) {
+    const error = "mauth.solutions.writeAll produced solution layout or hidden-mark issues.";
+    return {
+      ok: false,
+      toolName: "mauth.solutions.writeAll",
+      data: { layout, validationIssues: blockingIssues },
+      changedIds: [],
+      warnings: blockingIssues.map(issueWarning),
+      error,
+    };
+  }
+
+  return {
+    ...resultTool("mauth.solutions.writeAll", result),
+    data: { actionResult: result, layout },
+  };
+}
+
+function layoutCheckToolResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+  options: MauthAssistantToolOptions<Q, F, C>,
+): MauthAssistantToolResult<Q, F, C> {
+  const layout = inspectMauthLayout(document, args, options);
+  return {
+    ok: true,
+    toolName: "mauth.layout.check",
+    data: layout,
+    document,
+    changedIds: [],
+    warnings: layout.issues.map(issueWarning),
+  };
+}
+
 export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   document: MauthDocumentLike<Q, F, C>,
   call: MauthAssistantToolCall,
@@ -3804,6 +4316,10 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
     return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
   }
 
+  if (call.name === "mauth.solutions.writeAll") {
+    return writeAllSolutionsToolResult(document, call.arguments, options);
+  }
+
   if (call.name === "mauth.author.adjustResponseSpaces") {
     const actions = parseAuthorAdjustResponseSpacesActions(document, call.arguments);
     if (!Array.isArray(actions)) {
@@ -3818,6 +4334,10 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
       return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
     }
     return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
+  }
+
+  if (call.name === "mauth.layout.check") {
+    return layoutCheckToolResult(document, call.arguments, options);
   }
 
   const actions = parseActionList(call.arguments);

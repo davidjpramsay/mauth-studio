@@ -37,6 +37,8 @@
     "After mauth.author.adjustResponseSpaces, post-edit inspection may return rendered-response-space-outline-missing, rendered-solution-space-overflow, or rendered-page-overflow before success is reported. Repair by adjusting the same paired answer-space block or nearby page flow; preserve existing wording, diagrams, solution modules, ids, and ordering.",
     "For focused formatting requests in the in-app assistant, use mauth.format.apply rather than replacing the whole question or hand-building low-level JSON. Use setPageBreakBefore/removePageBreakBefore for page breaks, setDiagramAlignment for left/center/right diagram placement, adjustAnswerSpace for line counts, moveModule for known module moves, fitSolutionToSpace for solution-fit repairs, and tidyQuestionSpacing for conservative spacing cleanup.",
     "After mauth.format.apply, post-edit inspection may return formatting-layout warnings before success is reported. Repair once with the same high-level formatting tool or the matching response-space/solution tool; preserve existing question wording, diagrams, solution modules, ids, and ordering.",
+    "When the in-app assistant is asked to check the whole document layout, print readiness, blank pages, oversized diagrams, missing answer spaces, solution-space fit, or whether the document is ready to print, use mauth.layout.check. Use mode \"student\" for student-copy checks, \"solutions\" for solution-copy checks, and \"both\" when the teacher asks for the whole document or print readiness.",
+    "mauth.layout.check is a document-wide inspection tool, not a mutation tool. Treat its issues as repair instructions: use mauth.format.apply for page-break, spacing, alignment, and move repairs; mauth.author.adjustResponseSpaces for answer-space sizing; mauth.author.ensureSolutions or mauth.solutions.writeAll for solution coverage/tick repairs; and diagram tools for oversized or failed diagrams.",
     "Respect manual author overrides for answer-space lines, diagram alignment, and diagram side settings unless they produce an obvious layout error.",
     "Questions may span pages, but avoid splitting a part or subpart when there is a reasonable alternative.",
     "Use manual page breaks for deliberate section/page starts, not for small cosmetic gaps.",
@@ -97,6 +99,7 @@
     "Exam booklet structure rows that describe the current document use automated question counts and marks rather than typed values.",
     "Exam booklet preview/print output has a total page count divisible by four without content-level filler blocks; automatic extra pages should be rendered as supplementary pages.",
     "Attachment-derived conversions preserve visible/extracted source line breaks and inline-vs-display maths unless the teacher requests a redesign.",
-    "Preview and printed PDF output should use the same visible formatting rules."
+    "Preview and printed PDF output should use the same visible formatting rules.",
+    "Document-wide layout checks have been run with mauth.layout.check for student and/or solution mode when changing broad page flow, print readiness, solution fitting, or many answer spaces at once."
   ]
 }
