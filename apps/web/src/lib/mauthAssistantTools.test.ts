@@ -593,6 +593,99 @@ test("applies actions and returns the next document for the editor history path"
   assert.equal(result.document?.frontMatter.assessmentTitle, "Final Test");
 });
 
+test("applies high-level formatting operations without rewriting content", () => {
+  const document = documentFixture();
+  document.questions[0] = {
+    ...document.questions[0],
+    parts: [
+      {
+        id: "p-a",
+        label: "a",
+        marks: 1,
+        text: "Part A",
+        contentBlocks: [textBlock("p-a-text", "Part A")],
+        subparts: [],
+        itemOrder: [{ kind: "block", id: "p-a-text" }],
+      },
+      {
+        id: "p-b",
+        label: "b",
+        marks: 1,
+        text: "Part B",
+        contentBlocks: [spaceBlock("p-b-space", 3)],
+        subparts: [],
+        itemOrder: [{ kind: "block", id: "p-b-space" }],
+      },
+    ],
+    itemOrder: [
+      { kind: "block", id: "t1" },
+      { kind: "block", id: "d1" },
+      { kind: "block", id: "s1" },
+      { kind: "block", id: "sol1" },
+      { kind: "part", id: "p-a" },
+      { kind: "part", id: "p-b" },
+    ],
+  };
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.format.apply",
+    arguments: {
+      operations: [
+        { type: "setPageBreakBefore", target: { questionNumber: 1, partLabel: "b" } },
+        { type: "setDiagramAlignment", target: { questionNumber: 1, diagramId: "d1" }, diagramAlign: "right" },
+        { type: "adjustAnswerSpace", target: { questionNumber: 1 }, lines: 9, mode: "set" },
+      ],
+    },
+  });
+  const question = result.document?.questions[0];
+  const diagram = question?.contentBlocks.find((block) => block.id === "d1");
+  const space = question?.contentBlocks.find((block) => block.id === "s1");
+
+  assert.equal(result.ok, true);
+  assert.equal(question?.parts[1].pageBreakBefore, true);
+  assert.equal(diagram?.kind === "diagram" ? diagram.diagramAlign : "", "right");
+  assert.equal(space?.kind === "space" ? space.lines : 0, 9);
+  assert.equal(question?.contentBlocks[0].kind === "text" ? question.contentBlocks[0].text : "", "Find the value of $x$.");
+});
+
+test("moves modules and fits solution space through high-level formatting", () => {
+  const document = documentFixture();
+  document.questions[0] = {
+    ...document.questions[0],
+    contentBlocks: [
+      textBlock("t1", "Find the value of $x$."),
+      diagramBlock("d1", { type: "statsChart", data: { chartType: "histogram" } }),
+      spaceBlock("s1", 2),
+      textBlock("sol1", "**Solution.**\nLine 1.\nLine 2.\nLine 3.\nLine 4.\nLine 5. [[marks:2]]", "solution"),
+    ],
+    itemOrder: [
+      { kind: "block", id: "t1" },
+      { kind: "block", id: "d1" },
+      { kind: "block", id: "s1" },
+      { kind: "block", id: "sol1" },
+    ],
+  };
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.format.apply",
+    arguments: {
+      operations: [
+        { type: "moveModule", blockId: "d1", to: { questionNumber: 1 }, afterBlockId: "s1" },
+        { type: "fitSolutionToSpace", target: { questionNumber: 1 }, extraLines: 2 },
+      ],
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+  const space = blocks.find((block) => block.id === "s1");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    blocks.map((block) => block.id),
+    ["t1", "s1", "d1", "sol1"],
+  );
+  assert.equal(space?.kind === "space" ? space.lines : 0, 7);
+});
+
 test("replaces a question from a compact high-level authoring payload", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",

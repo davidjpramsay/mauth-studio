@@ -180,7 +180,7 @@ function containsDiagramPayload(value: unknown): boolean {
   });
 }
 
-type PostEditInspectionMode = "diagram" | "solutionLayout";
+type PostEditInspectionMode = "diagram" | "solutionLayout" | "formatLayout";
 
 interface PostEditInspectionPlan {
   args: Record<string, unknown>;
@@ -218,7 +218,10 @@ function firstRecordFromArray(value: unknown) {
 
 function postEditQuestionInspectionArgs(call: MauthAssistantAdapterToolCall): Record<string, unknown> {
   if (!isRecord(call.arguments)) return { scope: "question" };
-  const source = firstRecordFromArray(call.arguments.questions) ?? firstRecordFromArray(call.arguments.targets) ?? call.arguments;
+  const operation = firstRecordFromArray(call.arguments.operations) ?? firstRecordFromArray(call.arguments.edits);
+  const operationTarget = isRecord(operation?.target) ? operation.target : operation;
+  const source =
+    firstRecordFromArray(call.arguments.questions) ?? firstRecordFromArray(call.arguments.targets) ?? operationTarget ?? call.arguments;
   return { ...source, scope: "question" };
 }
 
@@ -245,6 +248,9 @@ function postEditInspectionPlan(call: MauthAssistantAdapterToolCall): PostEditIn
       args: targetCount > 1 ? { scope: "document" } : postEditQuestionInspectionArgs(call),
       modes: ["solutionLayout"],
     };
+  }
+  if (call.name === "mauth.format.apply") {
+    return { args: postEditQuestionInspectionArgs(call), modes: ["formatLayout", "solutionLayout"] };
   }
   return null;
 }
@@ -283,6 +289,16 @@ function repairablePostEditWarnings(
       ? inspection.renderedMetrics.warnings
           .filter((warning) => {
             if (modeSet.has("diagram") && warning.code.startsWith("rendered-diagram-")) return true;
+            if (modeSet.has("formatLayout")) {
+              return (
+                warning.code === "rendered-page-overflow" ||
+                warning.code === "rendered-response-space-outline-missing" ||
+                warning.code === "rendered-diagram-clipped" ||
+                warning.code === "rendered-diagram-clipped-by-page" ||
+                warning.code === "rendered-diagram-too-large" ||
+                warning.code === "rendered-diagram-too-small"
+              );
+            }
             return modeSet.has("solutionLayout") && solutionWarningCodes.has(warning.code);
           })
           .filter((warning) => warning.severity === "warning" || warning.severity === "error")
@@ -541,6 +557,7 @@ export async function runMauthAssistantAdapterTool<
           "mauth.author.addDiagram",
           "mauth.author.ensureSolutions",
           "mauth.author.adjustResponseSpaces",
+          "mauth.format.apply",
         ] as string[]
       ).includes(call.name) &&
       result.document

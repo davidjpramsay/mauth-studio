@@ -36,6 +36,7 @@ export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.author.addDiagram",
   "mauth.author.ensureSolutions",
   "mauth.author.adjustResponseSpaces",
+  "mauth.format.apply",
 ] as const;
 
 export type MauthAssistantToolName = (typeof MAUTH_ASSISTANT_TOOL_NAMES)[number];
@@ -81,6 +82,11 @@ export interface MauthAuthorSolutionsValidationFailure {
 }
 
 export interface MauthAuthorResponseSpaceValidationFailure {
+  error: string;
+  issues: MauthActionValidationIssue[];
+}
+
+export interface MauthFormatApplyValidationFailure {
   error: string;
   issues: MauthActionValidationIssue[];
 }
@@ -547,6 +553,10 @@ function questionOrder(blocks: readonly ContentBlock[], parts: readonly MauthPar
   return [...blockOrder(blocks), ...parts.map((part) => ({ kind: "part" as const, id: part.id }))];
 }
 
+function partOrder(blocks: readonly ContentBlock[], subparts: readonly MauthSubpartLike[]) {
+  return [...blockOrder(blocks), ...subparts.map((subpart) => ({ kind: "subpart" as const, id: subpart.id }))];
+}
+
 function positiveInteger(value: unknown, fallback: number, min = 1, max = 40) {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -904,8 +914,7 @@ function studentSpaceLinesInBlocks(blocks: readonly ContentBlock[]) {
 
 function studentAnswerSurfaceCountInBlocks(blocks: readonly ContentBlock[]) {
   return blocks.filter(
-    (block) =>
-      blockVisibility(block) === "student" && (block.kind === "space" || block.kind === "table" || block.kind === "diagram"),
+    (block) => blockVisibility(block) === "student" && (block.kind === "space" || block.kind === "table" || block.kind === "diagram"),
   ).length;
 }
 
@@ -1376,6 +1385,11 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
         description:
           "Resize or add student-only answer spaces for existing questions, parts, or subparts without rewriting question content, solutions, or diagrams.",
       },
+      {
+        name: "mauth.format.apply",
+        description:
+          "Apply safe high-level formatting operations such as page breaks before parts/subparts, diagram alignment, response-space sizing, module moves, solution-fit spacing, and tidy spacing without rewriting question content.",
+      },
     ],
     actionTypes: {
       content: MAUTH_CONTENT_ACTION_TYPES,
@@ -1458,6 +1472,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For mark-allocation or solution-only edits, prefer mauth.author.ensureSolutions and do not replace the whole question.",
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
+      "For focused formatting requests such as page breaks before a part/subpart, diagram alignment, moving one module, fitting a solution to its student space, or tidying excess spacing, prefer mauth.format.apply.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style geometry and scalar-product ray diagrams, graph2d for coordinate/function graphs, vector2d for component vectors on axes, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
@@ -3150,6 +3165,516 @@ function parseAuthorAdjustResponseSpacesActions<Q extends MauthQuestionLike, F e
   return actions;
 }
 
+type FormatTargetKind = "question" | "part" | "subpart";
+
+interface ResolvedFormatTarget {
+  question: MauthQuestionLike;
+  questionIndex: number;
+  previousQuestion?: MauthQuestionLike;
+  kind: FormatTargetKind;
+  part?: MauthPartLike;
+  partIndex?: number;
+  subpart?: MauthSubpartLike;
+  subpartIndex?: number;
+  scope: MauthContentScope;
+}
+
+function formatOperationType(entry: Record<string, unknown>) {
+  const value = entry.type ?? entry.operation ?? entry.action;
+  return typeof value === "string" ? value : "";
+}
+
+function formatOperationEntries(args: Record<string, unknown>) {
+  if (Array.isArray(args.operations)) return args.operations;
+  if (Array.isArray(args.edits)) return args.edits;
+  return [args];
+}
+
+function formatTargetRecord(entry: Record<string, unknown>) {
+  return isRecord(entry.target) ? entry.target : entry;
+}
+
+function resolvedFormatTargetAtPath<Q extends MauthQuestionLike>(
+  questions: readonly Q[],
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): ResolvedFormatTarget | undefined {
+  const targetRecord = formatTargetRecord(entry);
+  const question = questionTargetAtPath(questions, targetRecord, path, issues);
+  if (!question) return undefined;
+  const questionIndex = questions.findIndex((item) => item.id === question.id);
+  const part = partTargetAtPath(question, targetRecord, path, issues);
+  const wantsSubpart =
+    targetRecord.subpartId !== undefined ||
+    targetRecord.subpartLabel !== undefined ||
+    targetRecord.subpartNumber !== undefined ||
+    targetRecord.subpartIndex !== undefined;
+  if (wantsSubpart && !part) {
+    issues.push({
+      path: `${path}.target.partId`,
+      message: "must identify a part before targeting a subpart",
+      expected: "partId, partLabel, or partNumber",
+    });
+    return undefined;
+  }
+  const subpart = part && wantsSubpart ? subpartTargetAtPath(part, targetRecord, path, issues) : undefined;
+  const partIndex = part ? (question.parts ?? []).findIndex((item) => item.id === part.id) : -1;
+  const subpartIndex = part && subpart ? (part.subparts ?? []).findIndex((item) => item.id === subpart.id) : -1;
+
+  if (wantsSubpart && !subpart) return undefined;
+  if (subpart && part) {
+    return {
+      question,
+      questionIndex,
+      previousQuestion: questionIndex > 0 ? questions[questionIndex - 1] : undefined,
+      kind: "subpart",
+      part,
+      partIndex,
+      subpart,
+      subpartIndex,
+      scope: { kind: "subpart", questionId: question.id, partId: part.id, subpartId: subpart.id },
+    };
+  }
+  if (part) {
+    return {
+      question,
+      questionIndex,
+      previousQuestion: questionIndex > 0 ? questions[questionIndex - 1] : undefined,
+      kind: "part",
+      part,
+      partIndex,
+      scope: { kind: "part", questionId: question.id, partId: part.id },
+    };
+  }
+  return {
+    question,
+    questionIndex,
+    previousQuestion: questionIndex > 0 ? questions[questionIndex - 1] : undefined,
+    kind: "question",
+    scope: { kind: "question", questionId: question.id },
+  };
+}
+
+function pageBreakTargetForFormatTarget(
+  target: ResolvedFormatTarget,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  enabled: boolean,
+): MauthDocumentAction | undefined {
+  if (target.kind === "part" && target.part) {
+    return {
+      type: "pageBreak.set",
+      target: { kind: "part", questionId: target.question.id, partId: target.part.id },
+      enabled,
+    };
+  }
+  if (target.kind === "subpart" && target.part && target.subpart) {
+    return {
+      type: "pageBreak.set",
+      target: { kind: "subpart", questionId: target.question.id, partId: target.part.id, subpartId: target.subpart.id },
+      enabled,
+    };
+  }
+  if (target.kind === "question") {
+    if (target.questionIndex <= 0) {
+      issues.push({
+        path: `${path}.target.questionNumber`,
+        message: "cannot put a page break before the first question with this tool",
+        expected: "questionNumber greater than 1, or target a part/subpart",
+      });
+      return undefined;
+    }
+    const previousQuestion = target.previousQuestion;
+    return {
+      type: "pageBreak.set",
+      target: { kind: "question", questionId: previousQuestion?.id ?? target.question.id },
+      enabled,
+    };
+  }
+  return undefined;
+}
+
+function contentBlocksForFormatTarget(target: ResolvedFormatTarget) {
+  if (target.kind === "subpart") return target.subpart?.contentBlocks ?? [];
+  if (target.kind === "part") return target.part?.contentBlocks ?? [];
+  return target.question.contentBlocks;
+}
+
+function blockIdFromFormatEntry(entry: Record<string, unknown>) {
+  const target = formatTargetRecord(entry);
+  const value = entry.blockId ?? entry.moduleId ?? entry.diagramId ?? target.blockId ?? target.moduleId ?? target.diagramId;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function firstStudentSpaceBlock(blocks: readonly ContentBlock[]) {
+  return blocks.find((block) => block.kind === "space" && blockVisibility(block) === "student");
+}
+
+function uniqueScopedBlockId(scopeId: string, blocks: readonly ContentBlock[], suffix: string) {
+  const existing = new Set(blocks.map((block) => block.id));
+  const base = authorBlockId(scopeId, suffix);
+  if (!existing.has(base)) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}-${index}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+function scopeIdForFormatTarget(target: ResolvedFormatTarget) {
+  return target.subpart?.id ?? target.part?.id ?? target.question.id;
+}
+
+function formatLinesFromEntry(entry: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[], fallback?: number) {
+  const rawValue = entry.lines ?? entry.studentSpaceLines ?? entry.answerLines ?? entry.responseSpaceLines;
+  if (rawValue === undefined && fallback !== undefined) return fallback;
+  const number = typeof rawValue === "number" ? rawValue : Number(rawValue);
+  if (!Number.isInteger(number) || number < 1 || number > MAX_AUTHOR_STUDENT_SPACE_LINES) {
+    issues.push({
+      path: `${path}.lines`,
+      message: `must be an integer from 1 to ${MAX_AUTHOR_STUDENT_SPACE_LINES}`,
+      expected: "student answer-space line count",
+    });
+    return undefined;
+  }
+  return number;
+}
+
+function responseSpaceAdjustmentAction(
+  target: ResolvedFormatTarget,
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): MauthDocumentAction | undefined {
+  const blocks = contentBlocksForFormatTarget(target);
+  const existingSpace = firstStudentSpaceBlock(blocks);
+  const rawMode = entry.mode;
+  const mode = rawMode === "atLeast" || rawMode === "minimum" ? "atLeast" : rawMode === "add" || rawMode === "delta" ? "add" : "set";
+  const rawDelta = entry.deltaLines ?? entry.addLines;
+  const delta = typeof rawDelta === "number" ? rawDelta : Number(rawDelta);
+  const requestedLines = formatLinesFromEntry(
+    entry,
+    path,
+    issues,
+    mode === "add" && Number.isFinite(delta) ? Math.max(1, Math.min(MAX_AUTHOR_STUDENT_SPACE_LINES, delta)) : undefined,
+  );
+  if (!requestedLines) return undefined;
+  const currentLines = existingSpace?.kind === "space" ? existingSpace.lines : 0;
+  const nextLines =
+    mode === "atLeast"
+      ? Math.max(currentLines, requestedLines)
+      : mode === "add"
+        ? Math.max(1, Math.min(MAX_AUTHOR_STUDENT_SPACE_LINES, currentLines + requestedLines))
+        : requestedLines;
+
+  if (existingSpace?.kind === "space") {
+    return {
+      type: "module.update",
+      scope: target.scope,
+      blockId: existingSpace.id,
+      patch: { lines: nextLines },
+    };
+  }
+
+  const insertBeforeSolution = blocks.find((block) => blockVisibility(block) === "solution");
+  return {
+    type: "module.add",
+    scope: target.scope,
+    blocks: [
+      {
+        id: uniqueScopedBlockId(scopeIdForFormatTarget(target), blocks, "student-space"),
+        kind: "space",
+        lines: nextLines,
+        visibility: "student",
+      },
+    ],
+    ...(insertBeforeSolution ? { placement: { blockId: insertBeforeSolution.id, position: "before" as const } } : {}),
+  };
+}
+
+function findBlockEntryInDocument(
+  document: MauthDocumentLike<MauthQuestionLike, object, object>,
+  blockId: string,
+): { question: MauthQuestionLike; scope: MauthContentScope; block: ContentBlock } | undefined {
+  for (const question of document.questions) {
+    const questionBlock = question.contentBlocks.find((block) => block.id === blockId);
+    if (questionBlock) return { question, scope: { kind: "question", questionId: question.id }, block: questionBlock };
+    for (const part of question.parts ?? []) {
+      const partBlock = part.contentBlocks.find((block) => block.id === blockId);
+      if (partBlock) return { question, scope: { kind: "part", questionId: question.id, partId: part.id }, block: partBlock };
+      for (const subpart of part.subparts ?? []) {
+        const subpartBlock = subpart.contentBlocks.find((block) => block.id === blockId);
+        if (subpartBlock) {
+          return {
+            question,
+            scope: { kind: "subpart", questionId: question.id, partId: part.id, subpartId: subpart.id },
+            block: subpartBlock,
+          };
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function diagramAlignmentAction(
+  target: ResolvedFormatTarget,
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): MauthDocumentAction | undefined {
+  const diagramAlign = entry.diagramAlign ?? entry.align ?? entry.alignment;
+  if (diagramAlign !== "left" && diagramAlign !== "center" && diagramAlign !== "right") {
+    issues.push({ path: `${path}.diagramAlign`, message: "must be left, center, or right", expected: "diagram alignment" });
+    return undefined;
+  }
+  const blocks = contentBlocksForFormatTarget(target);
+  const explicitBlockId = blockIdFromFormatEntry(entry);
+  const diagramIndex = positiveInteger(entry.diagramIndex ?? entry.index, 1, 1, 100) - 1;
+  const diagram =
+    (explicitBlockId ? blocks.find((block) => block.id === explicitBlockId) : undefined) ??
+    blocks.filter((block) => block.kind === "diagram")[diagramIndex];
+  if (!diagram) {
+    issues.push({
+      path: explicitBlockId ? `${path}.diagramId` : `${path}.diagramIndex`,
+      message: "must reference an existing diagram in the target scope",
+      expected: "existing diagram module",
+    });
+    return undefined;
+  }
+  if (diagram.kind !== "diagram") {
+    issues.push({ path: `${path}.diagramId`, message: "must reference a diagram module", expected: "diagram module id" });
+    return undefined;
+  }
+  const diagramTextSide =
+    entry.diagramTextSide === "none" || entry.diagramTextSide === "left" || entry.diagramTextSide === "right"
+      ? entry.diagramTextSide
+      : undefined;
+  return {
+    type: "module.update",
+    scope: target.scope,
+    blockId: diagram.id,
+    patch: {
+      diagramAlign,
+      ...(diagramTextSide ? { diagramTextSide } : {}),
+    },
+  };
+}
+
+function moveModuleAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): MauthDocumentAction | undefined {
+  const blockId = blockIdFromFormatEntry(entry);
+  if (!blockId) {
+    issues.push({ path: `${path}.blockId`, message: "must provide the module/block id to move", expected: "existing module id" });
+    return undefined;
+  }
+  const source = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, blockId);
+  if (!source) {
+    issues.push({ path: `${path}.blockId`, message: "must reference an existing module", expected: "existing module id" });
+    return undefined;
+  }
+  const toRecord = isRecord(entry.to) ? entry.to : isRecord(entry.destination) ? entry.destination : entry;
+  const destination = resolvedFormatTargetAtPath(document.questions, toRecord, `${path}.to`, issues);
+  if (!destination) return undefined;
+  const placementRecord = isRecord(entry.placement) ? entry.placement : {};
+  const placementBlockId = entry.beforeBlockId ?? placementRecord.beforeBlockId;
+  const afterBlockId = entry.afterBlockId ?? placementRecord.afterBlockId;
+  const placement =
+    typeof placementBlockId === "string" && placementBlockId.trim()
+      ? { blockId: placementBlockId.trim(), position: "before" as const }
+      : typeof afterBlockId === "string" && afterBlockId.trim()
+        ? { blockId: afterBlockId.trim(), position: "after" as const }
+        : undefined;
+  return {
+    type: "module.move",
+    fromScope: source.scope,
+    toScope: destination.scope,
+    blockId,
+    ...(placement ? { placement } : {}),
+  };
+}
+
+function fitSolutionToSpaceAction(
+  target: ResolvedFormatTarget,
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): MauthDocumentAction | undefined {
+  const blocks = contentBlocksForFormatTarget(target);
+  const solutionText = solutionModulesInBlocks(blocks)
+    .map((block) => (block.kind === "text" ? block.text : ""))
+    .join("\n");
+  if (!solutionText.trim()) {
+    issues.push({ path, message: "target has no solution module to fit", expected: "target with a solution-only module" });
+    return undefined;
+  }
+  const extraLines = positiveInteger(entry.extraLines ?? entry.minimumExtraLines, 2, 0, 10);
+  const lines = Math.min(
+    MAX_AUTHOR_STUDENT_SPACE_LINES,
+    Math.max(MIN_AUTHOR_STUDENT_SPACE_LINES, solutionTextLineEstimate(solutionText) + extraLines),
+  );
+  return responseSpaceAdjustmentAction(target, { ...entry, lines, mode: "atLeast" }, path, issues);
+}
+
+function mergeAdjacentStudentSpaces(blocks: readonly ContentBlock[]): ContentBlock[] | undefined {
+  const nextBlocks: ContentBlock[] = [];
+  let changed = false;
+  for (const block of blocks) {
+    if (block.kind === "text" && blockVisibility(block) !== "solution" && !block.text.trim()) {
+      changed = true;
+      continue;
+    }
+    const previous = nextBlocks[nextBlocks.length - 1];
+    if (
+      previous?.kind === "space" &&
+      block.kind === "space" &&
+      blockVisibility(previous) === "student" &&
+      blockVisibility(block) === "student"
+    ) {
+      nextBlocks[nextBlocks.length - 1] = {
+        ...previous,
+        lines: Math.min(MAX_AUTHOR_STUDENT_SPACE_LINES, previous.lines + block.lines),
+      };
+      changed = true;
+      continue;
+    }
+    nextBlocks.push(block);
+  }
+  return changed ? nextBlocks : undefined;
+}
+
+function tidyQuestionSpacingAction(target: ResolvedFormatTarget): MauthDocumentAction | undefined {
+  const question = target.question;
+  let changed = false;
+  const mergedContentBlocks = mergeAdjacentStudentSpaces(question.contentBlocks);
+  const contentBlocks = mergedContentBlocks ?? question.contentBlocks;
+  if (mergedContentBlocks) changed = true;
+  const parts = (question.parts ?? []).map((part) => {
+    const mergedPartBlocks = mergeAdjacentStudentSpaces(part.contentBlocks);
+    const partBlocks = mergedPartBlocks ?? part.contentBlocks;
+    let partChanged = Boolean(mergedPartBlocks);
+    const subparts = (part.subparts ?? []).map((subpart) => {
+      const subpartBlocks = mergeAdjacentStudentSpaces(subpart.contentBlocks);
+      if (!subpartBlocks) return subpart;
+      partChanged = true;
+      return { ...subpart, contentBlocks: subpartBlocks, itemOrder: blockOrder(subpartBlocks) };
+    });
+    if (!partChanged) return part;
+    changed = true;
+    return { ...part, contentBlocks: partBlocks, subparts, itemOrder: partOrder(partBlocks, subparts) };
+  });
+  if (!changed) return undefined;
+  return {
+    type: "question.update",
+    questionId: question.id,
+    patch: {
+      contentBlocks,
+      parts,
+      itemOrder: questionOrder(contentBlocks, parts),
+    },
+  };
+}
+
+function parseFormatApplyActions<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+): MauthDocumentAction[] | MauthFormatApplyValidationFailure {
+  const issues: MauthActionValidationIssue[] = [];
+  if (!isRecord(args)) {
+    return {
+      error: "mauth.format.apply arguments must be an object.",
+      issues: [{ path: "arguments", message: "must be an object", expected: "formatting payload" }],
+    };
+  }
+
+  const rawOperations = formatOperationEntries(args);
+  const actions: MauthDocumentAction[] = [];
+  rawOperations.forEach((rawEntry, index) => {
+    const path = Array.isArray(args.operations) ? `arguments.operations[${index}]` : "arguments";
+    if (!isRecord(rawEntry)) {
+      issues.push({ path, message: "must be a formatting operation object", expected: "{ type, target, ... }" });
+      return;
+    }
+    const type = formatOperationType(rawEntry);
+    if (!type) {
+      issues.push({ path: `${path}.type`, message: "must be a supported formatting operation", expected: "format operation type" });
+      return;
+    }
+
+    if (type === "moveModule") {
+      const action = moveModuleAction(document, rawEntry, path, issues);
+      if (action) actions.push(action);
+      return;
+    }
+
+    const target = resolvedFormatTargetAtPath(document.questions, rawEntry, path, issues);
+    if (!target) return;
+    if (type === "setPageBreakBefore" || type === "startOnNewPage") {
+      const action = pageBreakTargetForFormatTarget(target, path, issues, true);
+      if (action) actions.push(action);
+      return;
+    }
+    if (type === "removePageBreakBefore" || type === "clearPageBreakBefore") {
+      const action = pageBreakTargetForFormatTarget(target, path, issues, false);
+      if (action) actions.push(action);
+      return;
+    }
+    if (type === "setDiagramAlignment") {
+      const action = diagramAlignmentAction(target, rawEntry, path, issues);
+      if (action) actions.push(action);
+      return;
+    }
+    if (type === "adjustAnswerSpace" || type === "adjustResponseSpace") {
+      const action = responseSpaceAdjustmentAction(target, rawEntry, path, issues);
+      if (action) actions.push(action);
+      return;
+    }
+    if (type === "fitSolutionToSpace") {
+      const action = fitSolutionToSpaceAction(target, rawEntry, path, issues);
+      if (action) actions.push(action);
+      return;
+    }
+    if (type === "tidyQuestionSpacing") {
+      const action = tidyQuestionSpacingAction(target);
+      if (action) actions.push(action);
+      return;
+    }
+
+    issues.push({
+      path: `${path}.type`,
+      message: `unsupported formatting operation: ${type}`,
+      expected:
+        "setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, or tidyQuestionSpacing",
+    });
+  });
+
+  if (issues.length) {
+    return {
+      error: formatMauthActionValidationIssues(issues),
+      issues,
+    };
+  }
+  if (!actions.length) {
+    return {
+      error: "mauth.format.apply did not produce any formatting changes.",
+      issues: [{ path: "arguments.operations", message: "must contain at least one changing operation", expected: "format operations" }],
+    };
+  }
+  const validation = validateMauthDocumentActionPayloads(actions);
+  if (!validation.ok) {
+    return {
+      error: formatMauthActionValidationIssues(validation.issues),
+      issues: validation.issues,
+    };
+  }
+  return actions;
+}
+
 function resultTool<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   toolName: MauthAssistantToolName,
   result: MauthDocumentActionResult<Q, F, C>,
@@ -3274,6 +3799,14 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
 
   if (call.name === "mauth.author.adjustResponseSpaces") {
     const actions = parseAuthorAdjustResponseSpacesActions(document, call.arguments);
+    if (!Array.isArray(actions)) {
+      return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
+    }
+    return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
+  }
+
+  if (call.name === "mauth.format.apply") {
+    const actions = parseFormatApplyActions(document, call.arguments);
     if (!Array.isArray(actions)) {
       return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
     }

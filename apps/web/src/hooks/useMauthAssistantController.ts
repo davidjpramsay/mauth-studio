@@ -168,6 +168,9 @@ function assistantResultMessage<Q extends MauthQuestionLike, F extends object, C
   if (result.toolName === "mauth.author.adjustResponseSpaces") {
     return result.changedIds.length ? "Updated the answer space." : "Answer-space update completed.";
   }
+  if (result.toolName === "mauth.format.apply") {
+    return result.changedIds.length ? "Updated the formatting." : "Formatting update completed.";
+  }
   if (result.toolName === "mauth.files.list") {
     const files = Array.isArray(data?.files) ? data.files : (result.files ?? []);
     return `Listed ${files.length} file${files.length === 1 ? "" : "s"} or folder${files.length === 1 ? "" : "s"}.`;
@@ -229,6 +232,7 @@ function assistantActivityLabelForTool(name: MauthAssistantAdapterToolCall["name
   if (name === "mauth.author.addDiagram") return "Adding diagram";
   if (name === "mauth.author.ensureSolutions") return "Writing solutions";
   if (name === "mauth.author.adjustResponseSpaces") return "Adjusting answer space";
+  if (name === "mauth.format.apply") return "Formatting layout";
   if (name === "mauth.files.list") return "Reading files";
   if (name === "mauth.files.open") return "Opening file";
   if (name === "mauth.files.save" || name === "mauth.files.saveAs") return "Saving file";
@@ -481,7 +485,8 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       toolName !== "mauth.author.replaceQuestion" &&
       toolName !== "mauth.author.addDiagram" &&
       toolName !== "mauth.author.ensureSolutions" &&
-      toolName !== "mauth.author.adjustResponseSpaces"
+      toolName !== "mauth.author.adjustResponseSpaces" &&
+      toolName !== "mauth.format.apply"
     ) {
       return "";
     }

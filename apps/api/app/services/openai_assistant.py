@@ -36,6 +36,7 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_author_add_diagram": "mauth.author.addDiagram",
     "mauth_author_ensure_solutions": "mauth.author.ensureSolutions",
     "mauth_author_adjust_response_spaces": "mauth.author.adjustResponseSpaces",
+    "mauth_format_apply": "mauth.format.apply",
 }
 
 MODEL_PRICING_USD_PER_1M = {
@@ -70,6 +71,7 @@ MAUTH_TOOL_NAMES = [
     "mauth.author.addDiagram",
     "mauth.author.ensureSolutions",
     "mauth.author.adjustResponseSpaces",
+    "mauth.format.apply",
     "mauth.files.describe",
     "mauth.files.list",
     "mauth.files.open",
@@ -689,6 +691,25 @@ def focused_tool_hint(
             "layout space",
         )
     )
+    asks_for_formatting = any(
+        term in text
+        for term in (
+            "format",
+            "formatting",
+            "spacing",
+            "layout",
+            "new page",
+            "page break",
+            "start on new page",
+            "move diagram",
+            "diagram right",
+            "diagram left",
+            "align diagram",
+            "make the solution fit",
+            "tidy",
+            "blank space",
+        )
+    )
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -738,6 +759,14 @@ def focused_tool_hint(
             "Focused tool routing hint: this is a response-space/layout request. Your first tool call should be "
             f'mauth_author_adjust_response_spaces with {{"targets":[{{"questionNumber":{question_number},"lines":10,"mode":"set"}}]}}. '
             "Use this for answer-space changes that should preserve existing question text, solutions, and diagrams."
+        )
+    if asks_for_formatting:
+        return (
+            "Focused tool routing hint: this is a formatting/layout request. Your first tool call should be "
+            f'mauth_format_apply with {{"operations":[{{"type":"tidyQuestionSpacing","target":{{"questionNumber":{question_number}}}}}]}} '
+            "adapted to the teacher's request. Use setPageBreakBefore/removePageBreakBefore for page breaks before "
+            "parts/subparts, setDiagramAlignment for diagram left/center/right, adjustAnswerSpace for answer-space "
+            "line counts, fitSolutionToSpace when solutions need to fit, and moveModule only when moving one known module."
         )
     if (
         any(term in text for term in ("solution", "worked", "answer key", "marking key")) or asks_for_marking_edit
@@ -1181,7 +1210,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                             ),
                             "solutionDiagrams": {
                                 "type": "array",
-                                "items": assistant_diagram_block_schema("One completed solution-copy diagram for this part."),
+                                "items": assistant_diagram_block_schema(
+                                    "One completed solution-copy diagram for this part."
+                                ),
                             },
                             "table": assistant_table_block_schema(
                                 "Optional student completion table for this part. Use blank strings for empty answer cells."
@@ -1195,7 +1226,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                             ),
                             "solutionTables": {
                                 "type": "array",
-                                "items": assistant_table_block_schema("One completed solution-copy table for this part."),
+                                "items": assistant_table_block_schema(
+                                    "One completed solution-copy table for this part."
+                                ),
                             },
                             "pageBreakBefore": {"type": "boolean"},
                         },
@@ -1420,6 +1453,87 @@ def mauth_author_adjust_response_spaces_tool_definition() -> dict[str, Any]:
     }
 
 
+def assistant_format_target_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": "Existing document location. Use questionNumber plus optional part/subpart labels or ids.",
+        "properties": {
+            "questionNumber": {"type": "integer", "minimum": 1},
+            "questionId": {"type": "string"},
+            "partId": {"type": "string"},
+            "partLabel": {"type": "string", "description": "Existing part label such as a, b, c."},
+            "partNumber": {"type": "integer", "minimum": 1},
+            "subpartId": {"type": "string"},
+            "subpartLabel": {"type": "string", "description": "Existing subpart label such as i, ii, iii."},
+            "subpartNumber": {"type": "integer", "minimum": 1},
+            "blockId": {"type": "string", "description": "Existing module id, when known."},
+            "moduleId": {"type": "string", "description": "Alias for blockId."},
+            "diagramId": {"type": "string", "description": "Existing diagram module id, when known."},
+        },
+        "required": ["questionNumber"],
+        "additionalProperties": False,
+    }
+
+
+def mauth_format_apply_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": "mauth_format_apply",
+        "description": (
+            "Apply safe high-level formatting changes without rewriting question content. Use for requests like "
+            "'put part (c) on a new page', 'move the diagram right', 'add more answer space', "
+            "'make the solution fit', 'move this module', or 'tidy spacing'. Prefer this over low-level "
+            "Mauth action JSON for formatting/layout edits."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "operations": {
+                    "type": "array",
+                    "description": "Formatting operations to apply atomically.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "setPageBreakBefore",
+                                    "removePageBreakBefore",
+                                    "setDiagramAlignment",
+                                    "adjustAnswerSpace",
+                                    "moveModule",
+                                    "fitSolutionToSpace",
+                                    "tidyQuestionSpacing",
+                                ],
+                            },
+                            "target": assistant_format_target_schema(),
+                            "to": assistant_format_target_schema(),
+                            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+                            "align": {"type": "string", "enum": ["left", "center", "right"]},
+                            "diagramTextSide": {"type": "string", "enum": ["none", "left", "right"]},
+                            "diagramIndex": {"type": "integer", "minimum": 1},
+                            "blockId": {"type": "string"},
+                            "moduleId": {"type": "string"},
+                            "diagramId": {"type": "string"},
+                            "lines": {"type": "integer", "minimum": 1, "maximum": 60},
+                            "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 60},
+                            "deltaLines": {"type": "integer", "minimum": 1, "maximum": 60},
+                            "mode": {"type": "string", "enum": ["set", "atLeast", "add"]},
+                            "beforeBlockId": {"type": "string"},
+                            "afterBlockId": {"type": "string"},
+                            "extraLines": {"type": "integer", "minimum": 0, "maximum": 10},
+                        },
+                        "required": ["type"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["operations"],
+            "additionalProperties": False,
+        },
+    }
+
+
 def assistant_tool_definitions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
@@ -1445,6 +1559,25 @@ def assistant_tool_definitions(
             "extra lines",
             "line count",
             "layout space",
+        )
+    )
+    asks_for_formatting = any(
+        term in text
+        for term in (
+            "format",
+            "formatting",
+            "spacing",
+            "layout",
+            "new page",
+            "page break",
+            "start on new page",
+            "move diagram",
+            "diagram right",
+            "diagram left",
+            "align diagram",
+            "make the solution fit",
+            "tidy",
+            "blank space",
         )
     )
     asks_for_marking_edit = any(
@@ -1526,6 +1659,8 @@ def assistant_tool_definitions(
         return [mauth_author_ensure_solutions_tool_definition()]
     if repair_targets & {"mauth_author_adjust_response_spaces", "mauth.author.adjustResponseSpaces"}:
         return [mauth_author_adjust_response_spaces_tool_definition()]
+    if repair_targets & {"mauth_format_apply", "mauth.format.apply"}:
+        return [mauth_format_apply_tool_definition()]
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
@@ -1535,6 +1670,8 @@ def assistant_tool_definitions(
         return [mauth_author_add_diagram_tool_definition()]
     if has_specific_question and asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
         return [mauth_author_adjust_response_spaces_tool_definition()]
+    if has_specific_question and asks_for_formatting and not asks_to_write_question:
+        return [mauth_format_apply_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
         return [mauth_author_ensure_solutions_tool_definition(), mauth_tool_definition()]
     if any(term in text for term in file_only_terms) and not any(
@@ -1547,6 +1684,7 @@ def assistant_tool_definitions(
         mauth_author_add_diagram_tool_definition(),
         mauth_author_ensure_solutions_tool_definition(),
         mauth_author_adjust_response_spaces_tool_definition(),
+        mauth_format_apply_tool_definition(),
         mauth_tool_definition(),
     ]
 
@@ -1596,6 +1734,7 @@ Tool-call contract:
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_author_replace_question. Use mauth_author_ensure_solutions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
+- For focused formatting/layout requests, use mauth_format_apply rather than low-level action JSON. Supported operations are setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, and tidyQuestionSpacing. This is the safe path for requests like "put part (c) on a new page", "move the diagram right", "make the solution fit", or "remove unnecessary blank space".
 - In mauth_author_replace_question, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_author_add_diagram with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_author_add_diagram again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To label an angle, use `LabelsAngle(OC, OD, $45^\\circ$)` between named segments or declare `Label angleCD $45^\\circ$` then `LabelsAngle(angleCD, C, O, D)`. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
