@@ -29,6 +29,21 @@ QUESTION_AUTHORING_PATTERN = re.compile(
     r"\b(?:write|replace|make|create|generate|build)\b[\s\S]{0,180}\bquestion\b",
     re.IGNORECASE,
 )
+LAYOUT_CHECK_TERMS = (
+    "layout check",
+    "check layout",
+    "document layout",
+    "document-wide layout",
+    "whole document layout",
+    "print risk",
+    "page overflow",
+    "blank page",
+    "weird blank",
+    "missing answer space",
+    "solution-space mismatch",
+    "ready to print",
+    "print-ready",
+)
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -575,6 +590,10 @@ def asks_to_author_question(text: str) -> bool:
     ) or bool(QUESTION_AUTHORING_PATTERN.search(text))
 
 
+def asks_for_layout_check_text(text: str) -> bool:
+    return any(term in text for term in LAYOUT_CHECK_TERMS)
+
+
 def compact_document_summary(
     document_summary: dict[str, Any] | None,
     messages: list[AssistantChatMessage] | None = None,
@@ -617,6 +636,76 @@ def question_summary_has_text(question: dict[str, Any]) -> bool:
                 if isinstance(value, str) and value.strip():
                     return True
     return False
+
+
+def summary_item_has_text(item: dict[str, Any]) -> bool:
+    for key in ("textPreview", "text", "questionText"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+    modules = item.get("modules")
+    if isinstance(modules, list):
+        for module in modules:
+            if not isinstance(module, dict):
+                continue
+            for key in ("textPreview", "text"):
+                value = module.get(key)
+                if isinstance(value, str) and value.strip():
+                    return True
+    return False
+
+
+def marked_summary_has_solution_context(summary: dict[str, Any] | None) -> bool:
+    questions = summary.get("questions") if isinstance(summary, dict) else None
+    if not isinstance(questions, list):
+        return False
+
+    found_marked_scope = False
+
+    def mark_value(item: dict[str, Any]) -> int:
+        value = item.get("marks")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return 0
+
+    def has_marked_children(item: dict[str, Any]) -> bool:
+        children = item.get("parts")
+        if not isinstance(children, list):
+            children = item.get("subparts")
+        if not isinstance(children, list):
+            return False
+        return any(
+            isinstance(child, dict) and (mark_value(child) > 0 or has_marked_children(child)) for child in children
+        )
+
+    def check_marked_item(item: dict[str, Any], *, inherit_context: bool = False) -> bool:
+        nonlocal found_marked_scope
+        marks = mark_value(item)
+        has_text = summary_item_has_text(item) or inherit_context
+        if marks > 0:
+            found_marked_scope = True
+            if not has_text:
+                return False
+
+        for key in ("parts", "subparts"):
+            children = item.get(key)
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                if not isinstance(child, dict):
+                    continue
+                if not check_marked_item(child, inherit_context=has_text):
+                    return False
+        return True
+
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        if (mark_value(question) > 0 or has_marked_children(question)) and not check_marked_item(question):
+            return False
+    return found_marked_scope
 
 
 def question_summary_text(question: dict[str, Any] | None) -> str:
@@ -735,21 +824,7 @@ def focused_tool_hint(
             "marking key",
         )
     )
-    asks_for_layout_check = any(
-        term in text
-        for term in (
-            "layout check",
-            "check layout",
-            "document-wide layout",
-            "print risk",
-            "page overflow",
-            "blank page",
-            "missing answer space",
-            "solution-space mismatch",
-            "ready to print",
-            "print-ready",
-        )
-    )
+    asks_for_layout_check = asks_for_layout_check_text(text)
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -774,6 +849,14 @@ def focused_tool_hint(
             "mauth_author_adjust_response_spaces, or mauth_write_solutions_for_questions as appropriate."
         )
     if asks_for_whole_solution_key:
+        if marked_summary_has_solution_context(compact_summary):
+            return (
+                "Focused tool routing hint: this is a whole-test solution-key request and the compact summary already "
+                "contains enough text for the marked questions, parts, and subparts. Your first tool call should be "
+                "mauth_write_all_solutions with one payload covering every marked scope. Do not call "
+                "mauth.document.inspect first. Preserve diagrams, use hidden [[marks:n]] ticks only, make tick totals "
+                "match marks, then use mauth_check_document_layout in solutions mode after the solution tool succeeds."
+            )
         return (
             "Focused tool routing hint: this is a whole-test solution-key request. Inspect the document first with "
             "mauth.document.inspect if the compact summary does not contain enough question text for every marked "
@@ -1719,8 +1802,10 @@ def assistant_tool_definitions(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
     attachments: list[AssistantAttachment] | None = None,
+    document_summary: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     text = request_text(messages, tool_outputs)
+    compact_summary = compact_document_summary(document_summary, messages)
     repair_targets = tool_output_target_names(tool_outputs)
     question_numbers = question_numbers_from_request(messages)
     has_specific_question = bool(question_numbers) or "current question" in text or "selected question" in text
@@ -1741,22 +1826,7 @@ def assistant_tool_definitions(
             "marking key",
         )
     )
-    asks_for_layout_check = any(
-        term in text
-        for term in (
-            "layout check",
-            "check layout",
-            "document-wide layout",
-            "print risk",
-            "page overflow",
-            "blank page",
-            "weird blank",
-            "missing answer space",
-            "solution-space mismatch",
-            "ready to print",
-            "print-ready",
-        )
-    )
+    asks_for_layout_check = asks_for_layout_check_text(text)
     asks_for_response_space = any(
         term in text
         for term in (
@@ -1918,18 +1988,12 @@ def assistant_tool_definitions(
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
         return [mauth_write_solutions_for_questions_tool_definition(), mauth_tool_definition()]
     if asks_for_layout_check:
-        return [
-            mauth_check_document_layout_tool_definition(),
-            mauth_fix_question_formatting_tool_definition(),
-            mauth_author_adjust_response_spaces_tool_definition(),
-            mauth_write_solutions_for_questions_tool_definition(),
-        ]
+        return [mauth_check_document_layout_tool_definition()]
     if asks_for_whole_solution_key:
-        return [
-            mauth_write_all_solutions_tool_definition(),
-            mauth_check_document_layout_tool_definition(),
-            mauth_tool_definition(),
-        ]
+        tools = [mauth_write_all_solutions_tool_definition(), mauth_check_document_layout_tool_definition()]
+        if not marked_summary_has_solution_context(compact_summary):
+            tools.append(mauth_tool_definition())
+        return tools
     if any(term in text for term in file_only_terms) and not any(
         term in text for term in ("question", "solution", "diagram", "format", "layout", "exam")
     ):
@@ -2223,13 +2287,26 @@ def input_items(request: AssistantChatRequest) -> list[dict[str, Any]]:
             if isinstance(tool_output.output, str)
             else json.dumps(tool_output.output, ensure_ascii=False)
         )
-        items.append(
-            {
-                "type": "function_call_output",
-                "call_id": tool_output.callId,
-                "output": output,
-            }
-        )
+        if request.previousResponseId:
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_output.callId,
+                    "output": output,
+                }
+            )
+        else:
+            tool_name = tool_output.name or "Mauth tool"
+            items.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"{tool_name} completed outside the provider response chain. "
+                        "Use this tool output to decide the next Mauth action or final reply:\n"
+                        f"{output}"
+                    ),
+                }
+            )
     return items
 
 
@@ -2352,6 +2429,47 @@ def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
     return calls
 
 
+def zero_token_usage_summary(model: str, *, source: str) -> dict[str, Any]:
+    return {
+        "model": model,
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "billableInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "estimatedCostUsd": 0.0,
+        "pricingSource": source,
+    }
+
+
+def direct_layout_check_response(model: str) -> dict[str, Any]:
+    arguments = {"mode": "both"}
+    return {
+        "configured": True,
+        "model": model,
+        "message": "Checking the document layout.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-layout-check",
+                "callId": "local-layout-check",
+                "name": "mauth_check_document_layout",
+                "arguments": arguments,
+                "mauthToolName": "mauth.layout.check",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth routing; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
+def should_use_direct_layout_check(request: AssistantChatRequest) -> bool:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return False
+    return asks_for_layout_check_text(request_text(request.messages))
+
+
 async def create_assistant_response(request: AssistantChatRequest) -> dict[str, Any]:
     model = request.model or assistant_model()
     if not assistant_configured():
@@ -2365,7 +2483,10 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
             "error": "OPENAI_API_KEY is missing.",
         }
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    if should_use_direct_layout_check(request):
+        return direct_layout_check_response(model)
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=20.0)) as client:
         selected_brain_files, planner_usage = await select_brain_files_for_request(
             client,
             messages=request.messages,
@@ -2383,7 +2504,12 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
                 request.attachments,
             ),
             "input": input_items(request),
-            "tools": assistant_tool_definitions(request.messages, request.toolOutputs, request.attachments),
+            "tools": assistant_tool_definitions(
+                request.messages,
+                request.toolOutputs,
+                request.attachments,
+                request.documentSummary,
+            ),
             "parallel_tool_calls": False,
         }
         if request.previousResponseId:

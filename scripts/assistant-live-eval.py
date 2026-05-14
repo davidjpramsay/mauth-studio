@@ -1262,7 +1262,7 @@ def collect_solution_texts(value: Any) -> list[str]:
     texts: list[str] = []
     if isinstance(value, dict):
         for key, inner_value in value.items():
-            if key == "solutionText" and isinstance(inner_value, str):
+            if key == "solutionText" and isinstance(inner_value, str) and inner_value.strip():
                 texts.append(inner_value)
             else:
                 texts.extend(collect_solution_texts(inner_value))
@@ -1593,6 +1593,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "prompt": "Check the whole document layout, then repair the obvious issues before telling me it is done.",
         "summary": sample_layout_problem_document_summary,
         "assert": assert_layout_check_call,
+        "assertFirstBeforeRepair": True,
         "repairFailure": lambda call: layout_warning_output(),
         "repairAssert": assert_layout_repair_call,
     },
@@ -1693,6 +1694,8 @@ def provider_error_message(error: httpx.HTTPError) -> str:
                     detail = str(detail_value)
         trimmed = detail.strip()
         return f"BLOCKED: assistant provider returned HTTP {status}: {trimmed}"
+    if isinstance(error, httpx.TimeoutException):
+        return f"BLOCKED: assistant provider request timed out: {error.__class__.__name__}"
     return f"BLOCKED: assistant provider request failed: {error}"
 
 
@@ -1737,6 +1740,13 @@ async def run_single_eval(
 
     repair_failure = case.get("repairFailure")
     if callable(repair_failure):
+        if case.get("assertFirstBeforeRepair"):
+            first_issues = assert_call(first_calls[0])
+            if first_issues:
+                print("FAIL:")
+                for issue in first_issues:
+                    print(f"- {issue}")
+                return 1, total_cost, total_tokens
         tool_output = repair_failure(first_calls[0])
         second, provider_error = await safe_create_assistant_response(
             AssistantChatRequest(

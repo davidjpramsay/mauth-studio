@@ -51,6 +51,52 @@ def test_assistant_chat_returns_safe_message_without_key(monkeypatch):
     assert "OPENAI_API_KEY" in data["message"]
 
 
+def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Check the whole document layout before printing."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Checking the document layout."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-layout-check",
+            "callId": "local-layout-check",
+            "name": "mauth_check_document_layout",
+            "arguments": {"mode": "both"},
+            "mauthToolName": "mauth.layout.check",
+            "mauthArguments": {"mode": "both"},
+        }
+    ]
+
+
+def test_tool_output_without_provider_response_id_is_sent_as_user_context():
+    request = openai_assistant.AssistantChatRequest(
+        toolOutputs=[
+            openai_assistant.AssistantToolOutput(
+                callId="local-layout-check",
+                name="mauth_check_document_layout",
+                output={"ok": False, "warnings": [{"code": "missing-space"}]},
+            )
+        ]
+    )
+
+    items = openai_assistant.input_items(request)
+
+    assert len(items) == 1
+    assert items[0]["role"] == "user"
+    assert "outside the provider response chain" in items[0]["content"]
+    assert "missing-space" in items[0]["content"]
+
+
 def test_extracts_mauth_tool_calls_from_openai_response():
     response = {
         "id": "resp_123",
@@ -459,20 +505,20 @@ def test_whole_test_solution_prompt_gets_write_all_and_layout_tools():
     }
     message = openai_assistant.AssistantChatMessage(role="user", content="Write the solutions for the whole test.")
 
-    tools = openai_assistant.assistant_tool_definitions([message])
+    tools = openai_assistant.assistant_tool_definitions([message], document_summary=summary)
     instructions = openai_assistant.assistant_instructions(summary, [message])
 
     assert [tool["name"] for tool in tools] == [
         "mauth_write_all_solutions",
         "mauth_check_document_layout",
-        "mauth_tool",
     ]
     assert "mauth_write_all_solutions" in instructions
+    assert "Do not call mauth.document.inspect first" in instructions
     assert "every marked question, part, and subpart" in instructions
     assert "mauth_check_document_layout" in instructions
 
 
-def test_layout_check_prompt_gets_layout_and_repair_tools():
+def test_layout_check_prompt_gets_layout_tool_first():
     message = openai_assistant.AssistantChatMessage(
         role="user",
         content="Please check the whole document layout for print risks, weird blank pages and solution spacing.",
@@ -484,12 +530,7 @@ def test_layout_check_prompt_gets_layout_and_repair_tools():
         [message],
     )
 
-    assert [tool["name"] for tool in tools] == [
-        "mauth_check_document_layout",
-        "mauth_fix_question_formatting",
-        "mauth_author_adjust_response_spaces",
-        "mauth_write_solutions_for_questions",
-    ]
+    assert [tool["name"] for tool in tools] == ["mauth_check_document_layout"]
     assert "mauth_check_document_layout" in instructions
     assert "repair page overflow" in instructions
 
