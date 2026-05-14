@@ -155,6 +155,16 @@ PerpendicularToSegment(l, A, B)
 Use `ParallelToSegment(l, A, B)` when the visible object should be only the segment `AB`, such as a chord parallel to a tangent. Use `Parallel(l, m)` when both full construction lines should be visible.
 Use `PerpendicularToSegment(l, A, B)` for a line perpendicular to a drawn segment `AB`.
 
+Do not use invented shortcuts such as `Connect(A, B)` or `Collinear(A, B, C)`. Draw visible joins with `Segment(name, A, B)` or `VectorSegment(name, A, B)`. If line incidence matters, declare the line first, then use `LineThrough(lineName, A, B)` and `On(P, lineName)`; otherwise leave the collinearity implicit in the drawing constraints.
+
+```penrose
+Line lineAB
+LineThrough(lineAB, A, B)
+On(C, lineAB)
+```
+
+All predicate calls use parentheses and commas. Do not write declaration-like predicate syntax such as `VectorSegment OA O A`; write `VectorSegment(OA, O, A)`.
+
 ## Circles
 
 ```penrose
@@ -167,6 +177,20 @@ OnCircle(B, gamma)
 ```
 
 `CircleThrough(gamma, O, A)` means centre `O`, through point `A`.
+
+For a circle through named circumference points, use a hidden centre and `OnCircle` constraints:
+
+```penrose
+Point centre, A, B, C
+Circle omega
+Label centre $\,$
+HidePoint(centre)
+CircleThrough(omega, centre, A)
+OnCircle(B, omega)
+OnCircle(C, omega)
+```
+
+Do not write `CircleThrough(omega, A, B, C)`.
 
 ## Tangents And Secants
 

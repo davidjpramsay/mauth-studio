@@ -831,7 +831,7 @@ def assert_parallel_chord_diagram_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
-def assert_multipart_probability_call(call: dict[str, Any]) -> list[str]:
+def assert_multipart_probability_call(call: dict[str, Any], *, require_solutions: bool = True) -> list[str]:
     issues: list[str] = []
     if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
         issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
@@ -850,8 +850,11 @@ def assert_multipart_probability_call(call: dict[str, Any]) -> list[str]:
                 continue
             if not str(part.get("text") or "").strip():
                 issues.append(f"parts[{index}].text should be non-empty")
-            if not str(part.get("solutionText") or "").strip():
+            solution_text = str(part.get("solutionText") or "").strip()
+            if require_solutions and not solution_text:
                 issues.append(f"parts[{index}].solutionText should be non-empty")
+            if not require_solutions and (solution_text or part.get("includeSolution") is True):
+                issues.append(f"parts[{index}] should not include a solution unless the source/request asks for one")
             if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
                 issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
             if "\\[" in str(part.get("text") or "") or "\\]" in str(part.get("text") or ""):
@@ -864,7 +867,7 @@ def assert_multipart_probability_call(call: dict[str, Any]) -> list[str]:
 
 
 def assert_pdf_attachment_probability_call(call: dict[str, Any]) -> list[str]:
-    issues = assert_multipart_probability_call(call)
+    issues = assert_multipart_probability_call(call, require_solutions=False)
     args = call.get("mauthArguments")
     if not isinstance(args, dict):
         return issues
@@ -890,6 +893,27 @@ def assert_docx_attachment_circle_call(call: dict[str, Any]) -> list[str]:
         issues.append("docx-derived question should preserve the AB/ACB angle proof target")
     if args.get("marks") != 5:
         issues.append("docx-derived question should preserve the 5 mark allocation")
+    graph_config = diagram_graph_config(args)
+    if graph_config.get("type") == "geometricConstruction":
+        substance = str(graph_config.get("options", {}).get("substanceSource") or "")
+        if "Connect(" in substance or "Collinear(" in substance:
+            issues.append(
+                "Penrose Substance should use native Segment/VectorSegment/LineThrough patterns, not Connect or Collinear"
+            )
+        try:
+            render_penrose_diagram(
+                {
+                    **graph_config,
+                    "style": graph_config.get("style") or "geometry",
+                    "options": {
+                        "penrosePreset": "geometry",
+                        "scalePercent": 100,
+                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
+                    },
+                }
+            )
+        except Exception as exc:
+            issues.append(f"docx-derived geometricConstruction should render through Penrose: {exc}")
     return issues
 
 
@@ -1069,10 +1093,18 @@ def assert_scalar_product_add_diagram_call(call: dict[str, Any]) -> list[str]:
         issues.append(
             "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
         )
+    if re.search(r"^\s*VectorSegment\s+\S+", substance, re.MULTILINE):
+        issues.append("Penrose Substance should call VectorSegment(OA, O, A), not `VectorSegment OA O A`")
+    if re.search(r"^\s*Segment\s+\S+\s+\S+\s+\S+", substance, re.MULTILINE):
+        issues.append("Penrose Substance should call Segment(AB, A, B), not `Segment AB A B`")
+    if re.search(r"\bLabelsAngle\s*\([^)]*\$", substance):
+        issues.append("Penrose Substance should declare a Label then call LabelsAngle(labelName, A, B, C)")
     if "SegmentLength(" in substance:
         issues.append(
             "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
         )
+    if "Collinear(" in substance or "Connect(" in substance:
+        issues.append("Penrose Substance should not invent unsupported Collinear or Connect predicates")
     compact_substance = compact_math_text(substance)
     if "rightangle(" not in compact_substance and "90" not in compact_substance:
         issues.append("scalar-product diagram should preserve the right-angle marker")
@@ -1134,7 +1166,15 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
         issues.append(
             "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
         )
+    if re.search(r"^\s*VectorSegment\s+\S+", substance, re.MULTILINE):
+        issues.append("Penrose Substance should call VectorSegment(OA, O, A), not `VectorSegment OA O A`")
+    if re.search(r"^\s*Segment\s+\S+\s+\S+\s+\S+", substance, re.MULTILINE):
+        issues.append("Penrose Substance should call Segment(AB, A, B), not `Segment AB A B`")
+    if re.search(r"\bLabelsAngle\s*\([^)]*\$", substance):
+        issues.append("Penrose Substance should declare a Label then call LabelsAngle(labelName, A, B, C)")
     compact_substance = compact_math_text(substance)
+    if "linethrough(" not in compact_substance or "on(o," not in compact_substance:
+        issues.append("scalar-product diagram should preserve the opposite collinear a and d rays")
     valid_right_angle_terms = ("rightangle(", "90")
     if not any(term in compact_substance for term in valid_right_angle_terms):
         issues.append("native diagram should preserve the visible right-angle marker")
@@ -1142,6 +1182,8 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
         issues.append(
             "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
         )
+    if "Collinear(" in substance or "Connect(" in substance:
+        issues.append("Penrose Substance should not invent unsupported Collinear or Connect predicates")
     if graph_type == "geometricConstruction":
         try:
             render_penrose_diagram(

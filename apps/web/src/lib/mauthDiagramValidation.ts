@@ -80,6 +80,31 @@ const COMMON_UNSUPPORTED_PENROSE_PREDICATES: Array<{
     expected: "Draw the visible rays or vectors directly with RayFrom or VectorSegment.",
   },
   {
+    pattern: /\bCollinear\s*\(/,
+    message: "uses unsupported Collinear predicate",
+    expected: "Use LineThrough(lineName, A, B) plus On(P, lineName) when incidence is essential, or omit it.",
+  },
+  {
+    pattern: /\bConnect\s*\(/,
+    message: "uses unsupported Connect predicate",
+    expected: "Use Segment(name, A, B) or VectorSegment(name, A, B).",
+  },
+  {
+    pattern: /\bLabelsAngle\s*\([^)]*\$/,
+    message: "uses raw TeX inside LabelsAngle",
+    expected: "Declare `Label angleName $...$` first, then use `LabelsAngle(angleName, A, B, C)`.",
+  },
+  {
+    pattern: /^\s*(VectorSegment|LineThrough|RayFrom|RightAngle|LabelsSegment|LabelsAngle|ParallelToSegment|PerpendicularToSegment)\s+\S+/m,
+    message: "uses non-parenthesized Penrose predicate syntax",
+    expected: "Use comma-separated predicate calls such as `VectorSegment(OA, O, A)`.",
+  },
+  {
+    pattern: /^\s*Segment\s+\S+\s+\S+\s+\S+/m,
+    message: "uses non-parenthesized Segment predicate syntax",
+    expected: "Use `NamedSegment AB` for declaration and `Segment(AB, A, B)` to draw it.",
+  },
+  {
     pattern: /\bLabelSegment\s*\(/,
     message: "uses unsupported LabelSegment predicate",
     expected: "Use LabelsSegment(labelName, A, B).",

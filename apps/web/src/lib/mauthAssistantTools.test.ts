@@ -1864,6 +1864,11 @@ test("rejects unsupported Penrose Substance predicates before applying diagrams"
               "LabelsPoint(A, $A$)",
               "SegmentLength(OA, 2)",
               "OppositeRays(A, O, B)",
+              "Collinear(A, O, B)",
+              "Connect(AB, A, B)",
+              "LabelsAngle(A, O, B, $45^\\circ$)",
+              "VectorSegment vecA O A",
+              "Segment chordAB A B",
               "Ray(rayA, O, A)",
               "PerpendicularToSegment(OB, OC)",
             ].join("\n"),
@@ -1879,6 +1884,11 @@ test("rejects unsupported Penrose Substance predicates before applying diagrams"
   assert.match(messages, /LabelsPoint/);
   assert.match(messages, /SegmentLength/);
   assert.match(messages, /OppositeRays/);
+  assert.match(messages, /Collinear/);
+  assert.match(messages, /Connect/);
+  assert.match(messages, /LabelsAngle/);
+  assert.match(messages, /non-parenthesized/);
+  assert.match(messages, /Segment predicate/);
   assert.match(messages, /Ray\(\.\.\.\)/);
   assert.match(messages, /PerpendicularToSegment must receive/);
 });
