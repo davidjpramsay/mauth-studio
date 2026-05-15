@@ -136,6 +136,7 @@ The in-app chatbox UI/provider adapter must call `runMauthAssistantAdapterTool`.
 - Streaming progress for provider responses and long tool chains, with calm labels such as Thinking, Inspecting document, Applying changes, Checking solutions, and a working timer.
 - Better continuation and recovery: resumable tool loops, stale-response cleanup, retry/repair after provider errors, and the ability to continue large edits without losing context or duplicating work.
 - Tool-level access to saved project search, question search, and eventually a question bank/curriculum bank, without exposing raw filesystem paths to the model.
+- Cost optimisation should be a deliberate pass after accuracy/reliability gates are green. Do not make the assistant cheaper by making it guess. Reduce spend by measuring real token traces, using native deterministic fast paths for layout/status/file checks, sending only selected brain packs and referenced-question summaries, exposing only the focused tool schemas for the request, caching stable schema/brain context where safe, stopping locally after successful validation, and using free self-smoke tests before paid live evals.
 - Visible provider settings/status beyond the current backend `.env` setup, with no silent document upload.
 
 ## Parity Roadmap
@@ -148,6 +149,7 @@ The in-app chatbox UI/provider adapter must call `runMauthAssistantAdapterTool`.
 6. Add project-level intelligence: search files, compare tests, duplicate/rename/move safely, and later integrate question-bank and curriculum-bank retrieval.
 7. Add an evaluation set: saved tests and prompts that compare in-app assistant outcomes against expected document changes, validation status, visual screenshots, and print behaviour.
 8. Keep the deterministic `pnpm smoke:assistant:self` suite as the first cheap gate before paid provider evals. Add scenarios whenever the assistant makes a new class of mistake, then fix the tool contract or brain rules until the scenario passes.
+9. Run focused cost/performance passes only after the relevant evals pass. The optimisation order is: remove unnecessary provider calls with native tools, shrink document/context payloads, retrieve only the needed brains, narrow exposed tools, cache stable context, and then consider cheaper routing models where they do not reduce quality.
 
 ## Guardrails
 

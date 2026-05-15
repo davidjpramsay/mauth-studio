@@ -90,6 +90,8 @@ Follow-ups for Codex-level in-app assistant parity:
 - Context/cost tightening:
   - Keep the brain-menu retrieval path and focused document summaries. Send smaller, targeted brain packets for the exact tool/diagram/workflow instead of broad 40k-token dumps for small edits.
   - Prefer narrow direct tools and one repair attempt over broad wrapper loops. Accuracy remains first, then speed, then cost.
+  - Treat API cost optimisation as a deliberate phase after the reliability gates are green, not as a reason to weaken context, validation, or semantic review while the assistant is still learning tool choice.
+  - When optimising, measure real prompt/token traces and reduce waste in this order: native deterministic fast paths for status/layout/file checks, smaller referenced-question summaries, selected brain packets only, narrow tool schemas, cached stable schema/brain text, local completion messages after successful validation, and free self-smoke tests before paid live evals.
 - Route remaining direct editor mutations through actions where the contract is stable, especially any formatting/front-matter paths still using local patches.
 - Expand renderer-specific diagram authoring guidance and validation for common teacher prompts. The assistant should choose `graphConfig.type` intelligently and emit validated renderer payloads, not accumulate one-off canned `standardDiagram` recipes.
 - Expand diagram-intent validation only when it is clearly conservative and useful. Add a self-smoke scenario from the real failure first, then add a precise expected-renderer check rather than broad prompt heuristics.
