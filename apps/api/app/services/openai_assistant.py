@@ -123,6 +123,13 @@ SOURCE_QUESTION_REPAIR_TERMS = (
     "teacher is adding a new/source question",
     "adding a new/source question",
 )
+QUESTION_PAYLOAD_REPAIR_TERMS = (
+    "actions[0].question",
+    ".question.contentblocks",
+    "arguments.question.contentblocks",
+    "graphconfig.metadata.vector2d",
+    "metadata.vector2d.vectors",
+)
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -1255,6 +1262,13 @@ def mauth_tool_definition() -> dict[str, Any]:
 
 
 def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
+    vector2d_description = (
+        "For graphConfig.type vector2d, provide a valid native vector2d config. Every "
+        "metadata.vector2d.vectors[] entry must include id, name, start:[x,y], and components:[dx,dy]. "
+        "Use labelStyle:'custom' with labels such as '\\\\mathbf{a}' for source scalar-product ray diagrams. "
+        "Use metadata.vector2d.segmentLabels[] with vectorId matching a vector id for magnitude labels, and "
+        "metadata.vector2d.angleMarkers[] with from/to matching vector ids for angle or right-angle markers."
+    )
     return {
         "type": "object",
         "description": description,
@@ -1273,7 +1287,7 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                 "type": "object",
                 "description": (
                     "Native Mauth renderer payload. Put renderer type/data/options here; never put type/data directly "
-                    "on the diagram block."
+                    "on the diagram block. " + vector2d_description
                 ),
                 "properties": {
                     "type": {
@@ -2015,6 +2029,12 @@ def assistant_tool_definitions(
     # wrapper tool just to fix a precise validationIssue path.
     if tool_outputs_mention(tool_outputs, SOURCE_QUESTION_REPAIR_TERMS):
         return [mauth_convert_source_question_tool_definition(require_diagram=True)]
+    if tool_outputs_mention(tool_outputs, QUESTION_PAYLOAD_REPAIR_TERMS) and repair_targets & {
+        "mauth_tool",
+        "mauth.actions.apply",
+        "mauth.actions.preview",
+    }:
+        return [mauth_convert_source_question_tool_definition(require_diagram=True)]
 
     if tool_outputs_mention(tool_outputs, ("semanticreview", "semantic review")):
         return [
@@ -2045,29 +2065,18 @@ def assistant_tool_definitions(
         if tool_outputs_mention(
             tool_outputs,
             (
+                "posteditinspection",
                 "diagramid",
                 "targetid",
-                "diagram-renderer",
-                "renderer-mismatch",
-                "missing tangent",
-                "paralleltosegment",
-                "chord segment",
-                "vector labels",
-                "rendered-diagram",
-                "graph2d",
-                "set-diagram",
-                "stats-chart",
-                "vector2d",
-                "penrose-",
             ),
         ):
             return [mauth_make_diagram_for_question_tool_definition()]
-        return [
-            mauth_question_upsert_tool_definition(
-                require_diagram=require_source_diagram
-                or tool_outputs_mention(tool_outputs, ("diagram", "graphconfig", "graph config"))
-            )
-        ]
+        require_repaired_diagram = require_source_diagram or tool_outputs_mention(
+            tool_outputs, ("diagram", "graphconfig", "graph config")
+        )
+        if repair_targets & {"mauth_convert_source_question"}:
+            return [mauth_convert_source_question_tool_definition(require_diagram=require_repaired_diagram)]
+        return [mauth_question_upsert_tool_definition(require_diagram=require_repaired_diagram)]
     if repair_targets & {"mauth_author_add_diagram", "mauth_make_diagram_for_question", "mauth.author.addDiagram"}:
         return [mauth_make_diagram_for_question_tool_definition()]
     if repair_targets & {

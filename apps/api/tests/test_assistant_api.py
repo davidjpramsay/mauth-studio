@@ -1004,6 +1004,70 @@ def test_broad_tool_new_question_misuse_repairs_with_source_conversion_tool():
     assert "diagram" in tools[0]["parameters"]["required"]
 
 
+def test_broad_question_payload_vector2d_validation_repairs_with_source_conversion_tool():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_tool",
+            output={
+                "ok": False,
+                "toolName": "mauth.actions.apply",
+                "error": (
+                    "actions[0].question.contentBlocks[0].graphConfig.metadata.vector2d.vectors[0].id "
+                    "must be a non-empty string. Expected: string; "
+                    "actions[0].question.contentBlocks[0].graphConfig.metadata.vector2d.vectors[0].start "
+                    "must be a pair of finite numbers. Expected: [number, number]."
+                ),
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "diagram" in tools[0]["parameters"]["required"]
+
+
+def test_source_question_vector2d_validation_repair_stays_on_source_conversion_tool():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_convert_source_question",
+            output={
+                "ok": False,
+                "toolName": "mauth.question.upsert",
+                "validationIssues": [
+                    {
+                        "path": "arguments.diagram.graphConfig.metadata.vector2d.vectors[0].id",
+                        "message": "must be a non-empty string",
+                        "expected": "string",
+                    },
+                    {
+                        "path": "arguments.diagram.graphConfig.metadata.vector2d.vectors[0].start",
+                        "message": "must be a pair of finite numbers",
+                        "expected": "[number, number]",
+                    },
+                ],
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "diagram" in tools[0]["parameters"]["required"]
+
+
+def test_source_question_tool_schema_describes_required_vector2d_fields():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(require_diagram=True)
+    graph_description = tool["parameters"]["properties"]["diagram"]["properties"]["graphConfig"]["description"]
+
+    assert "metadata.vector2d.vectors[]" in graph_description
+    assert "id, name, start:[x,y], and components:[dx,dy]" in graph_description
+    assert "metadata.vector2d.segmentLabels[]" in graph_description
+    assert "metadata.vector2d.angleMarkers[]" in graph_description
+
+
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
     tool = openai_assistant.mauth_author_add_diagram_tool_definition()
     properties = tool["parameters"]["properties"]
