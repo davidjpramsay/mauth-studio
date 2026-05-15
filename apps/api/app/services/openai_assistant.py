@@ -29,6 +29,10 @@ QUESTION_AUTHORING_PATTERN = re.compile(
     r"\b(?:write|replace|make|create|generate|build)\b[\s\S]{0,180}\bquestion\b",
     re.IGNORECASE,
 )
+QUESTION_APPEND_PATTERN = re.compile(
+    r"\b(?:add|append|insert)\s+(?:this|a|an|new)?\s*question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:a\s+)?question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:to|into)\s+(?:the\s+)?(?:test|document|assessment)\b",
+    re.IGNORECASE,
+)
 LAYOUT_CHECK_TERMS = (
     "layout check",
     "check layout",
@@ -570,24 +574,55 @@ def question_numbers_from_request(messages: list[AssistantChatMessage] | None = 
 
 
 def asks_to_author_question(text: str) -> bool:
-    return any(
-        term in text
-        for term in (
-            "write question",
-            "write a question",
-            "write me a question",
-            "replace question",
-            "make question",
-            "make a question",
-            "make me a question",
-            "create question",
-            "create a question",
-            "generate question",
-            "generate a question",
-            "build question",
-            "build a question",
+    return (
+        any(
+            term in text
+            for term in (
+                "write question",
+                "write a question",
+                "write me a question",
+                "replace question",
+                "make question",
+                "make a question",
+                "make me a question",
+                "create question",
+                "create a question",
+                "generate question",
+                "generate a question",
+                "build question",
+                "build a question",
+                "add question",
+                "add a question",
+                "add this question",
+                "append question",
+                "append a question",
+                "append this question",
+                "insert question",
+                "insert a question",
+                "insert this question",
+            )
         )
-    ) or bool(QUESTION_AUTHORING_PATTERN.search(text))
+        or bool(QUESTION_AUTHORING_PATTERN.search(text))
+        or asks_to_append_question(text)
+    )
+
+
+def asks_to_append_question(text: str) -> bool:
+    return bool(QUESTION_APPEND_PATTERN.search(text))
+
+
+def next_question_number_from_summary(summary: dict[str, Any] | None) -> int:
+    questions = summary.get("questions") if isinstance(summary, dict) else None
+    if not isinstance(questions, list):
+        return 1
+    max_number = 0
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        index = question.get("index")
+        if isinstance(index, int) and index >= 0:
+            max_number = max(max_number, index + 1)
+    return max_number + 1
 
 
 def asks_for_layout_check_text(text: str) -> bool:
@@ -838,7 +873,14 @@ def focused_tool_hint(
                 selected_question = question
                 break
 
-    question_number = sorted(question_numbers)[0] if question_numbers else 1
+    append_question = asks_to_append_question(text)
+    question_number = (
+        sorted(question_numbers)[0]
+        if question_numbers
+        else next_question_number_from_summary(compact_summary)
+        if append_question
+        else 1
+    )
     has_question_text = bool(selected_question and question_summary_has_text(selected_question))
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
 
@@ -884,9 +926,14 @@ def focused_tool_hint(
             else "Omit diagram fields to preserve existing diagrams; use diagrams: [] only when explicitly removing diagrams."
         )
         focused_tool_name = "mauth_convert_source_question" if has_source_attachment else "mauth_question_upsert"
+        target_description = (
+            f"the next missing question, Question {question_number}"
+            if append_question and not question_numbers
+            else f"Question {question_number}"
+        )
         return (
             "Focused tool routing hint: this is a one-question authoring request. Your first tool call should be "
-            f"{focused_tool_name} for Question {question_number}, with marks, questionText, studentSpaceLines, "
+            f"{focused_tool_name} for {target_description}, with marks, questionText, studentSpaceLines, "
             f"and solutionText when a solution is requested. If Question {question_number} is exactly the next missing "
             "question, this tool can append it; do not refuse just because it does not exist yet."
             f"{circle_proof_guidance} {diagram_guidance}"
@@ -1808,7 +1855,12 @@ def assistant_tool_definitions(
     compact_summary = compact_document_summary(document_summary, messages)
     repair_targets = tool_output_target_names(tool_outputs)
     question_numbers = question_numbers_from_request(messages)
-    has_specific_question = bool(question_numbers) or "current question" in text or "selected question" in text
+    has_specific_question = (
+        bool(question_numbers)
+        or "current question" in text
+        or "selected question" in text
+        or asks_to_append_question(text)
+    )
     asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
     asks_to_add = any(term in text for term in ("add", "include", "insert", "put", "place", "draw", "sketch"))
     asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))

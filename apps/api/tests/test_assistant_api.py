@@ -676,6 +676,36 @@ def test_focused_write_next_missing_question_does_not_refuse():
     )
 
 
+def test_add_this_question_routes_to_next_missing_source_conversion():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Please add this question to the test.",
+    )
+    summary = {
+        "questions": [
+            {"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Question 1."}]},
+            {"id": "q2", "index": 1, "modules": [{"kind": "text", "textPreview": "Question 2."}]},
+            {"id": "q3", "index": 2, "modules": [{"kind": "text", "textPreview": "Question 3."}]},
+        ]
+    }
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="screenshot-1",
+            name="source-question.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions([message], attachments=attachments, document_summary=summary)
+    instructions = openai_assistant.assistant_instructions(summary, [message], attachments=attachments)
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "for the next missing question, Question 4" in instructions
+    assert "this tool can append it; do not refuse" in instructions
+
+
 def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
     message = openai_assistant.AssistantChatMessage(
         role="user",
