@@ -499,6 +499,8 @@ function compactVector2dMetadata(metadata: unknown) {
       label: stringField(entry.label, 80),
       rightAngle: booleanField(entry.rightAngle),
       radius: numberField(entry.radius),
+      labelX: numberField(entry.labelX),
+      labelY: numberField(entry.labelY),
     }));
   const segmentLabels = recordArray(vector2d.segmentLabels)
     .slice(0, 8)
@@ -506,6 +508,9 @@ function compactVector2dMetadata(metadata: unknown) {
       vectorId: stringField(entry.vectorId, 40),
       label: stringField(entry.label, 80),
       position: numberField(entry.position),
+      offsetPx: numberField(entry.offsetPx ?? entry.offset),
+      labelX: numberField(entry.labelX),
+      labelY: numberField(entry.labelY),
     }));
   return {
     labelStyle: stringField(vector2d.labelStyle, 40),

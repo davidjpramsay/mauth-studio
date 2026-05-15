@@ -53,6 +53,8 @@ interface Vector2DSegmentLabel {
   position: number;
   offsetPx: number;
   color: string;
+  labelX?: number;
+  labelY?: number;
 }
 
 interface Vector2DAngleMarker {
@@ -253,6 +255,8 @@ function vector2dAnnotationData(graphConfig?: GraphConfig | null) {
           position: Math.max(0.05, Math.min(0.95, finiteNumber(record.position, 0.55))),
           offsetPx: finiteNumber(record.offsetPx ?? record.offset, 18),
           color: String(record.color ?? AXIS_COLOR),
+          labelX: finiteOptionalNumber(record.labelX),
+          labelY: finiteOptionalNumber(record.labelY),
         };
       })
       .filter((entry): entry is Vector2DSegmentLabel => !!entry),
@@ -447,15 +451,17 @@ function shortestAngleDelta(from: number, to: number) {
   return delta;
 }
 
-function drawSegmentLabel(board: JXG.Board, vector: Vector2DEntry, label: Vector2DSegmentLabel) {
+function drawSegmentLabel(board: JXG.Board, vector: Vector2DEntry, label: Vector2DSegmentLabel, onMove?: (x: number, y: number) => void) {
   const end = vectorEnd(vector);
   const baseX = vector.start[0] + (end[0] - vector.start[0]) * label.position;
   const baseY = vector.start[1] + (end[1] - vector.start[1]) * label.position;
   const direction = unitVector(vector);
   const offsetX = -direction[1] * label.offsetPx;
   const offsetY = -direction[0] * label.offsetPx;
-  const [x, y] = offsetUserByPixels(board, baseX, baseY, offsetX, offsetY);
-  createVectorLabelText(board, x, y, label.label, label.color);
+  const [defaultX, defaultY] = offsetUserByPixels(board, baseX, baseY, offsetX, offsetY);
+  const x = Number.isFinite(label.labelX) ? (label.labelX as number) : defaultX;
+  const y = Number.isFinite(label.labelY) ? (label.labelY as number) : defaultY;
+  createVectorLabelText(board, x, y, label.label, label.color, onMove);
 }
 
 function drawRightAngleMarker(board: JXG.Board, marker: Vector2DAngleMarker, first: Vector2DEntry, second: Vector2DEntry) {
@@ -503,7 +509,12 @@ function drawAngleArc(board: JXG.Board, marker: Vector2DAngleMarker, first: Vect
   } as Record<string, unknown>);
 }
 
-function drawAngleMarker(board: JXG.Board, vectors: readonly Vector2DEntry[], marker: Vector2DAngleMarker) {
+function drawAngleMarker(
+  board: JXG.Board,
+  vectors: readonly Vector2DEntry[],
+  marker: Vector2DAngleMarker,
+  onLabelMove?: (x: number, y: number) => void,
+) {
   const first = vectorByReference(vectors, marker.from);
   const second = vectorByReference(vectors, marker.to);
   if (!first || !second) return;
@@ -516,7 +527,7 @@ function drawAngleMarker(board: JXG.Board, vectors: readonly Vector2DEntry[], ma
   const labelRadius = marker.radius * 1.45;
   const labelX = Number.isFinite(marker.labelX) ? (marker.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius;
   const labelY = Number.isFinite(marker.labelY) ? (marker.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius;
-  createVectorLabelText(board, labelX, labelY, marker.label, marker.color);
+  createVectorLabelText(board, labelX, labelY, marker.label, marker.color, onLabelMove);
 }
 
 function createVectorLabelText(
@@ -613,6 +624,30 @@ function vector2dMetadataForSave(graphConfig: GraphConfig | undefined | null, ve
   };
 }
 
+function vector2dMetadataWithAnnotationLabelPosition(
+  graphConfig: GraphConfig | undefined | null,
+  collectionKey: "segmentLabels" | "angleMarkers",
+  id: string,
+  x: number,
+  y: number,
+) {
+  const metadata = graphConfig?.metadata ?? {};
+  const vectorData =
+    typeof metadata.vector2d === "object" && metadata.vector2d !== null ? (metadata.vector2d as Record<string, unknown>) : {};
+  const collection = Array.isArray(vectorData[collectionKey]) ? (vectorData[collectionKey] as unknown[]) : [];
+  return {
+    ...metadata,
+    vector2d: {
+      ...vectorData,
+      [collectionKey]: collection.map((entry, index) => {
+        const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {};
+        const fallbackId = `${collectionKey === "segmentLabels" ? "segment-label" : "angle-marker"}-${index + 1}`;
+        return String(record.id ?? fallbackId) === id ? { ...record, labelX: x, labelY: y } : record;
+      }),
+    },
+  };
+}
+
 export function Vector2DGraph({
   graphConfig,
   onGraphConfigChange,
@@ -676,12 +711,20 @@ export function Vector2DGraph({
     } as Record<string, unknown>);
 
     const vectors = vector2dEntries(graphConfig);
+    const annotationData = vector2dAnnotationData(graphConfig);
     const commitVectorLabelPosition = (vectorIndex: number, x: number, y: number) => {
       if (!onGraphConfigChange || !graphConfig) return;
       const nextVectors = vectors.map((vector, index) => (index === vectorIndex ? { ...vector, labelX: x, labelY: y } : vector));
       onGraphConfigChange({
         ...graphConfig,
         metadata: vector2dMetadataForSave(graphConfig, nextVectors),
+      });
+    };
+    const commitAnnotationLabelPosition = (collectionKey: "segmentLabels" | "angleMarkers", id: string, x: number, y: number) => {
+      if (!onGraphConfigChange || !graphConfig) return;
+      onGraphConfigChange({
+        ...graphConfig,
+        metadata: vector2dMetadataWithAnnotationLabelPosition(graphConfig, collectionKey, id, x, y),
       });
     };
 
@@ -870,12 +913,25 @@ export function Vector2DGraph({
         );
       }
     });
-    const annotationData = vector2dAnnotationData(graphConfig);
     annotationData.segmentLabels.forEach((label) => {
       const vector = vectorByReference(vectors, label.vectorId);
-      if (vector) drawSegmentLabel(board, vector, label);
+      if (vector) {
+        drawSegmentLabel(
+          board,
+          vector,
+          label,
+          onGraphConfigChange ? (x, y) => commitAnnotationLabelPosition("segmentLabels", label.id, x, y) : undefined,
+        );
+      }
     });
-    annotationData.angleMarkers.forEach((marker) => drawAngleMarker(board, vectors, marker));
+    annotationData.angleMarkers.forEach((marker) =>
+      drawAngleMarker(
+        board,
+        vectors,
+        marker,
+        onGraphConfigChange && marker.label.trim() ? (x, y) => commitAnnotationLabelPosition("angleMarkers", marker.id, x, y) : undefined,
+      ),
+    );
     return () => JXG.JSXGraph.freeBoard(board);
   }, [boardId, graphConfig, onGraphConfigChange]);
 

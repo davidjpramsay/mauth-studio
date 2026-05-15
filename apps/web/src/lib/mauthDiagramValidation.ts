@@ -501,6 +501,8 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
     optionalNumber(entry, "position", entryPath, issues, { min: 0, max: 1 });
     optionalNumber(entry, "offsetPx", entryPath, issues);
     optionalNumber(entry, "offset", entryPath, issues);
+    optionalNumber(entry, "labelX", entryPath, issues);
+    optionalNumber(entry, "labelY", entryPath, issues);
     optionalString(entry, "color", entryPath, issues);
   });
 
