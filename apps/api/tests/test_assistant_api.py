@@ -974,6 +974,36 @@ def test_add_diagram_new_question_misuse_repairs_with_source_conversion_tool():
     assert "diagram" in tools[0]["parameters"]["required"]
 
 
+def test_broad_tool_new_question_misuse_repairs_with_source_conversion_tool():
+    outputs = [
+        openai_assistant.AssistantToolOutput(
+            callId="call_1",
+            name="mauth_tool",
+            output={
+                "ok": False,
+                "toolName": "mauth.actions.apply",
+                "validationIssues": [
+                    {
+                        "path": "arguments.questionNumber",
+                        "message": "must reference an existing question",
+                        "expected": (
+                            "Question 4 does not exist yet. mauth.author.addDiagram only edits diagrams in existing "
+                            "questions 1 to 3. If the teacher is adding a new/source question, switch to "
+                            "mauth.question.upsert or mauth_convert_source_question and create Question 4 with the "
+                            "diagram in the same payload."
+                        ),
+                    }
+                ],
+            },
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(tool_outputs=outputs)
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "diagram" in tools[0]["parameters"]["required"]
+
+
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
     tool = openai_assistant.mauth_author_add_diagram_tool_definition()
     properties = tool["parameters"]["properties"]

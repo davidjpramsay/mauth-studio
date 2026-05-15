@@ -508,7 +508,10 @@ export function formatMauthActionValidationIssues(issues: readonly MauthActionVa
   const suffix =
     issues.length > shown.length ? `; plus ${issues.length - shown.length} more issue${issues.length - shown.length === 1 ? "" : "s"}` : "";
   return `Mauth action validation failed: ${shown
-    .map((issue) => `${issue.path} ${issue.message}`)
+    .map((issue) => {
+      const expected = issue.expected ? ` Expected: ${issue.expected}` : "";
+      return `${issue.path} ${issue.message}.${expected}`;
+    })
     .join("; ")}${suffix}. Repair the action payload and call the same Mauth tool again.`;
 }
 

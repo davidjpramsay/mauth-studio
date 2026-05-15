@@ -112,6 +112,17 @@ SOURCE_DIAGRAM_REQUEST_TERMS = (
     "attached screenshot",
 )
 ATTACHED_SOURCE_TERMS = ("this", "attached", "image", "screenshot", "pdf", "file", "source")
+SOURCE_QUESTION_REPAIR_TERMS = (
+    "switch to mauth.question.upsert",
+    "switch to mauth_question_upsert",
+    "switch to mauth_convert_source_question",
+    "mauth.question.upsert or mauth_convert_source_question",
+    "mauth_question_upsert or mauth_convert_source_question",
+    "use mauth.question.upsert instead of mauth.author.adddiagram",
+    "use mauth_question_upsert instead of mauth_author_add_diagram",
+    "teacher is adding a new/source question",
+    "adding a new/source question",
+)
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -2002,6 +2013,9 @@ def assistant_tool_definitions(
     # Repair continuations should stay on the same narrow authoring surface
     # that produced the failed tool output. This avoids reopening the broad
     # wrapper tool just to fix a precise validationIssue path.
+    if tool_outputs_mention(tool_outputs, SOURCE_QUESTION_REPAIR_TERMS):
+        return [mauth_convert_source_question_tool_definition(require_diagram=True)]
+
     if tool_outputs_mention(tool_outputs, ("semanticreview", "semantic review")):
         return [
             mauth_make_diagram_for_question_tool_definition(),
@@ -2055,18 +2069,6 @@ def assistant_tool_definitions(
             )
         ]
     if repair_targets & {"mauth_author_add_diagram", "mauth_make_diagram_for_question", "mauth.author.addDiagram"}:
-        if tool_outputs_mention(
-            tool_outputs,
-            (
-                "mauth.question.upsert",
-                "mauth_convert_source_question",
-                "adding a new/source question",
-                "new/source question",
-                "create question",
-                "next missing question",
-            ),
-        ):
-            return [mauth_convert_source_question_tool_definition(require_diagram=True)]
         return [mauth_make_diagram_for_question_tool_definition()]
     if repair_targets & {
         "mauth_author_ensure_solutions",
