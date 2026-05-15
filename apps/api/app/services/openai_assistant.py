@@ -7,6 +7,7 @@ import re
 import urllib.parse
 import zipfile
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 from xml.etree import ElementTree
 
@@ -30,7 +31,7 @@ QUESTION_AUTHORING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 QUESTION_APPEND_PATTERN = re.compile(
-    r"\b(?:add|append|insert)\s+(?:this|a|an|new)?\s*question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:a\s+)?question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:to|into)\s+(?:the\s+)?(?:test|document|assessment)\b",
+    r"\b(?:add|append|insert)\s+(?:(?:a|an)\s+new|this|a|an|new)?\s*question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:a\s+)?question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:to|into)\s+(?:the\s+)?(?:test|document|assessment)\b",
     re.IGNORECASE,
 )
 LAYOUT_CHECK_TERMS = (
@@ -48,6 +49,69 @@ LAYOUT_CHECK_TERMS = (
     "ready to print",
     "print-ready",
 )
+DIAGRAM_REQUEST_TERMS = ("diagram", "graph", "draw", "sketch")
+ADD_REQUEST_TERMS = ("add", "include", "insert", "put", "place", "draw", "sketch")
+SOLUTION_REQUEST_TERMS = ("solution", "worked", "answer key", "marking key")
+WHOLE_SOLUTION_REQUEST_TERMS = (
+    "all questions",
+    "every question",
+    "whole test",
+    "whole document",
+    "entire test",
+    "all solutions",
+    "full solution",
+    "solution key",
+    "marking key",
+)
+RESPONSE_SPACE_REQUEST_TERMS = (
+    "answer space",
+    "response space",
+    "working space",
+    "student space",
+    "more space",
+    "less space",
+    "space lines",
+    "extra lines",
+    "line count",
+    "layout space",
+)
+FORMATTING_REQUEST_TERMS = (
+    "format",
+    "formatting",
+    "spacing",
+    "layout",
+    "new page",
+    "page break",
+    "start on new page",
+    "move diagram",
+    "diagram right",
+    "diagram left",
+    "align diagram",
+    "make the solution fit",
+    "tidy",
+    "blank space",
+)
+MARKING_EDIT_REQUEST_TERMS = (
+    "mark",
+    "marks",
+    "mark allocation",
+    "allocation",
+    "tick",
+    "ticks",
+    "qed",
+    "deserve a mark",
+    "reduce to",
+    "increase to",
+)
+SOURCE_DIAGRAM_REQUEST_TERMS = (
+    "diagram",
+    "graph",
+    "chart",
+    "screenshot",
+    "attached image",
+    "attached screenshot",
+)
+ATTACHED_SOURCE_TERMS = ("this", "attached", "image", "screenshot", "pdf", "file", "source")
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_ATTACHMENT_EXTENSIONS = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".tex", ".yaml", ".yml")
 DIRECT_MAUTH_TOOL_NAME_MAP = {
@@ -629,6 +693,113 @@ def asks_for_layout_check_text(text: str) -> bool:
     return any(term in text for term in LAYOUT_CHECK_TERMS)
 
 
+@dataclass(frozen=True)
+class AssistantRequestIntent:
+    kind: str
+    question_numbers: frozenset[int]
+    target_question_number: int
+    has_specific_question: bool
+    has_source_attachment: bool
+    source_prompt_mentions_diagram: bool
+    require_source_diagram: bool
+    asks_to_write_question: bool
+    asks_to_append_question: bool
+    asks_for_diagram: bool
+    asks_to_add: bool
+    asks_for_solution: bool
+    asks_for_whole_solution_key: bool
+    asks_for_marking_edit: bool
+    asks_for_response_space: bool
+    asks_for_formatting: bool
+    asks_for_layout_check: bool
+    clarification_question: str | None = None
+
+
+def classify_request_intent(
+    compact_summary: dict[str, Any] | None,
+    messages: list[AssistantChatMessage] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
+) -> AssistantRequestIntent:
+    text = request_text(messages)
+    question_numbers = frozenset(question_numbers_from_request(messages))
+    append_question = asks_to_append_question(text)
+    has_source_attachment = bool(attachments)
+    source_prompt_mentions_diagram = any(term in text for term in SOURCE_DIAGRAM_REQUEST_TERMS)
+    asks_to_write_question = asks_to_author_question(text)
+    asks_for_diagram = any(term in text for term in DIAGRAM_REQUEST_TERMS)
+    asks_to_add = any(term in text for term in ADD_REQUEST_TERMS)
+    asks_for_solution = any(term in text for term in SOLUTION_REQUEST_TERMS)
+    asks_for_whole_solution_key = asks_for_solution and any(term in text for term in WHOLE_SOLUTION_REQUEST_TERMS)
+    asks_for_layout_check = asks_for_layout_check_text(text)
+    asks_for_response_space = any(term in text for term in RESPONSE_SPACE_REQUEST_TERMS)
+    asks_for_formatting = any(term in text for term in FORMATTING_REQUEST_TERMS)
+    asks_for_marking_edit = any(term in text for term in MARKING_EDIT_REQUEST_TERMS)
+    has_specific_question = bool(question_numbers) or "current question" in text or "selected question" in text
+    target_question_number = (
+        sorted(question_numbers)[0]
+        if question_numbers
+        else next_question_number_from_summary(compact_summary)
+        if append_question
+        else 1
+    )
+    require_source_diagram = source_diagram_required_for_replace(messages, attachments)
+
+    kind = "general"
+    clarification_question: str | None = None
+
+    if asks_for_layout_check:
+        kind = "layout_check"
+    elif asks_for_whole_solution_key:
+        kind = "write_all_solutions"
+    elif append_question and has_source_attachment:
+        kind = "append_source_question"
+    elif (
+        append_question
+        and not has_source_attachment
+        and any(term in text for term in ("this question", "attached", "image", "screenshot", "pdf", "file", "source"))
+        and all(term not in text for term in (":", "\n"))
+    ):
+        kind = "clarify"
+        clarification_question = "What should the new question be based on?"
+    elif asks_to_write_question:
+        kind = "write_question"
+    elif asks_for_diagram and asks_to_add and not has_specific_question:
+        kind = "clarify"
+        clarification_question = "Which question should I add the diagram to?"
+    elif asks_for_diagram and asks_to_add:
+        kind = "add_diagram"
+    elif has_source_attachment and not any(term in text for term in ATTACHED_SOURCE_TERMS):
+        kind = "clarify"
+        clarification_question = "What would you like me to do with the attached file?"
+    elif asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
+        kind = "response_space"
+    elif asks_for_formatting:
+        kind = "formatting"
+    elif asks_for_solution or asks_for_marking_edit:
+        kind = "solution_or_marking"
+
+    return AssistantRequestIntent(
+        kind=kind,
+        question_numbers=question_numbers,
+        target_question_number=target_question_number,
+        has_specific_question=has_specific_question or append_question,
+        has_source_attachment=has_source_attachment,
+        source_prompt_mentions_diagram=source_prompt_mentions_diagram,
+        require_source_diagram=require_source_diagram,
+        asks_to_write_question=asks_to_write_question,
+        asks_to_append_question=append_question,
+        asks_for_diagram=asks_for_diagram,
+        asks_to_add=asks_to_add,
+        asks_for_solution=asks_for_solution,
+        asks_for_whole_solution_key=asks_for_whole_solution_key,
+        asks_for_marking_edit=asks_for_marking_edit,
+        asks_for_response_space=asks_for_response_space,
+        asks_for_formatting=asks_for_formatting,
+        asks_for_layout_check=asks_for_layout_check,
+        clarification_question=clarification_question,
+    )
+
+
 def compact_document_summary(
     document_summary: dict[str, Any] | None,
     messages: list[AssistantChatMessage] | None = None,
@@ -782,84 +953,21 @@ def focused_tool_hint(
     attachments: list[AssistantAttachment] | None = None,
 ) -> str:
     text = request_text(messages)
-    has_source_attachment = bool(attachments)
-    source_prompt_mentions_diagram = any(
-        term in text
-        for term in (
-            "diagram",
-            "graph",
-            "chart",
-            "screenshot",
-            "attached image",
-            "attached screenshot",
+    intent = classify_request_intent(compact_summary, messages, attachments)
+    if intent.kind == "clarify" and intent.clarification_question:
+        return (
+            "Focused tool routing hint: this request is ambiguous. Do not call a Mauth editing tool yet. "
+            f"Ask exactly this clarifying question: {intent.clarification_question}"
         )
-    )
-    asks_for_marking_edit = any(
-        term in text
-        for term in (
-            "mark",
-            "marks",
-            "mark allocation",
-            "allocation",
-            "tick",
-            "ticks",
-            "qed",
-            "deserve a mark",
-            "reduce to",
-            "increase to",
-        )
-    )
-    asks_to_write_question = asks_to_author_question(text)
-    asks_for_response_space = any(
-        term in text
-        for term in (
-            "answer space",
-            "response space",
-            "working space",
-            "student space",
-            "more space",
-            "less space",
-            "space lines",
-            "extra lines",
-            "line count",
-            "layout space",
-        )
-    )
-    asks_for_formatting = any(
-        term in text
-        for term in (
-            "format",
-            "formatting",
-            "spacing",
-            "layout",
-            "new page",
-            "page break",
-            "start on new page",
-            "move diagram",
-            "diagram right",
-            "diagram left",
-            "align diagram",
-            "make the solution fit",
-            "tidy",
-            "blank space",
-        )
-    )
-    asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
-    asks_for_whole_solution_key = asks_for_solution and any(
-        term in text
-        for term in (
-            "all questions",
-            "every question",
-            "whole test",
-            "whole document",
-            "entire test",
-            "all solutions",
-            "full solution",
-            "solution key",
-            "marking key",
-        )
-    )
-    asks_for_layout_check = asks_for_layout_check_text(text)
+    has_source_attachment = intent.has_source_attachment
+    source_prompt_mentions_diagram = intent.source_prompt_mentions_diagram
+    asks_for_marking_edit = intent.asks_for_marking_edit
+    asks_to_write_question = intent.asks_to_write_question
+    asks_for_response_space = intent.asks_for_response_space
+    asks_for_formatting = intent.asks_for_formatting
+    asks_for_solution = intent.asks_for_solution
+    asks_for_whole_solution_key = intent.asks_for_whole_solution_key
+    asks_for_layout_check = intent.asks_for_layout_check
     question_numbers = question_numbers_from_request(messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
@@ -873,14 +981,8 @@ def focused_tool_hint(
                 selected_question = question
                 break
 
-    append_question = asks_to_append_question(text)
-    question_number = (
-        sorted(question_numbers)[0]
-        if question_numbers
-        else next_question_number_from_summary(compact_summary)
-        if append_question
-        else 1
-    )
+    append_question = intent.asks_to_append_question
+    question_number = intent.target_question_number
     has_question_text = bool(selected_question and question_summary_has_text(selected_question))
     combined_text = f"{text}\n{question_summary_text(selected_question)}"
 
@@ -1853,84 +1955,22 @@ def assistant_tool_definitions(
 ) -> list[dict[str, Any]]:
     text = request_text(messages, tool_outputs)
     compact_summary = compact_document_summary(document_summary, messages)
+    intent = classify_request_intent(compact_summary, messages, attachments)
     repair_targets = tool_output_target_names(tool_outputs)
-    question_numbers = question_numbers_from_request(messages)
-    has_specific_question = (
-        bool(question_numbers)
-        or "current question" in text
-        or "selected question" in text
-        or asks_to_append_question(text)
+    has_specific_question = intent.has_specific_question
+    asks_for_diagram = intent.asks_for_diagram
+    asks_to_add = intent.asks_to_add
+    asks_for_solution = intent.asks_for_solution
+    asks_for_whole_solution_key = intent.asks_for_whole_solution_key
+    asks_for_layout_check = intent.asks_for_layout_check
+    asks_for_response_space = intent.asks_for_response_space
+    asks_for_formatting = intent.asks_for_formatting
+    asks_for_marking_edit = intent.asks_for_marking_edit
+    asks_to_write_question = intent.asks_to_write_question
+    require_source_diagram = intent.require_source_diagram
+    asks_to_convert_source_question = intent.kind == "append_source_question" or (
+        bool(attachments) and asks_to_write_question
     )
-    asks_for_diagram = any(term in text for term in ("diagram", "graph", "draw", "sketch"))
-    asks_to_add = any(term in text for term in ("add", "include", "insert", "put", "place", "draw", "sketch"))
-    asks_for_solution = any(term in text for term in ("solution", "worked", "answer key", "marking key"))
-    asks_for_whole_solution_key = asks_for_solution and any(
-        term in text
-        for term in (
-            "all questions",
-            "every question",
-            "whole test",
-            "whole document",
-            "entire test",
-            "all solutions",
-            "full solution",
-            "solution key",
-            "marking key",
-        )
-    )
-    asks_for_layout_check = asks_for_layout_check_text(text)
-    asks_for_response_space = any(
-        term in text
-        for term in (
-            "answer space",
-            "response space",
-            "working space",
-            "student space",
-            "more space",
-            "less space",
-            "space lines",
-            "extra lines",
-            "line count",
-            "layout space",
-        )
-    )
-    asks_for_formatting = any(
-        term in text
-        for term in (
-            "format",
-            "formatting",
-            "spacing",
-            "layout",
-            "new page",
-            "page break",
-            "start on new page",
-            "move diagram",
-            "diagram right",
-            "diagram left",
-            "align diagram",
-            "make the solution fit",
-            "tidy",
-            "blank space",
-        )
-    )
-    asks_for_marking_edit = any(
-        term in text
-        for term in (
-            "mark",
-            "marks",
-            "mark allocation",
-            "allocation",
-            "tick",
-            "ticks",
-            "qed",
-            "deserve a mark",
-            "reduce to",
-            "increase to",
-        )
-    )
-    asks_to_write_question = asks_to_author_question(text)
-    require_source_diagram = source_diagram_required_for_replace(messages, attachments)
-    asks_to_convert_source_question = bool(attachments) and asks_to_write_question
     file_only_terms = ("open file", "save file", "rename file", "delete file", "move file", "folder", "files")
 
     # Repair continuations should stay on the same narrow authoring surface
@@ -2024,6 +2064,9 @@ def assistant_tool_definitions(
         return [mauth_author_adjust_response_spaces_tool_definition()]
     if repair_targets & {"mauth_format_apply", "mauth_fix_question_formatting", "mauth.format.apply"}:
         return [mauth_fix_question_formatting_tool_definition()]
+
+    if intent.kind == "clarify":
+        return []
 
     # Focused single-question requests should expose the narrow direct tool only.
     # This materially reduces provider input tokens and discourages tool-loop drift.
@@ -2518,10 +2561,32 @@ def direct_layout_check_response(model: str) -> dict[str, Any]:
     }
 
 
+def direct_clarification_response(model: str, question: str) -> dict[str, Any]:
+    return {
+        "configured": True,
+        "model": model,
+        "message": question,
+        "responseId": None,
+        "toolCalls": [],
+        "usage": zero_token_usage_summary(model, source="native Mauth intent clarification; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def should_use_direct_layout_check(request: AssistantChatRequest) -> bool:
     if request.previousResponseId or request.toolOutputs or request.attachments:
         return False
     return asks_for_layout_check_text(request_text(request.messages))
+
+
+def direct_clarification_question(request: AssistantChatRequest) -> str | None:
+    if request.previousResponseId or request.toolOutputs:
+        return None
+    compact_summary = compact_document_summary(request.documentSummary, request.messages)
+    intent = classify_request_intent(compact_summary, request.messages, request.attachments)
+    if intent.kind == "clarify" and intent.clarification_question:
+        return intent.clarification_question
+    return None
 
 
 async def create_assistant_response(request: AssistantChatRequest) -> dict[str, Any]:
@@ -2539,6 +2604,10 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
 
     if should_use_direct_layout_check(request):
         return direct_layout_check_response(model)
+
+    clarification_question = direct_clarification_question(request)
+    if clarification_question:
+        return direct_clarification_response(model, clarification_question)
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=20.0)) as client:
         selected_brain_files, planner_usage = await select_brain_files_for_request(

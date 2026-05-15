@@ -706,6 +706,47 @@ def test_add_this_question_routes_to_next_missing_source_conversion():
     assert "this tool can append it; do not refuse" in instructions
 
 
+def test_add_this_question_without_source_asks_for_clarification():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Please add this question to the test.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions({"questions": []}, [message])
+    request = openai_assistant.AssistantChatRequest(messages=[message], documentSummary={"questions": []})
+
+    assert tools == []
+    assert "Ask exactly this clarifying question: What should the new question be based on?" in instructions
+    assert openai_assistant.direct_clarification_question(request) == "What should the new question be based on?"
+
+
+def test_ambiguous_diagram_request_asks_for_target_question():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Please add a diagram.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions({"questions": []}, [message])
+    request = openai_assistant.AssistantChatRequest(messages=[message], documentSummary={"questions": []})
+
+    assert tools == []
+    assert "Ask exactly this clarifying question: Which question should I add the diagram to?" in instructions
+    assert openai_assistant.direct_clarification_question(request) == "Which question should I add the diagram to?"
+
+
+def test_add_new_question_with_topic_still_routes_to_upsert():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Add a new question about solving simultaneous linear equations.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+
+    assert [tool["name"] for tool in tools] == ["mauth_question_upsert"]
+
+
 def test_screenshot_question_conversion_requires_native_diagram_and_part_text():
     message = openai_assistant.AssistantChatMessage(
         role="user",
