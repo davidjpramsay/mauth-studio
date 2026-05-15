@@ -2055,6 +2055,18 @@ def assistant_tool_definitions(
             )
         ]
     if repair_targets & {"mauth_author_add_diagram", "mauth_make_diagram_for_question", "mauth.author.addDiagram"}:
+        if tool_outputs_mention(
+            tool_outputs,
+            (
+                "mauth.question.upsert",
+                "mauth_convert_source_question",
+                "adding a new/source question",
+                "new/source question",
+                "create question",
+                "next missing question",
+            ),
+        ):
+            return [mauth_convert_source_question_tool_definition(require_diagram=True)]
         return [mauth_make_diagram_for_question_tool_definition()]
     if repair_targets & {
         "mauth_author_ensure_solutions",

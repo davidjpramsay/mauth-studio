@@ -2015,7 +2015,12 @@ function replaceQuestionTarget<Q extends MauthQuestionLike>(
 
   const question = questions[questionNumber - 1];
   if (!question) {
-    issues.push({ path: "arguments.questionNumber", message: "must reference an existing question", expected: `1 to ${questions.length}` });
+    const nextQuestionNumber = questions.length + 1;
+    const expected =
+      questionNumber === nextQuestionNumber
+        ? `Question ${questionNumber} does not exist yet. mauth.author.addDiagram only edits diagrams in existing questions 1 to ${questions.length}. If the teacher is adding a new/source question, switch to mauth.question.upsert or mauth_convert_source_question and create Question ${questionNumber} with the diagram in the same payload.`
+        : `existing question 1 to ${questions.length}. For a new/source question, use mauth.question.upsert instead of mauth.author.addDiagram.`;
+    issues.push({ path: "arguments.questionNumber", message: "must reference an existing question", expected });
   }
   return question;
 }

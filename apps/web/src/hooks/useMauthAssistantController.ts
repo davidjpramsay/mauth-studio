@@ -582,7 +582,8 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
     const pendingContinuation = pendingToolContinuation;
     const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
-    const previousId = pendingContinuation ? null : previousResponseId;
+    const freshAttachmentTurn = requestAttachments.length > 0;
+    const previousId = pendingContinuation || freshAttachmentTurn ? null : previousResponseId;
     const priorMessages = chatMessages
       .filter(
         (chatMessage) =>
@@ -597,7 +598,9 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       );
     const outgoingMessages: AssistantChatMessage[] = previousId
       ? [{ role: "user", content: displayedUserContent }]
-      : [...priorMessages, { role: "user", content: displayedUserContent }];
+      : freshAttachmentTurn
+        ? [{ role: "user", content: displayedUserContent }]
+        : [...priorMessages, { role: "user", content: displayedUserContent }];
 
     setChatInput("");
     setChatAttachments([]);

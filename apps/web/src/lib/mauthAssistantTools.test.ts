@@ -1080,6 +1080,27 @@ test("rejects unwrapped high-level diagram payloads before applying", () => {
   assert(aliasData.validationIssues?.some((issue) => issue.message.includes("must be named graphConfig")));
 });
 
+test("addDiagram points new-question misuse back to question upsert", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 2,
+      diagram: {
+        graphConfig: {
+          type: "vector2d",
+          data: {},
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string }> };
+
+  assert.equal(result.ok, false);
+  assert(
+    data.validationIssues?.some((issue) => issue.path === "arguments.questionNumber" && issue.expected?.includes("mauth.question.upsert")),
+  );
+});
+
 test("rejects obvious diagram renderer mismatches before applying", () => {
   const scalarProductResult = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
