@@ -26,6 +26,67 @@ export type Vector2DAngleMarkerEntry = {
   labelY?: number;
 };
 
+export type Vector2DSourceVectorInput = {
+  id?: string;
+  name?: string;
+  label?: string;
+  start?: [number, number];
+  components?: [number, number];
+  end?: [number, number];
+  length?: number;
+  angleDeg?: number;
+  lengthLabel?: string | false;
+  color?: string;
+  showComponents?: boolean;
+  labelX?: number;
+  labelY?: number;
+};
+
+export type Vector2DSourceSegmentLabelInput = {
+  id?: string;
+  vectorId?: string;
+  vector?: string;
+  label?: string;
+  position?: number;
+  offsetPx?: number;
+  offset?: number;
+  color?: string;
+  labelX?: number;
+  labelY?: number;
+};
+
+export type Vector2DSourceAngleMarkerInput = {
+  id?: string;
+  from?: string;
+  to?: string;
+  vectorA?: string;
+  vectorB?: string;
+  label?: string;
+  rightAngle?: boolean;
+  kind?: string;
+  type?: string;
+  radius?: number;
+  color?: string;
+  labelX?: number;
+  labelY?: number;
+};
+
+export type Vector2DSourceDiagramInput = {
+  vectors?: Vector2DSourceVectorInput[];
+  segmentLabels?: Vector2DSourceSegmentLabelInput[];
+  angleMarkers?: Vector2DSourceAngleMarkerInput[];
+  widthPx?: number;
+  heightPx?: number;
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  showAxes?: boolean;
+  showGrid?: boolean;
+  equalScale?: boolean;
+  labelStyle?: Vector2DLabelStyle;
+};
+
 export const VECTOR_2D_COLORS = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#7c3aed"];
 export const VECTOR_2D_ANNOTATION_COLOR = "#0f172a";
 
@@ -100,6 +161,140 @@ function vectorPair(value: unknown, fallback: [number, number]): [number, number
 function finiteOptionalVectorNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function positiveVectorNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
+}
+
+function finiteVectorNumberOrUndefined(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function optionalVectorPair(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const x = finiteVectorNumberOrUndefined(value[0]);
+  const y = finiteVectorNumberOrUndefined(value[1]);
+  return x === undefined || y === undefined ? undefined : [x, y];
+}
+
+function sanitizeVectorId(value: unknown, fallback: string) {
+  const raw = typeof value === "string" && value.trim() ? value.trim() : fallback;
+  const normalized = raw.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (/^[A-Za-z][A-Za-z0-9_]*$/.test(normalized)) return normalized;
+  return /^[A-Za-z]/.test(fallback) ? fallback : `v_${fallback.replace(/[^A-Za-z0-9_]+/g, "_")}`;
+}
+
+function vectorLabelForSource(name: string, explicitLabel: unknown) {
+  if (typeof explicitLabel === "string" && explicitLabel.trim()) return explicitLabel.trim();
+  return `\\mathbf{${name.toLowerCase()}}`;
+}
+
+function formatSourceVectorNumber(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  const rounded = Math.abs(value) < 1e-9 ? 0 : Number(value.toFixed(6));
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function defaultSourceLengthLabel(value: unknown) {
+  const numberValue = finiteVectorNumberOrUndefined(value);
+  return numberValue === undefined ? "" : `${formatSourceVectorNumber(numberValue)}\\ \\text{units}`;
+}
+
+function componentsFromSourceVector(entry: Vector2DSourceVectorInput, start: [number, number]): [number, number] {
+  const explicitComponents = optionalVectorPair(entry.components);
+  if (explicitComponents) return explicitComponents;
+
+  const end = optionalVectorPair(entry.end);
+  if (end) return [end[0] - start[0], end[1] - start[1]];
+
+  const length = finiteVectorNumberOrUndefined(entry.length);
+  const angleDeg = finiteVectorNumberOrUndefined(entry.angleDeg);
+  if (length !== undefined && angleDeg !== undefined) {
+    const angleRadians = (angleDeg * Math.PI) / 180;
+    return [Number((length * Math.cos(angleRadians)).toFixed(8)), Number((length * Math.sin(angleRadians)).toFixed(8))];
+  }
+
+  return [1, 0];
+}
+
+function sourceVectorBounds(points: Array<[number, number]>, widthPx: number, heightPx: number) {
+  const xs = points.map((point) => point[0]);
+  const ys = points.map((point) => point[1]);
+  let minX = Math.min(...xs);
+  let maxX = Math.max(...xs);
+  let minY = Math.min(...ys);
+  let maxY = Math.max(...ys);
+  if (minX === maxX) {
+    minX -= 1;
+    maxX += 1;
+  }
+  if (minY === maxY) {
+    minY -= 1;
+    maxY += 1;
+  }
+
+  const xSpan = maxX - minX;
+  const ySpan = maxY - minY;
+  const padding = Math.max(xSpan, ySpan, 1) * 0.34;
+  minX -= padding;
+  maxX += padding;
+  minY -= padding;
+  maxY += padding;
+
+  const desiredAspect = Math.max(0.5, widthPx / Math.max(1, heightPx));
+  const currentAspect = (maxX - minX) / Math.max(0.001, maxY - minY);
+  if (currentAspect < desiredAspect) {
+    const targetSpan = (maxY - minY) * desiredAspect;
+    const extra = targetSpan - (maxX - minX);
+    minX -= extra / 2;
+    maxX += extra / 2;
+  } else if (currentAspect > desiredAspect) {
+    const targetSpan = (maxX - minX) / desiredAspect;
+    const extra = targetSpan - (maxY - minY);
+    minY -= extra / 2;
+    maxY += extra / 2;
+  }
+
+  return { minX, maxX, minY, maxY };
+}
+
+function sourceSegmentLabel(vectorId: string, label: string, index: number, entry: Partial<Vector2DSourceSegmentLabelInput> = {}) {
+  const labelX = finiteOptionalVectorNumber(entry.labelX);
+  const labelY = finiteOptionalVectorNumber(entry.labelY);
+
+  return {
+    id: String(entry.id ?? `segment-label-${vectorId}-${index + 1}`),
+    vectorId,
+    label,
+    position: Math.min(0.95, Math.max(0.05, finiteVectorNumber(entry.position, 0.55))),
+    offsetPx: finiteVectorNumber(entry.offsetPx ?? entry.offset, 0.3),
+    color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
+    ...(labelX !== undefined ? { labelX } : {}),
+    ...(labelY !== undefined ? { labelY } : {}),
+  };
+}
+
+function sourceAngleMarker(entry: Vector2DSourceAngleMarkerInput, index: number) {
+  const from = String(entry.from ?? entry.vectorA ?? "").trim();
+  const to = String(entry.to ?? entry.vectorB ?? "").trim();
+  if (!from || !to) return null;
+  const labelX = finiteOptionalVectorNumber(entry.labelX);
+  const labelY = finiteOptionalVectorNumber(entry.labelY);
+
+  return {
+    id: String(entry.id ?? `angle-marker-${index + 1}`),
+    from,
+    to,
+    label: String(entry.label ?? ""),
+    rightAngle: entry.rightAngle === true || entry.kind === "rightAngle" || entry.type === "rightAngle",
+    radius: Math.max(0.05, positiveVectorNumber(entry.radius, entry.rightAngle === true ? 0.38 : 0.62)),
+    color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
+    ...(labelX !== undefined ? { labelX } : {}),
+    ...(labelY !== undefined ? { labelY } : {}),
+  };
 }
 
 export function vector2dMetadata(config?: GraphConfig | null) {
@@ -214,4 +409,104 @@ export function vector2dMetadataFromAngleMarkers(config: GraphConfig, angleMarke
       angleMarkers,
     },
   };
+}
+
+export function buildVector2DSourceDiagramConfig(input: Vector2DSourceDiagramInput): GraphConfig {
+  const labelStyle = vector2dLabelStyle(input.labelStyle, "custom");
+  const widthPx = positiveVectorNumber(input.widthPx, 560);
+  const heightPx = positiveVectorNumber(input.heightPx, 360);
+  const rawVectors = input.vectors?.length ? input.vectors : [{ id: "a", name: "a", length: 2, angleDeg: 0 }];
+  const points: Array<[number, number]> = [[0, 0]];
+  const segmentLabels: ReturnType<typeof sourceSegmentLabel>[] = [];
+
+  const vectors = rawVectors.map((entry, index) => {
+    const fallbackName = defaultVector2DName(index, "boldLower");
+    const id = sanitizeVectorId(entry.id ?? entry.name, fallbackName);
+    const name = String(entry.name ?? entry.id ?? fallbackName).trim() || fallbackName;
+    const start = optionalVectorPair(entry.start) ?? [0, 0];
+    const components = componentsFromSourceVector(entry, start);
+    const labelX = finiteOptionalVectorNumber(entry.labelX);
+    const labelY = finiteOptionalVectorNumber(entry.labelY);
+    points.push(start, [start[0] + components[0], start[1] + components[1]]);
+
+    if (entry.lengthLabel !== false) {
+      const label =
+        typeof entry.lengthLabel === "string" && entry.lengthLabel.trim()
+          ? entry.lengthLabel.trim()
+          : defaultSourceLengthLabel(entry.length);
+      if (label) segmentLabels.push(sourceSegmentLabel(id, label, segmentLabels.length));
+    }
+
+    return {
+      id,
+      name,
+      label: vectorLabelForSource(name, entry.label),
+      start,
+      components,
+      color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
+      showComponents: entry.showComponents === true,
+      ...(labelX !== undefined ? { labelX } : {}),
+      ...(labelY !== undefined ? { labelY } : {}),
+    };
+  });
+
+  const vectorIds = new Set(vectors.map((vector) => vector.id));
+  for (const [index, entry] of (input.segmentLabels ?? []).entries()) {
+    const vectorId = String(entry.vectorId ?? entry.vector ?? "").trim();
+    const label = typeof entry.label === "string" ? entry.label.trim() : "";
+    if (vectorId && vectorIds.has(vectorId) && label) {
+      segmentLabels.push(sourceSegmentLabel(vectorId, label, segmentLabels.length + index, entry));
+    }
+  }
+
+  const angleMarkers = (input.angleMarkers ?? [])
+    .map(sourceAngleMarker)
+    .filter((entry): entry is NonNullable<ReturnType<typeof sourceAngleMarker>> => !!entry);
+
+  const bounds = sourceVectorBounds(points, widthPx, heightPx);
+  const xMin = finiteVectorNumberOrUndefined(input.xMin) ?? bounds.minX;
+  const xMax = finiteVectorNumberOrUndefined(input.xMax) ?? bounds.maxX;
+  const yMin = finiteVectorNumberOrUndefined(input.yMin) ?? bounds.minY;
+  const yMax = finiteVectorNumberOrUndefined(input.yMax) ?? bounds.maxY;
+
+  return {
+    ...DEFAULT_VECTOR_2D_GRAPH,
+    type: "vector2d",
+    expression: "",
+    latex: "",
+    functions: [],
+    features: [],
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    widthPx,
+    heightPx,
+    lockAspectRatio: false,
+    equalScale: input.equalScale !== false,
+    showGrid: input.showGrid === true,
+    showMajorGrid: input.showGrid === true,
+    showMinorGrid: false,
+    showGridBorder: false,
+    showAxes: input.showAxes === true,
+    showArrows: input.showAxes === true,
+    showAxisLabels: false,
+    showAxisNumbers: false,
+    axisLabelStepX: 1,
+    axisLabelStepY: 1,
+    axisExtensionMode: "manual",
+    functionExtensionMode: "manual",
+    axisExtension: 0,
+    functionExtension: 0,
+    functionExtensionLeft: 0,
+    functionExtensionRight: 0,
+    metadata: {
+      vector2d: {
+        labelStyle,
+        vectors,
+        ...(segmentLabels.length ? { segmentLabels } : {}),
+        ...(angleMarkers.length ? { angleMarkers } : {}),
+      },
+    },
+  } as GraphConfig;
 }

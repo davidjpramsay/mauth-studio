@@ -24,6 +24,7 @@ import {
 } from "./mauthActionValidation.ts";
 import { inspectMauthDiagram } from "./mauthDiagramInspection.ts";
 import { diagramIntentFromText } from "./mauthDiagramIntent.ts";
+import { buildVector2DSourceDiagramConfig, type Vector2DSourceDiagramInput } from "./diagramVector2d.ts";
 
 export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.tools.describe",
@@ -1691,7 +1692,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }, or from vectorRayDiagram for source-faithful scalar-product ray diagrams. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -1803,7 +1804,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For focused formatting requests such as page breaks before a part/subpart, diagram alignment, moving one module, fitting a solution to its student space, or tidying excess spacing, prefer mauth.format.apply.",
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
-      "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
+      "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
@@ -2419,6 +2420,114 @@ function validateAssistantDiagramIntent(
   });
 }
 
+function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {
+  const rawInput = entry.vectorRayDiagram ?? entry.sourceVectorDiagram ?? entry.vector2dSource;
+  if (rawInput === undefined) return undefined;
+  const issueCountBefore = issues.length;
+  if (!isRecord(rawInput)) {
+    issues.push({
+      path: `${entryPath}.vectorRayDiagram`,
+      message: "must be an object when using the compact source-vector diagram builder",
+      expected: "{ vectors, segmentLabels?, angleMarkers? }",
+    });
+    return undefined;
+  }
+  const rawVectors = rawInput.vectors;
+  if (!Array.isArray(rawVectors) || rawVectors.length === 0) {
+    issues.push({
+      path: `${entryPath}.vectorRayDiagram.vectors`,
+      message: "must contain at least one source vector",
+      expected: "array of vectors with id plus length+angleDeg, components, or end",
+    });
+    return undefined;
+  }
+
+  const vectorIds = new Set<string>();
+  rawVectors.forEach((vector, vectorIndex) => {
+    const vectorPath = `${entryPath}.vectorRayDiagram.vectors[${vectorIndex}]`;
+    if (!isRecord(vector)) {
+      issues.push({ path: vectorPath, message: "must be an object", expected: "{ id, length, angleDeg }" });
+      return;
+    }
+    const id = typeof vector.id === "string" ? vector.id.trim() : "";
+    if (!id) {
+      issues.push({ path: `${vectorPath}.id`, message: "must be a non-empty string", expected: "string" });
+    } else {
+      vectorIds.add(id);
+    }
+
+    const hasLengthAngle = Number.isFinite(Number(vector.length)) && Number.isFinite(Number(vector.angleDeg));
+    const hasComponents =
+      Array.isArray(vector.components) &&
+      vector.components.length >= 2 &&
+      Number.isFinite(Number(vector.components[0])) &&
+      Number.isFinite(Number(vector.components[1]));
+    const hasEnd =
+      Array.isArray(vector.end) &&
+      vector.end.length >= 2 &&
+      Number.isFinite(Number(vector.end[0])) &&
+      Number.isFinite(Number(vector.end[1]));
+    if (!hasLengthAngle && !hasComponents && !hasEnd) {
+      issues.push({
+        path: `${vectorPath}.length`,
+        message: "must define the vector direction and length",
+        expected: "length+angleDeg, components:[dx,dy], or end:[x,y]",
+      });
+    }
+  });
+
+  const rawAngleMarkers = rawInput.angleMarkers;
+  if (Array.isArray(rawAngleMarkers)) {
+    rawAngleMarkers.forEach((marker, markerIndex) => {
+      const markerPath = `${entryPath}.vectorRayDiagram.angleMarkers[${markerIndex}]`;
+      if (!isRecord(marker)) {
+        issues.push({ path: markerPath, message: "must be an object", expected: "{ from, to, label? }" });
+        return;
+      }
+      const from = typeof marker.from === "string" ? marker.from.trim() : "";
+      const to = typeof marker.to === "string" ? marker.to.trim() : "";
+      if (!from || !vectorIds.has(from)) {
+        issues.push({
+          path: `${markerPath}.from`,
+          message: "must reference a vector id in vectorRayDiagram.vectors",
+          expected: "vector id",
+        });
+      }
+      if (!to || !vectorIds.has(to)) {
+        issues.push({ path: `${markerPath}.to`, message: "must reference a vector id in vectorRayDiagram.vectors", expected: "vector id" });
+      }
+    });
+  }
+
+  const rawSegmentLabels = rawInput.segmentLabels;
+  if (Array.isArray(rawSegmentLabels)) {
+    rawSegmentLabels.forEach((label, labelIndex) => {
+      const labelPath = `${entryPath}.vectorRayDiagram.segmentLabels[${labelIndex}]`;
+      if (!isRecord(label)) {
+        issues.push({ path: labelPath, message: "must be an object", expected: "{ vectorId, label }" });
+        return;
+      }
+      const vectorId = typeof label.vectorId === "string" ? label.vectorId.trim() : "";
+      if (!vectorId || !vectorIds.has(vectorId)) {
+        issues.push({
+          path: `${labelPath}.vectorId`,
+          message: "must reference a vector id in vectorRayDiagram.vectors",
+          expected: "vector id",
+        });
+      }
+    });
+  }
+
+  if (issues.length > issueCountBefore) return undefined;
+  return rawInput as Vector2DSourceDiagramInput;
+}
+
+function graphConfigFromAssistantDiagramEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {
+  const sourceVectorInput = sourceVectorDiagramInputFromEntry(entry, entryPath, issues);
+  if (sourceVectorInput) return buildVector2DSourceDiagramConfig(sourceVectorInput);
+  return isRecord(entry.graphConfig) ? (entry.graphConfig as unknown as GraphConfig) : undefined;
+}
+
 interface DiagramBlocksFromArgsOptions {
   diagramKey?: string;
   diagramsKey?: string;
@@ -2483,12 +2592,14 @@ function diagramBlocksFromArgs(
       });
       return;
     }
-    const graphConfig = isRecord(entry.graphConfig) ? entry.graphConfig : undefined;
+    const issueCountBeforeGraphConfig = issues.length;
+    const graphConfig = graphConfigFromAssistantDiagramEntry(entry, entryPath, issues);
+    if (issues.length > issueCountBeforeGraphConfig) return;
     if (!isRecord(graphConfig) || typeof graphConfig.type !== "string") {
       issues.push({
         path: `${entryPath}.graphConfig`,
         message: "must contain a graphConfig with a supported type",
-        expected: "GraphConfig",
+        expected: "GraphConfig or vectorRayDiagram",
       });
       return;
     }

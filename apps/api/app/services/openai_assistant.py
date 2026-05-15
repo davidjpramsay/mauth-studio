@@ -1269,6 +1269,98 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
         "Use metadata.vector2d.segmentLabels[] with vectorId matching a vector id for magnitude labels, and "
         "metadata.vector2d.angleMarkers[] with from/to matching vector ids for angle or right-angle markers."
     )
+    vector_ray_diagram_schema = {
+        "type": "object",
+        "description": (
+            "Compact builder for source-faithful scalar-product ray/vector diagrams with no axes. Use this instead "
+            "of hand-building vector2d graphConfig when converting screenshots with common-origin rays, magnitude "
+            "labels, right-angle markers, and angle labels. Angles are standard degrees: 0 is right, 90 is up."
+        ),
+        "properties": {
+            "widthPx": {"type": "number", "minimum": 120, "maximum": 900},
+            "heightPx": {"type": "number", "minimum": 120, "maximum": 700},
+            "vectors": {
+                "type": "array",
+                "description": (
+                    "Rays/vectors. Provide id/name such as a,b,c,d. Prefer length+angleDeg for source ray diagrams; "
+                    "use components when exact components are the task. start defaults to [0,0]."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "label": {"type": "string", "description": "Optional LaTeX label, e.g. \\\\mathbf{a}."},
+                        "start": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        "components": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        "end": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        "length": {"type": "number"},
+                        "angleDeg": {"type": "number"},
+                        "lengthLabel": {
+                            "anyOf": [{"type": "string"}, {"type": "boolean"}],
+                            "description": "Magnitude label such as 2\\\\ \\\\text{units}; false hides the length label.",
+                        },
+                        "labelX": {"type": "number"},
+                        "labelY": {"type": "number"},
+                    },
+                    "required": ["id"],
+                    "additionalProperties": False,
+                },
+            },
+            "segmentLabels": {
+                "type": "array",
+                "description": "Optional additional draggable magnitude labels attached to a vector id.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vectorId": {"type": "string"},
+                        "label": {"type": "string"},
+                        "position": {"type": "number"},
+                        "offsetPx": {"type": "number"},
+                        "labelX": {"type": "number"},
+                        "labelY": {"type": "number"},
+                    },
+                    "required": ["vectorId", "label"],
+                    "additionalProperties": False,
+                },
+            },
+            "angleMarkers": {
+                "type": "array",
+                "description": "Angle or right-angle markers between vector ids.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
+                        "label": {"type": "string", "description": "Angle label such as 45^\\\\circ."},
+                        "rightAngle": {"type": "boolean"},
+                        "radius": {"type": "number"},
+                        "labelX": {"type": "number"},
+                        "labelY": {"type": "number"},
+                    },
+                    "required": ["from", "to"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["vectors"],
+        "additionalProperties": False,
+    }
     return {
         "type": "object",
         "description": description,
@@ -1298,8 +1390,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                 "required": ["type"],
                 "additionalProperties": True,
             },
+            "vectorRayDiagram": vector_ray_diagram_schema,
         },
-        "required": ["graphConfig"],
+        "required": [],
         "additionalProperties": False,
     }
 
@@ -1336,13 +1429,13 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
 
     diagram_description = (
         "Required for this request because the source attachment/request asks for a visible mathematical diagram. "
-        "Supply a native editable Mauth diagram block shaped as { graphConfig, diagramAlign? }. Do not place "
-        "renderer type/data at the top level. Do not replace the "
-        "diagram with prose, and do not omit this field."
+        "Supply a native editable Mauth diagram block shaped as { graphConfig, diagramAlign? }, or use "
+        "vectorRayDiagram for source scalar-product ray diagrams. Do not place renderer type/data at the top "
+        "level. Do not replace the diagram with prose, and do not omit this field."
         if require_diagram
         else (
-            "Optional existing Mauth diagram block shaped as { graphConfig, diagramAlign? }. "
-            "Do not place renderer type/data at the top level. "
+            "Optional existing Mauth diagram block shaped as { graphConfig, diagramAlign? }, or use "
+            "vectorRayDiagram for source scalar-product ray diagrams. Do not place renderer type/data at the top level. "
             "Omit to preserve existing diagrams. Supply a valid supported graphConfig only when adding or "
             "replacing the question's diagrams. When converting a screenshot/source question whose visible "
             "diagram belongs under the stem and before the parts, supply it here or in diagrams."
@@ -1633,7 +1726,8 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
                     ),
                 },
                 "diagram": assistant_diagram_block_schema(
-                    "Mauth diagram block. Provide { graphConfig, diagramAlign? }. For Penrose geometry, use "
+                    "Mauth diagram block. Provide { graphConfig, diagramAlign? }, or vectorRayDiagram for source "
+                    "scalar-product ray diagrams. For Penrose geometry, use "
                     '{ "graphConfig": { "type":"geometricConstruction", "options": { "substanceSource": '
                     '"Point A, B\\nCircle omega\\n..." } } }. Write supported Mauth Penrose Substance directly. '
                     "For tangent-parallel-chord diagrams, use predicates such as CircleThrough, OnCircle, "
@@ -2209,7 +2303,7 @@ Tool-call contract:
 - In mauth_question_upsert, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). Every predicate call must use parentheses and commas, for example `VectorSegment(OA, O, A)`; never write declaration-like predicate syntax such as `VectorSegment OA O A`. To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a segment or vector, use `Segment(name, A, B)` or `VectorSegment(name, A, B)`, not `Connect(...)`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To show collinearity, first declare the line with `Line lineName`, then use `LineThrough(lineName, A, B)` plus `On(P, lineName)` only when incidence is essential; do not invent `Collinear(...)`. To label an angle, always declare a label such as `Label angleCD $45^\\circ$`, then call `LabelsAngle(angleCD, C, O, D)`; never put raw TeX inside `LabelsAngle(...)` and never use a four-argument raw-label form. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
-- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use diagram.graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false. This preserves source ray directions and avoids Penrose auto-layout moving the geometry. Use metadata.vector2d.vectors for each labelled ray with common start [0,0], source-faithful numeric components/directions, labelStyle:"custom", and labels such as "\\mathbf{{a}}". Use metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}" and metadata.vector2d.angleMarkers for right-angle markers and labels such as "45^\\circ". Do not use network for these; network is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
+- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use the compact diagram.vectorRayDiagram builder when available. Provide vectors with id/name, length and angleDeg (standard degrees: 0 right, 90 up) or components, plus angleMarkers for right-angle/angle labels. Mauth expands that builder into a valid vector2d graphConfig with hidden axes/grid, custom labels, draggable magnitude labels, and angle markers. If hand-writing raw graphConfig instead, use graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false, metadata.vector2d.vectors with common start [0,0], labelStyle:"custom", labels such as "\\mathbf{{a}}", metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}", and metadata.vector2d.angleMarkers for labels such as "45^\\circ". Do not use network for these; network is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig or use vectorRayDiagram; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_write_solutions_for_questions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
 - For whole-test solution-key requests, use mauth_write_all_solutions after you have enough question text for every marked question, part, and subpart. It must include payload coverage for every marked scope, preserve diagrams, size studentSpaceLines generously, and use hidden [[marks:n]] annotations whose totals match each scope. After it succeeds, call mauth_check_document_layout with mode "solutions" and repair any returned solution-space or hidden-mark warnings before saying the solution key is complete.

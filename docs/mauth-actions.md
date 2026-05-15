@@ -67,7 +67,7 @@ The visible editor surface for these document settings lives under `T` in the `T
 - `mauth.actions.preview`: dry-run one or more document actions and return the proposed document plus preview summary.
 - `mauth.actions.apply`: apply one or more document actions and return the next document.
 - `mauth.author.replaceQuestion`: legacy alias for `mauth.question.upsert`. Keep it for backwards compatibility, but new assistant/provider prompts should use `mauth.question.upsert`.
-- `mauth.author.addDiagram`: add or replace a top-level diagram in one existing question from a compact payload. Assistant-authored diagrams must provide a renderer-specific `graphConfig`; canned `standardDiagram` recipe payloads are not supported. When repairing a diagram after inspection warnings, pass `diagramId`/`blockId`/`moduleId` so the existing diagram is replaced rather than appending another diagram.
+- `mauth.author.addDiagram`: add or replace a top-level diagram in one existing question from a compact payload. Assistant-authored diagrams must provide a renderer-specific `graphConfig`; canned `standardDiagram` recipe payloads are not supported. For source scalar-product ray diagrams, the compact `vectorRayDiagram` builder is also supported and expands into ordinary `vector2d` metadata. When repairing a diagram after inspection warnings, pass `diagramId`/`blockId`/`moduleId` so the existing diagram is replaced rather than appending another diagram.
 - `mauth.author.ensureSolutions`: create or resize matched student answer spaces and add solution-only worked-solution text for one or more existing questions/parts. It can also update question or part marks when repairing a marking key. `solutionText` should use hidden `[[marks:n]]` annotations at the end of mark-worthy lines; the renderer converts these to red check marks. The action layer normalises common visible mark notes, adds fallback hidden ticks when a high-level solution omits them, and raises student-space lines to the mark-based/solution-fit minimum.
 - `mauth.author.adjustResponseSpaces`: resize or add student-only answer/working spaces for existing questions, parts, or subparts without rewriting question text, diagrams, or solution modules. Use this for focused layout-space requests such as "give Question 1 more working space".
 - `mauth.format.apply`: apply safe high-level formatting changes without rewriting question content. Supported operations are `setPageBreakBefore`, `removePageBreakBefore`, `setDiagramAlignment`, `adjustAnswerSpace`, `moveModule`, `fitSolutionToSpace`, and `tidyQuestionSpacing`. Use it for requests such as "put part (c) on a new page", "move the diagram right", "make the solution fit", "move this module below the table", or "remove unnecessary blank space".
@@ -117,7 +117,7 @@ For common follow-up prompts, high-level tools should avoid extra provider loops
 
 - "Add/include the diagram in Question 1" should normally call `mauth.author.addDiagram` with `questionNumber: 1` and a real `diagram.graphConfig`. If the existing question is a schematic geometry/circle theorem prompt, use `graphConfig.type: "geometricConstruction"` with supported Penrose Substance in `graphConfig.options.substanceSource`. For a tangent parallel to a chord, use predicates such as `CircleThrough`, `OnCircle`, `Tangent`, `ParallelToSegment`, and `Segment`. Visible labels should match the question statement; hide auxiliary centre points unless the question names them.
 - If a previous diagram call returns post-edit inspection `validationIssues` with a `targetId`/`diagramId`, retry `mauth.author.addDiagram` with that `diagramId` and the corrected graphConfig. Do not append a second diagram unless the teacher explicitly asked for another diagram.
-- High-level diagram payloads must be wrapped exactly as `{ "diagram": { "graphConfig": { "type": "..." } } }` or `{ "diagrams": [{ "graphConfig": { "type": "..." } }] }`. Do not put `type`, `data`, `options`, or `metadata` directly on the diagram block, and do not use `config` as an alias. The assistant boundary rejects those shapes with repairable `arguments.diagram.graphConfig` validation issues before any document mutation.
+- High-level diagram payloads must be wrapped exactly as `{ "diagram": { "graphConfig": { "type": "..." } } }`, `{ "diagrams": [{ "graphConfig": { "type": "..." } }] }`, or for source scalar-product ray diagrams `{ "diagram": { "vectorRayDiagram": { "vectors": [...] } } }`. Do not put `type`, `data`, `options`, or `metadata` directly on the diagram block, and do not use `config` as an alias. The assistant boundary rejects those shapes with repairable `arguments.diagram.graphConfig` validation issues before any document mutation.
 - The same high-level boundary rejects obvious diagram-intent mismatches before a renderer is asked to draw anything. Treat `arguments.diagram.graphConfig.type` issues as instructions to switch renderer and emit the native schema for that renderer, not as teacher-facing failures.
 - "Write/add/fix the solution for Question 1" or "change this to 4 marks/remove the QED mark" should normally call `mauth.author.ensureSolutions` when the current summary contains the question text. The tool owns creating or resizing the student answer space, updating marks when supplied, preserving shared diagrams, and adding solution-only text. Put mark allocation in hidden `[[marks:n]]` line annotations, not visible `[1 mark]` prose, and make the hidden mark total match the question/part marks.
 - "Give Question 1 more working space", "make part (b) 8 lines", or similar focused response-space requests should call `mauth.author.adjustResponseSpaces`. Do not use `mauth.question.upsert` for these requests, because the point is to preserve existing wording, diagrams, solutions, ids, and pagination context while changing only the student response surface.
@@ -126,14 +126,14 @@ For common follow-up prompts, high-level tools should avoid extra provider loops
 - "Make Question 1 from this screenshot" should normally call `mauth.question.upsert` with the visible source structure: stem text, native diagram blocks under the stem, then structured parts with the visible mathematical task in each part. A prompt like "add this question to the test" without an explicit number means append the immediate next missing question, not add a diagram to an existing question. Do not turn the diagram into prose, do not create blank part rows, and do not add worked solutions unless the teacher asks for them or the source visibly contains them. For marked written-response parts, provide at least 3 student-space lines unless the answer is a table/diagram/graph surface.
 - If a source-question request with an attachment is misrouted to `mauth.author.addDiagram` and the target question does not exist, repair by switching to `mauth.question.upsert` or `mauth_convert_source_question`. Do not spend another round retrying the diagram-only tool, because the teacher is creating a question and diagram together.
 - Ambiguous fresh requests should ask before mutating. If the teacher says "add a diagram" without a target, ask which question. If they say "add this question" without an attachment or pasted question content, ask what the new question should be based on. This clarification should happen before provider tool routing when possible.
-- For screenshot scalar-product ray diagrams with common-origin vectors, magnitudes, right-angle markers, and angle labels but no axes, use `graphConfig.type: "vector2d"` with `showAxes:false`, `showGrid:false`, `showAxisLabels:false`, and `showAxisNumbers:false`. Preserve source ray directions with `metadata.vector2d.vectors`; every vector entry must include `id`, `name`, `start:[x,y]`, and `components:[dx,dy]`. Use `labelStyle:"custom"` and labels such as `\mathbf{a}`, use `metadata.vector2d.segmentLabels` with `vectorId` matching the vector `id` for magnitudes such as `2\ \text{units}`, and use `metadata.vector2d.angleMarkers` with `from`/`to` matching vector ids for right-angle markers and angle labels such as `45^\circ`. Do not use `network`; it is for conceptual networks. Do not use Penrose/geometricConstruction for these source ray diagrams unless the task is actually theorem geometry.
+- For screenshot scalar-product ray diagrams with common-origin vectors, magnitudes, right-angle markers, and angle labels but no axes, prefer `vectorRayDiagram` over hand-written raw `vector2d`. Provide each vector with a stable `id`/`name`, `length` plus `angleDeg` in standard degrees, optional `labelX`/`labelY`, and optional `lengthLabel`. Add `angleMarkers` with `from`/`to` vector ids for right-angle markers and labels such as `45^\circ`. The app expands this into `graphConfig.type: "vector2d"` with `showAxes:false`, `showGrid:false`, `showAxisLabels:false`, `showAxisNumbers:false`, `equalScale:true`, custom vector labels, magnitude labels, and angle markers. If hand-writing raw `vector2d`, preserve source ray directions with `metadata.vector2d.vectors`; every vector entry must include `id`, `name`, `start:[x,y]`, and `components:[dx,dy]`. Do not use `network`; it is for conceptual networks. Do not use Penrose/geometricConstruction for these source ray diagrams unless the task is actually theorem geometry.
 - If a new/source-question conversion fails inside `question.contentBlocks[].graphConfig`, especially a `metadata.vector2d.vectors` validation path, keep the repair on `mauth.question.upsert`/`mauth_convert_source_question`. Do not switch to `mauth.author.addDiagram` unless the question already exists and the failure includes a `diagramId`/`targetId` for replacing an existing diagram.
 - The diagram validator rejects known-invalid native payload mistakes before apply, then render-preflights changed renderer payloads where needed. After render succeeds, assistant commit preflight also runs shared diagram inspection for hard failures: wrong renderer, missing image source, missing scalar-product vector labels/angle markers, visible axes on no-axis scalar-product vector diagrams, invalid manual probability charts, missing named vector2d metadata, missing requested set shading/counts, and conservative Penrose circle-geometry semantic issues. Treat returned `validationIssues` as the repair target and retry once with corrected native metadata/Substance or corrected renderer config.
 - `mauth.preview.inspect` performs the same first-pass diagram inspection after a diagram exists. It does not replace mathematical judgement, but it catches common valid-but-wrong outputs such as a drawn line that is not declared as a tangent, a tangent not parallel to the named chord, a named chord not drawn as a segment, named points not on the same circle, an auxiliary centre label being shown when the prompt does not name it, vector-ray diagrams missing labels/angle markers, probability bars that do not sum to 1, Venn diagrams with requested shading/counts omitted, coordinate-vector diagrams missing a named vector, or graph2d diagrams missing requested tangent/region/asymptote features. When browser preview metrics are mounted, it also reports rendered failures such as failed diagram placeholders, likely label collisions, clipped diagrams, page overflows, solution-space overflow, and missing L-shaped diagram/answer-space outlines.
 - The low-level action boundary also sanitises assistant-authored solution text before preview/apply. Direct `module.add`, `module.update`, `question.update`, `part.update`, or `subpart.update` payloads must still use solution-only blocks and hidden `[[marks:n]]` ticks; visible `[1 mark]`, `(1 mark)`, `Solution (5 marks)`, and `\text{[1 mark]}` notes are treated as bad assistant output and normalised or rejected.
 - These successful high-level calls are terminal from the frontend's point of view. The panel should show a local result such as "Added the diagram." or "Updated the solutions." rather than paying for another provider round to summarise the obvious.
 
-Example focused diagram payload shape:
+Example focused geometry diagram payload shape:
 
 ```json
 {
@@ -151,6 +151,40 @@ Example focused diagram payload shape:
 ```
 
 This is a renderer-specific payload, not a canned recipe. Assistant-authored diagrams should stay on the real diagram tool surface: choose the renderer, load the relevant diagram brain, and emit the native `graphConfig` for that renderer.
+
+Example source scalar-product ray diagram payload shape:
+
+```json
+{
+  "questionNumber": 8,
+  "marks": 0,
+  "questionText": "Evaluate the following scalar products exactly.",
+  "diagram": {
+    "diagramAlign": "center",
+    "vectorRayDiagram": {
+      "widthPx": 560,
+      "heightPx": 380,
+      "vectors": [
+        { "id": "a", "length": 2, "angleDeg": 215, "lengthLabel": "2\\ \\text{units}" },
+        { "id": "b", "length": 2, "angleDeg": 125, "lengthLabel": "2\\ \\text{units}" },
+        { "id": "c", "length": 3, "angleDeg": 80, "lengthLabel": "3\\ \\text{units}" },
+        { "id": "d", "length": 2, "angleDeg": 35, "lengthLabel": "2\\ \\text{units}" }
+      ],
+      "angleMarkers": [
+        { "from": "b", "to": "d", "rightAngle": true },
+        { "from": "c", "to": "d", "label": "45^\\circ" }
+      ]
+    }
+  },
+  "parts": [
+    { "text": "$\\mathbf{a}\\cdot\\mathbf{b}$", "marks": 1, "answerSurface": "none" },
+    { "text": "$\\mathbf{a}\\cdot\\mathbf{d}$", "marks": 2, "answerSurface": "none" },
+    { "text": "$\\mathbf{c}\\cdot\\mathbf{d}$", "marks": 2, "answerSurface": "none" }
+  ]
+}
+```
+
+This is not a new renderer and not a canned diagram recipe. It is a safer high-level authoring shape that deterministically creates normal `vector2d` graph metadata for a narrow source-diagram family where raw JSON was repeatedly fragile.
 
 ## Current Actions
 

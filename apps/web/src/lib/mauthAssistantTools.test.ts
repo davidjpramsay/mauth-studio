@@ -803,6 +803,111 @@ test("high-level question authoring appends the next missing question", () => {
   assert.equal(appended.contentBlocks[2].visibility, "student");
 });
 
+test("high-level question authoring builds source scalar-product vector diagrams from compact vector intent", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 0,
+      questionText: "Evaluate the following scalar products exactly.",
+      diagram: {
+        diagramAlign: "center",
+        vectorRayDiagram: {
+          widthPx: 560,
+          heightPx: 380,
+          vectors: [
+            { id: "a", length: 2, angleDeg: 215, lengthLabel: "2\\ \\text{units}", labelX: -2.25, labelY: -1.45 },
+            { id: "b", length: 2, angleDeg: 135, lengthLabel: "2\\ \\text{units}", labelX: -1.7, labelY: 1.55 },
+            { id: "c", length: 3, angleDeg: 80, lengthLabel: "3\\ \\text{units}", labelX: 0.38, labelY: 3.1 },
+            { id: "d", length: 2, angleDeg: 35, lengthLabel: "2\\ \\text{units}", labelX: 2.2, labelY: 1.35 },
+          ],
+          angleMarkers: [
+            { from: "b", to: "d", rightAngle: true, radius: 0.42 },
+            { from: "c", to: "d", label: "45^\\circ", radius: 0.72, labelX: 0.95, labelY: 0.78 },
+          ],
+        },
+      },
+      parts: [
+        { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, answerSurface: "none" },
+        { text: "$\\mathbf{a}\\cdot\\mathbf{d}$", marks: 2, answerSurface: "none" },
+        { text: "$\\mathbf{c}\\cdot\\mathbf{d}$", marks: 2, answerSurface: "none" },
+      ],
+    },
+  });
+  const appended = result.document?.questions[1];
+  const diagram = appended?.contentBlocks.find((block) => block.kind === "diagram");
+  const graphConfig = diagram?.kind === "diagram" ? diagram.graphConfig : undefined;
+  const vector2d = graphConfig?.metadata?.vector2d as
+    | {
+        vectors?: Array<Record<string, unknown>>;
+        segmentLabels?: Array<Record<string, unknown>>;
+        angleMarkers?: Array<Record<string, unknown>>;
+      }
+    | undefined;
+  const warnings = graphConfig
+    ? inspectMauthDiagram(
+        graphConfig,
+        "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$, $\\mathbf{a}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$.",
+      ).warnings
+    : [];
+
+  assert.equal(result.ok, true);
+  assert.equal(appended?.marks, 0);
+  assert.equal(appended?.parts.length, 3);
+  assert.equal(graphConfig?.type, "vector2d");
+  assert.equal(graphConfig?.showAxes, false);
+  assert.equal(graphConfig?.showGrid, false);
+  assert.equal(graphConfig?.showAxisLabels, false);
+  assert.equal(graphConfig?.showAxisNumbers, false);
+  assert.equal(graphConfig?.equalScale, true);
+  assert.equal(vector2d?.vectors?.length, 4);
+  assert.deepEqual(
+    vector2d?.vectors?.map((vector) => vector.id),
+    ["a", "b", "c", "d"],
+  );
+  assert.equal(vector2d?.segmentLabels?.length, 4);
+  assert.equal(vector2d?.angleMarkers?.length, 2);
+  assert.equal(
+    vector2d?.angleMarkers?.some((marker) => marker.rightAngle === true),
+    true,
+  );
+  assert.equal(
+    vector2d?.angleMarkers?.some((marker) => marker.label === "45^\\circ"),
+    true,
+  );
+  assert.equal(
+    warnings.some((warning) => isAssistantDiagramInspectionWarningBlocking(warning)),
+    false,
+  );
+});
+
+test("high-level question authoring rejects incomplete compact vector diagrams before apply", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 5,
+      questionText: "Evaluate the following scalar products exactly.",
+      diagram: {
+        vectorRayDiagram: {
+          vectors: [
+            { length: 2, angleDeg: 215 },
+            { id: "b", length: 2 },
+          ],
+          angleMarkers: [{ from: "b", to: "d", label: "45^\\circ" }],
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.document, undefined);
+  assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.vectors[0].id"));
+  assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.vectors[1].length"));
+  assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.angleMarkers[0].to"));
+});
+
 test("high-level question authoring can pair diagram answer surfaces without separate working space", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",
