@@ -320,6 +320,38 @@ function vectorGraphSizing(graphConfig?: GraphConfig | null) {
   };
 }
 
+function vectorBoardBoundingBox(
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  displayWidth: number,
+  displayHeight: number,
+  equalScale: boolean,
+): [number, number, number, number] {
+  if (!equalScale || displayWidth <= 0 || displayHeight <= 0) return [left, top, right, bottom];
+
+  const boardWidth = right - left;
+  const boardHeight = top - bottom;
+  if (boardWidth <= 0 || boardHeight <= 0) return [left, top, right, bottom];
+
+  const displayRatio = displayWidth / displayHeight;
+  const boardRatio = boardWidth / boardHeight;
+  if (!Number.isFinite(displayRatio) || displayRatio <= 0 || !Number.isFinite(boardRatio) || boardRatio <= 0) {
+    return [left, top, right, bottom];
+  }
+
+  if (boardRatio < displayRatio) {
+    const nextWidth = boardHeight * displayRatio;
+    const padding = (nextWidth - boardWidth) / 2;
+    return [left - padding, top, right + padding, bottom];
+  }
+
+  const nextHeight = boardWidth / displayRatio;
+  const padding = (nextHeight - boardHeight) / 2;
+  return [left, top + padding, right, bottom - padding];
+}
+
 function axisLabelStep({
   graphConfig,
   axis,
@@ -703,7 +735,15 @@ export function Vector2DGraph({
     });
 
     const board = JXG.JSXGraph.initBoard(boardId, {
-      boundingbox: [xMin - boardPaddingX, yMax + boardPaddingY, xMax + boardPaddingX, yMin - boardPaddingY],
+      boundingbox: vectorBoardBoundingBox(
+        xMin - boardPaddingX,
+        yMax + boardPaddingY,
+        xMax + boardPaddingX,
+        yMin - boardPaddingY,
+        displayWidth,
+        displayHeight,
+        graphConfig?.equalScale === true,
+      ),
       axis: false,
       grid: false,
       showCopyright: false,

@@ -629,6 +629,8 @@ Use `vector2d` for coordinate-accurate vectors on axes. This is the right diagra
 
 For both `graph2d` and `vector2d`, the axis-letter labels `x` and `y` are rendered through MathJax so they match the rest of the mathematical notation. Tick numbers remain plain axis tick labels.
 
+Set `equalScale: true` whenever the visual angle or perpendicularity of vectors matters, including source-faithful scalar-product ray diagrams. This preserves the same screen scale in the x- and y-directions so angle arcs and right-angle markers match the vector relationships.
+
 The default label style is `boldLower`, which renders labels such as $\mathbf{a}=\begin{pmatrix}2\\3\end{pmatrix}$. Use `arrow` when the notation should be a directed segment label such as $\overrightarrow{AB}=\begin{pmatrix}2\\3\end{pmatrix}$. Use `custom` only when each vector needs a fully custom LaTeX label. Vector labels, segment labels, and angle labels are draggable in the preview; manual label positions are stored as `labelX` and `labelY` on the vector, segment label, or angle marker.
 
 Dotted component guide lines are available per vector with `"showComponents": true`, but leave them off by default. Use them only for solution annotations or questions that explicitly need the vector components shown. In the editor, component guides live under Annotations rather than the core vector row.
