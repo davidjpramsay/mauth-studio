@@ -706,6 +706,45 @@ def test_add_this_question_routes_to_next_missing_source_conversion():
     assert "this tool can append it; do not refuse" in instructions
 
 
+def test_add_this_as_next_question_with_diagram_source_routes_to_source_conversion():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content=(
+            "Add this as the next question in the test. Recreate the diagram as a native Mauth diagram, "
+            "put the diagram under the stem, and put the scalar-product parts underneath."
+        ),
+    )
+    summary = {
+        "questions": [
+            {"id": "q1", "index": 0, "modules": [{"kind": "text", "textPreview": "Question 1."}]},
+            {"id": "q2", "index": 1, "modules": [{"kind": "text", "textPreview": "Question 2."}]},
+            {"id": "q3", "index": 2, "modules": [{"kind": "text", "textPreview": "Question 3."}]},
+        ]
+    }
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="screenshot-1",
+            name="vector-source.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    request = openai_assistant.AssistantChatRequest(
+        messages=[message],
+        attachments=attachments,
+        documentSummary=summary,
+    )
+    tools = openai_assistant.assistant_tool_definitions([message], attachments=attachments, document_summary=summary)
+    instructions = openai_assistant.assistant_instructions(summary, [message], attachments=attachments)
+
+    assert openai_assistant.direct_clarification_question(request) is None
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "for the next missing question, Question 4" in instructions
+    assert "include it in diagram or diagrams in the same replacement payload" in instructions
+
+
 def test_add_this_question_without_source_asks_for_clarification():
     message = openai_assistant.AssistantChatMessage(
         role="user",

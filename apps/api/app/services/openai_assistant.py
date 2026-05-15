@@ -31,7 +31,7 @@ QUESTION_AUTHORING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 QUESTION_APPEND_PATTERN = re.compile(
-    r"\b(?:add|append|insert)\s+(?:(?:a|an)\s+new|this|a|an|new)?\s*question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:a\s+)?question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:to|into)\s+(?:the\s+)?(?:test|document|assessment)\b",
+    r"\b(?:add|append|insert)\s+(?:(?:a|an)\s+new|this|a|an|new)?\s*question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:the\s+)?next\s+question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:as\s+)?(?:a\s+)?question\b|\b(?:add|append|insert)\s+(?:this|the)?\s*(?:attached\s+)?(?:image|screenshot|pdf|file|source)?\s*(?:to|into)\s+(?:the\s+)?(?:test|document|assessment)\b",
     re.IGNORECASE,
 )
 LAYOUT_CHECK_TERMS = (
