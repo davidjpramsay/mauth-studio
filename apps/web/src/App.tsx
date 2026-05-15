@@ -3442,6 +3442,11 @@ function isSolutionReplacementBlock(block: EditorContentBlock) {
   return contentBlockVisibility(block) === "solution";
 }
 
+function canShareReplacementSlot(studentBlock: EditorContentBlock, solutionBlock: EditorContentBlock) {
+  if (studentBlock.kind === "space") return true;
+  return studentBlock.kind === solutionBlock.kind;
+}
+
 function visibilityReplacementSlotAt(blocks: EditorContentBlock[], startIndex: number): VisibilityReplacementSlotGroup | null {
   const block = blocks[startIndex];
   if (!block || block.kind === "pageBreak") return null;
@@ -3449,7 +3454,7 @@ function visibilityReplacementSlotAt(blocks: EditorContentBlock[], startIndex: n
   if (isStudentReplacementBlock(block)) {
     const solutionBlocks: EditorContentBlock[] = [];
     let cursor = startIndex + 1;
-    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor])) {
+    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor]) && canShareReplacementSlot(block, blocks[cursor])) {
       solutionBlocks.push(blocks[cursor]);
       cursor += 1;
     }
@@ -3471,10 +3476,12 @@ function visibilityReplacementSlotAt(blocks: EditorContentBlock[], startIndex: n
     }
     const studentBlock = blocks[cursor];
     if (!studentBlock || !isStudentReplacementBlock(studentBlock)) return null;
+    const compatibleSolutionBlocks = solutionBlocks.filter((solutionBlock) => canShareReplacementSlot(studentBlock, solutionBlock));
+    if (!compatibleSolutionBlocks.length || compatibleSolutionBlocks.length !== solutionBlocks.length) return null;
     return {
       studentBlock,
-      solutionBlocks,
-      blocks: [...solutionBlocks, studentBlock],
+      solutionBlocks: compatibleSolutionBlocks,
+      blocks: [...compatibleSolutionBlocks, studentBlock],
       endIndex: cursor,
     };
   }
@@ -7526,7 +7533,7 @@ export default function App() {
 
   const printDocument = useCallback(() => {
     flushSync(() => setPrintPreviewMounted(true));
-    window.requestAnimationFrame(() => window.print());
+    window.print();
   }, []);
 
   useEffect(() => {

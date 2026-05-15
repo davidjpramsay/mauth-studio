@@ -2283,6 +2283,18 @@ function hasAuthorTableArgs(args: Record<string, unknown>, tableKey = "table", t
   return hasOwn(args, tableKey) || hasOwn(args, tablesKey);
 }
 
+const ARTIFACT_TABLE_ANSWER_PATTERN =
+  /\b(?:complete|fill(?:\s+in)?|enter|write|find)\b[\s\S]{0,90}\b(?:table|missing values?|values?)\b|\btable of values\b/i;
+const ARTIFACT_DIAGRAM_ANSWER_PATTERN =
+  /\b(?:sketch|draw|plot|label|shade|complete)\b[\s\S]{0,110}\b(?:graph|grid|diagram|region|axes|intercepts?)\b|\bon the (?:grid|diagram|axes)\b|\bidentify all intercepts\b/i;
+
+function inferredAnswerSurfaceFromArgs(args: Record<string, unknown>): AuthorAnswerSurface {
+  const intentText = rawAssistantTextFragmentsFromAuthorArgs(args).join("\n");
+  if (hasAuthorTableArgs(args) && ARTIFACT_TABLE_ANSWER_PATTERN.test(intentText)) return "table";
+  if (hasAuthorDiagramArgs(args) && ARTIFACT_DIAGRAM_ANSWER_PATTERN.test(intentText)) return "diagram";
+  return "space";
+}
+
 function answerSurfaceFromArgs(args: Record<string, unknown>): AuthorAnswerSurface {
   const rawValue = args.answerSurface ?? args.responseSurface ?? args.responseMode;
   if (rawValue === "space" || rawValue === "freeResponse" || rawValue === "free-response" || rawValue === "written") return "space";
@@ -2296,7 +2308,7 @@ function answerSurfaceFromArgs(args: Record<string, unknown>): AuthorAnswerSurfa
   }
   if (hasAuthorTableArgs(args, "solutionTable", "solutionTables")) return "table";
   if (hasAuthorDiagramArgs(args, "solutionDiagram", "solutionDiagrams")) return "diagram";
-  return "space";
+  return inferredAnswerSurfaceFromArgs(args);
 }
 
 function isSolutionTextBlock(block: ContentBlock): block is TextContentBlock {
@@ -2615,7 +2627,7 @@ function appendAnswerSurfaceReplacementSlot(
   path: string,
 ) {
   if (!solutionBlocks.length) {
-    blocks.push(...studentBlocks.map((block) => withBlockVisibility(block, "student")));
+    blocks.push(...studentBlocks);
     return;
   }
 

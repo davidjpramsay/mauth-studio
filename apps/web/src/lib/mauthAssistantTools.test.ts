@@ -853,6 +853,51 @@ test("high-level question authoring can pair diagram answer surfaces without sep
   assert.equal(blocks[3].kind === "text" ? blocks[3].text.includes("[[marks:") : true, false);
 });
 
+test("high-level question authoring infers sketch diagrams are answer surfaces", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 2,
+      questionText: "Sketch the graph on the grid and identify all intercepts.",
+      studentSpaceLines: 8,
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -4,
+          xMax: 4,
+          yMin: -12,
+          yMax: 10,
+          functions: [],
+        },
+      },
+      solutionDiagram: {
+        graphConfig: {
+          type: "graph2d",
+          xMin: -4,
+          xMax: 4,
+          yMin: -12,
+          yMax: 10,
+          functions: [{ expression: "x^2-4", label: "$y=x^2-4$", show: true }],
+        },
+      },
+      solutionText: "Intercepts are $(-2,0)$ and $(2,0)$. [[marks:2]]",
+    },
+  });
+  const blocks = result.document?.questions[0].contentBlocks ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    blocks.some((block) => block.kind === "space"),
+    false,
+  );
+  assert.equal(blocks[1].kind, "diagram");
+  assert.equal(blocks[1].visibility, "student");
+  assert.equal(blocks[2].kind, "diagram");
+  assert.equal(blocks[2].visibility, "solution");
+  assert.equal(blocks[2].markTicks, 2);
+});
+
 test("high-level part authoring can pair completion tables as answer surfaces", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",
@@ -895,6 +940,46 @@ test("high-level part authoring can pair completion tables as answer surfaces", 
   assert.equal(partBlocks[3].kind, "text");
   assert.equal(partBlocks[3].visibility, "solution");
   assert.equal(partBlocks[3].kind === "text" ? partBlocks[3].text.includes("[[marks:") : true, false);
+});
+
+test("high-level part authoring infers completion tables are answer surfaces", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "Complete the table.",
+      parts: [
+        {
+          text: "For $y=x^2-4$, complete the table of values.",
+          marks: 2,
+          table: {
+            headers: ["$x$", "$-2$", "$0$", "$2$"],
+            rows: [["$y$", "", "", ""]],
+            showHeader: false,
+          },
+          solutionTable: {
+            headers: ["$x$", "$-2$", "$0$", "$2$"],
+            rows: [["$y$", "$0$", "$-4$", "$0$"]],
+            showHeader: false,
+          },
+          solutionText: "The completed table is shown. [[marks:2]]",
+        },
+      ],
+    },
+  });
+  const partBlocks = result.document?.questions[0].parts[0].contentBlocks ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    partBlocks.some((block) => block.kind === "space"),
+    false,
+  );
+  assert.equal(partBlocks[1].kind, "table");
+  assert.equal(partBlocks[1].visibility, "student");
+  assert.equal(partBlocks[2].kind, "table");
+  assert.equal(partBlocks[2].visibility, "solution");
+  assert.equal(partBlocks[2].markTicks, 2);
 });
 
 test("high-level question authoring rejects skipped question numbers", () => {
