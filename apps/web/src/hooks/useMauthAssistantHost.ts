@@ -77,7 +77,7 @@ function revisionFromToolContext(context: MauthAssistantToolCommitContext) {
 }
 
 function isPenroseGraphConfig(graphConfig: GraphConfig) {
-  return graphConfig.type === "geometricConstruction" || graphConfig.type === "setDiagram" || graphConfig.type === "vectorRelationship";
+  return graphConfig.type === "geometricConstruction" || graphConfig.type === "setDiagram" || graphConfig.type === "network";
 }
 
 interface PenrosePreflightCandidate {

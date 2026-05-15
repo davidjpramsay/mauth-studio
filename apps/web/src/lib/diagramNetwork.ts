@@ -1,6 +1,6 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
-export const DEFAULT_VECTOR_RELATIONSHIP_DATA = {
+export const DEFAULT_NETWORK_DATA = {
   hidePoints: false,
   hidePointLabels: false,
   objects: [
@@ -29,8 +29,8 @@ export function penroseIdentifier(value: unknown, fallback: string) {
   return /^[A-Za-z][A-Za-z0-9_]*$/.test(source) ? source : fallback;
 }
 
-function vectorSourceData(config: GraphConfig) {
-  const data = asRecord(config.data) ?? asRecord(DEFAULT_VECTOR_RELATIONSHIP_DATA);
+function networkSourceData(config: GraphConfig) {
+  const data = asRecord(config.data) ?? asRecord(DEFAULT_NETWORK_DATA);
   const objects = recordArray(data?.objects);
   const relationships = recordArray(data?.relationships);
   return { data: data ?? {}, objects, relationships };
@@ -57,13 +57,13 @@ function relationshipPointNames(relationship: Record<string, unknown>) {
   return points.filter((point): point is string => typeof point === "string");
 }
 
-function vectorRelationshipsFromConfig(config: GraphConfig) {
-  const { relationships } = vectorSourceData(config);
+function networksFromConfig(config: GraphConfig) {
+  const { relationships } = networkSourceData(config);
   const source = relationships.filter((relationship) => relationship.type === "segment" || relationship.type === "vectorSegment");
-  return source.length ? source : recordArray(DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships);
+  return source.length ? source : recordArray(DEFAULT_NETWORK_DATA.relationships);
 }
 
-function vectorPointNamesFromRelationships(relationships: Array<Record<string, unknown>>) {
+function networkPointNamesFromRelationships(relationships: Array<Record<string, unknown>>) {
   const names = new Set<string>();
   relationships.forEach((relationship) => {
     relationshipPointNames(relationship).forEach((point) => names.add(penroseIdentifier(point, `P${names.size + 1}`)));
@@ -71,11 +71,11 @@ function vectorPointNamesFromRelationships(relationships: Array<Record<string, u
   return [...names];
 }
 
-export function normalizedVectorRelationshipData(config: GraphConfig) {
-  const { data, objects } = vectorSourceData(config);
-  const relationships = vectorRelationshipsFromConfig(config).map((relationship, index) => {
+export function normalizedNetworkDiagramData(config: GraphConfig) {
+  const { data, objects } = networkSourceData(config);
+  const relationships = networksFromConfig(config).map((relationship, index) => {
     const points = relationshipPointNames(relationship).slice(0, 2);
-    const fallback = DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships[index] ?? DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships[0];
+    const fallback = DEFAULT_NETWORK_DATA.relationships[index] ?? DEFAULT_NETWORK_DATA.relationships[0];
     const fallbackPoints = Array.isArray(fallback.points) ? fallback.points : ["O", "A"];
     const start = penroseIdentifier(points[0], String(fallbackPoints[0] ?? "O"));
     const end = penroseIdentifier(points[1], String(fallbackPoints[1] ?? "A"));
@@ -86,7 +86,7 @@ export function normalizedVectorRelationshipData(config: GraphConfig) {
       label: relationship.label ?? relationship.value ?? fallback.label ?? "",
     };
   });
-  const relationshipPointNamesSet = vectorPointNamesFromRelationships(relationships);
+  const relationshipPointNamesSet = networkPointNamesFromRelationships(relationships);
   const objectMap = new Map<string, Record<string, unknown>>();
   objects.forEach((object) => {
     const name = penroseIdentifier(object.name, "");
@@ -110,7 +110,7 @@ export function normalizedVectorRelationshipData(config: GraphConfig) {
   };
 }
 
-export function vectorRelationshipDataForSave(data: ReturnType<typeof normalizedVectorRelationshipData>) {
+export function networkDataForSave(data: ReturnType<typeof normalizedNetworkDiagramData>) {
   const points = new Map<string, Record<string, unknown>>();
   data.objects.forEach((object) => {
     const name = penroseIdentifier(object.name, "");

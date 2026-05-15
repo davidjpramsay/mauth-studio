@@ -6,7 +6,7 @@ const SUPPORTED_DIAGRAM_TYPES = new Set([
   "graph3d",
   "image",
   "geometricConstruction",
-  "vectorRelationship",
+  "network",
   "setDiagram",
   "statsChart",
 ]);
@@ -822,6 +822,6 @@ export function validateMauthDiagramConfig(value: unknown, path: string, issues:
   if (value.type === "image") validateImageDiagram(value, path, issues);
   if (value.type === "statsChart") validateStatsChart(value, path, issues);
   if (value.type === "geometricConstruction") validatePenroseDiagram(value, path, issues);
-  if (value.type === "vectorRelationship") validatePenroseDiagram(value, path, issues, true);
+  if (value.type === "network") validatePenroseDiagram(value, path, issues, true);
   if (value.type === "setDiagram") validateSetDiagram(value, path, issues);
 }

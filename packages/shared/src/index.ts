@@ -5,7 +5,7 @@ export type DiagramType =
   | "graph3d"
   | "geometricConstruction"
   | "image"
-  | "vectorRelationship"
+  | "network"
   | "setDiagram"
   | "statsChart"
   | "vector2d"

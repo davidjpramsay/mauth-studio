@@ -5,12 +5,7 @@ import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
-import {
-  DEFAULT_VECTOR_RELATIONSHIP_DATA,
-  normalizedVectorRelationshipData,
-  penroseIdentifier,
-  vectorRelationshipDataForSave,
-} from "@/lib/diagramVectorRelationship";
+import { DEFAULT_NETWORK_DATA, normalizedNetworkDiagramData, penroseIdentifier, networkDataForSave } from "@/lib/diagramNetwork";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
@@ -20,19 +15,19 @@ function numberInputValue(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : "";
 }
 
-type VectorRelationshipEditorProps = {
+type NetworkDiagramEditorProps = {
   config: GraphConfig;
   substanceSource: string;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function VectorRelationshipEditor({ config, substanceSource, onChange }: VectorRelationshipEditorProps) {
+export function NetworkDiagramEditor({ config, substanceSource, onChange }: NetworkDiagramEditorProps) {
   const scalePercent = penroseScalePercent(config);
-  const data = normalizedVectorRelationshipData(config);
+  const data = normalizedNetworkDiagramData(config);
   const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
-  const patchVectorData = (nextData: ReturnType<typeof normalizedVectorRelationshipData>) => {
+  const patchNetworkData = (nextData: ReturnType<typeof normalizedNetworkDiagramData>) => {
     onChange({
-      data: vectorRelationshipDataForSave(nextData),
+      data: networkDataForSave(nextData),
       options: removePenroseSubstanceOverride(config),
       widthPx: undefined,
       heightPx: undefined,
@@ -45,13 +40,11 @@ export function VectorRelationshipEditor({ config, substanceSource, onChange }: 
       widthPx: undefined,
       heightPx: undefined,
     });
-  const updateVisibility = (
-    patch: Partial<Pick<ReturnType<typeof normalizedVectorRelationshipData>, "hidePoints" | "hidePointLabels">>,
-  ) => {
-    patchVectorData({ ...data, ...patch });
+  const updateVisibility = (patch: Partial<Pick<ReturnType<typeof normalizedNetworkDiagramData>, "hidePoints" | "hidePointLabels">>) => {
+    patchNetworkData({ ...data, ...patch });
   };
   const updateNode = (nodeIndex: number, patch: Partial<(typeof data)["objects"][number]>) => {
-    patchVectorData({
+    patchNetworkData({
       ...data,
       objects: data.objects.map((node, index) => {
         if (index !== nodeIndex) return node;
@@ -71,7 +64,7 @@ export function VectorRelationshipEditor({ config, substanceSource, onChange }: 
   const addNode = () => {
     const nextIndex = data.objects.length + 1;
     const name = penroseIdentifier(String.fromCharCode(64 + Math.min(nextIndex, 26)), `N${nextIndex}`);
-    patchVectorData({
+    patchNetworkData({
       ...data,
       objects: [...data.objects, { type: "point", name, label: name }],
     });
@@ -79,14 +72,14 @@ export function VectorRelationshipEditor({ config, substanceSource, onChange }: 
   const removeNode = (nodeIndex: number) => {
     const node = data.objects[nodeIndex];
     if (!node || data.objects.length <= 1) return;
-    patchVectorData({
+    patchNetworkData({
       ...data,
       objects: data.objects.filter((_, index) => index !== nodeIndex),
       relationships: data.relationships.filter((relationship) => !relationship.points.includes(node.name)),
     });
   };
   const updateRelationship = (relationshipIndex: number, patch: Partial<(typeof data)["relationships"][number]>) => {
-    patchVectorData({
+    patchNetworkData({
       ...data,
       relationships: data.relationships.map((relationship, index) =>
         index === relationshipIndex ? { ...relationship, ...patch } : relationship,
@@ -97,7 +90,7 @@ export function VectorRelationshipEditor({ config, substanceSource, onChange }: 
     const pointNames = data.objects.map((object) => object.name);
     const start = pointNames[0] ?? "A";
     const end = pointNames[1] ?? "B";
-    patchVectorData({
+    patchNetworkData({
       ...data,
       relationships: [
         ...data.relationships,
@@ -111,17 +104,17 @@ export function VectorRelationshipEditor({ config, substanceSource, onChange }: 
     });
   };
   const removeRelationship = (relationshipIndex: number) => {
-    patchVectorData({
+    patchNetworkData({
       ...data,
       relationships: data.relationships.filter((_, index) => index !== relationshipIndex),
     });
   };
   const useNetworkPreset = () => {
-    patchVectorData({
+    patchNetworkData({
       hidePoints: false,
       hidePointLabels: false,
-      objects: DEFAULT_VECTOR_RELATIONSHIP_DATA.objects.map((object) => ({ ...object, label: object.name })),
-      relationships: DEFAULT_VECTOR_RELATIONSHIP_DATA.relationships.map((relationship) => ({ ...relationship })),
+      objects: DEFAULT_NETWORK_DATA.objects.map((object) => ({ ...object, label: object.name })),
+      relationships: DEFAULT_NETWORK_DATA.relationships.map((relationship) => ({ ...relationship })),
     });
   };
   const updateSubstance = (value: string) =>

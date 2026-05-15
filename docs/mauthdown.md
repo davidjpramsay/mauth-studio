@@ -603,7 +603,7 @@ The web editor exposes the common two-set Venn controls directly. Use the quick 
 
 ### Network Diagrams
 
-Use `vectorRelationship` for schematic network diagrams where layout is conceptual rather than coordinate-accurate. Use `VectorSegment(name, start, end)` for directed links and `Segment(name, start, end)` for undirected links.
+Use `network` for schematic network diagrams where layout is conceptual rather than coordinate-accurate. Use `VectorSegment(name, start, end)` for directed links and `Segment(name, start, end)` for undirected links.
 
 The web editor exposes the common network controls directly: diagram scale, node rows, node labels, show/hide node dots, show/hide node labels, directed/undirected link rows, from/to nodes, and link labels. Use Advanced Substance only when the relationship diagram needs custom Penrose constraints beyond ordinary nodes and links.
 

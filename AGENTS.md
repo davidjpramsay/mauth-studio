@@ -103,7 +103,7 @@ Use the shared diagram shape:
 Current diagram systems:
 
 - `graph2d` and `graph3d`: JSXGraph.
-- `geometricConstruction`, `vectorRelationship`, and `setDiagram`: Penrose-backed static diagrams.
+- `geometricConstruction`, `network`, and `setDiagram`: Penrose-backed static diagrams.
 - `statsChart`: Plotly-backed statistical charts.
 
 Keep these rendering systems separate. Do not unify Penrose, Plotly, and JSXGraph internals.

@@ -8,10 +8,8 @@ PENROSE_CLI = ROOT / "packages" / "diagram-penrose" / "src" / "cli.mjs"
 
 
 def render_penrose_diagram(spec: dict[str, Any]) -> dict[str, Any]:
-    if spec.get("type") not in {"geometricConstruction", "vectorRelationship", "setDiagram"}:
-        raise ValueError(
-            'Penrose renderer only accepts type "geometricConstruction", "vectorRelationship", or "setDiagram"'
-        )
+    if spec.get("type") not in {"geometricConstruction", "network", "setDiagram"}:
+        raise ValueError('Penrose renderer only accepts type "geometricConstruction", "network", or "setDiagram"')
     if not PENROSE_CLI.exists():
         raise RuntimeError(f"Penrose renderer is missing at {PENROSE_CLI}")
 

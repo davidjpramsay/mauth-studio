@@ -1070,7 +1070,7 @@ def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
         call,
         expected_type="vector2d",
         required_terms=("2", "3", "4", "-3"),
-        forbidden_types=("vectorRelationship", "geometricConstruction", "graph2d"),
+        forbidden_types=("network", "geometricConstruction", "graph2d"),
     )
     serialized = call_text(call).lower()
     if "column" not in serialized and "\\begin{pmatrix}" not in serialized and "pmatrix" not in serialized:
@@ -1079,51 +1079,12 @@ def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
 
 
 def assert_scalar_product_add_diagram_call(call: dict[str, Any]) -> list[str]:
-    issues = assert_diagram_type_call(
+    return assert_diagram_type_call(
         call,
-        expected_type="geometricConstruction",
+        expected_type="vector2d",
         required_terms=("a", "b", "c", "d", "45"),
-        forbidden_types=("vectorRelationship", "vector2d", "graph2d"),
+        forbidden_types=("network", "geometricConstruction", "graph2d"),
     )
-    graph_config = diagram_graph_config(
-        call.get("mauthArguments") if isinstance(call.get("mauthArguments"), dict) else {}
-    )
-    substance = str(graph_config.get("options", {}).get("substanceSource") or "")
-    if "LabelSegment(" in substance or "\nRay(" in substance:
-        issues.append(
-            "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
-        )
-    if re.search(r"^\s*VectorSegment\s+\S+", substance, re.MULTILINE):
-        issues.append("Penrose Substance should call VectorSegment(OA, O, A), not `VectorSegment OA O A`")
-    if re.search(r"^\s*Segment\s+\S+\s+\S+\s+\S+", substance, re.MULTILINE):
-        issues.append("Penrose Substance should call Segment(AB, A, B), not `Segment AB A B`")
-    if re.search(r"\bLabelsAngle\s*\([^)]*\$", substance):
-        issues.append("Penrose Substance should declare a Label then call LabelsAngle(labelName, A, B, C)")
-    if "SegmentLength(" in substance:
-        issues.append(
-            "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
-        )
-    if "Collinear(" in substance or "Connect(" in substance:
-        issues.append("Penrose Substance should not invent unsupported Collinear or Connect predicates")
-    compact_substance = compact_math_text(substance)
-    if "rightangle(" not in compact_substance and "90" not in compact_substance:
-        issues.append("scalar-product diagram should preserve the right-angle marker")
-    if graph_config.get("type") == "geometricConstruction":
-        try:
-            render_penrose_diagram(
-                {
-                    **graph_config,
-                    "style": graph_config.get("style") or "geometry",
-                    "options": {
-                        "penrosePreset": "geometry",
-                        "scalePercent": 100,
-                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
-                    },
-                }
-            )
-        except Exception as exc:
-            issues.append(f"geometricConstruction graphConfig should render through Penrose: {exc}")
-    return issues
 
 
 def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
@@ -1609,8 +1570,8 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_scalar_product_add_diagram_call,
         "repairFailure": lambda call: wrong_renderer_failure_output(
             call,
-            actual="vectorRelationship",
-            expected="geometricConstruction",
+            actual="network",
+            expected="vector2d",
             reason=("This is a scalar-product ray diagram with magnitudes and angle markers, not a network diagram."),
         ),
         "repairAssert": assert_scalar_product_add_diagram_call,

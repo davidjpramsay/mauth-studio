@@ -185,7 +185,7 @@ SUPPORTED_DIAGRAM_TYPES = [
     "graph3d",
     "image",
     "geometricConstruction",
-    "vectorRelationship",
+    "network",
     "setDiagram",
     "statsChart",
 ]
@@ -312,6 +312,28 @@ def request_text(
     return "\n".join(parts).lower()
 
 
+def latest_user_messages(messages: list[AssistantChatMessage] | None = None) -> list[AssistantChatMessage]:
+    """Return only the current teacher request for intent/tool routing.
+
+    The provider can still see conversational history when needed, but
+    deterministic routing should not let stale prompts from earlier turns
+    override the newest teacher instruction.
+    """
+
+    for message in reversed(messages or []):
+        if message.role == "user" and message.content.strip():
+            return [message]
+    return []
+
+
+def current_request_text(
+    messages: list[AssistantChatMessage] | None = None,
+    tool_outputs: list[AssistantToolOutput] | None = None,
+    attachments: list[AssistantAttachment] | None = None,
+) -> str:
+    return request_text(latest_user_messages(messages), tool_outputs, attachments)
+
+
 def tool_output_target_names(tool_outputs: list[AssistantToolOutput] | None = None) -> set[str]:
     names: set[str] = set()
     for tool_output in tool_outputs or []:
@@ -402,7 +424,7 @@ def brain_files_for_request(
     tool_outputs: list[AssistantToolOutput] | None = None,
     attachments: list[AssistantAttachment] | None = None,
 ) -> list[str]:
-    text = request_text(messages, tool_outputs, attachments)
+    text = current_request_text(messages, tool_outputs, attachments)
     files = ["index.json"]
 
     def include(file_name: str) -> None:
@@ -530,14 +552,15 @@ def brain_selection_input(
     document_summary: dict[str, Any] | None,
     attachments: list[AssistantAttachment] | None = None,
 ) -> list[dict[str, Any]]:
-    compact_summary = compact_document_summary(document_summary, messages)
+    current_messages = latest_user_messages(messages)
+    compact_summary = compact_document_summary(document_summary, current_messages)
     summary_limit = min(assistant_document_context_limit(), 2500)
     summary_text = (
         json.dumps(compact_summary, ensure_ascii=False)[:summary_limit]
         if compact_summary and summary_limit > 0
         else "No document summary supplied."
     )
-    prompt_text = "\n".join(f"{message.role}: {message.content}" for message in messages or [])
+    prompt_text = "\n".join(f"{message.role}: {message.content}" for message in current_messages)
     return [
         {
             "role": "user",
@@ -720,8 +743,9 @@ def classify_request_intent(
     messages: list[AssistantChatMessage] | None = None,
     attachments: list[AssistantAttachment] | None = None,
 ) -> AssistantRequestIntent:
-    text = request_text(messages)
-    question_numbers = frozenset(question_numbers_from_request(messages))
+    current_messages = latest_user_messages(messages)
+    text = request_text(current_messages)
+    question_numbers = frozenset(question_numbers_from_request(current_messages))
     append_question = asks_to_append_question(text)
     has_source_attachment = bool(attachments)
     source_prompt_mentions_diagram = any(term in text for term in SOURCE_DIAGRAM_REQUEST_TERMS)
@@ -742,7 +766,7 @@ def classify_request_intent(
         if append_question
         else 1
     )
-    require_source_diagram = source_diagram_required_for_replace(messages, attachments)
+    require_source_diagram = source_diagram_required_for_replace(current_messages, attachments)
 
     kind = "general"
     clarification_question: str | None = None
@@ -952,8 +976,9 @@ def focused_tool_hint(
     messages: list[AssistantChatMessage] | None = None,
     attachments: list[AssistantAttachment] | None = None,
 ) -> str:
-    text = request_text(messages)
-    intent = classify_request_intent(compact_summary, messages, attachments)
+    current_messages = latest_user_messages(messages)
+    text = request_text(current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, attachments)
     if intent.kind == "clarify" and intent.clarification_question:
         return (
             "Focused tool routing hint: this request is ambiguous. Do not call a Mauth editing tool yet. "
@@ -968,7 +993,7 @@ def focused_tool_hint(
     asks_for_solution = intent.asks_for_solution
     asks_for_whole_solution_key = intent.asks_for_whole_solution_key
     asks_for_layout_check = intent.asks_for_layout_check
-    question_numbers = question_numbers_from_request(messages)
+    question_numbers = question_numbers_from_request(current_messages)
     questions = compact_summary.get("questions") if isinstance(compact_summary, dict) else None
     selected_question: dict[str, Any] | None = None
     if isinstance(questions, list):
@@ -1088,7 +1113,7 @@ def source_diagram_required_for_replace(
 ) -> bool:
     if not attachments:
         return False
-    text = request_text(messages)
+    text = request_text(latest_user_messages(messages))
     asks_to_write_question = asks_to_author_question(text)
     if not asks_to_write_question:
         return False
@@ -1953,9 +1978,10 @@ def assistant_tool_definitions(
     attachments: list[AssistantAttachment] | None = None,
     document_summary: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    text = request_text(messages, tool_outputs)
-    compact_summary = compact_document_summary(document_summary, messages)
-    intent = classify_request_intent(compact_summary, messages, attachments)
+    current_messages = latest_user_messages(messages)
+    text = request_text(current_messages, tool_outputs)
+    compact_summary = compact_document_summary(document_summary, current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, attachments)
     repair_targets = tool_output_target_names(tool_outputs)
     has_specific_question = intent.has_specific_question
     asks_for_diagram = intent.asks_for_diagram
@@ -2115,15 +2141,16 @@ def assistant_instructions(
     selected_brain_files: list[str] | None = None,
     attachments: list[AssistantAttachment] | None = None,
 ) -> str:
-    compact_summary = compact_document_summary(document_summary, messages)
+    current_messages = latest_user_messages(messages)
+    compact_summary = compact_document_summary(document_summary, current_messages)
     summary_limit = assistant_document_context_limit()
     summary_text = (
         json.dumps(compact_summary, ensure_ascii=False)[:summary_limit]
         if compact_summary and summary_limit > 0
         else "No document summary supplied."
     )
-    brain_text = assistant_brain_context(messages, tool_outputs, selected_brain_files, attachments)
-    tool_hint = focused_tool_hint(compact_summary, messages, attachments)
+    brain_text = assistant_brain_context(current_messages, tool_outputs, selected_brain_files, attachments)
+    tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
     attachment_lines = [
         f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
         for attachment in attachments or []
@@ -2159,7 +2186,7 @@ Tool-call contract:
 - In mauth_question_upsert, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
 - For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). Every predicate call must use parentheses and commas, for example `VectorSegment(OA, O, A)`; never write declaration-like predicate syntax such as `VectorSegment OA O A`. To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a segment or vector, use `Segment(name, A, B)` or `VectorSegment(name, A, B)`, not `Connect(...)`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To show collinearity, first declare the line with `Line lineName`, then use `LineThrough(lineName, A, B)` plus `On(P, lineName)` only when incidence is essential; do not invent `Collinear(...)`. To label an angle, always declare a label such as `Label angleCD $45^\\circ$`, then call `LabelsAngle(angleCD, C, O, D)`; never put raw TeX inside `LabelsAngle(...)` and never use a four-argument raw-label form. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
-- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use diagram.graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false. This preserves source ray directions and avoids Penrose auto-layout moving the geometry. Use metadata.vector2d.vectors for each labelled ray with common start [0,0], source-faithful numeric components/directions, labelStyle:"custom", and labels such as "\\mathbf{{a}}". Use metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}" and metadata.vector2d.angleMarkers for right-angle markers and labels such as "45^\\circ". Do not use vectorRelationship for these; vectorRelationship is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
+- Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use diagram.graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false. This preserves source ray directions and avoids Penrose auto-layout moving the geometry. Use metadata.vector2d.vectors for each labelled ray with common start [0,0], source-faithful numeric components/directions, labelStyle:"custom", and labels such as "\\mathbf{{a}}". Use metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}" and metadata.vector2d.angleMarkers for right-angle markers and labels such as "45^\\circ". Do not use network for these; network is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_write_solutions_for_questions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.
 - For whole-test solution-key requests, use mauth_write_all_solutions after you have enough question text for every marked question, part, and subpart. It must include payload coverage for every marked scope, preserve diagrams, size studentSpaceLines generously, and use hidden [[marks:n]] annotations whose totals match each scope. After it succeeds, call mauth_check_document_layout with mode "solutions" and repair any returned solution-space or hidden-mark warnings before saying the solution key is complete.
@@ -2357,9 +2384,14 @@ def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dic
 def input_items(request: AssistantChatRequest) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     attachments = request.attachments or []
-    user_message_indexes = [index for index, message in enumerate(request.messages) if message.role == "user"]
+    request_messages = (
+        request.messages
+        if request.previousResponseId or request.toolOutputs
+        else latest_user_messages(request.messages) or request.messages
+    )
+    user_message_indexes = [index for index, message in enumerate(request_messages) if message.role == "user"]
     attachment_message_index = user_message_indexes[-1] if user_message_indexes else None
-    for index, message in enumerate(request.messages):
+    for index, message in enumerate(request_messages):
         if attachments and index == attachment_message_index:
             content = [
                 {"type": "input_text", "text": message.content or "Use the attached file(s)."},
@@ -2576,14 +2608,15 @@ def direct_clarification_response(model: str, question: str) -> dict[str, Any]:
 def should_use_direct_layout_check(request: AssistantChatRequest) -> bool:
     if request.previousResponseId or request.toolOutputs or request.attachments:
         return False
-    return asks_for_layout_check_text(request_text(request.messages))
+    return asks_for_layout_check_text(current_request_text(request.messages))
 
 
 def direct_clarification_question(request: AssistantChatRequest) -> str | None:
     if request.previousResponseId or request.toolOutputs:
         return None
-    compact_summary = compact_document_summary(request.documentSummary, request.messages)
-    intent = classify_request_intent(compact_summary, request.messages, request.attachments)
+    current_messages = latest_user_messages(request.messages)
+    compact_summary = compact_document_summary(request.documentSummary, current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, request.attachments)
     if intent.kind == "clarify" and intent.clarification_question:
         return intent.clarification_question
     return None

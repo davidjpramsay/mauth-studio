@@ -69,7 +69,7 @@ import { StatsChartEditor } from "@/components/editor/StatsChartEditor";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { Vector2DGraphEditor } from "@/components/editor/Vector2DGraphEditor";
-import { VectorRelationshipEditor } from "@/components/editor/VectorRelationshipEditor";
+import { NetworkDiagramEditor } from "@/components/editor/NetworkDiagramEditor";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
@@ -171,7 +171,7 @@ import {
 } from "@/lib/diagramPenrose";
 import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance } from "@/lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
-import { DEFAULT_VECTOR_RELATIONSHIP_DATA } from "@/lib/diagramVectorRelationship";
+import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { cn } from "@/lib/utils";
 
 const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
@@ -460,13 +460,13 @@ const DIAGRAM_TYPES = [
   { value: "graph3d", label: "3D graph" },
   { value: "image", label: "Image" },
   { value: "geometricConstruction", label: "Geometric construction" },
-  { value: "vectorRelationship", label: "Network" },
+  { value: "network", label: "Network" },
   { value: "setDiagram", label: "Set diagram" },
   { value: "statsChart", label: "Statistics chart" },
 ];
 const DIAGRAM_TYPE_GROUPS = [
   { label: "Coordinate", values: ["graph2d", "vector2d", "graph3d"] },
-  { label: "Construction", values: ["geometricConstruction", "vectorRelationship", "setDiagram"] },
+  { label: "Construction", values: ["geometricConstruction", "network", "setDiagram"] },
   { label: "Statistics", values: ["statsChart"] },
   { label: "Media", values: ["image"] },
 ];
@@ -1204,7 +1204,7 @@ function normalizeDiagramType(type?: string | null) {
 }
 
 function isPenroseDiagramType(type?: string | null) {
-  return type === "geometricConstruction" || type === "vectorRelationship" || type === "setDiagram";
+  return type === "geometricConstruction" || type === "network" || type === "setDiagram";
 }
 
 function defaultPenrosePresetForType(type?: string | null) {
@@ -1214,7 +1214,7 @@ function defaultPenrosePresetForType(type?: string | null) {
 function defaultPenroseDataForType(type?: string | null) {
   const normalizedType = normalizeDiagramType(type);
   if (normalizedType === "setDiagram") return DEFAULT_SET_DATA;
-  if (normalizedType === "vectorRelationship") return DEFAULT_VECTOR_RELATIONSHIP_DATA;
+  if (normalizedType === "network") return DEFAULT_NETWORK_DATA;
   return DEFAULT_GEOMETRIC_DATA;
 }
 
@@ -1289,7 +1289,7 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
 }
 
 function geometricSourceData(config: GraphConfig) {
-  const fallback = normalizeDiagramType(config.type) === "vectorRelationship" ? DEFAULT_VECTOR_RELATIONSHIP_DATA : DEFAULT_GEOMETRIC_DATA;
+  const fallback = normalizeDiagramType(config.type) === "network" ? DEFAULT_NETWORK_DATA : DEFAULT_GEOMETRIC_DATA;
   const data = asRecord(config.data) ?? asRecord(fallback);
   const objects = recordArray(data?.objects);
   const relationships = recordArray(data?.relationships);
@@ -1363,9 +1363,9 @@ function generatedPenroseSubstance(config: GraphConfig) {
   if (normalizeDiagramType(config.type) === "setDiagram") return generatedSetPenroseSubstance(config);
 
   const { data, objects, relationships } = geometricSourceData(config);
-  const isVectorRelationship = normalizeDiagramType(config.type) === "vectorRelationship";
-  const hideVectorPoints = isVectorRelationship && data.hidePoints === true;
-  const hideVectorPointLabels = isVectorRelationship && data.hidePointLabels === true;
+  const isNetworkDiagram = normalizeDiagramType(config.type) === "network";
+  const hideNetworkPoints = isNetworkDiagram && data.hidePoints === true;
+  const hideNetworkPointLabels = isNetworkDiagram && data.hidePointLabels === true;
   const points = new Map<string, Record<string, unknown>>();
   objects.forEach((object, index) => {
     if (object?.type !== "point") return;
@@ -1403,11 +1403,11 @@ function generatedPenroseSubstance(config: GraphConfig) {
   const lines = [`Point ${pointNames.length ? pointNames.join(", ") : "A, B, C"}`];
   pointEntries.forEach((point, index) => {
     const pointName = pointNames[index] ?? `P${index + 1}`;
-    const hideLabel = point.hideLabel === true || point.showLabel === false || hideVectorPointLabels;
+    const hideLabel = point.hideLabel === true || point.showLabel === false || hideNetworkPointLabels;
     lines.push(penroseLabelStatement(pointName, hideLabel ? "\\," : (point.label ?? pointName)));
   });
   pointEntries.forEach((point, index) => {
-    if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideVectorPoints) {
+    if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideNetworkPoints) {
       lines.push(`HidePoint(${pointNames[index] ?? `P${index + 1}`})`);
     }
   });
@@ -3571,7 +3571,7 @@ function DiagramPreview({
     case "image":
       return <UploadedImageDiagram graphConfig={config} />;
     case "geometricConstruction":
-    case "vectorRelationship":
+    case "network":
     case "setDiagram":
       return <GeometricConstructionDiagram graphConfig={config} />;
     case "statsChart":
@@ -6624,7 +6624,7 @@ function diagramConfigSummary(graphConfig: GraphConfig) {
     return `${vectorCount} coordinate vector${vectorCount === 1 ? "" : "s"}`;
   }
   if (config.type === "graph3d") return "3D axes and saved camera view";
-  if (config.type === "vectorRelationship") return "Schematic network";
+  if (config.type === "network") return "Schematic network";
   if (config.type === "setDiagram") return "Two-set Venn";
   if (config.type === "geometricConstruction") return "Penrose construction";
   return diagramTypeLabel(config.type);
@@ -7326,8 +7326,8 @@ function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "p-3",
-      config.type === "vectorRelationship" ? (
-        <VectorRelationshipEditor config={config} substanceSource={penroseSubstanceSource(config)} onChange={patchConfig} />
+      config.type === "network" ? (
+        <NetworkDiagramEditor config={config} substanceSource={penroseSubstanceSource(config)} onChange={patchConfig} />
       ) : config.type === "setDiagram" ? (
         <SetDiagramEditor config={config} onChange={patchConfig} />
       ) : (

@@ -705,7 +705,7 @@ const scenarios: SmokeScenario[] = [
     id: "scalar-product-diagram-wrong-renderer-is-rejected",
     prompt: "Make Question 1 from a screenshot: evaluate scalar products with a four-vector ray diagram.",
     assistantPlan:
-      "The intent validator should reject graph2d/vectorRelationship/geometricConstruction here and ask for a native hidden-axis vector2d ray diagram.",
+      "The intent validator should reject graph2d/network/geometricConstruction here and ask for a native hidden-axis vector2d ray diagram.",
     start: () => documentFixture([question("q1", 5, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 8)])]),
     expectToolFailure: true,
     calls: [
@@ -722,7 +722,7 @@ const scenarios: SmokeScenario[] = [
           ],
           diagram: {
             graphConfig: {
-              type: "vectorRelationship",
+              type: "network",
               data: { nodes: [], edges: [] },
             },
           },

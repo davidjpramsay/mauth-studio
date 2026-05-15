@@ -62,7 +62,7 @@ const DEFAULT_CANVAS_HEIGHT = 300;
 const TEST_TEXT_FONT_SIZE_PX = 13.333;
 const SVG_CROP_PADDING = 24;
 const MIN_CROPPED_DIMENSION = 80;
-const PENROSE_DIAGRAM_TYPES = new Set(["geometricConstruction", "vectorRelationship", "setDiagram"]);
+const PENROSE_DIAGRAM_TYPES = new Set(["geometricConstruction", "network", "setDiagram"]);
 
 function assertIdentifier(value, label) {
   if (typeof value !== "string" || !IDENTIFIER_RE.test(value)) {
@@ -138,16 +138,16 @@ export function specToSubstance(spec) {
   const points = uniquePoints(spec);
   if (!points.length) throw new Error("A geometricConstruction diagram needs at least one point");
 
-  const isVectorRelationship = spec?.type === "vectorRelationship";
-  const hideVectorPoints = isVectorRelationship && spec?.data?.hidePoints === true;
-  const hideVectorPointLabels = isVectorRelationship && spec?.data?.hidePointLabels === true;
+  const isNetworkDiagram = spec?.type === "network";
+  const hideNetworkPoints = isNetworkDiagram && spec?.data?.hidePoints === true;
+  const hideNetworkPointLabels = isNetworkDiagram && spec?.data?.hidePointLabels === true;
   const lines = [`Point ${points.map((point) => point.name).join(", ")}`];
   points.forEach((point) => {
-    const hideLabel = point.hideLabel === true || point.showLabel === false || hideVectorPointLabels;
+    const hideLabel = point.hideLabel === true || point.showLabel === false || hideNetworkPointLabels;
     lines.push(labelStatement(point.name, hideLabel ? "\\," : (point.label ?? point.name)));
   });
   points.forEach((point) => {
-    if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideVectorPoints) {
+    if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideNetworkPoints) {
       lines.push(`HidePoint(${point.name})`);
     }
   });
@@ -1410,7 +1410,7 @@ function fixedSizeLabelSvg(svg, scalePercent) {
 
 export async function renderGeometricConstructionDiagram(spec) {
   if (!PENROSE_DIAGRAM_TYPES.has(spec?.type)) {
-    throw new Error('Penrose renderer only accepts type "geometricConstruction", "vectorRelationship", or "setDiagram"');
+    throw new Error('Penrose renderer only accepts type "geometricConstruction", "network", or "setDiagram"');
   }
 
   const preset = presetName(spec);

@@ -50,9 +50,9 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
   if (hasNetworkLanguage) {
     return {
       id: "network",
-      expectedType: "vectorRelationship",
+      expectedType: "network",
       label: "network diagram",
-      reason: "network diagrams should use vectorRelationship, which is the Penrose network renderer.",
+      reason: "network diagrams should use network, which is the Penrose network renderer.",
     };
   }
 

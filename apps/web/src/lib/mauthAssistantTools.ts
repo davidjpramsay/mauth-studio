@@ -603,7 +603,7 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
     return summary;
   }
 
-  if (config.type === "setDiagram" || config.type === "graph3d" || config.type === "image" || config.type === "vectorRelationship") {
+  if (config.type === "setDiagram" || config.type === "graph3d" || config.type === "image" || config.type === "network") {
     summary.data = compactPlainRecord(config.data, ["sets", "regions", "nodes", "edges", "src", "caption", "objects", "relationships"]);
     summary.metadata = compactPlainRecord(config.metadata, ["vectors", "labels", "view"]);
   }
@@ -1799,7 +1799,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; do not use top-level type/data/options fields or a config alias.",
-      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, vectorRelationship for networks, and graph3d for 3D.",
+      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",

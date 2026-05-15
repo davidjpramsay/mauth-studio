@@ -66,12 +66,7 @@ const DEFAULT_SET_DATA = {
 };
 
 export function penroseRenderRequest(graphConfig?: GraphConfig | null): DiagramSpec {
-  const type =
-    graphConfig?.type === "setDiagram"
-      ? "setDiagram"
-      : graphConfig?.type === "vectorRelationship"
-        ? "vectorRelationship"
-        : "geometricConstruction";
+  const type = graphConfig?.type === "setDiagram" ? "setDiagram" : graphConfig?.type === "network" ? "network" : "geometricConstruction";
   const preset = penrosePreset(graphConfig);
   return {
     type,

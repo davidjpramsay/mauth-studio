@@ -1008,7 +1008,7 @@ test("rejects obvious diagram renderer mismatches before applying", () => {
       ],
       diagram: {
         graphConfig: {
-          type: "vectorRelationship",
+          type: "network",
           data: { nodes: [], edges: [] },
         },
       },

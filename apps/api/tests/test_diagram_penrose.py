@@ -539,7 +539,7 @@ def test_penrose_vector_relationship_draws_arrows_and_can_hide_endpoints():
     response = client.post(
         "/api/diagram/penrose",
         json={
-            "type": "vectorRelationship",
+            "type": "network",
             "data": {
                 "hidePoints": True,
                 "hidePointLabels": True,
