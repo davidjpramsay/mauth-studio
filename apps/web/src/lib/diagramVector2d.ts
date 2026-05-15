@@ -14,7 +14,20 @@ export type Vector2DControlEntry = {
   labelY?: number;
 };
 
+export type Vector2DAngleMarkerEntry = {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  rightAngle: boolean;
+  radius: number;
+  color: string;
+  labelX?: number;
+  labelY?: number;
+};
+
 export const VECTOR_2D_COLORS = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#7c3aed"];
+export const VECTOR_2D_ANNOTATION_COLOR = "#0f172a";
 
 export const DEFAULT_VECTOR_2D_METADATA = {
   vector2d: {
@@ -157,12 +170,48 @@ export function normalizedVector2DEntries(config: GraphConfig): Vector2DControlE
   }));
 }
 
+export function normalizedVector2DAngleMarkers(config: GraphConfig): Vector2DAngleMarkerEntry[] {
+  const vector2d = vector2dMetadata(config);
+  const rawMarkers = Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : [];
+
+  return rawMarkers
+    .map((entry, index): Vector2DAngleMarkerEntry | null => {
+      const record = asRecord(entry) ?? {};
+      const from = String(record.from ?? record.vectorA ?? "");
+      const to = String(record.to ?? record.vectorB ?? "");
+      if (!from.trim() || !to.trim()) return null;
+
+      return {
+        id: String(record.id ?? `angle-marker-${index + 1}`),
+        from,
+        to,
+        label: String(record.label ?? ""),
+        rightAngle: record.rightAngle === true || record.kind === "rightAngle" || record.type === "rightAngle",
+        radius: Math.max(0.05, finiteVectorNumber(record.radius, 0.45)),
+        color: String(record.color ?? VECTOR_2D_ANNOTATION_COLOR),
+        labelX: finiteOptionalVectorNumber(record.labelX),
+        labelY: finiteOptionalVectorNumber(record.labelY),
+      };
+    })
+    .filter((entry): entry is Vector2DAngleMarkerEntry => !!entry);
+}
+
 export function vector2dMetadataFromEntries(config: GraphConfig, vectors: Vector2DControlEntry[]) {
   return {
     ...(config.metadata ?? {}),
     vector2d: {
       ...vector2dMetadata(config),
       vectors,
+    },
+  };
+}
+
+export function vector2dMetadataFromAngleMarkers(config: GraphConfig, angleMarkers: Vector2DAngleMarkerEntry[]) {
+  return {
+    ...(config.metadata ?? {}),
+    vector2d: {
+      ...vector2dMetadata(config),
+      angleMarkers,
     },
   };
 }

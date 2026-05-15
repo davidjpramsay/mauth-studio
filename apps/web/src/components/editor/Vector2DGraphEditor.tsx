@@ -5,12 +5,16 @@ import { Button } from "@/components/ui/button";
 import {
   DEFAULT_VECTOR_2D_GRAPH,
   DEFAULT_VECTOR_2D_METADATA,
+  VECTOR_2D_ANNOTATION_COLOR,
   VECTOR_2D_COLORS,
   defaultVector2DName,
+  normalizedVector2DAngleMarkers,
   normalizedVector2DEntries,
   vector2dLabelStyle,
   vector2dMetadata,
+  vector2dMetadataFromAngleMarkers,
   vector2dMetadataFromEntries,
+  type Vector2DAngleMarkerEntry,
   type Vector2DControlEntry,
   type Vector2DLabelStyle,
 } from "@/lib/diagramVector2d";
@@ -123,12 +127,34 @@ type Vector2DGraphEditorProps = {
 
 export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorProps) {
   const vectors = normalizedVector2DEntries(config);
+  const angleMarkers = normalizedVector2DAngleMarkers(config);
   const labelStyle = vector2dLabelStyle(vector2dMetadata(config).labelStyle);
+  const vectorReferenceOptions = vectors.flatMap((vector) => {
+    const options = [{ value: vector.id, label: vector.name && vector.name !== vector.id ? `${vector.name} (${vector.id})` : vector.id }];
+    if (vector.name && vector.name !== vector.id) options.push({ value: vector.name, label: `${vector.name} (name)` });
+    return options;
+  });
+  const vectorReferenceValues = new Set(vectorReferenceOptions.map((option) => option.value));
+  for (const marker of angleMarkers) {
+    if (marker.from && !vectorReferenceValues.has(marker.from)) {
+      vectorReferenceOptions.push({ value: marker.from, label: `${marker.from} (stored)` });
+      vectorReferenceValues.add(marker.from);
+    }
+    if (marker.to && !vectorReferenceValues.has(marker.to)) {
+      vectorReferenceOptions.push({ value: marker.to, label: `${marker.to} (stored)` });
+      vectorReferenceValues.add(marker.to);
+    }
+  }
   const patchVectors = (nextVectors: Vector2DControlEntry[]) => {
     onChange({
       functions: [],
       features: [],
       metadata: vector2dMetadataFromEntries(config, nextVectors),
+    });
+  };
+  const patchAngleMarkers = (nextMarkers: Vector2DAngleMarkerEntry[]) => {
+    onChange({
+      metadata: vector2dMetadataFromAngleMarkers(config, nextMarkers),
     });
   };
   const updateLabelStyle = (nextLabelStyle: Vector2DLabelStyle) => {
@@ -195,6 +221,37 @@ export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorPro
   };
   const resetLabelPosition = (vectorIndex: number) => {
     updateVector(vectorIndex, { labelX: undefined, labelY: undefined });
+  };
+  const updateAngleMarker = (markerIndex: number, patch: Partial<Vector2DAngleMarkerEntry>) => {
+    patchAngleMarkers(angleMarkers.map((marker, index) => (index === markerIndex ? { ...marker, ...patch } : marker)));
+  };
+  const addAngleMarker = () => {
+    const from = vectors[0]?.id;
+    const to = vectors[1]?.id ?? vectors[0]?.id;
+    if (!from || !to) return;
+    let nextIndex = angleMarkers.length + 1;
+    while (angleMarkers.some((marker) => marker.id === `angle-marker-${nextIndex}`)) nextIndex += 1;
+    patchAngleMarkers([
+      ...angleMarkers,
+      {
+        id: `angle-marker-${nextIndex}`,
+        from,
+        to,
+        label: "",
+        rightAngle: false,
+        radius: 0.45,
+        color: VECTOR_2D_ANNOTATION_COLOR,
+      },
+    ]);
+  };
+  const removeAngleMarker = (markerIndex: number) => {
+    patchAngleMarkers(angleMarkers.filter((_, index) => index !== markerIndex));
+  };
+  const updateAngleLabelPosition = (markerIndex: number, axis: 0 | 1, value?: number) => {
+    updateAngleMarker(markerIndex, axis === 0 ? { labelX: value } : { labelY: value });
+  };
+  const resetAngleLabelPosition = (markerIndex: number) => {
+    updateAngleMarker(markerIndex, { labelX: undefined, labelY: undefined });
   };
 
   return (
@@ -424,6 +481,136 @@ export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorPro
               {vector.name || vector.id} component guides
             </label>
           ))}
+        </div>
+        <div className="mt-2 flex flex-col gap-2 border-t pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Angle markers</div>
+            <Button type="button" variant="outline" size="sm" onClick={addAngleMarker} disabled={vectors.length < 2}>
+              <PlusCircle data-icon="inline-start" />
+              Add marker
+            </Button>
+          </div>
+          {angleMarkers.length ? (
+            <div className="grid grid-cols-1 gap-2">
+              {angleMarkers.map((marker, markerIndex) => (
+                <div key={`${marker.id}-${markerIndex}`} className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(100px,1fr)_minmax(100px,1fr)_120px_40px] md:items-end">
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      From
+                      <select
+                        value={marker.from}
+                        onChange={(event) => updateAngleMarker(markerIndex, { from: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      >
+                        {vectorReferenceOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      To
+                      <select
+                        value={marker.to}
+                        onChange={(event) => updateAngleMarker(markerIndex, { to: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      >
+                        {vectorReferenceOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex h-9 items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-normal md:self-end">
+                      <input
+                        type="checkbox"
+                        checked={marker.rightAngle}
+                        onChange={(event) => updateAngleMarker(markerIndex, { rightAngle: event.target.checked })}
+                      />
+                      Right angle
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Remove angle marker"
+                      aria-label="Remove angle marker"
+                      onClick={() => removeAngleMarker(markerIndex)}
+                      className="size-9"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(140px,1fr)_90px_90px_90px_90px_auto] md:items-end">
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label
+                      <input
+                        value={marker.label}
+                        placeholder={marker.rightAngle ? "optional" : "45^\\circ"}
+                        onChange={(event) => updateAngleMarker(markerIndex, { label: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Radius
+                      <input
+                        type="number"
+                        min={0.05}
+                        step={0.05}
+                        value={numberInputValue(marker.radius)}
+                        onChange={(event) =>
+                          updateAngleMarker(markerIndex, { radius: Math.max(0.05, optionalNumber(event.target.value) ?? 0.45) })
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Colour
+                      <input
+                        type="color"
+                        value={marker.color}
+                        onChange={(event) => updateAngleMarker(markerIndex, { color: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label x
+                      <input
+                        type="number"
+                        value={numberInputValue(marker.labelX)}
+                        onChange={(event) => updateAngleLabelPosition(markerIndex, 0, optionalNumber(event.target.value))}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label y
+                      <input
+                        type="number"
+                        value={numberInputValue(marker.labelY)}
+                        onChange={(event) => updateAngleLabelPosition(markerIndex, 1, optionalNumber(event.target.value))}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="col-span-2 md:col-span-1"
+                      onClick={() => resetAngleLabelPosition(markerIndex)}
+                    >
+                      Reset label
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed bg-muted/10 px-3 py-2 text-sm text-muted-foreground">
+              Add an angle marker to show an angle arc or perpendicular marker between two vectors.
+            </div>
+          )}
         </div>
       </section>
     </div>
