@@ -9677,6 +9677,12 @@ export default function App() {
     );
   }
 
+  function editorPageBreakCanMoveTo(source: EditorPageBreakTarget, destination: EditorPageBreakTarget | null | undefined) {
+    return Boolean(
+      destination && editorPageBreakKey(source) !== editorPageBreakKey(destination) && !editorPageBreakDestinationHasBreak(destination),
+    );
+  }
+
   function moveEditorPageBreak(source: EditorPageBreakTarget, destination: EditorPageBreakTarget) {
     if (editorPageBreakKey(source) === editorPageBreakKey(destination)) return;
     if (editorPageBreakDestinationHasBreak(destination)) return;
@@ -9686,13 +9692,13 @@ export default function App() {
     ]);
   }
 
-  function orderedPartTargets(question: QuestionBlock): EditorPageBreakTarget[] {
+  function orderedPartTargets(question: QuestionBlock): Extract<EditorPageBreakTarget, { kind: "part" }>[] {
     return orderedQuestionItems(question)
       .filter((item): item is Extract<OrderedQuestionItem, { kind: "part" }> => item.kind === "part")
       .map((item) => ({ kind: "part" as const, questionId: question.id, partId: item.part.id }));
   }
 
-  function orderedSubpartTargets(questionId: string, part: EditorPart): EditorPageBreakTarget[] {
+  function orderedSubpartTargets(questionId: string, part: EditorPart): Extract<EditorPageBreakTarget, { kind: "subpart" }>[] {
     return orderedPartItems(part)
       .filter((item): item is Extract<OrderedPartItem, { kind: "subpart" }> => item.kind === "subpart")
       .map((item) => ({ kind: "subpart" as const, questionId, partId: part.id, subpartId: item.subpart.id }));
@@ -9743,6 +9749,34 @@ export default function App() {
     }
 
     return null;
+  }
+
+  function editorPageBreakDestinationForOrderItem(
+    source: EditorPageBreakTarget,
+    container: SubsectionContainerRef,
+    beforeItem: ContainerOrderItem,
+  ): EditorPageBreakTarget | null {
+    if (source.kind === "part" && container.kind === "question" && beforeItem.kind === "part") {
+      if (source.questionId !== container.questionId) return null;
+      return { kind: "part", questionId: container.questionId, partId: beforeItem.id };
+    }
+
+    if (source.kind === "subpart" && container.kind === "part" && beforeItem.kind === "subpart") {
+      if (source.questionId !== container.questionId || source.partId !== container.partId) return null;
+      return { kind: "subpart", questionId: container.questionId, partId: container.partId, subpartId: beforeItem.id };
+    }
+
+    return null;
+  }
+
+  function editorPageBreakDestinationForContainer(
+    source: EditorPageBreakTarget,
+    container: SubsectionContainerRef,
+    placement: "start" | "end",
+  ): EditorPageBreakTarget | null {
+    if (placement !== "start") return null;
+    const firstItem = firstOrderItemInContainer(questionsRef.current, container);
+    return firstItem ? editorPageBreakDestinationForOrderItem(source, container, firstItem) : null;
   }
 
   function moveEditorPageBreakByKeyboard(target: EditorPageBreakTarget, direction: MoveDirection) {
@@ -9802,6 +9836,86 @@ export default function App() {
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
     setDragOverEditorPageBreak({ targetKey: editorPageBreakTargetKey(target), placement, destination });
+    return true;
+  }
+
+  function handleEditorPageBreakContainerDropZoneDragOver(
+    event: DragEvent<HTMLElement>,
+    container: SubsectionContainerRef,
+    placement: "start" | "end",
+  ) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const destination = editorPageBreakDestinationForContainer(source, container, placement);
+    const targetKey = containerDropKey(container, placement);
+    if (!destination || !editorPageBreakCanMoveTo(source, destination)) {
+      setDragOverEditorPageBreak((current) => (current?.targetKey === targetKey ? null : current));
+      return true;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverEditorPageBreak({ targetKey, placement: "before", destination });
+    return true;
+  }
+
+  function handleEditorPageBreakContainerDropZoneDrop(
+    event: DragEvent<HTMLElement>,
+    container: SubsectionContainerRef,
+    placement: "start" | "end",
+  ) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const targetKey = containerDropKey(container, placement);
+    const destination =
+      dragOverEditorPageBreak?.targetKey === targetKey
+        ? dragOverEditorPageBreak.destination
+        : editorPageBreakDestinationForContainer(source, container, placement);
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+    if (destination && editorPageBreakCanMoveTo(source, destination)) moveEditorPageBreak(source, destination);
+    return true;
+  }
+
+  function handleEditorPageBreakItemDropZoneDragOver(
+    event: DragEvent<HTMLElement>,
+    container: SubsectionContainerRef,
+    beforeItem: ContainerOrderItem,
+  ) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const destination = editorPageBreakDestinationForOrderItem(source, container, beforeItem);
+    const targetKey = itemDropKey(container, beforeItem);
+    if (!destination || !editorPageBreakCanMoveTo(source, destination)) {
+      setDragOverEditorPageBreak((current) => (current?.targetKey === targetKey ? null : current));
+      return true;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverEditorPageBreak({ targetKey, placement: "before", destination });
+    return true;
+  }
+
+  function handleEditorPageBreakItemDropZoneDrop(
+    event: DragEvent<HTMLElement>,
+    container: SubsectionContainerRef,
+    beforeItem: ContainerOrderItem,
+  ) {
+    const source = readEditorPageBreakDrag(event);
+    if (!source) return false;
+    const targetKey = itemDropKey(container, beforeItem);
+    const destination =
+      dragOverEditorPageBreak?.targetKey === targetKey
+        ? dragOverEditorPageBreak.destination
+        : editorPageBreakDestinationForOrderItem(source, container, beforeItem);
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+    if (destination && editorPageBreakCanMoveTo(source, destination)) moveEditorPageBreak(source, destination);
     return true;
   }
 
@@ -10124,6 +10238,7 @@ export default function App() {
   }
 
   function handleContainerDropZoneDragOver(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, placement: "start" | "end") {
+    if (handleEditorPageBreakContainerDropZoneDragOver(event, container, placement)) return;
     const active = readSubsectionDrag(event);
     const intent = active ? dropIntentForContainer(active, container, questionsRef.current, placement) : null;
     if (!active || !intent) return;
@@ -10142,9 +10257,11 @@ export default function App() {
     if (nextTarget && event.currentTarget.contains(nextTarget)) return;
     const targetKey = containerDropKey(container, placement);
     setDragOverSubsection((current) => (current?.targetKey === targetKey ? null : current));
+    setDragOverEditorPageBreak((current) => (current?.targetKey === targetKey ? null : current));
   }
 
   function handleContainerDropZoneDrop(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, placement: "start" | "end") {
+    if (handleEditorPageBreakContainerDropZoneDrop(event, container, placement)) return;
     const active = readSubsectionDrag(event);
     const targetKey = containerDropKey(container, placement);
     const intent =
@@ -10167,6 +10284,7 @@ export default function App() {
   }
 
   function handleItemDropZoneDragOver(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+    if (handleEditorPageBreakItemDropZoneDragOver(event, container, beforeItem)) return;
     const active = readSubsectionDrag(event);
     const intent = active ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current) : null;
     if (!active || !intent) return;
@@ -10185,9 +10303,11 @@ export default function App() {
     if (nextTarget && event.currentTarget.contains(nextTarget)) return;
     const targetKey = itemDropKey(container, beforeItem);
     setDragOverSubsection((current) => (current?.targetKey === targetKey ? null : current));
+    setDragOverEditorPageBreak((current) => (current?.targetKey === targetKey ? null : current));
   }
 
   function handleItemDropZoneDrop(event: DragEvent<HTMLElement>, container: SubsectionContainerRef, beforeItem: ContainerOrderItem) {
+    if (handleEditorPageBreakItemDropZoneDrop(event, container, beforeItem)) return;
     const active = readSubsectionDrag(event);
     const targetKey = itemDropKey(container, beforeItem);
     const intent =
@@ -10230,12 +10350,21 @@ export default function App() {
 
   function containerDropZone(container: SubsectionContainerRef, placement: "start" | "end", visible = true) {
     const targetKey = containerDropKey(container, placement);
-    const active = dragOverSubsection?.targetKey === targetKey;
-    const canDrop = Boolean(
+    const active = dragOverSubsection?.targetKey === targetKey || dragOverEditorPageBreak?.targetKey === targetKey;
+    const subsectionCanDrop = Boolean(
       visible && draggedSubsection && dropIntentForContainer(draggedSubsection, container, questionsRef.current, placement),
     );
+    const pageBreakCanDrop = Boolean(
+      visible &&
+      draggedEditorPageBreak &&
+      editorPageBreakCanMoveTo(
+        draggedEditorPageBreak,
+        editorPageBreakDestinationForContainer(draggedEditorPageBreak, container, placement),
+      ),
+    );
+    const canDrop = subsectionCanDrop || pageBreakCanDrop;
     if (!canDrop) return null;
-    const label = containerDropZoneLabel(container, placement);
+    const label = pageBreakCanDrop && !subsectionCanDrop ? "Drop page break here" : containerDropZoneLabel(container, placement);
     return (
       <div
         key={targetKey}
@@ -10261,12 +10390,21 @@ export default function App() {
 
   function itemDropZone(container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible = true) {
     const targetKey = itemDropKey(container, beforeItem);
-    const active = dragOverSubsection?.targetKey === targetKey;
-    const canDrop = Boolean(
+    const active = dragOverSubsection?.targetKey === targetKey || dragOverEditorPageBreak?.targetKey === targetKey;
+    const subsectionCanDrop = Boolean(
       visible && draggedSubsection && dropIntentBeforeOrderItem(draggedSubsection, container, beforeItem, questionsRef.current),
     );
+    const pageBreakCanDrop = Boolean(
+      visible &&
+      draggedEditorPageBreak &&
+      editorPageBreakCanMoveTo(
+        draggedEditorPageBreak,
+        editorPageBreakDestinationForOrderItem(draggedEditorPageBreak, container, beforeItem),
+      ),
+    );
+    const canDrop = subsectionCanDrop || pageBreakCanDrop;
     if (!canDrop) return null;
-    const label = itemDropZoneLabel(beforeItem);
+    const label = pageBreakCanDrop && !subsectionCanDrop ? "Drop page break here" : itemDropZoneLabel(beforeItem);
     return (
       <div
         key={targetKey}
@@ -10410,12 +10548,41 @@ export default function App() {
     applyEditorAction({ type: "part.add", questionId: question.id, part });
   }
 
+  function firstInsertableEditorPageBreakTarget(targets: EditorPageBreakTarget[], preferredAfterIndex = -1) {
+    const afterPreferred = preferredAfterIndex >= 0 ? targets.slice(preferredAfterIndex + 1) : [];
+    return (
+      afterPreferred.find((target) => !editorPageBreakDestinationHasBreak(target)) ??
+      targets.find((target) => !editorPageBreakDestinationHasBreak(target))
+    );
+  }
+
+  function partPageBreakInsertTarget(question: QuestionBlock) {
+    const targets = orderedPartTargets(question);
+    const active = parseScrollAnchor(activeTocItemId);
+    const preferredAfterIndex =
+      active.questionId === question.id && active.partId ? targets.findIndex((target) => target.partId === active.partId) : -1;
+    const target = firstInsertableEditorPageBreakTarget(targets, preferredAfterIndex);
+    return target?.kind === "part" ? target : null;
+  }
+
+  function subpartPageBreakInsertTarget(questionId: string, part: EditorPart) {
+    const targets = orderedSubpartTargets(questionId, part);
+    const active = parseScrollAnchor(activeTocItemId);
+    const preferredAfterIndex =
+      active.questionId === questionId && active.partId === part.id && active.subpartId
+        ? targets.findIndex((target) => target.subpartId === active.subpartId)
+        : -1;
+    const target = firstInsertableEditorPageBreakTarget(targets, preferredAfterIndex);
+    return target?.kind === "subpart" ? target : null;
+  }
+
   function addPartPageBreak(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const part = { ...createPart(), pageBreakBefore: true };
-    applyEditorAction({ type: "part.add", questionId: question.id, part });
-    revealEditorAnchor(partScrollAnchor(question.id, part.id));
+    const target = partPageBreakInsertTarget(question);
+    if (!target) return;
+    setEditorPageBreak(target, true);
+    revealEditorAnchor(partScrollAnchor(question.id, target.partId));
   }
 
   function removePart(questionId: string, partId: string) {
@@ -10442,10 +10609,10 @@ export default function App() {
   }
 
   function addSubpartPageBreak(questionId: string, part: EditorPart) {
-    const subparts = part.subparts ?? [];
-    const subpart = { ...createSubpart(subparts.length), pageBreakBefore: true };
-    applyEditorAction({ type: "subpart.add", questionId, partId: part.id, subpart });
-    revealEditorAnchor(subpartScrollAnchor(questionId, part.id, subpart.id));
+    const target = subpartPageBreakInsertTarget(questionId, part);
+    if (!target) return;
+    setEditorPageBreak(target, true);
+    revealEditorAnchor(subpartScrollAnchor(questionId, part.id, target.subpartId));
   }
 
   function removeSubpart(questionId: string, part: EditorPart, subpartId: string) {
@@ -11135,6 +11302,7 @@ export default function App() {
     const partActive = isActiveEditorAnchor(partAnchor);
     const partUsesSolutionSpace = !subparts.length && safeMarkValue(part.marks) > 0;
     const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
+    const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
     const partInsertAction = {
       label: "Subpart",
       tooltip: "Add a roman-numbered item, such as (i), inside this part",
@@ -11143,8 +11311,11 @@ export default function App() {
     };
     const partPageBreakInsertAction = {
       label: "Page break",
-      tooltip: "Add a page-break row before a new subpart",
+      tooltip: nextSubpartPageBreakTarget
+        ? "Add a page-break row before an existing subpart"
+        : "Add a subpart first, then insert a page-break row before it",
       icon: <FileText className="size-4" aria-hidden="true" />,
+      disabled: !nextSubpartPageBreakTarget,
       onClick: () => addSubpartPageBreak(question.id, part),
     };
     const partSolutionSlotAction = {
@@ -11209,7 +11380,7 @@ export default function App() {
               {partItems.map((item, partItemIndex) => {
                 const beforeItem: ContainerOrderItem =
                   item.kind === "block" ? { kind: "block", id: item.id } : { kind: "subpart", id: item.id };
-                const beforeDropZone = itemDropZone(partContainer, beforeItem, Boolean(draggedSubsection));
+                const beforeDropZone = itemDropZone(partContainer, beforeItem, Boolean(draggedSubsection || draggedEditorPageBreak));
 
                 if (item.kind === "block") {
                   return (
@@ -11238,7 +11409,7 @@ export default function App() {
                 );
               })}
             </div>
-            {containerDropZone(partContainer, "end", Boolean(draggedSubsection))}
+            {containerDropZone(partContainer, "end", Boolean(draggedSubsection || draggedEditorPageBreak))}
             <ContentInsertionActions
               buttonLabel="Add"
               centered
@@ -11540,6 +11711,7 @@ export default function App() {
                         const questionAnchor = questionScrollAnchor(question.id);
                         const questionActive = isActiveEditorAnchor(questionAnchor);
                         const questionUsesSolutionSpace = !hasParts && safeMarkValue(question.marks) > 0;
+                        const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
                         const questionSolutionSlotAction = {
                           label: "Solution slot",
                           tooltip: "Add paired answer space and solution text",
@@ -11611,23 +11783,43 @@ export default function App() {
                               </div>
 
                               {questionItems.length
-                                ? containerDropZone({ kind: "question", questionId: question.id }, "start", Boolean(draggedSubsection))
+                                ? containerDropZone(
+                                    { kind: "question", questionId: question.id },
+                                    "start",
+                                    Boolean(draggedSubsection || draggedEditorPageBreak),
+                                  )
                                 : null}
                               <div className="flex flex-col gap-3">
-                                {questionItems.map((item, itemIndex) =>
-                                  item.kind === "block" ? (
-                                    renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)
+                                {questionItems.map((item, itemIndex) => {
+                                  const beforeItem: ContainerOrderItem =
+                                    item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
+                                  const beforeDropZone = itemDropZone(
+                                    { kind: "question", questionId: question.id },
+                                    beforeItem,
+                                    Boolean(draggedSubsection || draggedEditorPageBreak),
+                                  );
+
+                                  return item.kind === "block" ? (
+                                    <Fragment key={item.id}>
+                                      {beforeDropZone}
+                                      {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)}
+                                    </Fragment>
                                   ) : (
                                     <Fragment key={item.id}>
+                                      {beforeDropZone}
                                       {item.part.pageBreakBefore
                                         ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
                                         : null}
                                       {renderPartPanel(question, item.part)}
                                     </Fragment>
-                                  ),
-                                )}
+                                  );
+                                })}
                               </div>
-                              {containerDropZone({ kind: "question", questionId: question.id }, "end", Boolean(draggedSubsection))}
+                              {containerDropZone(
+                                { kind: "question", questionId: question.id },
+                                "end",
+                                Boolean(draggedSubsection || draggedEditorPageBreak),
+                              )}
                               <ContentInsertionActions
                                 buttonLabel="Add"
                                 centered
@@ -11655,8 +11847,11 @@ export default function App() {
                                   },
                                   {
                                     label: "Page break",
-                                    tooltip: "Add a page-break row before a new part",
+                                    tooltip: nextPartPageBreakTarget
+                                      ? "Add a page-break row before an existing part"
+                                      : "Add a part first, then insert a page-break row before it",
                                     icon: <FileText className="size-4" aria-hidden="true" />,
+                                    disabled: !nextPartPageBreakTarget,
                                     onClick: () => addPartPageBreak(question.id),
                                   },
                                 ]}
