@@ -8068,7 +8068,7 @@ export default function App() {
       window.cancelAnimationFrame(secondFrame);
       window.cancelAnimationFrame(retryFrame);
     };
-  }, [showEditor, showPreview, previewFitScale, questions]);
+  }, [activeQuestionId, activeTocItemId, editorRevealRequest?.sequence, showEditor, showPreview, previewFitScale, questions]);
 
   function currentEditorSnapshot(): EditorHistorySnapshot {
     return {
@@ -9439,7 +9439,7 @@ export default function App() {
   }
 
   function openEditorFromPreviewAnchor(anchor: string) {
-    if (!anchor || paneMode !== "split") return;
+    if (!anchor || !showEditor) return;
     const tocItem = tocItemForPreviewAnchor(anchor);
     const editorAnchor = tocItem?.editorAnchor ?? anchor;
     const activeAnchor = tocItem?.id ?? editorAnchor;
@@ -9450,7 +9450,7 @@ export default function App() {
   }
 
   function handlePreviewPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (paneMode !== "split" || event.button !== 0) {
+    if (!showEditor || event.button !== 0) {
       previewEditClickStartRef.current = null;
       return;
     }
@@ -9464,7 +9464,7 @@ export default function App() {
   function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
     const start = previewEditClickStartRef.current;
     previewEditClickStartRef.current = null;
-    if (paneMode !== "split" || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (!showEditor || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (!start) return;
 
     const movement = Math.hypot(event.clientX - start.x, event.clientY - start.y);
