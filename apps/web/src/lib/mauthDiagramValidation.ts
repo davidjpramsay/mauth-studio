@@ -494,10 +494,49 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
   });
 }
 
+function validateSlopeFieldPoint(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a slope-field point object", "{ x, y, slope? }");
+    return;
+  }
+  requiredNumber(value, "x", path, issues);
+  requiredNumber(value, "y", path, issues);
+  optionalNumber(value, "slope", path, issues);
+  optionalString(value, "label", path, issues);
+  optionalString(value, "color", path, issues);
+  optionalBoolean(value, "show", path, issues);
+}
+
+function validateSlopeField(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const data = optionalRecord(config, "data", path, issues);
+  if (!data || !hasOwn(data, "slopeField")) return;
+  const slopeField = optionalRecord(data, "slopeField", `${path}.data`, issues);
+  if (!slopeField) return;
+  requiredString(slopeField, "expression", `${path}.data.slopeField`, issues);
+  numberArray(slopeField, "xValues", `${path}.data.slopeField`, issues);
+  numberArray(slopeField, "yValues", `${path}.data.slopeField`, issues);
+  optionalNumberPair(slopeField, "xRange", `${path}.data.slopeField`, issues);
+  optionalNumberPair(slopeField, "yRange", `${path}.data.slopeField`, issues);
+  optionalNumber(slopeField, "xStep", `${path}.data.slopeField`, issues, { positive: true });
+  optionalNumber(slopeField, "yStep", `${path}.data.slopeField`, issues, { positive: true });
+  optionalNumber(slopeField, "segmentLength", `${path}.data.slopeField`, issues, { positive: true });
+  optionalNumber(slopeField, "strokeWidth", `${path}.data.slopeField`, issues, { positive: true });
+  optionalString(slopeField, "color", `${path}.data.slopeField`, issues);
+  optionalBoolean(slopeField, "show", `${path}.data.slopeField`, issues);
+
+  const points = optionalArray(slopeField, "points", `${path}.data.slopeField`, issues);
+  points?.forEach((point, index) => validateSlopeFieldPoint(point, `${path}.data.slopeField.points[${index}]`, issues));
+  const highlightedPoints = optionalArray(slopeField, "highlightedPoints", `${path}.data.slopeField`, issues);
+  highlightedPoints?.forEach((point, index) =>
+    validateSlopeFieldPoint(point, `${path}.data.slopeField.highlightedPoints[${index}]`, issues),
+  );
+}
+
 function validateCoordinateGraph(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   validateCommonGraphConfig(config, path, issues);
   validateGraphFunctions(config, path, issues);
   validateGraphFeatures(config, path, issues);
+  validateSlopeField(config, path, issues);
 }
 
 function validateVector2D(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {

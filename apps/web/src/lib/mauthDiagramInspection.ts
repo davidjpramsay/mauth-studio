@@ -160,9 +160,34 @@ function graphExpressionLooksLinear(expression: string) {
 function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
   if (config.type !== "graph2d") return [];
   const features = recordArray(config.features);
+  const data = graphData(config);
   const warnings: MauthDiagramInspectionWarning[] = [];
   const visibleExpressions = visibleGraphFunctionExpressions(config);
   const expectedStraightLineCount = straightLineGraphExpectation(contextText);
+
+  if (/\bslope\s+field\b|\bdirection\s+field\b|\\frac\{\s*dy\s*\}\{\s*dx\s*\}|\bdy\s*\/\s*dx\b/i.test(contextText)) {
+    const slopeField = isRecord(data.slopeField) ? data.slopeField : {};
+    const hasSlopeFieldExpression = typeof slopeField.expression === "string" && slopeField.expression.trim();
+    if (!hasSlopeFieldExpression) {
+      warnings.push({
+        code: "graph2d-slope-field-missing",
+        severity: "warning",
+        message: "The prompt/source describes a slope field, but graph2d.data.slopeField is missing.",
+        path: "graphConfig.data.slopeField",
+      });
+    }
+    const asksForPointSlope = /\bcalculate\s+and\s+draw\b|\bdraw\s+the\s+slope\s+field\s+at\b|\bat\s+the\s+point\s*\(/i.test(contextText);
+    const highlightedPoints = recordArray(slopeField.highlightedPoints);
+    const points = recordArray(slopeField.points);
+    if (asksForPointSlope && highlightedPoints.length + points.length === 0) {
+      warnings.push({
+        code: "graph2d-slope-field-point-missing",
+        severity: "warning",
+        message: "The source asks for a slope-field segment at a specific point, but no explicit/highlighted point is encoded.",
+        path: "graphConfig.data.slopeField.highlightedPoints",
+      });
+    }
+  }
 
   if (!hasVisibleGraphFunction(config) && explicitFunctionGraphIntent(contextText)) {
     warnings.push({
@@ -616,6 +641,8 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "image-diagram-missing-source" ||
     warning.code === "graph2d-straight-line-functions-missing" ||
     warning.code === "graph2d-straight-line-mismatch" ||
+    warning.code === "graph2d-slope-field-missing" ||
+    warning.code === "graph2d-slope-field-point-missing" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||

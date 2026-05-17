@@ -318,6 +318,35 @@ def sample_methods_earthquake_screenshot_with_key() -> list[AssistantAttachment]
     ]
 
 
+def sample_specialist_slope_field_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q10-slope-field-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q10_slope_field_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q10-slope-field-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q10_slope_field_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q10-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=73,
+            end_line=156,
+        ),
+    ]
+
+
 def sample_specialist_argand_screenshot_with_key() -> list[AssistantAttachment]:
     return [
         attachment_png_from_path(
@@ -1032,6 +1061,11 @@ def finite_number(value: Any) -> float | None:
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def approximately(value: Any, expected: float, tolerance: float = 1e-6) -> bool:
+    number = finite_number(value)
+    return number is not None and abs(number - expected) <= tolerance
 
 
 def vector_ray_angle(entry: dict[str, Any]) -> float | None:
@@ -1760,6 +1794,107 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    compact_serialized = compact_math_text(serialized)
+    for term in ("slope field", "solution curve", "0.5", "-1"):
+        if term not in serialized:
+            issues.append(f"slope-field source conversion should preserve {term!r}")
+    if "dy/dx" not in compact_serialized and "dydx" not in compact_serialized:
+        issues.append("slope-field source conversion should preserve dy/dx notation")
+
+    graph_types = graph_config_types(args)
+    if "graph2d" not in graph_types:
+        issues.append(f"slope-field source diagram should use graph2d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "setDiagram", "network", "graph3d")):
+        issues.append("slope-field source should not use statsChart, setDiagram, network, or graph3d")
+
+    slope_fields: list[dict[str, Any]] = []
+    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    for config in collect_diagram_graph_configs(args):
+        if config.get("type") != "graph2d":
+            continue
+        data = config.get("data")
+        if isinstance(data, dict) and isinstance(data.get("slopeField"), dict):
+            slope_fields.append(data["slopeField"])
+    if not slope_fields:
+        issues.append("slope-field graph2d data should include data.slopeField")
+    else:
+        slope_expression = compact_math_text(str(slope_fields[0].get("expression") or ""))
+        if "x-1" not in slope_expression or ("2*y" not in slope_expression and "2y" not in slope_expression):
+            issues.append("slopeField.expression should encode (x - 1) / (2y)")
+        if not (
+            isinstance(slope_fields[0].get("xValues"), list)
+            and isinstance(slope_fields[0].get("yValues"), list)
+            or isinstance(slope_fields[0].get("xRange"), list)
+            and isinstance(slope_fields[0].get("yRange"), list)
+        ):
+            issues.append("slopeField should include grid x/y values or x/y ranges")
+        highlighted_points = slope_fields[0].get("highlightedPoints")
+        if not (
+            isinstance(highlighted_points, list)
+            and any(
+                isinstance(point, dict) and approximately(point.get("x"), 0.5) and approximately(point.get("y"), -1)
+                for point in highlighted_points
+            )
+        ):
+            issues.append("slopeField.highlightedPoints should include the requested point (0.5, -1)")
+    if not any(term in graph_serialized for term in ("y^2", "y**2")) or not any(
+        term in graph_serialized for term in ("x^2", "x**2")
+    ):
+        issues.append(
+            "slope-field graph payload should include the solution-curve relation or completed solution diagram"
+        )
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 3:
+        issues.append("slope-field source should become exactly three structured parts")
+        return issues
+    expected_marks = [3, 3, 2]
+    expected_terms = (
+        ("calculate", "draw", "0.5", "-1"),
+        ("equation", "solution curve", "0,0.5"),
+        ("draw", "solution curve"),
+    )
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text.replace(" ", "") and term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if part.get("answerSurface") != "diagram" and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("0.25", "y^2", "x^2/2", "-x", "1/4"):
+        if term not in solution_serialized and term not in graph_serialized:
+            issues.append(f"slope-field solution should preserve {term!r}")
+    hidden_total = hidden_mark_total("\n".join(solution_texts))
+    diagram_solution_marks = sum(
+        int(part.get("marks") or 0)
+        for part in parts
+        if isinstance(part, dict)
+        and part.get("answerSurface") == "diagram"
+        and isinstance(part.get("solutionDiagram"), dict)
+    )
+    if hidden_total + diagram_solution_marks != 8:
+        issues.append("slope-field hidden [[marks:n]] ticks plus completed solution diagrams should total 8")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("slope-field solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -2339,6 +2474,15 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_methods_earthquake_screenshot_with_key,
         "assert": assert_real_methods_earthquake_call,
     },
+    "real-specialist-slope-field": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the slope-field graph, solution-curve task, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_slope_field_screenshot_with_key,
+        "assert": assert_real_specialist_slope_field_call,
+    },
     "real-specialist-argand": {
         "prompt": (
             "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
@@ -2442,11 +2586,17 @@ EVAL_GROUPS: dict[str, list[str]] = {
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
     "real-exams-core": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
-    "real-exams-extended": ["real-specialist-argand", "real-specialist-prism", "real-specialist-implicit"],
+    "real-exams-extended": [
+        "real-specialist-slope-field",
+        "real-specialist-argand",
+        "real-specialist-prism",
+        "real-specialist-implicit",
+    ],
     "real-exams": [
         "real-methods-earthquake",
         "real-specialist-lighthouse",
         "real-specialist-stats",
+        "real-specialist-slope-field",
         "real-specialist-argand",
         "real-specialist-prism",
         "real-specialist-implicit",

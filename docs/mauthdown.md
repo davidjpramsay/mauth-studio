@@ -239,6 +239,29 @@ Page breaks between questions are attached after the current question and are ma
 
 Supported alignment values are `left`, `center`, and `right`. `centre` is accepted on import and normalised to `center`.
 
+For source slope-field or direction-field diagrams, use `graph2d.data.slopeField` rather than many unrelated `line_segment` features:
+
+```json
+{
+  "type": "graph2d",
+  "xMin": -2,
+  "xMax": 2,
+  "yMin": -2,
+  "yMax": 2,
+  "data": {
+    "slopeField": {
+      "expression": "(x - 1) / (2*y)",
+      "xValues": [-1.5, -0.5, 0.5, 1.5],
+      "yValues": [-1.5, -0.5, 0.5, 1.5],
+      "highlightedPoints": [{ "x": 0.5, "y": -1, "slope": 0.25, "label": "$(0.5,-1)$" }]
+    }
+  },
+  "functions": [{ "kind": "relation", "expression": "y^2 = x^2/2 - x + 1/4", "label": "solution" }]
+}
+```
+
+Use `xRange`/`yRange` plus `xStep`/`yStep` when the source uses a regular field over an interval. Use `highlightedPoints` for a particular slope segment that the student is asked to calculate or draw.
+
 For `graph3d` diagrams, the live preview persists the teacher's rotated camera in `metadata.view3d`:
 
 ```json

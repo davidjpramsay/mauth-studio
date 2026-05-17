@@ -268,6 +268,31 @@ export interface GraphFeature {
   solutionOnly?: boolean;
 }
 
+export interface GraphSlopeFieldPoint {
+  x: number;
+  y: number;
+  slope?: number;
+  label?: string;
+  color?: string;
+  show?: boolean;
+}
+
+export interface GraphSlopeFieldSpec {
+  expression: string;
+  xValues?: number[];
+  yValues?: number[];
+  xRange?: [number, number];
+  yRange?: [number, number];
+  xStep?: number;
+  yStep?: number;
+  segmentLength?: number;
+  color?: string;
+  strokeWidth?: number;
+  show?: boolean;
+  points?: GraphSlopeFieldPoint[];
+  highlightedPoints?: GraphSlopeFieldPoint[];
+}
+
 export interface MathRequest {
   expression: string;
   inputFormat: InputFormat;

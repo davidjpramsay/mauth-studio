@@ -568,6 +568,14 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
         show: entry.show === undefined ? undefined : booleanField(entry.show),
       }));
     if (features.length) summary.features = features;
+    if (isRecord(config.data) && isRecord(config.data.slopeField)) {
+      const slopeField = compactPlainRecord(
+        config.data.slopeField,
+        ["expression", "xValues", "yValues", "xRange", "yRange", "xStep", "yStep", "segmentLength", "points", "highlightedPoints"],
+        16,
+      );
+      if (slopeField) summary.data = { slopeField };
+    }
     return summary;
   }
 

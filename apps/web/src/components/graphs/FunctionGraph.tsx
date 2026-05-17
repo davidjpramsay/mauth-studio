@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
+import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece, GraphSlopeFieldPoint } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
 import { renderMathJaxSvg } from "@/lib/mathjax";
@@ -121,6 +121,7 @@ const GRAPH_LAYERS = {
   grid: 1,
   axis: 3,
   featureFill: 6,
+  slopeField: 7,
   function: 8,
   point: 9,
   functionArrow: 10,
@@ -166,6 +167,21 @@ type JXGElement = {
 };
 type NativeRegionElement = unknown;
 
+interface SlopeFieldSpec {
+  expression: string;
+  xValues?: number[];
+  yValues?: number[];
+  xRange?: [number, number];
+  yRange?: [number, number];
+  xStep?: number;
+  yStep?: number;
+  segmentLength?: number;
+  color?: string;
+  strokeWidth?: number;
+  points?: GraphSlopeFieldPoint[];
+  highlightedPoints?: GraphSlopeFieldPoint[];
+}
+
 function graphFunctions(graphConfig?: GraphConfig | null): GraphFunction[] {
   if (!graphConfig) return [];
   if (Array.isArray(graphConfig.functions)) return graphConfig.functions;
@@ -189,6 +205,12 @@ function shouldShowGraphItem(item: { show?: boolean }) {
 
 function graphFeatures(graphConfig?: GraphConfig | null): GraphFeature[] {
   return graphConfig?.features ?? [];
+}
+
+function graphDataRecord(graphConfig?: GraphConfig | null): Record<string, unknown> {
+  return graphConfig?.data && typeof graphConfig.data === "object" && !Array.isArray(graphConfig.data)
+    ? (graphConfig.data as Record<string, unknown>)
+    : {};
 }
 
 function isBaseRegionFeature(feature?: GraphFeature) {
@@ -274,6 +296,88 @@ function createImplicitEvaluator(expression: string) {
     } catch {
       return NaN;
     }
+  };
+}
+
+function slopeFieldExpression(expression: string) {
+  const equalsIndex = singleEqualsIndex(expression);
+  if (equalsIndex !== -1) return expression.slice(equalsIndex + 1).trim();
+  return expression.trim();
+}
+
+function createSlopeFieldEvaluator(expression: string) {
+  const jsExpression = toJavaScriptExpression(slopeFieldExpression(expression));
+  const evaluator = new Function("x", "y", `"use strict"; return (${jsExpression});`) as (x: number, y: number) => number;
+  return (x: number, y: number) => {
+    try {
+      const value = evaluator(x, y);
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+function finiteNumberFromUnknown(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberTuple(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const left = finiteNumberFromUnknown(value[0]);
+  const right = finiteNumberFromUnknown(value[1]);
+  if (left === null || right === null || left === right) return undefined;
+  return left < right ? [left, right] : [right, left];
+}
+
+function numberList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number" && Number.isFinite(item)) : undefined;
+}
+
+function slopeFieldPoint(value: unknown): GraphSlopeFieldPoint | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const x = finiteNumberFromUnknown(record.x);
+  const y = finiteNumberFromUnknown(record.y);
+  if (x === null || y === null) return null;
+  return {
+    x,
+    y,
+    ...(finiteNumberFromUnknown(record.slope) !== null ? { slope: finiteNumberFromUnknown(record.slope) as number } : {}),
+    ...(typeof record.label === "string" ? { label: record.label } : {}),
+    ...(typeof record.color === "string" ? { color: record.color } : {}),
+    ...(typeof record.show === "boolean" ? { show: record.show } : {}),
+  };
+}
+
+function slopeFieldSpec(graphConfig: GraphConfig): SlopeFieldSpec | null {
+  const data = graphDataRecord(graphConfig);
+  const raw = data.slopeField;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  if (record.show === false) return null;
+  const expression =
+    typeof record.expression === "string" && record.expression.trim()
+      ? record.expression.trim()
+      : typeof record.differentialEquation === "string" && record.differentialEquation.trim()
+        ? record.differentialEquation.trim()
+        : "";
+  if (!expression) return null;
+  return {
+    expression,
+    xValues: numberList(record.xValues),
+    yValues: numberList(record.yValues),
+    xRange: numberTuple(record.xRange),
+    yRange: numberTuple(record.yRange),
+    xStep: finiteNumberFromUnknown(record.xStep) ?? undefined,
+    yStep: finiteNumberFromUnknown(record.yStep) ?? undefined,
+    segmentLength: finiteNumberFromUnknown(record.segmentLength) ?? undefined,
+    color: typeof record.color === "string" ? record.color : undefined,
+    strokeWidth: finiteNumberFromUnknown(record.strokeWidth) ?? undefined,
+    points: Array.isArray(record.points) ? record.points.flatMap((point) => slopeFieldPoint(point) ?? []) : undefined,
+    highlightedPoints: Array.isArray(record.highlightedPoints)
+      ? record.highlightedPoints.flatMap((point) => slopeFieldPoint(point) ?? [])
+      : undefined,
   };
 }
 
@@ -468,6 +572,123 @@ function graphBoardSizing(graphConfig: GraphConfig) {
     boardPaddingX,
     boardPaddingY,
   };
+}
+
+function slopeFieldAxisValues(
+  explicitValues: number[] | undefined,
+  range: [number, number] | undefined,
+  step: number | undefined,
+  fallbackMin: number,
+  fallbackMax: number,
+  fallbackStep: number,
+) {
+  if (explicitValues?.length) return explicitValues;
+  const [min, max] = range ?? [fallbackMin, fallbackMax];
+  const spacing = Number.isFinite(step) && step && step > 0 ? step : fallbackStep;
+  return numericRange(min, max, spacing);
+}
+
+function slopeFieldSegmentEndpoints(x: number, y: number, slope: number, length: number): [[number, number], [number, number]] | null {
+  if (!Number.isFinite(slope)) return null;
+  if (Math.abs(slope) > 1e6) {
+    const halfLength = length / 2;
+    return [
+      [x, y - halfLength],
+      [x, y + halfLength],
+    ];
+  }
+  const scale = length / (2 * Math.sqrt(1 + slope * slope));
+  const dx = scale;
+  const dy = slope * scale;
+  return [
+    [x - dx, y - dy],
+    [x + dx, y + dy],
+  ];
+}
+
+function drawSlopeFieldSegment(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  slope: number | null,
+  length: number,
+  attributes: Record<string, unknown>,
+) {
+  if (slope === null) return;
+  const endpoints = slopeFieldSegmentEndpoints(x, y, slope, length);
+  if (!endpoints) return;
+  board.create("segment", endpoints, attributes);
+}
+
+function renderSlopeField(
+  board: JXG.Board,
+  graphConfig: GraphConfig,
+  xMajorStep: number,
+  yMajorStep: number,
+  xMin: number,
+  xMax: number,
+  yMin: number,
+  yMax: number,
+) {
+  const field = slopeFieldSpec(graphConfig);
+  if (!field) return;
+  let evaluator: (x: number, y: number) => number | null;
+  try {
+    evaluator = createSlopeFieldEvaluator(field.expression);
+  } catch {
+    return;
+  }
+
+  const xStep = Number.isFinite(field.xStep) && field.xStep && field.xStep > 0 ? field.xStep : xMajorStep;
+  const yStep = Number.isFinite(field.yStep) && field.yStep && field.yStep > 0 ? field.yStep : yMajorStep;
+  const xValues = slopeFieldAxisValues(field.xValues, field.xRange, field.xStep, xMin, xMax, xStep);
+  const yValues = slopeFieldAxisValues(field.yValues, field.yRange, field.yStep, yMin, yMax, yStep);
+  const segmentLength =
+    Number.isFinite(field.segmentLength) && field.segmentLength && field.segmentLength > 0
+      ? field.segmentLength
+      : Math.max(0.18, Math.min(xStep, yStep) * 0.55);
+  const baseAttributes = {
+    fixed: true,
+    highlight: false,
+    straightFirst: false,
+    straightLast: false,
+    strokeColor: field.color ?? "#475569",
+    strokeWidth: field.strokeWidth ?? 1.6,
+    layer: GRAPH_LAYERS.slopeField,
+  } as Record<string, unknown>;
+
+  let rendered = 0;
+  const maxSegments = 420;
+  for (const x of xValues) {
+    for (const y of yValues) {
+      if (rendered >= maxSegments) break;
+      drawSlopeFieldSegment(board, x, y, evaluator(x, y), segmentLength, baseAttributes);
+      rendered += 1;
+    }
+  }
+
+  const explicitPoints = [...(field.points ?? []), ...(field.highlightedPoints ?? [])].filter((point) => point.show !== false);
+  explicitPoints.forEach((point, index) => {
+    const color = point.color ?? (index >= (field.points?.length ?? 0) ? "#be123c" : (field.color ?? "#475569"));
+    drawSlopeFieldSegment(board, point.x, point.y, point.slope ?? evaluator(point.x, point.y), segmentLength * 1.15, {
+      ...baseAttributes,
+      strokeColor: color,
+      strokeWidth: Math.max(2.2, Number(field.strokeWidth ?? 1.6) + 0.8),
+      layer: GRAPH_LAYERS.point,
+    });
+    board.create("point", [point.x, point.y], {
+      fixed: true,
+      withLabel: false,
+      size: 2,
+      fillColor: color,
+      strokeColor: color,
+      highlight: false,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+    if (point.label?.trim()) {
+      createLabelText(board, point.x, point.y, point.label, color);
+    }
+  });
 }
 
 export function graphDisplayHeight(graphConfig?: GraphConfig | null) {
@@ -2676,6 +2897,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         createAxisLabelText(board, 0, yMax + yAxisExtension, "y", [8, -8], "left", "bottom");
       }
     }
+
+    renderSlopeField(board, graphConfig, xMajorStep, yMajorStep, xMin, xMax, yMin, yMax);
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {
       if (!onGraphConfigChange) return;

@@ -213,6 +213,19 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   ).warnings;
   assert(graphWarnings.some((warning) => warning.code === "graph2d-asymptote-feature-missing"));
 
+  const slopeFieldWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      xMin: -2,
+      xMax: 2,
+      yMin: -2,
+      yMax: 2,
+      functions: [],
+    },
+    "Part of the slope field given by $\\frac{dy}{dx}=\\frac{x-1}{2y}$ is shown. Calculate and draw the slope field at the point $(0.5,-1)$.",
+  ).warnings;
+  assert(slopeFieldWarnings.some((warning) => warning.code === "graph2d-slope-field-missing"));
+
   const graph3dWarnings = inspectMauthDiagram(
     {
       type: "graph3d",
@@ -258,6 +271,11 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   );
   assert(
     graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
+  );
+  assert(
+    slopeFieldWarnings.some(
+      (warning) => warning.code === "graph2d-slope-field-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
   );
 });
 
@@ -2141,6 +2159,82 @@ test("accepts native statistics density curves and blank axes", () => {
   const blockIds = result.document?.questions[0].contentBlocks.map((block) => block.id) ?? [];
   assert(blockIds.includes("density-chart"));
   assert(blockIds.includes("blank-axes-chart"));
+});
+
+test("accepts native graph2d slope fields", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "slope-field",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                xMin: -2,
+                xMax: 2,
+                yMin: -2,
+                yMax: 2,
+                data: {
+                  slopeField: {
+                    expression: "(x - 1) / (2*y)",
+                    xValues: [-1.5, -0.5, 0.5, 1.5],
+                    yValues: [-1.5, -0.5, 0.5, 1.5],
+                    highlightedPoints: [{ x: 0.5, y: -1, slope: 0.25, label: "$(0.5,-1)$" }],
+                  },
+                },
+                functions: [{ kind: "relation", expression: "y^2 = x^2/2 - x + 1/4", label: "solution", show: true }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "slope-field");
+  assert.equal(diagram?.kind, "diagram");
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph2d");
+});
+
+test("rejects malformed graph2d slope fields", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-slope-field",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                data: {
+                  slopeField: {
+                    expression: "(x - 1) / (2*y)",
+                    xValues: [-1, "0", 1],
+                    highlightedPoints: [{ x: 0.5, y: "bad" }],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.slopeField.xValues[1]"));
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.slopeField.highlightedPoints[0].y"));
 });
 
 test("accepts structured graph3d point and segment data", () => {
