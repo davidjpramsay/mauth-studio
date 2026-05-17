@@ -1085,10 +1085,10 @@ test("real-exam style source payloads survive authoring, inspection, and layout 
             solutionText: "Plot both points. [[marks:2]]",
           },
           {
-            text: "Shade the locus described by $|z-i|\\le 2$ and $\\pi/6\\le \\arg(z-i)\\le 5\\pi/6$.",
+            text: "Write equations or inequalities for the indicated locus whose upper boundary is part of a circle centred at $z=i$.",
             marks: 4,
             studentSpaceLines: 6,
-            solutionText: "The locus is the sector of $|z-i|\\le2$ between arguments $\\pi/6$ and $5\\pi/6$. [[marks:4]]",
+            solutionText: "The locus is $|z-i|\\le2$ with $\\pi/6\\le\\arg(z)\\le5\\pi/6$. [[marks:4]]",
           },
         ],
       },

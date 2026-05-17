@@ -2062,6 +2062,9 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
             not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
         ):
             issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+    locus_solution_text = compact_math_text(str(parts[3].get("solutionText") or "")) if isinstance(parts[3], dict) else ""
+    if "arg(z)" not in locus_solution_text or "arg(z-i)" in locus_solution_text:
+        issues.append("argand locus solution should preserve the official Arg(z) bounds, not shift them to Arg(z-i)")
 
     solution_texts = collect_solution_texts(args)
     solution_serialized = compact_math_text("\n".join(solution_texts))
@@ -3262,15 +3265,16 @@ def local_real_specialist_argand_call() -> dict[str, Any]:
                 {
                     "label": "d",
                     "text": (
-                        "Shade the locus described by the circle $|z-i|\\le 2$ and "
-                        "the inequalities $\\pi/6\\le \\arg(z-i)\\le 5\\pi/6$."
+                        "Write equations or inequalities for the indicated locus. The upper boundary is part of "
+                        "a circle centred at $z=i$."
                     ),
                     "marks": 4,
                     "studentSpaceLines": 6,
                     "includeSolution": True,
                     "solutionText": (
                         "$$|z-i|\\le 2$$ is the filled circle centred at $i$ with radius $2=\\sqrt4$. [[marks:1]]\n"
-                        "The argument bounds are $\\pi/6$ and $5\\pi/6$, so shade the circular sector above $i$. [[marks:3]]"
+                        "$$\\frac{\\pi}{6}\\le \\arg(z)\\le \\frac{5\\pi}{6},$$ "
+                        "so shade the circular sector above $i$. [[marks:3]]"
                     ),
                 },
             ],
@@ -3285,6 +3289,18 @@ def local_real_specialist_argand_bad_region_call() -> dict[str, Any]:
     features[2]["expressionTop"] = "sqrt(4 - x^2) + 1"
     features[2]["fillColor"] = "#93c5fd"
     features[2]["opacity"] = 0.25
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_argand_bad_shifted_arg_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    part_d = call["mauthArguments"]["parts"][3]
+    part_d["solutionText"] = (
+        "$$|z-i|\\le 2$$ is the filled circle centred at $i$ with radius $2=\\sqrt4$. [[marks:1]]\n"
+        "$$\\frac{\\pi}{6}\\le \\arg(z-i)\\le \\frac{5\\pi}{6},$$ "
+        "so shade the circular sector above $i$. [[marks:3]]"
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -3543,6 +3559,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "fillColor is not supported",
             "opacity is not supported",
             "clipSide should be set",
+        ],
+    },
+    "real-specialist-argand-bad-shifted-arg": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_bad_shifted_arg_call,
+        "expectedIssues": [
+            "official Arg(z) bounds",
         ],
     },
     "real-specialist-prism": {

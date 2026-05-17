@@ -1112,7 +1112,9 @@ def focused_tool_hint(
                 "for complex numbers, relation/expression functions for circle/ray boundaries, and supported indexed "
                 "region features for shading. Do not invent graph2d feature fields such as expressionTop, "
                 "expressionBottom, opacity, or fillColor; use functions plus functionAIndex/functionBIndex or "
-                "baseFeatureIndex/clipFunctionIndex/clipSide, and use fillOpacity for shading."
+                "baseFeatureIndex/clipFunctionIndex/clipSide, and use fillOpacity for shading. Preserve the source "
+                "or marking-key reference for argument bounds: a locus may combine |z-i| with Arg(z), so do not "
+                "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument."
             )
         if has_source_attachment and any(
             term in text for term in ("3d", "three-dimensional", "prism", "vertices", "sphere")
@@ -1609,6 +1611,44 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
     }
 
 
+def compact_assistant_diagram_block_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            f"{description} Same shape as the top-level diagram field: use "
+            "{ graphConfig: { type: ... }, diagramAlign? } or vectorRayDiagram. Keep renderer fields inside "
+            "graphConfig, not on the diagram block. The Mauth tool boundary validates the full renderer-specific "
+            "payload before applying it."
+        ),
+        "properties": {
+            "id": {"type": "string", "description": "Optional stable block id. Usually omit."},
+            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "diagramTextSide": {"type": "string", "enum": ["none", "left", "right"]},
+            "graphConfig": {
+                "type": "object",
+                "description": (
+                    "Native Mauth renderer payload. Include graphConfig.type and follow the top-level diagram "
+                    "schema/instructions for renderer-specific graph2d, vector2d, graph3d, statsChart, "
+                    "setDiagram, network, image, or geometricConstruction fields."
+                ),
+                "properties": {"type": {"type": "string", "enum": SUPPORTED_DIAGRAM_TYPES}},
+                "required": ["type"],
+                "additionalProperties": True,
+            },
+            "vectorRayDiagram": {
+                "type": "object",
+                "description": (
+                    "Same compact vectorRayDiagram builder as the top-level diagram field. Use for source "
+                    "scalar-product/common-origin ray diagrams."
+                ),
+                "additionalProperties": True,
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    }
+
+
 def assistant_table_block_schema(description: str) -> dict[str, Any]:
     return {
         "type": "object",
@@ -1752,11 +1792,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "native diagram here instead of replacing it with prose. Each item should be shaped as "
                         "{ graphConfig: { type: ... }, diagramAlign?: ... }; do not put type/data directly on the item."
                     ),
-                    "items": assistant_diagram_block_schema(
+                    "items": compact_assistant_diagram_block_schema(
                         "One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."
                     ),
                 },
-                "solutionDiagram": assistant_diagram_block_schema(
+                "solutionDiagram": compact_assistant_diagram_block_schema(
                     "Optional completed solution-copy diagram for answerSurface: diagram. Pair it with the student blank/partial "
                     "diagram so the solution copy shows the completed graph/labelled diagram in the same position and size."
                 ),
@@ -1766,7 +1806,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "Optional completed solution-copy diagrams for answerSurface: diagram. Usually supply one solution diagram "
                         "matching the one student diagram."
                     ),
-                    "items": assistant_diagram_block_schema("One completed solution-copy Mauth diagram block."),
+                    "items": compact_assistant_diagram_block_schema("One completed solution-copy Mauth diagram block."),
                 },
                 "table": assistant_table_block_schema(
                     "Optional student table. Use blank strings for cells the student should complete."
@@ -1841,22 +1881,22 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                 ),
                             },
                             "includeSolution": {"type": "boolean"},
-                            "diagram": assistant_diagram_block_schema(
+                            "diagram": compact_assistant_diagram_block_schema(
                                 "Optional native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
                             ),
                             "diagrams": {
                                 "type": "array",
                                 "description": "Optional replacement diagrams for this part. Omit to leave existing diagram decisions alone.",
-                                "items": assistant_diagram_block_schema(
+                                "items": compact_assistant_diagram_block_schema(
                                     "One native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
                                 ),
                             },
-                            "solutionDiagram": assistant_diagram_block_schema(
+                            "solutionDiagram": compact_assistant_diagram_block_schema(
                                 "Optional completed solution-copy diagram for this part when answerSurface is diagram."
                             ),
                             "solutionDiagrams": {
                                 "type": "array",
-                                "items": assistant_diagram_block_schema(
+                                "items": compact_assistant_diagram_block_schema(
                                     "One completed solution-copy diagram for this part."
                                 ),
                             },
@@ -1916,6 +1956,7 @@ def mauth_convert_source_question_tool_definition(*, require_diagram: bool = Fal
         "graphs should use graph2d with data.slopeField plus graphConfig.functions for any solution curve; keep graph2d "
         "bounds, display flags, functions, and features as top-level graphConfig fields, not under data or options. "
         "For implicit source solution curves, prefer a relation function over separate sqrt branches."
+        " For Argand loci, preserve the source or marking-key argument reference; do not change Arg(z) to Arg(z-i) unless the source uses Arg(z-i)."
     )
     return definition
 

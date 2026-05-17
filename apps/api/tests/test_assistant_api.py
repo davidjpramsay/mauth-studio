@@ -1073,6 +1073,18 @@ def test_source_question_tool_schema_describes_required_vector2d_fields():
     assert "metadata.vector2d.angleMarkers[]" in graph_description
 
 
+def test_source_question_tool_schema_stays_compact():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(require_diagram=True)
+    serialized = json.dumps(tool, ensure_ascii=False)
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+
+    assert len(serialized) < 45000
+    assert "metadata.vector2d.vectors[]" in properties["diagram"]["properties"]["graphConfig"]["description"]
+    assert "Same shape as the top-level diagram field" in properties["solutionDiagram"]["description"]
+    assert "Same shape as the top-level diagram field" in part_properties["diagram"]["description"]
+
+
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
     tool = openai_assistant.mauth_author_add_diagram_tool_definition()
     properties = tool["parameters"]["properties"]
