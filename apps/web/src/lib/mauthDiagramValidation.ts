@@ -45,6 +45,32 @@ const GRAPH_FEATURE_CLIP_SIDES = new Set(["above", "below", "left", "right", "in
 const GRAPH_AXES = new Set(["x", "y"]);
 const GRAPH_AXIS_LABEL_INTERVAL_MODES = new Set(["auto", "manual"]);
 const GRAPH_EXTENSION_MODES = new Set(["auto", "manual"]);
+const GRAPH2D_DATA_TOP_LEVEL_FIELDS = new Map([
+  ["functions", "graphConfig.functions"],
+  ["features", "graphConfig.features"],
+  ["xMin", "graphConfig.xMin"],
+  ["xMax", "graphConfig.xMax"],
+  ["yMin", "graphConfig.yMin"],
+  ["yMax", "graphConfig.yMax"],
+  ["width", "graphConfig.widthPx"],
+  ["height", "graphConfig.heightPx"],
+  ["widthPx", "graphConfig.widthPx"],
+  ["heightPx", "graphConfig.heightPx"],
+  ["scalePercent", "graphConfig.scalePercent"],
+  ["showGrid", "graphConfig.showGrid"],
+  ["showAxes", "graphConfig.showAxes"],
+  ["showAxisLabels", "graphConfig.showAxisLabels"],
+  ["showAxisNumbers", "graphConfig.showAxisNumbers"],
+]);
+const GRAPH2D_OPTIONS_TOP_LEVEL_FIELDS = new Map([
+  ...GRAPH2D_DATA_TOP_LEVEL_FIELDS,
+  ["gridMajorStep", "graphConfig.gridMajorStep"],
+  ["gridMinorStep", "graphConfig.gridMinorStep"],
+  ["gridMajorStepX", "graphConfig.gridMajorStepX"],
+  ["gridMajorStepY", "graphConfig.gridMajorStepY"],
+  ["axisLabelStepX", "graphConfig.axisLabelStepX"],
+  ["axisLabelStepY", "graphConfig.axisLabelStepY"],
+]);
 const VECTOR_2D_LABEL_STYLES = new Set(["boldLower", "arrow", "custom"]);
 const PENROSE_RELATIONSHIP_TYPES = new Set([
   "triangle",
@@ -416,6 +442,22 @@ function validateGraphFunctions(config: Record<string, unknown>, path: string, i
     optionalEnum(entry, "domainMode", entryPath, GRAPH_EXTENSION_MODES, issues);
     optionalEnum(entry, "functionExtensionMode", entryPath, GRAPH_EXTENSION_MODES, issues);
     compareRange(entry, "domainMin", "domainMax", entryPath, issues);
+    if (hasOwn(entry, "domain")) {
+      addIssue(
+        issues,
+        `${entryPath}.domain`,
+        "is not a supported graph2d function field; split the interval into domainMin and domainMax",
+        "{ domainMin, domainMax }",
+      );
+    }
+    if (hasOwn(entry, "style")) {
+      addIssue(
+        issues,
+        `${entryPath}.style`,
+        "is not a supported graph2d function style object; put styling directly on the function",
+        "{ color?, strokeWidth?, strokeStyle? }",
+      );
+    }
 
     const pieces = optionalArray(entry, "pieces", entryPath, issues);
     pieces?.forEach((piece, pieceIndex) => {
@@ -445,6 +487,17 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
     if (!isRecord(entry)) {
       addIssue(issues, entryPath, "must be a graph feature object", "GraphFeature");
       return;
+    }
+    if (hasOwn(entry, "type") && !hasOwn(entry, "kind")) {
+      addIssue(issues, `${entryPath}.type`, "must be named kind for graph2d features", "kind");
+    }
+    if (hasOwn(entry, "style")) {
+      addIssue(
+        issues,
+        `${entryPath}.style`,
+        "is not a supported graph2d feature style object; put styling directly on the feature",
+        "{ color?, size?, strokeWidth?, strokeStyle? }",
+      );
     }
     requiredEnum(entry, "kind", entryPath, GRAPH_FEATURE_KINDS, issues);
     optionalString(entry, "label", entryPath, issues);
@@ -532,7 +585,65 @@ function validateSlopeField(config: Record<string, unknown>, path: string, issue
   );
 }
 
+function validateGraph2DFieldPlacement(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const data = isRecord(config.data) ? config.data : undefined;
+  if (data) {
+    for (const [key, expected] of GRAPH2D_DATA_TOP_LEVEL_FIELDS) {
+      if (!hasOwn(data, key)) continue;
+      addIssue(
+        issues,
+        `${path}.data.${key}`,
+        "must be moved out of graphConfig.data; graph2d.data is only for renderer data such as slopeField",
+        expected,
+      );
+    }
+    if (hasOwn(data, "xRange")) {
+      addIssue(
+        issues,
+        `${path}.data.xRange`,
+        "must not be placed directly under graphConfig.data",
+        "graphConfig.xMin/xMax for graph bounds, or graphConfig.data.slopeField.xRange for slope-field sampling",
+      );
+    }
+    if (hasOwn(data, "yRange")) {
+      addIssue(
+        issues,
+        `${path}.data.yRange`,
+        "must not be placed directly under graphConfig.data",
+        "graphConfig.yMin/yMax for graph bounds, or graphConfig.data.slopeField.yRange for slope-field sampling",
+      );
+    }
+  }
+
+  const options = isRecord(config.options) ? config.options : undefined;
+  if (!options) return;
+  for (const [key, expected] of GRAPH2D_OPTIONS_TOP_LEVEL_FIELDS) {
+    if (!hasOwn(options, key)) continue;
+    addIssue(
+      issues,
+      `${path}.options.${key}`,
+      "must be a top-level graphConfig field; graph2d.options is not used for axes, ranges, size, functions, or features",
+      expected,
+    );
+  }
+  if (hasOwn(options, "xRange")) {
+    addIssue(issues, `${path}.options.xRange`, "must be expressed as top-level graph bounds", "graphConfig.xMin/xMax");
+  }
+  if (hasOwn(options, "yRange")) {
+    addIssue(issues, `${path}.options.yRange`, "must be expressed as top-level graph bounds", "graphConfig.yMin/yMax");
+  }
+  if (hasOwn(options, "axisLabels")) {
+    addIssue(
+      issues,
+      `${path}.options.axisLabels`,
+      "is not a supported graph2d axis-label field",
+      "Use showAxisLabels plus the default x/y axis labels.",
+    );
+  }
+}
+
 function validateCoordinateGraph(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  validateGraph2DFieldPlacement(config, path, issues);
   validateCommonGraphConfig(config, path, issues);
   validateGraphFunctions(config, path, issues);
   validateGraphFeatures(config, path, issues);

@@ -260,7 +260,9 @@ For source slope-field or direction-field diagrams, use `graph2d.data.slopeField
 }
 ```
 
-Use `xRange`/`yRange` plus `xStep`/`yStep` when the source uses a regular field over an interval. Use `highlightedPoints` for a particular slope segment that the student is asked to calculate or draw.
+Use `xRange`/`yRange` plus `xStep`/`yStep` when the source uses a regular field over an interval. Use `highlightedPoints` for a particular slope segment that the student is asked to calculate or draw. When the source asks for an implicit solution curve, prefer a relation function such as `{ "kind": "relation", "expression": "y^2 = x^2/2 - x + 1/4" }` over separate `sqrt(...)` branches.
+
+For `graph2d`, graph bounds (`xMin`, `xMax`, `yMin`, `yMax`), size (`widthPx`, `heightPx`), axes/grid display flags, `functions`, and `features` are top-level diagram JSON fields. Only renderer-specific data such as `slopeField` belongs under `data`. Do not put `functions` or `features` under `data`, do not put axes/size fields under `options`, and use `domainMin`/`domainMax` plus `color`/`strokeWidth`/`strokeStyle` directly on each function rather than `domain` or `style` wrapper fields. Graph features use `kind`, not `type`, and feature style fields such as `color`, `size`, and `strokeWidth` also live directly on the feature.
 
 For `graph3d` diagrams, the live preview persists the teacher's rotated camera in `metadata.view3d`:
 

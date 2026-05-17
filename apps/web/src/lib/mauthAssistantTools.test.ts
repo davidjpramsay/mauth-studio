@@ -2237,6 +2237,101 @@ test("rejects malformed graph2d slope fields", () => {
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.slopeField.highlightedPoints[0].y"));
 });
 
+test("rejects graph2d fields misplaced under data and options", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-graph2d-placement",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                data: {
+                  xRange: [-2, 2],
+                  yRange: [-2, 2],
+                  functions: [{ expression: "sqrt(0.5*x^2 - x + 0.25)" }],
+                  features: [{ type: "point", x: 0.5, y: -1, style: { color: "#111827", size: 5 } }],
+                  slopeField: {
+                    expression: "(x - 1) / (2*y)",
+                    xValues: [-1, 0, 1],
+                    yValues: [-1, 0, 1],
+                  },
+                },
+                options: {
+                  showGrid: true,
+                  width: 420,
+                  axisLabels: { x: "x", y: "y" },
+                },
+                functions: [
+                  {
+                    expression: "sqrt(0.5*x^2 - x + 0.25)",
+                    domain: [0, 4],
+                    style: { color: "#dc2626", strokeWidth: 2 },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.functions"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.features"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.xRange"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.showGrid"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.width"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.axisLabels"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].domain"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].style"));
+});
+
+test("rejects graph2d feature type and style wrapper fields", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-graph2d-features",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                features: [
+                  {
+                    type: "point",
+                    x: 0,
+                    y: 0.5,
+                    style: { color: "#111827", size: 5 },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].type"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].style"));
+});
+
 test("accepts structured graph3d point and segment data", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

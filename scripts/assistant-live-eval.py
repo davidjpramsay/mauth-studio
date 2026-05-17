@@ -1014,6 +1014,25 @@ def collect_diagram_graph_configs(value: Any) -> list[dict[str, Any]]:
     return configs
 
 
+def collect_diagram_graph_configs_with_paths(value: Any, path: str = "arguments") -> list[tuple[str, dict[str, Any]]]:
+    configs: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(value, dict):
+        graph_config = value.get("graphConfig", value.get("config"))
+        if isinstance(graph_config, dict) and isinstance(graph_config.get("type"), str):
+            key = "graphConfig" if isinstance(value.get("graphConfig"), dict) else "config"
+            configs.append((f"{path}.{key}", graph_config))
+        elif isinstance(value.get("type"), str):
+            configs.append((path, value))
+        for key, inner_value in value.items():
+            if key in {"graphConfig", "config"}:
+                continue
+            configs.extend(collect_diagram_graph_configs_with_paths(inner_value, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            configs.extend(collect_diagram_graph_configs_with_paths(item, f"{path}[{index}]"))
+    return configs
+
+
 def graph_config_types(args: dict[str, Any]) -> set[str]:
     return {str(config.get("type")) for config in collect_diagram_graph_configs(args) if config.get("type")}
 
@@ -1196,6 +1215,7 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
 def compact_math_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text.lower())
     compact = re.sub(r"\\d?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"\1/\2", compact)
+    compact = re.sub(r"\\d?frac([^\\{}])([^\\{}])", r"\1/\2", compact)
     replacements = {
         "\\cdot": ".",
         "\\approx": "=",
@@ -1814,13 +1834,46 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
         issues.append("slope-field source should not use statsChart, setDiagram, network, or graph3d")
 
     slope_fields: list[dict[str, Any]] = []
-    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
-    for config in collect_diagram_graph_configs(args):
+    graph2d_function_entries: list[Any] = []
+    graph_configs = collect_diagram_graph_configs(args)
+    for config in graph_configs:
         if config.get("type") != "graph2d":
             continue
         data = config.get("data")
         if isinstance(data, dict) and isinstance(data.get("slopeField"), dict):
             slope_fields.append(data["slopeField"])
+        if isinstance(data, dict):
+            for key in ("functions", "features"):
+                if key in data:
+                    issues.append(f"graph2d.{key} must be top-level graphConfig.{key}, not graphConfig.data.{key}")
+            if "xRange" in data:
+                issues.append("graph2d bounds should use top-level graphConfig.xMin/xMax, not graphConfig.data.xRange")
+            if "yRange" in data:
+                issues.append("graph2d bounds should use top-level graphConfig.yMin/yMax, not graphConfig.data.yRange")
+        options = config.get("options")
+        if isinstance(options, dict):
+            for key in ("showGrid", "showAxes", "showAxisLabels", "showAxisNumbers", "width", "height", "widthPx", "heightPx"):
+                if key in options:
+                    issues.append(f"graph2d {key} must be a top-level graphConfig field, not graphConfig.options.{key}")
+        functions = config.get("functions")
+        if isinstance(functions, list):
+            graph2d_function_entries.extend(functions)
+            for index, function in enumerate(functions):
+                if not isinstance(function, dict):
+                    continue
+                if "domain" in function:
+                    issues.append(f"graph2d.functions[{index}].domain should be domainMin/domainMax")
+                if "style" in function:
+                    issues.append(f"graph2d.functions[{index}].style should be color/strokeWidth/strokeStyle")
+        features = config.get("features")
+        if isinstance(features, list):
+            for index, feature in enumerate(features):
+                if not isinstance(feature, dict):
+                    continue
+                if "type" in feature and "kind" not in feature:
+                    issues.append(f"graph2d.features[{index}].type should be named kind")
+                if "style" in feature:
+                    issues.append(f"graph2d.features[{index}].style should be color/size/strokeWidth/strokeStyle")
     if not slope_fields:
         issues.append("slope-field graph2d data should include data.slopeField")
     else:
@@ -1843,11 +1896,12 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
             )
         ):
             issues.append("slopeField.highlightedPoints should include the requested point (0.5, -1)")
-    if not any(term in graph_serialized for term in ("y^2", "y**2")) or not any(
-        term in graph_serialized for term in ("x^2", "x**2")
+    top_level_function_serialized = compact_math_text(json.dumps(graph2d_function_entries, ensure_ascii=False))
+    if not any(term in top_level_function_serialized for term in ("y^2", "y**2")) or not any(
+        term in top_level_function_serialized for term in ("x^2", "x**2")
     ):
         issues.append(
-            "slope-field graph payload should include the solution-curve relation or completed solution diagram"
+            "slope-field graph2d.functions should include the solution-curve relation or completed solution diagram"
         )
 
     parts = args.get("parts")
@@ -1878,7 +1932,7 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
     solution_texts = collect_solution_texts(args)
     solution_serialized = compact_math_text("\n".join(solution_texts))
     for term in ("0.25", "y^2", "x^2/2", "-x", "1/4"):
-        if term not in solution_serialized and term not in graph_serialized:
+        if term not in solution_serialized and term not in top_level_function_serialized:
             issues.append(f"slope-field solution should preserve {term!r}")
     hidden_total = hidden_mark_total("\n".join(solution_texts))
     diagram_solution_marks = sum(
@@ -2338,6 +2392,135 @@ def validation_failure_output(
     }
 
 
+def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, Any]]:
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return []
+    issues: list[dict[str, Any]] = []
+    for config_path, config in collect_diagram_graph_configs_with_paths(args):
+        if config.get("type") != "graph2d":
+            continue
+        data = config.get("data")
+        if isinstance(data, dict):
+            for key in ("functions", "features"):
+                if key in data:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.data.{key}",
+                            "message": f"graph2d {key} must be top-level graphConfig.{key}, not graphConfig.data.{key}.",
+                            "expected": f"{config_path}.{key}",
+                        }
+                    )
+            if "xRange" in data:
+                issues.append(
+                    {
+                        "path": f"{config_path}.data.xRange",
+                        "message": "graph2d bounds must use top-level xMin/xMax.",
+                        "expected": f"{config_path}.xMin/xMax or {config_path}.data.slopeField.xRange",
+                    }
+                )
+            if "yRange" in data:
+                issues.append(
+                    {
+                        "path": f"{config_path}.data.yRange",
+                        "message": "graph2d bounds must use top-level yMin/yMax.",
+                        "expected": f"{config_path}.yMin/yMax or {config_path}.data.slopeField.yRange",
+                    }
+                )
+        options = config.get("options")
+        if isinstance(options, dict):
+            for key in ("showGrid", "showAxes", "showAxisLabels", "showAxisNumbers", "width", "height", "widthPx", "heightPx"):
+                if key in options:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.options.{key}",
+                            "message": "graph2d axes, size, bounds, functions, and features must be top-level graphConfig fields.",
+                            "expected": f"{config_path}.{key if key not in {'width', 'height'} else key + 'Px'}",
+                        }
+                    )
+        functions = config.get("functions")
+        if isinstance(functions, list):
+            for index, function in enumerate(functions):
+                if not isinstance(function, dict):
+                    continue
+                if "domain" in function:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.functions[{index}].domain",
+                            "message": "graph2d function domains must use domainMin/domainMax.",
+                            "expected": "domainMin/domainMax",
+                        }
+                    )
+                if "style" in function:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.functions[{index}].style",
+                            "message": "graph2d function styling must use direct color/strokeWidth/strokeStyle fields.",
+                            "expected": "color/strokeWidth/strokeStyle",
+                        }
+                    )
+        features = config.get("features")
+        if isinstance(features, list):
+            for index, feature in enumerate(features):
+                if not isinstance(feature, dict):
+                    continue
+                if "type" in feature and "kind" not in feature:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].type",
+                            "message": "graph2d features must use kind, not type.",
+                            "expected": "kind",
+                        }
+                    )
+                if "style" in feature:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].style",
+                            "message": "graph2d feature styling must use direct color/size/strokeWidth/strokeStyle fields.",
+                            "expected": "color/size/strokeWidth/strokeStyle",
+                        }
+                    )
+    return issues
+
+
+def real_slope_field_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues = graph2d_validation_issues_from_call(call)
+    for issue in first_issues:
+        if "solution-curve relation" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.solutionDiagram.graphConfig.functions",
+                    "message": (
+                        "The slope-field solution curve should preserve the implicit source relation; use a "
+                        "graph2d function with kind:'relation' and expression like y^2 = x^2/2 - x + 1/4."
+                    ),
+                    "expected": "graphConfig.functions[{ kind:'relation', expression:'y^2 = x^2/2 - x + 1/4' }]",
+                }
+            )
+        if "preserve '1/4'" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[1].solutionText",
+                    "message": "Preserve the exact constant from the marking key as 1/4 in the solution.",
+                    "expected": "1/4",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig",
+                "message": issue,
+                "expected": "source-faithful native graph2d slope-field payload",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth graph2d validation failed.",
+    )
+
+
 def wrong_renderer_failure_output(call: dict[str, Any], *, actual: str, expected: str, reason: str) -> dict[str, Any]:
     return validation_failure_output(
         tool_name=call.get("mauthToolName"),
@@ -2482,6 +2665,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_slope_field_screenshot_with_key,
         "assert": assert_real_specialist_slope_field_call,
+        "repairOnFailure": real_slope_field_repair_failure_output,
     },
     "real-specialist-argand": {
         "prompt": (
@@ -2765,6 +2949,45 @@ async def run_single_eval(
         return 0, total_cost, total_tokens
 
     issues = assert_call(first_calls[0])
+    repair_on_failure = case.get("repairOnFailure")
+    if issues and callable(repair_on_failure):
+        tool_output = repair_on_failure(first_calls[0], issues)
+        second, provider_error = await safe_create_assistant_response(
+            AssistantChatRequest(
+                model=model,
+                previousResponseId=first.get("responseId"),
+                toolOutputs=[
+                    AssistantToolOutput(
+                        callId=first_calls[0]["callId"],
+                        name=first_calls[0]["name"],
+                        output=tool_output,
+                    )
+                ],
+                documentSummary=summary,
+            )
+        )
+        if provider_error or second is None:
+            print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
+            return 2, total_cost, total_tokens
+        second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
+        total_cost += usage_cost(second.get("usage"))
+        total_tokens += usage_tokens(second.get("usage"))
+        print_provider_response("Repair response", second, second_calls, verbose=verbose)
+
+        if len(second_calls) != 1:
+            print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
+            return 1, total_cost, total_tokens
+
+        repair_issues = assert_call(second_calls[0])
+        if repair_issues:
+            print("FAIL:")
+            for issue in repair_issues:
+                print(f"- {issue}")
+            return 1, total_cost, total_tokens
+
+        print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
+        return 0, total_cost, total_tokens
+
     if issues:
         print("FAIL:")
         for issue in issues:
