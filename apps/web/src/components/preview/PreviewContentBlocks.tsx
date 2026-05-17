@@ -52,6 +52,7 @@ export interface PreviewContentRenderers {
     graphConfig?: GraphConfig | null;
     measureOnly?: boolean;
     showSolutions?: boolean;
+    solutionTone?: boolean;
     onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   }) => ReactNode;
   renderMath: (source: string, options?: { showSolutionMarks?: boolean }) => ReactNode;
@@ -136,6 +137,11 @@ function solutionSurfaceMarkTicks(block: EditorContentBlock, showSolutions: bool
   return Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0)));
 }
 
+function isSolutionSurface(block: EditorContentBlock, showSolutions: boolean) {
+  if (!showSolutions) return false;
+  return block.visibility === "solution" || block.solutionOnly === true;
+}
+
 function SolutionMarkedSurface({
   block,
   showSolutions,
@@ -150,9 +156,11 @@ function SolutionMarkedSurface({
   children: ReactNode;
 }) {
   const markTicks = solutionSurfaceMarkTicks(block, showSolutions);
-  if (!markTicks) return <>{children}</>;
+  const solutionSurface = isSolutionSurface(block, showSolutions);
+  if (!markTicks && !solutionSurface) return <>{children}</>;
+  if (!markTicks) return <div className={cn("test-solution-surface", contentClassName)}>{children}</div>;
   return (
-    <div className="test-marked-surface">
+    <div className={cn("test-marked-surface", solutionSurface && "test-solution-surface")}>
       <div className={cn("test-marked-surface-content", contentClassName)}>{children}</div>
       {renderers.renderSolutionMarkTicks(markTicks)}
     </div>
@@ -304,6 +312,7 @@ function DiagramWithBesideNode({
         graphConfig: diagramBlock.graphConfig,
         measureOnly,
         showSolutions,
+        solutionTone: isSolutionSurface(diagramBlock, showSolutions),
         onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
       })}
     </div>
@@ -416,6 +425,7 @@ function DiagramBesideContentBlock({
             graphConfig: block.graphConfig,
             measureOnly,
             showSolutions,
+            solutionTone: isSolutionSurface(block, showSolutions),
             onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
           })}
         </SolutionMarkedSurface>
@@ -589,6 +599,7 @@ function DiagramWithResponseSlot({
           graphConfig: diagramBlock.graphConfig,
           measureOnly,
           showSolutions,
+          solutionTone: isSolutionSurface(diagramBlock, showSolutions),
           onGraphConfigChange:
             measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(diagramBlock.id, graphConfig),
         })}
@@ -819,6 +830,7 @@ export function PreviewContentBlocks({
               graphConfig: block.graphConfig,
               measureOnly,
               showSolutions,
+              solutionTone: isSolutionSurface(block, showSolutions),
               onGraphConfigChange:
                 measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig),
             })}

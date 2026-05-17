@@ -2143,6 +2143,42 @@ function blockVisibilityFields(visibility?: ContentBlockVisibility) {
   };
 }
 
+function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: ContentBlockVisibility) {
+  if (visibility !== "solution") return {};
+  const markTicks = Number(record.markTicks);
+  if (!Number.isInteger(markTicks) || markTicks < 0 || markTicks > 20) return {};
+  return { markTicks };
+}
+
+function isSolutionOnlyBlock(block: EditorContentBlock) {
+  const explicitVisibility = normalizeContentBlockVisibility(block.visibility);
+  return (
+    explicitVisibility === "solution" || block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))
+  );
+}
+
+function solutionTextHasMarkAnnotation(block: EditorContentBlock) {
+  return block.kind === "text" && isSolutionOnlyBlock(block) && /\[\[marks:\s*\d+\s*]]/i.test(block.text);
+}
+
+function isSolutionSurfaceMissingTicks(block: EditorContentBlock) {
+  if (block.kind !== "table" && block.kind !== "diagram") return false;
+  if (!isSolutionOnlyBlock(block)) return false;
+  const markTicks = Number(block.markTicks);
+  return !Number.isInteger(markTicks);
+}
+
+function recoverMissingSolutionSurfaceTicks(blocks: EditorContentBlock[], marks: number) {
+  const markTicks = Math.max(0, Math.min(20, Math.round(safeMarkValue(marks))));
+  if (!markTicks || blocks.some(solutionTextHasMarkAnnotation)) return blocks;
+
+  const candidateIds = blocks.filter(isSolutionSurfaceMissingTicks).map((block) => block.id);
+  if (candidateIds.length !== 1) return blocks;
+
+  const [targetId] = candidateIds;
+  return blocks.map((block) => (block.id === targetId ? ({ ...block, markTicks } as EditorContentBlock) : block));
+}
+
 function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
   if (!Array.isArray(value)) return [];
 
@@ -2190,6 +2226,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           tableAlign: normalizeDiagramAlignment(record.tableAlign),
           cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
           ...blockVisibilityFields(visibility),
+          ...surfaceMarkTickFields(record, visibility),
         },
       ];
     }
@@ -2204,6 +2241,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
           graphConfig: withGraphDefaults(graphConfig),
           ...blockVisibilityFields(visibility),
+          ...surfaceMarkTickFields(record, visibility),
         },
       ];
     }
@@ -2234,14 +2272,15 @@ function normalizeEditorSubparts(value: unknown): EditorSubpart[] {
     value.flatMap((subpart): EditorSubpart[] => {
       const record = asRecord(subpart);
       if (!record) return [];
+      const marks = safeMarkValue(record.marks);
       return [
         {
           id: typeof record.id === "string" ? record.id : id("subpart"),
           label: typeof record.label === "string" ? record.label : "",
           text: typeof record.text === "string" ? record.text : "",
-          marks: safeMarkValue(record.marks),
+          marks,
           pageBreakBefore: record.pageBreakBefore === true,
-          contentBlocks: normalizeContentBlocks(record.contentBlocks),
+          contentBlocks: recoverMissingSolutionSurfaceTicks(normalizeContentBlocks(record.contentBlocks), marks),
         },
       ];
     }),
@@ -2255,14 +2294,15 @@ function normalizeEditorParts(value: unknown): EditorPart[] {
     value.flatMap((part): EditorPart[] => {
       const record = asRecord(part);
       if (!record) return [];
-      const contentBlocks = normalizeContentBlocks(record.contentBlocks);
+      const marks = safeMarkValue(record.marks);
+      const contentBlocks = recoverMissingSolutionSurfaceTicks(normalizeContentBlocks(record.contentBlocks), marks);
       const subparts = normalizeEditorSubparts(record.subparts);
       return [
         withNormalizedPartOrder({
           id: typeof record.id === "string" ? record.id : id("part"),
           label: "",
           text: typeof record.text === "string" ? record.text : "",
-          marks: safeMarkValue(record.marks),
+          marks,
           pageBreakBefore: record.pageBreakBefore === true,
           contentBlocks,
           subparts,
@@ -2279,7 +2319,8 @@ function normalizeQuestionBlocks(value: unknown): QuestionBlock[] {
   return value.flatMap((question): QuestionBlock[] => {
     const record = asRecord(question);
     if (!record) return [];
-    const contentBlocks = normalizeContentBlocks(record.contentBlocks);
+    const marks = safeMarkValue(record.marks);
+    const contentBlocks = recoverMissingSolutionSurfaceTicks(normalizeContentBlocks(record.contentBlocks), marks);
     const filteredContentBlocks = contentBlocks.filter((block) => block.kind !== "pageBreak");
     const parts = normalizeEditorParts(record.parts);
     const hasLegacyPageBreak = contentBlocks.some((block) => block.kind === "pageBreak");
@@ -2287,7 +2328,7 @@ function normalizeQuestionBlocks(value: unknown): QuestionBlock[] {
       withNormalizedQuestionOrder({
         id: typeof record.id === "string" ? record.id : id("question"),
         section: typeof record.section === "string" ? record.section : "Algebra",
-        marks: safeMarkValue(record.marks),
+        marks,
         contentBlocks: filteredContentBlocks,
         parts,
         itemOrder: normalizeItemOrder(record.itemOrder, questionAllowedOrderItems(filteredContentBlocks, parts)),
@@ -3117,6 +3158,7 @@ function partPanelSummary(blocks: EditorContentBlock[], showSolutions = true) {
   return firstTextSource(blocks, showSolutions);
 }
 
+const TEST_SOLUTION_COLOR = "#1d4ed8";
 const SOLUTION_MARK_SYMBOL = "✓";
 const SOLUTION_MARK_ANNOTATION_PATTERN = /\s*\[\[marks:(\d+)]]\s*$/i;
 type MixedMathSegmentType = "text" | "inline" | "display" | "marked-text" | "marked-display";
@@ -3558,17 +3600,21 @@ function DiagramPreview({
   graphConfig,
   measureOnly = false,
   showSolutions = true,
+  solutionTone = false,
   onGraphConfigChange,
 }: {
   graphConfig?: GraphConfig | null;
   measureOnly?: boolean;
   showSolutions?: boolean;
+  solutionTone?: boolean;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }) {
   const baseConfig = withGraphDefaults(graphConfig);
   const hasHiddenSolutionFeatures = !showSolutions && Boolean(baseConfig.features?.some(isSolutionOnlyGraphFeature));
   const config = graphConfigForSolutionVisibility(baseConfig, showSolutions);
   const visibleGraphConfigChange = hasHiddenSolutionFeatures ? undefined : onGraphConfigChange;
+  const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
+  const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
 
   if (measureOnly) {
     return <div className="w-full overflow-hidden bg-white" style={{ height: graphHeight(config), maxWidth: graphWidth(config) }} />;
@@ -3592,7 +3638,14 @@ function DiagramPreview({
     case "2d_graph":
     case "function":
     default:
-      return <FunctionGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <FunctionGraph
+          graphConfig={config}
+          solutionColor={solutionColor}
+          solutionFeatureColor={solutionFeatureColor}
+          onGraphConfigChange={visibleGraphConfigChange}
+        />
+      );
   }
 }
 

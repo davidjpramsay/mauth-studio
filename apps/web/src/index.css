@@ -52,6 +52,8 @@
     --input: 218 28% 84%;
     --ring: 218 95% 56%;
     --radius: 0.5rem;
+    --test-solution-color: #1d4ed8;
+    --test-solution-border-color: #93c5fd;
   }
 
   .dark {
@@ -1555,6 +1557,15 @@
 
   .test-marked-surface-content {
     min-width: 0;
+  }
+
+  .test-solution-block,
+  .test-solution-surface {
+    color: var(--test-solution-color);
+  }
+
+  .test-solution-surface .test-table-cell {
+    border-color: var(--test-solution-border-color);
   }
 
   .solution-mark-ticks {

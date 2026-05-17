@@ -7,6 +7,8 @@ import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, 
 
 interface FunctionGraphProps {
   graphConfig?: GraphConfig | null;
+  solutionColor?: string;
+  solutionFeatureColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }
 
@@ -2589,11 +2591,17 @@ function renderGraphFeature(
   graphConfig: GraphConfig,
   functions: GraphFunction[],
   featureIndex: number,
+  solutionColor?: string,
+  solutionFeatureColor?: string,
   onLabelMove?: (featureIndex: number, x: number, y: number) => void,
   onPointMove?: (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => void,
   onFreeLabelMove?: (featureIndex: number, x: number, y: number) => void,
 ) {
-  const color = feature.color ?? FUNCTION_COLORS[featureIndex % FUNCTION_COLORS.length];
+  const color =
+    solutionColor ??
+    (feature.solutionOnly === true ? solutionFeatureColor : undefined) ??
+    feature.color ??
+    FUNCTION_COLORS[featureIndex % FUNCTION_COLORS.length];
   const handleLabelMove = onLabelMove ? (x: number, y: number) => onLabelMove(featureIndex, x, y) : undefined;
   const handlePointMove = onPointMove
     ? (x: number, y: number, previousX: number, previousY: number) => onPointMove(featureIndex, x, y, previousX, previousY)
@@ -2688,7 +2696,7 @@ function renderGraphFeature(
   }
 }
 
-export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGraphProps) {
+export function FunctionGraph({ graphConfig, solutionColor, solutionFeatureColor, onGraphConfigChange }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
 
   useEffect(() => {
@@ -2946,7 +2954,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction)) return;
-      const color = graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length];
+      const color = solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length];
       const strokeWidth = lineWeight(graphFunction.strokeWidth, DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH);
       const dash = lineDash(graphFunction.strokeStyle);
       if (graphFunction.kind === "relation") {
@@ -3051,6 +3059,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         graphConfig,
         functions,
         index,
+        solutionColor,
+        solutionFeatureColor,
         commitFeatureLabelPosition,
         commitFeaturePointPosition,
         commitFreeLabelPosition,
@@ -3066,7 +3076,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         labelX,
         labelY,
         functionLabelLatex(graphFunction, index),
-        graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length],
+        solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length],
         onGraphConfigChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
       );
     });
@@ -3074,7 +3084,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     return () => {
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, graphConfig, onGraphConfigChange]);
+  }, [boardId, graphConfig, onGraphConfigChange, solutionColor, solutionFeatureColor]);
 
   return (
     <div
