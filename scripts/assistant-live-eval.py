@@ -1809,7 +1809,7 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
     solution_texts = collect_solution_texts(args)
     solution_serialized = compact_math_text("\n".join(solution_texts))
     for term in ("13.5", "m_w=3", "2/3", "-6", "10^9", "10^15"):
-        if term not in solution_serialized:
+        if compact_math_text(term) not in solution_serialized:
             issues.append(f"earthquake solution should preserve {term!r}")
     if hidden_mark_total("\n".join(solution_texts)) != 9:
         issues.append("earthquake hidden [[marks:n]] total should be exactly 9")
@@ -1838,14 +1838,17 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
         issues.append("slope-field source should not use statsChart, setDiagram, network, or graph3d")
 
     slope_fields: list[dict[str, Any]] = []
+    source_slope_fields: list[dict[str, Any]] = []
     graph2d_function_entries: list[Any] = []
-    graph_configs = collect_diagram_graph_configs(args)
-    for config in graph_configs:
+    graph_configs_with_paths = collect_diagram_graph_configs_with_paths(args)
+    for path, config in graph_configs_with_paths:
         if config.get("type") != "graph2d":
             continue
         data = config.get("data")
         if isinstance(data, dict) and isinstance(data.get("slopeField"), dict):
             slope_fields.append(data["slopeField"])
+            if "solutionDiagram" not in path and "solutionDiagrams" not in path:
+                source_slope_fields.append(data["slopeField"])
         if isinstance(data, dict):
             for key in ("functions", "features"):
                 if key in data:
@@ -1880,18 +1883,20 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
                     issues.append(f"graph2d.features[{index}].style should be color/size/strokeWidth/strokeStyle")
     if not slope_fields:
         issues.append("slope-field graph2d data should include data.slopeField")
+    elif not source_slope_fields:
+        issues.append("slope-field source/student graph2d data should include data.slopeField")
     else:
-        slope_expression = compact_math_text(str(slope_fields[0].get("expression") or ""))
+        slope_expression = compact_math_text(str(source_slope_fields[0].get("expression") or ""))
         if "x-1" not in slope_expression or ("2*y" not in slope_expression and "2y" not in slope_expression):
             issues.append("slopeField.expression should encode (x - 1) / (2y)")
         if not (
-            isinstance(slope_fields[0].get("xValues"), list)
-            and isinstance(slope_fields[0].get("yValues"), list)
-            or isinstance(slope_fields[0].get("xRange"), list)
-            and isinstance(slope_fields[0].get("yRange"), list)
+            isinstance(source_slope_fields[0].get("xValues"), list)
+            and isinstance(source_slope_fields[0].get("yValues"), list)
+            or isinstance(source_slope_fields[0].get("xRange"), list)
+            and isinstance(source_slope_fields[0].get("yRange"), list)
         ):
             issues.append("slopeField should include grid x/y values or x/y ranges")
-        highlighted_points = slope_fields[0].get("highlightedPoints")
+        highlighted_points = source_slope_fields[0].get("highlightedPoints")
         if not (
             isinstance(highlighted_points, list)
             and any(
@@ -2153,10 +2158,25 @@ def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
     if any(graph_type in graph_types for graph_type in ("statsChart", "geometricConstruction", "network")):
         issues.append("implicit curve source should not use statsChart, geometricConstruction, or network")
     graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
-    if "relation" not in graph_serialized and "x^3" not in graph_serialized:
+    compact_graph_serialized = compact_math_text(graph_serialized)
+    if not all(term in compact_graph_serialized for term in ("x^3", "y^3", "3xy")):
         issues.append("implicit curve graph2d should encode the relation x^3 + y^3 = 3xy + y")
+    graph_point_labels: set[str] = set()
+    for config in collect_diagram_graph_configs(args):
+        data = config.get("data") if isinstance(config.get("data"), dict) else {}
+        candidate_lists = [config.get("features"), config.get("points"), data.get("features"), data.get("points")]
+        for candidates in candidate_lists:
+            if not isinstance(candidates, list):
+                continue
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                for key in ("id", "name", "label"):
+                    value = candidate.get(key)
+                    if isinstance(value, str) and value.strip():
+                        graph_point_labels.add(compact_math_text(value))
     for label in ("o", "a", "b"):
-        if f'"{label}"' not in graph_serialized and label not in serialized:
+        if label not in graph_point_labels:
             issues.append(f"implicit curve graph should preserve point label {label.upper()}")
 
     parts = args.get("parts")
@@ -2871,10 +2891,349 @@ def local_tool_call(name: str, mauth_tool_name: str, mauth_arguments: dict[str, 
     }
 
 
+def local_source_question_call(mauth_arguments: dict[str, Any]) -> dict[str, Any]:
+    return local_tool_call("mauth_convert_source_question", QUESTION_UPSERT_TOOL_NAME, mauth_arguments)
+
+
+def local_real_methods_earthquake_call() -> dict[str, Any]:
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "An earthquake has seismic moment $M_0=3.16\\times10^{13}$. The graph shows the "
+                "relationship between moment magnitude $M_w$ and $\\log_{10}(M_0)$."
+            ),
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "graph2d",
+                    "xMin": 8,
+                    "xMax": 16,
+                    "yMin": 0,
+                    "yMax": 5,
+                    "widthPx": 620,
+                    "heightPx": 420,
+                    "xAxisLabel": "$\\log_{10}(M_0)$",
+                    "yAxisLabel": "$M_w$",
+                    "functions": [{"expression": "y=(2/3)x-6", "color": "#1d4ed8", "strokeWidth": 2}],
+                },
+            },
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "For $M_0=3.16\\times10^{13}$, determine $\\log_{10}(M_0)$.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "$$\\log_{10}(3.16\\times10^{13})=13.5.$$ [[marks:2]]",
+                },
+                {
+                    "label": "b",
+                    "text": "Use points A and B on the graph to determine the gradient.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "$$m=\\frac{4-2}{15-12}=\\frac23.$$ [[marks:2]]",
+                },
+                {
+                    "label": "c",
+                    "text": "Find the relationship in the form $M_w=a\\log_{10}(M_0)+b$.",
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": "$$M_w=\\frac23\\log_{10}(M_0)-6,$$ so $M_w=3$ when $M_0=10^{13.5}$. [[marks:3]]",
+                },
+                {
+                    "label": "d",
+                    "text": "Find the seismic moment for an earthquake of magnitude 4.",
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "When $M_w=4$, $4=\\frac23\\log_{10}(M_0)-6$, so $M_0=10^{15}$. "
+                        "When $M_w=0$, $M_0=10^9$. [[marks:2]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_methods_earthquake_bad_line_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_earthquake_call()))
+    call["mauthArguments"]["diagram"]["graphConfig"]["functions"][0]["expression"] = "y = (3/2)x + 6"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_stats_call() -> dict[str, Any]:
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "Anika claims that teenagers send me a text message with response times that have "
+                "mean 3 minutes and standard deviation 2.4 minutes. A sample of 64 responses is recorded."
+            ),
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "statsChart",
+                    "widthPx": 620,
+                    "heightPx": 380,
+                    "data": {
+                        "chartType": "density",
+                        "xLabel": "response time",
+                        "points": [
+                            {"x": 1.0, "y": 0.03},
+                            {"x": 2.1, "y": 0.2},
+                            {"x": 2.7, "y": 0.18},
+                            {"x": 5.0, "y": 0.02},
+                        ],
+                    },
+                },
+            },
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Estimate the probability that a response time is between 150 and 210 seconds.",
+                    "marks": 3,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": "$$P(150<X<210)=0.904.$$ [[marks:3]]",
+                },
+                {
+                    "label": "b",
+                    "text": "Describe the sample mean distribution for samples of size 64.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "$$\\mu_{\\bar X}=3,\\quad \\sigma_{\\bar X}=\\frac{2.4}{8}=0.3.$$ [[marks:2]]",
+                },
+                {
+                    "label": "c",
+                    "text": (
+                        "Anika collected a table with sample size 100, mean 2.1 and standard deviation 2.7. "
+                        "Comment on Anika's claim."
+                    ),
+                    "marks": 4,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The interval from the normal calculation is $1.5708$ to $2.6292$. [[marks:2]]\n"
+                        "The teenager-source claim is not accepted because the sample is biased and cannot prove it. [[marks:2]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_stats_bad_renderer_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    call["mauthArguments"]["diagram"]["graphConfig"] = {
+        "type": "graph2d",
+        "xMin": 0,
+        "xMax": 6,
+        "yMin": 0,
+        "yMax": 0.25,
+        "functions": [{"expression": "0.2e^{-x^2}"}],
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_slope_field_call() -> dict[str, Any]:
+    slope_graph = {
+        "type": "graph2d",
+        "xMin": -1,
+        "xMax": 3,
+        "yMin": -2,
+        "yMax": 2,
+        "widthPx": 620,
+        "heightPx": 420,
+        "showGrid": True,
+        "showAxes": True,
+        "functions": [
+            {
+                "kind": "relation",
+                "expression": "y^2 = x^2/2 - x + 1/4",
+                "color": "#1d4ed8",
+                "strokeWidth": 2,
+            }
+        ],
+        "data": {
+            "slopeField": {
+                "expression": "(x - 1) / (2*y)",
+                "xRange": [-1, 3, 0.5],
+                "yRange": [-2, 2, 0.5],
+                "highlightedPoints": [{"x": 0.5, "y": -1, "label": "$(0.5,-1)$"}],
+            }
+        },
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "The diagram shows a slope field for $\\frac{dy}{dx}=\\frac{x-1}{2y}$ "
+                "and a solution curve through $(0,0.5)$."
+            ),
+            "diagram": {"diagramAlign": "center", "graphConfig": slope_graph},
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Calculate $\\frac{dy}{dx}$ at $(0.5,-1)$ and draw the tangent direction on the slope field.",
+                    "marks": 3,
+                    "studentSpaceLines": 5,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$\\frac{dy}{dx}=\\frac{0.5-1}{2(-1)}=0.25.$$ [[marks:2]]\n"
+                        "The tangent segment at $(0.5,-1)$ has gradient $0.25$. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Find the equation of the solution curve through $(0,0.5)$.",
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$2y\\frac{dy}{dx}=x-1,$$ so "
+                        "$$y^2=\\frac{x^2}{2}-x+C.$$ [[marks:1]]\n"
+                        "Using $(0,0.5)$ gives $C=1/4$, hence "
+                        "$$y^2=\\frac{x^2}{2}-x+\\frac14.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": "Draw the solution curve on the slope-field diagram.",
+                    "marks": 2,
+                    "answerSurface": "diagram",
+                    "solutionDiagram": {"graphConfig": slope_graph},
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_slope_field_bad_schema_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_slope_field_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    slope_field = graph_config["data"].pop("slopeField")
+    graph_config["data"]["xRange"] = slope_field["xRange"]
+    graph_config["data"]["yRange"] = slope_field["yRange"]
+    graph_config["data"]["functions"] = [{"expression": "y^2 = x^2/2 - x + 1/4"}]
+    graph_config["data"]["features"] = [{"type": "point", "x": 0.5, "y": -1, "style": {"color": "red"}}]
+    graph_config["options"] = {"showGrid": True, "widthPx": 620}
+    graph_config["functions"][0]["domain"] = [-1, 3]
+    graph_config["functions"][0]["style"] = {"strokeWidth": 2}
+    graph_config["features"] = [{"type": "point", "x": 0.5, "y": -1, "style": {"color": "red"}}]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_argand_call() -> dict[str, Any]:
+    graph_config = {
+        "type": "graph2d",
+        "xMin": -4,
+        "xMax": 4,
+        "yMin": -2,
+        "yMax": 5,
+        "widthPx": 620,
+        "heightPx": 420,
+        "xAxisLabel": "Re",
+        "yAxisLabel": "Im",
+        "functions": [
+            {"kind": "relation", "expression": "x^2 + (y - 1)^2 = 4", "color": "#2563eb"}
+        ],
+        "features": [
+            {"kind": "point", "x": -1, "y": 1.732, "label": "$z_1$"},
+            {"kind": "point", "x": 2, "y": 0, "label": "$z_2$"},
+            {
+                "kind": "region_clipped_by_curve",
+                "baseFeatureIndex": 0,
+                "clipFunctionIndex": 0,
+                "clipSide": "inside",
+                "fillOpacity": 0.2,
+                "label": "locus shaded circle",
+            },
+        ],
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "On the Argand diagram, complex numbers $z_1$ and $z_2$ are shown. "
+                "Convert $z_1$ to polar form, give $z_2$ in Cartesian form, then describe "
+                "the locus satisfying the circle and argument inequalities."
+            ),
+            "diagram": {"diagramAlign": "center", "graphConfig": graph_config},
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Express $z_1$ in polar form.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "$$z_1=2cis\\left(\\frac{5\\pi}{6}\\right).$$ [[marks:2]]",
+                },
+                {
+                    "label": "b",
+                    "text": "Write $z_2$ in Cartesian form.",
+                    "marks": 1,
+                    "studentSpaceLines": 3,
+                    "includeSolution": True,
+                    "solutionText": "$$z_2=2+0i.$$ [[marks:1]]",
+                },
+                {
+                    "label": "c",
+                    "text": "Plot $z_1$ and $z_2$ on an Argand diagram.",
+                    "marks": 2,
+                    "studentSpaceLines": 3,
+                    "includeSolution": True,
+                    "solutionText": "Plot $z_1$ and $z_2$ with the shown Re and Im axes. [[marks:2]]",
+                },
+                {
+                    "label": "d",
+                    "text": (
+                        "Shade the locus described by the circle $|z-i|\\le 2$ and "
+                        "the inequalities $\\pi/6\\le \\arg(z-i)\\le 5\\pi/6$."
+                    ),
+                    "marks": 4,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$|z-i|\\le 2$$ is the filled circle centred at $i$ with radius $2=\\sqrt4$. [[marks:1]]\n"
+                        "The argument bounds are $\\pi/6$ and $5\\pi/6$, so shade the circular sector above $i$. [[marks:3]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_argand_bad_region_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    features = call["mauthArguments"]["diagram"]["graphConfig"]["features"]
+    features[2].pop("clipSide", None)
+    features[2]["expressionTop"] = "sqrt(4 - x^2) + 1"
+    features[2]["fillColor"] = "#93c5fd"
+    features[2]["opacity"] = 0.25
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
-    return local_tool_call(
-        "mauth_convert_source_question",
-        QUESTION_UPSERT_TOOL_NAME,
+    return local_source_question_call(
         {
             "questionNumber": 1,
             "marks": 0,
@@ -2991,7 +3350,136 @@ def local_real_specialist_prism_bad_graph3d_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_implicit_call() -> dict[str, Any]:
+    graph_config = {
+        "type": "graph2d",
+        "xMin": -1.5,
+        "xMax": 2.5,
+        "yMin": -1.5,
+        "yMax": 2.5,
+        "widthPx": 620,
+        "heightPx": 420,
+        "functions": [
+            {
+                "kind": "relation",
+                "expression": "x^3 + y^3 = 3xy + y",
+                "color": "#1d4ed8",
+                "strokeWidth": 2,
+            }
+        ],
+        "features": [
+            {"kind": "point", "x": 0, "y": 0, "label": "$O$"},
+            {"kind": "point", "x": -0.475, "y": 0, "label": "$A$"},
+            {"kind": "point", "x": 0.225, "y": 0, "label": "$B$"},
+        ],
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "The equation $x^3+y^3=3xy+y$ implicitly defines a curve with slope "
+                "at the origin and points A and B on the $x$-axis."
+            ),
+            "diagram": {"diagramAlign": "center", "graphConfig": graph_config},
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Use implicit differentiation to find $\\frac{dy}{dx}$.",
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$3x^2+3y^2\\frac{dy}{dx}=3y+3x\\frac{dy}{dx}+\\frac{dy}{dx}.$$ [[marks:1]]\n"
+                        "$$\\frac{dy}{dx}=\\frac{3y-3x^2}{3y^2-3x-1}.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Find the $x$ coordinates of A and B.",
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "At $y=0$, $x^3=0$ gives the origin; using the tangent condition gives "
+                        "$$x^4-2x^2-x=0.$$ [[marks:1]]\n"
+                        "The relevant roots are approximately $x=-0.475$ and $x=0.225$, so "
+                        "$A(-0.475,0)$ and $B(0.225,0)$. [[marks:2]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_implicit_bad_relation_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_implicit_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["functions"][0]["expression"] = "x^2 + y^2 = 1"
+    graph_config["features"] = [feature for feature in graph_config["features"] if feature.get("label") != "$B$"]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
+    "real-methods-earthquake": {
+        "assert": assert_real_methods_earthquake_call,
+        "call": local_real_methods_earthquake_call,
+    },
+    "real-methods-earthquake-bad-line": {
+        "assert": assert_real_methods_earthquake_call,
+        "call": local_real_methods_earthquake_bad_line_call,
+        "expectedIssues": [
+            "graph2d line should encode slope 2/3",
+            "graph2d line should encode vertical intercept -6",
+        ],
+    },
+    "real-specialist-stats": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_call,
+    },
+    "real-specialist-stats-bad-renderer": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_bad_renderer_call,
+        "expectedIssues": [
+            "statistics source graphs should use statsChart",
+            "should not be converted as a generic graph2d",
+            "probability-density graph should use statsChart chartType='density'",
+        ],
+    },
+    "real-specialist-slope-field": {
+        "assert": assert_real_specialist_slope_field_call,
+        "call": local_real_specialist_slope_field_call,
+    },
+    "real-specialist-slope-field-bad-schema": {
+        "assert": assert_real_specialist_slope_field_call,
+        "call": local_real_specialist_slope_field_bad_schema_call,
+        "expectedIssues": [
+            "graph2d.functions must be top-level",
+            "graph2d.features must be top-level",
+            "bounds should use top-level",
+            "widthPx must be a top-level",
+            "domain should be domainMin/domainMax",
+            "style should be color/strokeWidth/strokeStyle",
+            "features[0].type should be named kind",
+            "source/student graph2d data should include data.slopeField",
+        ],
+    },
+    "real-specialist-argand": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_call,
+    },
+    "real-specialist-argand-bad-region": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_bad_region_call,
+        "expectedIssues": [
+            "expressionTop is not supported",
+            "fillColor is not supported",
+            "opacity is not supported",
+            "clipSide should be set",
+        ],
+    },
     "real-specialist-prism": {
         "assert": assert_real_specialist_prism_call,
         "call": local_real_specialist_prism_call,
@@ -3011,11 +3499,23 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "segments should use strokeStyle/dashed",
         ],
     },
+    "real-specialist-implicit": {
+        "assert": assert_real_specialist_implicit_call,
+        "call": local_real_specialist_implicit_call,
+    },
+    "real-specialist-implicit-bad-relation": {
+        "assert": assert_real_specialist_implicit_call,
+        "call": local_real_specialist_implicit_bad_relation_call,
+        "expectedIssues": [
+            "graph2d should encode the relation",
+            "point label B",
+        ],
+    },
 }
 
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
-    "local-real-exams-extended": ["real-specialist-prism", "real-specialist-prism-bad-graph3d"],
+    "local-real-exams-extended": list(LOCAL_EVAL_CASES),
 }
 
 
