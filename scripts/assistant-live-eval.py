@@ -1220,10 +1220,14 @@ def compact_math_text(text: str) -> str:
         "\\cdot": ".",
         "\\approx": "=",
         "\\pi": "pi",
+        "\\operatorname": "",
+        "operatorname": "",
+        "\\mathrm": "",
         "·": ".",
         "\\mathbf": "",
         "\\boldsymbol": "",
         "\\vec": "",
+        "_": "",
         "{": "",
         "}": "",
         "$": "",
@@ -1964,12 +1968,27 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"argand plane and locus diagrams should use graph2d, got {sorted(graph_types)!r}")
     if any(graph_type in graph_types for graph_type in ("statsChart", "setDiagram", "network")):
         issues.append("argand/locus source should not use statsChart, setDiagram, or network")
-    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    graph_serialized_raw = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    graph_serialized = compact_math_text(graph_serialized_raw)
     for term in ("re", "im", "z1", "z2"):
         if term not in graph_serialized and term not in serialized:
             issues.append(f"argand diagram should preserve {term!r} labels")
     if not any(term in graph_serialized for term in ("circle", "x^2", "y-1", "region", "shade", "locus")):
         issues.append("argand locus graph should encode the circular shaded region semantics")
+    for config in collect_diagram_graph_configs(args):
+        if config.get("type") != "graph2d":
+            continue
+        features = config.get("features")
+        if not isinstance(features, list):
+            continue
+        for index, feature in enumerate(features):
+            if not isinstance(feature, dict):
+                continue
+            for key in ("expressionTop", "expressionBottom", "opacity", "fillColor"):
+                if key in feature:
+                    issues.append(f"argand graph2d.features[{index}].{key} is not supported")
+            if feature.get("kind") == "region_clipped_by_curve" and not feature.get("clipSide"):
+                issues.append(f"argand graph2d.features[{index}].clipSide should be set for clipped regions")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 4:
@@ -1977,6 +1996,7 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
         return issues
     expected_marks = [2, 1, 2, 4]
     expected_terms = (("z", "polar"), ("cartesian",), ("plot", "z"), ("locus", "inequalities"))
+    has_question_level_diagram_surface = args.get("answerSurface") == "diagram" and isinstance(args.get("diagram"), dict)
     for index, part in enumerate(parts):
         if not isinstance(part, dict):
             issues.append(f"parts[{index}] should be an object")
@@ -1987,7 +2007,8 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
         for term in expected_terms[index]:
             if term not in part_text:
                 issues.append(f"parts[{index}].text should preserve {term!r}")
-        if part.get("answerSurface") != "diagram" and (
+        uses_question_level_diagram_surface = index == 2 and has_question_level_diagram_surface and "plot" in part_text
+        if not uses_question_level_diagram_surface and part.get("answerSurface") != "diagram" and (
             not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
         ):
             issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
@@ -2478,6 +2499,31 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                             "path": f"{config_path}.features[{index}].style",
                             "message": "graph2d feature styling must use direct color/size/strokeWidth/strokeStyle fields.",
                             "expected": "color/size/strokeWidth/strokeStyle",
+                        }
+                    )
+                for key in ("expressionTop", "expressionBottom"):
+                    if key in feature:
+                        issues.append(
+                            {
+                                "path": f"{config_path}.features[{index}].{key}",
+                                "message": "graph2d region features must reference boundary functions by index, not inline expressions.",
+                                "expected": "graphConfig.functions plus functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex",
+                            }
+                        )
+                if "opacity" in feature:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].opacity",
+                            "message": "graph2d region shading opacity must use fillOpacity.",
+                            "expected": "fillOpacity",
+                        }
+                    )
+                if "fillColor" in feature:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].fillColor",
+                            "message": "graph2d feature colour must use color.",
+                            "expected": "color",
                         }
                     )
     return issues

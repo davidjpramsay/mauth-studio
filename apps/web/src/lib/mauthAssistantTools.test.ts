@@ -2332,6 +2332,46 @@ test("rejects graph2d feature type and style wrapper fields", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].style"));
 });
 
+test("rejects graph2d invented region expression fields", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-argand-region",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                functions: [{ expression: "1 + sqrt(4 - x^2)" }, { expression: "abs(x)/sqrt(3)" }],
+                features: [
+                  {
+                    kind: "region_clipped_by_curve",
+                    expressionTop: "1 + sqrt(4 - x^2)",
+                    expressionBottom: "abs(x)/sqrt(3)",
+                    opacity: 0.25,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].expressionTop"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].expressionBottom"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].opacity"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].clipSide"));
+});
+
 test("accepts structured graph3d point and segment data", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

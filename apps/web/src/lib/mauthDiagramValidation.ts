@@ -43,6 +43,12 @@ const GRAPH_FEATURE_STROKE_STYLES = new Set(["none", "solid", "dashed"]);
 const GRAPH_FEATURE_INTERSECTION_TARGETS = new Set(["function", "xAxis", "yAxis"]);
 const GRAPH_FEATURE_CLIP_SIDES = new Set(["above", "below", "left", "right", "inside", "outside"]);
 const GRAPH_AXES = new Set(["x", "y"]);
+const UNSUPPORTED_GRAPH_FEATURE_FIELDS = new Map([
+  ["expressionTop", "Use graphConfig.functions plus functionAIndex/functionBIndex on a region feature."],
+  ["expressionBottom", "Use graphConfig.functions plus functionAIndex/functionBIndex on a region feature."],
+  ["opacity", "Use fillOpacity for graph2d region shading opacity."],
+  ["fillColor", "Use color for graph2d feature colour."],
+]);
 const GRAPH_AXIS_LABEL_INTERVAL_MODES = new Set(["auto", "manual"]);
 const GRAPH_EXTENSION_MODES = new Set(["auto", "manual"]);
 const GRAPH2D_DATA_TOP_LEVEL_FIELDS = new Map([
@@ -498,6 +504,10 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
         "is not a supported graph2d feature style object; put styling directly on the feature",
         "{ color?, size?, strokeWidth?, strokeStyle? }",
       );
+    }
+    for (const [key, expected] of UNSUPPORTED_GRAPH_FEATURE_FIELDS) {
+      if (!hasOwn(entry, key)) continue;
+      addIssue(issues, `${entryPath}.${key}`, "is not a supported graph2d feature field", expected);
     }
     requiredEnum(entry, "kind", entryPath, GRAPH_FEATURE_KINDS, issues);
     optionalString(entry, "label", entryPath, issues);
