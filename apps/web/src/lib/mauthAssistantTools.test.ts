@@ -213,6 +213,16 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   ).warnings;
   assert(graphWarnings.some((warning) => warning.code === "graph2d-asymptote-feature-missing"));
 
+  const graph3dWarnings = inspectMauthDiagram(
+    {
+      type: "graph3d",
+      metadata: { view3d: { az: 1, el: 0.3, bank: 0 } },
+    },
+    "A rectangular prism is defined using the coordinate system shown. Determine the vector equation for main diagonal BT.",
+  ).warnings;
+  assert(graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing"));
+  assert(graph3dWarnings.some((warning) => warning.code === "graph3d-segments-missing"));
+
   const scalarWarnings = inspectMauthDiagram(
     {
       type: "geometricConstruction",
@@ -245,6 +255,9 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     scalarWarnings.some(
       (warning) => warning.code === "scalar-product-angle-marker-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
     ),
+  );
+  assert(
+    graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
   );
 });
 
@@ -2128,6 +2141,79 @@ test("accepts native statistics density curves and blank axes", () => {
   const blockIds = result.document?.questions[0].contentBlocks.map((block) => block.id) ?? [];
   assert(blockIds.includes("density-chart"));
   assert(blockIds.includes("blank-axes-chart"));
+});
+
+test("accepts structured graph3d point and segment data", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "prism-3d",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "O", coords: [0, 0, 0] },
+                    { id: "A", coords: [2, 0, 0] },
+                    { id: "B", coords: [2, 4, 0] },
+                    { id: "T", coords: [0, 0, 3] },
+                  ],
+                  segments: [
+                    { from: "O", to: "A" },
+                    { from: "A", to: "B" },
+                    { from: "B", to: "T", label: "$BT$" },
+                  ],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "prism-3d");
+  assert.equal(diagram?.kind, "diagram");
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
+});
+
+test("rejects malformed graph3d segment references", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-prism-3d",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [{ id: "A", coords: [2, 0, 0] }],
+                  segments: [{ from: "A", to: "B" }],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.segments[0].to"));
 });
 
 test("rejects unsupported Penrose Substance predicates before applying diagrams", () => {

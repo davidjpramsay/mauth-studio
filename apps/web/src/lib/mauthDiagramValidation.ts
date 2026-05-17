@@ -275,6 +275,16 @@ function numberPair(value: unknown, path: string, issues: MauthActionValidationI
   });
 }
 
+function numberTriple(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    addIssue(issues, path, "must be a triple of finite numbers", "[number, number, number]");
+    return;
+  }
+  value.forEach((item, index) => {
+    if (!finiteNumber(item)) addIssue(issues, `${path}[${index}]`, "must be a finite number", "number");
+  });
+}
+
 function optionalNumberPair(record: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[]) {
   if (!hasOwn(record, key)) return;
   numberPair(record[key], `${path}.${key}`, issues);
@@ -561,6 +571,62 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
 
 function validateGraph3D(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   validateCommonGraphConfig(config, path, issues);
+  const data = optionalRecord(config, "data", path, issues);
+  if (data) {
+    optionalNumberPair(data, "xRange", `${path}.data`, issues);
+    optionalNumberPair(data, "yRange", `${path}.data`, issues);
+    optionalNumberPair(data, "zRange", `${path}.data`, issues);
+    const points = optionalArray(data, "points", `${path}.data`, issues) ?? optionalArray(data, "vertices", `${path}.data`, issues);
+    const pointNames = new Set<string>();
+    points?.forEach((entry, index) => {
+      const entryPath = `${path}.data.points[${index}]`;
+      if (!isRecord(entry)) {
+        addIssue(issues, entryPath, "must be a 3D point object", "{ id, coords }");
+        return;
+      }
+      const id = typeof entry.id === "string" && entry.id.trim() ? entry.id : typeof entry.name === "string" ? entry.name : "";
+      if (!id.trim()) addIssue(issues, `${entryPath}.id`, "must be a non-empty string", "point id");
+      else pointNames.add(id);
+      if (hasOwn(entry, "coords")) {
+        numberTriple(entry.coords, `${entryPath}.coords`, issues);
+      } else if (hasOwn(entry, "coordinates")) {
+        numberTriple(entry.coordinates, `${entryPath}.coordinates`, issues);
+      } else if (hasOwn(entry, "position")) {
+        numberTriple(entry.position, `${entryPath}.position`, issues);
+      } else {
+        requiredNumber(entry, "x", entryPath, issues);
+        requiredNumber(entry, "y", entryPath, issues);
+        requiredNumber(entry, "z", entryPath, issues);
+      }
+      optionalString(entry, "label", entryPath, issues);
+      optionalString(entry, "color", entryPath, issues);
+      optionalBoolean(entry, "show", entryPath, issues);
+    });
+
+    const segments = optionalArray(data, "segments", `${path}.data`, issues) ?? optionalArray(data, "edges", `${path}.data`, issues);
+    segments?.forEach((entry, index) => {
+      const entryPath = `${path}.data.segments[${index}]`;
+      if (!isRecord(entry)) {
+        addIssue(issues, entryPath, "must be a 3D segment object", "{ from, to }");
+        return;
+      }
+      const pointsValue = Array.isArray(entry.points) ? entry.points : [];
+      const from = typeof entry.from === "string" ? entry.from : typeof pointsValue[0] === "string" ? pointsValue[0] : "";
+      const to = typeof entry.to === "string" ? entry.to : typeof pointsValue[1] === "string" ? pointsValue[1] : "";
+      if (!from.trim()) addIssue(issues, `${entryPath}.from`, "must be a non-empty point id", "point id");
+      else if (pointNames.size && !pointNames.has(from))
+        addIssue(issues, `${entryPath}.from`, "must reference a graph3d point", "declared point id");
+      if (!to.trim()) addIssue(issues, `${entryPath}.to`, "must be a non-empty point id", "point id");
+      else if (pointNames.size && !pointNames.has(to))
+        addIssue(issues, `${entryPath}.to`, "must reference a graph3d point", "declared point id");
+      optionalString(entry, "label", entryPath, issues);
+      optionalString(entry, "color", entryPath, issues);
+      optionalString(entry, "strokeStyle", entryPath, issues);
+      optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+      optionalBoolean(entry, "dashed", entryPath, issues);
+      optionalBoolean(entry, "show", entryPath, issues);
+    });
+  }
   const metadata = optionalRecord(config, "metadata", path, issues);
   const view3d = metadata ? optionalRecord(metadata, "view3d", `${path}.metadata`, issues) : undefined;
   if (!view3d) return;

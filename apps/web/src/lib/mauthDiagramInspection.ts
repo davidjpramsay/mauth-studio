@@ -337,6 +337,51 @@ function inspectImageSource(config: GraphConfig): MauthDiagramInspectionWarning[
   ];
 }
 
+function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
+  if (config.type !== "graph3d") return [];
+  const data = graphData(config);
+  const points = recordArray(Array.isArray(data.points) ? data.points : data.vertices);
+  const segments = recordArray(Array.isArray(data.segments) ? data.segments : data.edges);
+  const warnings: MauthDiagramInspectionWarning[] = [];
+  const needsStructured3d =
+    /\brectangular prism\b|\bprism\b|\b3d\b|\bthree-dimensional\b|\bcoordinate system\b|\bvertices\b|\bmain diagonal\b/i.test(contextText);
+  if (needsStructured3d && points.length < 4) {
+    warnings.push({
+      code: "graph3d-points-missing",
+      severity: "warning",
+      message: "3D source diagram should include named point/vertex data, not only a camera placeholder.",
+      path: "graphConfig.data.points",
+    });
+  }
+  if (needsStructured3d && segments.length < 3) {
+    warnings.push({
+      code: "graph3d-segments-missing",
+      severity: "warning",
+      message: "3D source diagram should include segment/edge data for the visible structure.",
+      path: "graphConfig.data.segments",
+    });
+  }
+  const compactContext = contextText.replace(/\s+/g, "").toLowerCase();
+  for (const pair of ["bt", "am"]) {
+    const [first, second] = pair;
+    const hasPair = segments.some((segment) => {
+      const pointPair = Array.isArray(segment.points) ? segment.points : [];
+      const from = String(segment.from ?? pointPair[0] ?? "").toLowerCase();
+      const to = String(segment.to ?? pointPair[1] ?? "").toLowerCase();
+      return (from === first && to === second) || (from === second && to === first);
+    });
+    if (compactContext.includes(pair) && !hasPair) {
+      warnings.push({
+        code: "graph3d-named-segment-missing",
+        severity: "warning",
+        message: `3D diagram should include the named segment ${pair.toUpperCase()} from the source question.`,
+        path: "graphConfig.data.segments",
+      });
+    }
+  }
+  return warnings;
+}
+
 function inspectStatsChart(config: GraphConfig): MauthDiagramInspectionWarning[] {
   if (config.type !== "statsChart") return [];
   const data = graphData(config);
@@ -546,6 +591,7 @@ export function inspectMauthDiagram(config: GraphConfig, contextText: string): M
     ...intent.warnings,
     ...inspectImageSource(config),
     ...inspectGraph2d(config, contextText),
+    ...inspectGraph3d(config, contextText),
     ...inspectStatsChart(config),
     ...inspectStatsChartIntent(config, contextText),
     ...inspectVector2d(config, contextText),
@@ -581,6 +627,9 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "stats-chart-relative-frequency-mode-missing" ||
     warning.code === "set-diagram-shading-missing" ||
     warning.code === "set-diagram-counts-missing" ||
+    warning.code === "graph3d-points-missing" ||
+    warning.code === "graph3d-segments-missing" ||
+    warning.code === "graph3d-named-segment-missing" ||
     warning.code.startsWith("penrose-")
   );
 }

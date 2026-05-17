@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
@@ -12,6 +12,22 @@ const DEFAULT_3D_VIEW_STATE = {
   az: 1,
   el: 0.3,
   bank: 0,
+};
+type Point3DCoords = [number, number, number];
+type Graph3DPointEntry = {
+  id: string;
+  label: string;
+  coords: Point3DCoords;
+  show: boolean;
+  color?: string;
+};
+type Graph3DSegmentEntry = {
+  from: string;
+  to: string;
+  label?: string;
+  color?: string;
+  dashed?: boolean;
+  show: boolean;
 };
 const AXIS_3D_LABEL_ATTRIBUTES = {
   label: LABEL_ATTRIBUTES,
@@ -62,6 +78,105 @@ interface Basic3DView {
 function finiteNumber(value: unknown, fallback: number) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function finiteTuple3(value: unknown): Point3DCoords | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  const x = Number(value[0]);
+  const y = Number(value[1]);
+  const z = Number(value[2]);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? [x, y, z] : null;
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function graph3dData(graphConfig?: GraphConfig | null) {
+  return asRecord(graphConfig?.data) ?? {};
+}
+
+function graph3dPoints(graphConfig?: GraphConfig | null): Graph3DPointEntry[] {
+  const data = graph3dData(graphConfig);
+  const rawPoints = Array.isArray(data.points) ? data.points : Array.isArray(data.vertices) ? data.vertices : [];
+  const points = rawPoints.flatMap((rawPoint): Graph3DPointEntry[] => {
+    const point = asRecord(rawPoint);
+    if (!point) return [];
+    const id = stringValue(point.id, stringValue(point.name));
+    if (!id) return [];
+    const coords =
+      finiteTuple3(point.coords) ??
+      finiteTuple3(point.coordinates) ??
+      finiteTuple3(point.position) ??
+      (Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)) && Number.isFinite(Number(point.z))
+        ? [Number(point.x), Number(point.y), Number(point.z)]
+        : null);
+    if (!coords) return [];
+    return [
+      {
+        id,
+        label: typeof point.label === "string" ? point.label : id,
+        coords,
+        show: point.show !== false,
+        color: typeof point.color === "string" ? point.color : undefined,
+      },
+    ];
+  });
+  return points.length ? points : [{ id: "P", label: "P", coords: [2, 2, 2], show: true }];
+}
+
+function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: Set<string>): Graph3DSegmentEntry[] {
+  const data = graph3dData(graphConfig);
+  const rawSegments = Array.isArray(data.segments) ? data.segments : Array.isArray(data.edges) ? data.edges : [];
+  return rawSegments.flatMap((rawSegment): Graph3DSegmentEntry[] => {
+    const segment = asRecord(rawSegment);
+    if (!segment) return [];
+    const pointPair = Array.isArray(segment.points) ? segment.points : undefined;
+    const from = stringValue(segment.from, stringValue(pointPair?.[0]));
+    const to = stringValue(segment.to, stringValue(pointPair?.[1]));
+    if (!from || !to || !pointIds.has(from) || !pointIds.has(to)) return [];
+    return [
+      {
+        from,
+        to,
+        label: typeof segment.label === "string" ? segment.label : undefined,
+        color: typeof segment.color === "string" ? segment.color : undefined,
+        dashed: segment.dashed === true || segment.strokeStyle === "dashed",
+        show: segment.show !== false,
+      },
+    ];
+  });
+}
+
+function rangeFromValue(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const left = Number(value[0]);
+  const right = Number(value[1]);
+  if (!Number.isFinite(left) || !Number.isFinite(right) || left === right) return null;
+  return left < right ? [left, right] : [right, left];
+}
+
+function rangeFromPoints(points: Graph3DPointEntry[], axisIndex: number, fallback: [number, number]) {
+  const values = points.map((point) => point.coords[axisIndex]).filter(Number.isFinite);
+  if (!values.length) return fallback;
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  if (min === max) return [min - 1, max + 1] as [number, number];
+  const pad = Math.max(0.5, (max - min) * 0.15);
+  return [Number((min - pad).toFixed(6)), Number((max + pad).toFixed(6))] as [number, number];
+}
+
+function graph3dRanges(graphConfig: GraphConfig | null | undefined, points: Graph3DPointEntry[]) {
+  const data = graph3dData(graphConfig);
+  return [
+    rangeFromValue(data.xRange) ?? rangeFromPoints(points, 0, [-5, 5]),
+    rangeFromValue(data.yRange) ?? rangeFromPoints(points, 1, [-5, 5]),
+    rangeFromValue(data.zRange) ?? rangeFromPoints(points, 2, [-5, 5]),
+  ] as [[number, number], [number, number], [number, number]];
 }
 
 function roundedViewValue(value: number) {
@@ -118,10 +233,15 @@ export function Basic3DGraph({
   const initialAz = initialViewState.az;
   const initialEl = initialViewState.el;
   const initialBank = initialViewState.bank;
+  const renderSignature = JSON.stringify({
+    data: graphConfig?.data ?? null,
+    widthPx: graphConfig?.widthPx ?? null,
+    heightPx: graphConfig?.heightPx ?? null,
+  });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     graphConfigRef.current = graphConfig;
-  }, [graphConfig]);
+  });
 
   useEffect(() => {
     const persistedViewState = { az: initialAz, el: initialEl, bank: initialBank };
@@ -136,6 +256,9 @@ export function Basic3DGraph({
       text: LABEL_ATTRIBUTES,
     } as Record<string, unknown>);
     let view: Basic3DView | null = null;
+    const renderGraphConfig = graphConfigRef.current;
+    const graphPoints = graph3dPoints(renderGraphConfig);
+    const graphRanges = graph3dRanges(renderGraphConfig, graphPoints);
 
     const commitViewState = () => {
       if (!view || !onGraphConfigChange) return;
@@ -173,11 +296,7 @@ export function Basic3DGraph({
         [
           [-4, -3],
           [8, 8],
-          [
-            [-5, 5],
-            [-5, 5],
-            [-5, 5],
-          ],
+          [graphRanges[0], graphRanges[1], graphRanges[2]],
         ],
         {
           az: { slider: { visible: false, start: persistedViewState.az } },
@@ -210,15 +329,76 @@ export function Basic3DGraph({
           ticks3d: { label: LABEL_ATTRIBUTES },
         } as Record<string, unknown>,
       ) as unknown as Basic3DView;
-      view.create("point3d", [2, 2, 2], { name: "P", ...POINT_3D_ATTRIBUTES });
-      view.create("text3d", [[2.35, 2.35, 2.35], render3DLatexLabel("P")], {
-        ...LATEX_3D_LABEL_ATTRIBUTES,
-        anchorX: "left",
-        anchorY: "bottom",
-      });
-      view.create("text3d", [[5.35, 0, 0], render3DLatexLabel("x")], LATEX_3D_LABEL_ATTRIBUTES);
-      view.create("text3d", [[0, 5.35, 0], render3DLatexLabel("y")], LATEX_3D_LABEL_ATTRIBUTES);
-      view.create("text3d", [[0, 0, 5.35], render3DLatexLabel("z")], LATEX_3D_LABEL_ATTRIBUTES);
+      const points = graphPoints;
+      const pointMap = new Map(points.map((point) => [point.id, point]));
+      const segments = graph3dSegments(renderGraphConfig, new Set(pointMap.keys()));
+      const ranges = graphRanges;
+      const labelOffset = Math.max(
+        0.18,
+        Math.max(ranges[0][1] - ranges[0][0], ranges[1][1] - ranges[1][0], ranges[2][1] - ranges[2][0]) * 0.035,
+      );
+
+      segments
+        .filter((segment) => segment.show)
+        .forEach((segment) => {
+          const from = pointMap.get(segment.from);
+          const to = pointMap.get(segment.to);
+          if (!from || !to) return;
+          view?.create(
+            "curve3d",
+            [
+              (t: number) => from.coords[0] + t * (to.coords[0] - from.coords[0]),
+              (t: number) => from.coords[1] + t * (to.coords[1] - from.coords[1]),
+              (t: number) => from.coords[2] + t * (to.coords[2] - from.coords[2]),
+              [0, 1],
+            ],
+            {
+              strokeColor: segment.color ?? "#111827",
+              strokeWidth: 1.8,
+              dash: segment.dashed ? 2 : 0,
+              highlight: false,
+            },
+          );
+          if (segment.label?.trim()) {
+            const midpoint: Point3DCoords = [
+              (from.coords[0] + to.coords[0]) / 2,
+              (from.coords[1] + to.coords[1]) / 2,
+              (from.coords[2] + to.coords[2]) / 2,
+            ];
+            view?.create(
+              "text3d",
+              [[midpoint[0] + labelOffset, midpoint[1] + labelOffset, midpoint[2] + labelOffset], render3DLatexLabel(segment.label)],
+              LATEX_3D_LABEL_ATTRIBUTES,
+            );
+          }
+        });
+
+      points
+        .filter((point) => point.show)
+        .forEach((point) => {
+          view?.create("point3d", point.coords, {
+            name: point.id,
+            ...POINT_3D_ATTRIBUTES,
+            fillColor: point.color ?? POINT_3D_ATTRIBUTES.fillColor,
+          });
+          if (point.label.trim()) {
+            view?.create(
+              "text3d",
+              [
+                [point.coords[0] + labelOffset, point.coords[1] + labelOffset, point.coords[2] + labelOffset],
+                render3DLatexLabel(point.label),
+              ],
+              {
+                ...LATEX_3D_LABEL_ATTRIBUTES,
+                anchorX: "left",
+                anchorY: "bottom",
+              },
+            );
+          }
+        });
+      view.create("text3d", [[ranges[0][1] + labelOffset, 0, 0], render3DLatexLabel("x")], LATEX_3D_LABEL_ATTRIBUTES);
+      view.create("text3d", [[0, ranges[1][1] + labelOffset, 0], render3DLatexLabel("y")], LATEX_3D_LABEL_ATTRIBUTES);
+      view.create("text3d", [[0, 0, ranges[2][1] + labelOffset], render3DLatexLabel("z")], LATEX_3D_LABEL_ATTRIBUTES);
     } catch {
       board.create("text", [-4.8, 4.8, "3D graph adapter"], LABEL_ATTRIBUTES);
     }
@@ -247,7 +427,7 @@ export function Basic3DGraph({
       window.removeEventListener("beforeprint", commitViewState);
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, initialAz, initialBank, initialEl, onGraphConfigChange]);
+  }, [boardId, initialAz, initialBank, initialEl, onGraphConfigChange, renderSignature]);
 
   return (
     <div

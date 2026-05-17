@@ -244,6 +244,22 @@ For `graph3d` diagrams, the live preview persists the teacher's rotated camera i
 ```json
 {
   "type": "graph3d",
+  "data": {
+    "points": [
+      { "id": "O", "label": "O", "coords": [0, 0, 0] },
+      { "id": "A", "label": "A", "coords": [2, 0, 0] },
+      { "id": "B", "label": "B", "coords": [2, 4, 0] },
+      { "id": "T", "label": "T", "coords": [0, 0, 3] }
+    ],
+    "segments": [
+      { "from": "O", "to": "A" },
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "T", "label": "$BT$" }
+    ],
+    "xRange": [-1, 3],
+    "yRange": [-1, 5],
+    "zRange": [-1, 4]
+  },
   "metadata": {
     "view3d": {
       "az": 1.35,
@@ -256,7 +272,7 @@ For `graph3d` diagrams, the live preview persists the teacher's rotated camera i
 
 Preserve this metadata when editing 3D diagrams so the printed PDF uses the same view as the screen preview.
 
-The editor treats `graph3d` as its own renderer family. It exposes diagram width, diagram height, and the stored camera values `az`, `el`, and `bank`. Do not add 2D graph functions, 2D axes options, or vector2d metadata to a `graph3d` diagram.
+The editor treats `graph3d` as its own renderer family. It exposes diagram width, diagram height, and the stored camera values `az`, `el`, and `bank`. For source 3D coordinate geometry, put named vertices in `data.points` and visible joins in `data.segments`; do not leave a source prism or solid as a camera-only placeholder. Do not add 2D graph functions, 2D axes options, or vector2d metadata to a `graph3d` diagram.
 
 ### Image Diagrams
 

@@ -614,7 +614,22 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
   }
 
   if (config.type === "setDiagram" || config.type === "graph3d" || config.type === "image" || config.type === "network") {
-    summary.data = compactPlainRecord(config.data, ["sets", "regions", "nodes", "edges", "src", "caption", "objects", "relationships"]);
+    summary.data = compactPlainRecord(config.data, [
+      "sets",
+      "regions",
+      "nodes",
+      "edges",
+      "src",
+      "caption",
+      "objects",
+      "relationships",
+      "points",
+      "vertices",
+      "segments",
+      "xRange",
+      "yRange",
+      "zRange",
+    ]);
     summary.metadata = compactPlainRecord(config.metadata, ["vectors", "labels", "view"]);
   }
 

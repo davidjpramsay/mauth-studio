@@ -318,6 +318,93 @@ def sample_methods_earthquake_screenshot_with_key() -> list[AssistantAttachment]
     ]
 
 
+def sample_specialist_argand_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q11-argand-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q11_argand_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q11-argand-locus-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q11_argand_locus_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q11-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=157,
+            end_line=228,
+        ),
+    ]
+
+
+def sample_specialist_prism_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q16-3d-prism-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q16_3d_prism_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q16-3d-prism-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q16_3d_prism_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q16-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=590,
+            end_line=685,
+        ),
+    ]
+
+
+def sample_specialist_implicit_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q18-implicit-curve-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q18_implicit_curve_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q18-implicit-curve-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q18_implicit_curve_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q18-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=860,
+            end_line=927,
+        ),
+    ]
+
+
 def png_bytes_from_html(html: str, *, width: int = 1400, height: int = 900) -> bytes:
     script = """
 const fs = require("fs");
@@ -1673,6 +1760,200 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("argand", "z1", "z2", "polar", "cartesian", "locus", "circle"):
+        if term not in serialized.replace("_", ""):
+            issues.append(f"argand source conversion should preserve {term!r}")
+
+    graph_types = graph_config_types(args)
+    if "graph2d" not in graph_types:
+        issues.append(f"argand plane and locus diagrams should use graph2d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "setDiagram", "network")):
+        issues.append("argand/locus source should not use statsChart, setDiagram, or network")
+    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    for term in ("re", "im", "z1", "z2"):
+        if term not in graph_serialized and term not in serialized:
+            issues.append(f"argand diagram should preserve {term!r} labels")
+    if not any(term in graph_serialized for term in ("circle", "x^2", "y-1", "region", "shade", "locus")):
+        issues.append("argand locus graph should encode the circular shaded region semantics")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 4:
+        issues.append("argand source should become exactly four structured parts")
+        return issues
+    expected_marks = [2, 1, 2, 4]
+    expected_terms = (("z", "polar"), ("cartesian",), ("plot", "z"), ("locus", "inequalities"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if part.get("answerSurface") != "diagram" and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("2cis", "5pi/6", "sqrt", "z-i", "arg", "pi/6"):
+        if term not in solution_serialized:
+            issues.append(f"argand solution should preserve {term!r}")
+    if "5pi/6" not in solution_serialized:
+        issues.append("argand locus solution should preserve upper argument bound 5pi/6")
+    if hidden_mark_total("\n".join(solution_texts)) != 9:
+        issues.append("argand hidden [[marks:n]] total should be exactly 9")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("argand solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
+def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("rectangular prism", "coordinate system", "main diagonal", "vector equation", "sphere"):
+        if term not in serialized:
+            issues.append(f"3d prism source conversion should preserve {term!r}")
+    for vertex in ("o", "a", "b", "c", "t", "m"):
+        if not re.search(rf"(?<![a-z]){re.escape(vertex)}(?![a-z])", serialized):
+            issues.append(f"3d prism source conversion should preserve named vertex/point {vertex.upper()}")
+
+    graph_types = graph_config_types(args)
+    if "graph3d" not in graph_types:
+        issues.append(f"3d prism source diagram should use graph3d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("graph2d", "statsChart", "network")):
+        issues.append("3d prism source should not use graph2d, statsChart, or network")
+    graph3d_configs = [config for config in collect_diagram_graph_configs(args) if config.get("type") == "graph3d"]
+    graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
+    point_ids: set[str] = set()
+    segment_pairs: set[tuple[str, str]] = set()
+    for config in graph3d_configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        points = data.get("points") if isinstance(data.get("points"), list) else data.get("vertices")
+        for point in points if isinstance(points, list) else []:
+            if isinstance(point, dict):
+                point_id = str(point.get("id") or point.get("name") or point.get("label") or "").lower()
+                if point_id:
+                    point_ids.add(point_id)
+        segments = data.get("segments") if isinstance(data.get("segments"), list) else data.get("edges")
+        for segment in segments if isinstance(segments, list) else []:
+            if isinstance(segment, dict):
+                segment_points = segment.get("points") if isinstance(segment.get("points"), list) else []
+                from_value = segment.get("from") or (segment_points[0] if segment_points else "")
+                to_value = segment.get("to") or (segment_points[1] if len(segment_points) > 1 else "")
+                from_id = str(from_value).lower()
+                to_id = str(to_value).lower()
+                if from_id and to_id:
+                    segment_pairs.add(tuple(sorted((from_id, to_id))))
+    for point_id in ("o", "a", "b", "c", "t", "m"):
+        if point_id not in point_ids and f'"{point_id}"' not in graph3d_serialized:
+            issues.append(f"3d prism graph3d data should include named point {point_id.upper()}")
+    for pair in (("b", "t"), ("a", "m")):
+        if tuple(sorted(pair)) not in segment_pairs and "".join(pair) not in graph3d_serialized:
+            issues.append(f"3d prism graph3d data should include segment {''.join(pair).upper()}")
+    if "view3d" not in graph3d_serialized:
+        issues.append("3d prism graph3d data should preserve a view3d camera")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 3:
+        issues.append("3d prism source should become exactly three structured parts")
+        return issues
+    expected_marks = [2, 3, 3]
+    expected_terms = (("vector equation", "bt"), ("sphere",), ("am", "intersect", "bt"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("-2", "-4", "3", "1.5", "7.25", "doesnotintersect"):
+        if term not in solution_serialized:
+            issues.append(f"3d prism solution should preserve {term!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 8:
+        issues.append("3d prism hidden [[marks:n]] total should be exactly 8")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("3d prism solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
+def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("implicitly defines", "curve", "slope", "origin", "points a and b"):
+        if term not in serialized:
+            issues.append(f"implicit-curve source conversion should preserve {term!r}")
+    if "x" not in serialized or "y" not in serialized:
+        issues.append("implicit-curve source conversion should preserve x/y variables")
+
+    graph_types = graph_config_types(args)
+    if "graph2d" not in graph_types:
+        issues.append(f"implicit curve source diagram should use graph2d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "geometricConstruction", "network")):
+        issues.append("implicit curve source should not use statsChart, geometricConstruction, or network")
+    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    if "relation" not in graph_serialized and "x^3" not in graph_serialized:
+        issues.append("implicit curve graph2d should encode the relation x^3 + y^3 = 3xy + y")
+    for label in ("o", "a", "b"):
+        if f'"{label}"' not in graph_serialized and label not in serialized:
+            issues.append(f"implicit curve graph should preserve point label {label.upper()}")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 2:
+        issues.append("implicit curve source should become exactly two structured parts")
+        return issues
+    expected_marks = [3, 3]
+    expected_terms = (("implicit", "dy"), ("x", "coordinates", "a"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("dy/dx", "3", "x^4", "-2x", "-1", "-0.475", "0.225"):
+        if term not in solution_serialized:
+            issues.append(f"implicit-curve solution should preserve {term!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 6:
+        issues.append("implicit-curve hidden [[marks:n]] total should be exactly 6")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("implicit-curve solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def graph2d_function_expressions(graph_config: dict[str, Any]) -> list[str]:
     functions = graph_config.get("functions")
     if isinstance(functions, list):
@@ -2058,6 +2339,33 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_methods_earthquake_screenshot_with_key,
         "assert": assert_real_methods_earthquake_call,
     },
+    "real-specialist-argand": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the Argand diagrams, locus shading, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_argand_screenshot_with_key,
+        "assert": assert_real_specialist_argand_call,
+    },
+    "real-specialist-prism": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the 3D coordinate prism diagram, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_prism_screenshot_with_key,
+        "assert": assert_real_specialist_prism_call,
+    },
+    "real-specialist-implicit": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the implicit curve diagram, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_implicit_screenshot_with_key,
+        "assert": assert_real_specialist_implicit_call,
+    },
     "repair-circle-diagram": {
         "prompt": "Please add the diagram to question 1 that goes along with the question.",
         "summary": sample_parallel_chord_circle_document_summary,
@@ -2133,7 +2441,16 @@ EVAL_GROUPS: dict[str, list[str]] = {
     ],
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
-    "real-exams": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
+    "real-exams-core": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
+    "real-exams-extended": ["real-specialist-argand", "real-specialist-prism", "real-specialist-implicit"],
+    "real-exams": [
+        "real-methods-earthquake",
+        "real-specialist-lighthouse",
+        "real-specialist-stats",
+        "real-specialist-argand",
+        "real-specialist-prism",
+        "real-specialist-implicit",
+    ],
 }
 
 
