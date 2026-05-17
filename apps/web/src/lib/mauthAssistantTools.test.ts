@@ -35,6 +35,40 @@ function hiddenMarkTotal(text: string) {
   return [...text.matchAll(/\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi)].reduce((sum, match) => sum + Number(match[1] ?? 0), 0);
 }
 
+function allQuestionText(questionItem?: MauthQuestionLike) {
+  const parts = questionItem?.parts ?? [];
+  const blocks = questionItem?.contentBlocks ?? [];
+  return [
+    ...blocks.map((block) => (block.kind === "text" ? block.text : "")),
+    ...parts.flatMap((partItem) => [
+      partItem.text ?? "",
+      ...partItem.contentBlocks.map((block) => (block.kind === "text" ? block.text : "")),
+      ...(partItem.subparts ?? []).flatMap((subpart) => [
+        subpart.text ?? "",
+        ...subpart.contentBlocks.map((block) => (block.kind === "text" ? block.text : "")),
+      ]),
+    ]),
+  ].join("\n");
+}
+
+function allSolutionText(questionItem?: MauthQuestionLike) {
+  const blocks = questionItem?.contentBlocks ?? [];
+  const parts = questionItem?.parts ?? [];
+  return [
+    ...blocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
+    ...parts.flatMap((partItem) => [
+      ...partItem.contentBlocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
+      ...(partItem.subparts ?? []).flatMap((subpart) =>
+        subpart.contentBlocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
+      ),
+    ]),
+  ].join("\n");
+}
+
+function questionDiagrams(questionItem?: MauthQuestionLike) {
+  return (questionItem?.contentBlocks ?? []).filter((block) => block.kind === "diagram");
+}
+
 function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
   return { id, kind: "diagram", graphConfig };
 }
@@ -225,6 +259,23 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     "Part of the slope field given by $\\frac{dy}{dx}=\\frac{x-1}{2y}$ is shown. Calculate and draw the slope field at the point $(0.5,-1)$.",
   ).warnings;
   assert(slopeFieldWarnings.some((warning) => warning.code === "graph2d-slope-field-missing"));
+
+  const implicitDerivativeWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      functions: [{ kind: "relation", expression: "x^3 + y^3 = 3xy + y" }],
+      features: [
+        { kind: "point", x: 0, y: 0, label: "$O$" },
+        { kind: "point", x: -0.475, y: 0, label: "$A$" },
+        { kind: "point", x: 0.225, y: 0, label: "$B$" },
+      ],
+    },
+    "The curve is implicitly defined by $x^3+y^3=3xy+y$. Use implicit differentiation to find $\\frac{dy}{dx}$.",
+  ).warnings;
+  assert.equal(
+    implicitDerivativeWarnings.some((warning) => warning.code === "graph2d-slope-field-missing"),
+    false,
+  );
 
   const graph3dWarnings = inspectMauthDiagram(
     {
@@ -832,6 +883,342 @@ test("high-level question authoring appends the next missing question", () => {
   assert.equal(appended.contentBlocks[1].kind === "diagram" ? appended.contentBlocks[1].graphConfig.type : "", "graph2d");
   assert.equal(appended.contentBlocks[2].kind, "space");
   assert.equal(appended.contentBlocks[2].visibility, "student");
+});
+
+test("real-exam style source payloads survive authoring, inspection, and layout checks", () => {
+  const cases: Array<{
+    id: string;
+    arguments: Record<string, unknown>;
+    diagramType: GraphConfig["type"];
+    partCount: number;
+    hiddenMarks: number;
+    requiredText: string[];
+  }> = [
+    {
+      id: "methods-earthquake",
+      diagramType: "graph2d",
+      partCount: 4,
+      hiddenMarks: 9,
+      requiredText: ["earthquake", "seismic moment", "M_w", "10^{15}"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText:
+          "An earthquake has seismic moment $M_0=3.16\\times10^{13}$. The graph shows the relationship between moment magnitude $M_w$ and $\\log_{10}(M_0)$.",
+        diagram: {
+          graphConfig: {
+            type: "graph2d",
+            xMin: 8,
+            xMax: 16,
+            yMin: 0,
+            yMax: 5,
+            xAxisLabel: "$\\log_{10}(M_0)$",
+            yAxisLabel: "$M_w$",
+            functions: [{ expression: "y=(2/3)x-6", color: "#1d4ed8", strokeWidth: 2 }],
+          },
+        },
+        parts: [
+          {
+            text: "For $M_0=3.16\\times10^{13}$, determine $\\log_{10}(M_0)$.",
+            marks: 2,
+            studentSpaceLines: 4,
+            solutionText: "$$\\log_{10}(3.16\\times10^{13})=13.5.$$ [[marks:2]]",
+          },
+          {
+            text: "Use points A and B on the graph to determine the gradient.",
+            marks: 2,
+            studentSpaceLines: 4,
+            solutionText: "$$m=\\frac{4-2}{15-12}=\\frac23.$$ [[marks:2]]",
+          },
+          {
+            text: "Find the relationship in the form $M_w=a\\log_{10}(M_0)+b$.",
+            marks: 3,
+            studentSpaceLines: 6,
+            solutionText: "$$M_w=\\frac23\\log_{10}(M_0)-6,$$ so $M_w=3$ when $M_0=10^{13.5}$. [[marks:3]]",
+          },
+          {
+            text: "Find the seismic moment for an earthquake of magnitude 4.",
+            marks: 2,
+            studentSpaceLines: 5,
+            solutionText: "When $M_w=4$, $M_0=10^{15}$. When $M_w=0$, $M_0=10^9$. [[marks:2]]",
+          },
+        ],
+      },
+    },
+    {
+      id: "specialist-stats",
+      diagramType: "statsChart",
+      partCount: 3,
+      hiddenMarks: 9,
+      requiredText: ["text message", "standard deviation", "0.904", "not accepted"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText:
+          "Anika claims that teenagers send me a text message with response times that have mean 3 minutes and standard deviation 2.4 minutes. A sample of 64 responses is recorded.",
+        diagram: {
+          graphConfig: {
+            type: "statsChart",
+            data: {
+              chartType: "density",
+              xLabel: "response time",
+              points: [
+                { x: 1, y: 0.03 },
+                { x: 2.1, y: 0.2 },
+                { x: 2.7, y: 0.18 },
+                { x: 5, y: 0.02 },
+              ],
+            },
+          },
+        },
+        parts: [
+          {
+            text: "Estimate the probability that a response time is between 150 and 210 seconds.",
+            marks: 3,
+            studentSpaceLines: 5,
+            solutionText: "$$P(150<X<210)=0.904.$$ [[marks:3]]",
+          },
+          {
+            text: "Describe the sample mean distribution for samples of size 64.",
+            marks: 2,
+            studentSpaceLines: 4,
+            solutionText: "$$\\mu_{\\bar X}=3,\\quad \\sigma_{\\bar X}=\\frac{2.4}{8}=0.3.$$ [[marks:2]]",
+          },
+          {
+            text: "Anika collected a table with sample size 100, mean 2.1 and standard deviation 2.7. Comment on Anika's claim.",
+            marks: 4,
+            studentSpaceLines: 6,
+            solutionText:
+              "The interval from the normal calculation is $1.5708$ to $2.6292$. [[marks:2]]\nThe claim is not accepted because the sample is biased. [[marks:2]]",
+          },
+        ],
+      },
+    },
+    {
+      id: "specialist-slope-field",
+      diagramType: "graph2d",
+      partCount: 3,
+      hiddenMarks: 8,
+      requiredText: ["slope field", "dy", "0.25", "x^2"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText: "The diagram shows a slope field for $\\frac{dy}{dx}=\\frac{x-1}{2y}$ and a solution curve through $(0,0.5)$.",
+        diagram: {
+          graphConfig: {
+            type: "graph2d",
+            xMin: -1,
+            xMax: 3,
+            yMin: -2,
+            yMax: 2,
+            functions: [{ kind: "relation", expression: "y^2 = x^2/2 - x + 1/4", color: "#1d4ed8" }],
+            features: [{ kind: "tangent", functionIndex: 0, x: 0.5, label: "gradient 0.25" }],
+            data: {
+              slopeField: {
+                expression: "(x - 1) / (2*y)",
+                xRange: [-1, 3],
+                yRange: [-2, 2],
+                xStep: 0.5,
+                yStep: 0.5,
+                highlightedPoints: [{ x: 0.5, y: -1, label: "$(0.5,-1)$" }],
+              },
+            },
+          },
+        },
+        parts: [
+          {
+            text: "Calculate $\\frac{dy}{dx}$ at $(0.5,-1)$ and draw the tangent direction on the slope field.",
+            marks: 3,
+            studentSpaceLines: 5,
+            solutionText: "$$\\frac{dy}{dx}=0.25.$$ [[marks:3]]",
+          },
+          {
+            text: "Find the equation of the solution curve through $(0,0.5)$.",
+            marks: 3,
+            studentSpaceLines: 6,
+            solutionText: "$$y^2=\\frac{x^2}{2}-x+\\frac14.$$ [[marks:3]]",
+          },
+          {
+            text: "Draw the solution curve on the slope-field diagram.",
+            marks: 2,
+            studentSpaceLines: 3,
+            solutionText: "Draw the relation $y^2=x^2/2-x+1/4$ on the slope field. [[marks:2]]",
+          },
+        ],
+      },
+    },
+    {
+      id: "specialist-argand",
+      diagramType: "graph2d",
+      partCount: 4,
+      hiddenMarks: 9,
+      requiredText: ["Argand", "locus", "5\\pi", "z-i"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText:
+          "On the Argand diagram, complex numbers $z_1$ and $z_2$ are shown. Describe the locus satisfying the circle and argument inequalities.",
+        diagram: {
+          graphConfig: {
+            type: "graph2d",
+            xMin: -4,
+            xMax: 4,
+            yMin: -2,
+            yMax: 5,
+            xAxisLabel: "Re",
+            yAxisLabel: "Im",
+            functions: [{ kind: "relation", expression: "x^2 + (y - 1)^2 = 4", color: "#2563eb" }],
+            features: [
+              { kind: "point", x: -1, y: 1.732, label: "$z_1$" },
+              { kind: "point", x: 2, y: 0, label: "$z_2$" },
+              { kind: "region_clipped_by_curve", baseFeatureIndex: 0, clipFunctionIndex: 0, clipSide: "inside", fillOpacity: 0.2 },
+            ],
+          },
+        },
+        parts: [
+          { text: "Express $z_1$ in polar form.", marks: 2, studentSpaceLines: 4, solutionText: "$$z_1=2cis(5\\pi/6).$$ [[marks:2]]" },
+          { text: "Write $z_2$ in Cartesian form.", marks: 1, studentSpaceLines: 3, solutionText: "$$z_2=2+0i.$$ [[marks:1]]" },
+          {
+            text: "Plot $z_1$ and $z_2$ on an Argand diagram.",
+            marks: 2,
+            studentSpaceLines: 3,
+            solutionText: "Plot both points. [[marks:2]]",
+          },
+          {
+            text: "Shade the locus described by $|z-i|\\le 2$ and $\\pi/6\\le \\arg(z-i)\\le 5\\pi/6$.",
+            marks: 4,
+            studentSpaceLines: 6,
+            solutionText: "The locus is the sector of $|z-i|\\le2$ between arguments $\\pi/6$ and $5\\pi/6$. [[marks:4]]",
+          },
+        ],
+      },
+    },
+    {
+      id: "specialist-prism",
+      diagramType: "graph3d",
+      partCount: 3,
+      hiddenMarks: 8,
+      requiredText: ["rectangular prism", "BT", "sphere", "does not intersect"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText:
+          "A rectangular prism is defined using the coordinate system shown with $A(2,0,0)$, $C(0,4,0)$ and $T(0,0,3)$. Point $M$ is the centre of face $OCFT$.",
+        diagram: {
+          graphConfig: {
+            type: "graph3d",
+            metadata: { view3d: { az: 1.1, el: 0.35, bank: 0 } },
+            data: {
+              points: [
+                { id: "O", coords: [0, 0, 0] },
+                { id: "A", coords: [2, 0, 0] },
+                { id: "B", coords: [2, 4, 0] },
+                { id: "C", coords: [0, 4, 0] },
+                { id: "T", coords: [0, 0, 3] },
+                { id: "M", coords: [0, 2, 1.5] },
+              ],
+              segments: [
+                { from: "O", to: "A" },
+                { from: "A", to: "B" },
+                { from: "B", to: "C" },
+                { from: "O", to: "T", strokeStyle: "dashed" },
+                { from: "B", to: "T", label: "$BT$" },
+                { from: "A", to: "M", label: "$AM$" },
+              ],
+            },
+          },
+        },
+        parts: [
+          {
+            text: "Determine the vector equation for $BT$.",
+            marks: 2,
+            studentSpaceLines: 6,
+            solutionText: "$$\\vec d=(-2,-4,3).$$ [[marks:2]]",
+          },
+          {
+            text: "Determine the Cartesian equation of the sphere.",
+            marks: 3,
+            studentSpaceLines: 8,
+            solutionText: "$$(x-1)^2+(y-2)^2+(z-1.5)^2=7.25.$$ [[marks:3]]",
+          },
+          {
+            text: "Prove that $AM$ does not intersect $BT$.",
+            marks: 3,
+            studentSpaceLines: 10,
+            solutionText: "The equations produce a contradiction, so $AM$ does not intersect $BT$. [[marks:3]]",
+          },
+        ],
+      },
+    },
+    {
+      id: "specialist-implicit",
+      diagramType: "graph2d",
+      partCount: 2,
+      hiddenMarks: 6,
+      requiredText: ["implicitly defines", "x^4", "-0.475", "0.225"],
+      arguments: {
+        questionNumber: 1,
+        marks: 0,
+        questionText: "The equation $x^3+y^3=3xy+y$ implicitly defines a curve with points A and B on the $x$-axis.",
+        diagram: {
+          graphConfig: {
+            type: "graph2d",
+            xMin: -1.5,
+            xMax: 2.5,
+            yMin: -1.5,
+            yMax: 2.5,
+            functions: [{ kind: "relation", expression: "x^3 + y^3 = 3xy + y", color: "#1d4ed8" }],
+            features: [
+              { kind: "point", x: 0, y: 0, label: "$O$" },
+              { kind: "point", x: -0.475, y: 0, label: "$A$" },
+              { kind: "point", x: 0.225, y: 0, label: "$B$" },
+            ],
+          },
+        },
+        parts: [
+          {
+            text: "Use implicit differentiation to find $\\frac{dy}{dx}$.",
+            marks: 3,
+            studentSpaceLines: 6,
+            solutionText: "$$\\frac{dy}{dx}=\\frac{3y-3x^2}{3y^2-3x-1}.$$ [[marks:3]]",
+          },
+          {
+            text: "Find the $x$ coordinates of A and B.",
+            marks: 3,
+            studentSpaceLines: 6,
+            solutionText: "$$x^4-2x^2-x=0,$$ giving $x=-0.475$ and $x=0.225$. [[marks:3]]",
+          },
+        ],
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    const result = runMauthAssistantTool(documentFixture(), { name: "mauth.question.upsert", arguments: item.arguments });
+    assert.equal(result.ok, true, item.id);
+    const authored = result.document?.questions[0];
+    assert.equal(authored?.parts?.length ?? 0, item.partCount, item.id);
+    assert.equal(
+      questionDiagrams(authored)[0]?.kind === "diagram" ? questionDiagrams(authored)[0].graphConfig.type : "",
+      item.diagramType,
+      item.id,
+    );
+    const combinedText = `${allQuestionText(authored)}\n${allSolutionText(authored)}`;
+    for (const expectedText of item.requiredText)
+      assert.match(combinedText, new RegExp(expectedText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), item.id);
+    assert.equal(hiddenMarkTotal(allSolutionText(authored)), item.hiddenMarks, item.id);
+
+    const previewResult = runMauthAssistantTool(result.document!, { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } });
+    const preview = previewResult.data as MauthPreviewInspection;
+    assert.equal(previewResult.ok, true, item.id);
+    assert.equal(preview.question?.diagrams[0]?.graphType, item.diagramType, item.id);
+    assert.equal(preview.question?.diagrams.flatMap((diagram) => diagram.warnings).length ?? 0, 0, item.id);
+
+    const layoutResult = runMauthAssistantTool(result.document!, { name: "mauth.layout.check", arguments: { mode: "both" } });
+    const layout = layoutResult.data as MauthLayoutCheck;
+    const blockingLayoutCodes = new Set(["student-space-missing", "solution-hidden-mark-total-mismatch", "solution-visible-mark-note"]);
+    assert.equal(layout.issues.filter((issue) => blockingLayoutCodes.has(issue.code)).length, 0, item.id);
+  }
 });
 
 test("high-level question authoring builds source scalar-product vector diagrams from compact vector intent", () => {

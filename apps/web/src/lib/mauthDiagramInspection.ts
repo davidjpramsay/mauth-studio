@@ -165,7 +165,7 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
   const visibleExpressions = visibleGraphFunctionExpressions(config);
   const expectedStraightLineCount = straightLineGraphExpectation(contextText);
 
-  if (/\bslope\s+field\b|\bdirection\s+field\b|\\frac\{\s*dy\s*\}\{\s*dx\s*\}|\bdy\s*\/\s*dx\b/i.test(contextText)) {
+  if (/\b(?:slope|direction)\s+field\b/i.test(contextText)) {
     const slopeField = isRecord(data.slopeField) ? data.slopeField : {};
     const hasSlopeFieldExpression = typeof slopeField.expression === "string" && slopeField.expression.trim();
     if (!hasSlopeFieldExpression) {

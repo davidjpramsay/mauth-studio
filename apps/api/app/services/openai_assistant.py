@@ -1731,7 +1731,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "end of mark-worthy lines so the solution copy renders red check marks; the total hidden "
                         "marks should match the item marks. For answerSurface diagram/table tasks, the completed "
                         "solutionDiagram/solutionTable receives the red ticks from the item marks automatically, so "
-                        "use solutionText only for a short unmarked note if needed. Do not write visible [1 mark], (1 mark), or "
+                        "use solutionText only for a short unmarked note if needed. Never include [[marks:n]] in "
+                        "solutionText when a solutionDiagram or solutionTable is present for the same item. "
+                        "Do not write visible [1 mark], (1 mark), or "
                         "'1 mark for ...' notes. Preserve LaTeX backslashes exactly; in JSON strings this means "
                         "commands such as \\ell and \\frac must be emitted with escaped backslashes, not as control "
                         "characters."
@@ -1834,7 +1836,8 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                     "Worked solution for this part. End mark-worthy lines with hidden [[marks:n]] tick "
                                     "annotations and make the hidden mark total match this part's marks. For answerSurface "
                                     "diagram/table parts, the completed solution surface receives the ticks automatically, "
-                                    "so use this only for a short unmarked note if needed."
+                                    "so use this only for a short unmarked note if needed. Never include [[marks:n]] here "
+                                    "when solutionDiagram or solutionTable is present for the same part."
                                 ),
                             },
                             "includeSolution": {"type": "boolean"},
@@ -2521,6 +2524,7 @@ Tool-call contract:
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, use mauth_convert_source_question and include it in diagram or diagrams in the same replacement payload; do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "The diagram shows...".
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. For marked written-response parts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested.
+- For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.

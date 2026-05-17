@@ -886,6 +886,37 @@ def call_text(call: dict[str, Any]) -> str:
     return json.dumps(call.get("mauthArguments", {}), ensure_ascii=False)
 
 
+def has_solution_surface(value: dict[str, Any], singular_key: str, plural_key: str) -> bool:
+    if isinstance(value.get(singular_key), dict):
+        return True
+    plural_value = value.get(plural_key)
+    return isinstance(plural_value, list) and any(isinstance(item, dict) for item in plural_value)
+
+
+def artifact_solution_text_mark_issues(value: Any, path: str = "arguments") -> list[str]:
+    issues: list[str] = []
+    if isinstance(value, dict):
+        answer_surface = value.get("answerSurface")
+        has_solution_diagram = has_solution_surface(value, "solutionDiagram", "solutionDiagrams")
+        has_solution_table = has_solution_surface(value, "solutionTable", "solutionTables")
+        solution_text = value.get("solutionText")
+        if isinstance(solution_text, str) and hidden_mark_total(solution_text):
+            if (answer_surface == "diagram" or answer_surface is None) and has_solution_diagram:
+                issues.append(
+                    f"{path}.solutionText should be unmarked when solutionDiagram is present; remove [[marks:n]] text ticks"
+                )
+            if (answer_surface == "table" or answer_surface is None) and has_solution_table:
+                issues.append(
+                    f"{path}.solutionText should be unmarked when solutionTable is present; remove [[marks:n]] text ticks"
+                )
+        for key, inner_value in value.items():
+            issues.extend(artifact_solution_text_mark_issues(inner_value, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            issues.extend(artifact_solution_text_mark_issues(item, f"{path}[{index}]"))
+    return issues
+
+
 def control_character_issues(text: str, field_name: str) -> list[str]:
     issues: list[str] = []
     for match in BAD_CONTROL_CHARACTER_PATTERN.finditer(text):
@@ -1050,6 +1081,7 @@ def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict
     solution_text = str(args.get("solutionText") or "")
     issues.extend(control_character_issues(question_text, "questionText"))
     issues.extend(control_character_issues(solution_text, "solutionText"))
+    issues.extend(artifact_solution_text_mark_issues(args))
     if "(a)" in question_text.lower() or "(b)" in question_text.lower():
         issues.append("questionText should not contain typed automatic part labels")
     if "\\[" in question_text or "\\]" in question_text:
@@ -1896,6 +1928,19 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
             and isinstance(source_slope_fields[0].get("yRange"), list)
         ):
             issues.append("slopeField should include grid x/y values or x/y ranges")
+        if isinstance(source_slope_fields[0].get("xRange"), list) and len(source_slope_fields[0]["xRange"]) != 2:
+            issues.append("slopeField.xRange should contain [min,max]; put sampling step in xStep")
+        if isinstance(source_slope_fields[0].get("yRange"), list) and len(source_slope_fields[0]["yRange"]) != 2:
+            issues.append("slopeField.yRange should contain [min,max]; put sampling step in yStep")
+        if (
+            isinstance(source_slope_fields[0].get("xRange"), list)
+            and isinstance(source_slope_fields[0].get("yRange"), list)
+            and not (
+                isinstance(source_slope_fields[0].get("xStep"), (int, float))
+                and isinstance(source_slope_fields[0].get("yStep"), (int, float))
+            )
+        ):
+            issues.append("slopeField range sampling should include numeric xStep and yStep")
         highlighted_points = source_slope_fields[0].get("highlightedPoints")
         if not (
             isinstance(highlighted_points, list)
@@ -3065,11 +3110,14 @@ def local_real_specialist_slope_field_call() -> dict[str, Any]:
                 "strokeWidth": 2,
             }
         ],
+        "features": [{"kind": "tangent", "functionIndex": 0, "x": 0.5, "label": "gradient 0.25"}],
         "data": {
             "slopeField": {
                 "expression": "(x - 1) / (2*y)",
-                "xRange": [-1, 3, 0.5],
-                "yRange": [-2, 2, 0.5],
+                "xRange": [-1, 3],
+                "yRange": [-2, 2],
+                "xStep": 0.5,
+                "yStep": 0.5,
                 "highlightedPoints": [{"x": 0.5, "y": -1, "label": "$(0.5,-1)$"}],
             }
         },
@@ -3135,6 +3183,15 @@ def local_real_specialist_slope_field_bad_schema_call() -> dict[str, Any]:
     graph_config["functions"][0]["domain"] = [-1, 3]
     graph_config["functions"][0]["style"] = {"strokeWidth": 2}
     graph_config["features"] = [{"type": "point", "x": 0.5, "y": -1, "style": {"color": "red"}}]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_slope_field_bad_artifact_marks_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_slope_field_call()))
+    part_c = call["mauthArguments"]["parts"][2]
+    part_c["solutionText"] = "Draw the completed solution curve on the slope field. [[marks:2]]"
+    part_c["includeSolution"] = True
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -3464,6 +3521,14 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "style should be color/strokeWidth/strokeStyle",
             "features[0].type should be named kind",
             "source/student graph2d data should include data.slopeField",
+        ],
+    },
+    "real-specialist-slope-field-bad-artifact-marks": {
+        "assert": assert_real_specialist_slope_field_call,
+        "call": local_real_specialist_slope_field_bad_artifact_marks_call,
+        "expectedIssues": [
+            "solutionText should be unmarked when solutionDiagram is present",
+            "ticks plus completed solution diagrams should total 8",
         ],
     },
     "real-specialist-argand": {
