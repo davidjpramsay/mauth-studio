@@ -1107,6 +1107,19 @@ def focused_tool_hint(
                 "expressionBottom, opacity, or fillColor; use functions plus functionAIndex/functionBIndex or "
                 "baseFeatureIndex/clipFunctionIndex/clipSide, and use fillOpacity for shading."
             )
+        if has_source_attachment and any(
+            term in text for term in ("3d", "three-dimensional", "prism", "vertices", "sphere")
+        ):
+            diagram_guidance += (
+                " For source 3D coordinate/prism diagrams, use graphConfig.type graph3d with explicit "
+                "data.points entries for every named vertex/point and data.segments entries for visible edges, "
+                "diagonals, and named lines such as BT or AM. For hidden/dashed 3D edges, use segment "
+                "strokeStyle:'dashed' or dashed:true, not style:'dashed'. Store the camera as metadata.view3d:{az,el,bank} "
+                "using renderer/radian-style values such as az:1.1, el:0.35, bank:0, not degrees; "
+                "do not use Plotly-style metadata.view3d.camera.eye, metadata.axisLabels, metadata.showAxes, "
+                "or metadata.showGrid. Do not add xAxis/yAxis/zAxis points or axis-label segments; the graph3d "
+                "renderer owns coordinate axes and labels."
+            )
         focused_tool_name = "mauth_convert_source_question" if has_source_attachment else "mauth_question_upsert"
         target_description = (
             f"the next missing question, Question {question_number}"
@@ -1431,8 +1444,12 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "region_between_curves, region_curve_axis, or region_clipped_by_curve features with "
                     "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide; use fillOpacity, "
                     "not expressionTop/expressionBottom/opacity fields. "
-                    "For graph3d source solids/prisms, use data.points:[{id,label,coords:[x,y,z]}] and "
-                    "data.segments:[{from,to,label?}] so named vertices and edges are explicit. " + vector2d_description
+                    "For graph3d source solids/prisms, use data.points:[{id,label,coords:[x,y,z]}], "
+                    "data.segments:[{from,to,label?,strokeStyle?}] with strokeStyle:'dashed' or dashed:true "
+                    "for hidden edges, and metadata.view3d:{az,el,bank} with radian-style "
+                    "renderer values such as {az:1.1,el:0.35,bank:0}; do not use "
+                    "segment style:'dashed', Plotly-style camera.eye, metadata axisLabels/showAxes/showGrid, or xAxis/yAxis/zAxis "
+                    "helper points/segments. " + vector2d_description
                 ),
                 "properties": {
                     "type": {
@@ -1453,7 +1470,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                         "type": "object",
                         "description": (
                             "Renderer data. For graph2d, only use this for data.slopeField; do not put graph2d "
-                            "functions, features, bounds, size, or axes fields here."
+                            "functions, features, bounds, size, or axes fields here. For graph3d, use "
+                            "points:[{id,label,coords:[x,y,z]}] and segments:[{from,to,label?,strokeStyle?,dashed?}]; "
+                            "do not use segment style."
                         ),
                     },
                     "options": {
@@ -1462,6 +1481,34 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                             "Renderer options, especially Penrose Substance. For graph2d, do not put axes, size, "
                             "bounds, functions, or features here; those are top-level graphConfig fields."
                         ),
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": (
+                            "Renderer metadata. For graph3d, use metadata.view3d with numeric az, el, and bank "
+                            "in renderer/radian-style units, not degrees. "
+                            "Do not use nested camera.eye or put axisLabels/showAxes/showGrid in metadata."
+                        ),
+                        "properties": {
+                            "view3d": {
+                                "type": "object",
+                                "properties": {
+                                    "az": {"type": "number"},
+                                    "el": {"type": "number"},
+                                    "bank": {"type": "number"},
+                                },
+                                "required": ["az", "el", "bank"],
+                                "additionalProperties": False,
+                            },
+                            "vector2d": {
+                                "type": "object",
+                                "description": "Vector2d renderer metadata. Use only when graphConfig.type is vector2d.",
+                                "additionalProperties": True,
+                            },
+                            "assistantDiagramRole": {"type": "string"},
+                            "renderer": {"type": "string"},
+                        },
+                        "additionalProperties": False,
                     },
                     "functions": {
                         "type": "array",
@@ -1632,7 +1679,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100,
-                    "description": "Optional question-level marks when parts are present. Usually 0.",
+                    "description": (
+                        "Question-level direct marks when parts are not carrying the marks. For multipart source "
+                        "questions with marked parts, use 0; do not copy the printed total because the part marks "
+                        "already preserve it."
+                    ),
                 },
                 "questionText": {
                     "type": "string",
@@ -1867,7 +1918,7 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
             "'include/add the diagram in question 1'. Choose the correct Mauth renderer and provide a real graphConfig. "
             "Use geometricConstruction/Penrose for schematic geometry and theorem diagrams; graph2d for coordinate/function "
             "graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts, density curves, normal/sample-mean distributions, and histograms; setDiagram for Venn/set diagrams; "
-            "graph3d for 3D diagrams with explicit data.points/data.segments for source solids; image for uploaded images. "
+            "graph3d for 3D diagrams with explicit data.points/data.segments and metadata.view3d az/el/bank in radians for source solids; image for uploaded images. "
             "For slope fields, use graph2d.data.slopeField rather than prose or loose line segments, and keep graph2d "
             "functions/features/ranges/display fields directly on graphConfig. Use relation functions for implicit "
             "solution curves when the source gives an implicit equation."
@@ -1925,7 +1976,7 @@ def mauth_make_diagram_for_question_tool_definition() -> dict[str, Any]:
         "post-edit semantic repairs. Read the question text, choose the correct renderer, and make the graphConfig match "
         "the stated mathematical relationships. Prefer geometricConstruction/Penrose for schematic geometry, graph2d for "
         "coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics charts, density curves, normal/sample-mean distributions, and histograms, setDiagram for Venn/set "
-        "diagrams, graph3d for 3D diagrams with explicit data.points/data.segments for source solids, and image only when an uploaded bitmap is explicitly required."
+        "diagrams, graph3d for 3D diagrams with explicit data.points/data.segments and metadata.view3d az/el/bank in radians for source solids, and image only when an uploaded bitmap is explicitly required."
     )
     return definition
 
@@ -2462,13 +2513,14 @@ Tool-call contract:
 - For slope-field/direction-field source diagrams, use graphConfig.type graph2d with data.slopeField rather than a bitmap, prose fallback, or many unrelated line_segment features. Include the differential expression and grid values/ranges, and encode requested point slopes in highlightedPoints. Keep graph2d bounds, size, display flags, functions, and features directly on graphConfig; do not put functions/features/xRange/yRange under graphConfig.data or axes/size settings under graphConfig.options. For implicit source solution curves, prefer a single relation function such as kind:"relation" with expression "y^2 = x^2/2 - x + 1/4" over separate sqrt branches.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, do not type only labels, and do not move expressions such as $\\mathbf{{a}}\\cdot\\mathbf{{b}}$ into the stem or a prose diagram description.
 - For source conversions with marked written-response parts, set each parts[i].studentSpaceLines to at least 3 unless the answer surface is a table, diagram, graph, or other completed artifact surface. Preserve larger source answer space when it is visible.
+- For multipart source questions with marks shown on each part, set top-level marks/questionMarks to 0 and put the marks on the parts/subparts. Do not duplicate the printed total at question level.
 - For tasks where the answer is the surface itself, such as complete the table, sketch the graph, draw the function, shade the region, or label the diagram, set answerSurface to table or diagram. Provide the blank/partial student table or diagram plus a completed solutionTable or solutionDiagram when solutions are requested. Do not create a separate large student working-space block for these artifact-answer tasks unless the teacher also asks for written working. The authoring layer places red ticks beside completed solution tables/diagrams automatically from the item marks, so do not duplicate those marks in solutionText.
 - Do not add worked solutions merely because a question has marks. Only include solutionText, parts[i].solutionText, or includeSolution: true when the teacher asks for solutions/answers/marking key, the source visibly includes solutions, or the request is explicitly a solution repair.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits, do not use mauth_question_upsert. Use mauth_write_solutions_for_questions with updated marks and revised solutionText when changing the worked solution, or mauth_tool with low-level question.update/module.update actions for marks-only edits. Preserve existing diagrams unless the teacher explicitly asks to remove or replace them.
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
 - For focused formatting/layout requests, use mauth_fix_question_formatting rather than low-level action JSON. Supported operations are setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, and tidyQuestionSpacing. This is the safe path for requests like "put part (c) on a new page", "move the diagram right", "make the solution fit", or "remove unnecessary blank space".
 - In mauth_question_upsert, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
-- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs and slope fields; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms, columns, probability density functions, normal curves, sample-mean distributions, and other statistical charts; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. In statsChart, use chartType density for arbitrary source density curves with points, normal for parameterised normal curves, and blankAxes for axes students sketch on. In graph2d diagrams, write xMin/xMax/yMin/yMax, widthPx/heightPx, showGrid/showAxes/showAxisLabels/showAxisNumbers, functions, and features directly on graphConfig; use function domainMin/domainMax and color/strokeWidth/strokeStyle. Graph2d features use kind, not type, and use direct color/size/strokeWidth/strokeStyle fields instead of a style wrapper. For graph2d shaded regions and loci, create boundary functions first, then use region_between_curves, region_curve_axis, or region_clipped_by_curve with functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus fillOpacity; do not invent expressionTop/expressionBottom/opacity fields. In graph2d slope-field source diagrams, write data.slopeField with expression, grid values/ranges, and highlightedPoints for requested point slopes. In graph3d source solids, write named vertices as data.points with coords and visible edges/diagonals as data.segments; do not emit a camera-only placeholder. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
+- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs and slope fields; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms, columns, probability density functions, normal curves, sample-mean distributions, and other statistical charts; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. In statsChart, use chartType density for arbitrary source density curves with points, normal for parameterised normal curves, and blankAxes for axes students sketch on. In graph2d diagrams, write xMin/xMax/yMin/yMax, widthPx/heightPx, showGrid/showAxes/showAxisLabels/showAxisNumbers, functions, and features directly on graphConfig; use function domainMin/domainMax and color/strokeWidth/strokeStyle. Graph2d features use kind, not type, and use direct color/size/strokeWidth/strokeStyle fields instead of a style wrapper. For graph2d shaded regions and loci, create boundary functions first, then use region_between_curves, region_curve_axis, or region_clipped_by_curve with functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus fillOpacity; do not invent expressionTop/expressionBottom/opacity fields. In graph2d slope-field source diagrams, write data.slopeField with expression, grid values/ranges, and highlightedPoints for requested point slopes. In graph3d source solids, write named vertices as data.points with coords and visible edges/diagonals as data.segments, use segment strokeStyle:'dashed' or dashed:true for hidden edges, and store the view as metadata.view3d with numeric az/el/bank in radians; do not emit a camera-only placeholder, degree-like az/el values, segment style:'dashed', metadata.view3d.camera.eye, metadata.axisLabels, metadata.showAxes, metadata.showGrid, or xAxis/yAxis/zAxis helper points/segments. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
 - Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). Segment and VectorSegment are predicates, not types: never write standalone declarations such as `Segment AB`, `Segment CP`, or `VectorSegment beam`. Declare `NamedSegment AB, CP, beam` first, then call `Segment(AB, A, B)` or `VectorSegment(beam, L, P)`. Every predicate call must use parentheses and commas, for example `VectorSegment(OA, O, A)`; never write declaration-like predicate syntax such as `VectorSegment OA O A` or `VectorSegment OA`. Label is a declaration form, not a predicate: write `Label A $A$`, never `Label(A, $A$)`. To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a segment or vector, use `Segment(name, A, B)` or `VectorSegment(name, A, B)`, not `Connect(...)`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To show collinearity, first declare the line with `Line lineName`, then use `LineThrough(lineName, A, B)` plus `On(P, lineName)` only when incidence is essential; do not invent `Collinear(...)`. To label an angle, always declare a label such as `Label angleCD $45^\\circ$`, then call `LabelsAngle(angleCD, C, O, D)`; never put raw TeX inside `LabelsAngle(...)` and never use a four-argument raw-label form. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
 - Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use the compact diagram.vectorRayDiagram builder when available. Provide vectors with id/name, length and angleDeg (standard degrees: 0 right, 90 up) or components, plus angleMarkers for right-angle/angle labels. Angle-marker `from`/`to` must name the two rays that bound the actual marked angle in the source, not merely nearby rays; for the common four-ray scalar-product diagram with b perpendicular to d and c making 45 degrees with d, use `{{from:"b",to:"d",rightAngle:true}}` and `{{from:"c",to:"d",label:"45^\\circ"}}`. Mauth expands that builder into a valid vector2d graphConfig with hidden axes/grid, custom labels, draggable magnitude labels, and angle markers. If hand-writing raw graphConfig instead, use graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false, metadata.vector2d.vectors with common start [0,0], labelStyle:"custom", labels such as "\\mathbf{{a}}", metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}", and metadata.vector2d.angleMarkers for labels such as "45^\\circ". Do not use network for these; network is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig or use vectorRayDiagram; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.

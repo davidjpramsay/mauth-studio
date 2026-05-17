@@ -2062,6 +2062,8 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
         segments = data.get("segments") if isinstance(data.get("segments"), list) else data.get("edges")
         for segment in segments if isinstance(segments, list) else []:
             if isinstance(segment, dict):
+                if "style" in segment:
+                    issues.append("3d prism graph3d segments should use strokeStyle/dashed, not style")
                 segment_points = segment.get("points") if isinstance(segment.get("points"), list) else []
                 from_value = segment.get("from") or (segment_points[0] if segment_points else "")
                 to_value = segment.get("to") or (segment_points[1] if len(segment_points) > 1 else "")
@@ -2069,20 +2071,44 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
                 to_id = str(to_value).lower()
                 if from_id and to_id:
                     segment_pairs.add(tuple(sorted((from_id, to_id))))
+        metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
+        for key in ("axisLabels", "showAxes", "showGrid"):
+            if key in metadata:
+                issues.append(f"3d prism graph3d metadata should not include unsupported {key}")
+        view3d = metadata.get("view3d") if isinstance(metadata.get("view3d"), dict) else {}
+        if not view3d:
+            issues.append("3d prism graph3d data should preserve metadata.view3d")
+        else:
+            if "camera" in view3d:
+                issues.append("3d prism graph3d view should use az/el/bank, not camera.eye")
+            for key in ("az", "el", "bank"):
+                value = view3d.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    issues.append(f"3d prism graph3d view3d.{key} should be numeric")
+                else:
+                    limit = 3.2 if key == "el" else 6.4
+                    if abs(float(value)) > limit:
+                        issues.append(f"3d prism graph3d view3d.{key} should use radians, not degrees")
     for point_id in ("o", "a", "b", "c", "t", "m"):
         if point_id not in point_ids and f'"{point_id}"' not in graph3d_serialized:
             issues.append(f"3d prism graph3d data should include named point {point_id.upper()}")
+    for axis_point_id in ("xaxis", "yaxis", "zaxis"):
+        if axis_point_id in point_ids:
+            issues.append(f"3d prism graph3d data should not include axis helper point {axis_point_id}")
     for pair in (("b", "t"), ("a", "m")):
         if tuple(sorted(pair)) not in segment_pairs and "".join(pair) not in graph3d_serialized:
             issues.append(f"3d prism graph3d data should include segment {''.join(pair).upper()}")
-    if "view3d" not in graph3d_serialized:
-        issues.append("3d prism graph3d data should preserve a view3d camera")
+    for pair in segment_pairs:
+        if any(point in {"xaxis", "yaxis", "zaxis"} for point in pair):
+            issues.append("3d prism graph3d data should not include axis helper segments")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 3:
         issues.append("3d prism source should become exactly three structured parts")
         return issues
     expected_marks = [2, 3, 3]
+    if args.get("marks") not in (0, None) or args.get("questionMarks") not in (0, None):
+        issues.append("3d prism multipart source should keep top-level marks/questionMarks at 0 and preserve marks on parts")
     expected_terms = (("vector equation", "bt"), ("sphere",), ("am", "intersect", "bt"))
     for index, part in enumerate(parts):
         if not isinstance(part, dict):

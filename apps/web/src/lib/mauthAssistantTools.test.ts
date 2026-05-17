@@ -2414,6 +2414,162 @@ test("accepts structured graph3d point and segment data", () => {
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
 });
 
+test("rejects unsupported graph3d camera metadata shape", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-prism-camera",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "A", coords: [2, 0, 0] },
+                    { id: "B", coords: [2, 4, 0] },
+                  ],
+                  segments: [{ from: "A", to: "B" }],
+                },
+                metadata: {
+                  view3d: { camera: { eye: { x: 5, y: -7, z: 4 } } },
+                  axisLabels: { x: "$x$", y: "$y$", z: "$z$" },
+                  showAxes: true,
+                  showGrid: false,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.camera"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.az"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.el"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.bank"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.axisLabels"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.showAxes"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.showGrid"));
+});
+
+test("rejects graph3d axis helper points and segments", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-prism-axis-points",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "O", coords: [0, 0, 0] },
+                    { id: "xAxis", label: "$x$", coords: [3, 0, 0] },
+                  ],
+                  segments: [{ from: "O", to: "xAxis", label: "$x$" }],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.points[1].id"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.segments[0].to"));
+});
+
+test("rejects graph3d degree-like view metadata values", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-prism-degree-view",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "A", coords: [2, 0, 0] },
+                    { id: "B", coords: [2, 4, 0] },
+                  ],
+                  segments: [{ from: "A", to: "B" }],
+                },
+                metadata: { view3d: { az: -52, el: 22, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.az"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.view3d.el"));
+});
+
+test("rejects ignored graph3d segment style field", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-prism-segment-style",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "O", coords: [0, 0, 0] },
+                    { id: "A", coords: [2, 0, 0] },
+                  ],
+                  segments: [{ from: "O", to: "A", style: "dashed" }],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.segments[0].style"));
+});
+
 test("rejects malformed graph3d segment references", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

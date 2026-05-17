@@ -77,6 +77,17 @@ const GRAPH2D_OPTIONS_TOP_LEVEL_FIELDS = new Map([
   ["axisLabelStepX", "graphConfig.axisLabelStepX"],
   ["axisLabelStepY", "graphConfig.axisLabelStepY"],
 ]);
+const GRAPH3D_UNSUPPORTED_METADATA_FIELDS = new Map([
+  ["axisLabels", "Graph3d axis labels are renderer-owned; do not put axisLabels in metadata."],
+  ["showAxes", "Graph3d axes are renderer-owned; do not put showAxes in metadata."],
+  ["showGrid", "Graph3d plane grids are hidden by default; do not put showGrid in metadata."],
+]);
+const GRAPH3D_RESERVED_AXIS_POINT_IDS = new Set(["xaxis", "yaxis", "zaxis"]);
+const GRAPH3D_VIEW_LIMITS = {
+  az: Math.PI * 2,
+  el: Math.PI,
+  bank: Math.PI * 2,
+} as const;
 const VECTOR_2D_LABEL_STYLES = new Set(["boldLower", "arrow", "custom"]);
 const PENROSE_RELATIONSHIP_TYPES = new Set([
   "triangle",
@@ -746,7 +757,12 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       }
       const id = typeof entry.id === "string" && entry.id.trim() ? entry.id : typeof entry.name === "string" ? entry.name : "";
       if (!id.trim()) addIssue(issues, `${entryPath}.id`, "must be a non-empty string", "point id");
-      else pointNames.add(id);
+      else {
+        pointNames.add(id);
+        if (GRAPH3D_RESERVED_AXIS_POINT_IDS.has(id.toLowerCase())) {
+          addIssue(issues, `${entryPath}.id`, "must be a named 3D vertex/point, not an axis helper", "omit axis helper points");
+        }
+      }
       if (hasOwn(entry, "coords")) {
         numberTriple(entry.coords, `${entryPath}.coords`, issues);
       } else if (hasOwn(entry, "coordinates")) {
@@ -776,11 +792,17 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       if (!from.trim()) addIssue(issues, `${entryPath}.from`, "must be a non-empty point id", "point id");
       else if (pointNames.size && !pointNames.has(from))
         addIssue(issues, `${entryPath}.from`, "must reference a graph3d point", "declared point id");
+      else if (GRAPH3D_RESERVED_AXIS_POINT_IDS.has(from.toLowerCase()))
+        addIssue(issues, `${entryPath}.from`, "must reference a named 3D vertex/point, not an axis helper", "omit axis helper segments");
       if (!to.trim()) addIssue(issues, `${entryPath}.to`, "must be a non-empty point id", "point id");
       else if (pointNames.size && !pointNames.has(to))
         addIssue(issues, `${entryPath}.to`, "must reference a graph3d point", "declared point id");
+      else if (GRAPH3D_RESERVED_AXIS_POINT_IDS.has(to.toLowerCase()))
+        addIssue(issues, `${entryPath}.to`, "must reference a named 3D vertex/point, not an axis helper", "omit axis helper segments");
       optionalString(entry, "label", entryPath, issues);
       optionalString(entry, "color", entryPath, issues);
+      if (hasOwn(entry, "style"))
+        addIssue(issues, `${entryPath}.style`, "must use graph3d segment strokeStyle or dashed", "strokeStyle or dashed");
       optionalString(entry, "strokeStyle", entryPath, issues);
       optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
       optionalBoolean(entry, "dashed", entryPath, issues);
@@ -788,11 +810,25 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
     });
   }
   const metadata = optionalRecord(config, "metadata", path, issues);
+  if (metadata) {
+    for (const [key, message] of GRAPH3D_UNSUPPORTED_METADATA_FIELDS) {
+      if (hasOwn(metadata, key)) addIssue(issues, `${path}.metadata.${key}`, message, "metadata.view3d only");
+    }
+  }
   const view3d = metadata ? optionalRecord(metadata, "view3d", `${path}.metadata`, issues) : undefined;
   if (!view3d) return;
-  optionalNumber(view3d, "az", `${path}.metadata.view3d`, issues);
-  optionalNumber(view3d, "el", `${path}.metadata.view3d`, issues);
-  optionalNumber(view3d, "bank", `${path}.metadata.view3d`, issues);
+  if (hasOwn(view3d, "camera")) {
+    addIssue(issues, `${path}.metadata.view3d.camera`, "graph3d uses az/el/bank, not Plotly-style camera metadata", "{ az, el, bank }");
+  }
+  requiredNumber(view3d, "az", `${path}.metadata.view3d`, issues);
+  requiredNumber(view3d, "el", `${path}.metadata.view3d`, issues);
+  requiredNumber(view3d, "bank", `${path}.metadata.view3d`, issues);
+  for (const key of ["az", "el", "bank"] as const) {
+    const value = view3d[key];
+    if (finiteNumber(value) && Math.abs(value) > GRAPH3D_VIEW_LIMITS[key]) {
+      addIssue(issues, `${path}.metadata.view3d.${key}`, "must be a renderer view value in radians, not degrees", "radian value");
+    }
+  }
 }
 
 function validateImageDiagram(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
