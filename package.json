@@ -9,6 +9,7 @@
     "smoke:diagram-gallery": "node scripts/diagram-gallery-smoke.mjs",
     "smoke:assistant:self": "node --experimental-strip-types scripts/assistant-self-smoke.mts",
     "smoke:file-manager": "node scripts/file-manager-smoke.mjs",
+    "eval:assistant:local": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --local --case local",
     "eval:assistant:live": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py",
     "eval:assistant:live:core": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case core --max-cost 1.50",
     "eval:assistant:live:diagrams": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case diagram-routing --max-cost 1.00",

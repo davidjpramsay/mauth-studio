@@ -2860,6 +2860,165 @@ EVAL_GROUPS: dict[str, list[str]] = {
 }
 
 
+def local_tool_call(name: str, mauth_tool_name: str, mauth_arguments: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"local-{name}",
+        "callId": f"local-{name}",
+        "name": name,
+        "arguments": mauth_arguments,
+        "mauthToolName": mauth_tool_name,
+        "mauthArguments": mauth_arguments,
+    }
+
+
+def local_real_specialist_prism_call() -> dict[str, Any]:
+    return local_tool_call(
+        "mauth_convert_source_question",
+        QUESTION_UPSERT_TOOL_NAME,
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "A rectangular prism is defined using the coordinate system shown with $A(2,0,0)$, "
+                "$C(0,4,0)$ and $T(0,0,3)$. Point $M$ is the centre of the planar face $OCFT$ "
+                "with coordinates $(0,2,1.5)$."
+            ),
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "graph3d",
+                    "widthPx": 620,
+                    "heightPx": 430,
+                    "metadata": {"view3d": {"az": 1.1, "el": 0.35, "bank": 0}},
+                    "data": {
+                        "points": [
+                            {"id": "O", "label": "$O$", "coords": [0, 0, 0]},
+                            {"id": "A", "label": "$A$", "coords": [2, 0, 0]},
+                            {"id": "B", "label": "$B$", "coords": [2, 4, 0]},
+                            {"id": "C", "label": "$C$", "coords": [0, 4, 0]},
+                            {"id": "T", "label": "$T$", "coords": [0, 0, 3]},
+                            {"id": "D", "label": "$D$", "coords": [2, 0, 3]},
+                            {"id": "E", "label": "$E$", "coords": [2, 4, 3]},
+                            {"id": "F", "label": "$F$", "coords": [0, 4, 3]},
+                            {"id": "M", "label": "$M$", "coords": [0, 2, 1.5]},
+                        ],
+                        "segments": [
+                            {"from": "O", "to": "A"},
+                            {"from": "A", "to": "B"},
+                            {"from": "B", "to": "C"},
+                            {"from": "O", "to": "C", "strokeStyle": "dashed"},
+                            {"from": "O", "to": "T", "strokeStyle": "dashed"},
+                            {"from": "A", "to": "D"},
+                            {"from": "B", "to": "E"},
+                            {"from": "C", "to": "F"},
+                            {"from": "T", "to": "D"},
+                            {"from": "D", "to": "E"},
+                            {"from": "E", "to": "F"},
+                            {"from": "T", "to": "F"},
+                            {"from": "B", "to": "T", "label": "$BT$"},
+                            {"from": "A", "to": "M", "label": "$AM$"},
+                        ],
+                    },
+                },
+            },
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Determine the vector equation for the prism's main diagonal $\\overleftrightarrow{BT}$.",
+                    "marks": 2,
+                    "studentSpaceLines": 6,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$B=(2,4,0)$ and $T=(0,0,3)$, so "
+                        "$$\\vec d=T-B=\\begin{pmatrix}-2\\\\-4\\\\3\\end{pmatrix}.$$ [[marks:1]]\n"
+                        "$$\\mathbf r=\\begin{pmatrix}2\\\\4\\\\0\\end{pmatrix}+\\lambda"
+                        "\\begin{pmatrix}-2\\\\-4\\\\3\\end{pmatrix},\\quad \\lambda\\in\\mathbb R.$$ [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Determine the Cartesian equation of the sphere that contains all vertices of the rectangular prism.",
+                    "marks": 3,
+                    "studentSpaceLines": 8,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The centre is $(1,2,1.5)$. [[marks:1]]\n"
+                        "$$r^2=(0-1)^2+(4-2)^2+(0-1.5)^2=7.25.$$ [[marks:1]]\n"
+                        "$$(x-1)^2+(y-2)^2+(z-1.5)^2=7.25.$$ [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": (
+                        "Prove, using a vector method, that line $\\overleftrightarrow{AM}$ does not "
+                        "intersect $\\overleftrightarrow{BT}$."
+                    ),
+                    "marks": 3,
+                    "studentSpaceLines": 10,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$AM:\\mathbf r=\\begin{pmatrix}2\\\\0\\\\0\\end{pmatrix}+\\mu"
+                        "\\begin{pmatrix}-2\\\\2\\\\1.5\\end{pmatrix}.$$ [[marks:1]]\n"
+                        "Equating with $BT$ gives $\\lambda=\\mu$ and $\\lambda=\\mu=2/3$. [[marks:1]]\n"
+                        "The $z$ coordinates require $\\mu=2\\lambda$, a contradiction, so $AM$ does not intersect $BT$. [[marks:1]]"
+                    ),
+                },
+            ],
+        },
+    )
+
+
+def local_real_specialist_prism_bad_graph3d_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    args = call["mauthArguments"]
+    args["questionMarks"] = 8
+    graph_config = args["diagram"]["graphConfig"]
+    graph_config["metadata"] = {
+        "view3d": {"camera": {"eye": {"x": 5, "y": -7, "z": 4}}},
+        "axisLabels": ["$x$", "$y$", "$z$"],
+        "showAxes": True,
+        "showGrid": False,
+    }
+    graph_config["data"]["points"].append({"id": "xAxis", "label": "$x$", "coords": [3, 0, 0]})
+    graph_config["data"]["segments"].append({"from": "O", "to": "xAxis", "label": "$x$"})
+    graph_config["data"]["segments"][3]["style"] = "dashed"
+    graph_config["data"]["segments"][3].pop("strokeStyle", None)
+    call["arguments"] = args
+    return call
+
+
+LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
+    "real-specialist-prism": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_call,
+    },
+    "real-specialist-prism-bad-graph3d": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_bad_graph3d_call,
+        "expectedIssues": [
+            "top-level marks/questionMarks",
+            "metadata should not include unsupported axisLabels",
+            "metadata should not include unsupported showAxes",
+            "metadata should not include unsupported showGrid",
+            "view should use az/el/bank",
+            "view3d.az should be numeric",
+            "axis helper point xaxis",
+            "axis helper segments",
+            "segments should use strokeStyle/dashed",
+        ],
+    },
+}
+
+LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
+    "local": list(LOCAL_EVAL_CASES),
+    "local-real-exams-extended": ["real-specialist-prism", "real-specialist-prism-bad-graph3d"],
+}
+
+
 def summarize_call(call: dict[str, Any]) -> dict[str, Any]:
     arguments = call.get("mauthArguments")
     compact_arguments = arguments
@@ -3154,15 +3313,65 @@ async def run_eval(
     return 2 if blocked else 0
 
 
+def run_local_eval(case_name: str = "local", verbose: bool = False) -> int:
+    selected_cases = LOCAL_EVAL_GROUPS.get(case_name, [case_name])
+    failed = False
+    results: list[tuple[str, bool, list[str]]] = []
+    for selected_case in selected_cases:
+        fixture = LOCAL_EVAL_CASES.get(selected_case)
+        if not fixture:
+            print(f"FAIL: no local fixture named {selected_case!r}", file=sys.stderr)
+            results.append((selected_case, False, [f"missing local fixture {selected_case!r}"]))
+            failed = True
+            continue
+        call_factory = fixture["call"]
+        call = call_factory() if callable(call_factory) else fixture["call"]
+        assert_call = fixture["assert"]
+        issues = assert_call(call)
+        expected_issues = fixture.get("expectedIssues")
+        if verbose:
+            print(f"\n=== local {selected_case} ===")
+            print(json.dumps({"toolCall": summarize_call(call), "issues": issues}, indent=2, ensure_ascii=False))
+        if expected_issues is None:
+            passed = not issues
+            if not passed:
+                print(f"FAIL local {selected_case}:")
+                for issue in issues:
+                    print(f"- {issue}")
+        else:
+            missing_expected = [
+                expected for expected in expected_issues if not any(expected in issue for issue in issues)
+            ]
+            passed = bool(issues) and not missing_expected
+            if not passed:
+                print(f"FAIL local {selected_case}:")
+                if not issues:
+                    print("- expected assertion issues, got none")
+                for expected in missing_expected:
+                    print(f"- missing expected issue containing {expected!r}")
+                for issue in issues:
+                    print(f"- actual: {issue}")
+        results.append((selected_case, passed, issues))
+        failed = failed or not passed
+
+    print("\nLOCAL SUMMARY:")
+    for selected_case, passed, issues in results:
+        expected_label = "expected failures" if LOCAL_EVAL_CASES.get(selected_case, {}).get("expectedIssues") else "clean"
+        print(f"- {'PASS' if passed else 'FAIL'} {selected_case}: {expected_label}, {len(issues)} issue(s)")
+    print("\nTOTAL: $0.0000, 0 provider tokens.")
+    return 1 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a live Mauth assistant eval against OpenAI.")
     parser.add_argument("--model", default=None, help="Override OPENAI_MODEL for this eval.")
     parser.add_argument(
         "--case",
-        choices=[*EVAL_CASES.keys(), *EVAL_GROUPS.keys()],
+        choices=[*EVAL_CASES.keys(), *EVAL_GROUPS.keys(), *LOCAL_EVAL_CASES.keys(), *LOCAL_EVAL_GROUPS.keys()],
         default="circle-question",
         help="Eval case or group to run.",
     )
+    parser.add_argument("--local", action="store_true", help="Run zero-cost local fixture assertions only.")
     parser.add_argument(
         "--final", action="store_true", help="Also test the optional final tool-output continuation call."
     )
@@ -3175,6 +3384,8 @@ def main() -> int:
     if raw_args and raw_args[0] == "--":
         raw_args = raw_args[1:]
     args = parser.parse_args(raw_args)
+    if args.local:
+        return run_local_eval(case_name=args.case, verbose=args.verbose)
     return asyncio.run(
         run_eval(
             case_name=args.case,

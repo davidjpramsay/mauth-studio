@@ -481,7 +481,12 @@ def test_focused_solution_prompt_gets_direct_tool_hint():
         summary,
         [openai_assistant.AssistantChatMessage(role="user", content="Write the worked solution for question 1.")],
     )
+    tools = openai_assistant.assistant_tool_definitions(
+        [openai_assistant.AssistantChatMessage(role="user", content="Write the worked solution for question 1.")],
+        document_summary=summary,
+    )
 
+    assert [tool["name"] for tool in tools] == ["mauth_write_solutions_for_questions", "mauth_tool"]
     assert "mauth_write_solutions_for_questions" in instructions
     assert "Do not call mauth.document.inspect first" in instructions
     assert "[[marks:n]]" in instructions
