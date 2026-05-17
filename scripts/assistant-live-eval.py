@@ -26,6 +26,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = ROOT / "apps" / "api"
+WORKBENCH_ROOT = ROOT.parent / "mauth-workbench"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
@@ -206,6 +207,114 @@ def sample_probability_pdf_attachment() -> list[AssistantAttachment]:
                 ]
             ),
         )
+    ]
+
+
+def workbench_fixture(*parts: str) -> Path:
+    path = WORKBENCH_ROOT.joinpath(*parts)
+    if not path.exists():
+        raise FileNotFoundError(f"Missing assistant live-eval fixture: {path}")
+    return path
+
+
+def attachment_png_from_path(name: str, path: Path) -> AssistantAttachment:
+    image_bytes = path.read_bytes()
+    payload = base64.b64encode(image_bytes).decode("ascii")
+    return AssistantAttachment(
+        name=name,
+        mimeType="image/png",
+        dataUrl=f"data:image/png;base64,{payload}",
+        sizeBytes=len(image_bytes),
+    )
+
+
+def attachment_text_from_path_lines(name: str, path: Path, *, start_line: int, end_line: int) -> AssistantAttachment:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    excerpt = "\n".join(lines[start_line - 1 : end_line])
+    payload = base64.b64encode(excerpt.encode("utf-8")).decode("ascii")
+    return AssistantAttachment(
+        name=name,
+        mimeType="text/plain",
+        dataUrl=f"data:text/plain;base64,{payload}",
+        sizeBytes=len(excerpt.encode("utf-8")),
+    )
+
+
+def sample_specialist_lighthouse_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q09-lighthouse.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q09_lighthouse_related_rates.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q09-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=15,
+            end_line=72,
+        ),
+    ]
+
+
+def sample_specialist_stats_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q15-statistics-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q15_stats_curve_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q15-statistics-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q15_stats_curve_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q15-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=480,
+            end_line=589,
+        ),
+    ]
+
+
+def sample_methods_earthquake_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2024-mam-q15-earthquake-graph-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q15_earthquake_graph_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2024-mam-q15-earthquake-graph-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q15_earthquake_graph_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2024-mam-q15-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2024-mam-ca-key.txt"),
+            start_line=676,
+            end_line=783,
+        ),
     ]
 
 
@@ -771,6 +880,50 @@ def diagram_graph_config(args: dict[str, Any]) -> dict[str, Any]:
     return graph_config if isinstance(graph_config, dict) else {}
 
 
+def collect_diagram_graph_configs(value: Any) -> list[dict[str, Any]]:
+    configs: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        graph_config = value.get("graphConfig", value.get("config"))
+        if isinstance(graph_config, dict) and isinstance(graph_config.get("type"), str):
+            configs.append(graph_config)
+        elif isinstance(value.get("type"), str):
+            configs.append(value)
+        for key, inner_value in value.items():
+            if key in {"graphConfig", "config"}:
+                continue
+            configs.extend(collect_diagram_graph_configs(inner_value))
+    elif isinstance(value, list):
+        for item in value:
+            configs.extend(collect_diagram_graph_configs(item))
+    return configs
+
+
+def graph_config_types(args: dict[str, Any]) -> set[str]:
+    return {str(config.get("type")) for config in collect_diagram_graph_configs(args) if config.get("type")}
+
+
+def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict[str, Any] | None]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
+        issues.append(f"expected {QUESTION_UPSERT_TOOL_NAME}, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"], None
+    if args.get("questionNumber") != 1:
+        issues.append("source screenshot should be converted into Question 1")
+    question_text = str(args.get("questionText") or "")
+    solution_text = str(args.get("solutionText") or "")
+    issues.extend(control_character_issues(question_text, "questionText"))
+    issues.extend(control_character_issues(solution_text, "solutionText"))
+    if "(a)" in question_text.lower() or "(b)" in question_text.lower():
+        issues.append("questionText should not contain typed automatic part labels")
+    if "\\[" in question_text or "\\]" in question_text:
+        issues.append("questionText should use $$...$$ display maths, not \\[...\\]")
+    if "\\[" in solution_text or "\\]" in solution_text:
+        issues.append("solutionText should use $$...$$ display maths, not \\[...\\]")
+    return issues, args
+
+
 def diagram_vector_ray_config(args: dict[str, Any]) -> dict[str, Any]:
     diagram = args.get("diagram")
     if isinstance(diagram, dict) and isinstance(diagram.get("vectorRayDiagram"), dict):
@@ -820,7 +973,9 @@ def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "
     vectors = vector_ray.get("vectors")
     if not isinstance(vectors, list):
         return [f"{path}.vectors should be an array"]
-    vector_entries = {str(vector.get("id") or vector.get("name") or ""): vector for vector in vectors if isinstance(vector, dict)}
+    vector_entries = {
+        str(vector.get("id") or vector.get("name") or ""): vector for vector in vectors if isinstance(vector, dict)
+    }
     for vector_id in ("a", "b", "c", "d"):
         entry = vector_entries.get(vector_id)
         if entry is None:
@@ -886,7 +1041,9 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
     if graph_config.get("showAxes") is not False or graph_config.get("showGrid") is not False:
         issues.append("source scalar-product vector2d diagram should hide axes and grid")
     metadata = graph_config.get("metadata")
-    vector2d = metadata.get("vector2d") if isinstance(metadata, dict) and isinstance(metadata.get("vector2d"), dict) else {}
+    vector2d = (
+        metadata.get("vector2d") if isinstance(metadata, dict) and isinstance(metadata.get("vector2d"), dict) else {}
+    )
     vectors = vector2d.get("vectors")
     if not isinstance(vectors, list) or len(vectors) < 4:
         issues.append("native vector2d diagram should include all four labelled vectors")
@@ -917,8 +1074,11 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
 
 def compact_math_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text.lower())
+    compact = re.sub(r"\\d?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"\1/\2", compact)
     replacements = {
         "\\cdot": ".",
+        "\\approx": "=",
+        "\\pi": "pi",
         "·": ".",
         "\\mathbf": "",
         "\\boldsymbol": "",
@@ -1282,7 +1442,9 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
             issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
         if str(part.get("solutionText") or "").strip() or part.get("includeSolution") is True:
             issues.append(f"parts[{index}] should not include a solution unless the prompt asks for one")
-        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+        if part.get("answerSurface") != "diagram" and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
             issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
         text = part_math_text(part)
         first, second = expected_terms[index]
@@ -1295,6 +1457,219 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
         issues.append("question-level marks should be omitted/0 or 5 when part marks total 5")
     if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 5:
         issues.append("structured part marks should total 5")
+    return issues
+
+
+def assert_real_lighthouse_question_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    if args.get("marks") != 5:
+        issues.append("lighthouse source question should preserve the 5 mark allocation")
+    if not isinstance(args.get("studentSpaceLines"), int) or args["studentSpaceLines"] < 8:
+        issues.append("lighthouse related-rates question should keep generous written working space")
+
+    serialized = call_text(call).lower()
+    for term in ("lighthouse", "beam", "50", "100", "theta"):
+        if term not in serialized and (term != "theta" or "θ" not in serialized):
+            issues.append(f"lighthouse source conversion should preserve {term!r}")
+
+    graph_types = graph_config_types(args)
+    if "geometricConstruction" not in graph_types:
+        issues.append(
+            f"lighthouse right-triangle diagram should use geometricConstruction, got {sorted(graph_types)!r}"
+        )
+    if "graph2d" in graph_types or "statsChart" in graph_types or "network" in graph_types:
+        issues.append("lighthouse right-triangle diagram should not use graph2d, statsChart, or network")
+    graph_config = diagram_graph_config(args)
+    substance = str(graph_config.get("options", {}).get("substanceSource") or "")
+    if graph_config.get("type") == "geometricConstruction":
+        for term in ("L", "C", "P"):
+            if term not in substance:
+                issues.append(f"geometricConstruction Substance should include point {term}")
+        if "RightAngle" not in substance and "Perpendicular" not in substance:
+            issues.append("lighthouse diagram should preserve the right angle at the coast")
+        try:
+            render_penrose_diagram(
+                {
+                    **graph_config,
+                    "style": graph_config.get("style") or "geometry",
+                    "options": {
+                        "penrosePreset": "geometry",
+                        "scalePercent": 100,
+                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
+                    },
+                }
+            )
+        except Exception as exc:
+            issues.append(f"lighthouse geometricConstruction should render through Penrose: {exc}")
+
+    solution_texts = collect_solution_texts(args)
+    if not solution_texts:
+        issues.append("official-key source should produce a worked solution")
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("pi/10", "tan", "sec", "78.54"):
+        if term not in solution_serialized:
+            issues.append(f"lighthouse solution should preserve {term!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 5:
+        issues.append("lighthouse hidden [[marks:n]] total should be exactly 5")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("lighthouse solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
+def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    question_text = str(args.get("questionText") or "")
+    serialized = call_text(call).lower()
+    for term in ("text message", "response", "mean", "standard deviation", "64"):
+        if term not in serialized:
+            issues.append(f"statistics source conversion should preserve {term!r}")
+    if "2.4" not in serialized or "3" not in serialized:
+        issues.append("statistics source conversion should preserve population mean 3 and standard deviation 2.4")
+
+    graph_types = graph_config_types(args)
+    if "statsChart" not in graph_types:
+        issues.append(f"statistics source graphs should use statsChart, got {sorted(graph_types)!r}")
+    if "graph2d" in graph_types:
+        issues.append(
+            "statistics distribution/blank-axis source should not be converted as a generic graph2d function graph"
+        )
+    stats_chart_types: list[str] = []
+    for config in collect_diagram_graph_configs(args):
+        if config.get("type") != "statsChart":
+            continue
+        data = config.get("data")
+        if isinstance(data, dict) and isinstance(data.get("chartType"), str):
+            stats_chart_types.append(str(data["chartType"]))
+    unsupported_stats_types = sorted(
+        {
+            chart_type
+            for chart_type in stats_chart_types
+            if chart_type not in {"histogram", "binomial", "normal", "box", "density", "blankAxes"}
+        }
+    )
+    if unsupported_stats_types:
+        issues.append(
+            f"statistics chartTypes should be supported native statsChart types, got {unsupported_stats_types!r}"
+        )
+    if "density" not in stats_chart_types:
+        issues.append("statistics source probability-density graph should use statsChart chartType='density'")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 3:
+        issues.append("statistics source should become exactly three structured parts")
+        return issues
+    expected_marks = [3, 2, 4]
+    expected_terms = (("150", "210"), ("sample mean", "distribution"), ("anika", "claim"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if part.get("answerSurface") != "diagram" and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 9:
+        issues.append("statistics structured part marks should total 9")
+    if "100" not in serialized or "2.1" not in serialized or "2.7" not in serialized:
+        issues.append("statistics source conversion should preserve the sample-size/mean/standard-deviation table")
+    if "send me a text message" not in question_text.lower():
+        issues.append("questionText should preserve the source request wording")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("0.904", "0.3", "1.5708", "2.6292"):
+        if term not in solution_serialized:
+            issues.append(f"statistics solution should preserve {term!r}")
+    solution_text = "\n".join(solution_texts).lower()
+    if all(
+        term not in solution_text for term in ("cannot", "not accepted", "not justified", "does not prove", "not prove")
+    ):
+        issues.append("statistics solution should reject Anika's teenager-source claim")
+    hidden_total = hidden_mark_total("\n".join(solution_texts))
+    diagram_solution_marks = sum(
+        int(part.get("marks") or 0)
+        for part in parts
+        if isinstance(part, dict)
+        and part.get("answerSurface") == "diagram"
+        and isinstance(part.get("solutionDiagram"), dict)
+    )
+    if hidden_total + diagram_solution_marks != 9:
+        issues.append("statistics hidden [[marks:n]] ticks plus completed solution diagrams should total 9")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("statistics solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
+def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("earthquake", "moment magnitude", "seismic moment", "log"):
+        if term not in serialized:
+            issues.append(f"earthquake source conversion should preserve {term!r}")
+    if "3.16" not in serialized or "10" not in serialized:
+        issues.append("earthquake source conversion should preserve the seismic moment 3.16 x 10^13")
+
+    graph_config = diagram_graph_config(args)
+    graph_types = graph_config_types(args)
+    if graph_config.get("type") != "graph2d" and "graph2d" not in graph_types:
+        issues.append(f"earthquake source graph should use graph2d, got {sorted(graph_types)!r}")
+    if "statsChart" in graph_types or "geometricConstruction" in graph_types:
+        issues.append("earthquake linear coordinate graph should not use statsChart or geometricConstruction")
+
+    graph_serialized = json.dumps(graph_config, ensure_ascii=False).lower()
+    if "log" not in serialized or "m_0" not in serialized.replace("{", "").replace("}", ""):
+        issues.append("earthquake payload should keep log10(M_0) axis/variable notation")
+    if not any(term in graph_serialized for term in ("2/3", "0.666", "0.667", "0.666666")):
+        issues.append("earthquake graph2d line should encode slope 2/3")
+    if "-6" not in graph_serialized:
+        issues.append("earthquake graph2d line should encode vertical intercept -6")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 4:
+        issues.append("earthquake source should become exactly four structured parts")
+        return issues
+    expected_marks = [2, 2, 3, 2]
+    expected_terms = (("3.16", "10"), ("a", "b"), ("relationship", "form"), ("magnitude", "4"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+    if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 9:
+        issues.append("earthquake structured part marks should total 9")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("13.5", "m_w=3", "2/3", "-6", "10^9", "10^15"):
+        if term not in solution_serialized:
+            issues.append(f"earthquake solution should preserve {term!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 9:
+        issues.append("earthquake hidden [[marks:n]] total should be exactly 9")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("earthquake solution should use hidden [[marks:n]] ticks, not visible mark notes")
     return issues
 
 
@@ -1656,6 +2031,33 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_scalar_product_screenshot_attachment,
         "assert": assert_screenshot_scalar_products_call,
     },
+    "real-specialist-lighthouse": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshot and official marking-key excerpt. "
+            "Preserve the diagram, marks, and mathematical wording, and include the worked solution from the key."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_lighthouse_screenshot_with_key,
+        "assert": assert_real_lighthouse_question_call,
+    },
+    "real-specialist-stats": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the statistics graphs/table, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_stats_screenshot_with_key,
+        "assert": assert_real_specialist_stats_call,
+    },
+    "real-methods-earthquake": {
+        "prompt": (
+            "Create Question 1 from the attached Methods exam screenshots and official marking-key excerpt. "
+            "Preserve the coordinate graph, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_methods_earthquake_screenshot_with_key,
+        "assert": assert_real_methods_earthquake_call,
+    },
     "repair-circle-diagram": {
         "prompt": "Please add the diagram to question 1 that goes along with the question.",
         "summary": sample_parallel_chord_circle_document_summary,
@@ -1731,6 +2133,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
     ],
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
+    "real-exams": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
 }
 
 

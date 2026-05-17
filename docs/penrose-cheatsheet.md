@@ -155,7 +155,7 @@ PerpendicularToSegment(l, A, B)
 Use `ParallelToSegment(l, A, B)` when the visible object should be only the segment `AB`, such as a chord parallel to a tangent. Use `Parallel(l, m)` when both full construction lines should be visible.
 Use `PerpendicularToSegment(l, A, B)` for a line perpendicular to a drawn segment `AB`.
 
-Do not use invented shortcuts such as `Connect(A, B)` or `Collinear(A, B, C)`. Draw visible joins with `Segment(name, A, B)` or `VectorSegment(name, A, B)`. If line incidence matters, declare the line first, then use `LineThrough(lineName, A, B)` and `On(P, lineName)`; otherwise leave the collinearity implicit in the drawing constraints.
+Do not use invented shortcuts such as `Connect(A, B)` or `Collinear(A, B, C)`. Draw visible joins with `Segment(name, A, B)` or `VectorSegment(name, A, B)`. Declare the reusable join name with `NamedSegment` first; `Segment` and `VectorSegment` are predicates, not type declarations. If line incidence matters, declare the line first, then use `LineThrough(lineName, A, B)` and `On(P, lineName)`; otherwise leave the collinearity implicit in the drawing constraints.
 
 ```penrose
 Line lineAB
@@ -163,7 +163,9 @@ LineThrough(lineAB, A, B)
 On(C, lineAB)
 ```
 
-All predicate calls use parentheses and commas. Do not write declaration-like predicate syntax such as `VectorSegment OA O A`; write `VectorSegment(OA, O, A)`.
+All predicate calls use parentheses and commas. Do not write declaration-like predicate syntax such as `VectorSegment OA O A`, `Segment AB`, or `VectorSegment beam`; write `VectorSegment(OA, O, A)`.
+
+Labels use declaration syntax, not predicate syntax. Write `Label A $A$`; do not write `Label(A, $A$)`.
 
 ## Circles
 

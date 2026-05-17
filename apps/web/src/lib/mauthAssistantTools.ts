@@ -588,7 +588,11 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
       "yAxisLabel",
       "dataValues",
       "xValues",
+      "yValues",
       "probabilities",
+      "points",
+      "range",
+      "yRange",
       "bins",
       "binSize",
     ]);
@@ -1692,7 +1696,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }, or from vectorRayDiagram for source-faithful scalar-product ray diagrams. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }, or from vectorRayDiagram for source-faithful scalar-product ray diagrams. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics including density/normal/blankAxes charts, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -1805,7 +1809,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
-      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
+      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",

@@ -31,12 +31,18 @@ const DEFAULT_HISTOGRAM_VALUES = [3, 5, 7, 7, 8, 10];
 const DEFAULT_MANUAL_X_VALUES = [2, 4, 5, 6, 7];
 const DEFAULT_MANUAL_PROBABILITIES = [0.1, 0.25, 0.3, 0.15, 0.2];
 const DEFAULT_BOX_VALUES = [1, 2, 3, 4, 5, 6, 7];
+const DEFAULT_BLANK_Y_RANGE: [number, number] = [0, 1];
 
-export const STATS_CHART_TYPES: Array<{ value: "histogram" | "binomial" | "normal" | "box"; label: string }> = [
+type SupportedStatsChartType = "histogram" | "binomial" | "normal" | "box" | "density" | "blankAxes";
+type DensityPoint = { x: number; y: number; label?: string };
+
+export const STATS_CHART_TYPES: Array<{ value: SupportedStatsChartType; label: string }> = [
   { value: "histogram", label: "Histogram / column graph" },
   { value: "binomial", label: "Binomial distribution" },
   { value: "normal", label: "Normal distribution" },
   { value: "box", label: "Box plot" },
+  { value: "density", label: "Probability density curve" },
+  { value: "blankAxes", label: "Blank statistics axes" },
 ];
 
 export const DEFAULT_STATS_CHART_SPEC: StatsChartSpec = {
@@ -114,6 +120,57 @@ function rangeValue(value: unknown, fallback: [number, number]): [number, number
   return left < right ? [left, right] : [right, left];
 }
 
+function extentRange(values: number[], fallback: [number, number], includeZero = false): [number, number] {
+  const finiteValues = values.filter(Number.isFinite);
+  if (!finiteValues.length) return fallback;
+  let min = Math.min(...finiteValues);
+  let max = Math.max(...finiteValues);
+  if (includeZero) {
+    min = Math.min(0, min);
+    max = Math.max(0, max);
+  }
+  if (min === max) {
+    const pad = Math.max(1, Math.abs(min) * 0.1);
+    return [Number((min - pad).toFixed(8)), Number((max + pad).toFixed(8))];
+  }
+  const pad = (max - min) * 0.04;
+  return [Number((min - pad).toFixed(8)), Number((max + pad).toFixed(8))];
+}
+
+function densityPointPairs(sourceData: Record<string, unknown>) {
+  const fromPoints = Array.isArray(sourceData.points)
+    ? sourceData.points.flatMap((point): DensityPoint[] => {
+        const pointRecord = asRecord(point);
+        const x = Number(pointRecord?.x);
+        const y = Number(pointRecord?.y);
+        const label = typeof pointRecord?.label === "string" ? pointRecord.label : undefined;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+        return label === undefined ? [{ x, y }] : [{ x, y, label }];
+      })
+    : [];
+
+  if (fromPoints.length) {
+    const points = [...fromPoints].sort((left, right) => left.x - right.x);
+    return {
+      points,
+      xs: points.map((point) => point.x),
+      ys: points.map((point) => point.y),
+    };
+  }
+
+  const xs = numberArray(sourceData.xValues, []);
+  const ys = numberArray(sourceData.yValues, []);
+  const pairCount = Math.min(xs.length, ys.length);
+  const points = Array.from({ length: pairCount }, (_, index) => ({ x: xs[index], y: ys[index] }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .sort((left, right) => left.x - right.x);
+  return {
+    points,
+    xs: points.map((point) => point.x),
+    ys: points.map((point) => point.y),
+  };
+}
+
 function pairedManualProbabilityValues(sourceData: Record<string, unknown>) {
   const sourceX = numberArray(sourceData.xValues, DEFAULT_MANUAL_X_VALUES);
   const sourceProbabilities = numberArray(sourceData.probabilities, DEFAULT_MANUAL_PROBABILITIES).map((value) => Math.max(0, value));
@@ -142,6 +199,13 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
   const yAxisMode = selectedChartType === "histogram" ? statsChartYAxisMode(sourceData.yAxisMode) : "frequency";
   const yLabelOrientation = selectedChartType === "histogram" ? statsChartYLabelOrientation(sourceData.yLabelOrientation) : "vertical";
   const manualProbabilities = pairedManualProbabilityValues(sourceData);
+  const densityPoints = densityPointPairs(sourceData);
+  const defaultRange =
+    selectedChartType === "density"
+      ? extentRange(densityPoints.xs, [mean - 3 * stdDev, mean + 3 * stdDev])
+      : [mean - 3 * stdDev, mean + 3 * stdDev];
+  const defaultYRange =
+    selectedChartType === "density" ? extentRange(densityPoints.ys, DEFAULT_BLANK_Y_RANGE, true) : DEFAULT_BLANK_Y_RANGE;
   const histogramDefaultYLabel =
     dataMode === "manualProbabilities" ? "P(X=x)" : yAxisMode === "relativeFrequency" ? "Relative frequency" : "Frequency";
 
@@ -155,28 +219,38 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
       yAxisMode,
       yLabelOrientation,
       values: numberArray(sourceData.values, defaultValues),
-      xValues: manualProbabilities.xValues,
-      probabilities: manualProbabilities.probabilities,
+      xValues: selectedChartType === "density" ? densityPoints.xs : manualProbabilities.xValues,
+      yValues: selectedChartType === "density" ? densityPoints.ys : numberArray(sourceData.yValues, []),
+      probabilities: selectedChartType === "histogram" ? manualProbabilities.probabilities : numberArray(sourceData.probabilities, []),
+      points: selectedChartType === "density" ? densityPoints.points : Array.isArray(sourceData.points) ? sourceData.points : undefined,
       mean,
       stdDev,
       trials,
       probability,
-      range: rangeValue(sourceData.range, [mean - 3 * stdDev, mean + 3 * stdDev]),
+      range: rangeValue(sourceData.range, defaultRange as [number, number]),
+      yRange: rangeValue(sourceData.yRange, defaultYRange),
       bins: sourceData.bins === undefined ? undefined : positiveNumber(sourceData.bins, 6),
       binSize: sourceData.binSize === undefined ? undefined : positiveNumber(sourceData.binSize, 1),
       xLabel: stringValue(
         sourceData.xLabel,
-        selectedChartType === "normal" || selectedChartType === "binomial" || dataMode === "manualProbabilities" ? "x" : "Value",
+        selectedChartType === "normal" ||
+          selectedChartType === "binomial" ||
+          selectedChartType === "density" ||
+          dataMode === "manualProbabilities"
+          ? "x"
+          : "Value",
       ),
       yLabel: stringValue(
         sourceData.yLabel,
         selectedChartType === "normal"
           ? "Density"
-          : selectedChartType === "binomial"
-            ? "Probability"
-            : selectedChartType === "box"
-              ? ""
-              : histogramDefaultYLabel,
+          : selectedChartType === "density"
+            ? "Density"
+            : selectedChartType === "binomial"
+              ? "Probability"
+              : selectedChartType === "box"
+                ? ""
+                : histogramDefaultYLabel,
       ),
       title: stringValue(sourceData.title, ""),
     },
@@ -211,6 +285,37 @@ function normalCurvePoints(mean: number, stdDev: number, range: [number, number]
   }
 
   return { xs, ys };
+}
+
+function densityCurvePoints(data: StatsChartData) {
+  const fromPoints = Array.isArray(data.points)
+    ? data.points
+        .map((point) => ({ x: Number(point.x), y: Number(point.y), label: point.label }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+        .sort((left, right) => left.x - right.x)
+    : [];
+
+  if (fromPoints.length) {
+    return {
+      xs: fromPoints.map((point) => point.x),
+      ys: fromPoints.map((point) => point.y),
+    };
+  }
+
+  const xs = data.xValues?.filter(Number.isFinite) ?? [];
+  const ys = data.yValues?.filter(Number.isFinite) ?? [];
+  const pairCount = Math.min(xs.length, ys.length);
+  if (pairCount) {
+    const points = Array.from({ length: pairCount }, (_, index) => ({ x: xs[index], y: ys[index] })).sort(
+      (left, right) => left.x - right.x,
+    );
+    return {
+      xs: points.map((point) => point.x),
+      ys: points.map((point) => point.y),
+    };
+  }
+
+  return normalCurvePoints(data.mean ?? 0, data.stdDev ?? 1, data.range ?? [-3, 3], 181);
 }
 
 function binomialCoefficient(n: number, k: number) {
@@ -508,6 +613,24 @@ function chartTraces(spec: StatsChartSpec) {
     ];
   }
 
+  if (data.chartType === "density") {
+    const { xs, ys } = densityCurvePoints(data);
+    return [
+      {
+        type: "scatter",
+        mode: "lines",
+        x: xs,
+        y: ys,
+        hoverinfo: "skip",
+        cliponaxis: false,
+        line: { color: lineColor, width: 2.4, shape: "spline" },
+        name: data.title || "Density",
+      },
+    ];
+  }
+
+  if (data.chartType === "blankAxes") return [];
+
   if (data.chartType === "box") {
     return [
       {
@@ -577,6 +700,7 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
     data.chartType === "normal"
       ? normalCurvePoints(data.mean ?? 0, data.stdDev ?? 1, data.range ?? [-3, 3], options.normalPointCount ?? 181)
       : undefined;
+  const density = data.chartType === "density" ? densityCurvePoints(data) : undefined;
   const histogramYAxis = positiveTickAxis(
     histogram?.yValues ?? [],
     histogram?.relative || histogram?.manual ? 0.1 : 1,
@@ -584,6 +708,7 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
   );
   const binomialYAxis = positiveTickAxis(binomial?.ys ?? [], 0.1);
   const normalYAxis = positiveTickAxis(normal?.ys ?? [], 0.1);
+  const densityYAxis = data.yRange ? { range: data.yRange } : positiveTickAxis(density?.ys ?? [], 0.1);
 
   return {
     data: chartTraces(spec),
@@ -629,7 +754,12 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
                   ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
                   range: data.range,
                 }
-              : baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+              : data.chartType === "density" || data.chartType === "blankAxes"
+                ? {
+                    ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+                    range: data.range,
+                  }
+                : baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
       yaxis:
         data.chartType === "box"
           ? {
@@ -655,7 +785,13 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
                     ...normalYAxis,
                     rangemode: "tozero",
                   }
-                : baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                : data.chartType === "density" || data.chartType === "blankAxes"
+                  ? {
+                      ...baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                      ...densityYAxis,
+                      rangemode: "tozero",
+                    }
+                  : baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
     },
     config: {
       staticPlot: !(options.interactive ?? false),
@@ -676,6 +812,8 @@ export function statsChartSummary(input?: GraphConfig | StatsChartSpec | null) {
   const spec = normalizeStatsChartSpec(input);
   const data = spec.data;
   if (data.chartType === "normal") return `Normal: mean ${data.mean}, standard deviation ${data.stdDev}`;
+  if (data.chartType === "density") return `Density curve: ${densityCurvePoints(data).xs.length} points`;
+  if (data.chartType === "blankAxes") return "Blank statistics axes";
   if (data.chartType === "binomial") return `Binomial: n ${data.trials}, p ${data.probability}`;
   if (data.chartType === "box") return `Box plot: ${data.values?.length ?? 0} values`;
   if (data.dataMode === "manualProbabilities") return `Manual probabilities: ${data.xValues?.length ?? 0} values`;

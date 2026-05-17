@@ -1254,6 +1254,21 @@ test("rejects obvious diagram renderer mismatches before applying", () => {
       },
     },
   });
+  const densityCurveResult = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.replaceQuestion",
+    arguments: {
+      questionNumber: 1,
+      marks: 3,
+      questionText:
+        "The distribution is given by the probability density function shown below. Sketch the likely distribution of the sample mean.",
+      diagram: {
+        graphConfig: {
+          type: "graph2d",
+          functions: [{ expression: "exp(-x^2)" }],
+        },
+      },
+    },
+  });
   const circleGeometryResult = runMauthAssistantTool(
     {
       ...documentFixture(),
@@ -1277,6 +1292,7 @@ test("rejects obvious diagram renderer mismatches before applying", () => {
   const scalarData = scalarProductResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
   const vectorData = coordinateVectorResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
   const statsData = statsChartResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const densityData = densityCurveResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
   const circleData = circleGeometryResult.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
 
   assert.equal(scalarProductResult.ok, false);
@@ -1289,6 +1305,9 @@ test("rejects obvious diagram renderer mismatches before applying", () => {
   assert.equal(statsChartResult.ok, false);
   assert(statsData.validationIssues?.some((issue) => issue.expected === "statsChart"));
   assert.match(statsChartResult.error ?? "", /statistics chart/);
+  assert.equal(densityCurveResult.ok, false);
+  assert(densityData.validationIssues?.some((issue) => issue.expected === "statsChart"));
+  assert.match(densityCurveResult.error ?? "", /statistics chart/);
   assert.equal(circleGeometryResult.ok, false);
   assert(circleData.validationIssues?.some((issue) => issue.expected === "geometricConstruction"));
   assert.match(circleGeometryResult.error ?? "", /schematic geometry diagram/);
@@ -2059,6 +2078,58 @@ test("rejects malformed diagram configs before they reach the action engine", ()
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.probabilities"));
 });
 
+test("accepts native statistics density curves and blank axes", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "density-chart",
+              kind: "diagram",
+              graphConfig: {
+                type: "statsChart",
+                data: {
+                  chartType: "density",
+                  points: [
+                    { x: 150, y: 0 },
+                    { x: 180, y: 0.02 },
+                    { x: 210, y: 0 },
+                  ],
+                  range: [150, 210],
+                  yRange: [0, 0.03],
+                },
+              },
+            },
+            {
+              id: "blank-axes-chart",
+              kind: "diagram",
+              graphConfig: {
+                type: "statsChart",
+                data: {
+                  chartType: "blankAxes",
+                  range: [2.1, 2.7],
+                  yRange: [0, 4],
+                  xLabel: "Sample mean",
+                  yLabel: "Density",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const blockIds = result.document?.questions[0].contentBlocks.map((block) => block.id) ?? [];
+  assert(blockIds.includes("density-chart"));
+  assert(blockIds.includes("blank-axes-chart"));
+});
+
 test("rejects unsupported Penrose Substance predicates before applying diagrams", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.addDiagram",
@@ -2074,6 +2145,7 @@ test("rejects unsupported Penrose Substance predicates before applying diagrams"
               "NamedSegment OA, OB",
               "LabelsPoint(A, $A$)",
               "SegmentLength(OA, 2)",
+              "Label(A, $A$)",
               "OppositeRays(A, O, B)",
               "Collinear(A, O, B)",
               "Connect(AB, A, B)",
@@ -2093,6 +2165,7 @@ test("rejects unsupported Penrose Substance predicates before applying diagrams"
 
   assert.equal(result.ok, false);
   assert.match(messages, /LabelsPoint/);
+  assert.match(messages, /Label\(\.\.\.\)/);
   assert.match(messages, /SegmentLength/);
   assert.match(messages, /OppositeRays/);
   assert.match(messages, /Collinear/);

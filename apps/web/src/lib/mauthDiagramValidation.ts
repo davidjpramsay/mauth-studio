@@ -10,7 +10,7 @@ const SUPPORTED_DIAGRAM_TYPES = new Set([
   "setDiagram",
   "statsChart",
 ]);
-const STATS_CHART_TYPES = new Set(["histogram", "binomial", "normal", "box"]);
+const STATS_CHART_TYPES = new Set(["histogram", "binomial", "normal", "box", "density", "blankAxes"]);
 const HISTOGRAM_BAR_TYPES = new Set(["continuous", "discrete"]);
 const STATS_CHART_DATA_MODES = new Set(["raw", "manualProbabilities"]);
 const STATS_CHART_Y_AXIS_MODES = new Set(["frequency", "relativeFrequency"]);
@@ -68,6 +68,11 @@ const COMMON_UNSUPPORTED_PENROSE_PREDICATES: Array<{
     pattern: /\bLabelsPoint\s*\(/,
     message: "uses unsupported LabelsPoint predicate",
     expected: "Label the existing point directly, e.g. `Label A $A$` or `Label A $\\mathbf{a}$`.",
+  },
+  {
+    pattern: /\bLabel\s*\(/,
+    message: "uses unsupported Label(...) predicate syntax",
+    expected: "Label declarations use `Label A $A$`, not `Label(A, $A$)`.",
   },
   {
     pattern: /\bSegmentLength\s*\(/,
@@ -268,6 +273,31 @@ function numberPair(value: unknown, path: string, issues: MauthActionValidationI
   value.forEach((item, index) => {
     if (!finiteNumber(item)) addIssue(issues, `${path}[${index}]`, "must be a finite number", "number");
   });
+}
+
+function optionalNumberPair(record: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[]) {
+  if (!hasOwn(record, key)) return;
+  numberPair(record[key], `${path}.${key}`, issues);
+  if (Array.isArray(record[key]) && finiteNumber(record[key][0]) && finiteNumber(record[key][1]) && record[key][0] >= record[key][1]) {
+    addIssue(issues, `${path}.${key}[1]`, `must be greater than ${key}[0]`, `${key}[1] > ${key}[0]`);
+  }
+}
+
+function pointArray(record: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[]) {
+  const values = optionalArray(record, key, path, issues);
+  if (!values) return undefined;
+  values.forEach((value, index) => {
+    const point = isRecord(value) ? value : undefined;
+    const pointPath = `${path}.${key}[${index}]`;
+    if (!point) {
+      addIssue(issues, pointPath, "must be an object", "{ x: number, y: number }");
+      return;
+    }
+    requiredNumber(point, "x", pointPath, issues);
+    requiredNumber(point, "y", pointPath, issues);
+    optionalString(point, "label", pointPath, issues);
+  });
+  return values;
 }
 
 function pointNameArray(
@@ -611,12 +641,37 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
   if (data.chartType === "normal") {
     requiredNumber(data, "mean", `${path}.data`, issues);
     requiredNumber(data, "stdDev", `${path}.data`, issues, { positive: true });
-    if (hasOwn(data, "range")) {
-      numberPair(data.range, `${path}.data.range`, issues);
-      if (Array.isArray(data.range) && finiteNumber(data.range[0]) && finiteNumber(data.range[1]) && data.range[0] >= data.range[1]) {
-        addIssue(issues, `${path}.data.range[1]`, "must be greater than range[0]", "range[1] > range[0]");
+    optionalNumberPair(data, "range", `${path}.data`, issues);
+  }
+
+  if (data.chartType === "density") {
+    const xValues = numberArray(data, "xValues", `${path}.data`, issues);
+    const yValues = numberArray(data, "yValues", `${path}.data`, issues);
+    const points = pointArray(data, "points", `${path}.data`, issues);
+    const hasPointCurve = Boolean(points?.length);
+    const hasPairedValues = Boolean(xValues?.length || yValues?.length);
+    if (!hasPointCurve && !hasPairedValues) {
+      addIssue(issues, `${path}.data.points`, "density curves need points or paired xValues/yValues", "points[] or xValues/yValues");
+    }
+    if (points && points.length < 2)
+      addIssue(issues, `${path}.data.points`, "density curves need at least two points", "at least two points");
+    if (xValues || yValues) {
+      if (!xValues?.length) addIssue(issues, `${path}.data.xValues`, "density curves need x-values", "number[]");
+      if (!yValues?.length) addIssue(issues, `${path}.data.yValues`, "density curves need y-values", "number[]");
+      if (xValues && yValues && xValues.length !== yValues.length) {
+        addIssue(issues, `${path}.data.yValues`, "must have the same length as xValues", "one y-value per x-value");
+      }
+      if (xValues && yValues && xValues.length < 2 && yValues.length < 2) {
+        addIssue(issues, `${path}.data.xValues`, "density curves need at least two paired values", "at least two x/y pairs");
       }
     }
+    optionalNumberPair(data, "range", `${path}.data`, issues);
+    optionalNumberPair(data, "yRange", `${path}.data`, issues);
+  }
+
+  if (data.chartType === "blankAxes") {
+    optionalNumberPair(data, "range", `${path}.data`, issues);
+    optionalNumberPair(data, "yRange", `${path}.data`, issues);
   }
 
   if (data.chartType === "box") {

@@ -1070,6 +1070,25 @@ def focused_tool_hint(
             if has_source_attachment and source_prompt_mentions_diagram
             else "Omit diagram fields to preserve existing diagrams; use diagrams: [] only when explicitly removing diagrams."
         )
+        if has_source_attachment and any(
+            term in text
+            for term in (
+                "statistic",
+                "stats",
+                "distribution",
+                "probability density",
+                "sample mean",
+                "histogram",
+                "column graph",
+            )
+        ):
+            diagram_guidance += (
+                " For source statistical graphs, use graphConfig.type statsChart for histograms, column graphs, "
+                "probability density functions, normal curves, and sample-mean distribution sketches wherever the "
+                "native stats chart DSL can represent the display. Use chartType density for arbitrary density curves, "
+                "normal for parameterised normal curves, and blankAxes for student sketch axes. Do not default to graph2d "
+                "just because the source statistical chart has x-y axes."
+            )
         focused_tool_name = "mauth_convert_source_question" if has_source_attachment else "mauth_question_upsert"
         target_description = (
             f"the next missing question, Question {question_number}"
@@ -1379,7 +1398,13 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                 "type": "object",
                 "description": (
                     "Native Mauth renderer payload. Put renderer type/data/options here; never put type/data directly "
-                    "on the diagram block. " + vector2d_description
+                    "on the diagram block. For statsChart normal/density displays, use fields like "
+                    "{type:'statsChart', data:{chartType:'normal', mean:3, stdDev:0.3, range:[1.5,4.5], "
+                    "xLabel:'$\\\\overline{T}$', yLabel:'Density'}, options:{showGrid:true, showFill:false}}; "
+                    "for arbitrary source density curves use data.chartType:'density' with points:[{x,y},...] or "
+                    "paired xValues/yValues; for blank student sketch axes use data.chartType:'blankAxes' with range/yRange; "
+                    "for histograms/columns use data.chartType:'histogram' with values or manual xValues/probabilities. "
+                    + vector2d_description
                 ),
                 "properties": {
                     "type": {
@@ -1690,7 +1715,10 @@ def mauth_convert_source_question_tool_definition(*, require_diagram: bool = Fal
         "editable Mauth content. Use this for source-fidelity requests. Preserve the visible stem, marks, line breaks, "
         "inline-vs-display maths intent, source diagram placement, and structured parts. If the source includes a visible "
         "mathematical diagram and the teacher asks to include/enter it, provide a native diagram/diagrams payload in this "
-        "same call rather than replacing the diagram with prose."
+        "same call rather than replacing the diagram with prose. Statistical source graphs such as probability density "
+        "functions, normal curves, sample-mean distributions, histograms, and column graphs should normally use "
+        "statsChart rather than graph2d. Use statsChart chartType density for arbitrary source density curves, normal "
+        "for parameterised normal curves, and blankAxes for axes students sketch on."
     )
     return definition
 
@@ -1703,7 +1731,7 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
             "Add a teacher-ready diagram to one existing question. Use for focused follow-ups like "
             "'include/add the diagram in question 1'. Choose the correct Mauth renderer and provide a real graphConfig. "
             "Use geometricConstruction/Penrose for schematic geometry and theorem diagrams; graph2d for coordinate/function "
-            "graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts; setDiagram for Venn/set diagrams; "
+            "graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts, density curves, normal/sample-mean distributions, and histograms; setDiagram for Venn/set diagrams; "
             "graph3d for 3D diagrams; image for uploaded images."
         ),
         "parameters": {
@@ -1758,7 +1786,7 @@ def mauth_make_diagram_for_question_tool_definition() -> dict[str, Any]:
         "Create or repair a native editable diagram for one existing question. Use for focused diagram follow-ups and "
         "post-edit semantic repairs. Read the question text, choose the correct renderer, and make the graphConfig match "
         "the stated mathematical relationships. Prefer geometricConstruction/Penrose for schematic geometry, graph2d for "
-        "coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics, setDiagram for Venn/set "
+        "coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics charts, density curves, normal/sample-mean distributions, and histograms, setDiagram for Venn/set "
         "diagrams, graph3d for 3D diagrams, and image only when an uploaded bitmap is explicitly required."
     )
     return definition
@@ -2301,8 +2329,8 @@ Tool-call contract:
 - For focused answer-space or working-space changes where the teacher is not asking for a solution rewrite, use mauth_author_adjust_response_spaces. It resizes or adds student-only response spaces for questions, parts, or subparts while preserving the existing question text, solutions, and diagrams.
 - For focused formatting/layout requests, use mauth_fix_question_formatting rather than low-level action JSON. Supported operations are setPageBreakBefore, removePageBreakBefore, setDiagramAlignment, adjustAnswerSpace, moveModule, fitSolutionToSpace, and tidyQuestionSpacing. This is the safe path for requests like "put part (c) on a new page", "move the diagram right", "make the solution fit", or "remove unnecessary blank space".
 - In mauth_question_upsert, omitted diagram and diagrams fields preserve existing diagrams. Use diagrams: [] or preserveExistingDiagrams: false only when the teacher explicitly asks to remove diagrams.
-- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms/columns/distributions; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
-- Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). Every predicate call must use parentheses and commas, for example `VectorSegment(OA, O, A)`; never write declaration-like predicate syntax such as `VectorSegment OA O A`. To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a segment or vector, use `Segment(name, A, B)` or `VectorSegment(name, A, B)`, not `Connect(...)`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To show collinearity, first declare the line with `Line lineName`, then use `LineThrough(lineName, A, B)` plus `On(P, lineName)` only when incidence is essential; do not invent `Collinear(...)`. To label an angle, always declare a label such as `Label angleCD $45^\\circ$`, then call `LabelsAngle(angleCD, C, O, D)`; never put raw TeX inside `LabelsAngle(...)` and never use a four-argument raw-label form. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
+- For focused follow-ups that only ask to add/include a diagram in one existing question, use mauth_make_diagram_for_question with a real diagram.graphConfig. Choose the renderer first: geometricConstruction/Penrose for schematic geometry, circle theorem, tangent, parallel, perpendicular, construction, and relationship diagrams; graph2d for coordinate/function graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for histograms, columns, probability density functions, normal curves, sample-mean distributions, and other statistical charts; setDiagram for Venn/set diagrams; graph3d for 3D diagrams; image for uploaded images. In statsChart, use chartType density for arbitrary source density curves with points, normal for parameterised normal curves, and blankAxes for axes students sketch on. If a previous diagram edit returned post-edit inspection validationIssues with a targetId/diagramId, call mauth_make_diagram_for_question again with that diagramId so the existing diagram is replaced rather than appending another diagram.
+- Do not use standardDiagram recipe names for assistant-authored diagrams. For Penrose geometry, native means supported Penrose Substance in graphConfig.options.substanceSource. Use the compact Penrose guidance from the selected Diagram Brain: declare objects such as Point, Line, Ray, Circle, and NamedSegment, then use predicates such as CircleThrough, OnCircle, Tangent, Segment, VectorSegment, RayFrom, ParallelToSegment, PerpendicularToSegment, EqualLength, LabelsSegment, LabelsAngle, and RightAngle. Structured graphConfig.data geometry is only for simple UI-driven controls; supported Substance is the normal AI geometry path. Visible diagram labels should match the question statement. Hide auxiliary construction points, such as a circle centre not named in the question, with Label centre $\\,$ and HidePoint(centre). Segment and VectorSegment are predicates, not types: never write standalone declarations such as `Segment AB`, `Segment CP`, or `VectorSegment beam`. Declare `NamedSegment AB, CP, beam` first, then call `Segment(AB, A, B)` or `VectorSegment(beam, L, P)`. Every predicate call must use parentheses and commas, for example `VectorSegment(OA, O, A)`; never write declaration-like predicate syntax such as `VectorSegment OA O A` or `VectorSegment OA`. Label is a declaration form, not a predicate: write `Label A $A$`, never `Label(A, $A$)`. To label a point, write `Label A $A$` or `Label A $\\mathbf{{a}}$` directly on the existing point name; do not invent LabelsPoint. To label a segment, write `Label lenA $2\\ \\text{{units}}$` then `LabelsSegment(lenA, O, A)`; do not write `LabelSegment`. To draw a segment or vector, use `Segment(name, A, B)` or `VectorSegment(name, A, B)`, not `Connect(...)`. To draw a ray, use `RayFrom(rayA, O, A)`, not `Ray(rayA, O, A)`. To show collinearity, first declare the line with `Line lineName`, then use `LineThrough(lineName, A, B)` plus `On(P, lineName)` only when incidence is essential; do not invent `Collinear(...)`. To label an angle, always declare a label such as `Label angleCD $45^\\circ$`, then call `LabelsAngle(angleCD, C, O, D)`; never put raw TeX inside `LabelsAngle(...)` and never use a four-argument raw-label form. To draw a visible right-angle marker, use `RightAngle(B, O, C)`, not `PerpendicularToSegment`.
 - Source scalar-product/vector-ray diagrams with magnitudes, angle markers, labelled rays, and no coordinate axes should use the compact diagram.vectorRayDiagram builder when available. Provide vectors with id/name, length and angleDeg (standard degrees: 0 right, 90 up) or components, plus angleMarkers for right-angle/angle labels. Angle-marker `from`/`to` must name the two rays that bound the actual marked angle in the source, not merely nearby rays; for the common four-ray scalar-product diagram with b perpendicular to d and c making 45 degrees with d, use `{{from:"b",to:"d",rightAngle:true}}` and `{{from:"c",to:"d",label:"45^\\circ"}}`. Mauth expands that builder into a valid vector2d graphConfig with hidden axes/grid, custom labels, draggable magnitude labels, and angle markers. If hand-writing raw graphConfig instead, use graphConfig.type = "vector2d" with showAxes:false, showGrid:false, showAxisLabels:false, and showAxisNumbers:false, metadata.vector2d.vectors with common start [0,0], labelStyle:"custom", labels such as "\\mathbf{{a}}", metadata.vector2d.segmentLabels for magnitudes such as "2\\ \\text{{units}}", and metadata.vector2d.angleMarkers for labels such as "45^\\circ". Do not use network for these; network is for conceptual network/link diagrams only. Use geometricConstruction/Penrose only when the task is actually ruler-style theorem geometry, not a source ray/vector magnitude diagram. For a circle through named points, use a hidden centre plus `CircleThrough(omega, centre, A)` and `OnCircle(B, omega)`, `OnCircle(C, omega)`; do not call `CircleThrough(omega, A, B, C)`. In replaceQuestion/addDiagram diagrams, always wrap renderer payloads inside graphConfig or use vectorRayDiagram; never put type/data/options directly on diagram and never use config as an alias.
 - Preserve LaTeX backslashes exactly in all tool-call JSON strings. Write commands such as `\\ell`, `\\frac`, `\\angle`, and `\\sum` as escaped backslashes in JSON so the parsed document text contains real LaTeX commands, not control characters.
 - For focused requests to add or write a worked solution for a named question, use mauth_write_solutions_for_questions when the supplied compact document summary includes that question's textPreview or enough module text to solve it. Do not inspect first merely to confirm ids, marks, or module counts already present in the summary. Inspect first only when the requested question text is missing or too truncated to solve correctly.

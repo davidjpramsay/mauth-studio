@@ -392,6 +392,53 @@ Normal distribution:
 :::
 ````
 
+Arbitrary probability density curve from source points:
+
+````md
+:::diagram type="statsChart" align="center"
+
+```json
+{
+  "type": "statsChart",
+  "data": {
+    "chartType": "density",
+    "points": [
+      { "x": 150, "y": 0 },
+      { "x": 180, "y": 0.02 },
+      { "x": 210, "y": 0 }
+    ],
+    "range": [150, 210],
+    "yRange": [0, 0.03],
+    "xLabel": "Response length",
+    "yLabel": "Density"
+  }
+}
+```
+
+:::
+````
+
+Blank statistics axes for a student sketch:
+
+````md
+:::diagram type="statsChart" align="center"
+
+```json
+{
+  "type": "statsChart",
+  "data": {
+    "chartType": "blankAxes",
+    "range": [2.1, 2.7],
+    "yRange": [0, 4],
+    "xLabel": "$\\overline{x}$",
+    "yLabel": "Density"
+  }
+}
+```
+
+:::
+````
+
 Binomial distribution:
 
 ````md

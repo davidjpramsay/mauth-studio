@@ -33,15 +33,16 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
   }
 
   const hasStatsLanguage =
-    /\bhistogram\b|\bcolumn graph\b|\bbar chart\b|\brelative frequenc(?:y|ies)\b|\bmanual probabilities\b|\bprobability mass\b|\bp\s*\(\s*x\s*=\s*x\s*\)|\bp\s*\(\s*x\s*\)/i.test(
+    /\bhistogram\b|\bcolumn graph\b|\bbar chart\b|\brelative frequenc(?:y|ies)\b|\bmanual probabilities\b|\bprobability mass\b|\bprobability density\b|\bprobability density function\b|\bnormal curve\b|\bnormal distribution\b|\bsample mean distribution\b|\bdistribution of the sample mean\b|\blikely distribution\b|\bp\s*\(\s*x\s*=\s*x\s*\)|\bp\s*\(\s*x\s*\)/i.test(
       rawText,
-    ) || /\bprobability graph\b|\bfrequency graph\b|\bpmf\b/.test(text);
+    ) || /\bprobability graph\b|\bfrequency graph\b|\bpmf\b|\bpdf\b|\bstats chart\b/.test(text);
   if (hasStatsLanguage) {
     return {
       id: "statistics-chart",
       expectedType: "statsChart",
       label: "statistics chart",
-      reason: "histograms, column graphs, probability graphs, and relative-frequency charts should use statsChart.",
+      reason:
+        "histograms, column graphs, probability graphs, density curves, normal distributions, and relative-frequency charts should use statsChart.",
     };
   }
 

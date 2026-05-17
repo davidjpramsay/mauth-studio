@@ -63,3 +63,50 @@ test("keeps vertical y-axis labels as the default", () => {
 
   assert.equal(spec.data.yLabelOrientation, "vertical");
 });
+
+test("plots source probability density curves from explicit points", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "density",
+      points: [
+        { x: 150, y: 0 },
+        { x: 180, y: 0.02 },
+        { x: 210, y: 0 },
+      ],
+      range: [150, 210],
+      yRange: [0, 0.03],
+      xLabel: "Response length",
+      yLabel: "Density",
+    },
+  });
+
+  const trace = config.data[0];
+  const layout = config.layout as { xaxis: { range: [number, number] }; yaxis: { range: [number, number] } };
+
+  assert.equal(trace.type, "scatter");
+  assert.equal(trace.mode, "lines");
+  assert.deepEqual(trace.x, [150, 180, 210]);
+  assert.deepEqual(trace.y, [0, 0.02, 0]);
+  assert.deepEqual(layout.xaxis.range, [150, 210]);
+  assert.deepEqual(layout.yaxis.range, [0, 0.03]);
+});
+
+test("renders blank statistics axes for student distribution sketches", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "blankAxes",
+      range: [2.1, 2.7],
+      yRange: [0, 4],
+      xLabel: "Sample mean",
+      yLabel: "Density",
+    },
+  });
+
+  const layout = config.layout as { xaxis: { range: [number, number] }; yaxis: { range: [number, number] } };
+
+  assert.deepEqual(config.data, []);
+  assert.deepEqual(layout.xaxis.range, [2.1, 2.7]);
+  assert.deepEqual(layout.yaxis.range, [0, 4]);
+});

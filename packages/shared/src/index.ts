@@ -11,7 +11,7 @@ export type DiagramType =
   | "vector2d"
   | string;
 
-export type StatsChartType = "histogram" | "binomial" | "normal" | "box" | "scatter" | "bar" | string;
+export type StatsChartType = "histogram" | "binomial" | "normal" | "box" | "density" | "blankAxes" | "scatter" | "bar" | string;
 export type HistogramBarType = "continuous" | "discrete";
 export type StatsChartDataMode = "raw" | "manualProbabilities";
 export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
@@ -25,12 +25,14 @@ export interface StatsChartData {
   yLabelOrientation?: StatsChartYLabelOrientation;
   values?: number[];
   xValues?: number[];
+  yValues?: number[];
   probabilities?: number[];
   mean?: number;
   stdDev?: number;
   trials?: number;
   probability?: number;
   range?: [number, number];
+  yRange?: [number, number];
   bins?: number;
   binSize?: number;
   xLabel?: string;
