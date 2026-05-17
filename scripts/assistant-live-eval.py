@@ -771,6 +771,150 @@ def diagram_graph_config(args: dict[str, Any]) -> dict[str, Any]:
     return graph_config if isinstance(graph_config, dict) else {}
 
 
+def diagram_vector_ray_config(args: dict[str, Any]) -> dict[str, Any]:
+    diagram = args.get("diagram")
+    if isinstance(diagram, dict) and isinstance(diagram.get("vectorRayDiagram"), dict):
+        return diagram["vectorRayDiagram"]
+    diagrams = args.get("diagrams")
+    if isinstance(diagrams, list):
+        for diagram_item in diagrams:
+            if isinstance(diagram_item, dict) and isinstance(diagram_item.get("vectorRayDiagram"), dict):
+                return diagram_item["vectorRayDiagram"]
+    return {}
+
+
+def angle_distance_degrees(first: float, second: float) -> float:
+    difference = abs((first - second) % 360)
+    return min(difference, 360 - difference)
+
+
+def finite_number(value: Any) -> float | None:
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def vector_ray_angle(entry: dict[str, Any]) -> float | None:
+    angle = finite_number(entry.get("angleDeg"))
+    if angle is not None:
+        return angle % 360
+    components = entry.get("components")
+    if (
+        isinstance(components, list)
+        and len(components) == 2
+        and isinstance(components[0], int | float)
+        and isinstance(components[1], int | float)
+    ):
+        import math
+
+        return math.degrees(math.atan2(float(components[1]), float(components[0]))) % 360
+    return None
+
+
+def marker_pair(marker: dict[str, Any]) -> set[str]:
+    return {str(marker.get("from") or ""), str(marker.get("to") or "")}
+
+
+def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "diagram.vectorRayDiagram") -> list[str]:
+    issues: list[str] = []
+    vectors = vector_ray.get("vectors")
+    if not isinstance(vectors, list):
+        return [f"{path}.vectors should be an array"]
+    vector_entries = {str(vector.get("id") or vector.get("name") or ""): vector for vector in vectors if isinstance(vector, dict)}
+    for vector_id in ("a", "b", "c", "d"):
+        entry = vector_entries.get(vector_id)
+        if entry is None:
+            issues.append(f"{path}.vectors should include vector {vector_id!r}")
+            continue
+        if not str(entry.get("label") or entry.get("name") or entry.get("id") or "").strip():
+            issues.append(f"{path}.vectors[{vector_id}] should include a visible label")
+        if finite_number(entry.get("length")) is None and not isinstance(entry.get("components"), list):
+            issues.append(f"{path}.vectors[{vector_id}] should include length or components")
+
+    angles = {vector_id: vector_ray_angle(entry) for vector_id, entry in vector_entries.items()}
+    if angles.get("a") is not None and angles.get("d") is not None:
+        if abs(angle_distance_degrees(angles["a"], angles["d"]) - 180) > 8:
+            issues.append("vectorRayDiagram should make a and d opposite collinear rays")
+    if angles.get("b") is not None and angles.get("d") is not None:
+        if abs(angle_distance_degrees(angles["b"], angles["d"]) - 90) > 8:
+            issues.append("vectorRayDiagram should make b perpendicular to d")
+    if angles.get("c") is not None and angles.get("d") is not None:
+        if abs(angle_distance_degrees(angles["c"], angles["d"]) - 45) > 8:
+            issues.append("vectorRayDiagram should make the angle between c and d equal to 45 degrees")
+
+    serialized = json.dumps(vector_ray, ensure_ascii=False).lower()
+    for value in ("2", "3", "45"):
+        if value not in serialized:
+            issues.append(f"vectorRayDiagram should preserve visible value {value!r}")
+
+    markers = vector_ray.get("angleMarkers")
+    if not isinstance(markers, list) or not markers:
+        issues.append("vectorRayDiagram.angleMarkers should include right-angle and 45 degree markers")
+    else:
+        if not any(isinstance(marker, dict) and marker.get("rightAngle") is True for marker in markers):
+            issues.append("vectorRayDiagram should preserve the visible right-angle marker")
+        elif not any(
+            isinstance(marker, dict) and marker.get("rightAngle") is True and marker_pair(marker) == {"b", "d"}
+            for marker in markers
+        ):
+            issues.append("vectorRayDiagram right-angle marker should span the perpendicular rays b and d")
+        if not any(isinstance(marker, dict) and "45" in str(marker.get("label") or "") for marker in markers):
+            issues.append("vectorRayDiagram should preserve the visible 45 degree angle marker")
+        elif not any(
+            isinstance(marker, dict) and "45" in str(marker.get("label") or "") and marker_pair(marker) == {"c", "d"}
+            for marker in markers
+        ):
+            issues.append("vectorRayDiagram 45 degree marker should span the labelled rays c and d")
+    return issues
+
+
+def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "diagram") -> list[str]:
+    vector_ray = diagram_vector_ray_config(args)
+    if vector_ray:
+        return assert_vector_ray_diagram_shape(vector_ray, path=f"{path}.vectorRayDiagram")
+
+    graph_config = diagram_graph_config(args)
+    graph_type = graph_config.get("type")
+    if graph_type != "vector2d":
+        return [f"source scalar-product ray diagram should use vectorRayDiagram or vector2d, got {graph_type!r}"]
+
+    issues: list[str] = []
+    serialized_diagram = json.dumps(graph_config, ensure_ascii=False).lower()
+    for term in ("a", "b", "c", "d", "45"):
+        if term not in serialized_diagram:
+            issues.append(f"native vector2d diagram should preserve visible diagram label/value {term!r}")
+    if graph_config.get("showAxes") is not False or graph_config.get("showGrid") is not False:
+        issues.append("source scalar-product vector2d diagram should hide axes and grid")
+    metadata = graph_config.get("metadata")
+    vector2d = metadata.get("vector2d") if isinstance(metadata, dict) and isinstance(metadata.get("vector2d"), dict) else {}
+    vectors = vector2d.get("vectors")
+    if not isinstance(vectors, list) or len(vectors) < 4:
+        issues.append("native vector2d diagram should include all four labelled vectors")
+    segment_labels = vector2d.get("segmentLabels")
+    if not isinstance(segment_labels, list) or len(segment_labels) < 4:
+        issues.append("native vector2d diagram should preserve magnitude labels")
+    angle_markers = vector2d.get("angleMarkers")
+    if not isinstance(angle_markers, list) or not any(
+        isinstance(marker, dict) and marker.get("rightAngle") is True for marker in angle_markers
+    ):
+        issues.append("native vector2d diagram should preserve the visible right-angle marker")
+    elif not any(
+        isinstance(marker, dict) and marker.get("rightAngle") is True and marker_pair(marker) == {"b", "d"}
+        for marker in angle_markers
+    ):
+        issues.append("native vector2d diagram right-angle marker should span the perpendicular rays b and d")
+    if not isinstance(angle_markers, list) or not any(
+        isinstance(marker, dict) and "45" in str(marker.get("label") or "") for marker in angle_markers
+    ):
+        issues.append("native vector2d diagram should preserve the visible 45 degree angle marker")
+    elif not any(
+        isinstance(marker, dict) and "45" in str(marker.get("label") or "") and marker_pair(marker) == {"c", "d"}
+        for marker in angle_markers
+    ):
+        issues.append("native vector2d diagram 45 degree marker should span the labelled rays c and d")
+    return issues
+
+
 def compact_math_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text.lower())
     replacements = {
@@ -1079,12 +1223,15 @@ def assert_vector2d_call(call: dict[str, Any]) -> list[str]:
 
 
 def assert_scalar_product_add_diagram_call(call: dict[str, Any]) -> list[str]:
-    return assert_diagram_type_call(
-        call,
-        expected_type="vector2d",
-        required_terms=("a", "b", "c", "d", "45"),
-        forbidden_types=("network", "geometricConstruction", "graph2d"),
-    )
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.author.addDiagram":
+        issues.append(f"expected mauth.author.addDiagram, got {call.get('mauthToolName')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+    if args.get("questionNumber") != 1:
+        issues.append("questionNumber should be 1")
+    return [*issues, *assert_vector2d_or_vector_ray_diagram(args)]
 
 
 def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
@@ -1107,59 +1254,18 @@ def assert_screenshot_scalar_products_call(call: dict[str, Any]) -> list[str]:
     if "diagram shows" in question_text.lower():
         issues.append("source diagram should be recreated as a native diagram, not moved into prose")
 
-    graph_config = diagram_graph_config(args)
-    graph_type = graph_config.get("type")
-    if graph_type != "geometricConstruction":
-        issues.append(f"screenshot ray/vector source should use geometricConstruction, got {graph_type!r}")
     diagrams = args.get("diagrams")
     if isinstance(diagrams, list) and any(
         isinstance(item, dict) and "type" in item and "graphConfig" not in item for item in diagrams
     ):
         issues.append("diagram items should be wrapped as { graphConfig: ... }, not top-level { type, data }")
-    serialized_diagram = json.dumps(graph_config, ensure_ascii=False).lower()
-    for term in ("a", "b", "c", "d", "45"):
-        if term not in serialized_diagram:
-            issues.append(f"native diagram should preserve visible diagram label/value {term!r}")
+    graph_config = diagram_graph_config(args)
+    graph_type = graph_config.get("type")
+    vector_ray = diagram_vector_ray_config(args)
+    serialized_diagram = json.dumps(vector_ray or graph_config, ensure_ascii=False).lower()
     if graph_type == "image" or "data:image" in serialized_diagram:
         issues.append("do not paste the screenshot back as an image; recreate an editable native diagram")
-    substance = str(graph_config.get("options", {}).get("substanceSource") or "")
-    if "LabelSegment(" in substance or "\nRay(" in substance:
-        issues.append(
-            "Penrose Substance should use supported predicates such as VectorSegment/RayFrom and LabelsSegment"
-        )
-    if re.search(r"^\s*VectorSegment\s+\S+", substance, re.MULTILINE):
-        issues.append("Penrose Substance should call VectorSegment(OA, O, A), not `VectorSegment OA O A`")
-    if re.search(r"^\s*Segment\s+\S+\s+\S+\s+\S+", substance, re.MULTILINE):
-        issues.append("Penrose Substance should call Segment(AB, A, B), not `Segment AB A B`")
-    if re.search(r"\bLabelsAngle\s*\([^)]*\$", substance):
-        issues.append("Penrose Substance should declare a Label then call LabelsAngle(labelName, A, B, C)")
-    compact_substance = compact_math_text(substance)
-    if "linethrough(" not in compact_substance or "on(o," not in compact_substance:
-        issues.append("scalar-product diagram should preserve the opposite collinear a and d rays")
-    valid_right_angle_terms = ("rightangle(", "90")
-    if not any(term in compact_substance for term in valid_right_angle_terms):
-        issues.append("native diagram should preserve the visible right-angle marker")
-    if "SegmentLength(" in substance:
-        issues.append(
-            "Penrose Substance should not invent unsupported SegmentLength predicates; use LabelsSegment for lengths"
-        )
-    if "Collinear(" in substance or "Connect(" in substance:
-        issues.append("Penrose Substance should not invent unsupported Collinear or Connect predicates")
-    if graph_type == "geometricConstruction":
-        try:
-            render_penrose_diagram(
-                {
-                    **graph_config,
-                    "style": graph_config.get("style") or "geometry",
-                    "options": {
-                        "penrosePreset": "geometry",
-                        "scalePercent": 100,
-                        **(graph_config.get("options") if isinstance(graph_config.get("options"), dict) else {}),
-                    },
-                }
-            )
-        except Exception as exc:
-            issues.append(f"geometricConstruction graphConfig should render through Penrose: {exc}")
+    issues.extend(assert_vector2d_or_vector_ray_diagram(args))
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 3:
