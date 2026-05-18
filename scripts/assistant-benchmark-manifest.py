@@ -248,9 +248,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate assistant real-exam benchmark metadata.")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST, help="Benchmark manifest JSON path.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable validation output.")
-    raw_args = sys.argv[1:]
-    if raw_args and raw_args[0] == "--":
-        raw_args = raw_args[1:]
+    raw_args = [arg for arg in sys.argv[1:] if arg != "--"]
     args = parser.parse_args(raw_args)
 
     manifest = load_json(args.manifest)

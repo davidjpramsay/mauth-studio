@@ -14,6 +14,7 @@ import base64
 import contextlib
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,6 +28,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = ROOT / "apps" / "api"
 WORKBENCH_ROOT = ROOT.parent / "mauth-workbench"
+BENCHMARK_MANIFEST_PATH = ROOT / "configs" / "assistant-real-exam-benchmarks.json"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
@@ -45,6 +47,7 @@ from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
+DEFAULT_LIVE_CASE_COST_CAP = 0.35
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -1056,6 +1059,74 @@ def usage_tokens(usage: dict[str, Any] | None) -> int:
         return 0
     value = usage.get("totalTokens")
     return value if isinstance(value, int) else 0
+
+
+def selected_live_cases(case_name: str) -> list[str]:
+    return EVAL_GROUPS.get(case_name, [case_name])
+
+
+def benchmark_manifest_index() -> dict[str, dict[str, Any]]:
+    if not BENCHMARK_MANIFEST_PATH.exists():
+        return {}
+    with contextlib.suppress(Exception):
+        manifest = json.loads(BENCHMARK_MANIFEST_PATH.read_text(encoding="utf-8"))
+        benchmarks = manifest.get("benchmarks")
+        if isinstance(benchmarks, list):
+            return {
+                benchmark["id"]: benchmark
+                for benchmark in benchmarks
+                if isinstance(benchmark, dict) and isinstance(benchmark.get("id"), str)
+            }
+    return {}
+
+
+def benchmark_label(benchmark: dict[str, Any] | None) -> str:
+    if not benchmark:
+        return "benchmark: none"
+    expected = benchmark.get("expected") if isinstance(benchmark.get("expected"), dict) else {}
+    renderers = expected.get("renderers") if isinstance(expected.get("renderers"), list) else []
+    renderer_label = ", ".join(str(renderer) for renderer in renderers) if renderers else "unknown renderer"
+    status = benchmark.get("status") if isinstance(benchmark.get("status"), str) else "unknown"
+    return f"benchmark: {status}, renderers: {renderer_label}"
+
+
+def print_cost_plan(
+    case_name: str,
+    *,
+    model: str | None,
+    max_cost: float,
+    max_cases: int | None,
+    case_cost_cap: float,
+    paid_enabled: bool,
+) -> int:
+    selected_cases = selected_live_cases(case_name)
+    planned_cases = selected_cases[:max_cases] if max_cases is not None else selected_cases
+    benchmark_index = benchmark_manifest_index()
+    model_label = model or os.environ.get("OPENAI_MODEL") or "default assistant model"
+    print("ASSISTANT LIVE EVAL COST PLAN")
+    print(f"- provider configured: {'yes' if assistant_configured() else 'no'}")
+    print(f"- model: {model_label}")
+    print(f"- requested case/group: {case_name}")
+    print(f"- selected cases: {len(selected_cases)}")
+    print(f"- planned paid cases this run: {len(planned_cases)}")
+    print(f"- run max-cost cap: ${max_cost:.2f}")
+    print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
+    print("- no-cost gates before paid real-exam work:")
+    print("  - pnpm eval:assistant:benchmarks")
+    print("  - pnpm eval:assistant:local")
+    print("  - pnpm smoke:assistant:preview for renderer-heavy cases")
+    print("- cases:")
+    for selected_case in planned_cases:
+        case_class = live_eval_case_class(selected_case)
+        benchmark = benchmark_index.get(selected_case)
+        print(f"  - {selected_case}: class={case_class}; {benchmark_label(benchmark)}")
+    if len(planned_cases) < len(selected_cases):
+        print(f"- skipped by --max-cases: {len(selected_cases) - len(planned_cases)} case(s)")
+    if paid_enabled:
+        print("- paid execution: enabled by --allow-paid")
+    else:
+        print("- paid execution: blocked; append -- --allow-paid to a pnpm script after reviewing this plan")
+    return 0
 
 
 def as_dict(value: Any) -> dict[str, Any]:
@@ -5827,6 +5898,8 @@ async def run_eval(
     model: str | None = None,
     final_message: bool = False,
     max_cost: float = 1.5,
+    max_cases: int | None = None,
+    case_cost_cap: float = DEFAULT_LIVE_CASE_COST_CAP,
     stop_on_failure: bool = False,
     verbose: bool = False,
 ) -> int:
@@ -5834,13 +5907,16 @@ async def run_eval(
         print("OPENAI_API_KEY is not configured; live eval skipped.", file=sys.stderr)
         return 2
 
-    selected_cases = EVAL_GROUPS.get(case_name, [case_name])
+    selected_cases = selected_live_cases(case_name)
     total_cost = 0.0
     total_tokens = 0
     failed = False
     blocked = False
     results: list[tuple[str, int, float, int]] = []
-    for selected_case in selected_cases:
+    for index, selected_case in enumerate(selected_cases):
+        if max_cases is not None and index >= max_cases:
+            print(f"\nSTOP: max case limit reached before {selected_case}. Limit: {max_cases}.")
+            break
         if total_cost >= max_cost:
             print(f"\nSTOP: estimated cost cap reached before {selected_case}. Cap: ${max_cost:.2f}.")
             break
@@ -5856,6 +5932,11 @@ async def run_eval(
             print("\nSTOP: provider blocked the live eval; remaining cases were skipped.")
             break
         if failed and stop_on_failure:
+            break
+        if cost >= case_cost_cap:
+            print(
+                f"\nSTOP: {selected_case} cost ${cost:.4f}, above the per-case spike stop ${case_cost_cap:.2f}."
+            )
             break
     print("\nSUMMARY:")
     for selected_case, status, cost, tokens in results:
@@ -5959,11 +6040,31 @@ def main() -> int:
     parser.add_argument(
         "--max-cost", type=float, default=1.5, help="Stop before starting another case after this cost."
     )
+    parser.add_argument(
+        "--case-cost-cap",
+        type=float,
+        default=DEFAULT_LIVE_CASE_COST_CAP,
+        help="Stop a paid live eval group after any single case costs at least this much.",
+    )
+    parser.add_argument(
+        "--max-cases",
+        type=int,
+        default=None,
+        help="Maximum number of live provider cases to run from the selected group.",
+    )
+    parser.add_argument(
+        "--cost-plan",
+        action="store_true",
+        help="Print the planned paid cases, caps, benchmark links, and no-cost gates without calling the provider.",
+    )
+    parser.add_argument(
+        "--allow-paid",
+        action="store_true",
+        help="Actually call the provider for live evals. Without this flag, live evals print a cost plan only.",
+    )
     parser.add_argument("--stop-on-failure", action="store_true", help="Stop after the first failed case.")
     parser.add_argument("--verbose", action="store_true", help="Print full provider tool payloads.")
-    raw_args = sys.argv[1:]
-    if raw_args and raw_args[0] == "--":
-        raw_args = raw_args[1:]
+    raw_args = [arg for arg in sys.argv[1:] if arg != "--"]
     args = parser.parse_args(raw_args)
     if args.list_cases:
         return list_eval_taxonomy()
@@ -5971,12 +6072,23 @@ def main() -> int:
         return dump_local_calls(case_name=args.case)
     if args.local:
         return run_local_eval(case_name=args.case, verbose=args.verbose)
+    if args.cost_plan or not args.allow_paid:
+        return print_cost_plan(
+            args.case,
+            model=args.model,
+            max_cost=args.max_cost,
+            max_cases=args.max_cases,
+            case_cost_cap=args.case_cost_cap,
+            paid_enabled=args.allow_paid and not args.cost_plan,
+        )
     return asyncio.run(
         run_eval(
             case_name=args.case,
             model=args.model,
             final_message=args.final,
             max_cost=args.max_cost,
+            max_cases=args.max_cases,
+            case_cost_cap=args.case_cost_cap,
             stop_on_failure=args.stop_on_failure,
             verbose=args.verbose,
         )
