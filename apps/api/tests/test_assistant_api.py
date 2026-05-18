@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -1340,6 +1341,92 @@ def test_attachment_requests_select_relevant_brain_files():
         ],
     )
     assert {"formatting.json", "diagram.json", "solutions.json"}.issubset(docx_files)
+
+
+def test_deterministic_brain_selection_skips_planner_for_source_questions():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content=(
+                "Create Question 1 from the attached Specialist exam screenshot and official marking-key excerpt. "
+                "Preserve the diagram, marks, and include the worked solution."
+            ),
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="source.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        ),
+        openai_assistant.AssistantAttachment(
+            name="official-key.txt",
+            mimeType="text/plain",
+            dataUrl="data:text/plain;base64,U29sdXRpb24=",
+            sizeBytes=8,
+        ),
+    ]
+
+    class FailingPlannerClient:
+        async def post(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            raise AssertionError("brain planner should not be called for deterministic source-question routing")
+
+    files, usage = asyncio.run(
+        openai_assistant.select_brain_files_for_request(
+            FailingPlannerClient(),
+            messages=messages,
+            tool_outputs=None,
+            document_summary={"questions": []},
+            attachments=attachments,
+        )
+    )
+
+    assert usage is None
+    assert files == ["index.json", "question.json", "diagram.json", "solutions.json"]
+
+
+def test_deterministic_brain_selection_includes_formatting_for_pdf_source_questions():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content="Convert the attached PDF page into Question 1.",
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="exam-page.pdf",
+            mimeType="application/pdf",
+            dataUrl="data:application/pdf;base64,JVBERi0x",
+            sizeBytes=8,
+        )
+    ]
+
+    ids = openai_assistant.deterministic_brain_ids_for_request(
+        messages,
+        tool_outputs=None,
+        document_summary={"questions": []},
+        attachments=attachments,
+    )
+
+    assert ids == ["question", "diagram", "formatting"]
+    assert openai_assistant.brain_files_from_ids(ids) == [
+        "index.json",
+        "question.json",
+        "diagram.json",
+        "formatting.json",
+    ]
+
+
+def test_deterministic_brain_selection_defers_general_chat_to_planner():
+    ids = openai_assistant.deterministic_brain_ids_for_request(
+        [openai_assistant.AssistantChatMessage(role="user", content="What can this assistant do?")],
+        tool_outputs=None,
+        document_summary={"questions": [{"id": "q1", "index": 0, "marks": 3}]},
+        attachments=None,
+    )
+
+    assert ids is None
 
 
 def test_invalid_tool_arguments_do_not_raise():

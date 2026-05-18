@@ -633,6 +633,71 @@ def selected_brain_ids_from_response(response: dict[str, Any]) -> list[str]:
     return []
 
 
+def deterministic_brain_ids_for_request(
+    messages: list[AssistantChatMessage] | None,
+    tool_outputs: list[AssistantToolOutput] | None,
+    document_summary: dict[str, Any] | None,
+    attachments: list[AssistantAttachment] | None = None,
+) -> list[str] | None:
+    if tool_outputs:
+        return None
+
+    current_messages = latest_user_messages(messages)
+    compact_summary = compact_document_summary(document_summary, current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, attachments)
+    text = request_text(current_messages, attachments=attachments)
+    attached_source_question_request = bool(attachments) and any(
+        term in text for term in ("question", "convert", "reproduce", "exam", "paper")
+    )
+    if intent.kind == "clarify" or (intent.kind == "general" and not attached_source_question_request):
+        return None
+
+    ids: list[str] = []
+
+    def include(brain_id: str) -> None:
+        if brain_id not in ids:
+            ids.append(brain_id)
+
+    if intent.kind in {"write_question", "append_source_question"} or attached_source_question_request:
+        include("question")
+        if intent.has_source_attachment or intent.asks_for_diagram or intent.source_prompt_mentions_diagram:
+            include("diagram")
+        if intent.asks_for_solution or any(
+            term in (attachment.name or "").lower() for attachment in attachments or [] for term in ("key", "solution")
+        ):
+            include("solutions")
+        if intent.asks_for_formatting or any(
+            attachment_is_pdf(attachment)
+            or attachment_is_docx(attachment)
+            or (
+                attachment_is_text_like(attachment)
+                and not any(term in (attachment.name or "").lower() for term in ("key", "solution", "answer"))
+            )
+            for attachment in attachments or []
+        ):
+            include("formatting")
+        return ids
+
+    if intent.kind == "add_diagram":
+        return ["question", "diagram"]
+    if intent.kind == "solution_or_marking":
+        return ["question", "solutions"]
+    if intent.kind == "write_all_solutions":
+        return ["question", "solutions", "formatting"]
+    if intent.kind == "response_space":
+        return ["question", "formatting"]
+    if intent.kind in {"formatting", "layout_check"}:
+        return ["question", "formatting"]
+
+    if any(term in text for term in ("diagram", "graph", "chart", "axis", "axes", "vector", "locus")):
+        include("diagram")
+    if any(term in text for term in ("solution", "marking key", "answer key", "worked")):
+        include("solutions")
+    if any(term in text for term in ("format", "layout", "print", "page", "pdf")):
+        include("formatting")
+    return ids or None
+
+
 async def select_brain_files_for_request(
     client: httpx.AsyncClient,
     *,
@@ -642,6 +707,9 @@ async def select_brain_files_for_request(
     attachments: list[AssistantAttachment] | None = None,
 ) -> tuple[list[str], dict[str, Any] | None]:
     fallback_files = brain_files_for_request(messages, tool_outputs, attachments)
+    deterministic_ids = deterministic_brain_ids_for_request(messages, tool_outputs, document_summary, attachments)
+    if deterministic_ids:
+        return brain_files_from_ids(deterministic_ids), None
     if tool_outputs or not assistant_brain_planner_enabled():
         return fallback_files, None
 
