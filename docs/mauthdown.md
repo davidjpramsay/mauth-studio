@@ -349,6 +349,7 @@ For histogram/column graph displays:
 - `yLabelOrientation="vertical"` keeps the y-axis label rotated on the left.
 - `yLabelOrientation="horizontal"` places the y-axis label horizontally near the top-left of the chart.
 - `dataMode="raw"` calculates bars from `values`.
+- `dataMode="manualFrequencies"` plots exact frequency columns from matching `xValues` and `frequencies`.
 - `dataMode="manualProbabilities"` plots exact probability columns from matching `xValues` and `probabilities`.
 
 Histogram / column graph from raw values:
@@ -383,6 +384,31 @@ Histogram / column graph from raw values:
 ````
 
 For histograms, `bins` means the exact number of intervals. If `binSize` is supplied instead, it means the exact interval width. The app precomputes the interval counts before handing the chart to Plotly so Plotly does not silently choose a different bin layout.
+
+Manual frequency columns:
+
+````md
+:::diagram type="statsChart" align="center"
+
+```json
+{
+  "type": "statsChart",
+  "data": {
+    "chartType": "histogram",
+    "barType": "continuous",
+    "dataMode": "manualFrequencies",
+    "yAxisMode": "frequency",
+    "xValues": [270, 290, 310],
+    "frequencies": [4, 8, 10],
+    "binSize": 20,
+    "xLabel": "$W$",
+    "yLabel": "Frequency"
+  }
+}
+```
+
+:::
+````
 
 Manual probability columns:
 

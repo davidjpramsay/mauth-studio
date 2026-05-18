@@ -52,6 +52,47 @@ test("plots discrete raw data as relative-frequency columns", () => {
   assert.deepEqual(layout.yaxis.range, [0, 0.5]);
 });
 
+test("plots manual frequency histograms from compact bin counts", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "histogram",
+      dataMode: "manualFrequencies",
+      barType: "continuous",
+      xValues: [270, 290, 310],
+      frequencies: [4, 8, 10],
+      binSize: 20,
+    },
+  });
+
+  const trace = config.data[0];
+  const layout = config.layout as { xaxis: { range: [number, number] }; yaxis: { range: [number, number] } };
+
+  assert.deepEqual(trace.x, [270, 290, 310]);
+  assert.deepEqual(trace.y, [4, 8, 10]);
+  assert.equal(trace.width, 20);
+  assert.deepEqual(layout.xaxis.range, [260, 320]);
+  assert.deepEqual(layout.yaxis.range, [0, 10]);
+});
+
+test("normalizes legacy xValues plus values as manual frequencies", () => {
+  const spec = normalizeStatsChartSpec({
+    type: "statsChart",
+    data: {
+      chartType: "histogram",
+      barType: "continuous",
+      xValues: [270, 290],
+      values: [4, 8],
+      binWidth: 20,
+    },
+  });
+
+  assert.equal(spec.data.dataMode, "manualFrequencies");
+  assert.deepEqual(spec.data.xValues, [270, 290]);
+  assert.deepEqual(spec.data.frequencies, [4, 8]);
+  assert.equal(spec.data.binSize, 20);
+});
+
 test("keeps vertical y-axis labels as the default", () => {
   const spec = normalizeStatsChartSpec({
     type: "statsChart",

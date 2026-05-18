@@ -18,6 +18,7 @@
     "eval:assistant:live:confidence": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case confidence --max-cost 0.75",
     "eval:assistant:live:real-exams": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams --max-cost 2.10",
     "eval:assistant:live:real-exams:core": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams-core --max-cost 0.90",
+    "eval:assistant:live:real-exams:methods-stats": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams-methods-stats --max-cost 0.70",
     "eval:assistant:live:real-exams:extended": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams-extended --max-cost 1.30",
     "eval:assistant:live:all": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case all",
     "test:api": "cd apps/api && uv run pytest",

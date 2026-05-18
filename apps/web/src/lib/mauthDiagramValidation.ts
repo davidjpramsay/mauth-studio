@@ -12,7 +12,7 @@ const SUPPORTED_DIAGRAM_TYPES = new Set([
 ]);
 const STATS_CHART_TYPES = new Set(["histogram", "binomial", "normal", "box", "density", "blankAxes"]);
 const HISTOGRAM_BAR_TYPES = new Set(["continuous", "discrete"]);
-const STATS_CHART_DATA_MODES = new Set(["raw", "manualProbabilities"]);
+const STATS_CHART_DATA_MODES = new Set(["raw", "manualProbabilities", "manualFrequencies"]);
 const STATS_CHART_Y_AXIS_MODES = new Set(["frequency", "relativeFrequency"]);
 const STATS_CHART_Y_LABEL_ORIENTATIONS = new Set(["vertical", "horizontal"]);
 const GRAPH_FUNCTION_KINDS = new Set(["expression", "piecewise", "relation"]);
@@ -876,9 +876,11 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
   if (data.chartType === "histogram") {
     const xValues = numberArray(data, "xValues", `${path}.data`, issues);
     const probabilities = numberArray(data, "probabilities", `${path}.data`, issues);
+    const frequencies = numberArray(data, "frequencies", `${path}.data`, issues);
     numberArray(data, "values", `${path}.data`, issues);
     optionalNumber(data, "bins", `${path}.data`, issues, { integer: true, positive: true });
     optionalNumber(data, "binSize", `${path}.data`, issues, { positive: true });
+    optionalNumber(data, "binWidth", `${path}.data`, issues, { positive: true });
     if (data.dataMode === "manualProbabilities") {
       if (!xValues?.length) addIssue(issues, `${path}.data.xValues`, "manual probabilities need x-values", "number[]");
       if (!probabilities?.length) addIssue(issues, `${path}.data.probabilities`, "manual probabilities need probabilities", "number[]");
@@ -888,6 +890,18 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
       probabilities?.forEach((probability, index) => {
         if (finiteNumber(probability) && probability < 0) {
           addIssue(issues, `${path}.data.probabilities[${index}]`, "must not be negative", "probability >= 0");
+        }
+      });
+    }
+    if (data.dataMode === "manualFrequencies") {
+      if (!xValues?.length) addIssue(issues, `${path}.data.xValues`, "manual frequencies need x-values", "number[]");
+      if (!frequencies?.length) addIssue(issues, `${path}.data.frequencies`, "manual frequencies need frequencies", "number[]");
+      if (xValues && frequencies && xValues.length !== frequencies.length) {
+        addIssue(issues, `${path}.data.frequencies`, "must have the same length as xValues", "one frequency per x-value");
+      }
+      frequencies?.forEach((frequency, index) => {
+        if (finiteNumber(frequency) && frequency < 0) {
+          addIssue(issues, `${path}.data.frequencies[${index}]`, "must not be negative", "frequency >= 0");
         }
       });
     }

@@ -1162,7 +1162,9 @@ def focused_tool_hint(
                 "probability density functions, normal curves, and sample-mean distribution sketches wherever the "
                 "native stats chart DSL can represent the display. Use chartType density for arbitrary density curves, "
                 "normal for parameterised normal curves, and blankAxes for student sketch axes. Do not default to graph2d "
-                "just because the source statistical chart has x-y axes."
+                "just because the source statistical chart has x-y axes. For histograms or column graphs with visible "
+                "bin centres/categories and counts, use dataMode manualFrequencies with matching xValues and frequencies "
+                "rather than overloading values with counts."
             )
         if has_source_attachment and any(term in text for term in ("slope field", "direction field", "dy/dx")):
             diagram_guidance += (
@@ -1512,7 +1514,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "xLabel:'$\\\\overline{T}$', yLabel:'Density'}, options:{showGrid:true, showFill:false}}; "
                     "for arbitrary source density curves use data.chartType:'density' with points:[{x,y},...] or "
                     "paired xValues/yValues; for blank student sketch axes use data.chartType:'blankAxes' with range/yRange; "
-                    "for histograms/columns use data.chartType:'histogram' with values or manual xValues/probabilities. "
+                    "for histograms/columns use data.chartType:'histogram' with raw values, manualFrequencies "
+                    "xValues/frequencies for visible counts, or manualProbabilities xValues/probabilities for exact probabilities. "
                     "For graph2d, put xMin/xMax/yMin/yMax, widthPx/heightPx, showGrid/showAxes, functions, and features "
                     "directly on graphConfig. Do not nest those fields under data or options. For graph2d slope fields, "
                     "use data.slopeField:{expression,xValues?,yValues?,xRange?,yRange?,xStep?,yStep?,highlightedPoints?}. "

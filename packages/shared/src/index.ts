@@ -13,7 +13,7 @@ export type DiagramType =
 
 export type StatsChartType = "histogram" | "binomial" | "normal" | "box" | "density" | "blankAxes" | "scatter" | "bar" | string;
 export type HistogramBarType = "continuous" | "discrete";
-export type StatsChartDataMode = "raw" | "manualProbabilities";
+export type StatsChartDataMode = "raw" | "manualProbabilities" | "manualFrequencies";
 export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
 export type StatsChartYLabelOrientation = "vertical" | "horizontal";
 

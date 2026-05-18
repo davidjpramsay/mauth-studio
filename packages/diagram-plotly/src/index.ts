@@ -101,6 +101,7 @@ function histogramBarType(value: unknown): HistogramBarType {
 }
 
 function statsChartDataMode(value: unknown): StatsChartDataMode {
+  if (value === "manualFrequencies") return "manualFrequencies";
   return value === "manualProbabilities" ? "manualProbabilities" : "raw";
 }
 
@@ -193,7 +194,19 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
   const stdDev = positiveNumber(sourceData.stdDev, 1);
   const trials = Math.max(1, Math.floor(positiveNumber(sourceData.trials, 10)));
   const probability = Math.min(1, Math.max(0, numeric(sourceData.probability, 0.5)));
-  const dataMode = selectedChartType === "histogram" ? statsChartDataMode(sourceData.dataMode) : "raw";
+  const hasManualFrequencies =
+    selectedChartType === "histogram" && Array.isArray(sourceData.xValues) && Array.isArray(sourceData.frequencies);
+  const hasLegacyManualFrequencyValues =
+    selectedChartType === "histogram" &&
+    Array.isArray(sourceData.xValues) &&
+    Array.isArray(sourceData.values) &&
+    sourceData.xValues.length === sourceData.values.length;
+  const dataMode =
+    selectedChartType === "histogram"
+      ? hasManualFrequencies || hasLegacyManualFrequencyValues
+        ? "manualFrequencies"
+        : statsChartDataMode(sourceData.dataMode)
+      : "raw";
   const barType =
     selectedChartType === "histogram" && dataMode !== "manualProbabilities" ? histogramBarType(sourceData.barType) : "discrete";
   const yAxisMode = selectedChartType === "histogram" ? statsChartYAxisMode(sourceData.yAxisMode) : "frequency";
@@ -222,6 +235,10 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
       xValues: selectedChartType === "density" ? densityPoints.xs : manualProbabilities.xValues,
       yValues: selectedChartType === "density" ? densityPoints.ys : numberArray(sourceData.yValues, []),
       probabilities: selectedChartType === "histogram" ? manualProbabilities.probabilities : numberArray(sourceData.probabilities, []),
+      frequencies:
+        selectedChartType === "histogram"
+          ? numberArray(sourceData.frequencies, hasLegacyManualFrequencyValues ? numberArray(sourceData.values, []) : [])
+          : numberArray(sourceData.frequencies, []),
       points: selectedChartType === "density" ? densityPoints.points : Array.isArray(sourceData.points) ? sourceData.points : undefined,
       mean,
       stdDev,
@@ -230,7 +247,10 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
       range: rangeValue(sourceData.range, defaultRange as [number, number]),
       yRange: rangeValue(sourceData.yRange, defaultYRange),
       bins: sourceData.bins === undefined ? undefined : positiveNumber(sourceData.bins, 6),
-      binSize: sourceData.binSize === undefined ? undefined : positiveNumber(sourceData.binSize, 1),
+      binSize:
+        sourceData.binSize === undefined && sourceData.binWidth === undefined
+          ? undefined
+          : positiveNumber(sourceData.binSize ?? sourceData.binWidth, 1),
       xLabel: stringValue(
         sourceData.xLabel,
         selectedChartType === "normal" ||
@@ -450,6 +470,42 @@ function manualProbabilityBarData(data: StatsChartData) {
   };
 }
 
+function manualFrequencyBarData(data: StatsChartData) {
+  const xValues = data.xValues?.length ? data.xValues : DEFAULT_MANUAL_X_VALUES;
+  const frequencies = data.frequencies?.length ? data.frequencies.map((value) => Math.max(0, value)) : DEFAULT_MANUAL_PROBABILITIES;
+  const pairs = xValues
+    .map((x, index) => ({ x, frequency: frequencies[index] ?? 0 }))
+    .filter((pair) => Number.isFinite(pair.x) && Number.isFinite(pair.frequency))
+    .sort((left, right) => left.x - right.x);
+  const centres = pairs.length ? pairs.map((pair) => pair.x) : DEFAULT_MANUAL_X_VALUES;
+  const counts = pairs.length ? pairs.map((pair) => pair.frequency) : DEFAULT_MANUAL_PROBABILITIES;
+  const relative = data.yAxisMode === "relativeFrequency";
+  const total = counts.reduce((sum, count) => sum + count, 0) || 1;
+  const yValues = relative ? counts.map((count) => Number((count / total).toFixed(8))) : counts;
+  const requestedWidth = positiveNumber(data.binSize, discreteBarWidth(centres));
+  const width = data.barType === "continuous" ? requestedWidth : discreteBarWidth(centres);
+  const range =
+    data.barType === "continuous"
+      ? ([Number((centres[0] - width / 2).toFixed(6)), Number((centres[centres.length - 1] + width / 2).toFixed(6))] as [number, number])
+      : discreteRange(centres, width);
+  const edges =
+    data.barType === "continuous"
+      ? centres.map((centre) => [Number((centre - width / 2).toFixed(6)), Number((centre + width / 2).toFixed(6))])
+      : undefined;
+  return {
+    centres,
+    counts,
+    yValues,
+    edges,
+    width,
+    range,
+    tickvals: centres,
+    discrete: data.barType !== "continuous",
+    manual: true,
+    relative,
+  };
+}
+
 function discreteFrequencyBarData(data: StatsChartData) {
   const values = (data.values ?? DEFAULT_HISTOGRAM_VALUES).filter(Number.isFinite);
   const sourceValues = values.length ? values : DEFAULT_HISTOGRAM_VALUES;
@@ -479,6 +535,7 @@ function discreteFrequencyBarData(data: StatsChartData) {
 
 function histogramBarData(data: StatsChartData) {
   if (data.dataMode === "manualProbabilities") return manualProbabilityBarData(data);
+  if (data.dataMode === "manualFrequencies") return manualFrequencyBarData(data);
   if (data.barType === "discrete") return discreteFrequencyBarData(data);
 
   const values = (data.values ?? DEFAULT_HISTOGRAM_VALUES).filter(Number.isFinite);

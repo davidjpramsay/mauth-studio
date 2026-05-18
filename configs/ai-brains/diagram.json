@@ -75,6 +75,7 @@
     "For arbitrary source probability density curves, use statsChart data.chartType density with points [{x,y}, ...] or paired xValues/yValues, plus range and yRange when the source axes are visible. For exact normal curves, use chartType normal with mean, stdDev, and range. For blank axes students must sketch on, use chartType blankAxes with range/yRange and axis labels.",
     "For statsChart histogram/column graph displays, use barType continuous for binned histograms and barType discrete for separate value columns.",
     "For statsChart histogram/column graph displays, use yAxisMode frequency for counts and relativeFrequency for relative frequencies or probability-style bars calculated from raw data.",
+    "For source histograms or column graphs where the visible chart gives exact bin centres/categories and counts, use dataMode manualFrequencies with matching xValues and frequencies. Do not put count values in data.values unless they are raw observations to be counted.",
     "For statsChart histogram/column graph displays, use yLabelOrientation horizontal when the y-axis label should read across the top-left of the chart instead of rotated vertically.",
     "For exact probability bars that should not be calculated from raw data, use dataMode manualProbabilities with matching xValues and probabilities.",
     "Do not unify JSXGraph, Penrose, and Plotly internals.",

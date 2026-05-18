@@ -2536,6 +2536,23 @@ test("accepts native statistics density curves and blank axes", () => {
                 },
               },
             },
+            {
+              id: "manual-frequency-chart",
+              kind: "diagram",
+              graphConfig: {
+                type: "statsChart",
+                data: {
+                  chartType: "histogram",
+                  dataMode: "manualFrequencies",
+                  barType: "continuous",
+                  xValues: [270, 290, 310],
+                  frequencies: [4, 8, 10],
+                  binSize: 20,
+                  xLabel: "$W$",
+                  yLabel: "Frequency",
+                },
+              },
+            },
           ],
         },
       ],

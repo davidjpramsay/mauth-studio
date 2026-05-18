@@ -318,6 +318,82 @@ def sample_methods_earthquake_screenshot_with_key() -> list[AssistantAttachment]
     ]
 
 
+def sample_methods_ev_histogram_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2024-mam-q13-ev-histogram-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q13_ev_histogram_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2024-mam-q13-ev-histogram-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q13_ev_histogram_p2.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2024-mam-q13-ev-histogram-p3.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q13_ev_histogram_p3.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2024-mam-q13-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2024-mam-ca-key.txt"),
+            start_line=465,
+            end_line=568,
+        ),
+    ]
+
+
+def sample_methods_dice_game_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2024-mam-q14-dice-game-chart-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q14_dice_game_chart_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2024-mam-q14-dice-game-chart-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q14_dice_game_chart_p2.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2024-mam-q14-dice-game-chart-p3.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2024-mam-calculator-assumed",
+                "crops",
+                "q14_dice_game_chart_p3.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2024-mam-q14-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2024-mam-ca-key.txt"),
+            start_line=569,
+            end_line=675,
+        ),
+    ]
+
+
 def sample_specialist_slope_field_screenshot_with_key() -> list[AssistantAttachment]:
     return [
         attachment_png_from_path(
@@ -917,6 +993,30 @@ def artifact_solution_text_mark_issues(value: Any, path: str = "arguments") -> l
     return issues
 
 
+def solution_surface_mark_total(value: Any) -> int:
+    if isinstance(value, dict):
+        marks = value.get("marks")
+        solution_text = value.get("solutionText")
+        has_marked_solution_text = isinstance(solution_text, str) and hidden_mark_total(solution_text) > 0
+        total = 0
+        if (
+            isinstance(marks, int)
+            and not isinstance(marks, bool)
+            and not has_marked_solution_text
+            and (
+                has_solution_surface(value, "solutionDiagram", "solutionDiagrams")
+                or has_solution_surface(value, "solutionTable", "solutionTables")
+            )
+        ):
+            total += marks
+        for inner_value in value.values():
+            total += solution_surface_mark_total(inner_value)
+        return total
+    if isinstance(value, list):
+        return sum(solution_surface_mark_total(item) for item in value)
+    return 0
+
+
 def control_character_issues(text: str, field_name: str) -> list[str]:
     issues: list[str] = []
     for match in BAD_CONTROL_CHARACTER_PATTERN.finditer(text):
@@ -1159,15 +1259,24 @@ def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "
             issues.append(f"{path}.vectors[{vector_id}] should include length or components")
 
     angles = {vector_id: vector_ray_angle(entry) for vector_id, entry in vector_entries.items()}
-    if angles.get("a") is not None and angles.get("d") is not None:
-        if abs(angle_distance_degrees(angles["a"], angles["d"]) - 180) > 8:
-            issues.append("vectorRayDiagram should make a and d opposite collinear rays")
-    if angles.get("b") is not None and angles.get("d") is not None:
-        if abs(angle_distance_degrees(angles["b"], angles["d"]) - 90) > 8:
-            issues.append("vectorRayDiagram should make b perpendicular to d")
-    if angles.get("c") is not None and angles.get("d") is not None:
-        if abs(angle_distance_degrees(angles["c"], angles["d"]) - 45) > 8:
-            issues.append("vectorRayDiagram should make the angle between c and d equal to 45 degrees")
+    if (
+        angles.get("a") is not None
+        and angles.get("d") is not None
+        and abs(angle_distance_degrees(angles["a"], angles["d"]) - 180) > 8
+    ):
+        issues.append("vectorRayDiagram should make a and d opposite collinear rays")
+    if (
+        angles.get("b") is not None
+        and angles.get("d") is not None
+        and abs(angle_distance_degrees(angles["b"], angles["d"]) - 90) > 8
+    ):
+        issues.append("vectorRayDiagram should make b perpendicular to d")
+    if (
+        angles.get("c") is not None
+        and angles.get("d") is not None
+        and abs(angle_distance_degrees(angles["c"], angles["d"]) - 45) > 8
+    ):
+        issues.append("vectorRayDiagram should make the angle between c and d equal to 45 degrees")
 
     serialized = json.dumps(vector_ray, ensure_ascii=False).lower()
     for value in ("2", "3", "45"):
@@ -1850,6 +1959,368 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def stats_chart_data_objects(args: dict[str, Any]) -> list[dict[str, Any]]:
+    data_objects: list[dict[str, Any]] = []
+    for config in collect_diagram_graph_configs(args):
+        if config.get("type") != "statsChart":
+            continue
+        data = config.get("data")
+        if isinstance(data, dict):
+            data_objects.append(data)
+    return data_objects
+
+
+def numeric_counter(values: Any) -> dict[float, int]:
+    counts: dict[float, int] = {}
+    if not isinstance(values, list):
+        return counts
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        key = round(float(value), 6)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def manual_probability_map(data: dict[str, Any]) -> dict[float, float]:
+    x_values = data.get("xValues")
+    probabilities = data.get("probabilities")
+    if not isinstance(x_values, list) or not isinstance(probabilities, list):
+        return {}
+    result: dict[float, float] = {}
+    for x_value, probability in zip(x_values, probabilities, strict=False):
+        if (
+            isinstance(x_value, bool)
+            or isinstance(probability, bool)
+            or not isinstance(x_value, (int, float))
+            or not isinstance(probability, (int, float))
+        ):
+            continue
+        result[round(float(x_value), 6)] = float(probability)
+    return result
+
+
+def manual_frequency_map(data: dict[str, Any]) -> dict[float, int]:
+    x_values = data.get("xValues")
+    frequencies = data.get("frequencies")
+    if not isinstance(frequencies, list) and isinstance(data.get("values"), list):
+        frequencies = data.get("values")
+    if not isinstance(x_values, list) or not isinstance(frequencies, list) or len(x_values) != len(frequencies):
+        return {}
+    result: dict[float, int] = {}
+    for x_value, frequency in zip(x_values, frequencies, strict=False):
+        if (
+            isinstance(x_value, bool)
+            or isinstance(frequency, bool)
+            or not isinstance(x_value, (int, float))
+            or not isinstance(frequency, (int, float))
+        ):
+            continue
+        result[round(float(x_value), 6)] = int(frequency)
+    return result
+
+
+def stats_histogram_count_issues(
+    data_objects: list[dict[str, Any]],
+    expected_counts: dict[float, int],
+    *,
+    label: str,
+    allow_normalised_probabilities: bool = False,
+) -> list[str]:
+    issues: list[str] = []
+    raw_counts: dict[float, int] = {}
+    frequency_values: dict[float, int] = {}
+    probability_values: dict[float, float] = {}
+    for data in data_objects:
+        raw_counts.update(numeric_counter(data.get("values")))
+        frequency_values.update(manual_frequency_map(data))
+        probability_values.update(manual_probability_map(data))
+    total = sum(expected_counts.values())
+    for value, expected_count in expected_counts.items():
+        key = round(float(value), 6)
+        if raw_counts.get(key) == expected_count or frequency_values.get(key) == expected_count:
+            continue
+        expected_probability = expected_count / total if total else 0
+        if allow_normalised_probabilities and abs(probability_values.get(key, -1) - expected_probability) < 0.002:
+            continue
+        issues.append(f"{label} histogram/count chart should preserve value {value:g} with count {expected_count}")
+    return issues
+
+
+def structured_part_items(parts: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if not isinstance(parts, list):
+        return items
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        items.append(part)
+        items.extend(structured_part_items(part.get("parts")))
+        items.extend(structured_part_items(part.get("subparts")))
+    return items
+
+
+def structured_part_leaf_items(parts: Any) -> list[dict[str, Any]]:
+    leaves: list[dict[str, Any]] = []
+    if not isinstance(parts, list):
+        return leaves
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        child_leaves = structured_part_leaf_items(part.get("parts")) + structured_part_leaf_items(part.get("subparts"))
+        if child_leaves:
+            leaves.extend(child_leaves)
+        else:
+            leaves.append(part)
+    return leaves
+
+
+def table_rows(table: Any) -> list[list[str]]:
+    rows: list[list[str]] = []
+    if not isinstance(table, dict):
+        return rows
+    headers = table.get("headers")
+    if isinstance(headers, list):
+        rows.append([str(cell) for cell in headers])
+    for row in table.get("rows") or []:
+        if isinstance(row, list):
+            rows.append([str(cell) for cell in row])
+    return rows
+
+
+def collect_solution_tables(value: Any) -> list[dict[str, Any]]:
+    tables: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        solution_table = value.get("solutionTable")
+        if isinstance(solution_table, dict):
+            tables.append(solution_table)
+        solution_tables = value.get("solutionTables")
+        if isinstance(solution_tables, list):
+            tables.extend(table for table in solution_tables if isinstance(table, dict))
+        for inner_value in value.values():
+            tables.extend(collect_solution_tables(inner_value))
+    elif isinstance(value, list):
+        for item in value:
+            tables.extend(collect_solution_tables(item))
+    return tables
+
+
+def solution_table_profit_map_is_correct(value: Any) -> bool:
+    for table in collect_solution_tables(value):
+        rows = table_rows(table)
+        compact_rows = [[compact_math_text(cell) for cell in row] for row in rows]
+        for header_index, header_row in enumerate(compact_rows):
+            positions = {
+                label: next((index for index, cell in enumerate(header_row) if cell == label), None)
+                for label in ("-1", "0", "1")
+            }
+            if any(position is None for position in positions.values()):
+                continue
+            for probability_row in compact_rows[header_index + 1 :]:
+                if not any("p(y" in cell or "prob" in cell for cell in probability_row):
+                    continue
+                values = {
+                    label: probability_row[position] if position < len(probability_row) else ""
+                    for label, position in positions.items()
+                    if position is not None
+                }
+                if (
+                    "0.443" in values.get("-1", "")
+                    and "0.208" in values.get("0", "")
+                    and "0.349" in values.get("1", "")
+                ):
+                    return True
+    return False
+
+
+def assert_real_methods_ev_histogram_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    compact_serialized = compact_math_text(serialized)
+    for term in ("zaprer", "spruky", "electric vehicle", "albany", "350", "400", "0.2525", "420"):
+        if term not in serialized:
+            issues.append(f"ev histogram source conversion should preserve {term!r}")
+    if "1.6" not in serialized:
+        issues.append("ev histogram source conversion should preserve the kilometres-to-miles conversion")
+
+    graph_types = graph_config_types(args)
+    if "statsChart" not in graph_types:
+        issues.append(f"ev histogram source should use statsChart, got {sorted(graph_types)!r}")
+    if "graph2d" in graph_types:
+        issues.append("ev histogram should not be converted as a generic graph2d function graph")
+
+    data_objects = stats_chart_data_objects(args)
+    chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
+    if "histogram" not in chart_types:
+        issues.append("ev source histogram should use statsChart chartType='histogram'")
+    issues.extend(
+        stats_histogram_count_issues(
+            data_objects,
+            {
+                270: 4,
+                290: 8,
+                310: 10,
+                330: 12,
+                350: 18,
+                370: 40,
+                390: 54,
+                410: 34,
+                430: 20,
+            },
+            label="ev",
+        )
+    )
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 6:
+        issues.append("ev histogram source should become exactly six structured parts")
+        return issues
+    expected_marks = [2, 1, 3, 2, 2, 2]
+    expected_terms = (
+        ("standard deviation",),
+        ("albany", "420"),
+        ("expected value", "variance", "miles"),
+        ("histogram", "normal"),
+        ("uniform", "expected"),
+        ("zaprer", "spruky", "albany"),
+    )
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if part.get("answerSurface") != "diagram" and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 12:
+        issues.append("ev histogram structured part marks should total 12")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    for term in ("75", "0.1753", "218.75", "2197", "375.8", "0.1", "zaprer"):
+        if compact_math_text(term) not in solution_serialized and compact_math_text(term) not in compact_serialized:
+            issues.append(f"ev histogram solution should preserve {term!r}")
+    if "skew" not in "\n".join(solution_texts).lower() and "not symmetrical" not in "\n".join(solution_texts).lower():
+        issues.append("ev histogram solution should identify the Spruky histogram as skewed/not symmetrical")
+    if hidden_mark_total("\n".join(solution_texts)) != 12:
+        issues.append("ev histogram hidden [[marks:n]] total should be exactly 12")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("ev histogram solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
+def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    compact_serialized = compact_math_text(serialized)
+    for term in ("ulam", "four standard dice", "500", "10 000", "charity", "profit"):
+        if term not in serialized:
+            issues.append(f"dice-game source conversion should preserve {term!r}")
+
+    graph_types = graph_config_types(args)
+    if "statsChart" not in graph_types:
+        issues.append(f"dice-game source frequency chart should use statsChart, got {sorted(graph_types)!r}")
+    if "graph2d" in graph_types:
+        issues.append("dice-game frequency chart should not be converted as a generic graph2d graph")
+    data_objects = stats_chart_data_objects(args)
+    chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
+    if "histogram" not in chart_types:
+        issues.append("dice-game source frequency chart should use statsChart chartType='histogram'")
+    issues.extend(
+        stats_histogram_count_issues(
+            data_objects,
+            {
+                1: 66,
+                2: 113,
+                3: 108,
+                4: 57,
+                5: 57,
+                6: 40,
+                7: 26,
+                8: 13,
+                9: 6,
+                10: 3,
+                11: 4,
+                12: 5,
+                13: 2,
+            },
+            label="dice-game",
+            allow_normalised_probabilities=True,
+        )
+    )
+
+    for term in ("0.134", "0.215", "0.208", "0.153", "0.106", "0.067", "0.047", "0.030"):
+        if term not in serialized:
+            issues.append(f"dice-game probability table should preserve {term!r}")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) < 5:
+        issues.append("dice-game source should become at least five structured parts")
+        return issues
+    leaf_parts = structured_part_leaf_items(parts)
+    if sum(part.get("marks", 0) for part in leaf_parts) != 14:
+        issues.append("dice-game structured part marks should total 14")
+    part_texts = [str(part.get("text") or "").lower() for part in structured_part_items(parts)]
+    part_text_joined = "\n".join(part_texts)
+    expected_term_options = (
+        ("exactly two", ("exactly two",)),
+        ("not winning", ("not winning", "does not win", "not win")),
+        ("binomial", ("binomial",)),
+        ("probability distribution", ("probability distribution",)),
+        ("expected value", ("expected value",)),
+        ("variance", ("variance",)),
+        ("profitable", ("profitable",)),
+        ("charity", ("charity",)),
+    )
+    for description, options in expected_term_options:
+        if not any(option in part_text_joined for option in options):
+            issues.append(f"dice-game structured parts should preserve {description!r}")
+    for index, part in enumerate(leaf_parts):
+        answer_surface = part.get("answerSurface")
+        if answer_surface in ("diagram", "table"):
+            continue
+        if part.get("marks", 0) > 0 and (
+            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        ):
+            issues.append(f"dice-game leaf part {index}.studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_joined = "\n".join(solution_texts).lower()
+    solution_serialized = compact_math_text(solution_joined)
+    for term in ("113/500", "0.642", "0.443", "0.208", "0.349", "-0.094", "0.783"):
+        if compact_math_text(term) not in solution_serialized and compact_math_text(term) not in compact_serialized:
+            issues.append(f"dice-game solution should preserve {term!r}")
+    profit_mapping_in_text = "p(y=-1)=0.443" in solution_serialized and "p(y=1)=0.349" in solution_serialized
+    if not profit_mapping_in_text and not solution_table_profit_map_is_correct(args):
+        issues.append("dice-game solution should map profit probabilities to Y=-1, 0, 1 correctly")
+    if all(
+        term not in solution_joined
+        for term in ("not fixed", "not independent", "not a fixed number", "not independent")
+    ):
+        issues.append("dice-game solution should explain why the game is not binomial")
+    if "profitable" not in solution_joined or "charity" not in solution_joined:
+        issues.append("dice-game solution should state the game is profitable for the charity")
+    solution_mark_total = hidden_mark_total("\n".join(solution_texts)) + solution_surface_mark_total(args)
+    if solution_mark_total != 14:
+        issues.append("dice-game hidden [[marks:n]] total should be exactly 14")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("dice-game solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -1891,7 +2362,16 @@ def assert_real_specialist_slope_field_call(call: dict[str, Any]) -> list[str]:
                 issues.append("graph2d bounds should use top-level graphConfig.yMin/yMax, not graphConfig.data.yRange")
         options = config.get("options")
         if isinstance(options, dict):
-            for key in ("showGrid", "showAxes", "showAxisLabels", "showAxisNumbers", "width", "height", "widthPx", "heightPx"):
+            for key in (
+                "showGrid",
+                "showAxes",
+                "showAxisLabels",
+                "showAxisNumbers",
+                "width",
+                "height",
+                "widthPx",
+                "heightPx",
+            ):
                 if key in options:
                     issues.append(f"graph2d {key} must be a top-level graphConfig field, not graphConfig.options.{key}")
         functions = config.get("functions")
@@ -2046,7 +2526,9 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
         return issues
     expected_marks = [2, 1, 2, 4]
     expected_terms = (("z", "polar"), ("cartesian",), ("plot", "z"), ("locus", "inequalities"))
-    has_question_level_diagram_surface = args.get("answerSurface") == "diagram" and isinstance(args.get("diagram"), dict)
+    has_question_level_diagram_surface = args.get("answerSurface") == "diagram" and isinstance(
+        args.get("diagram"), dict
+    )
     for index, part in enumerate(parts):
         if not isinstance(part, dict):
             issues.append(f"parts[{index}] should be an object")
@@ -2058,11 +2540,15 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
             if term not in part_text:
                 issues.append(f"parts[{index}].text should preserve {term!r}")
         uses_question_level_diagram_surface = index == 2 and has_question_level_diagram_surface and "plot" in part_text
-        if not uses_question_level_diagram_surface and part.get("answerSurface") != "diagram" and (
-            not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3
+        if (
+            not uses_question_level_diagram_surface
+            and part.get("answerSurface") != "diagram"
+            and (not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3)
         ):
             issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
-    locus_solution_text = compact_math_text(str(parts[3].get("solutionText") or "")) if isinstance(parts[3], dict) else ""
+    locus_solution_text = (
+        compact_math_text(str(parts[3].get("solutionText") or "")) if isinstance(parts[3], dict) else ""
+    )
     if "arg(z)" not in locus_solution_text or "arg(z-i)" in locus_solution_text:
         issues.append("argand locus solution should preserve the official Arg(z) bounds, not shift them to Arg(z-i)")
 
@@ -2161,7 +2647,9 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
         return issues
     expected_marks = [2, 3, 3]
     if args.get("marks") not in (0, None) or args.get("questionMarks") not in (0, None):
-        issues.append("3d prism multipart source should keep top-level marks/questionMarks at 0 and preserve marks on parts")
+        issues.append(
+            "3d prism multipart source should keep top-level marks/questionMarks at 0 and preserve marks on parts"
+        )
     expected_terms = (("vector equation", "bt"), ("sphere",), ("am", "intersect", "bt"))
     for index, part in enumerate(parts):
         if not isinstance(part, dict):
@@ -2544,7 +3032,16 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                 )
         options = config.get("options")
         if isinstance(options, dict):
-            for key in ("showGrid", "showAxes", "showAxisLabels", "showAxisNumbers", "width", "height", "widthPx", "heightPx"):
+            for key in (
+                "showGrid",
+                "showAxes",
+                "showAxisLabels",
+                "showAxisNumbers",
+                "width",
+                "height",
+                "widthPx",
+                "heightPx",
+            ):
                 if key in options:
                     issues.append(
                         {
@@ -2797,6 +3294,24 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_methods_earthquake_screenshot_with_key,
         "assert": assert_real_methods_earthquake_call,
     },
+    "real-methods-ev-histogram": {
+        "prompt": (
+            "Create Question 1 from the attached Methods exam screenshots and official marking-key excerpt. "
+            "Preserve the normal-distribution wording, histogram, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_methods_ev_histogram_screenshot_with_key,
+        "assert": assert_real_methods_ev_histogram_call,
+    },
+    "real-methods-dice-game": {
+        "prompt": (
+            "Create Question 1 from the attached Methods exam screenshots and official marking-key excerpt. "
+            "Preserve the frequency chart, probability table, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_methods_dice_game_screenshot_with_key,
+        "assert": assert_real_methods_dice_game_call,
+    },
     "real-specialist-slope-field": {
         "prompt": (
             "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
@@ -2910,6 +3425,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
     "real-exams-core": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
+    "real-exams-methods-stats": ["real-methods-ev-histogram", "real-methods-dice-game"],
     "real-exams-extended": [
         "real-specialist-slope-field",
         "real-specialist-argand",
@@ -2918,6 +3434,8 @@ EVAL_GROUPS: dict[str, list[str]] = {
     ],
     "real-exams": [
         "real-methods-earthquake",
+        "real-methods-ev-histogram",
+        "real-methods-dice-game",
         "real-specialist-lighthouse",
         "real-specialist-stats",
         "real-specialist-slope-field",
@@ -3012,6 +3530,347 @@ def local_real_methods_earthquake_call() -> dict[str, Any]:
 def local_real_methods_earthquake_bad_line_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_earthquake_call()))
     call["mauthArguments"]["diagram"]["graphConfig"]["functions"][0]["expression"] = "y = (3/2)x + 6"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_ev_histogram_call() -> dict[str, Any]:
+    histogram_counts = {
+        270: 4,
+        290: 8,
+        310: 10,
+        330: 12,
+        350: 18,
+        370: 40,
+        390: 54,
+        410: 34,
+        430: 20,
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "Brianna is considering buying an electric vehicle from Zaprer Motors. The distance $X$ before "
+                "recharging is normally distributed with mean 350 km, and $P(X>400)=0.2525$. "
+                "A rival company, Spruky Cars, provides a histogram from 200 trials."
+            ),
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "statsChart",
+                    "widthPx": 620,
+                    "heightPx": 400,
+                    "data": {
+                        "chartType": "histogram",
+                        "dataMode": "manualFrequencies",
+                        "barType": "continuous",
+                        "yAxisMode": "frequency",
+                        "xValues": list(histogram_counts),
+                        "frequencies": list(histogram_counts.values()),
+                        "binSize": 20,
+                        "range": [260, 440],
+                        "xLabel": "$W$",
+                        "yLabel": "Frequency",
+                    },
+                },
+            },
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Determine the standard deviation of $X$.",
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$P(X>400)=0.2525$$ gives $z\\approx0.6666$, so "
+                        "$$\\sigma=\\frac{400-350}{0.6666}\\approx75.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Calculate the probability Brianna can drive to Albany, 420 km away, without recharging.",
+                    "marks": 1,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "$$P(X>420)=0.1753.$$ [[marks:1]]",
+                },
+                {
+                    "label": "c",
+                    "text": (
+                        "Let $Y$ be the distance in miles where $1$ mile = $1.6$ kilometres. "
+                        "Determine the expected value and variance of $Y$."
+                    ),
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$E(Y)=\\frac{350}{1.6}=218.75.$$ [[marks:1]]\n"
+                        "$$\\operatorname{Var}(Y)=\\frac{75^2}{1.6^2}\\approx2197.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "d",
+                    "text": "Using the histogram, decide whether a normal distribution is appropriate for Spruky distances.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": "No. The histogram is skewed/not symmetrical, so a normal model is not appropriate. [[marks:2]]",
+                },
+                {
+                    "label": "e",
+                    "text": (
+                        "Assuming values are uniformly distributed within each interval, use the histogram to estimate "
+                        "the expected distance for a Spruky vehicle."
+                    ),
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "Using midpoints gives "
+                        "$$E(W)=270\\frac4{200}+290\\frac8{200}+\\cdots+430\\frac{20}{200}=375.8\\text{ km}.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "f",
+                    "text": "Which company, Zaprer or Spruky, is more likely to get Brianna to Albany without recharging?",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$P(X>420)=0.1753$$ for Zaprer, while the histogram gives "
+                        "$$P(W>420)=\\frac{20}{200}=0.1.$$ "
+                        "Brianna is more likely to reach Albany in the Zaprer vehicle. [[marks:2]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_methods_ev_histogram_bad_renderer_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    call["mauthArguments"]["diagram"]["graphConfig"] = {
+        "type": "graph2d",
+        "xMin": 260,
+        "xMax": 440,
+        "yMin": 0,
+        "yMax": 60,
+        "functions": [{"expression": "54e^{-((x-390)^2)/400}"}],
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_ev_histogram_bad_counts_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    frequencies = call["mauthArguments"]["diagram"]["graphConfig"]["data"]["frequencies"]
+    frequencies[-1] = 0
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_call() -> dict[str, Any]:
+    frequency_counts = {1: 66, 2: 113, 3: 108, 4: 57, 5: 57, 6: 40, 7: 26, 8: 13, 9: 6, 10: 3, 11: 4, 12: 5, 13: 2}
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "Mr Ulam devises a game using four standard dice. Winning dice showing a 1 are removed, "
+                "and the game ends when the player has two or more winning dice. Experimental frequency "
+                "results from 500 games and a simulation table from 10 000 games are provided."
+            ),
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "statsChart",
+                    "widthPx": 640,
+                    "heightPx": 360,
+                    "data": {
+                        "chartType": "histogram",
+                        "dataMode": "manualFrequencies",
+                        "barType": "discrete",
+                        "yAxisMode": "frequency",
+                        "xValues": list(frequency_counts),
+                        "frequencies": list(frequency_counts.values()),
+                        "xLabel": "$x$",
+                        "yLabel": "$f$",
+                    },
+                },
+            },
+            "tables": [
+                {
+                    "caption": "Simulated probability distribution for $X$",
+                    "headers": ["x", "1", "2", "3", "4", "5", "6", "7", "8"],
+                    "rows": [["P(X=x)", "0.134", "0.215", "0.208", "0.153", "0.106", "0.067", "0.047", "0.030"]],
+                },
+                {
+                    "headers": ["x", "9", "10", "11", "12", "13", "14", "15", "16"],
+                    "rows": [["P(X=x)", "0.016", "0.012", "0.005", "0.003", "0.002", "0.001", "0.001", "0.000"]],
+                },
+            ],
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Using the experimental data, estimate the probability of winning exactly two rolls and not winning in two or less rolls.",
+                    "marks": 3,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$P(X=2)=\\frac{113}{500}=0.226.$$ [[marks:1]]\n"
+                        "$$P(X>2)=1-\\frac{66+113}{500}=0.642.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "State two reasons why the game cannot be modelled using a binomial distribution.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The number of rolls is not fixed, and the trials are not independent because removed dice "
+                        "change later rolls. [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": "Using the simulation data, complete the probability distribution table for player profit $Y$.",
+                    "marks": 3,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": "$$P(Y=-1)=0.443,\\quad P(Y=0)=0.208,\\quad P(Y=1)=0.349.$$ [[marks:3]]",
+                },
+                {
+                    "label": "d",
+                    "text": "Calculate the expected value and variance of $Y$.",
+                    "marks": 4,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$E(Y)=1(0.349)+0(0.208)-1(0.443)=-0.094.$$ [[marks:2]]\n"
+                        "$$\\operatorname{Var}(Y)=(1+0.094)^2(0.349)+(0+0.094)^2(0.208)+(-1+0.094)^2(0.443)=0.783.$$ [[marks:2]]"
+                    ),
+                },
+                {
+                    "label": "e",
+                    "text": "In the long run, do you expect the game to be profitable for the charity? Justify your answer.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "Yes, the game is expected to be profitable for the charity. The expected profit to the player "
+                        "is $-0.094$, so the expected profit to the charity is $0.094$ per game. [[marks:2]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_methods_dice_game_bad_renderer_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["diagram"]["graphConfig"] = {
+        "type": "graph2d",
+        "xMin": 0,
+        "xMax": 14,
+        "yMin": 0,
+        "yMax": 120,
+        "functions": [{"expression": "120e^{-0.25x}"}],
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_bad_profit_table_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    part_c = call["mauthArguments"]["parts"][2]
+    part_c["solutionText"] = "$$P(Y=-1)=0.349,\\quad P(Y=0)=0.208,\\quad P(Y=1)=0.443.$$ [[marks:3]]"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_split_solution_table_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["parts"] = [
+        {
+            "label": "a(i)",
+            "text": "Using the experimental data, estimate the probability of winning exactly two rolls.",
+            "marks": 1,
+            "studentSpaceLines": 3,
+            "includeSolution": True,
+            "solutionText": "$$P(X=2)=\\frac{113}{500}=0.226.$$ [[marks:1]]",
+        },
+        {
+            "label": "a(ii)",
+            "text": "Estimate the probability of not winning in two or less rolls.",
+            "marks": 2,
+            "studentSpaceLines": 3,
+            "includeSolution": True,
+            "solutionText": "$$P(X>2)=1-\\frac{66+113}{500}=0.642.$$ [[marks:2]]",
+        },
+        {
+            "label": "b",
+            "text": "State two reasons why the game cannot be modelled using a binomial distribution.",
+            "marks": 2,
+            "studentSpaceLines": 4,
+            "includeSolution": True,
+            "solutionText": (
+                "The number of rolls is not fixed, and the trials are not independent because removed dice "
+                "change later rolls. [[marks:2]]"
+            ),
+        },
+        {
+            "label": "c",
+            "text": "Using the simulation data, complete the probability distribution table for player profit $Y$.",
+            "marks": 3,
+            "answerSurface": "table",
+            "table": {
+                "headers": ["$y$", "$-1$", "$0$", "$1$"],
+                "rows": [["$P(Y=y)$", "", "", ""]],
+                "showHeader": False,
+            },
+            "solutionTable": {
+                "headers": ["$y$", "$-1$", "$0$", "$1$"],
+                "rows": [["$P(Y=y)$", "$1-0.349-0.208=0.443$", "$0.208$", "$0.134+0.215=0.349$"]],
+                "showHeader": False,
+            },
+            "includeSolution": True,
+            "solutionText": "The completed profit distribution is shown.",
+        },
+        {
+            "label": "d(i)",
+            "text": "Calculate the expected value of $Y$.",
+            "marks": 2,
+            "studentSpaceLines": 3,
+            "includeSolution": True,
+            "solutionText": "$$E(Y)=1(0.349)+0(0.208)-1(0.443)=-0.094.$$ [[marks:2]]",
+        },
+        {
+            "label": "d(ii)",
+            "text": "Calculate the variance of $Y$.",
+            "marks": 2,
+            "studentSpaceLines": 3,
+            "includeSolution": True,
+            "solutionText": (
+                "$$\\operatorname{Var}(Y)=(1+0.094)^2(0.349)+(0+0.094)^2(0.208)"
+                "+(-1+0.094)^2(0.443)=0.783.$$ [[marks:2]]"
+            ),
+        },
+        {
+            "label": "e",
+            "text": "In the long run, do you expect the game to be profitable for the charity? Justify your answer.",
+            "marks": 2,
+            "studentSpaceLines": 4,
+            "includeSolution": True,
+            "solutionText": (
+                "Yes, the game is expected to be profitable for the charity. The expected profit to the player "
+                "is $-0.094$, so the expected profit to the charity is $0.094$ per game. [[marks:2]]"
+            ),
+        },
+    ]
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -3210,9 +4069,7 @@ def local_real_specialist_argand_call() -> dict[str, Any]:
         "heightPx": 420,
         "xAxisLabel": "Re",
         "yAxisLabel": "Im",
-        "functions": [
-            {"kind": "relation", "expression": "x^2 + (y - 1)^2 = 4", "color": "#2563eb"}
-        ],
+        "functions": [{"kind": "relation", "expression": "x^2 + (y - 1)^2 = 4", "color": "#2563eb"}],
         "features": [
             {"kind": "point", "x": -1, "y": 1.732, "label": "$z_1$"},
             {"kind": "point", "x": 2, "y": 0, "label": "$z_2$"},
@@ -3506,6 +4363,48 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "graph2d line should encode slope 2/3",
             "graph2d line should encode vertical intercept -6",
+        ],
+    },
+    "real-methods-ev-histogram": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_call,
+    },
+    "real-methods-ev-histogram-bad-renderer": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_bad_renderer_call,
+        "expectedIssues": [
+            "ev histogram should not be converted as a generic graph2d",
+            "ev source histogram should use statsChart chartType='histogram'",
+        ],
+    },
+    "real-methods-ev-histogram-bad-counts": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_bad_counts_call,
+        "expectedIssues": [
+            "histogram/count chart should preserve value 430 with count 20",
+        ],
+    },
+    "real-methods-dice-game": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_call,
+    },
+    "real-methods-dice-game-split-solution-table": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_split_solution_table_call,
+    },
+    "real-methods-dice-game-bad-renderer": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_bad_renderer_call,
+        "expectedIssues": [
+            "dice-game frequency chart should not be converted as a generic graph2d",
+            "dice-game source frequency chart should use statsChart chartType='histogram'",
+        ],
+    },
+    "real-methods-dice-game-bad-profit-table": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_bad_profit_table_call,
+        "expectedIssues": [
+            "dice-game solution should map profit probabilities",
         ],
     },
     "real-specialist-stats": {
@@ -3944,7 +4843,9 @@ def run_local_eval(case_name: str = "local", verbose: bool = False) -> int:
 
     print("\nLOCAL SUMMARY:")
     for selected_case, passed, issues in results:
-        expected_label = "expected failures" if LOCAL_EVAL_CASES.get(selected_case, {}).get("expectedIssues") else "clean"
+        expected_label = (
+            "expected failures" if LOCAL_EVAL_CASES.get(selected_case, {}).get("expectedIssues") else "clean"
+        )
         print(f"- {'PASS' if passed else 'FAIL'} {selected_case}: {expected_label}, {len(issues)} issue(s)")
     print("\nTOTAL: $0.0000, 0 provider tokens.")
     return 1 if failed else 0
