@@ -1747,6 +1747,86 @@ def compact_assistant_diagram_block_schema(description: str) -> dict[str, Any]:
     }
 
 
+def source_conversion_diagram_block_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            f"{description} Use exactly one of graphConfig or vectorRayDiagram. Keep renderer fields inside graphConfig, "
+            "not on the diagram block. The app validates full renderer-specific payloads before applying."
+        ),
+        "properties": {
+            "id": {"type": "string", "description": "Optional stable block id. Usually omit."},
+            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "diagramTextSide": {"type": "string", "enum": ["none", "left", "right"]},
+            "graphConfig": {
+                "type": "object",
+                "description": (
+                    "Native Mauth renderer payload. Required field: type. Use graph2d for coordinate/function, "
+                    "slope-field, Argand/locus, and implicit-curve diagrams; statsChart for histograms, "
+                    "probability/frequency charts, density curves, normal curves, and blank sketch axes; graph3d "
+                    "for 3D points/segments/faces/solids including sphereCap; vector2d for coordinate vectors; "
+                    "geometricConstruction for schematic theorem geometry; setDiagram for Venn/set diagrams. "
+                    "For graph2d, keep bounds/functions/features top-level, with only slopeField under data. "
+                    "For graph3d, use data.points, data.segments, data.faces, data.solids, and metadata.view3d "
+                    "{az,el,bank}. For vector2d, metadata.vector2d.vectors[] entries need id, name, start:[x,y], "
+                    "and components:[dx,dy]; use metadata.vector2d.segmentLabels[] and metadata.vector2d.angleMarkers[] "
+                    "for magnitude and angle labels."
+                ),
+                "properties": {"type": {"type": "string", "enum": SUPPORTED_DIAGRAM_TYPES}},
+                "required": ["type"],
+                "additionalProperties": True,
+            },
+            "vectorRayDiagram": {
+                "type": "object",
+                "description": (
+                    "Compact source ray/vector diagram builder for no-axis scalar-product screenshots. Include "
+                    "vectors:[{id,name?,length?,angleDeg?,components?,lengthLabel?}] and optional "
+                    "angleMarkers:[{from,to,label?,rightAngle?}]."
+                ),
+                "properties": {
+                    "widthPx": {"type": "number"},
+                    "heightPx": {"type": "number"},
+                    "vectors": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                    "segmentLabels": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                    "angleMarkers": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                },
+                "required": ["vectors"],
+                "additionalProperties": False,
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    }
+
+
+def source_conversion_compact_diagram_block_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            f"{description} Use exactly one of graphConfig or vectorRayDiagram. Keep renderer fields inside graphConfig."
+        ),
+        "properties": {
+            "id": {"type": "string", "description": "Optional stable block id. Usually omit."},
+            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "diagramTextSide": {"type": "string", "enum": ["none", "left", "right"]},
+            "graphConfig": {
+                "type": "object",
+                "description": "Native renderer payload. Include type plus renderer-specific fields.",
+                "properties": {"type": {"type": "string", "enum": SUPPORTED_DIAGRAM_TYPES}},
+                "required": ["type"],
+                "additionalProperties": True,
+            },
+            "vectorRayDiagram": {
+                "type": "object",
+                "description": "Compact no-axis scalar-product ray diagram payload.",
+                "additionalProperties": True,
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    }
+
+
 def assistant_table_block_schema(description: str) -> dict[str, Any]:
     return {
         "type": "object",
@@ -2041,26 +2121,139 @@ def mauth_question_upsert_tool_definition(*, require_diagram: bool = False) -> d
     return definition
 
 
+def source_conversion_table_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": description,
+        "properties": {
+            "id": {"type": "string"},
+            "headers": {"type": "array", "items": {"type": "string"}},
+            "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+            "showHeader": {"type": "boolean"},
+            "tableAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "cellAlignment": {"type": "string", "enum": ["left", "center", "right"]},
+        },
+        "required": ["rows"],
+        "additionalProperties": False,
+    }
+
+
+def source_conversion_part_schema() -> dict[str, Any]:
+    diagram = source_conversion_compact_diagram_block_schema("Optional native diagram for this part.")
+    table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
+    return {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "text": {
+                "type": "string",
+                "description": "Visible part prompt without a typed '(a)' label. Do not leave marked parts blank.",
+            },
+            "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+            "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+            "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+            "solutionText": {
+                "type": "string",
+                "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+            },
+            "includeSolution": {"type": "boolean"},
+            "diagram": diagram,
+            "diagrams": {"type": "array", "items": diagram},
+            "solutionDiagram": source_conversion_compact_diagram_block_schema(
+                "Completed solution-copy diagram for answerSurface diagram."
+            ),
+            "solutionDiagrams": {
+                "type": "array",
+                "items": source_conversion_compact_diagram_block_schema("One completed solution-copy diagram."),
+            },
+            "table": table,
+            "tables": {"type": "array", "items": table},
+            "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+            "solutionTables": {
+                "type": "array",
+                "items": source_conversion_table_schema("One completed solution-copy table."),
+            },
+            "pageBreakBefore": {"type": "boolean"},
+        },
+        "required": ["text", "marks"],
+        "additionalProperties": False,
+    }
+
+
 def mauth_convert_source_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
-    definition = mauth_question_upsert_tool_definition(require_diagram=require_diagram)
-    definition["name"] = "mauth_convert_source_question"
-    definition["description"] = (
-        "Convert one question from an attached screenshot, PDF page, Word/text source, or pasted source into native "
-        "editable Mauth content. Use this for source-fidelity requests. Preserve the visible stem, marks, line breaks, "
-        "inline-vs-display maths intent, source diagram placement, and structured parts. If the source includes a visible "
-        "mathematical diagram and the teacher asks to include/enter it, provide a native diagram/diagrams payload in this "
-        "same call rather than replacing the diagram with prose. Statistical source graphs such as probability density "
-        "functions, normal curves, sample-mean distributions, histograms, and column graphs should normally use "
-        "statsChart rather than graph2d. Use statsChart chartType density for arbitrary source density curves, normal "
-        "for parameterised normal curves, and blankAxes for axes students sketch on. Source slope-field/direction-field "
-        "graphs should use graph2d with data.slopeField plus graphConfig.functions for any solution curve; keep graph2d "
-        "bounds, display flags, functions, and features as top-level graphConfig fields, not under data or options. "
-        "For implicit source solution curves, prefer a relation function over separate sqrt branches."
-        " For Argand loci, preserve the source or marking-key argument reference; do not change Arg(z) to Arg(z-i) unless the source uses Arg(z-i)."
-        " For source spherical caps or solids of revolution, use graph2d for the generating cross-section and graph3d "
-        "with a sphereCap solid for the 3D cap when the source shows both diagrams."
+    required_fields = ["questionNumber", "marks", "questionText"]
+    if require_diagram:
+        required_fields.append("diagram")
+    diagram_description = (
+        "Required for this request because the source/request asks for a visible mathematical diagram. Recreate it as "
+        "native Mauth data; do not replace it with prose."
+        if require_diagram
+        else "Optional native source diagram. Use when the source has a visible mathematical diagram."
     )
-    return definition
+    diagram = source_conversion_diagram_block_schema(diagram_description)
+    table = source_conversion_table_schema(
+        "Optional source table. Use blank strings only for student-completion cells."
+    )
+    return {
+        "type": "function",
+        "name": "mauth_convert_source_question",
+        "description": (
+            "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
+            "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
+            "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
+            "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
+            "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questionNumber": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "1-based target. If exactly one past current count, Mauth appends it.",
+                },
+                "questionId": {"type": "string"},
+                "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+                "questionMarks": {"type": "integer", "minimum": 0, "maximum": 100},
+                "questionText": {
+                    "type": "string",
+                    "description": "Stem text only. Do not type 'Question 1'. Use structured parts for (a), (b), ...",
+                },
+                "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+                "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+                "solutionText": {
+                    "type": "string",
+                    "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks.",
+                },
+                "includeSolution": {"type": "boolean"},
+                "diagram": diagram,
+                "diagrams": {
+                    "type": "array",
+                    "items": source_conversion_compact_diagram_block_schema("One native source diagram."),
+                },
+                "solutionDiagram": source_conversion_compact_diagram_block_schema("Completed solution-copy diagram."),
+                "solutionDiagrams": {
+                    "type": "array",
+                    "items": source_conversion_compact_diagram_block_schema("One completed solution-copy diagram."),
+                },
+                "table": table,
+                "tables": {"type": "array", "items": table},
+                "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+                "solutionTables": {
+                    "type": "array",
+                    "items": source_conversion_table_schema("One completed solution-copy table."),
+                },
+                "preserveExistingDiagrams": {"type": "boolean"},
+                "parts": {
+                    "type": "array",
+                    "description": "Structured source parts. Put visible part tasks here; do not create blank marked parts.",
+                    "items": source_conversion_part_schema(),
+                },
+            },
+            "required": required_fields,
+            "additionalProperties": False,
+        },
+    }
 
 
 def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:

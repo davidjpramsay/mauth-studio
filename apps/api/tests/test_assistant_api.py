@@ -1098,10 +1098,10 @@ def test_source_question_tool_schema_stays_compact():
     properties = tool["parameters"]["properties"]
     part_properties = properties["parts"]["items"]["properties"]
 
-    assert len(serialized) < 45000
+    assert len(serialized) < 24000
     assert "metadata.vector2d.vectors[]" in properties["diagram"]["properties"]["graphConfig"]["description"]
-    assert "Same shape as the top-level diagram field" in properties["solutionDiagram"]["description"]
-    assert "Same shape as the top-level diagram field" in part_properties["diagram"]["description"]
+    assert "Use exactly one of graphConfig or vectorRayDiagram" in properties["solutionDiagram"]["description"]
+    assert "Use exactly one of graphConfig or vectorRayDiagram" in part_properties["diagram"]["description"]
 
 
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
