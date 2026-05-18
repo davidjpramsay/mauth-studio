@@ -2440,17 +2440,25 @@ function validateAssistantDiagramIntent(
   graphConfig: Record<string, unknown>,
   entryPath: string,
   issues: MauthActionValidationIssue[],
-  intentText: string,
+  intent: ReturnType<typeof diagramIntentFromText>,
+  hasExpectedIntentDiagram: boolean,
 ) {
-  const intent = diagramIntentFromText(intentText);
   if (!intent) return;
   const actualType = typeof graphConfig.type === "string" ? graphConfig.type : "";
   if (!actualType || actualType === intent.expectedType) return;
+  if (hasExpectedIntentDiagram && intent.expectedType === "graph3d" && ["graph2d", "2d_graph", "function"].includes(actualType)) return;
   issues.push({
     path: `${entryPath}.graphConfig.type`,
     message: `${intent.label} appears to be using ${actualType}; ${intent.reason}`,
     expected: intent.expectedType,
   });
+}
+
+function rawAssistantDiagramEntryType(entry: unknown) {
+  if (!isRecord(entry)) return undefined;
+  if (isRecord(entry.vectorRayDiagram) || isRecord(entry.sourceVectorDiagram) || isRecord(entry.vector2dSource)) return "vector2d";
+  const graphConfig = isRecord(entry.graphConfig) ? entry.graphConfig : undefined;
+  return typeof graphConfig?.type === "string" ? graphConfig.type : undefined;
 }
 
 function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {
@@ -2589,6 +2597,9 @@ function diagramBlocksFromArgs(
   }
   const rawDiagrams = Array.isArray(args[diagramsKey]) ? args[diagramsKey] : singleDiagram ? [singleDiagram] : [];
   const blocks: ContentBlock[] = [];
+  const diagramIntent = diagramIntentFromText(intentText);
+  const rawDiagramTypes = rawDiagrams.map(rawAssistantDiagramEntryType).filter((type): type is string => Boolean(type));
+  const hasExpectedIntentDiagram = Boolean(diagramIntent && rawDiagramTypes.includes(diagramIntent.expectedType));
   const defaultDiagramAlign =
     args.diagramAlign === "left" || args.diagramAlign === "center" || args.diagramAlign === "right" ? args.diagramAlign : undefined;
   const rendererKeys = [
@@ -2644,7 +2655,7 @@ function diagramBlocksFromArgs(
       });
       return;
     }
-    validateAssistantDiagramIntent(graphConfig, entryPath, issues, intentText);
+    validateAssistantDiagramIntent(graphConfig, entryPath, issues, diagramIntent, hasExpectedIntentDiagram);
     if (issues.length) return;
     const diagramAlign =
       entry.diagramAlign === "left" || entry.diagramAlign === "center" || entry.diagramAlign === "right"

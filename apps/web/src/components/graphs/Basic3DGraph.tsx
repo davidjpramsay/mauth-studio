@@ -389,13 +389,32 @@ function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function render3DLatexLabel(latex: string) {
+function stripLatexDelimiters(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) return trimmed.slice(2, -2).trim();
+  if (trimmed.startsWith("$") && trimmed.endsWith("$")) return trimmed.slice(1, -1).trim();
+  return trimmed;
+}
+
+function escapeLatexText(value: string) {
+  return value.replace(/\\/g, "\\textbackslash{}").replace(/([{}_%&#])/g, "\\$1");
+}
+
+function labelLatexSource(value: string) {
+  const stripped = stripLatexDelimiters(value);
+  if (!stripped) return "";
+  if (/[\\^_{}=()[\]+-]/.test(stripped) || /^[A-Za-z][A-Za-z0-9]*$/.test(stripped)) return stripped;
+  return `\\text{${escapeLatexText(stripped)}}`;
+}
+
+function render3DLatexLabel(label: string) {
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
+  const latex = labelLatexSource(label);
   try {
     const html = renderMathJaxSvg(latex, false);
     return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(latex)}</span>`;
+    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
   }
 }
 

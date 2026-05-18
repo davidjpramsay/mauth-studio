@@ -9,6 +9,7 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
+apps/web/.tmp/
 tmp/
 storage/
 drafts/

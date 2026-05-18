@@ -46,6 +46,23 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
     };
   }
 
+  const hasGraph3DLanguage =
+    /\brectangular prism\b|\bprism\b|\bpyramid\b|\bcone\b|\bcylinder\b|\bspherical cap\b|\b3[-\s]?d\b|\bthree-dimensional\b|\bmain diagonal\b/i.test(
+      rawText,
+    ) ||
+    /\bcoordinate system shown\b.*\b(?:prism|pyramid|solid|vertices|sphere)\b|\b(?:prism|pyramid|solid|vertices|sphere)\b.*\bcoordinate system shown\b/i.test(
+      rawText,
+    ) ||
+    /\bvertices\b.{0,80}\b(?:prism|pyramid|solid)\b|\b(?:prism|pyramid|solid)\b.{0,80}\bvertices\b/i.test(rawText);
+  if (hasGraph3DLanguage) {
+    return {
+      id: "graph3d",
+      expectedType: "graph3d",
+      label: "3D geometry diagram",
+      reason: "3D solids, coordinate prisms, pyramids, cones, cylinders, spheres, and spherical caps should use graph3d.",
+    };
+  }
+
   const hasNetworkLanguage =
     /\bnetwork\b|\bnodes?\b|\bedges?\b|\bvertices\b|\badjacency\b|\bshortest path\b|\bcritical path\b|\bminimum spanning\b/i.test(rawText);
   if (hasNetworkLanguage) {

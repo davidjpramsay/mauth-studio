@@ -4508,7 +4508,6 @@ def local_real_specialist_spherical_cap_call() -> dict[str, Any]:
                 "domainMin": 0,
                 "domainMax": 20,
                 "color": "#111827",
-                "strokeWidth": 0,
                 "show": False,
             },
         ],
@@ -5049,6 +5048,7 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
+    "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism"],
 }
 
 
@@ -5397,6 +5397,21 @@ def run_local_eval(case_name: str = "local", verbose: bool = False) -> int:
     return 1 if failed else 0
 
 
+def dump_local_calls(case_name: str = "local") -> int:
+    selected_cases = LOCAL_EVAL_GROUPS.get(case_name, [case_name])
+    cases: list[dict[str, Any]] = []
+    for selected_case in selected_cases:
+        fixture = LOCAL_EVAL_CASES.get(selected_case)
+        if not fixture:
+            print(f"FAIL: no local fixture named {selected_case!r}", file=sys.stderr)
+            return 1
+        call_factory = fixture["call"]
+        call = call_factory() if callable(call_factory) else fixture["call"]
+        cases.append({"case": selected_case, "toolCall": call})
+    print(json.dumps({"cases": cases}, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a live Mauth assistant eval against OpenAI.")
     parser.add_argument("--model", default=None, help="Override OPENAI_MODEL for this eval.")
@@ -5407,6 +5422,11 @@ def main() -> int:
         help="Eval case or group to run.",
     )
     parser.add_argument("--local", action="store_true", help="Run zero-cost local fixture assertions only.")
+    parser.add_argument(
+        "--dump-local-calls",
+        action="store_true",
+        help="Print selected zero-cost local assistant tool-call fixtures as JSON.",
+    )
     parser.add_argument(
         "--final", action="store_true", help="Also test the optional final tool-output continuation call."
     )
@@ -5419,6 +5439,8 @@ def main() -> int:
     if raw_args and raw_args[0] == "--":
         raw_args = raw_args[1:]
     args = parser.parse_args(raw_args)
+    if args.dump_local_calls:
+        return dump_local_calls(case_name=args.case)
     if args.local:
         return run_local_eval(case_name=args.case, verbose=args.verbose)
     return asyncio.run(
