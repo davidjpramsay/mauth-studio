@@ -2133,6 +2133,72 @@ def solution_table_profit_map_is_correct(value: Any) -> bool:
     return False
 
 
+def graph3d_point_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def graph3d_point_coords(point: dict[str, Any]) -> tuple[float, float, float] | None:
+    candidates = (point.get("coords"), point.get("coordinates"), point.get("position"))
+    for candidate in candidates:
+        if (
+            isinstance(candidate, list)
+            and len(candidate) >= 3
+            and all(not isinstance(value, bool) and isinstance(value, (int, float)) for value in candidate[:3])
+        ):
+            return (float(candidate[0]), float(candidate[1]), float(candidate[2]))
+    if all(
+        not isinstance(point.get(key), bool) and isinstance(point.get(key), (int, float)) for key in ("x", "y", "z")
+    ):
+        return (float(point["x"]), float(point["y"]), float(point["z"]))
+    return None
+
+
+def graph3d_semantics(
+    configs: list[dict[str, Any]],
+) -> tuple[dict[str, tuple[float, float, float]], set[tuple[str, str]], set[tuple[str, str]]]:
+    point_coords: dict[str, tuple[float, float, float]] = {}
+    segment_pairs: set[tuple[str, str]] = set()
+    dashed_pairs: set[tuple[str, str]] = set()
+    for config in configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        points = data.get("points") if isinstance(data.get("points"), list) else data.get("vertices")
+        for point in points if isinstance(points, list) else []:
+            if not isinstance(point, dict):
+                continue
+            point_id = graph3d_point_key(point.get("id") or point.get("name") or point.get("label"))
+            coords = graph3d_point_coords(point)
+            if point_id and coords:
+                point_coords[point_id] = coords
+        segments = data.get("segments") if isinstance(data.get("segments"), list) else data.get("edges")
+        for segment in segments if isinstance(segments, list) else []:
+            if not isinstance(segment, dict):
+                continue
+            segment_points = segment.get("points") if isinstance(segment.get("points"), list) else []
+            from_id = graph3d_point_key(segment.get("from") or (segment_points[0] if segment_points else ""))
+            to_id = graph3d_point_key(segment.get("to") or (segment_points[1] if len(segment_points) > 1 else ""))
+            if not from_id or not to_id:
+                continue
+            pair = tuple(sorted((from_id, to_id)))
+            segment_pairs.add(pair)
+            if segment.get("dashed") is True or str(segment.get("strokeStyle") or "").lower() == "dashed":
+                dashed_pairs.add(pair)
+    return point_coords, segment_pairs, dashed_pairs
+
+
+def graph3d_close_coords(
+    actual: tuple[float, float, float] | None,
+    expected: tuple[float, float, float],
+    *,
+    tolerance: float = 0.02,
+) -> bool:
+    return actual is not None and all(
+        abs(actual_value - expected_value) <= tolerance
+        for actual_value, expected_value in zip(actual, expected, strict=False)
+    )
+
+
 def assert_real_methods_ev_histogram_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -2588,6 +2654,7 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
     point_ids: set[str] = set()
     segment_pairs: set[tuple[str, str]] = set()
+    point_coords, semantic_segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
     for config in graph3d_configs:
         data = config.get("data")
         if not isinstance(data, dict):
@@ -2634,9 +2701,47 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     for axis_point_id in ("xaxis", "yaxis", "zaxis"):
         if axis_point_id in point_ids:
             issues.append(f"3d prism graph3d data should not include axis helper point {axis_point_id}")
-    for pair in (("b", "t"), ("a", "m")):
-        if tuple(sorted(pair)) not in segment_pairs and "".join(pair) not in graph3d_serialized:
+    expected_coords = {
+        "o": (0.0, 0.0, 0.0),
+        "a": (2.0, 0.0, 0.0),
+        "b": (2.0, 4.0, 0.0),
+        "c": (0.0, 4.0, 0.0),
+        "t": (0.0, 0.0, 3.0),
+        "d": (2.0, 0.0, 3.0),
+        "e": (2.0, 4.0, 3.0),
+        "f": (0.0, 4.0, 3.0),
+        "m": (0.0, 2.0, 1.5),
+    }
+    for point_id, coords in expected_coords.items():
+        if not graph3d_close_coords(point_coords.get(point_id), coords):
+            issues.append(f"3d prism graph3d point {point_id.upper()} should have coordinates {coords}")
+    required_segments = (
+        ("o", "a"),
+        ("a", "b"),
+        ("b", "c"),
+        ("o", "c"),
+        ("o", "t"),
+        ("a", "d"),
+        ("b", "e"),
+        ("c", "f"),
+        ("t", "d"),
+        ("d", "e"),
+        ("e", "f"),
+        ("t", "f"),
+        ("b", "t"),
+        ("a", "m"),
+    )
+    for pair in required_segments:
+        sorted_pair = tuple(sorted(pair))
+        if (
+            sorted_pair not in segment_pairs
+            and sorted_pair not in semantic_segment_pairs
+            and "".join(pair) not in graph3d_serialized
+        ):
             issues.append(f"3d prism graph3d data should include segment {''.join(pair).upper()}")
+    for pair in (("o", "c"), ("o", "t")):
+        if tuple(sorted(pair)) not in dashed_pairs:
+            issues.append(f"3d prism graph3d segment {''.join(pair).upper()} should be dashed/dotted like the source")
     for pair in segment_pairs:
         if any(point in {"xaxis", "yaxis", "zaxis"} for point in pair):
             issues.append("3d prism graph3d data should not include axis helper segments")
@@ -2666,9 +2771,17 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
 
     solution_texts = collect_solution_texts(args)
     solution_serialized = compact_math_text("\n".join(solution_texts))
-    for term in ("-2", "-4", "3", "1.5", "7.25", "doesnotintersect"):
-        if term not in solution_serialized:
-            issues.append(f"3d prism solution should preserve {term!r}")
+    expected_solution_terms = (
+        ("-2",),
+        ("-4",),
+        ("3",),
+        ("1.5", "3/2"),
+        ("7.25", "29/4"),
+        ("doesnotintersect",),
+    )
+    for term_options in expected_solution_terms:
+        if not any(term in solution_serialized for term in term_options):
+            issues.append(f"3d prism solution should preserve one of {term_options!r}")
     if hidden_mark_total("\n".join(solution_texts)) != 8:
         issues.append("3d prism hidden [[marks:n]] total should be exactly 8")
     if visible_mark_note_count("\n".join(solution_texts)):
@@ -4280,6 +4393,33 @@ def local_real_specialist_prism_bad_graph3d_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_prism_bad_coordinates_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    for point in graph_config["data"]["points"]:
+        if point.get("id") == "B":
+            point["coords"] = [2, 3, 0]
+        if point.get("id") == "M":
+            point["coords"] = [0, 2, 1]
+    for segment in graph_config["data"]["segments"]:
+        if segment.get("from") == "O" and segment.get("to") in {"C", "T"}:
+            segment.pop("strokeStyle", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_prism_fraction_sphere_solution_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    part_b = call["mauthArguments"]["parts"][1]
+    part_b["solutionText"] = (
+        "The centre is $\\left(1,2,\\frac32\\right)$. [[marks:1]]\n"
+        "$$r^2=(0-1)^2+(4-2)^2+\\left(0-\\frac32\\right)^2=\\frac{29}{4}.$$ [[marks:1]]\n"
+        "$$(x-1)^2+(y-2)^2+\\left(z-\\frac32\\right)^2=\\frac{29}{4}.$$ [[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_implicit_call() -> dict[str, Any]:
     graph_config = {
         "type": "graph2d",
@@ -4471,6 +4611,10 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_specialist_prism_call,
         "call": local_real_specialist_prism_call,
     },
+    "real-specialist-prism-fraction-sphere-solution": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_fraction_sphere_solution_call,
+    },
     "real-specialist-prism-bad-graph3d": {
         "assert": assert_real_specialist_prism_call,
         "call": local_real_specialist_prism_bad_graph3d_call,
@@ -4484,6 +4628,16 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "axis helper point xaxis",
             "axis helper segments",
             "segments should use strokeStyle/dashed",
+        ],
+    },
+    "real-specialist-prism-bad-coordinates": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_bad_coordinates_call,
+        "expectedIssues": [
+            "3d prism graph3d point B should have coordinates",
+            "3d prism graph3d point M should have coordinates",
+            "3d prism graph3d segment OC should be dashed",
+            "3d prism graph3d segment OT should be dashed",
         ],
     },
     "real-specialist-implicit": {

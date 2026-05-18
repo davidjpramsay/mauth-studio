@@ -281,6 +281,11 @@ For `graph3d` diagrams, the live preview persists the teacher's rotated camera i
       { "from": "A", "to": "B" },
       { "from": "B", "to": "T", "label": "$BT$" }
     ],
+    "faces": [{ "points": ["O", "A", "B"], "fillColor": "#dbeafe", "fillOpacity": 0.16 }],
+    "solids": [
+      { "kind": "cone", "baseCenter": "O", "apex": "T", "radius": 2 },
+      { "kind": "sphere", "center": [1, 2, 1.5], "radius": 2.69 }
+    ],
     "xRange": [-1, 3],
     "yRange": [-1, 5],
     "zRange": [-1, 4]
@@ -297,7 +302,7 @@ For `graph3d` diagrams, the live preview persists the teacher's rotated camera i
 
 Preserve this metadata when editing 3D diagrams so the printed PDF uses the same view as the screen preview. `metadata.view3d` is the renderer-native camera shape and must contain numeric `az`, `el`, and `bank` fields in renderer/radian-style units, not degrees; values such as `az: 1.1`, `el: 0.35`, and `bank: 0` are plausible. Nested `camera.eye` metadata is not read by the renderer.
 
-The editor treats `graph3d` as its own renderer family. It exposes diagram width, diagram height, and the stored camera values `az`, `el`, and `bank`. For source 3D coordinate geometry, put named vertices in `data.points` and visible joins in `data.segments`; use `strokeStyle: "dashed"` or `dashed: true` for hidden edges, not a segment `style` field. Do not leave a source prism or solid as a camera-only placeholder. Do not add 2D graph functions, 2D axes options, metadata `axisLabels`/`showAxes`/`showGrid`, `xAxis`/`yAxis`/`zAxis` helper points or axis-label segments, or vector2d metadata to a `graph3d` diagram.
+The editor treats `graph3d` as its own renderer family. It exposes diagram width, diagram height, and the stored camera values `az`, `el`, and `bank`. For source 3D coordinate geometry, put named vertices in `data.points` and visible joins in `data.segments`; use `strokeStyle: "dashed"` or `dashed: true` for hidden edges, not a segment `style` field. Use `data.faces` for polygon faces on prisms and pyramids, and `data.solids` for curved solids with `kind: "cone"`, `"cylinder"`, `"sphere"`, or `"circle"`. Cone/cylinder solids use `baseCenter`, `apex` or `topCenter`, and `radius`; spheres/circles use `center` and `radius`, with optional `normal` for circles. Do not leave a source prism, pyramid, cone, cylinder, or sphere as a camera-only placeholder. Do not add 2D graph functions, 2D axes options, metadata `axisLabels`/`showAxes`/`showGrid`, `xAxis`/`yAxis`/`zAxis` helper points or axis-label segments, or vector2d metadata to a `graph3d` diagram.
 
 ### Image Diagrams
 

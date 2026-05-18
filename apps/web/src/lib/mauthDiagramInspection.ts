@@ -367,10 +367,14 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
   const data = graphData(config);
   const points = recordArray(Array.isArray(data.points) ? data.points : data.vertices);
   const segments = recordArray(Array.isArray(data.segments) ? data.segments : data.edges);
+  const faces = recordArray(data.faces);
+  const solids = recordArray(Array.isArray(data.solids) ? data.solids : data.surfaces);
   const warnings: MauthDiagramInspectionWarning[] = [];
   const needsStructured3d =
-    /\brectangular prism\b|\bprism\b|\b3d\b|\bthree-dimensional\b|\bcoordinate system\b|\bvertices\b|\bmain diagonal\b/i.test(contextText);
-  if (needsStructured3d && points.length < 4) {
+    /\brectangular prism\b|\bprism\b|\bpyramid\b|\bcone\b|\bcylinder\b|\bsphere\b|\b3d\b|\bthree-dimensional\b|\bcoordinate system\b|\bvertices\b|\bmain diagonal\b/i.test(
+      contextText,
+    );
+  if (needsStructured3d && points.length < 4 && solids.length === 0) {
     warnings.push({
       code: "graph3d-points-missing",
       severity: "warning",
@@ -378,13 +382,25 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
       path: "graphConfig.data.points",
     });
   }
-  if (needsStructured3d && segments.length < 3) {
+  if (needsStructured3d && segments.length < 3 && faces.length === 0 && solids.length === 0) {
     warnings.push({
       code: "graph3d-segments-missing",
       severity: "warning",
       message: "3D source diagram should include segment/edge data for the visible structure.",
       path: "graphConfig.data.segments",
     });
+  }
+  for (const kind of ["cone", "cylinder", "sphere"] as const) {
+    if (!new RegExp(`\\b${kind}\\b`, "i").test(contextText)) continue;
+    const hasSolidKind = solids.some((solid) => String(solid.kind ?? solid.type ?? "").toLowerCase() === kind);
+    if (!hasSolidKind && points.length < 4 && segments.length < 4 && faces.length === 0) {
+      warnings.push({
+        code: "graph3d-solid-kind-missing",
+        severity: "warning",
+        message: `3D ${kind} source diagram should use a graph3d ${kind} solid or enough explicit geometry to show the shape.`,
+        path: "graphConfig.data.solids",
+      });
+    }
   }
   const compactContext = contextText.replace(/\s+/g, "").toLowerCase();
   for (const pair of ["bt", "am"]) {
@@ -657,6 +673,7 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph3d-points-missing" ||
     warning.code === "graph3d-segments-missing" ||
     warning.code === "graph3d-named-segment-missing" ||
+    warning.code === "graph3d-solid-kind-missing" ||
     warning.code.startsWith("penrose-")
   );
 }

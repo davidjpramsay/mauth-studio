@@ -637,11 +637,14 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
       "points",
       "vertices",
       "segments",
+      "faces",
+      "solids",
+      "surfaces",
       "xRange",
       "yRange",
       "zRange",
     ]);
-    summary.metadata = compactPlainRecord(config.metadata, ["vectors", "labels", "view"]);
+    summary.metadata = compactPlainRecord(config.metadata, ["vectors", "labels", "view", "view3d"]);
   }
 
   return summary;

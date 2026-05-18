@@ -88,6 +88,7 @@ const GRAPH3D_VIEW_LIMITS = {
   el: Math.PI,
   bank: Math.PI * 2,
 } as const;
+const GRAPH3D_SOLID_KINDS = new Set(["circle", "cone", "cylinder", "sphere"]);
 const VECTOR_2D_LABEL_STYLES = new Set(["boldLower", "arrow", "custom"]);
 const PENROSE_RELATIONSHIP_TYPES = new Set([
   "triangle",
@@ -326,6 +327,54 @@ function numberTriple(value: unknown, path: string, issues: MauthActionValidatio
   value.forEach((item, index) => {
     if (!finiteNumber(item)) addIssue(issues, `${path}[${index}]`, "must be a finite number", "number");
   });
+}
+
+function graph3dPointReference(value: unknown, path: string, pointNames: Set<string>, issues: MauthActionValidationIssue[]) {
+  if (typeof value === "string") {
+    if (!value.trim()) addIssue(issues, path, "must be a non-empty point id", "point id or [x,y,z]");
+    else if (GRAPH3D_RESERVED_AXIS_POINT_IDS.has(value.toLowerCase()))
+      addIssue(issues, path, "must reference a named 3D vertex/point, not an axis helper", "omit axis helper references");
+    else if (pointNames.size && !pointNames.has(value)) addIssue(issues, path, "must reference a graph3d point", "declared point id");
+    return;
+  }
+  if (Array.isArray(value)) {
+    numberTriple(value, path, issues);
+    return;
+  }
+  if (isRecord(value)) {
+    const id = typeof value.id === "string" && value.id.trim() ? value.id : typeof value.name === "string" ? value.name : "";
+    if (id) {
+      if (GRAPH3D_RESERVED_AXIS_POINT_IDS.has(id.toLowerCase()))
+        addIssue(issues, `${path}.id`, "must reference a named 3D vertex/point, not an axis helper", "omit axis helper references");
+      else if (pointNames.size && !pointNames.has(id))
+        addIssue(issues, `${path}.id`, "must reference a graph3d point", "declared point id");
+      return;
+    }
+    if (hasOwn(value, "coords")) numberTriple(value.coords, `${path}.coords`, issues);
+    else if (hasOwn(value, "coordinates")) numberTriple(value.coordinates, `${path}.coordinates`, issues);
+    else if (hasOwn(value, "position")) numberTriple(value.position, `${path}.position`, issues);
+    else {
+      requiredNumber(value, "x", path, issues);
+      requiredNumber(value, "y", path, issues);
+      requiredNumber(value, "z", path, issues);
+    }
+    return;
+  }
+  addIssue(issues, path, "must be a point id, coordinate triple, or point object", "point id | [x,y,z] | { x, y, z }");
+}
+
+function requiredGraph3dPointReference(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  pointNames: Set<string>,
+  issues: MauthActionValidationIssue[],
+) {
+  if (!hasOwn(record, key)) {
+    addIssue(issues, `${path}.${key}`, "is required", "point id or [x,y,z]");
+    return;
+  }
+  graph3dPointReference(record[key], `${path}.${key}`, pointNames, issues);
 }
 
 function optionalNumberPair(record: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[]) {
@@ -808,6 +857,87 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalBoolean(entry, "dashed", entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
     });
+
+    const faces = optionalArray(data, "faces", `${path}.data`, issues);
+    faces?.forEach((entry, index) => {
+      const entryPath = `${path}.data.faces[${index}]`;
+      if (!isRecord(entry)) {
+        addIssue(issues, entryPath, "must be a 3D face object", "{ points: [...] }");
+        return;
+      }
+      const pointRefs = Array.isArray(entry.points) ? entry.points : Array.isArray(entry.vertices) ? entry.vertices : undefined;
+      if (!pointRefs) {
+        addIssue(issues, `${entryPath}.points`, "must be an array of point ids or coordinate triples", "point references[]");
+      } else if (pointRefs.length < 3) {
+        addIssue(issues, `${entryPath}.points`, "must contain at least three point references", "3 or more points");
+      } else {
+        pointRefs.forEach((pointRef, pointIndex) =>
+          graph3dPointReference(pointRef, `${entryPath}.points[${pointIndex}]`, pointNames, issues),
+        );
+      }
+      optionalString(entry, "label", entryPath, issues);
+      optionalString(entry, "color", entryPath, issues);
+      optionalString(entry, "fillColor", entryPath, issues);
+      optionalString(entry, "strokeColor", entryPath, issues);
+      optionalString(entry, "strokeStyle", entryPath, issues);
+      optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
+      optionalNumber(entry, "opacity", entryPath, issues, { min: 0, max: 1 });
+      optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+      optionalBoolean(entry, "dashed", entryPath, issues);
+      optionalBoolean(entry, "show", entryPath, issues);
+      if (hasOwn(entry, "style"))
+        addIssue(issues, `${entryPath}.style`, "must use graph3d face fillColor/strokeColor fields, not style", "fillColor/strokeColor");
+    });
+
+    const solidLists = [
+      { key: "solids", values: optionalArray(data, "solids", `${path}.data`, issues) },
+      { key: "surfaces", values: optionalArray(data, "surfaces", `${path}.data`, issues) },
+    ];
+    for (const solidList of solidLists) {
+      solidList.values?.forEach((entry, index) => {
+        const entryPath = `${path}.data.${solidList.key}[${index}]`;
+        if (!isRecord(entry)) {
+          addIssue(issues, entryPath, "must be a graph3d solid object", "{ kind, ... }");
+          return;
+        }
+        const kind = typeof entry.kind === "string" ? entry.kind : typeof entry.type === "string" ? entry.type : "";
+        if (!GRAPH3D_SOLID_KINDS.has(kind)) {
+          addIssue(issues, `${entryPath}.kind`, "must be one of: circle, cone, cylinder, sphere", "circle | cone | cylinder | sphere");
+        }
+        optionalString(entry, "type", entryPath, issues);
+        optionalString(entry, "color", entryPath, issues);
+        optionalString(entry, "fillColor", entryPath, issues);
+        optionalString(entry, "strokeColor", entryPath, issues);
+        optionalNumber(entry, "radius", entryPath, issues, { positive: true });
+        optionalNumber(entry, "height", entryPath, issues, { positive: true });
+        optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
+        optionalNumber(entry, "opacity", entryPath, issues, { min: 0, max: 1 });
+        optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+        optionalNumber(entry, "stepsU", entryPath, issues, { integer: true, min: 8 });
+        optionalNumber(entry, "stepsV", entryPath, issues, { integer: true, min: 2 });
+        optionalBoolean(entry, "show", entryPath, issues);
+        if (hasOwn(entry, "normal")) numberTriple(entry.normal, `${entryPath}.normal`, issues);
+        if (hasOwn(entry, "axis")) numberTriple(entry.axis, `${entryPath}.axis`, issues);
+        if (!hasOwn(entry, "radius")) addIssue(issues, `${entryPath}.radius`, "is required", "positive number");
+        if (kind === "sphere" || kind === "circle") {
+          requiredGraph3dPointReference(entry, "center", entryPath, pointNames, issues);
+        }
+        if (kind === "cone") {
+          requiredGraph3dPointReference(entry, "baseCenter", entryPath, pointNames, issues);
+          if (!hasOwn(entry, "apex") && !hasOwn(entry, "height")) {
+            addIssue(issues, `${entryPath}.apex`, "is required when height is omitted", "point id or [x,y,z]");
+          }
+          if (hasOwn(entry, "apex")) graph3dPointReference(entry.apex, `${entryPath}.apex`, pointNames, issues);
+        }
+        if (kind === "cylinder") {
+          requiredGraph3dPointReference(entry, "baseCenter", entryPath, pointNames, issues);
+          if (!hasOwn(entry, "topCenter") && !hasOwn(entry, "height")) {
+            addIssue(issues, `${entryPath}.topCenter`, "is required when height is omitted", "point id or [x,y,z]");
+          }
+          if (hasOwn(entry, "topCenter")) graph3dPointReference(entry.topCenter, `${entryPath}.topCenter`, pointNames, issues);
+        }
+      });
+    }
   }
   const metadata = optionalRecord(config, "metadata", path, issues);
   if (metadata) {

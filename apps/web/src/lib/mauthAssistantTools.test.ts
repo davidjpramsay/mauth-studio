@@ -287,6 +287,15 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   assert(graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing"));
   assert(graph3dWarnings.some((warning) => warning.code === "graph3d-segments-missing"));
 
+  const coneWarnings = inspectMauthDiagram(
+    {
+      type: "graph3d",
+      metadata: { view3d: { az: 1, el: 0.3, bank: 0 } },
+    },
+    "The diagram shows a cone with radius 2 cm and height 5 cm.",
+  ).warnings;
+  assert(coneWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing"));
+
   const scalarWarnings = inspectMauthDiagram(
     {
       type: "geometricConstruction",
@@ -322,6 +331,9 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   );
   assert(
     graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
+  );
+  assert(
+    coneWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
   );
   assert(
     slopeFieldWarnings.some(
@@ -2818,6 +2830,56 @@ test("accepts structured graph3d point and segment data", () => {
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
 });
 
+test("accepts graph3d faces and solid primitives", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "solid-3d",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "O", coords: [0, 0, 0] },
+                    { id: "A", coords: [2, 0, 0] },
+                    { id: "B", coords: [0, 2, 0] },
+                    { id: "T", coords: [0, 0, 3] },
+                  ],
+                  segments: [
+                    { from: "O", to: "A" },
+                    { from: "O", to: "B" },
+                    { from: "O", to: "T", strokeStyle: "dashed" },
+                  ],
+                  faces: [{ points: ["O", "A", "B"], fillColor: "#dbeafe", fillOpacity: 0.18 }],
+                  solids: [
+                    { kind: "cone", baseCenter: "O", apex: "T", radius: 2, fillOpacity: 0.12 },
+                    { kind: "sphere", center: [1, 1, 1], radius: 1.5, strokeColor: "#1d4ed8" },
+                    { kind: "cylinder", baseCenter: [4, 0, 0], topCenter: [4, 0, 3], radius: 1 },
+                  ],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "solid-3d");
+  const data = (diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined) as Record<string, unknown> | undefined;
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
+  assert.equal(Array.isArray(data?.faces), true);
+  assert.equal(Array.isArray(data?.solids), true);
+});
+
 test("rejects unsupported graph3d camera metadata shape", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",
@@ -3003,6 +3065,46 @@ test("rejects malformed graph3d segment references", () => {
 
   assert.equal(result.ok, false);
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].blocks[0].graphConfig.data.segments[0].to"));
+});
+
+test("rejects malformed graph3d faces and solid primitives", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-solid-3d",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [{ id: "A", coords: [0, 0, 0] }],
+                  faces: [{ points: ["A", "B"] }],
+                  solids: [
+                    { kind: "cone", baseCenter: "A", radius: -2 },
+                    { kind: "torus", center: [0, 0, 0], radius: 2 },
+                  ],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.faces[0].points"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[0].radius"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[0].apex"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[1].kind"));
 });
 
 test("rejects unsupported Penrose Substance predicates before applying diagrams", () => {

@@ -1187,13 +1187,25 @@ def focused_tool_hint(
                 "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument."
             )
         if has_source_attachment and any(
-            term in text for term in ("3d", "three-dimensional", "prism", "vertices", "sphere")
+            term in text
+            for term in (
+                "3d",
+                "three-dimensional",
+                "prism",
+                "pyramid",
+                "vertices",
+                "cone",
+                "cylinder",
+                "sphere",
+            )
         ):
             diagram_guidance += (
-                " For source 3D coordinate/prism diagrams, use graphConfig.type graph3d with explicit "
-                "data.points entries for every named vertex/point and data.segments entries for visible edges, "
-                "diagonals, and named lines such as BT or AM. For hidden/dashed 3D edges, use segment "
-                "strokeStyle:'dashed' or dashed:true, not style:'dashed'. Store the camera as metadata.view3d:{az,el,bank} "
+                " For source 3D diagrams, use graphConfig.type graph3d with explicit renderer data: "
+                "data.points entries for every named vertex/point; data.segments entries for visible edges, "
+                "diagonals, and named lines such as BT or AM; data.faces for shaded polygon faces on prisms/pyramids; "
+                "and data.solids for true curved solids such as cones, cylinders, spheres, and circles. "
+                "For hidden/dashed 3D edges, use segment strokeStyle:'dashed' or dashed:true, not style:'dashed'. "
+                "Store the camera as metadata.view3d:{az,el,bank} "
                 "using renderer/radian-style values such as az:1.1, el:0.35, bank:0, not degrees; "
                 "do not use Plotly-style metadata.view3d.camera.eye, metadata.axisLabels, metadata.showAxes, "
                 "or metadata.showGrid. Do not add xAxis/yAxis/zAxis points or axis-label segments; the graph3d "
@@ -1525,9 +1537,11 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "region_between_curves, region_curve_axis, or region_clipped_by_curve features with "
                     "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide; use fillOpacity, "
                     "not expressionTop/expressionBottom/opacity fields. "
-                    "For graph3d source solids/prisms, use data.points:[{id,label,coords:[x,y,z]}], "
+                    "For graph3d source solids, use data.points:[{id,label,coords:[x,y,z]}], "
                     "data.segments:[{from,to,label?,strokeStyle?}] with strokeStyle:'dashed' or dashed:true "
-                    "for hidden edges, and metadata.view3d:{az,el,bank} with radian-style "
+                    "for hidden edges, data.faces:[{points:[...]}] for polygon faces on prisms/pyramids, "
+                    "and data.solids:[{kind:'cone'|'cylinder'|'sphere'|'circle',...}] for curved solids. "
+                    "Use metadata.view3d:{az,el,bank} with radian-style "
                     "renderer values such as {az:1.1,el:0.35,bank:0}; do not use "
                     "segment style:'dashed', Plotly-style camera.eye, metadata axisLabels/showAxes/showGrid, or xAxis/yAxis/zAxis "
                     "helper points/segments. " + vector2d_description
@@ -1552,7 +1566,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                         "description": (
                             "Renderer data. For graph2d, only use this for data.slopeField; do not put graph2d "
                             "functions, features, bounds, size, or axes fields here. For graph3d, use "
-                            "points:[{id,label,coords:[x,y,z]}] and segments:[{from,to,label?,strokeStyle?,dashed?}]; "
+                            "points:[{id,label,coords:[x,y,z]}], segments:[{from,to,label?,strokeStyle?,dashed?}], "
+                            "faces:[{points:[...]}], and solids:[{kind:'cone'|'cylinder'|'sphere'|'circle',...}]; "
                             "do not use segment style."
                         ),
                     },
@@ -2041,7 +2056,7 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
             "'include/add the diagram in question 1'. Choose the correct Mauth renderer and provide a real graphConfig. "
             "Use geometricConstruction/Penrose for schematic geometry and theorem diagrams; graph2d for coordinate/function "
             "graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts, density curves, normal/sample-mean distributions, and histograms; setDiagram for Venn/set diagrams; "
-            "graph3d for 3D diagrams with explicit data.points/data.segments and metadata.view3d az/el/bank in radians for source solids; image for uploaded images. "
+            "graph3d for 3D diagrams with explicit points, segments, polygon faces, curved solids, and metadata.view3d az/el/bank in radians; image for uploaded images. "
             "For slope fields, use graph2d.data.slopeField rather than prose or loose line segments, and keep graph2d "
             "functions/features/ranges/display fields directly on graphConfig. Use relation functions for implicit "
             "solution curves when the source gives an implicit equation."
@@ -2099,7 +2114,7 @@ def mauth_make_diagram_for_question_tool_definition() -> dict[str, Any]:
         "post-edit semantic repairs. Read the question text, choose the correct renderer, and make the graphConfig match "
         "the stated mathematical relationships. Prefer geometricConstruction/Penrose for schematic geometry, graph2d for "
         "coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics charts, density curves, normal/sample-mean distributions, and histograms, setDiagram for Venn/set "
-        "diagrams, graph3d for 3D diagrams with explicit data.points/data.segments and metadata.view3d az/el/bank in radians for source solids, and image only when an uploaded bitmap is explicitly required."
+        "diagrams, graph3d for 3D diagrams with explicit points, segments, faces, curved solids, and metadata.view3d az/el/bank in radians, and image only when an uploaded bitmap is explicitly required."
     )
     return definition
 
@@ -2644,7 +2659,7 @@ Tool-call contract:
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
 - For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For regions/loci, define boundary functions first and reference them by supported region feature indices.
-- For graph3d source solids, use data.points, data.segments, segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
+- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle for curved solids. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
 - Preserve LaTeX backslashes exactly in JSON strings and use $...$ / $$...$$, not \[...\] or \(...\).
 - Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless they explicitly ask for implementation details.

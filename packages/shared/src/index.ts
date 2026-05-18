@@ -67,6 +67,85 @@ export interface StatsChartSpec {
   options?: StatsChartOptions;
 }
 
+export interface Graph3DPointData {
+  id?: string;
+  name?: string;
+  label?: string;
+  coords?: [number, number, number];
+  coordinates?: [number, number, number];
+  position?: [number, number, number];
+  x?: number;
+  y?: number;
+  z?: number;
+  color?: string;
+  show?: boolean;
+  [key: string]: unknown;
+}
+
+export interface Graph3DSegmentData {
+  from?: string;
+  to?: string;
+  points?: string[];
+  label?: string;
+  color?: string;
+  strokeStyle?: "solid" | "dashed";
+  strokeWidth?: number;
+  dashed?: boolean;
+  show?: boolean;
+  [key: string]: unknown;
+}
+
+export interface Graph3DFaceData {
+  points?: Array<string | [number, number, number] | Graph3DPointData>;
+  vertices?: Array<string | [number, number, number] | Graph3DPointData>;
+  label?: string;
+  color?: string;
+  fillColor?: string;
+  fillOpacity?: number;
+  strokeColor?: string;
+  strokeStyle?: "solid" | "dashed";
+  strokeWidth?: number;
+  dashed?: boolean;
+  show?: boolean;
+  [key: string]: unknown;
+}
+
+export interface Graph3DSolidData {
+  kind?: "circle" | "cone" | "cylinder" | "sphere" | string;
+  type?: "circle" | "cone" | "cylinder" | "sphere" | string;
+  center?: string | [number, number, number] | Graph3DPointData;
+  baseCenter?: string | [number, number, number] | Graph3DPointData;
+  topCenter?: string | [number, number, number] | Graph3DPointData;
+  apex?: string | [number, number, number] | Graph3DPointData;
+  normal?: [number, number, number];
+  axis?: [number, number, number];
+  radius?: number;
+  height?: number;
+  color?: string;
+  fillColor?: string;
+  fillOpacity?: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  stepsU?: number;
+  stepsV?: number;
+  show?: boolean;
+  [key: string]: unknown;
+}
+
+export interface Graph3DData {
+  points?: Graph3DPointData[];
+  vertices?: Graph3DPointData[];
+  segments?: Graph3DSegmentData[];
+  edges?: Graph3DSegmentData[];
+  faces?: Graph3DFaceData[];
+  solids?: Graph3DSolidData[];
+  surfaces?: Graph3DSolidData[];
+  xRange?: [number, number];
+  yRange?: [number, number];
+  zRange?: [number, number];
+  [key: string]: unknown;
+}
+
 export interface ImageDiagramData {
   src?: string;
   name?: string;
@@ -87,7 +166,7 @@ export interface WorkedStep {
 
 export interface GraphConfig {
   type: DiagramType;
-  data?: GeometricDiagramData | StatsChartData | ImageDiagramData | Record<string, unknown>;
+  data?: GeometricDiagramData | StatsChartData | Graph3DData | ImageDiagramData | Record<string, unknown>;
   style?: string;
   options?: Record<string, unknown>;
   expression?: string;
