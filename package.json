@@ -25,6 +25,7 @@
     "eval:assistant:live:real-exams:graph3d": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams-graph3d --max-cost 0.80",
     "eval:assistant:live:all": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case all",
     "eval:assistant:list": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --list-cases",
+    "eval:assistant:benchmarks": "cd apps/api && uv run python ../../scripts/assistant-benchmark-manifest.py",
     "test:api": "cd apps/api && uv run pytest",
     "test:web-actions": "node --experimental-strip-types --test apps/web/src/lib/*Actions.test.ts apps/web/src/lib/mauthAssistant*.test.ts",
     "test:plotly": "node --experimental-strip-types --test packages/diagram-plotly/tests/*.test.ts",
