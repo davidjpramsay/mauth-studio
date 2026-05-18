@@ -79,6 +79,24 @@ def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
     ]
 
 
+def test_assistant_help_prompt_uses_native_fast_path(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "What can this assistant do?"}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["responseId"] is None
+    assert data["toolCalls"] == []
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert "create or convert questions" in data["message"]
+
+
 def test_tool_output_without_provider_response_id_is_sent_as_user_context():
     request = openai_assistant.AssistantChatRequest(
         toolOutputs=[

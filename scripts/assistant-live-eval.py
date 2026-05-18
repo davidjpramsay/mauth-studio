@@ -41,7 +41,13 @@ from app.models.schemas import (  # noqa: E402
 from app.services.openai_assistant import (  # noqa: E402
     DOCX_MIME_TYPE,
     assistant_configured,
+    assistant_instructions,
+    assistant_tool_definitions,
+    brain_files_for_request,
+    brain_files_from_ids,
     create_assistant_response,
+    deterministic_brain_ids_for_request,
+    input_items,
 )
 from app.services.penrose import render_penrose_diagram  # noqa: E402
 
@@ -1090,6 +1096,75 @@ def benchmark_label(benchmark: dict[str, Any] | None) -> str:
     return f"benchmark: {status}, renderers: {renderer_label}"
 
 
+def byte_label(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f} MB"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f} KB"
+    return f"{value} B"
+
+
+def provider_request_shape_for_case(case_name: str, model: str | None = None) -> dict[str, Any]:
+    case = EVAL_CASES[case_name]
+    messages = [AssistantChatMessage(role="user", content=str(case["prompt"]))]
+    summary = case["summary"]()
+    attachments_factory = case.get("attachments")
+    attachments = attachments_factory() if callable(attachments_factory) else []
+    deterministic_ids = deterministic_brain_ids_for_request(
+        messages,
+        tool_outputs=None,
+        document_summary=summary,
+        attachments=attachments,
+    )
+    brain_files = (
+        brain_files_from_ids(deterministic_ids)
+        if deterministic_ids
+        else brain_files_for_request(
+            messages,
+            tool_outputs=None,
+            attachments=attachments,
+        )
+    )
+    request = AssistantChatRequest(
+        model=model,
+        messages=messages,
+        documentSummary=summary,
+        attachments=attachments,
+    )
+    tools = assistant_tool_definitions(messages, None, attachments, summary)
+    instructions = assistant_instructions(summary, messages, None, brain_files, attachments)
+    input_payload = input_items(request)
+    return {
+        "brainSelection": "deterministic" if deterministic_ids else "fallback/planner-eligible",
+        "brainFiles": brain_files,
+        "toolNames": [tool.get("name") for tool in tools if isinstance(tool.get("name"), str)],
+        "instructionChars": len(instructions),
+        "toolSchemaChars": len(json.dumps(tools, ensure_ascii=False)),
+        "inputChars": len(json.dumps(input_payload, ensure_ascii=False)),
+        "attachmentCount": len(attachments),
+        "attachmentBytes": sum(
+            attachment.sizeBytes for attachment in attachments if isinstance(attachment.sizeBytes, int)
+        ),
+    }
+
+
+def request_shape_label(shape: dict[str, Any]) -> str:
+    tool_names = shape.get("toolNames") if isinstance(shape.get("toolNames"), list) else []
+    brain_files = shape.get("brainFiles") if isinstance(shape.get("brainFiles"), list) else []
+    attachment_bytes = shape.get("attachmentBytes") if isinstance(shape.get("attachmentBytes"), int) else 0
+    attachment_count = shape.get("attachmentCount") if isinstance(shape.get("attachmentCount"), int) else 0
+    return (
+        f"brains={','.join(str(item) for item in brain_files)} "
+        f"({shape.get('brainSelection')}); "
+        f"tools={len(tool_names)} [{', '.join(str(item) for item in tool_names[:3])}"
+        f"{'...' if len(tool_names) > 3 else ''}]; "
+        f"instructions={shape.get('instructionChars')} chars; "
+        f"schemas={shape.get('toolSchemaChars')} chars; "
+        f"input={shape.get('inputChars')} chars; "
+        f"attachments={attachment_count}/{byte_label(attachment_bytes)}"
+    )
+
+
 def print_cost_plan(
     case_name: str,
     *,
@@ -1120,6 +1195,8 @@ def print_cost_plan(
         case_class = live_eval_case_class(selected_case)
         benchmark = benchmark_index.get(selected_case)
         print(f"  - {selected_case}: class={case_class}; {benchmark_label(benchmark)}")
+        shape = provider_request_shape_for_case(selected_case, model=model)
+        print(f"    request shape: {request_shape_label(shape)}")
     if len(planned_cases) < len(selected_cases):
         print(f"- skipped by --max-cases: {len(selected_cases) - len(planned_cases)} case(s)")
     if paid_enabled:
@@ -2856,15 +2933,12 @@ def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
             issues.append(f"graph3d solid-family graph3d data should include a {required_kind} solid")
     for solid in solids:
         kind = graph3d_solid_kind(solid)
-        if kind == "cone":
-            if "baseCenter" not in solid or ("apex" not in solid and "height" not in solid):
-                issues.append("graph3d cone solid should include baseCenter plus apex or height")
-        if kind == "cylinder":
-            if "baseCenter" not in solid or ("topCenter" not in solid and "height" not in solid):
-                issues.append("graph3d cylinder solid should include baseCenter plus topCenter or height")
-        if kind == "sphere":
-            if "center" not in solid:
-                issues.append("graph3d sphere solid should include center")
+        if kind == "cone" and ("baseCenter" not in solid or ("apex" not in solid and "height" not in solid)):
+            issues.append("graph3d cone solid should include baseCenter plus apex or height")
+        if kind == "cylinder" and ("baseCenter" not in solid or ("topCenter" not in solid and "height" not in solid)):
+            issues.append("graph3d cylinder solid should include baseCenter plus topCenter or height")
+        if kind == "sphere" and "center" not in solid:
+            issues.append("graph3d sphere solid should include center")
         if kind in {"cone", "cylinder", "sphere"}:
             radius = solid.get("radius")
             if isinstance(radius, bool) or not isinstance(radius, (int, float)) or radius <= 0:
@@ -5934,9 +6008,7 @@ async def run_eval(
         if failed and stop_on_failure:
             break
         if cost >= case_cost_cap:
-            print(
-                f"\nSTOP: {selected_case} cost ${cost:.4f}, above the per-case spike stop ${case_cost_cap:.2f}."
-            )
+            print(f"\nSTOP: {selected_case} cost ${cost:.4f}, above the per-case spike stop ${case_cost_cap:.2f}.")
             break
     print("\nSUMMARY:")
     for selected_case, status, cost, tokens in results:

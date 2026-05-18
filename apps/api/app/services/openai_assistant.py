@@ -80,6 +80,15 @@ RESPONSE_SPACE_REQUEST_TERMS = (
     "line count",
     "layout space",
 )
+ASSISTANT_HELP_REQUEST_TERMS = (
+    "what can this assistant do",
+    "what can you do",
+    "how do i use the assistant",
+    "how do i use this assistant",
+    "assistant help",
+    "help using the assistant",
+    "what are your tools",
+)
 FORMATTING_REQUEST_TERMS = (
     "format",
     "formatting",
@@ -3062,6 +3071,22 @@ def direct_layout_check_response(model: str) -> dict[str, Any]:
     }
 
 
+def direct_assistant_help_response(model: str) -> dict[str, Any]:
+    return {
+        "configured": True,
+        "model": model,
+        "message": (
+            "I can help edit the current Mauth document: create or convert questions, build native diagrams, "
+            "write worked solutions, adjust answer space and formatting, check layout, and work with project files. "
+            "For the best result, name the question number and attach or paste the source when converting an exam item."
+        ),
+        "responseId": None,
+        "toolCalls": [],
+        "usage": zero_token_usage_summary(model, source="native Mauth assistant help; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def direct_clarification_response(model: str, question: str) -> dict[str, Any]:
     return {
         "configured": True,
@@ -3078,6 +3103,13 @@ def should_use_direct_layout_check(request: AssistantChatRequest) -> bool:
     if request.previousResponseId or request.toolOutputs or request.attachments:
         return False
     return asks_for_layout_check_text(current_request_text(request.messages))
+
+
+def should_use_direct_assistant_help(request: AssistantChatRequest) -> bool:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return False
+    text = current_request_text(request.messages)
+    return any(term in text for term in ASSISTANT_HELP_REQUEST_TERMS)
 
 
 def direct_clarification_question(request: AssistantChatRequest) -> str | None:
@@ -3106,6 +3138,9 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
 
     if should_use_direct_layout_check(request):
         return direct_layout_check_response(model)
+
+    if should_use_direct_assistant_help(request):
+        return direct_assistant_help_response(model)
 
     clarification_question = direct_clarification_question(request)
     if clarification_question:
