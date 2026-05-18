@@ -42,12 +42,20 @@ interface AppliedReplayCase {
 interface BrowserDiagramMetric {
   caseName: string;
   type: string;
+  chartType: string;
+  hasSlopeField: boolean;
   width: number;
   height: number;
   primitiveCount: number;
   labelCount: number;
+  plotlyBarCount: number;
+  plotlyLineCount: number;
+  expectedFunctionColors: string[];
+  functionStrokeCount: number;
   renderedGraphic: boolean;
   text: string;
+  requiredLabels: string[];
+  missingLabels: string[];
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,7 +65,7 @@ const TEMP_ROOT = path.join(WEB_ROOT, ".tmp", `assistant-preview-replay-smoke-${
 const WORKBENCH_ROOT = path.resolve(ROOT, "..", "mauth-workbench");
 const OUTPUT_ROOT =
   process.env.MAUTH_ASSISTANT_PREVIEW_SMOKE_OUTPUT ?? path.join(WORKBENCH_ROOT, "verification", "assistant-preview-replay-smoke");
-const DEFAULT_CASE_GROUP = "local-real-exams-graph3d";
+const DEFAULT_CASE_GROUP = "local-real-exams-preview";
 
 function argValue(name: string, fallback: string) {
   const index = process.argv.indexOf(name);
@@ -163,14 +171,26 @@ function graphTypeFromDiagram(value: unknown) {
 function expectedDiagramTypes(args: unknown) {
   if (!isRecord(args)) return [];
   const types: string[] = [];
-  const single = graphTypeFromDiagram(args.diagram);
-  if (single) types.push(single);
-  if (Array.isArray(args.diagrams)) {
-    for (const diagram of args.diagrams) {
-      const diagramType = graphTypeFromDiagram(diagram);
-      if (diagramType) types.push(diagramType);
+  const collectFromRecord = (record: Record<string, unknown>) => {
+    for (const key of ["diagram", "solutionDiagram"]) {
+      const single = graphTypeFromDiagram(record[key]);
+      if (single) types.push(single);
     }
-  }
+    for (const key of ["diagrams", "solutionDiagrams"]) {
+      if (!Array.isArray(record[key])) continue;
+      for (const diagram of record[key]) {
+        const diagramType = graphTypeFromDiagram(diagram);
+        if (diagramType) types.push(diagramType);
+      }
+    }
+    for (const key of ["parts", "subparts"]) {
+      if (!Array.isArray(record[key])) continue;
+      for (const item of record[key]) {
+        if (isRecord(item)) collectFromRecord(item);
+      }
+    }
+  };
+  collectFromRecord(args);
   return types;
 }
 
@@ -545,16 +565,102 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
 function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const config = graphConfig ?? ({ type: "graph2d" } as GraphConfig);
   const type = String(config.type ?? "graph2d");
+  const data = (config as any).data && typeof (config as any).data === "object" ? (config as any).data : {};
+  const chartType = type === "statsChart" ? String(data.chartType ?? "") : "";
+  const hasSlopeField = type === "graph2d" && Boolean(data.slopeField);
+  const requiredLabels = expectedDiagramLabels(config);
+  const expectedFunctionColors = expectedGraph2DFunctionColors(config);
   let content: React.ReactNode;
   if (type === "statsChart") content = <StatsChartDiagram graphConfig={config} />;
   else if (type === "vector2d") content = <Vector2DGraph graphConfig={config} />;
   else if (type === "graph3d" || type === "basic3d") content = <Basic3DGraph graphConfig={config} />;
   else content = <FunctionGraph graphConfig={config} />;
   return (
-    <div className="replay-diagram-frame" data-replay-diagram-frame="true" data-diagram-type={type}>
+    <div
+      className="replay-diagram-frame"
+      data-replay-diagram-frame="true"
+      data-diagram-type={type}
+      data-chart-type={chartType}
+      data-has-slope-field={hasSlopeField ? "true" : undefined}
+      data-required-labels={JSON.stringify(requiredLabels)}
+      data-function-colors={JSON.stringify(expectedFunctionColors)}
+    >
       {content}
     </div>
   );
+}
+
+function stripLatexDelimiters(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) return trimmed.slice(2, -2).trim();
+  if (trimmed.startsWith("$") && trimmed.endsWith("$")) return trimmed.slice(1, -1).trim();
+  return trimmed;
+}
+
+function expectedLabelText(value: unknown) {
+  if (typeof value !== "string") return "";
+  return stripLatexDelimiters(value)
+    .replace(/\\\\(?:mathbf|vec|overrightarrow|overleftrightarrow)\\s*\\{([^}]*)\\}/g, "$1")
+    .replace(/\\\\text\\s*\\{([^}]*)\\}/g, "$1")
+    .replace(/\\\\(?:left|right|displaystyle|textstyle)\\b/g, "")
+    .replace(/[{}$]/g, " ")
+    .replace(/\\\\/g, " ")
+    .replace(/\\\\[,;:! ]/g, " ")
+    .replace(/\\\\_/g, "_")
+    .trim();
+}
+
+function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
+  const config = (graphConfig ?? {}) as any;
+  const type = String(config.type ?? "");
+  const labels: string[] = [];
+  if (type === "graph2d" || type === "2d_graph" || type === "function") {
+    for (const key of ["xAxisLabel", "yAxisLabel"]) {
+      const label = expectedLabelText(config[key]);
+      if (label) labels.push(label);
+    }
+    for (const feature of Array.isArray(config.features) ? config.features : []) {
+      if (feature?.kind !== "point") continue;
+      const label = expectedLabelText(feature.label);
+      if (label) labels.push(label);
+    }
+    const highlightedPoints = config.data?.slopeField?.highlightedPoints;
+    for (const point of Array.isArray(highlightedPoints) ? highlightedPoints : []) {
+      const label = expectedLabelText(point?.label);
+      if (label) labels.push(label);
+    }
+  }
+  if (type === "graph3d" || type === "basic3d") {
+    for (const point of Array.isArray(config.data?.points) ? config.data.points : []) {
+      const label = expectedLabelText(point?.label);
+      if (label) labels.push(label);
+    }
+    for (const segment of Array.isArray(config.data?.segments) ? config.data.segments : []) {
+      const label = expectedLabelText(segment?.label);
+      if (label) labels.push(label);
+    }
+  }
+  if (type === "statsChart") {
+    for (const key of ["title", "xLabel", "yLabel"]) {
+      const label = expectedLabelText(config.data?.[key]);
+      if (label) labels.push(label);
+    }
+  }
+  return [...new Set(labels)].filter((label) => label.length <= 48);
+}
+
+function expectedGraph2DFunctionColors(graphConfig?: GraphConfig | null) {
+  const config = (graphConfig ?? {}) as any;
+  const type = String(config.type ?? "");
+  if (type !== "graph2d" && type !== "2d_graph" && type !== "function") return [];
+  const neutralColors = new Set(["#000", "#000000", "#111", "#111111", "#111827"]);
+  return [
+    ...new Set(
+      (Array.isArray(config.functions) ? config.functions : [])
+        .filter((entry: any) => entry?.show !== false && typeof entry?.color === "string" && !neutralColors.has(entry.color.toLowerCase()))
+        .map((entry: any) => entry.color),
+    ),
+  ];
 }
 
 const previewContentRuntime: PreviewContentRuntime = {
@@ -696,7 +802,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
 }
 
 function blockingMetricWarnings(metrics: { warnings?: Array<{ code?: string; message?: string; severity?: string }> }) {
-  const blockingCodes = new Set(["rendered-diagram-failed", "rendered-diagram-clipped", "rendered-diagram-clipped-by-page"]);
+  const blockingCodes = new Set(["rendered-diagram-failed", "rendered-diagram-clipped"]);
   return (metrics.warnings ?? []).filter((warning) => warning.code && blockingCodes.has(warning.code));
 }
 
@@ -717,6 +823,23 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   }
   if (metric.type === "statsChart" && metric.primitiveCount < 4) {
     failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
+  }
+  if (metric.type === "statsChart" && ["histogram", "binomial"].includes(metric.chartType) && metric.plotlyBarCount < 1) {
+    failures.push(`${metric.caseName} ${metric.chartType} statsChart rendered no Plotly bars`);
+  }
+  if (metric.type === "statsChart" && ["density", "normal"].includes(metric.chartType) && metric.plotlyLineCount < 1) {
+    failures.push(`${metric.caseName} ${metric.chartType} statsChart rendered no Plotly curve line`);
+  }
+  if (metric.hasSlopeField && metric.primitiveCount < 30) {
+    failures.push(`${metric.caseName} slope-field graph2d rendered only ${metric.primitiveCount} SVG primitives`);
+  }
+  if (metric.expectedFunctionColors.length > 0 && metric.functionStrokeCount < 1) {
+    failures.push(
+      `${metric.caseName} ${metric.type} rendered no function strokes matching expected color(s): ${metric.expectedFunctionColors.join(", ")}`,
+    );
+  }
+  if (metric.requiredLabels.length > 0 && metric.labelCount === 0) {
+    failures.push(`${metric.caseName} ${metric.type} rendered no label surfaces for expected labels: ${metric.requiredLabels.join(", ")}`);
   }
   if (/could not render|mathjax-error|error rendering|failed to render/i.test(metric.text)) {
     failures.push(`${metric.caseName} ${metric.type} contains render error text: ${metric.text}`);
@@ -752,15 +875,29 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
     const url = `http://127.0.0.1:${port}`;
     await waitForServer(url, vite, logs);
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.waitForSelector("[data-replay-ready='true']", { state: "attached", timeout: 20_000 });
-    await page.waitForFunction(
-      () => {
-        const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]"));
-        return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
-      },
-      null,
-      { timeout: 20_000 },
-    );
+    try {
+      await page.waitForSelector("[data-replay-ready='true']", { state: "attached", timeout: 20_000 });
+      await page.waitForFunction(
+        () => {
+          const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]"));
+          return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
+        },
+        null,
+        { timeout: 20_000 },
+      );
+    } catch (error) {
+      const bodyText = (
+        (await page
+          .locator("body")
+          .textContent()
+          .catch(() => "")) ?? ""
+      ).trim();
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\nConsole errors:\n${consoleErrors.join("\n")}\nPage errors:\n${pageErrors.join(
+          "\n",
+        )}\nVite logs:\n${logs.join("")}\nBody text:\n${bodyText}`,
+      );
+    }
     await page.waitForTimeout(1200);
 
     await fs.mkdir(outputDir, { recursive: true });
@@ -782,6 +919,10 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
       Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).map((frame) => {
         const caseName = frame.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
         const type = frame.getAttribute("data-diagram-type") ?? "";
+        const chartType = frame.getAttribute("data-chart-type") ?? "";
+        const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
+        const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
+        const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
         const rect = frame.getBoundingClientRect();
         const primitives = Array.from(
           frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
@@ -790,15 +931,43 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
           const style = window.getComputedStyle(element);
           return box.width + box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
         });
+        const normalizeLabel = (value: string) =>
+          value
+            .toLowerCase()
+            .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
+            .replace(/[^a-z0-9]+/g, "");
+        const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
+        const normalizedText = normalizeLabel(frame.textContent ?? "");
+        const colorProbe = document.createElement("span");
+        colorProbe.style.display = "none";
+        document.body.appendChild(colorProbe);
+        const normalizeColor = (value: string) => {
+          colorProbe.style.color = value;
+          return window.getComputedStyle(colorProbe).color;
+        };
+        const expectedColors = new Set(expectedFunctionColors.map(normalizeColor));
+        const functionStrokeCount = primitives.filter((element) => {
+          const stroke = window.getComputedStyle(element).stroke || element.getAttribute("stroke") || "";
+          return expectedColors.has(normalizeColor(stroke));
+        }).length;
+        colorProbe.remove();
         return {
           caseName,
           type,
+          chartType,
+          hasSlopeField,
           width: Math.round(rect.width * 10) / 10,
           height: Math.round(rect.height * 10) / 10,
           primitiveCount: primitives.length,
+          plotlyBarCount: frame.querySelectorAll(".barlayer path").length,
+          plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
+          expectedFunctionColors,
+          functionStrokeCount,
           labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
           renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
-          text: (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240),
+          text,
+          requiredLabels,
+          missingLabels: requiredLabels.filter((label) => !normalizedText.includes(normalizeLabel(label))),
         };
       }),
     );

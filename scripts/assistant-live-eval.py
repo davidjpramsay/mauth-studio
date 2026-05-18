@@ -4344,6 +4344,7 @@ def local_real_specialist_slope_field_call() -> dict[str, Any]:
                     "text": "Draw the solution curve on the slope-field diagram.",
                     "marks": 2,
                     "answerSurface": "diagram",
+                    "diagram": {"graphConfig": slope_graph},
                     "solutionDiagram": {"graphConfig": slope_graph},
                 },
             ],
@@ -5049,6 +5050,15 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
     "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism"],
+    "local-real-exams-preview": [
+        "real-methods-ev-histogram",
+        "real-specialist-stats",
+        "real-specialist-slope-field",
+        "real-specialist-argand",
+        "real-specialist-spherical-cap",
+        "real-specialist-prism",
+        "real-specialist-implicit",
+    ],
 }
 
 

@@ -80,8 +80,41 @@ function normalizeUnaryMinusBeforePowers(expression: string) {
   return normalized;
 }
 
+function normalizeImplicitXYMultiplication(expression: string) {
+  let normalized = "";
+
+  const nonWhitespaceAfter = (index: number) => {
+    let cursor = index + 1;
+    while (cursor < expression.length && /\s/.test(expression[cursor])) cursor += 1;
+    return cursor < expression.length ? cursor : -1;
+  };
+  const isIdentifierLetter = (value: string | undefined) => Boolean(value && /[A-Za-z_.]/.test(value));
+  const isXYVariable = (index: number) => {
+    const value = expression[index]?.toLowerCase();
+    if (value !== "x" && value !== "y") return false;
+    const previous = expression[index - 1];
+    const next = expression[index + 1];
+    if (isIdentifierLetter(previous) && previous.toLowerCase() !== "x" && previous.toLowerCase() !== "y") return false;
+    if (isIdentifierLetter(next) && next.toLowerCase() !== "x" && next.toLowerCase() !== "y") return false;
+    return true;
+  };
+
+  for (let index = 0; index < expression.length; index += 1) {
+    normalized += expression[index];
+    const nextIndex = nonWhitespaceAfter(index);
+    if (nextIndex === -1) continue;
+    const current = expression[index];
+    const next = expression[nextIndex];
+    const leftFactor = /\d/.test(current) || current === ")" || isXYVariable(index);
+    const rightFactor = next === "(" || isXYVariable(nextIndex) || (/\d/.test(next) && (current === ")" || isXYVariable(index)));
+    if (leftFactor && rightFactor) normalized += "*";
+  }
+
+  return normalized;
+}
+
 function toJavaScriptExpression(expression: string) {
-  const jsExpression = expression
+  const jsExpression = normalizeImplicitXYMultiplication(expression)
     .replace(/\*\*/g, "^")
     .replace(/\^/g, "**")
     .replace(/\bpi\b/gi, "Math.PI")
