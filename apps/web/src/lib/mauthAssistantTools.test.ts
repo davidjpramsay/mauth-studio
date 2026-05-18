@@ -296,6 +296,16 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   ).warnings;
   assert(coneWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing"));
 
+  const capWarnings = inspectMauthDiagram(
+    {
+      type: "graph3d",
+      data: { solids: [{ kind: "sphere", center: [0, 0, 0], radius: 10 }] },
+      metadata: { view3d: { az: 1, el: 0.3, bank: 0 } },
+    },
+    "A solid spherical cap with depth h is part of a solid sphere with radius 10 cm.",
+  ).warnings;
+  assert(capWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing"));
+
   const scalarWarnings = inspectMauthDiagram(
     {
       type: "geometricConstruction",
@@ -334,6 +344,9 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   );
   assert(
     coneWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
+  );
+  assert(
+    capWarnings.some((warning) => warning.code === "graph3d-solid-kind-missing" && isAssistantDiagramInspectionWarningBlocking(warning)),
   );
   assert(
     slopeFieldWarnings.some(
@@ -1336,6 +1349,32 @@ test("high-level question authoring rejects incomplete compact vector diagrams b
   assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.vectors[0].id"));
   assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.vectors[1].length"));
   assert(data.validationIssues?.some((issue) => issue.path === "arguments.diagram.vectorRayDiagram.angleMarkers[0].to"));
+});
+
+test("high-level question authoring rejects duplicate diagram and diagrams payloads", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 1,
+      questionText: "Use the diagram to answer the question.",
+      diagram: {
+        graphConfig: { type: "graph2d", functions: [{ expression: "x" }] },
+      },
+      diagrams: [
+        {
+          graphConfig: { type: "graph2d", functions: [{ expression: "x" }] },
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.document, undefined);
+  assert(
+    data.validationIssues?.some((issue) => issue.path === "arguments.diagrams" && issue.message.includes("use either diagram or diagrams")),
+  );
 });
 
 test("high-level question authoring can pair diagram answer surfaces without separate working space", () => {
@@ -2861,6 +2900,7 @@ test("accepts graph3d faces and solid primitives", () => {
                     { kind: "cone", baseCenter: "O", apex: "T", radius: 2, fillOpacity: 0.12 },
                     { kind: "sphere", center: [1, 1, 1], radius: 1.5, strokeColor: "#1d4ed8" },
                     { kind: "cylinder", baseCenter: [4, 0, 0], topCenter: [4, 0, 3], radius: 1 },
+                    { kind: "sphereCap", center: [8, 0, 0], radius: 2, height: 0.8, axis: [1, 0, 0] },
                   ],
                 },
                 metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
@@ -3087,6 +3127,7 @@ test("rejects malformed graph3d faces and solid primitives", () => {
                   solids: [
                     { kind: "cone", baseCenter: "A", radius: -2 },
                     { kind: "torus", center: [0, 0, 0], radius: 2 },
+                    { kind: "sphereCap", center: [0, 0, 0], radius: 2 },
                   ],
                 },
                 metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
@@ -3105,6 +3146,7 @@ test("rejects malformed graph3d faces and solid primitives", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[0].radius"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[0].apex"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[1].kind"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[2].height"));
 });
 
 test("rejects unsupported Penrose Substance predicates before applying diagrams", () => {

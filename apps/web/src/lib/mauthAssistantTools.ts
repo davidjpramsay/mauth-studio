@@ -2579,6 +2579,14 @@ function diagramBlocksFromArgs(
   const diagramsKey = options.diagramsKey ?? "diagrams";
   const idSuffix = options.idSuffix ?? "diagram";
   const singleDiagram = args[diagramKey];
+  if (hasOwn(args, diagramKey) && hasOwn(args, diagramsKey) && Array.isArray(args[diagramsKey])) {
+    issues.push({
+      path: `arguments.${diagramsKey}`,
+      message: `use either ${diagramKey} or ${diagramsKey}, not both`,
+      expected: `omit ${diagramKey} when sending ${diagramsKey}`,
+    });
+    return [];
+  }
   const rawDiagrams = Array.isArray(args[diagramsKey]) ? args[diagramsKey] : singleDiagram ? [singleDiagram] : [];
   const blocks: ContentBlock[] = [];
   const defaultDiagramAlign =

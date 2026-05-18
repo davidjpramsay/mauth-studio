@@ -111,8 +111,8 @@ export interface Graph3DFaceData {
 }
 
 export interface Graph3DSolidData {
-  kind?: "circle" | "cone" | "cylinder" | "sphere" | string;
-  type?: "circle" | "cone" | "cylinder" | "sphere" | string;
+  kind?: "circle" | "cone" | "cylinder" | "sphere" | "sphereCap" | "sphericalCap" | string;
+  type?: "circle" | "cone" | "cylinder" | "sphere" | "sphereCap" | "sphericalCap" | string;
   center?: string | [number, number, number] | Graph3DPointData;
   baseCenter?: string | [number, number, number] | Graph3DPointData;
   topCenter?: string | [number, number, number] | Graph3DPointData;
@@ -121,6 +121,7 @@ export interface Graph3DSolidData {
   axis?: [number, number, number];
   radius?: number;
   height?: number;
+  depth?: number;
   color?: string;
   fillColor?: string;
   fillOpacity?: number;

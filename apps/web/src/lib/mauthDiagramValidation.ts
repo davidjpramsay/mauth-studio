@@ -88,7 +88,7 @@ const GRAPH3D_VIEW_LIMITS = {
   el: Math.PI,
   bank: Math.PI * 2,
 } as const;
-const GRAPH3D_SOLID_KINDS = new Set(["circle", "cone", "cylinder", "sphere"]);
+const GRAPH3D_SOLID_KINDS = new Set(["circle", "cone", "cylinder", "sphere", "sphereCap", "spherecap", "sphericalCap", "sphericalcap"]);
 const VECTOR_2D_LABEL_STYLES = new Set(["boldLower", "arrow", "custom"]);
 const PENROSE_RELATIONSHIP_TYPES = new Set([
   "triangle",
@@ -901,8 +901,14 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
           return;
         }
         const kind = typeof entry.kind === "string" ? entry.kind : typeof entry.type === "string" ? entry.type : "";
+        const normalizedKind = kind.toLowerCase();
         if (!GRAPH3D_SOLID_KINDS.has(kind)) {
-          addIssue(issues, `${entryPath}.kind`, "must be one of: circle, cone, cylinder, sphere", "circle | cone | cylinder | sphere");
+          addIssue(
+            issues,
+            `${entryPath}.kind`,
+            "must be one of: circle, cone, cylinder, sphere, sphereCap",
+            "circle | cone | cylinder | sphere | sphereCap",
+          );
         }
         optionalString(entry, "type", entryPath, issues);
         optionalString(entry, "color", entryPath, issues);
@@ -910,6 +916,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         optionalString(entry, "strokeColor", entryPath, issues);
         optionalNumber(entry, "radius", entryPath, issues, { positive: true });
         optionalNumber(entry, "height", entryPath, issues, { positive: true });
+        optionalNumber(entry, "depth", entryPath, issues, { positive: true });
         optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
         optionalNumber(entry, "opacity", entryPath, issues, { min: 0, max: 1 });
         optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
@@ -919,17 +926,27 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         if (hasOwn(entry, "normal")) numberTriple(entry.normal, `${entryPath}.normal`, issues);
         if (hasOwn(entry, "axis")) numberTriple(entry.axis, `${entryPath}.axis`, issues);
         if (!hasOwn(entry, "radius")) addIssue(issues, `${entryPath}.radius`, "is required", "positive number");
-        if (kind === "sphere" || kind === "circle") {
+        if (
+          normalizedKind === "sphere" ||
+          normalizedKind === "circle" ||
+          normalizedKind === "spherecap" ||
+          normalizedKind === "sphericalcap"
+        ) {
           requiredGraph3dPointReference(entry, "center", entryPath, pointNames, issues);
         }
-        if (kind === "cone") {
+        if (normalizedKind === "spherecap" || normalizedKind === "sphericalcap") {
+          if (!hasOwn(entry, "height") && !hasOwn(entry, "depth")) {
+            addIssue(issues, `${entryPath}.height`, "is required for a graph3d sphereCap", "positive cap height/depth");
+          }
+        }
+        if (normalizedKind === "cone") {
           requiredGraph3dPointReference(entry, "baseCenter", entryPath, pointNames, issues);
           if (!hasOwn(entry, "apex") && !hasOwn(entry, "height")) {
             addIssue(issues, `${entryPath}.apex`, "is required when height is omitted", "point id or [x,y,z]");
           }
           if (hasOwn(entry, "apex")) graph3dPointReference(entry.apex, `${entryPath}.apex`, pointNames, issues);
         }
-        if (kind === "cylinder") {
+        if (normalizedKind === "cylinder") {
           requiredGraph3dPointReference(entry, "baseCenter", entryPath, pointNames, issues);
           if (!hasOwn(entry, "topCenter") && !hasOwn(entry, "height")) {
             addIssue(issues, `${entryPath}.topCenter`, "is required when height is omitted", "point id or [x,y,z]");

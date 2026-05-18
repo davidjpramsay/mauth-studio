@@ -452,6 +452,26 @@ def sample_specialist_argand_screenshot_with_key() -> list[AssistantAttachment]:
     ]
 
 
+def sample_specialist_spherical_cap_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q13-spherical-cap.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q13_spherical_cap.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q13-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=297,
+            end_line=342,
+        ),
+    ]
+
+
 def sample_specialist_prism_screenshot_with_key() -> list[AssistantAttachment]:
     return [
         attachment_png_from_path(
@@ -1188,6 +1208,8 @@ def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict
         issues.append("questionText should use $$...$$ display maths, not \\[...\\]")
     if "\\[" in solution_text or "\\]" in solution_text:
         issues.append("solutionText should use $$...$$ display maths, not \\[...\\]")
+    if "diagram" in args and isinstance(args.get("diagrams"), list):
+        issues.append("source conversion should use either diagram or diagrams, not both")
     return issues, args
 
 
@@ -1361,6 +1383,8 @@ def compact_math_text(text: str) -> str:
         "\\cdot": ".",
         "\\approx": "=",
         "\\pi": "pi",
+        "\\left": "",
+        "\\right": "",
         "\\operatorname": "",
         "operatorname": "",
         "\\mathrm": "",
@@ -2632,6 +2656,175 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def graph3d_solid_entries(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    solids: list[dict[str, Any]] = []
+    for config in configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        for key in ("solids", "surfaces"):
+            values = data.get(key)
+            if not isinstance(values, list):
+                continue
+            solids.extend(value for value in values if isinstance(value, dict))
+    return solids
+
+
+def graph3d_solid_kind(value: dict[str, Any]) -> str:
+    return re.sub(r"[^a-z]", "", str(value.get("kind") or value.get("type") or "").lower())
+
+
+def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    compact_serialized = compact_math_text(serialized)
+    for term in ("spherical cap", "depth", "solid sphere"):
+        if term not in serialized:
+            issues.append(f"spherical-cap source conversion should preserve {term!r}")
+    if "radius" not in serialized or "10" not in serialized:
+        issues.append("spherical-cap source conversion should preserve radius 10")
+    if "xaxis" not in compact_serialized:
+        issues.append("spherical-cap source conversion should preserve the x axis of revolution")
+    for term in ("h", "10", "20"):
+        if term not in serialized:
+            issues.append(f"spherical-cap source conversion should preserve visible label/value {term!r}")
+    if "x^2+y^2=20x" not in compact_serialized and "x2+y2=20x" not in compact_serialized:
+        issues.append("spherical-cap source conversion should preserve x^2 + y^2 = 20x")
+
+    graph_types = graph_config_types(args)
+    if "graph2d" not in graph_types:
+        issues.append(f"spherical-cap cross-section should use graph2d, got {sorted(graph_types)!r}")
+    if "graph3d" not in graph_types:
+        issues.append(f"spherical-cap solid diagram should use graph3d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "setDiagram", "network", "vector2d")):
+        issues.append("spherical-cap source should not use statsChart, setDiagram, network, or vector2d")
+
+    graph_configs = collect_diagram_graph_configs(args)
+    graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
+    graph2d_serialized_raw = json.dumps(graph2d_configs, ensure_ascii=False).lower()
+    graph2d_serialized = compact_math_text(graph2d_serialized_raw)
+    if graph2d_configs and not any(
+        term in graph2d_serialized
+        for term in (
+            "x^2+y^2=20*x",
+            "x^2+y^2=20x",
+            "x2+y2=20x",
+            "20*x-x^2",
+            "20x-x2",
+        )
+    ):
+        issues.append("spherical-cap graph2d cross-section should encode x^2 + y^2 = 20x or y^2 = 20x - x^2")
+    if graph2d_configs and not any(
+        term in graph2d_serialized_raw for term in ("region_curve_axis", "region_between_curves", "shade")
+    ):
+        issues.append("spherical-cap graph2d cross-section should encode the shaded generating region")
+    for term in ("h", "10", "20"):
+        if graph2d_configs and term not in graph2d_serialized_raw:
+            issues.append(f"spherical-cap graph2d cross-section should preserve diagram label/value {term!r}")
+
+    graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
+    graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
+    solids = graph3d_solid_entries(graph3d_configs)
+    solid_kinds = {graph3d_solid_kind(solid) for solid in solids}
+    if "spherecap" not in solid_kinds and "sphericalcap" not in solid_kinds:
+        issues.append("spherical-cap graph3d data should use a sphereCap solid, not a full sphere placeholder")
+    if "sphere" in solid_kinds and "spherecap" not in solid_kinds and "sphericalcap" not in solid_kinds:
+        issues.append("spherical-cap graph3d data should not represent the cap as only a full sphere")
+    cap_solids = [solid for solid in solids if graph3d_solid_kind(solid) in {"spherecap", "sphericalcap"}]
+    for index, solid in enumerate(cap_solids):
+        radius = solid.get("radius")
+        if (
+            isinstance(radius, bool)
+            or not isinstance(radius, (int, float))
+            or not approximately(radius, 10, tolerance=0.25)
+        ):
+            issues.append(f"spherical-cap graph3d sphereCap[{index}].radius should preserve source radius 10")
+        height = solid.get("height", solid.get("depth"))
+        if isinstance(height, bool) or not isinstance(height, (int, float)) or height <= 0:
+            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include a positive height/depth")
+        if "axis" not in solid and "normal" not in solid:
+            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include the cap axis/normal")
+        if "center" not in solid:
+            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include the sphere center")
+    for config in graph3d_configs:
+        data = config.get("data")
+        if isinstance(data, dict):
+            for segment in data.get("segments") if isinstance(data.get("segments"), list) else []:
+                if isinstance(segment, dict) and "style" in segment:
+                    issues.append("spherical-cap graph3d segments should use strokeStyle/dashed, not style")
+        metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
+        for key in ("axisLabels", "showAxes", "showGrid"):
+            if key in metadata:
+                issues.append(f"spherical-cap graph3d metadata should not include unsupported {key}")
+        view3d = metadata.get("view3d") if isinstance(metadata.get("view3d"), dict) else {}
+        if not view3d:
+            issues.append("spherical-cap graph3d data should preserve metadata.view3d")
+        else:
+            if "camera" in view3d:
+                issues.append("spherical-cap graph3d view should use az/el/bank, not camera.eye")
+            for key in ("az", "el", "bank"):
+                value = view3d.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    issues.append(f"spherical-cap graph3d view3d.{key} should be numeric")
+    if "h" not in graph3d_serialized:
+        issues.append("spherical-cap graph3d diagram should preserve the visible depth label h")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 2:
+        issues.append("spherical-cap source should become exactly two structured parts")
+        return issues
+    expected_marks = [1, 4]
+    expected_terms = (("show", "circle", "20x"), ("volume", "spherical cap", "h"))
+    if args.get("marks") not in (0, None) or args.get("questionMarks") not in (0, None):
+        issues.append(
+            "spherical-cap multipart source should keep top-level marks/questionMarks at 0 and preserve marks on parts"
+        )
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        part_compact = compact_math_text(part_text)
+        for term in expected_terms[index]:
+            if term not in part_text and term not in part_compact:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    expected_solution_terms = (
+        ("(x-10)^2",),
+        ("10^2", "100"),
+        ("x^2+y^2=20x", "x2+y2=20x"),
+        ("y^2=20x-x^2", "y2=20x-x2"),
+        ("∫_0^h", "int_0^h", "from0toh"),
+        ("π(20x-x^2)", "pi(20x-x^2)", "pi(20*x-x^2)"),
+        ("10h^2",),
+        ("h^3/3",),
+        (
+            "πh^2(10-h/3)",
+            "pih^2(10-h/3)",
+            "pih^2/3(30-h)",
+            "pih^2(30-h)/3",
+            "pi(10h^2-h^3/3)",
+        ),
+    )
+    for term_options in expected_solution_terms:
+        if not any(compact_math_text(term) in solution_serialized for term in term_options):
+            issues.append(f"spherical-cap solution should preserve one of {term_options!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 5:
+        issues.append("spherical-cap hidden [[marks:n]] total should be exactly 5")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("spherical-cap solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -3444,6 +3637,15 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_specialist_argand_screenshot_with_key,
         "assert": assert_real_specialist_argand_call,
     },
+    "real-specialist-spherical-cap": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshot and official marking-key excerpt. "
+            "Preserve the spherical-cap cross-section and 3D cap diagrams, structured parts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_spherical_cap_screenshot_with_key,
+        "assert": assert_real_specialist_spherical_cap_call,
+    },
     "real-specialist-prism": {
         "prompt": (
             "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
@@ -3542,9 +3744,11 @@ EVAL_GROUPS: dict[str, list[str]] = {
     "real-exams-extended": [
         "real-specialist-slope-field",
         "real-specialist-argand",
+        "real-specialist-spherical-cap",
         "real-specialist-prism",
         "real-specialist-implicit",
     ],
+    "real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism"],
     "real-exams": [
         "real-methods-earthquake",
         "real-methods-ev-histogram",
@@ -3553,6 +3757,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-stats",
         "real-specialist-slope-field",
         "real-specialist-argand",
+        "real-specialist-spherical-cap",
         "real-specialist-prism",
         "real-specialist-implicit",
     ],
@@ -4275,6 +4480,163 @@ def local_real_specialist_argand_bad_shifted_arg_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_spherical_cap_call() -> dict[str, Any]:
+    cross_section = {
+        "type": "graph2d",
+        "xMin": -1,
+        "xMax": 21,
+        "yMin": -11,
+        "yMax": 11,
+        "widthPx": 560,
+        "heightPx": 360,
+        "equalScale": True,
+        "showGrid": False,
+        "showAxes": True,
+        "showAxisLabels": True,
+        "showAxisNumbers": False,
+        "functions": [
+            {
+                "kind": "relation",
+                "expression": "x^2 + y^2 = 20*x",
+                "label": "$x^2+y^2=20x$",
+                "color": "#111827",
+                "strokeWidth": 1.6,
+            },
+            {
+                "kind": "expression",
+                "expression": "sqrt(20*x - x^2)",
+                "domainMin": 0,
+                "domainMax": 20,
+                "color": "#111827",
+                "strokeWidth": 0,
+                "show": False,
+            },
+        ],
+        "features": [
+            {
+                "kind": "region_curve_axis",
+                "functionIndex": 1,
+                "axis": "x",
+                "xMin": 0,
+                "xMax": 4,
+                "color": "#dbeafe",
+                "fillOpacity": 0.4,
+            },
+            {"kind": "line_segment", "x1": 4, "y1": 0, "x2": 4, "y2": 8, "strokeWidth": 1.4, "color": "#111827"},
+            {"kind": "label", "x": 4, "y": -1.25, "label": "$h$"},
+            {"kind": "label", "x": 10, "y": -1.25, "label": "$10$"},
+            {"kind": "label", "x": 20, "y": -1.25, "label": "$20$"},
+        ],
+    }
+    cap_solid = {
+        "type": "graph3d",
+        "widthPx": 420,
+        "heightPx": 340,
+        "metadata": {"view3d": {"az": 1.25, "el": 0.28, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "P", "label": "", "coords": [0, 0, 0], "show": False},
+                {"id": "H", "label": "", "coords": [4, 0, 0], "show": False},
+            ],
+            "segments": [{"from": "P", "to": "H", "label": "$h$", "strokeStyle": "dashed"}],
+            "solids": [
+                {
+                    "kind": "sphereCap",
+                    "center": [10, 0, 0],
+                    "radius": 10,
+                    "height": 4,
+                    "axis": [-1, 0, 0],
+                    "fillColor": "#dbeafe",
+                    "fillOpacity": 0.22,
+                    "strokeColor": "#111827",
+                }
+            ],
+            "xRange": [-1, 11],
+            "yRange": [-6, 6],
+            "zRange": [-6, 6],
+        },
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "A solid spherical cap with depth $h$ is part of a solid sphere with radius $10$ cm. "
+                "This cap can be generated by revolving the shaded region about the $x$ axis."
+            ),
+            "diagrams": [
+                {"diagramAlign": "left", "graphConfig": cross_section},
+                {"diagramAlign": "right", "graphConfig": cap_solid},
+            ],
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Show that the equation for the circle shown above is $x^2+y^2=20x$.",
+                    "marks": 1,
+                    "studentSpaceLines": 4,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The centre is $(10,0)$ with radius $10$, so "
+                        "$$(x-10)^2+(y-0)^2=10^2.$$ [[marks:1]]\n"
+                        "Expanding gives $x^2-20x+10^2+y^2=10^2$, hence $x^2+y^2=20x$."
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Develop an expression for the volume of the spherical cap in terms of $h$.",
+                    "marks": 4,
+                    "studentSpaceLines": 10,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "From $x^2+y^2=20x$, $y^2=20x-x^2$. [[marks:1]]\n"
+                        "$$V=\\int_0^h \\pi y^2\\,dx=\\int_0^h \\pi(20x-x^2)\\,dx.$$ [[marks:1]]\n"
+                        "$$V=\\pi\\left[10x^2-\\frac{x^3}{3}\\right]_0^h=\\pi\\left(10h^2-\\frac{h^3}{3}\\right).$$ [[marks:1]]\n"
+                        "$$V=\\pi h^2\\left(10-\\frac{h}{3}\\right).$$ [[marks:1]]"
+                    ),
+                },
+            ],
+        },
+    )
+
+
+def local_real_specialist_spherical_cap_full_sphere_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph3d = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    graph3d["data"]["solids"] = [{"kind": "sphere", "center": [10, 0, 0], "radius": 10}]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_spherical_cap_equivalent_solution_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    part_b = call["mauthArguments"]["parts"][1]
+    part_b["solutionText"] = (
+        "From $x^2+y^2=20x$, $y^2=20x-x^2$. [[marks:1]]\n"
+        "$$V=\\int_0^h \\pi y^2\\,dx=\\int_0^h \\pi(20x-x^2)\\,dx.$$ [[marks:1]]\n"
+        "$$V=\\pi\\left[10x^2-\\frac{x^3}{3}\\right]_0^h=\\pi\\left(10h^2-\\frac{h^3}{3}\\right).$$ [[marks:1]]\n"
+        "$$V=\\frac{\\pi h^2}{3}(30-h).$$ [[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_spherical_cap_duplicate_diagram_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    call["mauthArguments"]["diagram"] = call["mauthArguments"]["diagrams"][0]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_spherical_cap_missing_cross_section_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    call["mauthArguments"]["diagrams"] = [call["mauthArguments"]["diagrams"][1]]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -4605,6 +4967,36 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_argand_bad_shifted_arg_call,
         "expectedIssues": [
             "official Arg(z) bounds",
+        ],
+    },
+    "real-specialist-spherical-cap": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_call,
+    },
+    "real-specialist-spherical-cap-equivalent-solution": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_equivalent_solution_call,
+    },
+    "real-specialist-spherical-cap-duplicate-diagram": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_duplicate_diagram_call,
+        "expectedIssues": [
+            "either diagram or diagrams",
+        ],
+    },
+    "real-specialist-spherical-cap-full-sphere": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_full_sphere_call,
+        "expectedIssues": [
+            "sphereCap solid",
+            "not represent the cap as only a full sphere",
+        ],
+    },
+    "real-specialist-spherical-cap-missing-cross-section": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_missing_cross_section_call,
+        "expectedIssues": [
+            "cross-section should use graph2d",
         ],
     },
     "real-specialist-prism": {

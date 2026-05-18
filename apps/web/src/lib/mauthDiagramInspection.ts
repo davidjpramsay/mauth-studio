@@ -371,7 +371,7 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
   const solids = recordArray(Array.isArray(data.solids) ? data.solids : data.surfaces);
   const warnings: MauthDiagramInspectionWarning[] = [];
   const needsStructured3d =
-    /\brectangular prism\b|\bprism\b|\bpyramid\b|\bcone\b|\bcylinder\b|\bsphere\b|\b3d\b|\bthree-dimensional\b|\bcoordinate system\b|\bvertices\b|\bmain diagonal\b/i.test(
+    /\brectangular prism\b|\bprism\b|\bpyramid\b|\bcone\b|\bcylinder\b|\bsphere\b|\bspherical cap\b|\b3d\b|\bthree-dimensional\b|\bcoordinate system\b|\bvertices\b|\bmain diagonal\b/i.test(
       contextText,
     );
   if (needsStructured3d && points.length < 4 && solids.length === 0) {
@@ -398,6 +398,20 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
         code: "graph3d-solid-kind-missing",
         severity: "warning",
         message: `3D ${kind} source diagram should use a graph3d ${kind} solid or enough explicit geometry to show the shape.`,
+        path: "graphConfig.data.solids",
+      });
+    }
+  }
+  if (/\bspherical cap\b|\bsphere cap\b/i.test(contextText)) {
+    const hasCapSolid = solids.some((solid) => {
+      const kind = String(solid.kind ?? solid.type ?? "").toLowerCase();
+      return kind === "spherecap" || kind === "sphericalcap";
+    });
+    if (!hasCapSolid) {
+      warnings.push({
+        code: "graph3d-solid-kind-missing",
+        severity: "warning",
+        message: "3D spherical-cap source diagram should use a graph3d sphereCap solid, not a full sphere placeholder.",
         path: "graphConfig.data.solids",
       });
     }

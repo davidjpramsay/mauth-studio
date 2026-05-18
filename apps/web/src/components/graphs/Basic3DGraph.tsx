@@ -39,7 +39,7 @@ type Graph3DFaceEntry = {
   dashed?: boolean;
   show: boolean;
 };
-type Graph3DSolidKind = "circle" | "cone" | "cylinder" | "sphere";
+type Graph3DSolidKind = "circle" | "cone" | "cylinder" | "sphere" | "spherecap" | "sphericalcap";
 type Graph3DSolidEntry = {
   kind: Graph3DSolidKind;
   center?: Point3DCoords;
@@ -48,6 +48,7 @@ type Graph3DSolidEntry = {
   apex?: Point3DCoords;
   normal?: Point3DCoords;
   radius: number;
+  height?: number;
   fillColor?: string;
   fillOpacity: number;
   strokeColor?: string;
@@ -290,11 +291,12 @@ function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Ma
     const solid = asRecord(rawSolid);
     if (!solid) return [];
     const kind = stringValue(solid.kind, stringValue(solid.type)).toLowerCase();
-    if (kind !== "circle" && kind !== "cone" && kind !== "cylinder" && kind !== "sphere") return [];
+    if (kind !== "circle" && kind !== "cone" && kind !== "cylinder" && kind !== "sphere" && kind !== "spherecap" && kind !== "sphericalcap")
+      return [];
     const radius = positiveNumber(solid.radius, 0);
     if (!radius) return [];
     const normal = finiteTuple3(solid.normal) ?? finiteTuple3(solid.axis) ?? [0, 0, 1];
-    const height = Number(solid.height);
+    const height = Number(solid.height ?? solid.depth);
     const center = pointCoordsFromValue(solid.center, pointMap);
     const baseCenter = pointCoordsFromValue(solid.baseCenter, pointMap) ?? center;
     const topCenter =
@@ -304,6 +306,7 @@ function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Ma
       pointCoordsFromValue(solid.apex, pointMap) ??
       (baseCenter && Number.isFinite(height) ? vectorAdd(baseCenter, vectorScale(normalizeVector(normal), height)) : null);
     if ((kind === "sphere" || kind === "circle") && !center) return [];
+    if ((kind === "spherecap" || kind === "sphericalcap") && (!center || !Number.isFinite(height) || height <= 0)) return [];
     if (kind === "cone" && (!baseCenter || !apex)) return [];
     if (kind === "cylinder" && (!baseCenter || !topCenter)) return [];
     return [
@@ -315,6 +318,7 @@ function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Ma
         apex: apex ?? undefined,
         normal,
         radius,
+        height: Number.isFinite(height) && height > 0 ? height : undefined,
         fillColor: colorValue(solid.fillColor, colorValue(solid.color, "#93c5fd")),
         fillOpacity: clampedOpacity(solid.fillOpacity ?? solid.opacity, 0.16),
         strokeColor: colorValue(solid.strokeColor, colorValue(solid.color, "#1f2937")),
@@ -562,6 +566,71 @@ function renderSphere3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   renderCircleCurve3D(view, solid.center, [1, 0, 0], solid.radius, solidStrokeAttributes(solid));
 }
 
+function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+  if (!solid.center || !solid.height) return;
+  const height = Math.min(solid.radius * 2, Math.max(1e-6, solid.height));
+  const axis = solid.normal ?? [0, 0, 1];
+  const { u, v, w } = basisFromNormal(axis);
+  const baseZ = solid.radius - height;
+  const baseRadius = Math.sqrt(Math.max(0, solid.radius * solid.radius - baseZ * baseZ));
+  const baseCenter = vectorAdd(solid.center, vectorScale(w, baseZ));
+  const capPoint = (angle: number, t: number) => {
+    const z = baseZ + height * t;
+    const sectionRadius = Math.sqrt(Math.max(0, solid.radius * solid.radius - z * z));
+    return vectorAdd(
+      solid.center!,
+      vectorAdd(
+        vectorScale(w, z),
+        vectorAdd(vectorScale(u, sectionRadius * Math.cos(angle)), vectorScale(v, sectionRadius * Math.sin(angle))),
+      ),
+    );
+  };
+
+  try {
+    view.create(
+      "parametricsurface3d",
+      [
+        (angle: number, t: number) => capPoint(angle, t)[0],
+        (angle: number, t: number) => capPoint(angle, t)[1],
+        (angle: number, t: number) => capPoint(angle, t)[2],
+        [0, Math.PI * 2],
+        [0, 1],
+      ],
+      surfaceAttributes(solid),
+    );
+  } catch {
+    // The outline below still shows the cap depth and circular section.
+  }
+
+  try {
+    view.create(
+      "parametricsurface3d",
+      [
+        (angle: number, radial: number) => baseCenter[0] + radial * baseRadius * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
+        (angle: number, radial: number) => baseCenter[1] + radial * baseRadius * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
+        (angle: number, radial: number) => baseCenter[2] + radial * baseRadius * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
+        [0, Math.PI * 2],
+        [0, 1],
+      ],
+      {
+        ...surfaceAttributes(solid),
+        fillOpacity: Math.min(0.22, Math.max(0.06, solid.fillOpacity)),
+      },
+    );
+  } catch {
+    // The base circle below is the stable fallback for the flat cut face.
+  }
+
+  renderCircleCurve3D(view, baseCenter, w, baseRadius, solidStrokeAttributes(solid));
+  for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+    view.create(
+      "curve3d",
+      [(t: number) => capPoint(angle, t)[0], (t: number) => capPoint(angle, t)[1], (t: number) => capPoint(angle, t)[2], [0, 1]],
+      solidStrokeAttributes(solid),
+    );
+  }
+}
+
 function renderGraph3DSolid(view: Basic3DView, solid: Graph3DSolidEntry) {
   if (!solid.show) return;
   if (solid.kind === "circle" && solid.center) {
@@ -572,6 +641,8 @@ function renderGraph3DSolid(view: Basic3DView, solid: Graph3DSolidEntry) {
     renderCylinder3D(view, solid);
   } else if (solid.kind === "sphere") {
     renderSphere3D(view, solid);
+  } else if (solid.kind === "spherecap" || solid.kind === "sphericalcap") {
+    renderSphereCap3D(view, solid);
   }
 }
 
