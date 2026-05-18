@@ -2674,6 +2674,160 @@ def graph3d_solid_kind(value: dict[str, Any]) -> str:
     return re.sub(r"[^a-z]", "", str(value.get("kind") or value.get("type") or "").lower())
 
 
+def graph3d_face_entries(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    faces: list[dict[str, Any]] = []
+    for config in configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        values = data.get("faces")
+        if not isinstance(values, list):
+            continue
+        faces.extend(value for value in values if isinstance(value, dict))
+    return faces
+
+
+def graph3d_common_schema_issues(configs: list[dict[str, Any]], label: str) -> list[str]:
+    issues: list[str] = []
+    for config in configs:
+        data = config.get("data")
+        point_ids: set[str] = set()
+        if isinstance(data, dict):
+            points = data.get("points") if isinstance(data.get("points"), list) else data.get("vertices")
+            for point in points if isinstance(points, list) else []:
+                if not isinstance(point, dict):
+                    continue
+                point_id = graph3d_point_key(point.get("id") or point.get("name") or point.get("label"))
+                if point_id:
+                    point_ids.add(point_id)
+            for axis_point_id in ("xaxis", "yaxis", "zaxis"):
+                if axis_point_id in point_ids:
+                    issues.append(f"{label} graph3d data should not include axis helper point {axis_point_id}")
+            segments = data.get("segments") if isinstance(data.get("segments"), list) else data.get("edges")
+            for segment in segments if isinstance(segments, list) else []:
+                if not isinstance(segment, dict):
+                    continue
+                if "style" in segment:
+                    issues.append(f"{label} graph3d segments should use strokeStyle/dashed, not style")
+                segment_points = segment.get("points") if isinstance(segment.get("points"), list) else []
+                from_id = graph3d_point_key(segment.get("from") or (segment_points[0] if segment_points else ""))
+                to_id = graph3d_point_key(segment.get("to") or (segment_points[1] if len(segment_points) > 1 else ""))
+                if any(point in {"xaxis", "yaxis", "zaxis"} for point in (from_id, to_id)):
+                    issues.append(f"{label} graph3d data should not include axis helper segments")
+            for face in data.get("faces") if isinstance(data.get("faces"), list) else []:
+                if isinstance(face, dict) and "style" in face:
+                    issues.append(f"{label} graph3d faces should use fillColor/strokeColor, not style")
+        metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
+        for key in ("axisLabels", "showAxes", "showGrid"):
+            if key in metadata:
+                issues.append(f"{label} graph3d metadata should not include unsupported {key}")
+        view3d = metadata.get("view3d") if isinstance(metadata.get("view3d"), dict) else {}
+        if not view3d:
+            issues.append(f"{label} graph3d data should preserve metadata.view3d")
+            continue
+        if "camera" in view3d:
+            issues.append(f"{label} graph3d view should use az/el/bank, not camera.eye")
+        for key in ("az", "el", "bank"):
+            value = view3d.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                issues.append(f"{label} graph3d view3d.{key} should be numeric")
+            else:
+                limit = 3.2 if key == "el" else 6.4
+                if abs(float(value)) > limit:
+                    issues.append(f"{label} graph3d view3d.{key} should use radians, not degrees")
+    return issues
+
+
+def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("square pyramid", "cone", "cylinder", "sphere", "radius", "height"):
+        if term not in serialized:
+            issues.append(f"graph3d solid-family source conversion should preserve {term!r}")
+
+    graph_types = graph_config_types(args)
+    if "graph3d" not in graph_types:
+        issues.append(f"graph3d solid-family diagrams should use graph3d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("graph2d", "statsChart", "network", "setDiagram", "vector2d")):
+        issues.append("graph3d solid-family source should not use 2D/statistics/network renderers")
+
+    graph3d_configs = [config for config in collect_diagram_graph_configs(args) if config.get("type") == "graph3d"]
+    if len(graph3d_configs) < 4:
+        issues.append("graph3d solid-family source should include separate graph3d diagrams for pyramid, cone, cylinder, and sphere")
+    issues.extend(graph3d_common_schema_issues(graph3d_configs, "graph3d solid-family"))
+
+    point_coords, segment_pairs, _dashed_pairs = graph3d_semantics(graph3d_configs)
+    expected_pyramid_coords = {
+        "a": (0.0, 0.0, 0.0),
+        "b": (4.0, 0.0, 0.0),
+        "c": (4.0, 4.0, 0.0),
+        "d": (0.0, 4.0, 0.0),
+        "v": (2.0, 2.0, 3.0),
+    }
+    for point_id, coords in expected_pyramid_coords.items():
+        if not graph3d_close_coords(point_coords.get(point_id), coords):
+            issues.append(f"graph3d pyramid point {point_id.upper()} should have coordinates {coords}")
+    for pair in (("a", "b"), ("b", "c"), ("c", "d"), ("a", "d"), ("a", "v"), ("b", "v"), ("c", "v"), ("d", "v")):
+        if tuple(sorted(pair)) not in segment_pairs:
+            issues.append(f"graph3d pyramid should include segment {''.join(pair).upper()}")
+    if len(graph3d_face_entries(graph3d_configs)) < 5:
+        issues.append("graph3d pyramid diagram should include polygon faces, not just edge lines")
+
+    solids = graph3d_solid_entries(graph3d_configs)
+    solid_kinds = {graph3d_solid_kind(solid) for solid in solids}
+    for required_kind in ("cone", "cylinder", "sphere"):
+        if required_kind not in solid_kinds:
+            issues.append(f"graph3d solid-family graph3d data should include a {required_kind} solid")
+    for solid in solids:
+        kind = graph3d_solid_kind(solid)
+        if kind == "cone":
+            if "baseCenter" not in solid or ("apex" not in solid and "height" not in solid):
+                issues.append("graph3d cone solid should include baseCenter plus apex or height")
+        if kind == "cylinder":
+            if "baseCenter" not in solid or ("topCenter" not in solid and "height" not in solid):
+                issues.append("graph3d cylinder solid should include baseCenter plus topCenter or height")
+        if kind == "sphere":
+            if "center" not in solid:
+                issues.append("graph3d sphere solid should include center")
+        if kind in {"cone", "cylinder", "sphere"}:
+            radius = solid.get("radius")
+            if isinstance(radius, bool) or not isinstance(radius, (int, float)) or radius <= 0:
+                issues.append(f"graph3d {kind} solid should include a positive radius")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 4:
+        issues.append("graph3d solid-family source should become exactly four structured parts")
+        return issues
+    expected_marks = [2, 2, 2, 2]
+    expected_terms = (("pyramid", "vertices", "height"), ("cone", "radius", "height"), ("cylinder", "radius", "height"), ("sphere", "radius"))
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = "\n".join(solution_texts).lower()
+    for term in ("a,b,c,d,v", "20\\pi", "9\\pi", "16\\pi"):
+        if term not in solution_serialized.replace(" ", "") and term not in solution_serialized:
+            issues.append(f"graph3d solid-family solution should preserve {term!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 8:
+        issues.append("graph3d solid-family hidden [[marks:n]] total should be exactly 8")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("graph3d solid-family solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -4782,6 +4936,199 @@ def local_real_specialist_prism_fraction_sphere_solution_call() -> dict[str, Any
     return call
 
 
+def local_graph3d_general_solids_call() -> dict[str, Any]:
+    pyramid = {
+        "type": "graph3d",
+        "widthPx": 340,
+        "heightPx": 260,
+        "metadata": {"view3d": {"az": 1.05, "el": 0.38, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "A", "label": "$A$", "coords": [0, 0, 0]},
+                {"id": "B", "label": "$B$", "coords": [4, 0, 0]},
+                {"id": "C", "label": "$C$", "coords": [4, 4, 0]},
+                {"id": "D", "label": "$D$", "coords": [0, 4, 0]},
+                {"id": "V", "label": "$V$", "coords": [2, 2, 3]},
+            ],
+            "segments": [
+                {"from": "A", "to": "B"},
+                {"from": "B", "to": "C"},
+                {"from": "C", "to": "D"},
+                {"from": "A", "to": "D", "strokeStyle": "dashed"},
+                {"from": "A", "to": "V"},
+                {"from": "B", "to": "V"},
+                {"from": "C", "to": "V"},
+                {"from": "D", "to": "V", "strokeStyle": "dashed"},
+            ],
+            "faces": [
+                {"points": ["A", "B", "C", "D"], "fillColor": "#dbeafe", "fillOpacity": 0.12},
+                {"points": ["A", "B", "V"], "fillColor": "#fef3c7", "fillOpacity": 0.14},
+                {"points": ["B", "C", "V"], "fillColor": "#dcfce7", "fillOpacity": 0.14},
+                {"points": ["C", "D", "V"], "fillColor": "#fee2e2", "fillOpacity": 0.14},
+                {"points": ["D", "A", "V"], "fillColor": "#e0e7ff", "fillOpacity": 0.14},
+            ],
+            "xRange": [-0.5, 4.5],
+            "yRange": [-0.5, 4.5],
+            "zRange": [0, 3.5],
+        },
+    }
+    cone = {
+        "type": "graph3d",
+        "widthPx": 340,
+        "heightPx": 260,
+        "metadata": {"view3d": {"az": 1.2, "el": 0.32, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "ConeO", "label": "$O$", "coords": [0, 0, 0], "show": False},
+                {"id": "ConeV", "label": "$V$", "coords": [0, 0, 5]},
+                {"id": "ConeR", "label": "$r=2$", "coords": [2, 0, 0], "show": False},
+            ],
+            "segments": [
+                {"from": "ConeO", "to": "ConeV", "label": "$h=5$", "strokeStyle": "dashed"},
+                {"from": "ConeO", "to": "ConeR", "label": "$r=2$"},
+            ],
+            "solids": [
+                {
+                    "kind": "cone",
+                    "baseCenter": "ConeO",
+                    "apex": "ConeV",
+                    "radius": 2,
+                    "fillColor": "#fde68a",
+                    "fillOpacity": 0.2,
+                    "strokeColor": "#92400e",
+                }
+            ],
+            "xRange": [-2.6, 2.6],
+            "yRange": [-2.6, 2.6],
+            "zRange": [0, 5.5],
+        },
+    }
+    cylinder = {
+        "type": "graph3d",
+        "widthPx": 340,
+        "heightPx": 260,
+        "metadata": {"view3d": {"az": 1.15, "el": 0.3, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "CylB", "label": "$B$", "coords": [0, 0, 0], "show": False},
+                {"id": "CylT", "label": "$T$", "coords": [0, 0, 4], "show": False},
+                {"id": "CylR", "label": "$r=1.5$", "coords": [1.5, 0, 0], "show": False},
+            ],
+            "segments": [
+                {"from": "CylB", "to": "CylT", "label": "$h=4$", "strokeStyle": "dashed"},
+                {"from": "CylB", "to": "CylR", "label": "$r=1.5$"},
+            ],
+            "solids": [
+                {
+                    "kind": "cylinder",
+                    "baseCenter": "CylB",
+                    "topCenter": "CylT",
+                    "radius": 1.5,
+                    "fillColor": "#bfdbfe",
+                    "fillOpacity": 0.2,
+                    "strokeColor": "#1d4ed8",
+                }
+            ],
+            "xRange": [-2.1, 2.1],
+            "yRange": [-2.1, 2.1],
+            "zRange": [0, 4.5],
+        },
+    }
+    sphere = {
+        "type": "graph3d",
+        "widthPx": 340,
+        "heightPx": 260,
+        "metadata": {"view3d": {"az": 1.05, "el": 0.25, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "SphereC", "label": "$C$", "coords": [0, 0, 0], "show": False},
+                {"id": "SphereP", "label": "$P$", "coords": [2, 0, 0], "show": False},
+            ],
+            "segments": [{"from": "SphereC", "to": "SphereP", "label": "$r=2$"}],
+            "solids": [
+                {
+                    "kind": "sphere",
+                    "center": "SphereC",
+                    "radius": 2,
+                    "fillColor": "#ddd6fe",
+                    "fillOpacity": 0.16,
+                    "strokeColor": "#5b21b6",
+                }
+            ],
+            "xRange": [-2.5, 2.5],
+            "yRange": [-2.5, 2.5],
+            "zRange": [-2.5, 2.5],
+        },
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "Four separate 3D diagrams show a square pyramid, a right circular cone, "
+                "a right circular cylinder and a sphere. Use the labelled radius and height information."
+            ),
+            "diagrams": [
+                {"diagramAlign": "left", "graphConfig": pyramid},
+                {"diagramAlign": "right", "graphConfig": cone},
+                {"diagramAlign": "left", "graphConfig": cylinder},
+                {"diagramAlign": "right", "graphConfig": sphere},
+            ],
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "For the square pyramid, list vertices $A,B,C,D,V$ and state its height.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": "The vertices are $A,B,C,D,V$ and the height is $3$. [[marks:2]]",
+                },
+                {
+                    "label": "b",
+                    "text": "For the cone, identify the base radius and height.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": "The cone has radius $2$ and height $5$, so $V=\\frac13\\pi r^2h=\\frac{20\\pi}{3}$. [[marks:2]]",
+                },
+                {
+                    "label": "c",
+                    "text": "For the cylinder, identify the base radius and height.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": "The cylinder has radius $1.5$ and height $4$, so $V=\\pi r^2h=9\\pi$. [[marks:2]]",
+                },
+                {
+                    "label": "d",
+                    "text": "For the sphere, identify the radius and write its surface area.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": "The sphere has radius $2$, so its surface area is $4\\pi r^2=16\\pi$. [[marks:2]]",
+                },
+            ],
+        }
+    )
+
+
+def local_graph3d_general_solids_placeholders_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_graph3d_general_solids_call()))
+    for diagram in call["mauthArguments"]["diagrams"]:
+        graph_config = diagram["graphConfig"]
+        data = graph_config["data"]
+        data["segments"] = []
+        data["faces"] = []
+        data["solids"] = []
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_implicit_call() -> dict[str, Any]:
     graph_config = {
         "type": "graph2d",
@@ -4937,7 +5284,6 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "domain should be domainMin/domainMax",
             "style should be color/strokeWidth/strokeStyle",
             "features[0].type should be named kind",
-            "source/student graph2d data should include data.slopeField",
         ],
     },
     "real-specialist-slope-field-bad-artifact-marks": {
@@ -5032,6 +5378,20 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "3d prism graph3d segment OT should be dashed",
         ],
     },
+    "graph3d-general-solids": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_call,
+    },
+    "graph3d-general-solids-placeholders": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_placeholders_call,
+        "expectedIssues": [
+            "pyramid diagram should include polygon faces",
+            "graph3d solid-family graph3d data should include a cone solid",
+            "graph3d solid-family graph3d data should include a cylinder solid",
+            "graph3d solid-family graph3d data should include a sphere solid",
+        ],
+    },
     "real-specialist-implicit": {
         "assert": assert_real_specialist_implicit_call,
         "call": local_real_specialist_implicit_call,
@@ -5049,7 +5409,7 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
-    "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism"],
+    "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
     "local-real-exams-preview": [
         "real-methods-ev-histogram",
         "real-specialist-stats",
@@ -5057,8 +5417,10 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-argand",
         "real-specialist-spherical-cap",
         "real-specialist-prism",
+        "graph3d-general-solids",
         "real-specialist-implicit",
     ],
+    "local-graph3d-general": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
 }
 
 

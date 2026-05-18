@@ -52,6 +52,10 @@ interface BrowserDiagramMetric {
   plotlyLineCount: number;
   expectedFunctionColors: string[];
   functionStrokeCount: number;
+  expectedGraph3DPointCount: number;
+  expectedGraph3DSegmentCount: number;
+  expectedGraph3DFaceCount: number;
+  expectedGraph3DSolidKinds: string[];
   renderedGraphic: boolean;
   text: string;
   requiredLabels: string[];
@@ -570,6 +574,7 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const hasSlopeField = type === "graph2d" && Boolean(data.slopeField);
   const requiredLabels = expectedDiagramLabels(config);
   const expectedFunctionColors = expectedGraph2DFunctionColors(config);
+  const graph3dExpectations = expectedGraph3DExpectations(config);
   let content: React.ReactNode;
   if (type === "statsChart") content = <StatsChartDiagram graphConfig={config} />;
   else if (type === "vector2d") content = <Vector2DGraph graphConfig={config} />;
@@ -584,6 +589,10 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
       data-has-slope-field={hasSlopeField ? "true" : undefined}
       data-required-labels={JSON.stringify(requiredLabels)}
       data-function-colors={JSON.stringify(expectedFunctionColors)}
+      data-graph3d-point-count={graph3dExpectations.pointCount}
+      data-graph3d-segment-count={graph3dExpectations.segmentCount}
+      data-graph3d-face-count={graph3dExpectations.faceCount}
+      data-graph3d-solid-kinds={JSON.stringify(graph3dExpectations.solidKinds)}
     >
       {content}
     </div>
@@ -661,6 +670,32 @@ function expectedGraph2DFunctionColors(graphConfig?: GraphConfig | null) {
         .map((entry: any) => entry.color),
     ),
   ];
+}
+
+function expectedGraph3DExpectations(graphConfig?: GraphConfig | null) {
+  const config = (graphConfig ?? {}) as any;
+  const type = String(config.type ?? "");
+  const data = config.data && typeof config.data === "object" ? config.data : {};
+  if (type !== "graph3d" && type !== "basic3d") {
+    return { pointCount: 0, segmentCount: 0, faceCount: 0, solidKinds: [] as string[] };
+  }
+  const points = Array.isArray(data.points) ? data.points : Array.isArray(data.vertices) ? data.vertices : [];
+  const segments = Array.isArray(data.segments) ? data.segments : Array.isArray(data.edges) ? data.edges : [];
+  const faces = Array.isArray(data.faces) ? data.faces : [];
+  const solids = Array.isArray(data.solids) ? data.solids : Array.isArray(data.surfaces) ? data.surfaces : [];
+  return {
+    pointCount: points.length,
+    segmentCount: segments.length,
+    faceCount: faces.length,
+    solidKinds: [
+      ...new Set(
+        solids
+          .map((solid: any) => (typeof solid?.kind === "string" ? solid.kind : typeof solid?.type === "string" ? solid.type : ""))
+          .filter(Boolean)
+          .map((kind: string) => kind.toLowerCase().replace(/[^a-z]/g, "")),
+      ),
+    ],
+  };
 }
 
 const previewContentRuntime: PreviewContentRuntime = {
@@ -815,6 +850,22 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.primitiveCount < 12) {
     failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
   }
+  if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.expectedGraph3DSegmentCount >= 8 && metric.primitiveCount < 20) {
+    failures.push(
+      `${metric.caseName} ${metric.type} rendered too few primitives for ${metric.expectedGraph3DSegmentCount} expected 3D segments`,
+    );
+  }
+  if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.expectedGraph3DFaceCount >= 5 && metric.primitiveCount < 20) {
+    failures.push(`${metric.caseName} ${metric.type} rendered too few primitives for ${metric.expectedGraph3DFaceCount} expected 3D faces`);
+  }
+  const richGraph3DSolids = metric.expectedGraph3DSolidKinds.filter(
+    (kind) => kind !== "sphere" && kind !== "circle" && kind !== "spherecap" && kind !== "sphericalcap",
+  );
+  if ((metric.type === "graph3d" || metric.type === "basic3d") && richGraph3DSolids.length > 0 && metric.primitiveCount < 18) {
+    failures.push(
+      `${metric.caseName} ${metric.type} rendered too few primitives for expected 3D solid(s): ${richGraph3DSolids.join(", ")}`,
+    );
+  }
   if ((metric.type === "graph2d" || metric.type === "2d_graph" || metric.type === "function") && metric.primitiveCount < 8) {
     failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
   }
@@ -923,6 +974,7 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
         const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
         const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
         const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
+        const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
         const rect = frame.getBoundingClientRect();
         const primitives = Array.from(
           frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
@@ -963,6 +1015,10 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
           plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
           expectedFunctionColors,
           functionStrokeCount,
+          expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
+          expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
+          expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
+          expectedGraph3DSolidKinds,
           labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
           renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
           text,
