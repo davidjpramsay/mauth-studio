@@ -5,6 +5,7 @@ import json
 import zipfile
 
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 
 from app.main import app
 from app.services import openai_assistant
@@ -27,6 +28,18 @@ def minimal_docx_data_url(lines: list[str]) -> str:
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("word/document.xml", document_xml)
     return data_url(openai_assistant.DOCX_MIME_TYPE, buffer.getvalue())
+
+
+def png_data_url(width: int, height: int) -> tuple[str, int]:
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    for y in range(20, height, 80):
+        draw.line((20, y, width - 20, y), fill="black", width=2)
+        draw.text((30, y + 10), f"Question source line {y}", fill="black")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    return data_url("image/png", payload), len(payload)
 
 
 def test_assistant_status_reports_missing_key(monkeypatch):
@@ -1259,13 +1272,41 @@ def test_input_items_attach_images_and_pdfs_to_latest_user_message():
     assert {
         "type": "input_image",
         "image_url": "data:image/png;base64,iVBORw0KGgo=",
-        "detail": "auto",
+        "detail": "high",
     } in latest_user_content
     assert {
         "type": "input_file",
         "filename": "paper.pdf",
         "file_data": "data:application/pdf;base64,JVBERi0x",
     } in latest_user_content
+
+
+def test_input_items_optimize_large_images_for_provider(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_IMAGE_MAX_LONG_EDGE", "640")
+    image_data_url, image_bytes = png_data_url(1600, 1200)
+    request = openai_assistant.AssistantChatRequest(
+        messages=[openai_assistant.AssistantChatMessage(role="user", content="Convert this source screenshot.")],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                id="image-1",
+                name="question-source.png",
+                mimeType="image/png",
+                dataUrl=image_data_url,
+                sizeBytes=image_bytes,
+            )
+        ],
+    )
+
+    [item] = openai_assistant.input_items(request)
+    image_item = next(content for content in item["content"] if content["type"] == "input_image")
+    stats = openai_assistant.assistant_attachment_payload_stats(request.attachments)
+
+    assert image_item["detail"] == "high"
+    assert image_item["image_url"].startswith("data:image/")
+    assert len(image_item["image_url"]) < len(image_data_url)
+    assert stats["optimizedAttachmentCount"] == 1
+    assert stats["providerAttachmentBytes"] < stats["rawAttachmentBytes"]
+    assert stats["imageMaxLongEdge"] == 640
 
 
 def test_input_items_extract_text_and_docx_attachments_to_latest_user_message():
@@ -1317,7 +1358,7 @@ def test_attachment_only_request_creates_user_input_item():
 
     assert items[0]["role"] == "user"
     assert items[0]["content"][0] == {"type": "input_text", "text": "Use the attached file(s)."}
-    assert {"type": "input_image", "image_url": "data:image/png;base64,abc", "detail": "auto"} in items[0]["content"]
+    assert {"type": "input_image", "image_url": "data:image/png;base64,abc", "detail": "high"} in items[0]["content"]
 
 
 def test_attachment_requests_select_relevant_brain_files():

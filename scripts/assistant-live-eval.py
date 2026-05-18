@@ -40,6 +40,7 @@ from app.models.schemas import (  # noqa: E402
 )
 from app.services.openai_assistant import (  # noqa: E402
     DOCX_MIME_TYPE,
+    assistant_attachment_payload_stats,
     assistant_configured,
     assistant_instructions,
     assistant_tool_definitions,
@@ -54,6 +55,7 @@ from app.services.penrose import render_penrose_diagram  # noqa: E402
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
+DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -1134,6 +1136,7 @@ def provider_request_shape_for_case(case_name: str, model: str | None = None) ->
     tools = assistant_tool_definitions(messages, None, attachments, summary)
     instructions = assistant_instructions(summary, messages, None, brain_files, attachments)
     input_payload = input_items(request)
+    attachment_stats = assistant_attachment_payload_stats(attachments)
     return {
         "brainSelection": "deterministic" if deterministic_ids else "fallback/planner-eligible",
         "brainFiles": brain_files,
@@ -1145,14 +1148,31 @@ def provider_request_shape_for_case(case_name: str, model: str | None = None) ->
         "attachmentBytes": sum(
             attachment.sizeBytes for attachment in attachments if isinstance(attachment.sizeBytes, int)
         ),
+        "attachmentStats": attachment_stats,
     }
 
 
 def request_shape_label(shape: dict[str, Any]) -> str:
     tool_names = shape.get("toolNames") if isinstance(shape.get("toolNames"), list) else []
     brain_files = shape.get("brainFiles") if isinstance(shape.get("brainFiles"), list) else []
-    attachment_bytes = shape.get("attachmentBytes") if isinstance(shape.get("attachmentBytes"), int) else 0
+    attachment_stats = shape.get("attachmentStats") if isinstance(shape.get("attachmentStats"), dict) else {}
+    provider_attachment_bytes = attachment_stats.get("providerAttachmentBytes")
+    attachment_bytes = provider_attachment_bytes if isinstance(provider_attachment_bytes, int) else 0
+    if not attachment_bytes and isinstance(shape.get("attachmentBytes"), int):
+        attachment_bytes = shape["attachmentBytes"]
+    raw_attachment_bytes = (
+        attachment_stats.get("rawAttachmentBytes")
+        if isinstance(attachment_stats.get("rawAttachmentBytes"), int)
+        else attachment_bytes
+    )
     attachment_count = shape.get("attachmentCount") if isinstance(shape.get("attachmentCount"), int) else 0
+    optimized_count = (
+        attachment_stats.get("optimizedAttachmentCount")
+        if isinstance(attachment_stats.get("optimizedAttachmentCount"), int)
+        else 0
+    )
+    image_detail = attachment_stats.get("imageDetail") or "unknown"
+    max_long_edge = attachment_stats.get("imageMaxLongEdge") or "unknown"
     return (
         f"brains={','.join(str(item) for item in brain_files)} "
         f"({shape.get('brainSelection')}); "
@@ -1161,7 +1181,8 @@ def request_shape_label(shape: dict[str, Any]) -> str:
         f"instructions={shape.get('instructionChars')} chars; "
         f"schemas={shape.get('toolSchemaChars')} chars; "
         f"input={shape.get('inputChars')} chars; "
-        f"attachments={attachment_count}/{byte_label(attachment_bytes)}"
+        f"attachments={attachment_count}/{byte_label(attachment_bytes)} sent"
+        f" (raw {byte_label(raw_attachment_bytes)}, optimized {optimized_count}, detail={image_detail}, maxEdge={max_long_edge})"
     )
 
 
@@ -1172,6 +1193,7 @@ def print_cost_plan(
     max_cost: float,
     max_cases: int | None,
     case_cost_cap: float,
+    provider_input_char_cap: int,
     paid_enabled: bool,
 ) -> int:
     selected_cases = selected_live_cases(case_name)
@@ -1186,19 +1208,30 @@ def print_cost_plan(
     print(f"- planned paid cases this run: {len(planned_cases)}")
     print(f"- run max-cost cap: ${max_cost:.2f}")
     print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
+    print(f"- provider input char cap: {provider_input_char_cap:,} per case")
     print("- no-cost gates before paid real-exam work:")
     print("  - pnpm eval:assistant:benchmarks")
     print("  - pnpm eval:assistant:local")
     print("  - pnpm smoke:assistant:preview for renderer-heavy cases")
     print("- cases:")
+    over_budget_cases: list[tuple[str, int]] = []
     for selected_case in planned_cases:
         case_class = live_eval_case_class(selected_case)
         benchmark = benchmark_index.get(selected_case)
         print(f"  - {selected_case}: class={case_class}; {benchmark_label(benchmark)}")
         shape = provider_request_shape_for_case(selected_case, model=model)
         print(f"    request shape: {request_shape_label(shape)}")
+        input_chars = shape.get("inputChars")
+        if isinstance(input_chars, int) and provider_input_char_cap > 0 and input_chars > provider_input_char_cap:
+            over_budget_cases.append((selected_case, input_chars))
     if len(planned_cases) < len(selected_cases):
         print(f"- skipped by --max-cases: {len(selected_cases) - len(planned_cases)} case(s)")
+    if over_budget_cases:
+        print("- provider input budget: blocked")
+        for selected_case, input_chars in over_budget_cases:
+            print(f"  - {selected_case}: {input_chars:,} chars > {provider_input_char_cap:,} cap")
+        return 1
+    print("- provider input budget: ok")
     if paid_enabled:
         print("- paid execution: enabled by --allow-paid")
     else:
@@ -5974,6 +6007,7 @@ async def run_eval(
     max_cost: float = 1.5,
     max_cases: int | None = None,
     case_cost_cap: float = DEFAULT_LIVE_CASE_COST_CAP,
+    provider_input_char_cap: int = DEFAULT_PROVIDER_INPUT_CHAR_CAP,
     stop_on_failure: bool = False,
     verbose: bool = False,
 ) -> int:
@@ -5993,6 +6027,17 @@ async def run_eval(
             break
         if total_cost >= max_cost:
             print(f"\nSTOP: estimated cost cap reached before {selected_case}. Cap: ${max_cost:.2f}.")
+            break
+        shape = provider_request_shape_for_case(selected_case, model=model)
+        input_chars = shape.get("inputChars")
+        if isinstance(input_chars, int) and provider_input_char_cap > 0 and input_chars > provider_input_char_cap:
+            print(
+                f"\nBLOCKED: {selected_case} provider input is {input_chars:,} chars, "
+                f"above the {provider_input_char_cap:,} char cap. Run the cost plan and shrink source attachments first.",
+                file=sys.stderr,
+            )
+            results.append((selected_case, 2, 0.0, 0))
+            blocked = True
             break
         status, cost, tokens = await run_single_eval(
             selected_case, model=model, final_message=final_message, verbose=verbose
@@ -6119,6 +6164,12 @@ def main() -> int:
         help="Stop a paid live eval group after any single case costs at least this much.",
     )
     parser.add_argument(
+        "--provider-input-char-cap",
+        type=int,
+        default=DEFAULT_PROVIDER_INPUT_CHAR_CAP,
+        help="Block planned/paid cases whose provider input JSON exceeds this many characters. Use 0 to disable.",
+    )
+    parser.add_argument(
         "--max-cases",
         type=int,
         default=None,
@@ -6151,6 +6202,7 @@ def main() -> int:
             max_cost=args.max_cost,
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
+            provider_input_char_cap=args.provider_input_char_cap,
             paid_enabled=args.allow_paid and not args.cost_plan,
         )
     return asyncio.run(
@@ -6161,6 +6213,7 @@ def main() -> int:
             max_cost=args.max_cost,
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
+            provider_input_char_cap=args.provider_input_char_cap,
             stop_on_failure=args.stop_on_failure,
             verbose=args.verbose,
         )

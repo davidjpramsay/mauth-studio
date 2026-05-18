@@ -12,6 +12,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.bootstrap import CONFIG_ROOT
 from app.models.schemas import AssistantAttachment, AssistantChatMessage, AssistantChatRequest, AssistantToolOutput
@@ -24,6 +25,10 @@ DEFAULT_DOCUMENT_CONTEXT_CHARS = 8000
 MAX_ASSISTANT_ATTACHMENTS = 6
 MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
 MAX_ASSISTANT_EXTRACTED_TEXT_CHARS = 80_000
+DEFAULT_ASSISTANT_IMAGE_DETAIL = "high"
+DEFAULT_ASSISTANT_IMAGE_MAX_LONG_EDGE = 1000
+DEFAULT_ASSISTANT_IMAGE_WEBP_QUALITY = 82
+DEFAULT_ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES = 20_000
 TOKENS_PER_MILLION = 1_000_000
 QUESTION_REFERENCE_PATTERN = re.compile(r"\b(?:q|question)\s*(\d{1,3})\b", re.IGNORECASE)
 QUESTION_AUTHORING_PATTERN = re.compile(
@@ -260,6 +265,46 @@ def assistant_document_context_limit() -> int:
         return max(0, int(value))
     except ValueError:
         return DEFAULT_DOCUMENT_CONTEXT_CHARS
+
+
+def env_flag_enabled(name: str, *, default: bool = True) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "off", "no"}
+
+
+def env_int(name: str, default: int, *, minimum: int = 0, maximum: int | None = None) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def assistant_image_detail() -> str:
+    value = os.environ.get("ASSISTANT_IMAGE_DETAIL", DEFAULT_ASSISTANT_IMAGE_DETAIL).strip().lower()
+    if value in {"low", "high", "auto"}:
+        return value
+    return DEFAULT_ASSISTANT_IMAGE_DETAIL
+
+
+def assistant_image_max_long_edge() -> int:
+    return env_int("ASSISTANT_IMAGE_MAX_LONG_EDGE", DEFAULT_ASSISTANT_IMAGE_MAX_LONG_EDGE, minimum=0)
+
+
+def assistant_image_webp_quality() -> int:
+    return env_int("ASSISTANT_IMAGE_WEBP_QUALITY", DEFAULT_ASSISTANT_IMAGE_WEBP_QUALITY, minimum=1, maximum=100)
+
+
+def assistant_image_optimize_min_bytes() -> int:
+    return env_int("ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES", DEFAULT_ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES, minimum=0)
 
 
 def compact_string_items(
@@ -2943,6 +2988,136 @@ def attachment_data_bytes(data_url: str) -> bytes:
     return urllib.parse.unquote_to_bytes(payload)
 
 
+def attachment_data_url(mime_type: str, data: bytes) -> str:
+    payload = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_type};base64,{payload}"
+
+
+def attachment_data_size(attachment: AssistantAttachment) -> int:
+    data = attachment_data_bytes(attachment.dataUrl)
+    if data:
+        return len(data)
+    if isinstance(attachment.sizeBytes, int):
+        return max(0, attachment.sizeBytes)
+    return 0
+
+
+def attachment_is_optimizable_image(attachment: AssistantAttachment) -> bool:
+    mime_type = (attachment.mimeType or "").lower()
+    return mime_type in {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+
+
+def image_name_with_extension(name: str, extension: str) -> str:
+    base = name.rsplit(".", 1)[0] if "." in name else name
+    return f"{base}{extension}"
+
+
+def rgb_image_for_provider(image: Image.Image) -> Image.Image:
+    image = ImageOps.exif_transpose(image)
+    if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+        transparent = image.convert("RGBA")
+        background = Image.new("RGBA", transparent.size, (255, 255, 255, 255))
+        background.alpha_composite(transparent)
+        return background.convert("RGB")
+    return image.convert("RGB")
+
+
+def resize_image_for_provider(image: Image.Image, max_long_edge: int) -> tuple[Image.Image, bool]:
+    if max_long_edge <= 0:
+        return image, False
+    long_edge = max(image.size)
+    if long_edge <= max_long_edge:
+        return image, False
+    scale = max_long_edge / long_edge
+    size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    return image.resize(size, Image.Resampling.LANCZOS), True
+
+
+def encoded_provider_image_candidates(image: Image.Image) -> list[tuple[str, str, bytes]]:
+    candidates: list[tuple[str, str, bytes]] = []
+    with suppress(OSError, ValueError):
+        buffer = io.BytesIO()
+        image.save(
+            buffer,
+            format="WEBP",
+            quality=assistant_image_webp_quality(),
+            method=6,
+        )
+        candidates.append(("image/webp", ".webp", buffer.getvalue()))
+    with suppress(OSError, ValueError):
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=88, optimize=True)
+        candidates.append(("image/jpeg", ".jpg", buffer.getvalue()))
+    return candidates
+
+
+def provider_optimized_attachment(attachment: AssistantAttachment) -> AssistantAttachment:
+    if not env_flag_enabled("ASSISTANT_OPTIMIZE_IMAGE_ATTACHMENTS", default=True):
+        return attachment
+    if not attachment_is_optimizable_image(attachment):
+        return attachment
+
+    original_bytes = attachment_data_bytes(attachment.dataUrl)
+    if not original_bytes:
+        return attachment
+
+    try:
+        with Image.open(io.BytesIO(original_bytes)) as image:
+            provider_image = rgb_image_for_provider(image)
+            provider_image, resized = resize_image_for_provider(provider_image, assistant_image_max_long_edge())
+    except (OSError, UnidentifiedImageError, ValueError):
+        return attachment
+
+    if not resized and len(original_bytes) < assistant_image_optimize_min_bytes():
+        return attachment
+
+    candidates = encoded_provider_image_candidates(provider_image)
+    if not candidates:
+        return attachment
+    mime_type, extension, optimized_bytes = min(candidates, key=lambda candidate: len(candidate[2]))
+    if not resized and len(optimized_bytes) >= len(original_bytes):
+        return attachment
+
+    return AssistantAttachment(
+        id=attachment.id,
+        name=image_name_with_extension(attachment.name or "attachment", extension),
+        mimeType=mime_type,
+        dataUrl=attachment_data_url(mime_type, optimized_bytes),
+        sizeBytes=len(optimized_bytes),
+    )
+
+
+def provider_optimized_attachments(attachments: list[AssistantAttachment] | None) -> list[AssistantAttachment]:
+    return [provider_optimized_attachment(attachment) for attachment in attachments or []]
+
+
+def assistant_attachment_payload_stats(attachments: list[AssistantAttachment] | None) -> dict[str, Any]:
+    original = list(attachments or [])[:MAX_ASSISTANT_ATTACHMENTS]
+    optimized = provider_optimized_attachments(original)
+    raw_bytes = sum(attachment_data_size(attachment) for attachment in original)
+    provider_bytes = sum(attachment_data_size(attachment) for attachment in optimized)
+    raw_data_chars = sum(len(attachment.dataUrl or "") for attachment in original)
+    provider_data_chars = sum(len(attachment.dataUrl or "") for attachment in optimized)
+    optimized_count = sum(
+        1
+        for raw, provider in zip(original, optimized, strict=False)
+        if raw.dataUrl != provider.dataUrl or raw.mimeType != provider.mimeType or raw.name != provider.name
+    )
+    return {
+        "attachmentLimit": MAX_ASSISTANT_ATTACHMENTS,
+        "rawAttachmentCount": len(attachments or []),
+        "providerAttachmentCount": len(optimized),
+        "omittedAttachmentCount": max(0, len(attachments or []) - MAX_ASSISTANT_ATTACHMENTS),
+        "rawAttachmentBytes": raw_bytes,
+        "providerAttachmentBytes": provider_bytes,
+        "rawAttachmentDataChars": raw_data_chars,
+        "providerAttachmentDataChars": provider_data_chars,
+        "optimizedAttachmentCount": optimized_count,
+        "imageDetail": assistant_image_detail(),
+        "imageMaxLongEdge": assistant_image_max_long_edge(),
+    }
+
+
 def xml_local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
@@ -3005,7 +3180,7 @@ def extract_attachment_text(attachment: AssistantAttachment) -> str:
 
 def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for attachment in attachments[:MAX_ASSISTANT_ATTACHMENTS]:
+    for attachment in provider_optimized_attachments(attachments[:MAX_ASSISTANT_ATTACHMENTS]):
         name = attachment.name or "attachment"
         mime_type = attachment.mimeType or ""
         data_url = attachment.dataUrl.strip()
@@ -3021,7 +3196,7 @@ def attachment_content_items(attachments: list[AssistantAttachment]) -> list[dic
             continue
         items.append({"type": "input_text", "text": f"Attached file: {name} ({mime_type or 'unknown type'})."})
         if mime_type.startswith("image/"):
-            items.append({"type": "input_image", "image_url": data_url, "detail": "auto"})
+            items.append({"type": "input_image", "image_url": data_url, "detail": assistant_image_detail()})
         elif attachment_is_pdf(attachment):
             items.append({"type": "input_file", "filename": name, "file_data": data_url})
         elif attachment_is_docx(attachment) or attachment_is_text_like(attachment):
