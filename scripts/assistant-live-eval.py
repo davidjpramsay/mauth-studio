@@ -2756,7 +2756,9 @@ def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
 
     graph3d_configs = [config for config in collect_diagram_graph_configs(args) if config.get("type") == "graph3d"]
     if len(graph3d_configs) < 4:
-        issues.append("graph3d solid-family source should include separate graph3d diagrams for pyramid, cone, cylinder, and sphere")
+        issues.append(
+            "graph3d solid-family source should include separate graph3d diagrams for pyramid, cone, cylinder, and sphere"
+        )
     issues.extend(graph3d_common_schema_issues(graph3d_configs, "graph3d solid-family"))
 
     point_coords, segment_pairs, _dashed_pairs = graph3d_semantics(graph3d_configs)
@@ -2802,7 +2804,12 @@ def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
         issues.append("graph3d solid-family source should become exactly four structured parts")
         return issues
     expected_marks = [2, 2, 2, 2]
-    expected_terms = (("pyramid", "vertices", "height"), ("cone", "radius", "height"), ("cylinder", "radius", "height"), ("sphere", "radius"))
+    expected_terms = (
+        ("pyramid", "vertices", "height"),
+        ("cone", "radius", "height"),
+        ("cylinder", "radius", "height"),
+        ("sphere", "radius"),
+    )
     for index, part in enumerate(parts):
         if not isinstance(part, dict):
             issues.append(f"parts[{index}] should be an object")
@@ -3916,6 +3923,148 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-implicit",
     ],
 }
+
+TOOL_CLASSIFICATION: list[dict[str, str]] = [
+    {
+        "class": "source-conversion",
+        "primaryTool": "mauth.question.upsert / mauth_convert_source_question",
+        "ownerBrains": "question, diagram, solutions, formatting",
+        "zeroCostGate": "pnpm eval:assistant:local plus pnpm smoke:assistant:preview for renderer-heavy sources",
+    },
+    {
+        "class": "diagram-follow-up",
+        "primaryTool": "mauth.author.addDiagram / mauth_make_diagram_for_question",
+        "ownerBrains": "diagram",
+        "zeroCostGate": "pnpm smoke:assistant:self and renderer-specific local/preview cases",
+    },
+    {
+        "class": "solution-or-marking",
+        "primaryTool": "mauth.author.ensureSolutions / mauth_write_solutions_for_questions",
+        "ownerBrains": "solutions, formatting",
+        "zeroCostGate": "pnpm smoke:assistant:self and pnpm test:web-actions",
+    },
+    {
+        "class": "whole-test-solutions",
+        "primaryTool": "mauth.solutions.writeAll / mauth_write_all_solutions",
+        "ownerBrains": "solutions, formatting",
+        "zeroCostGate": "pnpm smoke:assistant:self before paid confidence eval",
+    },
+    {
+        "class": "layout-or-formatting",
+        "primaryTool": "mauth.layout.check, mauth.author.adjustResponseSpaces, mauth.format.apply",
+        "ownerBrains": "formatting",
+        "zeroCostGate": "pnpm smoke:assistant:self and pnpm test:web-actions",
+    },
+    {
+        "class": "file-operations",
+        "primaryTool": "mauth.files.*",
+        "ownerBrains": "none unless content is edited",
+        "zeroCostGate": "pnpm smoke:file-manager and pnpm test:web-actions",
+    },
+]
+
+EVAL_GATE_CLASSIFICATION: list[dict[str, str]] = [
+    {
+        "gate": "self-smoke",
+        "command": "pnpm smoke:assistant:self",
+        "purpose": "Free assistant-routing rehearsal with real Mauth tools and no provider call.",
+    },
+    {
+        "gate": "local-semantic",
+        "command": "pnpm eval:assistant:local",
+        "purpose": "Free semantic assertions for representative source payloads and known-bad tool shapes.",
+    },
+    {
+        "gate": "preview-replay",
+        "command": "pnpm smoke:assistant:preview",
+        "purpose": "Free browser replay through high-level tools and real JSXGraph/Plotly/Penrose preview surfaces.",
+    },
+    {
+        "gate": "paid-live",
+        "command": "pnpm eval:assistant:live:*",
+        "purpose": "Bounded real-provider checks only after the free gates pass or when testing a new high-risk prompt class.",
+    },
+    {
+        "gate": "project-check",
+        "command": "pnpm check",
+        "purpose": "Full format, lint, unit, and build gate before committing source changes.",
+    },
+]
+
+LIVE_EVAL_CASE_CLASSES: dict[str, str] = {
+    "circle-question": "question-authoring",
+    "circle-diagram": "diagram-follow-up",
+    "circle-parallel-diagram": "diagram-follow-up",
+    "multipart-probability": "question-authoring",
+    "ensure-solution": "solution-or-marking",
+    "mark-edit-preserve-diagram": "solution-or-marking",
+    "rewrite-preserve-diagram": "preservation-edit",
+    "linear-intersection-question": "question-authoring",
+    "graph2d-function-diagram": "diagram-follow-up",
+    "set-diagram-routing": "diagram-follow-up",
+    "stats-chart-routing": "diagram-follow-up",
+    "vector2d-routing": "diagram-follow-up",
+    "pdf-attachment-question": "source-conversion",
+    "docx-attachment-question": "source-conversion",
+    "screenshot-scalar-products": "source-conversion",
+    "repair-circle-diagram": "repair-loop",
+    "repair-scalar-product-diagram": "repair-loop",
+    "write-all-solutions-confidence": "whole-test-solutions",
+    "layout-check-confidence": "layout-or-formatting",
+    "layout-repair-confidence": "repair-loop",
+}
+
+
+def live_eval_case_class(case_name: str) -> str:
+    if case_name in LIVE_EVAL_CASE_CLASSES:
+        return LIVE_EVAL_CASE_CLASSES[case_name]
+    if case_name.startswith("real-"):
+        return "source-conversion"
+    return "uncategorised"
+
+
+def local_eval_case_class(case_name: str) -> str:
+    if "bad" in case_name or "placeholder" in case_name or "missing" in case_name or "duplicate" in case_name:
+        return "negative-fixture"
+    if case_name.startswith("graph3d-"):
+        return "renderer-semantic"
+    if case_name.startswith("real-"):
+        return "source-conversion"
+    return "uncategorised"
+
+
+def group_memberships(case_name: str, groups: dict[str, list[str]]) -> list[str]:
+    return [name for name, cases in groups.items() if case_name in cases]
+
+
+def list_eval_taxonomy() -> int:
+    payload = {
+        "toolClasses": TOOL_CLASSIFICATION,
+        "evalGates": EVAL_GATE_CLASSIFICATION,
+        "liveGroups": EVAL_GROUPS,
+        "localGroups": LOCAL_EVAL_GROUPS,
+        "liveCases": [
+            {
+                "name": name,
+                "class": live_eval_case_class(name),
+                "groups": group_memberships(name, EVAL_GROUPS),
+                "paid": True,
+            }
+            for name in sorted(EVAL_CASES)
+        ],
+        "localCases": [
+            {
+                "name": name,
+                "class": "negative-fixture" if case.get("expectedIssues") else local_eval_case_class(name),
+                "groups": group_memberships(name, LOCAL_EVAL_GROUPS),
+                "expectedFailureFixture": bool(case.get("expectedIssues")),
+                "paid": False,
+            }
+            for name, case in sorted(LOCAL_EVAL_CASES.items())
+        ],
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
 
 
 def local_tool_call(name: str, mauth_tool_name: str, mauth_arguments: dict[str, Any]) -> dict[str, Any]:
@@ -5795,6 +5944,11 @@ def main() -> int:
     )
     parser.add_argument("--local", action="store_true", help="Run zero-cost local fixture assertions only.")
     parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="Print assistant tool/eval taxonomy, live groups, local groups, and case classifications as JSON.",
+    )
+    parser.add_argument(
         "--dump-local-calls",
         action="store_true",
         help="Print selected zero-cost local assistant tool-call fixtures as JSON.",
@@ -5811,6 +5965,8 @@ def main() -> int:
     if raw_args and raw_args[0] == "--":
         raw_args = raw_args[1:]
     args = parser.parse_args(raw_args)
+    if args.list_cases:
+        return list_eval_taxonomy()
     if args.dump_local_calls:
         return dump_local_calls(case_name=args.case)
     if args.local:
