@@ -339,6 +339,12 @@ function postEditInspectionExpected(warning: MauthPreviewInspectionWarning, repa
       : `Repair the diagram with a corrected native graphConfig.${targetInstruction}`;
   }
   if (!warning.code.startsWith("rendered-") && warning.targetId) {
+    if (warning.code === "scalar-product-segment-label-tex-unsafe") {
+      return `Repair this scalar-product vector diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and TeX-safe magnitude labels such as 2\\ \\text{units}.${targetInstruction}`;
+    }
+    if (warning.code === "scalar-product-angle-label-tex-unsafe") {
+      return `Repair this scalar-product vector diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and TeX-safe angle labels such as 45^\\circ.${targetInstruction}`;
+    }
     return `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.${targetInstruction}`;
   }
   if (warning.code === "rendered-response-space-outline-missing") {

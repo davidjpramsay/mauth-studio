@@ -272,6 +272,42 @@ test("assistant diagram preflight accepts source-faithful scalar-product vector2
   assert.equal(result.ok, true);
 });
 
+test("assistant diagram preflight gives scalar-product raw-label repair hints", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock("t1", "Evaluate $\\mathbf{c}\\cdot\\mathbf{d}$ from the scalar product diagram."),
+        vector2dDiagramBlock("d1", {
+          type: "vector2d",
+          showAxes: false,
+          showGrid: false,
+          metadata: {
+            vector2d: {
+              labelStyle: "custom",
+              vectors: [
+                { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.52, 2.95] },
+                { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.638, 1.147] },
+              ],
+              segmentLabels: [{ vectorId: "d", label: "2 units" }],
+              angleMarkers: [{ from: "c", to: "d", label: "45°" }],
+            },
+          },
+        }),
+        spaceBlock("s1"),
+      ],
+      2,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+  const expectedText = (result.validationIssues ?? []).map((issue) => issue.expected ?? "").join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(expectedText, /2\\ \\text\{units\}/);
+  assert.match(expectedText, /45\^\\circ/);
+});
+
 test("assistant semantic preflight accepts changed Penrose circle diagrams that match the prompt", () => {
   const document = documentFixture(
     question(

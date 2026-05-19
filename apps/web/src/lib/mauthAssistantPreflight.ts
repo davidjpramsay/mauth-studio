@@ -253,6 +253,12 @@ function diagramInspectionExpected(code: string) {
   }
   if (code === "scalar-product-vector2d-axes-visible")
     return "Set graphConfig.showAxes and graphConfig.showGrid to false for no-axis scalar-product ray diagrams.";
+  if (code === "scalar-product-segment-label-tex-unsafe") {
+    return "Use TeX-safe vector magnitude labels such as 2\\ \\text{units} in graphConfig.metadata.vector2d.segmentLabels.";
+  }
+  if (code === "scalar-product-angle-label-tex-unsafe") {
+    return "Use TeX-safe angle labels such as 45^\\circ in graphConfig.metadata.vector2d.angleMarkers.";
+  }
   return "A native diagram whose renderer choice, labels, and declared geometry match the question prompt.";
 }
 

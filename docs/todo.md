@@ -242,6 +242,7 @@ Status: prototype implemented.
 
 Follow-ups:
 
+- Move module settings into a right-side inspector panel, similar to Apple-style inspectors. Keep each editor module focused on its main content and immediate editing surface, and put secondary controls such as alignment, visibility, sizing, diagram/chart options, labels, presets, spacing, and advanced metadata in the inspector for the selected module/question/part.
 - Add a separate blank-page structure item instead of allowing duplicate page breaks.
 - Keep browser-testing drag/drop and accidental-click behaviour, especially on narrow screens and touch-like input.
 - Keep selection outlines focused on the innermost selected module and avoid parent highlight noise.
