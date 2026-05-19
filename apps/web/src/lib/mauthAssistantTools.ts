@@ -2153,6 +2153,33 @@ const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
 const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
+const MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = /(^|[^\\])\$\\\$(?=\\?[A-Za-z])/;
+const AUTHOR_TEXT_FIELD_KEYS = new Set(["questionText", "text", "prompt", "partText", "solutionText", "solution", "label"]);
+
+function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (typeof value === "string") {
+    if (MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN.test(value)) {
+      issues.push({
+        path,
+        message: "contains malformed escaped dollar inside maths",
+        expected: "write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$",
+      });
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => addAuthorTextQualityIssues(item, `${path}[${index}]`, issues));
+    return;
+  }
+  if (!isRecord(value)) return;
+  Object.entries(value).forEach(([key, item]) => {
+    if (typeof item === "string" && AUTHOR_TEXT_FIELD_KEYS.has(key)) {
+      addAuthorTextQualityIssues(item, `${path}.${key}`, issues);
+    } else if (Array.isArray(item) || isRecord(item)) {
+      addAuthorTextQualityIssues(item, `${path}.${key}`, issues);
+    }
+  });
+}
 
 function markCountFromNote(...counts: Array<string | undefined>) {
   return Math.max(0, Math.min(6, Math.round(Number(counts.find(Boolean)) || 0)));
@@ -3071,6 +3098,7 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
       issues: [{ path: "arguments", message: "must be an object", expected: "replace-question payload" }],
     };
   }
+  addAuthorTextQualityIssues(args, "arguments", issues);
 
   const target = replaceOrAppendQuestionTarget(document.questions, args, issues);
   const text = textFromArgs(args);

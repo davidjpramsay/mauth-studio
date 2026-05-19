@@ -53,6 +53,7 @@ from app.services.openai_assistant import (  # noqa: E402
 from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = re.compile(r"(?<!\\)\$\\\$(?=\\?[A-Za-z])")
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
@@ -1055,6 +1056,29 @@ def control_character_issues(text: str, field_name: str) -> list[str]:
     return issues
 
 
+def latex_artifact_issues(text: str, field_name: str) -> list[str]:
+    issues: list[str] = []
+    if MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN.search(text):
+        issues.append(f"{field_name} contains malformed escaped dollar inside maths")
+    return issues
+
+
+def text_quality_issues(value: Any, path: str = "mauthArguments") -> list[str]:
+    issues: list[str] = []
+    if isinstance(value, dict):
+        for key, inner_value in value.items():
+            inner_path = f"{path}.{key}"
+            if isinstance(inner_value, str) and key in {"questionText", "solutionText", "text", "label"}:
+                issues.extend(control_character_issues(inner_value, inner_path))
+                issues.extend(latex_artifact_issues(inner_value, inner_path))
+            elif isinstance(inner_value, (dict, list)):
+                issues.extend(text_quality_issues(inner_value, inner_path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            issues.extend(text_quality_issues(item, f"{path}[{index}]"))
+    return issues
+
+
 def usage_cost(usage: dict[str, Any] | None) -> float:
     if not isinstance(usage, dict):
         return 0
@@ -1380,8 +1404,7 @@ def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict
         issues.append("source screenshot should be converted into Question 1")
     question_text = str(args.get("questionText") or "")
     solution_text = str(args.get("solutionText") or "")
-    issues.extend(control_character_issues(question_text, "questionText"))
-    issues.extend(control_character_issues(solution_text, "solutionText"))
+    issues.extend(text_quality_issues(args))
     issues.extend(artifact_solution_text_mark_issues(args))
     if "(a)" in question_text.lower() or "(b)" in question_text.lower():
         issues.append("questionText should not contain typed automatic part labels")
@@ -3765,6 +3788,108 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
     return issues
 
 
+def graph3d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, Any]]:
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return []
+    issues: list[dict[str, Any]] = []
+    for config_path, config in collect_diagram_graph_configs_with_paths(args):
+        if config.get("type") != "graph3d":
+            continue
+        metadata = config.get("metadata")
+        if isinstance(metadata, dict):
+            for key in ("axisLabels", "showAxes", "showGrid"):
+                if key in metadata:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.metadata.{key}",
+                            "message": f"graph3d {key} is renderer-owned; do not put it in metadata.",
+                            "expected": f"{config_path}.metadata.view3d only",
+                        }
+                    )
+            view3d = metadata.get("view3d")
+            if isinstance(view3d, dict):
+                if "camera" in view3d:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.metadata.view3d.camera",
+                            "message": "graph3d uses az/el/bank, not Plotly-style camera metadata.",
+                            "expected": "{ az, el, bank }",
+                        }
+                    )
+                for key in ("az", "el", "bank"):
+                    value = view3d.get(key)
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        issues.append(
+                            {
+                                "path": f"{config_path}.metadata.view3d.{key}",
+                                "message": "graph3d view metadata must include numeric az, el, and bank.",
+                                "expected": "numeric radian-style renderer value",
+                            }
+                        )
+                    else:
+                        limit = 3.2 if key == "el" else 6.4
+                        if abs(float(value)) > limit:
+                            issues.append(
+                                {
+                                    "path": f"{config_path}.metadata.view3d.{key}",
+                                    "message": "graph3d view metadata must use radian-style renderer values, not degrees.",
+                                    "expected": "numeric radian-style renderer value",
+                                }
+                            )
+            elif view3d is not None:
+                issues.append(
+                    {
+                        "path": f"{config_path}.metadata.view3d",
+                        "message": "graph3d metadata.view3d must be an object with az, el, and bank.",
+                        "expected": "{ az, el, bank }",
+                    }
+                )
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        points = data.get("points")
+        if isinstance(points, list):
+            for index, point in enumerate(points):
+                if not isinstance(point, dict):
+                    continue
+                point_id = str(point.get("id") or "").lower()
+                if point_id in {"xaxis", "yaxis", "zaxis"}:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.data.points[{index}].id",
+                            "message": "graph3d axes are renderer-owned; do not add axis helper points.",
+                            "expected": "only source-named vertices and construction points",
+                        }
+                    )
+        segments = data.get("segments")
+        if isinstance(segments, list):
+            for index, segment in enumerate(segments):
+                if not isinstance(segment, dict):
+                    continue
+                if "style" in segment:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.data.segments[{index}].style",
+                            "message": "graph3d segment styling must use strokeStyle:'dashed' or dashed:true, not style.",
+                            "expected": "strokeStyle:'dashed' or dashed:true",
+                        }
+                    )
+                endpoint_values = [segment.get("from"), segment.get("to")]
+                points_value = segment.get("points")
+                if isinstance(points_value, list):
+                    endpoint_values.extend(points_value[:2])
+                if any(str(value or "").lower() in {"xaxis", "yaxis", "zaxis"} for value in endpoint_values):
+                    issues.append(
+                        {
+                            "path": f"{config_path}.data.segments[{index}]",
+                            "message": "graph3d axes are renderer-owned; do not add axis helper segments.",
+                            "expected": "only source visible/hidden edges, diagonals, and named lines",
+                        }
+                    )
+    return issues
+
+
 def real_slope_field_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues = graph2d_validation_issues_from_call(call)
     for issue in first_issues:
@@ -3800,6 +3925,27 @@ def real_slope_field_repair_failure_output(call: dict[str, Any], first_issues: l
         tool_name=call.get("mauthToolName"),
         validation_issues=validation_issues,
         message="Mauth graph2d validation failed.",
+    )
+
+
+def real_prism_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues = graph3d_validation_issues_from_call(call)
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig",
+                "message": issue,
+                "expected": (
+                    "source-faithful native graph3d payload using data.points/data.segments/data.faces and "
+                    "metadata.view3d only"
+                ),
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth graph3d validation failed.",
     )
 
 
@@ -3993,6 +4139,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_prism_screenshot_with_key,
         "assert": assert_real_specialist_prism_call,
+        "repairOnFailure": real_prism_repair_failure_output,
     },
     "real-specialist-implicit": {
         "prompt": (
@@ -5251,6 +5398,18 @@ def local_real_specialist_prism_bad_coordinates_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_prism_bad_latex_artifact_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[0]["text"] = "Determine the vector equation for the prism's main diagonal $\\$\\overrightarrow{BT}$."
+    parts[2]["text"] = (
+        "Prove, using a vector method, that line $\\$\\overrightarrow{AM}$ does not "
+        "intersect $\\$\\overrightarrow{BT}$."
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_fraction_sphere_solution_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_prism_call()))
     part_b = call["mauthArguments"]["parts"][1]
@@ -5703,6 +5862,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "3d prism graph3d point M should have coordinates",
             "3d prism graph3d segment OC should be dashed",
             "3d prism graph3d segment OT should be dashed",
+        ],
+    },
+    "real-specialist-prism-bad-latex-artifact": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_bad_latex_artifact_call,
+        "expectedIssues": [
+            "contains malformed escaped dollar inside maths",
         ],
     },
     "graph3d-general-solids": {

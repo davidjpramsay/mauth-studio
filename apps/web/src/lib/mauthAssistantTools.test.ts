@@ -1573,6 +1573,31 @@ test("high-level question authoring rejects skipped question numbers", () => {
   assert(data.validationIssues?.some((issue) => issue.path === "arguments.questionNumber" && issue.expected === "1 to 2"));
 });
 
+test("high-level question authoring rejects malformed escaped-dollar maths", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "A rectangular prism has a main diagonal.",
+      parts: [
+        {
+          text: "Determine the vector equation for $\\$\\overrightarrow{BT}$.",
+          marks: 2,
+          studentSpaceLines: 6,
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.document, undefined);
+  assert(
+    data.validationIssues?.some((issue) => issue.path === "arguments.parts[0].text" && issue.message.includes("malformed escaped dollar")),
+  );
+});
+
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",

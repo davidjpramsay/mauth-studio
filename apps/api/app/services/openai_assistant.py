@@ -1813,7 +1813,9 @@ def source_conversion_diagram_block_schema(description: str) -> dict[str, Any]:
                     "geometricConstruction for schematic theorem geometry; setDiagram for Venn/set diagrams. "
                     "For graph2d, keep bounds/functions/features top-level, with only slopeField under data. "
                     "For graph3d, use data.points, data.segments, data.faces, data.solids, and metadata.view3d "
-                    "{az,el,bank}. For vector2d, metadata.vector2d.vectors[] entries need id, name, start:[x,y], "
+                    "{az,el,bank}; do not use metadata.axisLabels, metadata.showAxes, metadata.showGrid, "
+                    "metadata.view3d.camera, segment style, or xAxis/yAxis/zAxis helper points. "
+                    "For vector2d, metadata.vector2d.vectors[] entries need id, name, start:[x,y], "
                     "and components:[dx,dy]; use metadata.vector2d.segmentLabels[] and metadata.vector2d.angleMarkers[] "
                     "for magnitude and angle labels."
                 ),
@@ -2245,6 +2247,7 @@ def mauth_convert_source_question_tool_definition(*, require_diagram: bool = Fal
         "description": (
             "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
             "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
+            "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
             "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
             "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
             "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
@@ -2932,7 +2935,7 @@ Authoring quality bar:
 - Include enough information for students to solve the problem. Include a concise worked solution only when requested or present in the source material.
 - Mathematical validity is mandatory. Before calling a write/edit tool, internally check that every conclusion follows from the stated givens and that the solution does not assume information visible only in an imagined diagram.
 - Never emit a proof question whose worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If your first draft is invalid, change the question statement before calling the tool.
-- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\] or \\(...\\) delimiters.
+- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\], \\(...\\), or escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$.
 - A student answer surface must keep the same layout in both copies. For sketch/label/table tasks, the solution copy should replace the blank student diagram/table with a completed solution diagram/table in the same document position, not add a separate solution below it.
 - For multipart questions, use the structured parts array on mauth_question_upsert or mauth.question.upsert. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.
