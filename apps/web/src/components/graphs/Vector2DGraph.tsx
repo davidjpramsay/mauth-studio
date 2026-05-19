@@ -457,6 +457,13 @@ function vectorEnd(vector: Vector2DEntry): [number, number] {
   return [vector.start[0] + vector.components[0], vector.start[1] + vector.components[1]];
 }
 
+function defaultVectorLabelPosition(board: JXG.Board, vector: Vector2DEntry): [number, number] {
+  const baseX = vector.start[0] + vector.components[0] * 0.72;
+  const baseY = vector.start[1] + vector.components[1] * 0.72;
+  const direction = unitVector(vector);
+  return offsetUserByPixels(board, baseX, baseY, direction[1] * 14, direction[0] * 14);
+}
+
 function vectorLookupKey(value: string) {
   return value.trim().toLowerCase();
 }
@@ -941,8 +948,9 @@ export function Vector2DGraph({
       drawVectorArrow(board, vector.start, end, vector.color);
       const labelLatex = vectorLabelLatex(vector);
       if (labelLatex.trim()) {
-        const labelX = Number.isFinite(vector.labelX) ? (vector.labelX as number) : vector.start[0] + vector.components[0] * 0.55;
-        const labelY = Number.isFinite(vector.labelY) ? (vector.labelY as number) : vector.start[1] + vector.components[1] * 0.55;
+        const [defaultLabelX, defaultLabelY] = defaultVectorLabelPosition(board, vector);
+        const labelX = Number.isFinite(vector.labelX) ? (vector.labelX as number) : defaultLabelX;
+        const labelY = Number.isFinite(vector.labelY) ? (vector.labelY as number) : defaultLabelY;
         createVectorLabelText(
           board,
           labelX,

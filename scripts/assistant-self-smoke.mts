@@ -165,7 +165,7 @@ function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean;
         labelStyle: "custom",
         vectors: [
           { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4] },
-          { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.1, 1.8] },
+          { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.29, 1.53] },
           ...(includeAllLabels ? [{ id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9] }] : []),
           ...(includeAllLabels ? [{ id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.65, 1.4] }] : []),
         ],
@@ -177,7 +177,7 @@ function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean;
         ],
         angleMarkers: includeAngleMarkers
           ? [
-              { from: "b", to: "c", rightAngle: true, radius: 0.48 },
+              { from: "b", to: "d", rightAngle: true, radius: 0.48 },
               { from: "c", to: "d", label: "45^\\circ", radius: 0.64 },
             ]
           : [],

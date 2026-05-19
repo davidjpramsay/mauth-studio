@@ -98,6 +98,78 @@ function vector2dAngleMarkers(config: GraphConfig) {
   return recordArray(vector2d.angleMarkers);
 }
 
+function vector2dVectors(config: GraphConfig) {
+  const metadataVector2d = graphMetadata(config).vector2d;
+  const vector2d: Record<string, unknown> = isRecord(metadataVector2d) ? metadataVector2d : {};
+  return recordArray(vector2d.vectors);
+}
+
+function finiteNumberValue(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function numericPairValue(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const x = finiteNumberValue(value[0]);
+  const y = finiteNumberValue(value[1]);
+  return x === undefined || y === undefined ? undefined : [x, y];
+}
+
+function vector2dAngleDegrees(vector: Record<string, unknown>) {
+  const components = numericPairValue(vector.components ?? vector.vector);
+  if (components) return (Math.atan2(components[1], components[0]) * 180) / Math.PI;
+  const start = numericPairValue(vector.start) ?? [0, 0];
+  const end = numericPairValue(vector.end);
+  if (end) return (Math.atan2(end[1] - start[1], end[0] - start[0]) * 180) / Math.PI;
+  return undefined;
+}
+
+function vectorReferenceKey(value: unknown) {
+  return typeof value === "string"
+    ? normalizedMathText(value)
+        .replace(/[^A-Za-z0-9]+/g, "")
+        .toLowerCase()
+    : "";
+}
+
+function vector2dByReference(vectors: Array<Record<string, unknown>>, reference: unknown) {
+  const key = vectorReferenceKey(reference);
+  if (!key) return undefined;
+  return vectors.find((vector) => [vector.id, vector.name, vector.label].some((value) => vectorReferenceKey(value) === key));
+}
+
+function angleDistanceDegrees(first: number, second: number) {
+  const normalizedFirst = ((first % 360) + 360) % 360;
+  const normalizedSecond = ((second % 360) + 360) % 360;
+  const difference = Math.abs(normalizedFirst - normalizedSecond) % 360;
+  return difference > 180 ? 360 - difference : difference;
+}
+
+function angleLabelDegrees(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const source = value
+    .trim()
+    .replace(/^\${1,2}|\${1,2}$/g, "")
+    .replace(/^\\\(|\\\)$/g, "")
+    .replace(/\s+/g, "")
+    .replace(/\u00b0/g, "^\\circ")
+    .replace(/\\degree\b/gi, "^\\circ")
+    .replace(/\^\{\\circ\}/gi, "^\\circ");
+  const match = source.match(/^([+-]?\d+(?:\.\d+)?)(?:\^\\circ|\\circ)?$/i);
+  return match ? Number(match[1]) : undefined;
+}
+
+function vector2dMarkerAngleDistance(config: GraphConfig, marker: Record<string, unknown>) {
+  const vectors = vector2dVectors(config);
+  const first = vector2dByReference(vectors, marker.from ?? marker.vectorA);
+  const second = vector2dByReference(vectors, marker.to ?? marker.vectorB);
+  if (!first || !second) return undefined;
+  const firstAngle = vector2dAngleDegrees(first);
+  const secondAngle = vector2dAngleDegrees(second);
+  return firstAngle === undefined || secondAngle === undefined ? undefined : angleDistanceDegrees(firstAngle, secondAngle);
+}
+
 function normalizedMathText(rawText: string) {
   return rawText
     .replace(/\\mathbf\s*\{\s*([^}]+)\s*\}/g, "$1")
@@ -336,6 +408,31 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
       path: "graphConfig.metadata.vector2d.angleMarkers",
     });
   }
+  angleMarkers.forEach((marker, markerIndex) => {
+    const distance = vector2dMarkerAngleDistance(config, marker);
+    if (distance === undefined) return;
+    if (marker.rightAngle === true && Math.abs(distance - 90) > 8) {
+      warnings.push({
+        code: "scalar-product-right-angle-geometry-mismatch",
+        severity: "warning",
+        message: `Scalar-product right-angle marker references vectors ${String(marker.from ?? marker.vectorA ?? "")} and ${String(
+          marker.to ?? marker.vectorB ?? "",
+        )}, which are ${Number(distance.toFixed(1))} degrees apart rather than perpendicular.`,
+        path: `graphConfig.metadata.vector2d.angleMarkers[${markerIndex}]`,
+      });
+    }
+    const labelledAngle = angleLabelDegrees(marker.label);
+    if (marker.rightAngle !== true && labelledAngle !== undefined && Math.abs(distance - labelledAngle) > 8) {
+      warnings.push({
+        code: "scalar-product-angle-marker-geometry-mismatch",
+        severity: "warning",
+        message: `Scalar-product angle marker label ${Number(labelledAngle.toFixed(1))} degrees does not match vectors ${String(
+          marker.from ?? marker.vectorA ?? "",
+        )} and ${String(marker.to ?? marker.vectorB ?? "")}, which are ${Number(distance.toFixed(1))} degrees apart.`,
+        path: `graphConfig.metadata.vector2d.angleMarkers[${markerIndex}]`,
+      });
+    }
+  });
   if ((config.showAxes !== false || config.showGrid !== false) && /\bscalar products?\b|\bdot products?\b/i.test(contextText)) {
     warnings.push({
       code: "scalar-product-vector2d-axes-visible",
@@ -676,6 +773,8 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||
+    warning.code === "scalar-product-right-angle-geometry-mismatch" ||
+    warning.code === "scalar-product-angle-marker-geometry-mismatch" ||
     warning.code === "scalar-product-vector2d-axes-visible" ||
     warning.code === "vector2d-labels-missing" ||
     warning.code === "stats-chart-probabilities-not-normalised" ||

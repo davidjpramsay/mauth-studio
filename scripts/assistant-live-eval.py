@@ -4684,6 +4684,38 @@ def local_source_question_call(mauth_arguments: dict[str, Any]) -> dict[str, Any
     return local_tool_call("mauth_convert_source_question", QUESTION_UPSERT_TOOL_NAME, mauth_arguments)
 
 
+def local_screenshot_scalar_products_call() -> dict[str, Any]:
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionText": "Evaluate the following scalar products exactly.",
+            "diagram": {
+                "diagramAlign": "center",
+                "vectorRayDiagram": {
+                    "widthPx": 560,
+                    "heightPx": 380,
+                    "vectors": [
+                        {"id": "a", "length": 2, "angleDeg": 215, "lengthLabel": "2 units"},
+                        {"id": "b", "length": 2, "angleDeg": 125, "lengthLabel": "2\\text{units}"},
+                        {"id": "c", "length": 3, "angleDeg": 80, "lengthLabel": "3\\ \\text{units}"},
+                        {"id": "d", "length": 2, "angleDeg": 35, "lengthLabel": "$2\\ \\text{units}$"},
+                    ],
+                    "angleMarkers": [
+                        {"from": "b", "to": "d", "rightAngle": True, "radius": 0.42},
+                        {"from": "c", "to": "d", "label": "45°", "radius": 0.72},
+                    ],
+                },
+            },
+            "parts": [
+                {"label": "a", "text": "$\\mathbf{a}\\cdot\\mathbf{b}$", "marks": 1, "studentSpaceLines": 3},
+                {"label": "b", "text": "$\\mathbf{a}\\cdot\\mathbf{d}$", "marks": 2, "studentSpaceLines": 3},
+                {"label": "c", "text": "$\\mathbf{c}\\cdot\\mathbf{d}$", "marks": 2, "studentSpaceLines": 3},
+            ],
+        }
+    )
+
+
 def local_real_methods_earthquake_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -6408,6 +6440,10 @@ def local_real_specialist_ski_modelling_bad_solution_call() -> dict[str, Any]:
 
 
 LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
+    "screenshot-scalar-products": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_call,
+    },
     "real-methods-earthquake": {
         "assert": assert_real_methods_earthquake_call,
         "call": local_real_methods_earthquake_call,
@@ -6699,6 +6735,7 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
     "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
     "local-real-exams-preview": [
+        "screenshot-scalar-products",
         "real-methods-ev-histogram",
         "real-specialist-stats",
         "real-specialist-confidence-intervals",

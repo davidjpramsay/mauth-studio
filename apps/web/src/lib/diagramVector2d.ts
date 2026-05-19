@@ -173,6 +173,42 @@ function finiteVectorNumberOrUndefined(value: unknown) {
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
+function stripInlineMathDelimiters(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) return trimmed.slice(2, -2).trim();
+  if (trimmed.startsWith("$") && trimmed.endsWith("$")) return trimmed.slice(1, -1).trim();
+  if (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) return trimmed.slice(2, -2).trim();
+  return trimmed;
+}
+
+function normalizeSourceLabelLatex(value: string) {
+  return stripInlineMathDelimiters(value)
+    .replace(/\u00a0/g, " ")
+    .trim();
+}
+
+function normalizeSourceLengthLabel(value: string) {
+  const source = normalizeSourceLabelLatex(value)
+    .replace(/\\(?:text|mathrm)\s*\{\s*units?\s*\}/gi, "\\text{units}")
+    .replace(/\s+/g, " ")
+    .trim();
+  const unitsMatch = source.match(/^([+-]?\d+(?:\.\d+)?)\s*(?:\\\s*)?(?:\\text\s*\{\s*units?\s*\}|units?)$/i);
+  if (unitsMatch) return `${unitsMatch[1]}\\ \\text{units}`;
+  return source;
+}
+
+function normalizeSourceAngleLabel(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const source = normalizeSourceLabelLatex(value)
+    .replace(/\s+/g, "")
+    .replace(/\u00b0/g, "^\\circ")
+    .replace(/\\degree\b/gi, "^\\circ")
+    .replace(/\^\{\\circ\}/gi, "^\\circ");
+  const degreeMatch = source.match(/^([+-]?\d+(?:\.\d+)?)(?:\^\\circ|\\circ)?$/i);
+  if (degreeMatch) return `${degreeMatch[1]}^\\circ`;
+  return source;
+}
+
 function optionalVectorPair(value: unknown): [number, number] | undefined {
   if (!Array.isArray(value) || value.length < 2) return undefined;
   const x = finiteVectorNumberOrUndefined(value[0]);
@@ -188,7 +224,7 @@ function sanitizeVectorId(value: unknown, fallback: string) {
 }
 
 function vectorLabelForSource(name: string, explicitLabel: unknown) {
-  if (typeof explicitLabel === "string" && explicitLabel.trim()) return explicitLabel.trim();
+  if (typeof explicitLabel === "string" && explicitLabel.trim()) return normalizeSourceLabelLatex(explicitLabel);
   return `\\mathbf{${name.toLowerCase()}}`;
 }
 
@@ -261,16 +297,27 @@ function sourceVectorBounds(points: Array<[number, number]>, widthPx: number, he
   return { minX, maxX, minY, maxY };
 }
 
-function sourceSegmentLabel(vectorId: string, label: string, index: number, entry: Partial<Vector2DSourceSegmentLabelInput> = {}) {
+function defaultSourceSegmentOffsetPx(components: [number, number]) {
+  const angle = ((Math.atan2(components[1], components[0]) * 180) / Math.PI + 360) % 360;
+  return angle <= 60 ? -18 : 18;
+}
+
+function sourceSegmentLabel(
+  vectorId: string,
+  label: string,
+  index: number,
+  entry: Partial<Vector2DSourceSegmentLabelInput> = {},
+  fallbackOffsetPx = 18,
+) {
   const labelX = finiteOptionalVectorNumber(entry.labelX);
   const labelY = finiteOptionalVectorNumber(entry.labelY);
 
   return {
     id: String(entry.id ?? `segment-label-${vectorId}-${index + 1}`),
     vectorId,
-    label,
+    label: normalizeSourceLengthLabel(label),
     position: Math.min(0.95, Math.max(0.05, finiteVectorNumber(entry.position, 0.55))),
-    offsetPx: finiteVectorNumber(entry.offsetPx ?? entry.offset, 0.3),
+    offsetPx: finiteVectorNumber(entry.offsetPx ?? entry.offset, fallbackOffsetPx),
     color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
     ...(labelX !== undefined ? { labelX } : {}),
     ...(labelY !== undefined ? { labelY } : {}),
@@ -288,7 +335,7 @@ function sourceAngleMarker(entry: Vector2DSourceAngleMarkerInput, index: number)
     id: String(entry.id ?? `angle-marker-${index + 1}`),
     from,
     to,
-    label: String(entry.label ?? ""),
+    label: normalizeSourceAngleLabel(entry.label),
     rightAngle: entry.rightAngle === true || entry.kind === "rightAngle" || entry.type === "rightAngle",
     radius: Math.max(0.05, positiveVectorNumber(entry.radius, entry.rightAngle === true ? 0.38 : 0.62)),
     color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
@@ -434,7 +481,7 @@ export function buildVector2DSourceDiagramConfig(input: Vector2DSourceDiagramInp
         typeof entry.lengthLabel === "string" && entry.lengthLabel.trim()
           ? entry.lengthLabel.trim()
           : defaultSourceLengthLabel(entry.length);
-      if (label) segmentLabels.push(sourceSegmentLabel(id, label, segmentLabels.length));
+      if (label) segmentLabels.push(sourceSegmentLabel(id, label, segmentLabels.length, {}, defaultSourceSegmentOffsetPx(components)));
     }
 
     return {

@@ -244,7 +244,7 @@ test("assistant diagram preflight accepts source-faithful scalar-product vector2
               labelStyle: "custom",
               vectors: [
                 { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4] },
-                { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.1, 1.8] },
+                { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.29, 1.53] },
                 { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9] },
                 { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.65, 1.4] },
               ],

@@ -649,6 +649,21 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
       if (label) labels.push(label);
     }
   }
+  if (type === "vector2d") {
+    const vector2d = config.metadata?.vector2d ?? {};
+    for (const vector of Array.isArray(vector2d.vectors) ? vector2d.vectors : []) {
+      const label = expectedLabelText(vector?.label ?? vector?.name ?? vector?.id);
+      if (label) labels.push(label);
+    }
+    for (const segmentLabel of Array.isArray(vector2d.segmentLabels) ? vector2d.segmentLabels : []) {
+      const label = expectedLabelText(segmentLabel?.label);
+      if (label) labels.push(label);
+    }
+    for (const angleMarker of Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : []) {
+      const label = expectedLabelText(angleMarker?.label);
+      if (label) labels.push(label);
+    }
+  }
   if (type === "statsChart") {
     for (const key of ["title", "xLabel", "yLabel"]) {
       const label = expectedLabelText(config.data?.[key]);

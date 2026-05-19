@@ -323,6 +323,31 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$ when the angle between them is $45^\\circ$.",
   ).warnings;
   assert(scalarWarnings.some((warning) => warning.code === "scalar-product-angle-marker-missing"));
+  const scalarMismatchWarnings = inspectMauthDiagram(
+    {
+      type: "vector2d",
+      showAxes: false,
+      showGrid: false,
+      metadata: {
+        vector2d: {
+          labelStyle: "custom",
+          vectors: [
+            { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.414, 1.414] },
+            { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.638, 1.147] },
+            { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.52, 2.95] },
+          ],
+          angleMarkers: [
+            { from: "b", to: "d", rightAngle: true },
+            { from: "c", to: "d", label: "45^\\circ" },
+          ],
+        },
+      },
+    },
+    "Evaluate $\\mathbf{b}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$ from the scalar product diagram.",
+  ).warnings;
+  const rightAngleMismatch = scalarMismatchWarnings.find((warning) => warning.code === "scalar-product-right-angle-geometry-mismatch");
+  assert(rightAngleMismatch);
+  assert.equal(isAssistantDiagramInspectionWarningBlocking(rightAngleMismatch), true);
   assert(
     statsWarnings.some(
       (warning) => warning.code === "stats-chart-probabilities-not-normalised" && isAssistantDiagramInspectionWarningBlocking(warning),
@@ -1330,13 +1355,13 @@ test("high-level question authoring builds source scalar-product vector diagrams
           heightPx: 380,
           vectors: [
             { id: "a", length: 2, angleDeg: 215, lengthLabel: "2\\ \\text{units}", labelX: -2.25, labelY: -1.45 },
-            { id: "b", length: 2, angleDeg: 135, lengthLabel: "2\\ \\text{units}", labelX: -1.7, labelY: 1.55 },
+            { id: "b", length: 2, angleDeg: 125, lengthLabel: "2 units", labelX: -1.7, labelY: 1.55 },
             { id: "c", length: 3, angleDeg: 80, lengthLabel: "3\\ \\text{units}", labelX: 0.38, labelY: 3.1 },
             { id: "d", length: 2, angleDeg: 35, lengthLabel: "2\\ \\text{units}", labelX: 2.2, labelY: 1.35 },
           ],
           angleMarkers: [
             { from: "b", to: "d", rightAngle: true, radius: 0.42 },
-            { from: "c", to: "d", label: "45^\\circ", radius: 0.72, labelX: 0.95, labelY: 0.78 },
+            { from: "c", to: "d", label: "45°", radius: 0.72, labelX: 0.95, labelY: 0.78 },
           ],
         },
       },
@@ -1379,6 +1404,14 @@ test("high-level question authoring builds source scalar-product vector diagrams
     ["a", "b", "c", "d"],
   );
   assert.equal(vector2d?.segmentLabels?.length, 4);
+  assert.deepEqual(
+    vector2d?.segmentLabels?.map((label) => label.label),
+    ["2\\ \\text{units}", "2\\ \\text{units}", "3\\ \\text{units}", "2\\ \\text{units}"],
+  );
+  assert.deepEqual(
+    vector2d?.segmentLabels?.map((label) => label.offsetPx),
+    [18, 18, 18, -18],
+  );
   assert.equal(vector2d?.angleMarkers?.length, 2);
   assert.equal(
     vector2d?.angleMarkers?.some((marker) => marker.rightAngle === true),
@@ -1391,6 +1424,35 @@ test("high-level question authoring builds source scalar-product vector diagrams
   assert.equal(
     warnings.some((warning) => isAssistantDiagramInspectionWarningBlocking(warning)),
     false,
+  );
+});
+
+test("high-level question authoring rejects mismatched compact vector angle markers before apply", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 0,
+      questionText: "Evaluate the following scalar products exactly.",
+      diagram: {
+        vectorRayDiagram: {
+          vectors: [
+            { id: "b", length: 2, angleDeg: 135 },
+            { id: "d", length: 2, angleDeg: 35 },
+          ],
+          angleMarkers: [{ from: "b", to: "d", rightAngle: true }],
+        },
+      },
+    },
+  });
+  const issues = (result.data as { validationIssues?: Array<{ path?: string; message?: string }> } | undefined)?.validationIssues ?? [];
+
+  assert.equal(result.ok, false);
+  assert(
+    issues.some(
+      (issue) =>
+        issue.path === "arguments.diagram.vectorRayDiagram.angleMarkers[0]" && /100(?:\.0)? degrees apart/.test(issue.message ?? ""),
+    ),
   );
 });
 

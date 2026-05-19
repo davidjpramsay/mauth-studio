@@ -2501,6 +2501,55 @@ function rawAssistantDiagramEntryType(entry: unknown) {
   return typeof graphConfig?.type === "string" ? graphConfig.type : undefined;
 }
 
+function finiteSourceVectorNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function sourceVectorPairForValidation(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const x = finiteSourceVectorNumber(value[0]);
+  const y = finiteSourceVectorNumber(value[1]);
+  return x === undefined || y === undefined ? undefined : [x, y];
+}
+
+function sourceVectorAngleDegrees(vector: Record<string, unknown>) {
+  const angleDeg = finiteSourceVectorNumber(vector.angleDeg);
+  if (angleDeg !== undefined) return ((angleDeg % 360) + 360) % 360;
+
+  const components = sourceVectorPairForValidation(vector.components);
+  if (components) return (Math.atan2(components[1], components[0]) * 180) / Math.PI;
+
+  const end = sourceVectorPairForValidation(vector.end);
+  if (end) {
+    const start = sourceVectorPairForValidation(vector.start) ?? [0, 0];
+    return (Math.atan2(end[1] - start[1], end[0] - start[0]) * 180) / Math.PI;
+  }
+
+  return undefined;
+}
+
+function angleDistanceDegrees(first: number, second: number) {
+  const normalizedFirst = ((first % 360) + 360) % 360;
+  const normalizedSecond = ((second % 360) + 360) % 360;
+  const difference = Math.abs(normalizedFirst - normalizedSecond) % 360;
+  return difference > 180 ? 360 - difference : difference;
+}
+
+function sourceAngleLabelDegrees(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const source = value
+    .trim()
+    .replace(/^\${1,2}|\${1,2}$/g, "")
+    .replace(/^\\\(|\\\)$/g, "")
+    .replace(/\s+/g, "")
+    .replace(/\u00b0/g, "^\\circ")
+    .replace(/\\degree\b/gi, "^\\circ")
+    .replace(/\^\{\\circ\}/gi, "^\\circ");
+  const match = source.match(/^([+-]?\d+(?:\.\d+)?)(?:\^\\circ|\\circ)?$/i);
+  return match ? Number(match[1]) : undefined;
+}
+
 function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {
   const rawInput = entry.vectorRayDiagram ?? entry.sourceVectorDiagram ?? entry.vector2dSource;
   if (rawInput === undefined) return undefined;
@@ -2524,6 +2573,7 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
   }
 
   const vectorIds = new Set<string>();
+  const vectorAngles = new Map<string, number>();
   rawVectors.forEach((vector, vectorIndex) => {
     const vectorPath = `${entryPath}.vectorRayDiagram.vectors[${vectorIndex}]`;
     if (!isRecord(vector)) {
@@ -2536,6 +2586,8 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
     } else {
       vectorIds.add(id);
     }
+    const angle = sourceVectorAngleDegrees(vector);
+    if (id && angle !== undefined) vectorAngles.set(id, angle);
 
     const hasLengthAngle = Number.isFinite(Number(vector.length)) && Number.isFinite(Number(vector.angleDeg));
     const hasComponents =
@@ -2576,6 +2628,27 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
       }
       if (!to || !vectorIds.has(to)) {
         issues.push({ path: `${markerPath}.to`, message: "must reference a vector id in vectorRayDiagram.vectors", expected: "vector id" });
+      }
+      if (from && to && vectorIds.has(from) && vectorIds.has(to)) {
+        const firstAngle = vectorAngles.get(from);
+        const secondAngle = vectorAngles.get(to);
+        const distance = firstAngle === undefined || secondAngle === undefined ? undefined : angleDistanceDegrees(firstAngle, secondAngle);
+        const rightAngle = marker.rightAngle === true || marker.kind === "rightAngle" || marker.type === "rightAngle";
+        if (rightAngle && distance !== undefined && Math.abs(distance - 90) > 8) {
+          issues.push({
+            path: markerPath,
+            message: `rightAngle marker references vectors ${from} and ${to}, which are ${Number(distance.toFixed(1))} degrees apart`,
+            expected: "two vectors separated by 90 degrees, or different marker endpoints",
+          });
+        }
+        const labelledAngle = sourceAngleLabelDegrees(marker.label);
+        if (!rightAngle && labelledAngle !== undefined && distance !== undefined && Math.abs(distance - labelledAngle) > 8) {
+          issues.push({
+            path: markerPath,
+            message: `angle marker label ${Number(labelledAngle.toFixed(1))} degrees does not match vectors ${from} and ${to}, which are ${Number(distance.toFixed(1))} degrees apart`,
+            expected: "angle-marker endpoints whose separation matches the visible angle label",
+          });
+        }
       }
     });
   }
