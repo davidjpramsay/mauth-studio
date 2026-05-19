@@ -1093,14 +1093,25 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
+function graphLabelLatex(source: string) {
+  const trimmed = source.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$") && !trimmed.startsWith("$$") && !trimmed.endsWith("\\$")) {
+    return trimmed.slice(1, -1).trim();
+  }
+  if (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) return trimmed.slice(2, -2).trim();
+  if (trimmed.startsWith("\\[") && trimmed.endsWith("\\]")) return trimmed.slice(2, -2).trim();
+  return trimmed;
+}
+
 function renderLatexLabelHtml(latex: string, color: string) {
+  const normalizedLatex = graphLabelLatex(latex);
   const safeColor = safeCssColor(color);
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   try {
-    const html = renderMathJaxSvg(latex, false);
+    const html = renderMathJaxSvg(normalizedLatex, false);
     return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(latex)}</span>`;
+    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
   }
 }
 

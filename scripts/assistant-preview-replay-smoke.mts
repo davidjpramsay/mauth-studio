@@ -39,7 +39,11 @@ interface AppliedReplayCase {
   expectedDiagramTypes: string[];
 }
 
+type PreviewReplayView = "student" | "solutions";
+type PreviewPageMode = "flow" | "a4";
+
 interface BrowserDiagramMetric {
+  view?: PreviewReplayView;
   caseName: string;
   type: string;
   chartType: string;
@@ -62,6 +66,23 @@ interface BrowserDiagramMetric {
   missingLabels: string[];
 }
 
+interface BrowserRenderedWarning {
+  view?: PreviewReplayView;
+  code?: string;
+  message?: string;
+  severity?: string;
+  anchor?: string;
+  caseName?: string;
+}
+
+interface BrowserRenderedMetrics {
+  warnings?: BrowserRenderedWarning[];
+  anchors?: Array<{
+    anchor?: string;
+    warnings?: BrowserRenderedWarning[];
+  }>;
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB_ROOT = path.join(ROOT, "apps", "web");
 const API_ROOT = path.join(ROOT, "apps", "api");
@@ -75,6 +96,24 @@ function argValue(name: string, fallback: string) {
   const index = process.argv.indexOf(name);
   if (index < 0) return fallback;
   return process.argv[index + 1] && !process.argv[index + 1].startsWith("--") ? process.argv[index + 1] : fallback;
+}
+
+function previewViews() {
+  const rawValue = argValue("--view", process.env.MAUTH_ASSISTANT_PREVIEW_VIEW ?? "both")
+    .trim()
+    .toLowerCase();
+  if (rawValue === "student") return ["student"] as const;
+  if (rawValue === "solutions" || rawValue === "solution") return ["solutions"] as const;
+  if (rawValue === "both") return ["student", "solutions"] as const;
+  throw new Error(`Unsupported --view ${JSON.stringify(rawValue)}. Use student, solutions, or both.`);
+}
+
+function previewPageMode(): PreviewPageMode {
+  const rawValue = argValue("--page-mode", process.env.MAUTH_ASSISTANT_PREVIEW_PAGE_MODE ?? "flow")
+    .trim()
+    .toLowerCase();
+  if (rawValue === "flow" || rawValue === "a4") return rawValue;
+  throw new Error(`Unsupported --page-mode ${JSON.stringify(rawValue)}. Use flow or a4.`);
 }
 
 function timestampSlug() {
@@ -374,8 +413,13 @@ export default defineConfig({
   box-sizing: border-box;
   font-family: "Times New Roman", Georgia, serif;
   font-size: 11pt;
-  height: var(--a4-page-height, 1122.519685px);
   line-height: 1.48;
+  min-height: var(--a4-page-height, 1122.519685px);
+  overflow: visible;
+}
+
+.replay-page[data-replay-page-mode="a4"] {
+  height: var(--a4-page-height, 1122.519685px);
   min-height: 0;
   overflow: hidden;
 }
@@ -444,6 +488,10 @@ import { collectRenderedPreviewMetrics } from "@/lib/mauthPreviewMetrics";
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 const replayCases = ${safeEmbeddedJson(cases)} as Array<{ caseName: string; document: any; expectedDiagramTypes: string[] }>;
+const searchParams = new URLSearchParams(window.location.search);
+const previewView = searchParams.get("view") === "student" ? "student" : "solutions";
+const pageMode = searchParams.get("pageMode") === "a4" ? "a4" : "flow";
+const showSolutions = previewView === "solutions";
 const MARK_PATTERN = /\\[\\[\\s*marks\\s*:\\s*(\\d+)\\s*\\]\\]/gi;
 
 function alphaLabel(index: number) {
@@ -821,10 +869,10 @@ function ReplayCase({ replayCase }: { replayCase: (typeof replayCases)[number] }
   return (
     <section data-replay-case={replayCase.caseName}>
       <p className="replay-case-title">{replayCase.caseName}</p>
-      <div className="a4-page replay-page">
+      <div className="a4-page replay-page" data-replay-page-mode={pageMode}>
         <div className="a4-page-content" data-preview-root="true">
           {(replayCase.document.questions ?? []).map((question: any, index: number) => (
-            <QuestionPreview key={question.id} question={question} index={index} showSolutions={true} />
+            <QuestionPreview key={question.id} question={question} index={index} showSolutions={showSolutions} />
           ))}
         </div>
       </div>
@@ -834,7 +882,7 @@ function ReplayCase({ replayCase }: { replayCase: (typeof replayCases)[number] }
 
 function App() {
   return (
-    <main className="replay-stage" id="preview-root" data-replay-ready="true">
+    <main className="replay-stage" id="preview-root" data-preview-view={previewView} data-preview-page-mode={pageMode} data-replay-ready="true">
       {replayCases.map((replayCase) => (
         <ReplayCase key={replayCase.caseName} replayCase={replayCase} />
       ))}
@@ -843,7 +891,24 @@ function App() {
 }
 
 Object.assign(window, {
-  collectAssistantPreviewReplayMetrics: () => collectRenderedPreviewMetrics(document.getElementById("preview-root")),
+  collectAssistantPreviewReplayMetrics: () => {
+    const root = document.getElementById("preview-root");
+    const metrics = collectRenderedPreviewMetrics(root);
+    const caseByAnchor = new Map<string, string>();
+    const warnings: Array<Record<string, unknown>> = [];
+    for (const caseElement of Array.from(document.querySelectorAll<HTMLElement>("[data-replay-case]"))) {
+      const caseName = caseElement.getAttribute("data-replay-case") ?? "";
+      const caseMetrics = collectRenderedPreviewMetrics(caseElement);
+      for (const anchor of caseMetrics.anchors ?? []) caseByAnchor.set(anchor.anchor, caseName);
+      for (const warning of caseMetrics.warnings ?? []) warnings.push({ ...warning, caseName });
+    }
+    return {
+      ...metrics,
+      warnings: warnings.length
+        ? warnings
+        : (metrics.warnings ?? []).map((warning) => ({ ...warning, caseName: caseByAnchor.get(warning.anchor ?? "") })),
+    };
+  },
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
@@ -851,72 +916,102 @@ ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
   );
 }
 
-function blockingMetricWarnings(metrics: { warnings?: Array<{ code?: string; message?: string; severity?: string }> }) {
+function warningCaseName(warning: BrowserRenderedWarning) {
+  if (warning.caseName) return warning.caseName;
+  const match = typeof warning.anchor === "string" ? warning.anchor.match(/^case:([^/]+)/) : null;
+  return match?.[1] ?? null;
+}
+
+function warningSummary(warnings: readonly BrowserRenderedWarning[]) {
+  const counts = new Map<string, number>();
+  for (const warning of warnings) {
+    const key = warning.code ?? "unknown-warning";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Array.from(counts)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([code, count]) => `${code}:${count}`)
+    .join(", ");
+}
+
+function dedupeWarnings(warnings: readonly BrowserRenderedWarning[]) {
+  const seen = new Set<string>();
+  return warnings.filter((warning) => {
+    const key = `${warning.view ?? ""}:${warning.caseName ?? ""}:${warning.code ?? ""}:${warning.anchor ?? ""}:${warning.message ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function blockingMetricWarnings(metrics: { warnings?: BrowserRenderedWarning[] }) {
   const blockingCodes = new Set(["rendered-diagram-failed", "rendered-diagram-clipped"]);
   return (metrics.warnings ?? []).filter((warning) => warning.code && blockingCodes.has(warning.code));
 }
 
 function failDiagramMetric(metric: BrowserDiagramMetric) {
   const failures: string[] = [];
-  if (!metric.renderedGraphic) failures.push(`${metric.caseName} ${metric.type} did not produce a rendered graphic`);
+  const label = `${metric.view ?? "preview"} ${metric.caseName} ${metric.type}`;
+  if (!metric.renderedGraphic) failures.push(`${label} did not produce a rendered graphic`);
   if (metric.width < 80 || metric.height < 60) {
-    failures.push(`${metric.caseName} ${metric.type} rendered too small at ${metric.width}x${metric.height}`);
+    failures.push(`${label} rendered too small at ${metric.width}x${metric.height}`);
   }
   if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.primitiveCount < 12) {
-    failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
+    failures.push(`${label} rendered only ${metric.primitiveCount} SVG primitives`);
   }
   if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.expectedGraph3DSegmentCount >= 8 && metric.primitiveCount < 20) {
-    failures.push(
-      `${metric.caseName} ${metric.type} rendered too few primitives for ${metric.expectedGraph3DSegmentCount} expected 3D segments`,
-    );
+    failures.push(`${label} rendered too few primitives for ${metric.expectedGraph3DSegmentCount} expected 3D segments`);
   }
   if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.expectedGraph3DFaceCount >= 5 && metric.primitiveCount < 20) {
-    failures.push(`${metric.caseName} ${metric.type} rendered too few primitives for ${metric.expectedGraph3DFaceCount} expected 3D faces`);
+    failures.push(`${label} rendered too few primitives for ${metric.expectedGraph3DFaceCount} expected 3D faces`);
   }
   const richGraph3DSolids = metric.expectedGraph3DSolidKinds.filter(
     (kind) => kind !== "sphere" && kind !== "circle" && kind !== "spherecap" && kind !== "sphericalcap",
   );
   if ((metric.type === "graph3d" || metric.type === "basic3d") && richGraph3DSolids.length > 0 && metric.primitiveCount < 18) {
-    failures.push(
-      `${metric.caseName} ${metric.type} rendered too few primitives for expected 3D solid(s): ${richGraph3DSolids.join(", ")}`,
-    );
+    failures.push(`${label} rendered too few primitives for expected 3D solid(s): ${richGraph3DSolids.join(", ")}`);
   }
   if ((metric.type === "graph2d" || metric.type === "2d_graph" || metric.type === "function") && metric.primitiveCount < 8) {
-    failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
+    failures.push(`${label} rendered only ${metric.primitiveCount} SVG primitives`);
   }
   if (metric.type === "vector2d" && metric.primitiveCount < 8) {
-    failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
+    failures.push(`${label} rendered only ${metric.primitiveCount} SVG primitives`);
   }
   if (metric.type === "statsChart" && metric.primitiveCount < 4) {
-    failures.push(`${metric.caseName} ${metric.type} rendered only ${metric.primitiveCount} SVG primitives`);
+    failures.push(`${label} rendered only ${metric.primitiveCount} SVG primitives`);
   }
   if (metric.type === "statsChart" && ["histogram", "binomial"].includes(metric.chartType) && metric.plotlyBarCount < 1) {
-    failures.push(`${metric.caseName} ${metric.chartType} statsChart rendered no Plotly bars`);
+    failures.push(`${metric.view ?? "preview"} ${metric.caseName} ${metric.chartType} statsChart rendered no Plotly bars`);
   }
   if (metric.type === "statsChart" && ["density", "normal"].includes(metric.chartType) && metric.plotlyLineCount < 1) {
-    failures.push(`${metric.caseName} ${metric.chartType} statsChart rendered no Plotly curve line`);
+    failures.push(`${metric.view ?? "preview"} ${metric.caseName} ${metric.chartType} statsChart rendered no Plotly curve line`);
   }
   if (metric.hasSlopeField && metric.primitiveCount < 30) {
-    failures.push(`${metric.caseName} slope-field graph2d rendered only ${metric.primitiveCount} SVG primitives`);
-  }
-  if (metric.expectedFunctionColors.length > 0 && metric.functionStrokeCount < 1) {
     failures.push(
-      `${metric.caseName} ${metric.type} rendered no function strokes matching expected color(s): ${metric.expectedFunctionColors.join(", ")}`,
+      `${metric.view ?? "preview"} ${metric.caseName} slope-field graph2d rendered only ${metric.primitiveCount} SVG primitives`,
     );
   }
+  if (metric.expectedFunctionColors.length > 0 && metric.functionStrokeCount < 1) {
+    failures.push(`${label} rendered no function strokes matching expected color(s): ${metric.expectedFunctionColors.join(", ")}`);
+  }
   if (metric.requiredLabels.length > 0 && metric.labelCount === 0) {
-    failures.push(`${metric.caseName} ${metric.type} rendered no label surfaces for expected labels: ${metric.requiredLabels.join(", ")}`);
+    failures.push(`${label} rendered no label surfaces for expected labels: ${metric.requiredLabels.join(", ")}`);
   }
   if (/could not render|mathjax-error|error rendering|failed to render/i.test(metric.text)) {
-    failures.push(`${metric.caseName} ${metric.type} contains render error text: ${metric.text}`);
+    failures.push(`${label} contains render error text: ${metric.text}`);
   }
   if (/\$[^$\n]{1,40}\$/.test(metric.text)) {
-    failures.push(`${metric.caseName} ${metric.type} rendered raw LaTeX delimiters in labels: ${metric.text}`);
+    failures.push(`${label} rendered raw LaTeX delimiters in labels: ${metric.text}`);
   }
   return failures;
 }
 
-async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
+async function runBrowserReplay(
+  cases: AppliedReplayCase[],
+  outputDir: string,
+  views: readonly PreviewReplayView[],
+  pageMode: PreviewPageMode,
+) {
   const port = await findFreePort();
   await writeFixture(port, cases);
   const logs: string[] = [];
@@ -940,126 +1035,184 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
   try {
     const url = `http://127.0.0.1:${port}`;
     await waitForServer(url, vite, logs);
-    await page.goto(url, { waitUntil: "networkidle" });
-    try {
-      await page.waitForSelector("[data-replay-ready='true']", { state: "attached", timeout: 20_000 });
-      await page.waitForFunction(
-        () => {
-          const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]"));
-          return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
+    await fs.mkdir(outputDir, { recursive: true });
+    const viewResults: Array<{
+      view: PreviewReplayView;
+      renderedMetrics: BrowserRenderedMetrics;
+      diagramMetrics: BrowserDiagramMetric[];
+    }> = [];
+
+    for (const view of views) {
+      await page.goto(`${url}?view=${view}&pageMode=${pageMode}`, { waitUntil: "networkidle" });
+      try {
+        await page.waitForSelector(`[data-replay-ready='true'][data-preview-view='${view}'][data-preview-page-mode='${pageMode}']`, {
+          state: "attached",
+          timeout: 20_000,
+        });
+        await page.waitForFunction(
+          () => {
+            const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]"));
+            return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
+          },
+          null,
+          { timeout: 20_000 },
+        );
+      } catch (error) {
+        const bodyText = (
+          (await page
+            .locator("body")
+            .textContent()
+            .catch(() => "")) ?? ""
+        ).trim();
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nView: ${view}\nConsole errors:\n${consoleErrors.join(
+            "\n",
+          )}\nPage mode: ${pageMode}\nPage errors:\n${pageErrors.join("\n")}\nVite logs:\n${logs.join("")}\nBody text:\n${bodyText}`,
+        );
+      }
+      await page.waitForTimeout(1200);
+
+      const viewOutputDir = path.join(outputDir, view);
+      await fs.mkdir(viewOutputDir, { recursive: true });
+      for (const replayCase of cases) {
+        await page.locator(`[data-replay-case="${replayCase.caseName}"] .replay-page`).screenshot({
+          path: path.join(viewOutputDir, `${replayCase.caseName}.png`),
+        });
+      }
+
+      const renderedMetrics = await page.evaluate(() => {
+        const collector = (
+          window as typeof window & {
+            collectAssistantPreviewReplayMetrics?: () => BrowserRenderedMetrics;
+          }
+        ).collectAssistantPreviewReplayMetrics;
+        return collector
+          ? collector()
+          : { warnings: [{ code: "metrics-missing", message: "preview metrics collector was not installed" }] };
+      });
+      const diagramMetrics = (
+        await page.evaluate(() =>
+          Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).map((frame) => {
+            const caseName = frame.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
+            const type = frame.getAttribute("data-diagram-type") ?? "";
+            const chartType = frame.getAttribute("data-chart-type") ?? "";
+            const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
+            const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
+            const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
+            const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
+            const rect = frame.getBoundingClientRect();
+            const primitives = Array.from(
+              frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
+            ).filter((element) => {
+              const box = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return box.width + box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+            });
+            const normalizeLabel = (value: string) =>
+              value
+                .toLowerCase()
+                .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
+                .replace(/[^a-z0-9]+/g, "");
+            const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
+            const normalizedText = normalizeLabel(frame.textContent ?? "");
+            const colorProbe = document.createElement("span");
+            colorProbe.style.display = "none";
+            document.body.appendChild(colorProbe);
+            const normalizeColor = (value: string) => {
+              colorProbe.style.color = value;
+              return window.getComputedStyle(colorProbe).color;
+            };
+            const expectedColors = new Set(expectedFunctionColors.map(normalizeColor));
+            const functionStrokeCount = primitives.filter((element) => {
+              const stroke = window.getComputedStyle(element).stroke || element.getAttribute("stroke") || "";
+              return expectedColors.has(normalizeColor(stroke));
+            }).length;
+            colorProbe.remove();
+            return {
+              caseName,
+              type,
+              chartType,
+              hasSlopeField,
+              width: Math.round(rect.width * 10) / 10,
+              height: Math.round(rect.height * 10) / 10,
+              primitiveCount: primitives.length,
+              plotlyBarCount: frame.querySelectorAll(".barlayer path").length,
+              plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
+              expectedFunctionColors,
+              functionStrokeCount,
+              expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
+              expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
+              expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
+              expectedGraph3DSolidKinds,
+              labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
+              renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
+              text,
+              requiredLabels,
+              missingLabels: requiredLabels.filter((label) => !normalizedText.includes(normalizeLabel(label))),
+            };
+          }),
+        )
+      ).map((metric) => ({ ...metric, view }));
+      const renderedWarnings = dedupeWarnings((renderedMetrics.warnings ?? []).map((warning) => ({ ...warning, view })));
+      renderedMetrics.warnings = renderedWarnings;
+      await fs.writeFile(path.join(viewOutputDir, "rendered-metrics.json"), JSON.stringify(renderedMetrics, null, 2));
+      await fs.writeFile(path.join(viewOutputDir, "diagram-metrics.json"), JSON.stringify(diagramMetrics, null, 2));
+      viewResults.push({ view, renderedMetrics, diagramMetrics });
+    }
+
+    const allRenderedWarnings = dedupeWarnings(viewResults.flatMap((result) => result.renderedMetrics.warnings ?? []));
+    const allDiagramMetrics = viewResults.flatMap((result) => result.diagramMetrics);
+    await fs.writeFile(
+      path.join(outputDir, "rendered-metrics.json"),
+      JSON.stringify(
+        {
+          pageMode,
+          views: viewResults.map((result) => ({
+            view: result.view,
+            metrics: result.renderedMetrics,
+          })),
+          warnings: allRenderedWarnings,
         },
         null,
-        { timeout: 20_000 },
-      );
-    } catch (error) {
-      const bodyText = (
-        (await page
-          .locator("body")
-          .textContent()
-          .catch(() => "")) ?? ""
-      ).trim();
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\nConsole errors:\n${consoleErrors.join("\n")}\nPage errors:\n${pageErrors.join(
-          "\n",
-        )}\nVite logs:\n${logs.join("")}\nBody text:\n${bodyText}`,
-      );
-    }
-    await page.waitForTimeout(1200);
-
-    await fs.mkdir(outputDir, { recursive: true });
-    for (const replayCase of cases) {
-      await page.locator(`[data-replay-case="${replayCase.caseName}"] .replay-page`).screenshot({
-        path: path.join(outputDir, `${replayCase.caseName}.png`),
-      });
-    }
-
-    const renderedMetrics = await page.evaluate(() => {
-      const collector = (
-        window as typeof window & {
-          collectAssistantPreviewReplayMetrics?: () => { warnings?: Array<{ code?: string; message?: string; severity?: string }> };
-        }
-      ).collectAssistantPreviewReplayMetrics;
-      return collector ? collector() : { warnings: [{ code: "metrics-missing", message: "preview metrics collector was not installed" }] };
-    });
-    const diagramMetrics = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).map((frame) => {
-        const caseName = frame.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
-        const type = frame.getAttribute("data-diagram-type") ?? "";
-        const chartType = frame.getAttribute("data-chart-type") ?? "";
-        const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
-        const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
-        const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
-        const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
-        const rect = frame.getBoundingClientRect();
-        const primitives = Array.from(
-          frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
-        ).filter((element) => {
-          const box = element.getBoundingClientRect();
-          const style = window.getComputedStyle(element);
-          return box.width + box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-        });
-        const normalizeLabel = (value: string) =>
-          value
-            .toLowerCase()
-            .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
-            .replace(/[^a-z0-9]+/g, "");
-        const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
-        const normalizedText = normalizeLabel(frame.textContent ?? "");
-        const colorProbe = document.createElement("span");
-        colorProbe.style.display = "none";
-        document.body.appendChild(colorProbe);
-        const normalizeColor = (value: string) => {
-          colorProbe.style.color = value;
-          return window.getComputedStyle(colorProbe).color;
-        };
-        const expectedColors = new Set(expectedFunctionColors.map(normalizeColor));
-        const functionStrokeCount = primitives.filter((element) => {
-          const stroke = window.getComputedStyle(element).stroke || element.getAttribute("stroke") || "";
-          return expectedColors.has(normalizeColor(stroke));
-        }).length;
-        colorProbe.remove();
-        return {
-          caseName,
-          type,
-          chartType,
-          hasSlopeField,
-          width: Math.round(rect.width * 10) / 10,
-          height: Math.round(rect.height * 10) / 10,
-          primitiveCount: primitives.length,
-          plotlyBarCount: frame.querySelectorAll(".barlayer path").length,
-          plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
-          expectedFunctionColors,
-          functionStrokeCount,
-          expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
-          expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
-          expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
-          expectedGraph3DSolidKinds,
-          labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
-          renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
-          text,
-          requiredLabels,
-          missingLabels: requiredLabels.filter((label) => !normalizedText.includes(normalizeLabel(label))),
-        };
-      }),
+        2,
+      ),
     );
+    await fs.writeFile(path.join(outputDir, "diagram-metrics.json"), JSON.stringify(allDiagramMetrics, null, 2));
 
     const failures = [
-      ...blockingMetricWarnings(renderedMetrics).map((warning) => `${warning.code}: ${warning.message ?? ""}`),
-      ...diagramMetrics.flatMap(failDiagramMetric),
+      ...blockingMetricWarnings({ warnings: allRenderedWarnings }).map(
+        (warning) => `${warning.view ?? "preview"} ${warning.caseName ?? ""} ${warning.code}: ${warning.message ?? ""}`,
+      ),
+      ...allDiagramMetrics.flatMap(failDiagramMetric),
       ...consoleErrors.map((error) => `console error: ${error}`),
       ...pageErrors.map((error) => `page error: ${error}`),
     ];
     if (failures.length) {
       throw new Error(`Assistant preview replay smoke failed. Screenshots: ${outputDir}\n${failures.join("\n")}`);
     }
-    const warningCount = renderedMetrics.warnings?.length ?? 0;
-    const nonBlockingWarnings = (renderedMetrics.warnings ?? [])
+    const warningCount = allRenderedWarnings.length;
+    const nonBlockingWarnings = allRenderedWarnings
       .filter((warning) => !blockingMetricWarnings({ warnings: [warning] }).length)
       .map((warning) => warning.code)
       .filter((code): code is string => Boolean(code));
-    const warningSummary = nonBlockingWarnings.length ? ` Non-blocking warnings: ${[...new Set(nonBlockingWarnings)].join(", ")}.` : "";
+    const nonBlockingSummary = warningCount ? ` Warning summary: ${warningSummary(allRenderedWarnings)}.` : "";
+    const warningCases = [
+      ...new Set(
+        allRenderedWarnings
+          .map((warning) => {
+            const caseName = warningCaseName(warning);
+            return caseName ? `${warning.view ?? "preview"}:${caseName}` : null;
+          })
+          .filter((caseName): caseName is string => Boolean(caseName)),
+      ),
+    ];
+    const warningCaseSummary = warningCases.length ? ` Warning cases: ${warningCases.join(", ")}.` : "";
+    const nonBlockingKinds = nonBlockingWarnings.length ? ` Non-blocking warnings: ${[...new Set(nonBlockingWarnings)].join(", ")}.` : "";
+    const viewSummary = viewResults
+      .map((result) => `${result.view}:${cases.length} case(s), ${result.diagramMetrics.length} diagram(s)`)
+      .join("; ");
     console.log(
-      `Assistant preview replay smoke passed for ${cases.length} case(s), ${diagramMetrics.length} diagram(s). Screenshots: ${outputDir}. Rendered warning count: ${warningCount}.${warningSummary}`,
+      `Assistant preview replay smoke passed for ${viewSummary}. Page mode: ${pageMode}. Screenshots: ${outputDir}. Rendered warning count: ${warningCount}.${nonBlockingKinds}${nonBlockingSummary}${warningCaseSummary}`,
     );
   } finally {
     await browser.close();
@@ -1070,10 +1223,12 @@ async function runBrowserReplay(cases: AppliedReplayCase[], outputDir: string) {
 
 async function main() {
   const caseGroup = argValue("--case", process.env.MAUTH_ASSISTANT_PREVIEW_CASE ?? DEFAULT_CASE_GROUP);
+  const views = previewViews();
+  const pageMode = previewPageMode();
   const replayCases = loadReplayCases(caseGroup);
   const appliedCases = replayCases.map(applyReplayCase);
   const outputDir = path.join(OUTPUT_ROOT, timestampSlug());
-  await runBrowserReplay(appliedCases, outputDir);
+  await runBrowserReplay(appliedCases, outputDir, views, pageMode);
 }
 
 main().catch((error) => {

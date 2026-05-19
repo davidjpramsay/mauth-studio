@@ -6183,8 +6183,8 @@ def local_real_specialist_slope_field_call() -> dict[str, Any]:
         "xMax": 3,
         "yMin": -2,
         "yMax": 2,
-        "widthPx": 620,
-        "heightPx": 420,
+        "widthPx": 560,
+        "heightPx": 360,
         "showGrid": True,
         "showAxes": True,
         "functions": [
@@ -6891,8 +6891,8 @@ def local_real_specialist_prism_fraction_sphere_solution_call() -> dict[str, Any
 def local_graph3d_general_solids_call() -> dict[str, Any]:
     pyramid = {
         "type": "graph3d",
-        "widthPx": 340,
-        "heightPx": 260,
+        "widthPx": 300,
+        "heightPx": 210,
         "metadata": {"view3d": {"az": 1.05, "el": 0.38, "bank": 0}},
         "data": {
             "points": [
@@ -6926,8 +6926,8 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
     }
     cone = {
         "type": "graph3d",
-        "widthPx": 340,
-        "heightPx": 260,
+        "widthPx": 300,
+        "heightPx": 210,
         "metadata": {"view3d": {"az": 1.2, "el": 0.32, "bank": 0}},
         "data": {
             "points": [
@@ -6957,8 +6957,8 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
     }
     cylinder = {
         "type": "graph3d",
-        "widthPx": 340,
-        "heightPx": 260,
+        "widthPx": 300,
+        "heightPx": 210,
         "metadata": {"view3d": {"az": 1.15, "el": 0.3, "bank": 0}},
         "data": {
             "points": [
@@ -6988,8 +6988,8 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
     }
     sphere = {
         "type": "graph3d",
-        "widthPx": 340,
-        "heightPx": 260,
+        "widthPx": 300,
+        "heightPx": 210,
         "metadata": {"view3d": {"az": 1.05, "el": 0.25, "bank": 0}},
         "data": {
             "points": [
