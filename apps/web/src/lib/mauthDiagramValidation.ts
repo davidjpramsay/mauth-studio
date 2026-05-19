@@ -87,6 +87,11 @@ const GRAPH3D_UNSUPPORTED_METADATA_FIELDS = new Map([
   ["axisLabels", "Graph3d axis labels are renderer-owned; do not put axisLabels in metadata."],
   ["showAxes", "Graph3d axes are renderer-owned; do not put showAxes in metadata."],
   ["showGrid", "Graph3d plane grids are hidden by default; do not put showGrid in metadata."],
+  ["width", "Graph3d size belongs on top-level graphConfig.widthPx, not metadata."],
+  ["height", "Graph3d size belongs on top-level graphConfig.heightPx, not metadata."],
+  ["widthPx", "Graph3d size belongs on top-level graphConfig.widthPx, not metadata."],
+  ["heightPx", "Graph3d size belongs on top-level graphConfig.heightPx, not metadata."],
+  ["scalePercent", "Graph3d scale belongs on top-level graphConfig.scalePercent, not metadata."],
 ]);
 const GRAPH3D_RESERVED_AXIS_POINT_IDS = new Set(["xaxis", "yaxis", "zaxis"]);
 const GRAPH3D_VIEW_LIMITS = {

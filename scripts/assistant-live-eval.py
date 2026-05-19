@@ -3500,7 +3500,7 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
                 if from_id and to_id:
                     segment_pairs.add(tuple(sorted((from_id, to_id))))
         metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
-        for key in ("axisLabels", "showAxes", "showGrid"):
+        for key in ("axisLabels", "showAxes", "showGrid", "width", "height", "widthPx", "heightPx", "scalePercent"):
             if key in metadata:
                 issues.append(f"3d prism graph3d metadata should not include unsupported {key}")
         view3d = metadata.get("view3d") if isinstance(metadata.get("view3d"), dict) else {}
@@ -4545,6 +4545,20 @@ def graph3d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                             "path": f"{config_path}.metadata.{key}",
                             "message": f"graph3d {key} is renderer-owned; do not put it in metadata.",
                             "expected": f"{config_path}.metadata.view3d only",
+                        }
+                    )
+            for key in ("width", "height", "widthPx", "heightPx", "scalePercent"):
+                if key in metadata:
+                    expected = (
+                        f"{config_path}.scalePercent"
+                        if key == "scalePercent"
+                        else f"{config_path}.{key if key not in {'width', 'height'} else key + 'Px'}"
+                    )
+                    issues.append(
+                        {
+                            "path": f"{config_path}.metadata.{key}",
+                            "message": f"graph3d {key} must be a top-level graphConfig field, not metadata.{key}.",
+                            "expected": expected,
                         }
                     )
             view3d = metadata.get("view3d")
@@ -6768,6 +6782,15 @@ def local_real_specialist_prism_bad_graph3d_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_prism_bad_metadata_size_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["metadata"]["widthPx"] = graph_config.pop("widthPx")
+    graph_config["metadata"]["heightPx"] = graph_config.pop("heightPx")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_bad_coordinates_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_prism_call()))
     graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
@@ -7534,6 +7557,14 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "axis helper point xaxis",
             "axis helper segments",
             "segments should use strokeStyle/dashed",
+        ],
+    },
+    "real-specialist-prism-bad-metadata-size": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_bad_metadata_size_call,
+        "expectedIssues": [
+            "metadata should not include unsupported widthPx",
+            "metadata should not include unsupported heightPx",
         ],
     },
     "real-specialist-prism-bad-coordinates": {

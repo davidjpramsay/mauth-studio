@@ -3266,6 +3266,8 @@ test("rejects unsupported graph3d camera metadata shape", () => {
                   axisLabels: { x: "$x$", y: "$y$", z: "$z$" },
                   showAxes: true,
                   showGrid: false,
+                  widthPx: 640,
+                  heightPx: 390,
                 },
               },
             },
@@ -3285,6 +3287,8 @@ test("rejects unsupported graph3d camera metadata shape", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.axisLabels"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.showAxes"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.showGrid"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.widthPx"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.metadata.heightPx"));
 });
 
 test("rejects graph3d axis helper points and segments", () => {
