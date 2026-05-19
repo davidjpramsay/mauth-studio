@@ -455,7 +455,7 @@
     },
     {
       "id": "planned-specialist-ski-modelling",
-      "status": "planned",
+      "status": "active",
       "requestClass": "source-conversion",
       "course": "Mathematics Specialist",
       "source": {
@@ -485,21 +485,21 @@
         }
       ],
       "evals": {
-        "localCase": null,
+        "localCase": "real-specialist-ski-modelling",
         "liveCase": null,
-        "previewReplay": false
+        "previewReplay": true
       },
       "expected": {
         "tool": "mauth_convert_source_question",
         "mauthTool": "mauth.question.upsert",
-        "renderers": ["graph2d", "table"]
+        "renderers": ["graph2d"]
       },
       "semanticChecks": [
         "large modelling graph is converted as native graph2d",
-        "multi-page parts, tables, marks, and dense working are preserved",
+        "multi-page parts, defining equations, marks, and dense working are preserved",
         "local semantic fixture exists before a paid provider call"
       ],
-      "freeGates": ["create local semantic fixture first"],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
       "paidGate": null
     },
     {

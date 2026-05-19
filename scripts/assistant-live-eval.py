@@ -3420,6 +3420,93 @@ def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_real_specialist_ski_modelling_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("ski", "jumper", "32", "sloped ground", "170", "0.5"):
+        if term not in serialized:
+            issues.append(f"ski-modelling source conversion should preserve {term!r}")
+    for point_label in ("$b$", "$e$"):
+        if point_label not in serialized:
+            issues.append(f"ski-modelling source conversion should preserve point label {point_label}")
+    if "x'(t)" not in serialized and "x ' ( t )" not in serialized and "x prime" not in serialized:
+        issues.append("ski-modelling source conversion should preserve x'(t) notation")
+    if "e" not in serialized or "-0.05" not in serialized:
+        issues.append("ski-modelling source conversion should preserve exponential horizontal velocity")
+
+    graph_types = graph_config_types(args)
+    if "graph2d" not in graph_types:
+        issues.append(f"ski-modelling source diagram should use graph2d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "geometricConstruction", "network", "graph3d")):
+        issues.append("ski-modelling source should not use statsChart, geometricConstruction, network, or graph3d")
+    graph_configs = [config for config in collect_diagram_graph_configs(args) if config.get("type") == "graph2d"]
+    graph_serialized = json.dumps(graph_configs, ensure_ascii=False).lower()
+    graph_expressions = [
+        compact_math_text(expression) for config in graph_configs for expression in graph2d_function_expressions(config)
+    ]
+    combined_expressions = "\n".join(graph_expressions)
+    if "170" not in combined_expressions or "-0.5" not in combined_expressions:
+        issues.append("ski-modelling graph2d should encode the sloped ground y = 170 - 0.5x")
+    if not any(term in combined_expressions for term in ("log((740-x)/640)", "ln((740-x)/640)", "log(740-x/640)")):
+        issues.append("ski-modelling graph2d should encode the Cartesian flight curve")
+    for label in ("$B$", "$E$"):
+        if label.lower() not in graph_serialized:
+            issues.append(f"ski-modelling graph2d should include labelled point {label}")
+    if not any(term in graph_serialized for term in ("255.915", "255.916", "42.042")):
+        issues.append("ski-modelling graph2d should include or support the landing point semantics")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 5:
+        issues.append("ski-modelling source should become exactly five structured parts")
+        return issues
+    expected_marks = [2, 3, 3, 3, 3]
+    expected_terms = (
+        ("x(t)", "740", "640"),
+        ("3", "height", "sloped ground"),
+        ("vertical lift", "s", "9.8"),
+        ("time", "land", "sloped ground"),
+        ("angle", "impacts", "sloped ground"),
+    )
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            issues.append(f"parts[{index}] should be an object")
+            continue
+        if part.get("marks") != expected_marks[index]:
+            issues.append(f"parts[{index}].marks should be {expected_marks[index]}")
+        part_text = str(part.get("text") or "").lower()
+        for term in expected_terms[index]:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+        if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
+            issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
+    if sum(part.get("marks", 0) for part in parts if isinstance(part, dict)) != 14:
+        issues.append("ski-modelling structured part marks should total 14")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    expected_solution_terms = (
+        ("740-640e^-0.05t", "740-640*e^-0.05t", "740-640exp(-0.05t)"),
+        ("22.07",),
+        ("s=4.8", "s=4.8ms-2", "s=4.8m/s^2"),
+        ("255.915887", "255.916"),
+        ("5.58",),
+        ("24.2042",),
+        ("-27.9209",),
+        ("22.5",),
+    )
+    for term_options in expected_solution_terms:
+        if not any(term in solution_serialized for term in term_options):
+            issues.append(f"ski-modelling solution should preserve one of {term_options!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 14:
+        issues.append("ski-modelling hidden [[marks:n]] total should be exactly 14")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("ski-modelling solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def graph2d_function_expressions(graph_config: dict[str, Any]) -> list[str]:
     functions = graph_config.get("functions")
     if isinstance(functions, list):
@@ -5776,6 +5863,186 @@ def local_real_specialist_implicit_bad_relation_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_ski_modelling_call() -> dict[str, Any]:
+    graph_config = {
+        "type": "graph2d",
+        "xMin": 0,
+        "xMax": 400,
+        "yMin": 0,
+        "yMax": 210,
+        "widthPx": 640,
+        "heightPx": 420,
+        "showGrid": True,
+        "showAxes": True,
+        "showAxisLabels": True,
+        "showAxisNumbers": True,
+        "xAxisLabel": "$x$",
+        "yAxisLabel": "$y$",
+        "functions": [
+            {
+                "kind": "expression",
+                "expression": "120 + 60*((100 - x)/100)^2",
+                "domainMin": 0,
+                "domainMax": 100,
+                "color": "#111827",
+                "strokeWidth": 2,
+                "label": "ramp descent",
+            },
+            {
+                "kind": "expression",
+                "expression": "170 - 0.5*x",
+                "domainMin": 100,
+                "domainMax": 340,
+                "color": "#111827",
+                "strokeWidth": 2,
+                "label": "$y=170-0.5x$",
+            },
+            {
+                "kind": "expression",
+                "expression": "120 - 1000*(log((740 - x)/640))^2",
+                "domainMin": 100,
+                "domainMax": 255.916,
+                "color": "#9ca3af",
+                "strokeWidth": 2.2,
+                "label": "skier flight path",
+            },
+        ],
+        "features": [
+            {"kind": "point", "x": 0, "y": 180, "label": "$B$", "color": "#111827"},
+            {"kind": "point", "x": 100, "y": 120, "label": "$E$", "color": "#111827"},
+            {"kind": "point", "x": 255.915887, "y": 42.04205652, "label": "", "color": "#6b7280"},
+            {"kind": "label", "x": 170, "y": 8, "label": "$x$"},
+            {"kind": "line_segment", "x1": 100, "y1": 120, "x2": 145, "y2": 120, "label": "horizontal velocity"},
+        ],
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "Using the correct technique, Olympic ski jumpers can slow down their descent by creating lift "
+                "to counteract gravity. A skier begins his descent at point $B$ and leaves the ramp travelling "
+                "horizontally at point $E(100,120)$ at 32 metres per second. Let $t$ be the number of seconds "
+                "in flight after point $E$, $h(t)$ the height above the horizontal ground $y=0$, and $x(t)$ "
+                "the horizontal position. The sloped ground for landing is $y=170-0.5x$ for $100\\le x\\le340$. "
+                "The horizontal velocity is $x'(t)=32e^{-0.05t}$."
+            ),
+            "diagram": {"diagramAlign": "center", "graphConfig": graph_config},
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "Show that $x(t)=740-640e^{-0.05t}$.",
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$x(t)=\\int 32e^{-0.05t}\\,dt=-640e^{-0.05t}+c.$$ [[marks:1]]\n"
+                        "Using $x(0)=100$ gives $100=-640+c$, so $c=740$ and "
+                        "$$x(t)=740-640e^{-0.05t}.$$ [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "b",
+                    "text": "Calculate the height of the skier above the sloped ground after 3 seconds of flight, correct to the nearest 0.01 metre.",
+                    "marks": 3,
+                    "studentSpaceLines": 7,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$r(3)=\\begin{pmatrix}189.1468\\ldots\\\\97.5\\end{pmatrix}.$$ [[marks:1]]\n"
+                        "At $x=189.1468\\ldots$, the sloped ground has height "
+                        "$$y=170-0.5(189.1468\\ldots)=75.42655\\ldots.$$ [[marks:1]]\n"
+                        "The height above the sloped ground is $97.5-75.42655\\ldots=22.07$ metres. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": "Determine the vertical lift $s$ (m/s$^2$) provided by the skier's suit and equipment in the descent if $\\frac{d^2h}{dt^2}=s-9.8$, where $s$ is a constant.",
+                    "marks": 3,
+                    "studentSpaceLines": 8,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "Integrating gives $h'(t)=(s-9.8)t+c$, and $h'(0)=0$ so $c=0$. [[marks:1]]\n"
+                        "$$h(t)=\\frac{s-9.8}{2}t^2+k,$$ and $h(0)=120$ gives $k=120$. [[marks:1]]\n"
+                        "Since $h(t)=120-2.5t^2$, $\\frac{s-9.8}{2}=-2.5$, hence $s=4.8\\text{ m/s}^2$. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "d",
+                    "text": (
+                        "The Cartesian equation for the skier's flight is "
+                        "$$y=120-1000\\left(\\ln\\left(\\frac{740-x}{640}\\right)\\right)^2.$$ "
+                        "Calculate the time taken for the skier to land on the sloped ground, correct to the nearest 0.01 second."
+                    ),
+                    "marks": 3,
+                    "studentSpaceLines": 8,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "Solving $y=170-0.5x$ with "
+                        "$$y=120-1000\\left(\\ln\\left(\\frac{740-x}{640}\\right)\\right)^2$$ "
+                        "gives the landing point $(255.915887,42.04205652)$. [[marks:1]]\n"
+                        "Then $42.04205652=120-2.5t^2$, equivalently "
+                        "$255.915887=740-640e^{-0.05t}$. [[marks:1]]\n"
+                        "Solving gives $t=5.584189949\\ldots$, so the time is $5.58$ seconds. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "e",
+                    "text": "Calculate the angle at which the skier impacts the sloped ground, correct to the nearest 0.1 degree.",
+                    "marks": 3,
+                    "studentSpaceLines": 8,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "$$r'(t)=\\begin{pmatrix}32e^{-0.05t}\\\\-5t\\end{pmatrix},$$ so "
+                        "$$r'(5.58418\\ldots)=\\begin{pmatrix}24.2042\\ldots\\\\-27.9209\\ldots\\end{pmatrix}.$$ [[marks:1]]\n"
+                        "The velocity angle below the horizontal is "
+                        "$$\\tan^{-1}\\left(\\frac{27.9209}{24.2042}\\right)=49.0784^\\circ.$$ [[marks:1]]\n"
+                        "The ground angle is $\\tan^{-1}(0.5)=26.5650^\\circ$, so the impact angle is "
+                        "$49.0784^\\circ-26.5650^\\circ=22.5^\\circ$. [[marks:1]]"
+                    ),
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_ski_modelling_bad_graph_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_ski_modelling_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["functions"] = [
+        {
+            "kind": "expression",
+            "expression": "170 - x",
+            "domainMin": 100,
+            "domainMax": 340,
+            "color": "#111827",
+        }
+    ]
+    graph_config["features"] = [
+        feature
+        for feature in graph_config["features"]
+        if feature.get("label") != "$E$" and abs(float(feature.get("x", 0)) - 255.915887) > 0.01
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_ski_modelling_bad_solution_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_ski_modelling_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[1]["solutionText"] = "At $t=3$, the skier is $18.50$ metres above the sloped ground. [[marks:3]]"
+    parts[2]["solutionText"] = "Solving gives $s=9.8\\text{ m/s}^2$. [[marks:3]]"
+    parts[3]["solutionText"] = "The landing time is $4.20$ seconds. [[marks:3]]"
+    parts[4]["solutionText"] = "The impact angle is $12.0^\\circ$. [[marks:3]]"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-methods-earthquake": {
         "assert": assert_real_methods_earthquake_call,
@@ -6007,6 +6274,30 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "point label B",
         ],
     },
+    "real-specialist-ski-modelling": {
+        "assert": assert_real_specialist_ski_modelling_call,
+        "call": local_real_specialist_ski_modelling_call,
+    },
+    "real-specialist-ski-modelling-bad-graph": {
+        "assert": assert_real_specialist_ski_modelling_call,
+        "call": local_real_specialist_ski_modelling_bad_graph_call,
+        "expectedIssues": [
+            "ski-modelling graph2d should encode the sloped ground",
+            "ski-modelling graph2d should encode the Cartesian flight curve",
+            "labelled point $E$",
+            "landing point semantics",
+        ],
+    },
+    "real-specialist-ski-modelling-bad-solution": {
+        "assert": assert_real_specialist_ski_modelling_call,
+        "call": local_real_specialist_ski_modelling_bad_solution_call,
+        "expectedIssues": [
+            "ski-modelling solution should preserve one of ('22.07'",
+            "ski-modelling solution should preserve one of ('s=4.8'",
+            "ski-modelling solution should preserve one of ('5.58'",
+            "ski-modelling solution should preserve one of ('22.5'",
+        ],
+    },
 }
 
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
@@ -6022,6 +6313,7 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-prism",
         "graph3d-general-solids",
         "real-specialist-implicit",
+        "real-specialist-ski-modelling",
     ],
     "local-graph3d-general": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
 }
