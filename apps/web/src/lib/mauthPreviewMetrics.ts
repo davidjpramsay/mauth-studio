@@ -79,7 +79,18 @@ function collisionArea(a: DOMRect, b: DOMRect) {
   return width * height;
 }
 
-function countLikelyLabelCollisions(diagramRoot: HTMLElement) {
+function normalizedNumericLabel(value: string) {
+  const normalized = value.trim().replace(/−/g, "-").replace(/\s+/g, "");
+  return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalized : null;
+}
+
+function isDuplicateNumericTickCollision(leftText: string, rightText: string) {
+  const left = normalizedNumericLabel(leftText);
+  const right = normalizedNumericLabel(rightText);
+  return Boolean(left && right && left === right);
+}
+
+function likelyLabelCollisions(diagramRoot: HTMLElement) {
   const selectors = "svg text, .jxg-latex-label, mjx-container[jax='SVG']";
   const rawCandidates = Array.from(diagramRoot.querySelectorAll<Element>(selectors)).filter((element) => {
     const text = compactText(element.textContent ?? "", 40);
@@ -89,11 +100,23 @@ function countLikelyLabelCollisions(diagramRoot: HTMLElement) {
   const candidates = rawCandidates.filter(
     (candidate, index) => !rawCandidates.some((other, otherIndex) => otherIndex !== index && other.contains(candidate)),
   );
-  const rects = candidates.map((candidate) => candidate.getBoundingClientRect());
-  let collisions = 0;
-  for (let i = 0; i < rects.length; i += 1) {
-    for (let j = i + 1; j < rects.length; j += 1) {
-      if (collisionArea(rects[i], rects[j]) > 8) collisions += 1;
+  const entries = candidates.map((candidate) => ({
+    text: compactText(candidate.textContent ?? "", 40),
+    rect: candidate.getBoundingClientRect(),
+  }));
+  const collisions: NonNullable<NonNullable<MauthRenderedPreviewAnchorMetrics["diagram"]>["labelCollisionPairs"]> = [];
+  for (let i = 0; i < entries.length; i += 1) {
+    for (let j = i + 1; j < entries.length; j += 1) {
+      const overlapAreaPx = collisionArea(entries[i].rect, entries[j].rect);
+      if (overlapAreaPx > 8 && !isDuplicateNumericTickCollision(entries[i].text, entries[j].text)) {
+        collisions.push({
+          leftText: entries[i].text,
+          rightText: entries[j].text,
+          overlapAreaPx: roundMetric(overlapAreaPx),
+          leftRect: rectMetrics(entries[i].rect),
+          rightRect: rectMetrics(entries[j].rect),
+        });
+      }
     }
   }
   return collisions;
@@ -147,7 +170,7 @@ function findDiagramMetrics(element: HTMLElement): MauthRenderedPreviewAnchorMet
   const rect = diagramRoot.getBoundingClientRect();
   const clipped = diagramRoot.scrollWidth > diagramRoot.clientWidth + 1 || diagramRoot.scrollHeight > diagramRoot.clientHeight + 1;
   const tooSmall = renderedGraphic && !errorMatch && (rect.width < 80 || rect.height < 60);
-  const labelCollisionCount = renderedGraphic && !errorMatch ? countLikelyLabelCollisions(diagramRoot) : 0;
+  const labelCollisionPairs = renderedGraphic && !errorMatch ? likelyLabelCollisions(diagramRoot) : [];
   return {
     found: true,
     rendered: renderedGraphic && !errorMatch,
@@ -155,7 +178,12 @@ function findDiagramMetrics(element: HTMLElement): MauthRenderedPreviewAnchorMet
     viewportRect: rectMetrics(rect),
     ...(clipped ? { clipped: true } : {}),
     ...(tooSmall ? { tooSmall: true } : {}),
-    ...(labelCollisionCount ? { labelCollisionCount } : {}),
+    ...(labelCollisionPairs.length
+      ? {
+          labelCollisionCount: labelCollisionPairs.length,
+          labelCollisionPairs: labelCollisionPairs.slice(0, 6),
+        }
+      : {}),
   };
 }
 
@@ -225,13 +253,15 @@ function anchorMetrics(
     });
   }
   if (diagram?.found && diagram.rendered && diagram.labelCollisionCount) {
+    const samplePair = diagram.labelCollisionPairs?.[0];
+    const sampleText = samplePair ? ` Example: "${samplePair.leftText}" overlaps "${samplePair.rightText}".` : "";
     warnings.push({
       code: "rendered-diagram-label-collision",
       severity: "warning",
       anchor,
       message: `The selected diagram has ${diagram.labelCollisionCount} likely overlapping label pair${
         diagram.labelCollisionCount === 1 ? "" : "s"
-      }.`,
+      }.${sampleText}`,
     });
   }
   if (diagram?.found && diagram.rendered && diagram.tooSmall) {

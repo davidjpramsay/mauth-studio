@@ -208,6 +208,13 @@ export interface MauthRenderedPreviewAnchorMetrics {
     viewportRect?: MauthRenderedPreviewRect;
     clipped?: boolean;
     labelCollisionCount?: number;
+    labelCollisionPairs?: Array<{
+      leftText: string;
+      rightText: string;
+      overlapAreaPx: number;
+      leftRect: MauthRenderedPreviewRect;
+      rightRect: MauthRenderedPreviewRect;
+    }>;
     tooSmall?: boolean;
     tooLarge?: boolean;
   };
