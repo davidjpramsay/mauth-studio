@@ -1899,6 +1899,79 @@ def assistant_table_block_schema(description: str) -> dict[str, Any]:
     }
 
 
+def assistant_author_subpart_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "label": {
+                "type": "string",
+                "description": "Subpart label such as i or ii. Omit to auto-label.",
+            },
+            "text": {
+                "type": "string",
+                "description": (
+                    "Subpart prompt text without a typed '(i)' label. Must contain the visible subpart task "
+                    "from the source; never leave this blank for a marked subpart."
+                ),
+            },
+            "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+            "studentSpaceLines": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40,
+                "description": "Generous subpart answer/work space for free-response subparts.",
+            },
+            "answerSurface": {
+                "type": "string",
+                "enum": ["space", "diagram", "table", "none"],
+                "description": "Use diagram/table when the subpart answer is drawn/completed directly on that surface.",
+            },
+            "solutionText": {
+                "type": "string",
+                "description": (
+                    "Only include when the teacher requested solutions or the source visibly contains one. "
+                    "Worked solution for this subpart using hidden [[marks:n]] tick annotations."
+                ),
+            },
+            "includeSolution": {"type": "boolean"},
+            "diagram": compact_assistant_diagram_block_schema(
+                "Optional native Mauth diagram block for this subpart, shaped as { graphConfig, diagramAlign? }."
+            ),
+            "diagrams": {
+                "type": "array",
+                "description": "Optional replacement diagrams for this subpart.",
+                "items": compact_assistant_diagram_block_schema(
+                    "One native Mauth diagram block for this subpart, shaped as { graphConfig, diagramAlign? }."
+                ),
+            },
+            "solutionDiagram": compact_assistant_diagram_block_schema(
+                "Optional completed solution-copy diagram for this subpart when answerSurface is diagram."
+            ),
+            "solutionDiagrams": {
+                "type": "array",
+                "items": compact_assistant_diagram_block_schema(
+                    "One completed solution-copy diagram for this subpart."
+                ),
+            },
+            "table": assistant_table_block_schema(
+                "Optional student completion table for this subpart. Use blank strings for empty answer cells."
+            ),
+            "tables": {
+                "type": "array",
+                "items": assistant_table_block_schema("One student completion table for this subpart."),
+            },
+            "solutionTable": assistant_table_block_schema("Optional completed solution-copy table for this subpart."),
+            "solutionTables": {
+                "type": "array",
+                "items": assistant_table_block_schema("One completed solution-copy table for this subpart."),
+            },
+            "pageBreakBefore": {"type": "boolean"},
+        },
+        "required": ["text", "marks"],
+        "additionalProperties": False,
+    }
+
+
 def mauth_author_replace_question_tool_definition(*, require_diagram: bool = False) -> dict[str, Any]:
     required_fields = ["questionNumber", "marks", "questionText"]
     if require_diagram:
@@ -2063,7 +2136,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "description": (
                         "Optional structured parts. Use this instead of typing '(a)', '(b)', '(c)' into questionText. "
                         "Each part can have text, marks, answerSurface, studentSpaceLines, solutionText, optional diagram/diagrams, "
-                        "and optional table/solutionTable answer surfaces. "
+                        "optional table/solutionTable answer surfaces, and optional subparts for nested (i)/(ii) items. "
                         "If the source says the diagram goes under the stem and the parts go under the diagram, put the "
                         "diagram at question level and keep the actual visible part tasks in this parts array."
                     ),
@@ -2143,6 +2216,14 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                     "One completed solution-copy table for this part."
                                 ),
                             },
+                            "subparts": {
+                                "type": "array",
+                                "description": (
+                                    "Optional structured subparts for nested source items such as (f)(i) and (f)(ii). "
+                                    "Use these instead of flattening '(i)'/'(ii)' into part text."
+                                ),
+                                "items": assistant_author_subpart_schema(),
+                            },
                             "pageBreakBefore": {"type": "boolean"},
                         },
                         "required": ["text", "marks"],
@@ -2188,6 +2269,47 @@ def source_conversion_table_schema(description: str) -> dict[str, Any]:
 def source_conversion_part_schema() -> dict[str, Any]:
     diagram = source_conversion_compact_diagram_block_schema("Optional native diagram for this part.")
     table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
+    subpart_diagram = source_conversion_compact_diagram_block_schema("Optional native diagram for this subpart.")
+    subpart_table = source_conversion_table_schema(
+        "Optional table for this subpart. Use blank strings for student cells."
+    )
+    subpart_schema = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "text": {
+                "type": "string",
+                "description": "Visible subpart prompt without a typed '(i)' label. Do not leave marked subparts blank.",
+            },
+            "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+            "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+            "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+            "solutionText": {
+                "type": "string",
+                "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+            },
+            "includeSolution": {"type": "boolean"},
+            "diagram": subpart_diagram,
+            "diagrams": {"type": "array", "items": subpart_diagram},
+            "solutionDiagram": source_conversion_compact_diagram_block_schema(
+                "Completed solution-copy diagram for answerSurface diagram."
+            ),
+            "solutionDiagrams": {
+                "type": "array",
+                "items": source_conversion_compact_diagram_block_schema("One completed solution-copy diagram."),
+            },
+            "table": subpart_table,
+            "tables": {"type": "array", "items": subpart_table},
+            "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+            "solutionTables": {
+                "type": "array",
+                "items": source_conversion_table_schema("One completed solution-copy table."),
+            },
+            "pageBreakBefore": {"type": "boolean"},
+        },
+        "required": ["text", "marks"],
+        "additionalProperties": False,
+    }
     return {
         "type": "object",
         "properties": {
@@ -2219,6 +2341,13 @@ def source_conversion_part_schema() -> dict[str, Any]:
             "solutionTables": {
                 "type": "array",
                 "items": source_conversion_table_schema("One completed solution-copy table."),
+            },
+            "subparts": {
+                "type": "array",
+                "description": (
+                    "Nested source subparts such as (i) and (ii). Use this instead of flattening subparts into text."
+                ),
+                "items": subpart_schema,
             },
             "pageBreakBefore": {"type": "boolean"},
         },
@@ -2294,7 +2423,10 @@ def mauth_convert_source_question_tool_definition(*, require_diagram: bool = Fal
                 "preserveExistingDiagrams": {"type": "boolean"},
                 "parts": {
                     "type": "array",
-                    "description": "Structured source parts. Put visible part tasks here; do not create blank marked parts.",
+                    "description": (
+                        "Structured source parts. Put visible part tasks here; use subparts for nested (i)/(ii) items; "
+                        "do not create blank marked parts."
+                    ),
                     "items": source_conversion_part_schema(),
                 },
             },
@@ -2906,7 +3038,7 @@ Tool-call contract:
 - If semanticReview.required=true, compare the teacher request, question text, and diagram summary. Every named mathematical object, equation, label, and relationship used by the solution should appear in the artifact; repair mismatches with the focused tool.
 - If a tool output has ok=false but committedDocument=true or repairTarget, repair that exact inserted target once using repairTarget.questionNumber/questionId and repairTarget.diagramId/targetId. Do not append a duplicate.
 - For attachment-derived one-question conversions where the teacher asks for the diagram to be entered, included, placed under the prompt, or kept from the source, use mauth_convert_source_question and include it in diagram or diagrams in the same replacement payload; use exactly one of diagram or diagrams, never both. For multiple source diagrams, use diagrams and omit diagram. Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "The diagram shows...".
-- For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. For marked written-response parts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
+- For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels. For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested.
 - For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
@@ -2937,7 +3069,7 @@ Authoring quality bar:
 - Never emit a proof question whose worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If your first draft is invalid, change the question statement before calling the tool.
 - Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\], \\(...\\), or escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$.
 - A student answer surface must keep the same layout in both copies. For sketch/label/table tasks, the solution copy should replace the blank student diagram/table with a completed solution diagram/table in the same document position, not add a separate solution below it.
-- For multipart questions, use the structured parts array on mauth_question_upsert or mauth.question.upsert. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
+- For multipart questions, use the structured parts array on mauth_question_upsert or mauth.question.upsert, and use parts[].subparts for nested "(i)", "(ii)" items. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.
 - For circle-geometry proof prompts involving tangents and angles subtended at the circumference, prefer a symbolic theorem/proof relationship. A robust default is to use the centre, radius perpendicular to tangent, equal radii, and the central-angle/angle-at-circumference relationship to prove the tangent-chord angle result. Do not add unnecessary numerical angle givens, and do not add parallel chords or parallel-line scaffolding unless the teacher explicitly asks for parallel lines.
 

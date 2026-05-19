@@ -2382,6 +2382,19 @@ function answerSurfaceFromArgs(args: Record<string, unknown>): AuthorAnswerSurfa
   return inferredAnswerSurfaceFromArgs(args);
 }
 
+function answerSurfaceForAuthorPart(args: Record<string, unknown>, hasSubparts: boolean): AuthorAnswerSurface {
+  const hasExplicitSurface = hasOwn(args, "answerSurface") || hasOwn(args, "responseSurface") || hasOwn(args, "responseMode");
+  const hasOwnAnswerSurface =
+    hasAuthorDiagramArgs(args) ||
+    hasAuthorTableArgs(args) ||
+    hasAuthorDiagramArgs(args, "solutionDiagram", "solutionDiagrams") ||
+    hasAuthorTableArgs(args, "solutionTable", "solutionTables") ||
+    hasOwn(args, "solutionText") ||
+    hasOwn(args, "solution");
+  if (hasSubparts && !hasExplicitSurface && !hasOwnAnswerSurface) return "none";
+  return answerSurfaceFromArgs(args);
+}
+
 function isSolutionTextBlock(block: ContentBlock): block is TextContentBlock {
   return (
     block.kind === "text" && (block.visibility === "solution" || block.solutionOnly === true || SOLUTION_HEADING_PATTERN.test(block.text))
@@ -2964,11 +2977,17 @@ function isOnlyPartLabel(text: string) {
   return /^\(?\s*(?:[a-z]|[ivxlcdm]+)\s*\)?[).:]?\s*$/i.test(text);
 }
 
-function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: string, partText: string, issues: MauthActionValidationIssue[]) {
+function contentBlocksForAuthorPart(
+  args: Record<string, unknown>,
+  partId: string,
+  partText: string,
+  issues: MauthActionValidationIssue[],
+  options: { hasSubparts?: boolean } = {},
+) {
   const solutionText = optionalTextArg(args, "solutionText") || optionalTextArg(args, "solution");
   const includeSolution = args.includeSolution !== false && Boolean(solutionText);
   const marks = positiveInteger(args.marks, 1, 0, 100);
-  const answerSurface = answerSurfaceFromArgs(args);
+  const answerSurface = answerSurfaceForAuthorPart(args, options.hasSubparts === true);
   const studentSpaceLines = resolvedStudentSpaceLines(args.studentSpaceLines ?? args.answerLines ?? args.lines, solutionText, marks, 6, 40);
   const partDiagrams = diagramBlocksFromArgs(args, partId, issues, [partText, ...rawAssistantTextFragmentsFromAuthorArgs(args)].join("\n"));
   const partTables = tableBlocksFromArgs(args, partId, issues);
@@ -3050,6 +3069,55 @@ function contentBlocksForAuthorPart(args: Record<string, unknown>, partId: strin
   return blocks;
 }
 
+function authorSubpartLabel(index: number, value: unknown) {
+  if (typeof value === "string" && value.trim()) return value.trim().replace(/[().]/g, "");
+  return ["i", "ii", "iii", "iv", "v", "vi"][index] ?? String(index + 1);
+}
+
+function pushPartPromptValidationIssues(
+  entry: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  expected: string,
+) {
+  const text = partTextFromArgs(entry);
+  if (!text) issues.push({ path: `${path}.text`, message: "must be a non-empty string", expected });
+  else if (isOnlyPartLabel(text)) {
+    issues.push({
+      path: `${path}.text`,
+      message: "must include the actual part prompt, not only the visible part label",
+      expected,
+    });
+  }
+  return text;
+}
+
+function authorSubpartsFromArgs(args: Record<string, unknown>, partId: string, parentPath: string, issues: MauthActionValidationIssue[]) {
+  const rawSubparts = Array.isArray(args.subparts) ? args.subparts : [];
+  const subparts: MauthSubpartLike[] = [];
+
+  rawSubparts.forEach((entry, index) => {
+    const path = `${parentPath}.subparts[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path, message: "must be a subpart object", expected: "{ text, marks, studentSpaceLines, solutionText }" });
+      return;
+    }
+    const text = pushPartPromptValidationIssues(entry, path, issues, "subpart prompt text such as `State the smaller interval.`");
+    const subpartId = String(entry.id ?? authorBlockId(partId, `subpart-${index + 1}`));
+    const contentBlocks = contentBlocksForAuthorPart(entry, subpartId, text, issues);
+    subparts.push({
+      id: subpartId,
+      label: authorSubpartLabel(index, entry.label),
+      marks: positiveInteger(entry.marks, 1, 0, 100),
+      text,
+      contentBlocks,
+      pageBreakBefore: entry.pageBreakBefore === true,
+    });
+  });
+
+  return subparts;
+}
+
 function authorPartsFromArgs(args: Record<string, unknown>, questionId: string, issues: MauthActionValidationIssue[]) {
   const rawParts = Array.isArray(args.parts) ? args.parts : [];
   const parts: MauthPartLike[] = [];
@@ -3060,25 +3128,19 @@ function authorPartsFromArgs(args: Record<string, unknown>, questionId: string, 
       issues.push({ path, message: "must be a part object", expected: "{ text, marks, studentSpaceLines, solutionText }" });
       return;
     }
-    const text = partTextFromArgs(entry);
-    if (!text) issues.push({ path: `${path}.text`, message: "must be a non-empty string", expected: "part prompt text" });
-    else if (isOnlyPartLabel(text)) {
-      issues.push({
-        path: `${path}.text`,
-        message: "must include the actual part prompt, not only the visible part label",
-        expected: "part prompt text such as $\\mathbf{a}\\cdot\\mathbf{b}$",
-      });
-    }
+    const text = pushPartPromptValidationIssues(entry, path, issues, "part prompt text such as $\\mathbf{a}\\cdot\\mathbf{b}$");
     const partId = String(entry.id ?? authorBlockId(questionId, `part-${index + 1}`));
-    const contentBlocks = contentBlocksForAuthorPart(entry, partId, text, issues);
+    const hasSubparts = Array.isArray(entry.subparts) && entry.subparts.length > 0;
+    const contentBlocks = contentBlocksForAuthorPart(entry, partId, text, issues, { hasSubparts });
+    const subparts = authorSubpartsFromArgs(entry, partId, path, issues);
     parts.push({
       id: partId,
       label: authorPartLabel(index, entry.label),
       marks: positiveInteger(entry.marks, 1, 0, 100),
       text,
       contentBlocks,
-      subparts: [],
-      itemOrder: blockOrder(contentBlocks),
+      subparts,
+      itemOrder: partOrder(contentBlocks, subparts),
       pageBreakBefore: entry.pageBreakBefore === true,
     });
   });

@@ -192,6 +192,51 @@
       "paidGate": "pnpm eval:assistant:live:real-exams:core"
     },
     {
+      "id": "real-specialist-confidence-intervals",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "17",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q17_confidence_intervals_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q17_confidence_intervals_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 715,
+          "lineEnd": 858
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-confidence-intervals",
+        "liveCase": null,
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["table"]
+      },
+      "semanticChecks": [
+        "confidence interval comparison is preserved as a structured table, not a diagram",
+        "nested part (f)(i)/(ii) is preserved with parts[].subparts",
+        "official worked solutions and hidden mark ticks total 12"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": null
+    },
+    {
       "id": "real-specialist-slope-field",
       "status": "active",
       "requestClass": "source-conversion",

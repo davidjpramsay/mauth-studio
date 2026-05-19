@@ -2133,6 +2133,135 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def source_table_rows(args: dict[str, Any]) -> list[list[str]]:
+    tables = args.get("tables")
+    if isinstance(tables, list):
+        rows: list[list[str]] = []
+        for table in tables:
+            rows.extend(table_rows(table))
+        return rows
+    table = args.get("table")
+    return table_rows(table)
+
+
+def confidence_interval_table_has_row(rows: list[list[str]], row_label: str, required_terms: tuple[str, ...]) -> bool:
+    for row in rows:
+        if not row:
+            continue
+        compact_cells = [compact_math_text(cell) for cell in row]
+        if compact_cells[0] != row_label.lower():
+            continue
+        compact_row = "|".join(compact_cells)
+        if all(term in compact_row for term in required_terms):
+            return True
+    return False
+
+
+def assert_real_specialist_confidence_intervals_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    for term in ("online shopping", "december 2020", "400", "95%", "width", "200", "sample standard deviation"):
+        if term not in serialized:
+            issues.append(f"confidence-interval source conversion should preserve {term!r}")
+    for term in ("population mean", "perth residents", "sample mean"):
+        if term not in serialized:
+            issues.append(f"confidence-interval source conversion should preserve {term!r}")
+
+    graph_types = graph_config_types(args)
+    if graph_types:
+        issues.append(
+            f"confidence-interval table source should not be converted to a diagram, got {sorted(graph_types)!r}"
+        )
+
+    rows = source_table_rows(args)
+    compact_rows = [[compact_math_text(cell) for cell in row] for row in rows]
+    joined_rows = "\n".join("|".join(row) for row in compact_rows)
+    for term in ("confidenceinterval", "samplesize", "samplestandarddeviation", "confidencelevel"):
+        if term not in joined_rows:
+            issues.append(f"confidence-interval table should preserve header {term!r}")
+    expected_rows = {
+        "a": ("n", "s", "95%"),
+        "b": ("n", "s", "99%"),
+        "c": ("2n", "s", "95%"),
+        "d": ("n", "0.8s", "95%"),
+    }
+    for label, required_terms in expected_rows.items():
+        if not confidence_interval_table_has_row(rows, label, required_terms):
+            issues.append(f"confidence-interval table should preserve row {label.upper()} with {required_terms!r}")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 6:
+        issues.append("confidence-interval source should become six structured top-level parts")
+        return issues
+    leaves = structured_part_leaf_items(parts)
+    expected_leaf_marks = [1, 2, 2, 3, 2, 1, 1]
+    if len(leaves) != len(expected_leaf_marks):
+        issues.append("confidence-interval source should preserve seven leaf marked parts/subparts")
+    for index, expected_marks in enumerate(expected_leaf_marks):
+        if index >= len(leaves):
+            continue
+        leaf = leaves[index]
+        if leaf.get("marks") != expected_marks:
+            issues.append(f"confidence-interval leaf part {index}.marks should be {expected_marks}")
+        if not isinstance(leaf.get("studentSpaceLines"), int) or leaf["studentSpaceLines"] < 3:
+            issues.append(f"confidence-interval leaf part {index}.studentSpaceLines should be at least 3")
+    part_f = next(
+        (part for part in parts if isinstance(part, dict) and str(part.get("label") or "").lower() == "f"), None
+    )
+    subparts = part_f.get("subparts") if isinstance(part_f, dict) else None
+    if not isinstance(subparts, list) or len(subparts) != 2:
+        issues.append("confidence-interval part f should preserve two structured subparts")
+    else:
+        labels = [str(subpart.get("label") or "").lower() for subpart in subparts if isinstance(subpart, dict)]
+        if labels != ["i", "ii"]:
+            issues.append("confidence-interval part f subparts should be labelled i and ii")
+    expected_terms = (
+        ("95%", "confidence interval"),
+        ("standard deviation", "sample mean"),
+        ("sample size", "width", "50"),
+        ("probability", "2n", "50"),
+        ("contains", "population mean"),
+        ("smaller width",),
+    )
+    for index, terms in enumerate(expected_terms):
+        if index >= len(parts) or not isinstance(parts[index], dict):
+            continue
+        part_text = str(parts[index].get("text") or "").lower()
+        for term in terms:
+            if term not in part_text:
+                issues.append(f"parts[{index}].text should preserve {term!r}")
+    if sum(int(leaf.get("marks") or 0) for leaf in leaves if isinstance(leaf, dict)) != 12:
+        issues.append("confidence-interval leaf marks should total 12")
+
+    solution_texts = collect_solution_texts(args)
+    solution_joined = "\n".join(solution_texts)
+    solution_serialized = compact_math_text(solution_joined)
+    expected_solution_terms = (
+        ("300", "500"),
+        ("51.02",),
+        ("16n",),
+        ("36.0768", "36.08"),
+        ("1.3859", "1.386"),
+        ("0.166",),
+        ("cannotdetermine", "cannotbedetermine"),
+        ("unknown", "randomsampling"),
+        ("95%islessthan99%", "95<99"),
+        ("0.707", "1/sqrt2"),
+        ("0.8",),
+    )
+    for term_options in expected_solution_terms:
+        if not any(term in solution_serialized for term in term_options):
+            issues.append(f"confidence-interval solution should preserve one of {term_options!r}")
+    if hidden_mark_total(solution_joined) != 12:
+        issues.append("confidence-interval hidden [[marks:n]] total should be exactly 12")
+    if visible_mark_note_count(solution_joined):
+        issues.append("confidence-interval solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -5075,6 +5204,158 @@ def local_real_specialist_stats_bad_renderer_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_confidence_intervals_call() -> dict[str, Any]:
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "A researcher is interested in estimating the population mean $\\mu$ (dollars) that Perth "
+                "residents had spent via online shopping in December 2020. A random sample of size $n$ "
+                "gave a sample mean of $400$, a sample standard deviation $s$ and a 95% confidence "
+                "interval of width $200$."
+            ),
+            "tables": [
+                {
+                    "headers": [
+                        "Confidence interval",
+                        "Sample size",
+                        "Sample standard deviation",
+                        "Confidence level",
+                    ],
+                    "rows": [
+                        ["A", "$n$", "$s$", "95%"],
+                        ["B", "$n$", "$s$", "99%"],
+                        ["C", "$2n$", "$s$", "95%"],
+                        ["D", "$n$", "$0.8s$", "95%"],
+                    ],
+                    "tableAlign": "left",
+                    "cellAlignment": "center",
+                }
+            ],
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "State the 95% confidence interval obtained.",
+                    "marks": 1,
+                    "studentSpaceLines": 3,
+                    "includeSolution": True,
+                    "solutionText": "$$300\\le \\mu\\le 500.$$ [[marks:1]]",
+                },
+                {
+                    "label": "b",
+                    "text": "Calculate the standard deviation of the sample mean, correct to $0.01.",
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The margin of error is $100$. [[marks:1]]\n"
+                        "$$100=1.96\\sigma_{\\bar X},\\quad \\sigma_{\\bar X}=51.02.$$ [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": (
+                        "In terms of $n$, what sample size would yield a 95% confidence interval of width $50$? "
+                        "Show your reasoning."
+                    ),
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "The interval width is one quarter of the original width. [[marks:1]]\n"
+                        "Standard error is inversely proportional to $\\sqrt n$, so the sample size must increase "
+                        "by $4^2=16$. The new sample size is $16n$. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "d",
+                    "text": (
+                        "What is the probability that another sample of size $2n$ would produce a sample mean "
+                        "that differs from $\\mu$ by more than $50$?"
+                    ),
+                    "marks": 3,
+                    "studentSpaceLines": 6,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "For sample size $2n$, $\\sigma_{\\bar X}=51.02/\\sqrt2=36.0768\\ldots$. [[marks:1]]\n"
+                        "$$P(|\\bar X-\\mu|>50)=2P\\left(Z>\\frac{50}{36.0768\\ldots}\\right)=2P(Z>1.3859\\ldots).$$ [[marks:1]]\n"
+                        "Thus the probability is $0.166$. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "e",
+                    "text": (
+                        "Which of the confidence intervals (A, B, C or D) contains $\\mu$, the population mean "
+                        "expenditure for online shopping in December 2020? Justify your answer."
+                    ),
+                    "marks": 2,
+                    "studentSpaceLines": 4,
+                    "includeSolution": True,
+                    "solutionText": (
+                        "We cannot determine which interval contains the true population mean $\\mu$. [[marks:1]]\n"
+                        "The value of $\\mu$ is unknown and intervals vary because of random sampling. [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "f",
+                    "text": "For each of the following, state the confidence interval that has the smaller width. Justify your answers.",
+                    "marks": 0,
+                    "answerSurface": "none",
+                    "subparts": [
+                        {
+                            "label": "i",
+                            "text": "A and B.",
+                            "marks": 1,
+                            "studentSpaceLines": 3,
+                            "includeSolution": True,
+                            "solutionText": (
+                                "Confidence interval A has the smaller width because 95% is less than 99%. [[marks:1]]"
+                            ),
+                        },
+                        {
+                            "label": "ii",
+                            "text": "C and D.",
+                            "marks": 1,
+                            "studentSpaceLines": 3,
+                            "includeSolution": True,
+                            "solutionText": (
+                                "For C, $\\sigma_{\\bar X}=s/\\sqrt{2n}=0.707(s/\\sqrt n)$. "
+                                "For D, $\\sigma_{\\bar X}=0.8s/\\sqrt n=0.8(s/\\sqrt n)$, "
+                                "so C has the smaller width. [[marks:1]]"
+                            ),
+                        },
+                    ],
+                },
+            ],
+        }
+    )
+
+
+def local_real_specialist_confidence_intervals_bad_table_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    rows = call["mauthArguments"]["tables"][0]["rows"]
+    rows[2] = ["C", "$n$", "$s$", "95%"]
+    rows[3] = ["D", "$n$", "$s$", "95%"]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_confidence_intervals_bad_solution_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[0]["solutionText"] = "$$250\\le \\mu\\le 550.$$ [[marks:1]]"
+    parts[1]["solutionText"] = "$$\\sigma_{\\bar X}=42.00.$$ [[marks:2]]"
+    parts[2]["solutionText"] = "The new sample size is $4n$. [[marks:2]]"
+    parts[3]["solutionText"] = "The probability is $0.083$. [[marks:3]]"
+    parts[4]["solutionText"] = "Confidence interval B contains $\\mu$. [[marks:2]]"
+    parts[5]["subparts"][0]["solutionText"] = "B has the smaller width. [[marks:1]]"
+    parts[5]["subparts"][1]["solutionText"] = "D has the smaller width. [[marks:1]]"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_slope_field_call() -> dict[str, Any]:
     slope_graph = {
         "type": "graph2d",
@@ -6132,6 +6413,31 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "probability-density graph should use statsChart chartType='density'",
         ],
     },
+    "real-specialist-confidence-intervals": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_call,
+    },
+    "real-specialist-confidence-intervals-bad-table": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_bad_table_call,
+        "expectedIssues": [
+            "confidence-interval table should preserve row C",
+            "confidence-interval table should preserve row D",
+        ],
+    },
+    "real-specialist-confidence-intervals-bad-solution": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_bad_solution_call,
+        "expectedIssues": [
+            "confidence-interval solution should preserve one of ('300'",
+            "confidence-interval solution should preserve one of ('51.02'",
+            "confidence-interval solution should preserve one of ('16n'",
+            "confidence-interval solution should preserve one of ('0.166'",
+            "confidence-interval solution should preserve one of ('cannotdetermine'",
+            "confidence-interval solution should preserve one of ('95%islessthan99%'",
+            "confidence-interval solution should preserve one of ('0.707'",
+        ],
+    },
     "real-specialist-slope-field": {
         "assert": assert_real_specialist_slope_field_call,
         "call": local_real_specialist_slope_field_call,
@@ -6307,6 +6613,7 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local-real-exams-preview": [
         "real-methods-ev-histogram",
         "real-specialist-stats",
+        "real-specialist-confidence-intervals",
         "real-specialist-slope-field",
         "real-specialist-argand",
         "real-specialist-spherical-cap",

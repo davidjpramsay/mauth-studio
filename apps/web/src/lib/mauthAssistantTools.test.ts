@@ -910,6 +910,76 @@ test("high-level question authoring appends the next missing question", () => {
   assert.equal(appended.contentBlocks[2].visibility, "student");
 });
 
+test("high-level question authoring preserves structured subparts", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "A table compares confidence intervals obtained from different samples.",
+      tables: [
+        {
+          headers: ["Confidence interval", "Sample size", "Sample standard deviation", "Confidence level"],
+          rows: [
+            ["A", "$n$", "$s$", "95%"],
+            ["B", "$n$", "$s$", "99%"],
+            ["C", "$2n$", "$s$", "95%"],
+            ["D", "$n$", "$0.8s$", "95%"],
+          ],
+        },
+      ],
+      parts: [
+        {
+          label: "f",
+          text: "For each pair, state the confidence interval that has the smaller width.",
+          marks: 0,
+          subparts: [
+            {
+              label: "i",
+              text: "A and B.",
+              marks: 1,
+              studentSpaceLines: 3,
+              solutionText: "A has the smaller width because 95% is less than 99%. [[marks:1]]",
+            },
+            {
+              label: "ii",
+              text: "C and D.",
+              marks: 1,
+              studentSpaceLines: 3,
+              solutionText: "C has the smaller width because $1/\\sqrt{2}=0.707<0.8$. [[marks:1]]",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const question = result.document?.questions[0];
+  const part = question?.parts?.[0];
+  const subparts = part?.subparts ?? [];
+
+  assert.equal(result.ok, true);
+  assert.equal(part?.label, "f");
+  assert.equal(part?.marks, 0);
+  assert.deepEqual(
+    subparts.map((subpart) => subpart.label),
+    ["i", "ii"],
+  );
+  assert.deepEqual(
+    subparts.map((subpart) => subpart.marks),
+    [1, 1],
+  );
+  assert.equal(part?.itemOrder?.filter((item) => item.kind === "subpart").length, 2);
+  assert.equal(
+    part?.contentBlocks.some((block) => block.kind === "space" && block.visibility === "student"),
+    false,
+  );
+  assert.equal(
+    subparts.every((subpart) => subpart.contentBlocks.some((block) => block.kind === "space")),
+    true,
+  );
+  assert.equal(hiddenMarkTotal(allSolutionText(question)), 2);
+});
+
 test("real-exam style source payloads survive authoring, inspection, and layout checks", () => {
   const cases: Array<{
     id: string;
