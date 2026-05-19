@@ -42,6 +42,25 @@ def png_data_url(width: int, height: int) -> tuple[str, int]:
     return data_url("image/png", payload), len(payload)
 
 
+def png_data_url_with_margins(width: int, height: int) -> tuple[str, int]:
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((360, 260, 640, 430), outline="black", width=3)
+    draw.text((380, 290), "Question 4", fill="black")
+    draw.text((380, 330), "Evaluate 2x + 3.", fill="black")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    return data_url("image/png", payload), len(payload)
+
+
+def data_url_image_size(value: str) -> tuple[int, int]:
+    _, _, payload = value.partition(",")
+    image_bytes = base64.b64decode(payload)
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        return image.size
+
+
 def test_assistant_status_reports_missing_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -1307,6 +1326,36 @@ def test_input_items_optimize_large_images_for_provider(monkeypatch):
     assert stats["optimizedAttachmentCount"] == 1
     assert stats["providerAttachmentBytes"] < stats["rawAttachmentBytes"]
     assert stats["imageMaxLongEdge"] == 640
+    assert stats["providerImagePixels"] < stats["rawImagePixels"]
+
+
+def test_input_items_trim_blank_image_borders_for_provider(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_IMAGE_MAX_LONG_EDGE", "0")
+    monkeypatch.setenv("ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES", "0")
+    monkeypatch.setenv("ASSISTANT_IMAGE_TRIM_PADDING_PX", "20")
+    image_data_url, image_bytes = png_data_url_with_margins(1000, 800)
+    request = openai_assistant.AssistantChatRequest(
+        messages=[openai_assistant.AssistantChatMessage(role="user", content="Convert this source screenshot.")],
+        attachments=[
+            openai_assistant.AssistantAttachment(
+                id="image-1",
+                name="question-source.png",
+                mimeType="image/png",
+                dataUrl=image_data_url,
+                sizeBytes=image_bytes,
+            )
+        ],
+    )
+
+    [item] = openai_assistant.input_items(request)
+    image_item = next(content for content in item["content"] if content["type"] == "input_image")
+    stats = openai_assistant.assistant_attachment_payload_stats(request.attachments)
+
+    assert data_url_image_size(image_item["image_url"])[0] < 400
+    assert data_url_image_size(image_item["image_url"])[1] < 260
+    assert stats["optimizedAttachmentCount"] == 1
+    assert stats["imageTrimBorders"] is True
+    assert stats["providerImagePixels"] < stats["rawImagePixels"] / 8
 
 
 def test_input_items_extract_text_and_docx_attachments_to_latest_user_message():

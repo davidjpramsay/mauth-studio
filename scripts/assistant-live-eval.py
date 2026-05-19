@@ -1226,6 +1226,13 @@ def request_shape_label(shape: dict[str, Any]) -> str:
     )
     image_detail = attachment_stats.get("imageDetail") or "unknown"
     max_long_edge = attachment_stats.get("imageMaxLongEdge") or "unknown"
+    raw_image_pixels = attachment_stats.get("rawImagePixels") if isinstance(attachment_stats.get("rawImagePixels"), int) else 0
+    provider_image_pixels = (
+        attachment_stats.get("providerImagePixels") if isinstance(attachment_stats.get("providerImagePixels"), int) else 0
+    )
+    pixel_label = (
+        f", pixels={provider_image_pixels:,}/{raw_image_pixels:,}" if raw_image_pixels or provider_image_pixels else ""
+    )
     return (
         f"brains={','.join(str(item) for item in brain_files)} "
         f"({shape.get('brainSelection')}); "
@@ -1235,7 +1242,7 @@ def request_shape_label(shape: dict[str, Any]) -> str:
         f"schemas={shape.get('toolSchemaChars')} chars; "
         f"input={shape.get('inputChars')} chars; "
         f"attachments={attachment_count}/{byte_label(attachment_bytes)} sent"
-        f" (raw {byte_label(raw_attachment_bytes)}, optimized {optimized_count}, detail={image_detail}, maxEdge={max_long_edge})"
+        f" (raw {byte_label(raw_attachment_bytes)}, optimized {optimized_count}, detail={image_detail}, maxEdge={max_long_edge}{pixel_label})"
     )
 
 

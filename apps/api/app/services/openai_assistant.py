@@ -12,7 +12,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 import httpx
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
 from app.bootstrap import CONFIG_ROOT
 from app.models.schemas import AssistantAttachment, AssistantChatMessage, AssistantChatRequest, AssistantToolOutput
@@ -29,6 +29,8 @@ DEFAULT_ASSISTANT_IMAGE_DETAIL = "high"
 DEFAULT_ASSISTANT_IMAGE_MAX_LONG_EDGE = 1000
 DEFAULT_ASSISTANT_IMAGE_WEBP_QUALITY = 82
 DEFAULT_ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES = 20_000
+DEFAULT_ASSISTANT_IMAGE_TRIM_BACKGROUND_THRESHOLD = 18
+DEFAULT_ASSISTANT_IMAGE_TRIM_PADDING_PX = 24
 TOKENS_PER_MILLION = 1_000_000
 QUESTION_REFERENCE_PATTERN = re.compile(r"\b(?:q|question)\s*(\d{1,3})\b", re.IGNORECASE)
 QUESTION_AUTHORING_PATTERN = re.compile(
@@ -305,6 +307,23 @@ def assistant_image_webp_quality() -> int:
 
 def assistant_image_optimize_min_bytes() -> int:
     return env_int("ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES", DEFAULT_ASSISTANT_IMAGE_OPTIMIZE_MIN_BYTES, minimum=0)
+
+
+def assistant_image_trim_borders_enabled() -> bool:
+    return env_flag_enabled("ASSISTANT_IMAGE_TRIM_BORDERS", default=True)
+
+
+def assistant_image_trim_background_threshold() -> int:
+    return env_int(
+        "ASSISTANT_IMAGE_TRIM_BACKGROUND_THRESHOLD",
+        DEFAULT_ASSISTANT_IMAGE_TRIM_BACKGROUND_THRESHOLD,
+        minimum=1,
+        maximum=255,
+    )
+
+
+def assistant_image_trim_padding_px() -> int:
+    return env_int("ASSISTANT_IMAGE_TRIM_PADDING_PX", DEFAULT_ASSISTANT_IMAGE_TRIM_PADDING_PX, minimum=0, maximum=512)
 
 
 def compact_string_items(
@@ -3169,6 +3188,45 @@ def resize_image_for_provider(image: Image.Image, max_long_edge: int) -> tuple[I
     return image.resize(size, Image.Resampling.LANCZOS), True
 
 
+def sampled_corner_background(image: Image.Image) -> tuple[int, int, int]:
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return (255, 255, 255)
+    corners = [
+        image.getpixel((0, 0)),
+        image.getpixel((width - 1, 0)),
+        image.getpixel((0, height - 1)),
+        image.getpixel((width - 1, height - 1)),
+    ]
+    return tuple(round(sum(int(pixel[channel]) for pixel in corners) / len(corners)) for channel in range(3))
+
+
+def trim_image_border_for_provider(image: Image.Image) -> tuple[Image.Image, bool]:
+    if not assistant_image_trim_borders_enabled():
+        return image, False
+    if image.width < 32 or image.height < 32:
+        return image, False
+
+    background = Image.new("RGB", image.size, sampled_corner_background(image))
+    diff = ImageChops.difference(image, background).convert("L")
+    mask = diff.point(lambda value: 255 if value >= assistant_image_trim_background_threshold() else 0)
+    bbox = mask.getbbox()
+    if not bbox:
+        return image, False
+
+    left, top, right, bottom = bbox
+    padding = assistant_image_trim_padding_px()
+    left = max(0, left - padding)
+    top = max(0, top - padding)
+    right = min(image.width, right + padding)
+    bottom = min(image.height, bottom + padding)
+    if left <= 0 and top <= 0 and right >= image.width and bottom >= image.height:
+        return image, False
+    if right - left < 32 or bottom - top < 32:
+        return image, False
+    return image.crop((left, top, right, bottom)), True
+
+
 def encoded_provider_image_candidates(image: Image.Image) -> list[tuple[str, str, bytes]]:
     candidates: list[tuple[str, str, bytes]] = []
     with suppress(OSError, ValueError):
@@ -3200,18 +3258,19 @@ def provider_optimized_attachment(attachment: AssistantAttachment) -> AssistantA
     try:
         with Image.open(io.BytesIO(original_bytes)) as image:
             provider_image = rgb_image_for_provider(image)
+            provider_image, trimmed = trim_image_border_for_provider(provider_image)
             provider_image, resized = resize_image_for_provider(provider_image, assistant_image_max_long_edge())
     except (OSError, UnidentifiedImageError, ValueError):
         return attachment
 
-    if not resized and len(original_bytes) < assistant_image_optimize_min_bytes():
+    if not trimmed and not resized and len(original_bytes) < assistant_image_optimize_min_bytes():
         return attachment
 
     candidates = encoded_provider_image_candidates(provider_image)
     if not candidates:
         return attachment
     mime_type, extension, optimized_bytes = min(candidates, key=lambda candidate: len(candidate[2]))
-    if not resized and len(optimized_bytes) >= len(original_bytes):
+    if not trimmed and not resized and len(optimized_bytes) >= len(original_bytes):
         return attachment
 
     return AssistantAttachment(
@@ -3227,6 +3286,17 @@ def provider_optimized_attachments(attachments: list[AssistantAttachment] | None
     return [provider_optimized_attachment(attachment) for attachment in attachments or []]
 
 
+def attachment_image_dimensions(attachment: AssistantAttachment) -> tuple[int, int] | None:
+    if not attachment_is_optimizable_image(attachment):
+        return None
+    data = attachment_data_bytes(attachment.dataUrl)
+    if not data:
+        return None
+    with suppress(OSError, UnidentifiedImageError, ValueError), Image.open(io.BytesIO(data)) as image:
+        return image.size
+    return None
+
+
 def assistant_attachment_payload_stats(attachments: list[AssistantAttachment] | None) -> dict[str, Any]:
     original = list(attachments or [])[:MAX_ASSISTANT_ATTACHMENTS]
     optimized = provider_optimized_attachments(original)
@@ -3234,6 +3304,14 @@ def assistant_attachment_payload_stats(attachments: list[AssistantAttachment] | 
     provider_bytes = sum(attachment_data_size(attachment) for attachment in optimized)
     raw_data_chars = sum(len(attachment.dataUrl or "") for attachment in original)
     provider_data_chars = sum(len(attachment.dataUrl or "") for attachment in optimized)
+    raw_image_dimensions = [
+        dimensions for attachment in original if (dimensions := attachment_image_dimensions(attachment))
+    ]
+    provider_image_dimensions = [
+        dimensions for attachment in optimized if (dimensions := attachment_image_dimensions(attachment))
+    ]
+    raw_image_pixels = sum(width * height for width, height in raw_image_dimensions)
+    provider_image_pixels = sum(width * height for width, height in provider_image_dimensions)
     optimized_count = sum(
         1
         for raw, provider in zip(original, optimized, strict=False)
@@ -3248,9 +3326,14 @@ def assistant_attachment_payload_stats(attachments: list[AssistantAttachment] | 
         "providerAttachmentBytes": provider_bytes,
         "rawAttachmentDataChars": raw_data_chars,
         "providerAttachmentDataChars": provider_data_chars,
+        "rawImagePixels": raw_image_pixels,
+        "providerImagePixels": provider_image_pixels,
+        "rawImageMaxLongEdge": max((max(dimensions) for dimensions in raw_image_dimensions), default=0),
+        "providerImageMaxLongEdge": max((max(dimensions) for dimensions in provider_image_dimensions), default=0),
         "optimizedAttachmentCount": optimized_count,
         "imageDetail": assistant_image_detail(),
         "imageMaxLongEdge": assistant_image_max_long_edge(),
+        "imageTrimBorders": assistant_image_trim_borders_enabled(),
     }
 
 
