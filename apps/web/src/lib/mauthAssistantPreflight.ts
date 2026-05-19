@@ -245,6 +245,9 @@ function questionTextFragments(question: MauthQuestionLike) {
 function diagramInspectionExpected(code: string) {
   if (code === "diagram-renderer-mismatch") return "Use the renderer expected by the prompt and write that renderer's native graphConfig.";
   if (code === "image-diagram-missing-source") return "Attach an uploaded image source in graphConfig.data.src.";
+  if (code.startsWith("graph2d-source-")) {
+    return "Preserve each explicitly stated graph equation, domain, coordinate point, and visible coordinate-axis setting in the native graph2d graphConfig.";
+  }
   if (code === "scalar-product-vector-labels-missing") {
     return "Add visible vector labels for every vector named in the scalar products. For vector2d, use metadata.vector2d.vectors names/labels; for Penrose, use direct `Label A $\\mathbf{a}$` statements.";
   }

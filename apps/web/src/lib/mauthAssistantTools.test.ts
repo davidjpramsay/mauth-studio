@@ -277,6 +277,72 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     false,
   );
 
+  const sourceGraphWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      showAxes: true,
+      showGrid: true,
+      showAxisLabels: false,
+      functions: [
+        { kind: "expression", expression: "170 - x", domainMin: 0, domainMax: 100 },
+        { kind: "expression", expression: "120 - 1000*(log((740 - x)/640))^2", domainMin: 100, domainMax: 340 },
+      ],
+      features: [{ kind: "point", x: 0, y: 180, label: "$B$" }],
+    },
+    [
+      "A skier leaves the ramp at point $E(100,120)$.",
+      "The sloped ground is $y=170-0.5x$ for $100\\le x\\le340$.",
+      "The Cartesian equation for the flight path is $y=120-1000\\left(\\ln\\left(\\frac{740-x}{640}\\right)\\right)^2$ for $100\\le x\\le255.916$.",
+      "The landing point is $(255.916,42.042)$ on the coordinate graph.",
+    ].join(" "),
+  ).warnings;
+  assert(sourceGraphWarnings.some((warning) => warning.code === "graph2d-source-equation-missing"));
+  assert(sourceGraphWarnings.some((warning) => warning.code === "graph2d-source-domain-mismatch"));
+  assert(sourceGraphWarnings.some((warning) => warning.code === "graph2d-source-point-missing"));
+  assert(sourceGraphWarnings.some((warning) => warning.code === "graph2d-source-axis-labels-hidden"));
+
+  const correctSourceGraphWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      showAxes: true,
+      showGrid: true,
+      showAxisLabels: true,
+      functions: [
+        { kind: "expression", expression: "170 - 0.5*x", domainMin: 100, domainMax: 340 },
+        { kind: "expression", expression: "120 - 1000*(log((740 - x)/640))^2", domainMin: 100, domainMax: 255.916 },
+      ],
+      features: [
+        { kind: "point", x: 100, y: 120, label: "$E$" },
+        { kind: "point", x: 255.916, y: 42.042 },
+      ],
+    },
+    [
+      "A skier leaves the ramp at point $E(100,120)$.",
+      "The sloped ground is $y=170-0.5x$ for $100\\le x\\le340$.",
+      "The Cartesian equation for the flight path is $y=120-1000\\left(\\ln\\left(\\frac{740-x}{640}\\right)\\right)^2$ for $100\\le x\\le255.916$.",
+      "The landing point is $(255.916,42.042)$ on the coordinate graph.",
+    ].join(" "),
+  ).warnings;
+  assert.equal(
+    correctSourceGraphWarnings.some((warning) => warning.code.startsWith("graph2d-source-")),
+    false,
+  );
+
+  const blankSketchWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      showAxes: true,
+      showGrid: true,
+      showAxisLabels: true,
+      functions: [],
+    },
+    "Sketch the graph of $y=x^2-4$ on the axes provided.",
+  ).warnings;
+  assert.equal(
+    blankSketchWarnings.some((warning) => warning.code === "graph2d-source-equation-missing"),
+    false,
+  );
+
   const graph3dWarnings = inspectMauthDiagram(
     {
       type: "graph3d",
@@ -405,6 +471,21 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   assert(
     slopeFieldWarnings.some(
       (warning) => warning.code === "graph2d-slope-field-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    sourceGraphWarnings.some(
+      (warning) => warning.code === "graph2d-source-equation-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    sourceGraphWarnings.some(
+      (warning) => warning.code === "graph2d-source-domain-mismatch" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    sourceGraphWarnings.some(
+      (warning) => warning.code === "graph2d-source-point-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
     ),
   );
 });

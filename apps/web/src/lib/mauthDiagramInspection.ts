@@ -253,6 +253,270 @@ function graphExpressionLooksLinear(expression: string) {
   return true;
 }
 
+interface SourceGraphEquation {
+  expression: string;
+  normalized: string;
+  requiredTokens: string[];
+  domain?: { min: number; max: number };
+}
+
+interface SourceGraphPoint {
+  label?: string;
+  x: number;
+  y: number;
+}
+
+function normalizedGraphText(rawText: string) {
+  let text = rawText
+    .replace(/\r/g, "\n")
+    .replace(/\u2212/g, "-")
+    .replace(/\\left|\\right/g, "")
+    .replace(/\\,/g, "")
+    .replace(/\\cdot/g, "*")
+    .replace(/\\times/g, "*")
+    .replace(/\\ln\b/g, "log")
+    .replace(/\\log\b/g, "log")
+    .replace(/\\leq?|≤/g, "<=")
+    .replace(/\\geq?|≥/g, ">=")
+    .replace(/\\d?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, "($1)/($2)")
+    .replace(/\^\{([^{}]+)\}/g, "^$1")
+    .replace(/[$`]/g, " ")
+    .replace(/[{}]/g, "");
+  text = text.replace(/([0-9.])\s*x\b/g, "$1*x");
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function compactGraphExpression(rawText: string) {
+  return normalizedGraphText(rawText)
+    .toLowerCase()
+    .replace(/\bln\b/g, "log")
+    .replace(/\s+/g, "")
+    .replace(/\*/g, "");
+}
+
+function sourceEquationKey(expression: string) {
+  const compact = compactGraphExpression(expression);
+  const equalityIndex = compact.indexOf("=");
+  if (equalityIndex < 0) return compact;
+  const left = compact.slice(0, equalityIndex);
+  const right = compact.slice(equalityIndex + 1);
+  if (/^(?:y|[a-z]\(x\))$/.test(left)) return right;
+  return compact;
+}
+
+function tokenizedGraphExpression(expression: string) {
+  const compact = sourceEquationKey(expression);
+  const tokens = new Set<string>();
+  for (const match of compact.matchAll(/-\d+(?:\.\d+)?/g)) tokens.add(match[0]);
+  for (const match of compact.matchAll(/\d+(?:\.\d+)?/g)) tokens.add(match[0]);
+  for (const match of compact.matchAll(/\b(?:x|y|log|sin|cos|tan|sqrt|exp)\b/g)) tokens.add(match[0]);
+  for (const match of compact.matchAll(/-\d+(?:\.\d+)?x/g)) tokens.add(match[0]);
+  for (const match of compact.matchAll(/(^|[^0-9.])-[xy](?!\/)/g)) tokens.add(match[0].slice(-2));
+  for (const match of compact.matchAll(/(^|[^0-9.])\+[xy](?!\/)/g)) tokens.add(match[0].slice(-2));
+  if (/\^2|\*\*2/.test(expression)) tokens.add("^2");
+  if (/\^3|\*\*3/.test(expression)) tokens.add("^3");
+  return [...tokens].filter((token) => token !== "1");
+}
+
+function mathLikeSegments(rawText: string) {
+  const segments: Array<{ text: string; end: number }> = [];
+  const dollarPattern = /\${1,2}([\s\S]*?)\${1,2}/g;
+  for (const match of rawText.matchAll(dollarPattern)) {
+    const text = match[1]?.trim() ?? "";
+    if (text) segments.push({ text, end: match.index + match[0].length });
+  }
+  const normalized = normalizedGraphText(rawText);
+  for (const match of normalized.matchAll(/\b(?:y|[a-z]\s*\(\s*x\s*\))\s*=\s*[^.;\n]+/gi)) {
+    const text = match[0].split(/\s+for\s+|[,;]/i)[0]?.trim() ?? "";
+    if (text) segments.push({ text, end: rawText.length });
+  }
+  return segments;
+}
+
+function sourceEquationLooksGraph2d(expression: string) {
+  const compact = compactGraphExpression(expression);
+  if (!compact.includes("=")) return false;
+  if (/(?:dy.*dx|dydx|d2|x'\(t\)|x\(t\)|h\(t\)|p\(x|p\(x=)/i.test(compact)) return false;
+  if (/^(?:y|[a-z]\(x\))=/.test(compact)) return true;
+  return /x/.test(compact) && /y/.test(compact) && !/[a-z]\(t\)/.test(compact);
+}
+
+function extractDomainNear(rawText: string, startIndex: number) {
+  const windowText = normalizedGraphText(rawText.slice(startIndex, startIndex + 180));
+  const match = windowText.match(/(-?\d+(?:\.\d+)?)\s*<=\s*x\s*<=\s*(-?\d+(?:\.\d+)?)/i);
+  if (!match) return undefined;
+  const min = Number(match[1]);
+  const max = Number(match[2]);
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : undefined;
+}
+
+function extractSourceGraphEquations(contextText: string): SourceGraphEquation[] {
+  const seen = new Set<string>();
+  const equations: SourceGraphEquation[] = [];
+  for (const segment of mathLikeSegments(contextText)) {
+    if (!sourceEquationLooksGraph2d(segment.text)) continue;
+    const normalized = sourceEquationKey(segment.text);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    equations.push({
+      expression: segment.text,
+      normalized,
+      requiredTokens: tokenizedGraphExpression(segment.text),
+      domain: extractDomainNear(contextText, segment.end),
+    });
+  }
+  return equations;
+}
+
+function sourceGraphEquationMatchesFunction(source: SourceGraphEquation, graphExpression: string) {
+  const target = sourceEquationKey(graphExpression);
+  if (!target) return false;
+  if (target.includes(source.normalized) || source.normalized.includes(target)) return true;
+  if (!source.requiredTokens.length) return false;
+  return source.requiredTokens.every((token) => target.includes(token));
+}
+
+function finiteGraphNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  }
+  return undefined;
+}
+
+function graphNumberClose(value: unknown, expected: number, tolerance: number) {
+  const number = finiteGraphNumber(value);
+  return number !== undefined && Math.abs(number - expected) <= tolerance;
+}
+
+function graphFunctionDomainMatches(functionEntry: Record<string, unknown>, domain: { min: number; max: number }) {
+  return graphNumberClose(functionEntry.domainMin, domain.min, 0.02) && graphNumberClose(functionEntry.domainMax, domain.max, 0.02);
+}
+
+function sourceGraphFunctions(config: GraphConfig) {
+  const entries = recordArray(config.functions)
+    .map((entry, index) => ({ entry, index, expression: typeof entry.expression === "string" ? entry.expression.trim() : "" }))
+    .filter((item) => item.entry.show !== false && item.expression);
+  if (entries.length) return entries;
+  return typeof config.expression === "string" && config.expression.trim()
+    ? [{ entry: { expression: config.expression }, index: -1, expression: config.expression.trim() }]
+    : [];
+}
+
+function extractSourceGraphPoints(contextText: string): SourceGraphPoint[] {
+  const normalized = normalizedGraphText(contextText);
+  const points: SourceGraphPoint[] = [];
+  const seen = new Set<string>();
+  const pointPattern = /\b(?:point\s+)?([A-Z])\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+  for (const match of normalized.matchAll(pointPattern)) {
+    const label = match[1];
+    const x = Number(match[2]);
+    const y = Number(match[3]);
+    const key = `${label}:${x}:${y}`;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || seen.has(key)) continue;
+    seen.add(key);
+    points.push({ label, x, y });
+  }
+  const coordinatePattern = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+  for (const match of normalized.matchAll(coordinatePattern)) {
+    const before = normalized.slice(Math.max(0, match.index - 45), match.index).toLowerCase();
+    if (!/\b(?:landing|intersection|intersect|turning|endpoint|end point)\b/.test(before)) continue;
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    const key = `:${x}:${y}`;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || seen.has(key)) continue;
+    seen.add(key);
+    points.push({ x, y });
+  }
+  return points;
+}
+
+function graphFeatureLabelKey(value: unknown) {
+  return typeof value === "string"
+    ? normalizedMathText(value)
+        .replace(/[^A-Za-z0-9]+/g, "")
+        .toLowerCase()
+    : "";
+}
+
+function graphHasPointFeature(features: Array<Record<string, unknown>>, sourcePoint: SourceGraphPoint) {
+  const expectedLabel = sourcePoint.label?.toLowerCase();
+  return features.some((feature) => {
+    if (feature.show === false || feature.kind !== "point") return false;
+    if (!graphNumberClose(feature.x, sourcePoint.x, 0.05) || !graphNumberClose(feature.y, sourcePoint.y, 0.05)) return false;
+    if (!expectedLabel) return true;
+    return graphFeatureLabelKey(feature.label) === expectedLabel || graphFeatureLabelKey(feature.name) === expectedLabel;
+  });
+}
+
+function shouldInspectSourceGraphAxes(contextText: string, equations: SourceGraphEquation[], points: SourceGraphPoint[]) {
+  if (!equations.length && !points.length) return false;
+  return /\b(?:graph|coordinate|cartesian|axes?|axis|modelling|modeling|sloped ground|landing point)\b/i.test(contextText);
+}
+
+function inspectGraph2dSourceConsistency(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
+  const warnings: MauthDiagramInspectionWarning[] = [];
+  const sourceEquations = extractSourceGraphEquations(contextText);
+  const sourcePoints = extractSourceGraphPoints(contextText);
+  const graphFunctions = sourceGraphFunctions(config);
+  const features = recordArray(config.features);
+
+  for (const sourceEquation of sourceEquations) {
+    const match = graphFunctions.find((functionEntry) => sourceGraphEquationMatchesFunction(sourceEquation, functionEntry.expression));
+    if (!match && graphFunctions.length > 0) {
+      warnings.push({
+        code: "graph2d-source-equation-missing",
+        severity: "warning",
+        message: `The question/source explicitly states ${sourceEquation.expression}, but no visible graph2d function or relation matches it.`,
+        path: "graphConfig.functions",
+      });
+      continue;
+    }
+    if (match && sourceEquation.domain && !graphFunctionDomainMatches(match.entry, sourceEquation.domain)) {
+      const pathIndex = match.index >= 0 ? `[${match.index}]` : "";
+      warnings.push({
+        code: "graph2d-source-domain-mismatch",
+        severity: "warning",
+        message: `The question/source gives ${sourceEquation.expression} on ${sourceEquation.domain.min} <= x <= ${sourceEquation.domain.max}, but the matching graph2d function does not preserve that domain.`,
+        path: `graphConfig.functions${pathIndex}`,
+      });
+    }
+  }
+
+  for (const sourcePoint of sourcePoints) {
+    if (graphHasPointFeature(features, sourcePoint)) continue;
+    const labelText = sourcePoint.label ? `point ${sourcePoint.label}` : "the stated point";
+    warnings.push({
+      code: "graph2d-source-point-missing",
+      severity: "warning",
+      message: `The question/source explicitly states ${labelText} at (${sourcePoint.x}, ${sourcePoint.y}), but graph2d has no matching point feature.`,
+      path: "graphConfig.features",
+    });
+  }
+
+  if (shouldInspectSourceGraphAxes(contextText, sourceEquations, sourcePoints)) {
+    if (config.showAxes === false || config.showGrid === false) {
+      warnings.push({
+        code: "graph2d-source-axes-hidden",
+        severity: "warning",
+        message: "The question/source describes a coordinate graph, but graph2d axes or grid are hidden.",
+        path: "graphConfig.showAxes",
+      });
+    }
+    if (config.showAxisLabels === false) {
+      warnings.push({
+        code: "graph2d-source-axis-labels-hidden",
+        severity: "warning",
+        message: "The question/source describes a coordinate graph, but graph2d axis labels are hidden.",
+        path: "graphConfig.showAxisLabels",
+      });
+    }
+  }
+
+  return warnings;
+}
+
 function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
   if (config.type !== "graph2d") return [];
   const features = recordArray(config.features);
@@ -357,6 +621,7 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
     }
   }
 
+  warnings.push(...inspectGraph2dSourceConsistency(config, contextText));
   return warnings;
 }
 
@@ -812,6 +1077,11 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph2d-straight-line-mismatch" ||
     warning.code === "graph2d-slope-field-missing" ||
     warning.code === "graph2d-slope-field-point-missing" ||
+    warning.code === "graph2d-source-equation-missing" ||
+    warning.code === "graph2d-source-domain-mismatch" ||
+    warning.code === "graph2d-source-point-missing" ||
+    warning.code === "graph2d-source-axes-hidden" ||
+    warning.code === "graph2d-source-axis-labels-hidden" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||
