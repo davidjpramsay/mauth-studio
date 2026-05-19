@@ -413,6 +413,52 @@
       "paidGate": "pnpm eval:assistant:live:real-exams:graph3d"
     },
     {
+      "id": "real-specialist-square-pyramid",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2025,
+        "paper": "Calculator Assumed",
+        "question": "18",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2025-mas-ca-q18-square-pyramid/crops/2025-mas-ca-q18-square-pyramid_p20.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2025-mas-ca-q18-square-pyramid/crops/2025-mas-ca-q18-square-pyramid_p21.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2025-mas-ca-key.txt",
+          "lineStart": 917,
+          "lineEnd": 1029
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-square-pyramid",
+        "liveCase": "real-specialist-square-pyramid",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph3d", "graph2d"]
+      },
+      "semanticChecks": [
+        "square-pyramid 3D diagram uses graph3d with named vertices, hidden edges, and faces",
+        "top view is preserved as graph2d with labels and vector directions",
+        "O, F, and M satisfy the source midpoint relationships",
+        "structured subparts, marks, and official vector-solution semantics match the source"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:graph3d"
+    },
+    {
       "id": "real-specialist-implicit",
       "status": "active",
       "requestClass": "source-conversion",

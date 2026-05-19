@@ -543,6 +543,35 @@ def sample_specialist_prism_screenshot_with_key() -> list[AssistantAttachment]:
     ]
 
 
+def sample_specialist_square_pyramid_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2025-mas-q18-square-pyramid-p20.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2025-mas-ca-q18-square-pyramid",
+                "crops",
+                "2025-mas-ca-q18-square-pyramid_p20.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2025-mas-q18-square-pyramid-p21.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2025-mas-ca-q18-square-pyramid",
+                "crops",
+                "2025-mas-ca-q18-square-pyramid_p21.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2025-mas-q18-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2025-mas-ca-key.txt"),
+            start_line=917,
+            end_line=1029,
+        ),
+    ]
+
+
 def sample_specialist_implicit_screenshot_with_key() -> list[AssistantAttachment]:
     return [
         attachment_png_from_path(
@@ -3553,6 +3582,144 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str]:
+    issues, args = assert_source_question_common(call)
+    if args is None:
+        return issues
+
+    serialized = call_text(call).lower()
+    compact_serialized = compact_math_text(serialized)
+    for term in ("square pyramid", "coordinate system", "midpoint of db", "midpoint of edge ab", "midpoint of ef"):
+        if compact_math_text(term) not in compact_serialized:
+            issues.append(f"square-pyramid source conversion should preserve {term!r}")
+    for term in ("abcd", "point e", "origin o", "top view", "right angle"):
+        if compact_math_text(term) not in compact_serialized and term not in serialized:
+            issues.append(f"square-pyramid source conversion should preserve {term!r}")
+    for term in ("fe", "dm", "dmf"):
+        if term not in compact_serialized:
+            issues.append(f"square-pyramid source conversion should preserve vector/angle term {term!r}")
+
+    graph_types = graph_config_types(args)
+    if "graph3d" not in graph_types:
+        issues.append(f"square-pyramid 3D diagram should use graph3d, got {sorted(graph_types)!r}")
+    if "graph2d" not in graph_types:
+        issues.append(f"square-pyramid top-view diagram should use graph2d, got {sorted(graph_types)!r}")
+    if any(graph_type in graph_types for graph_type in ("statsChart", "network", "setDiagram", "vector2d")):
+        issues.append("square-pyramid source should not use statsChart, network, setDiagram, or vector2d")
+
+    graph_configs = collect_diagram_graph_configs(args)
+    graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
+    graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
+    issues.extend(graph3d_common_schema_issues(graph3d_configs, "square-pyramid"))
+
+    point_coords, segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
+    for point_id in ("a", "b", "c", "d", "e", "f", "m", "o"):
+        if point_id not in point_coords:
+            issues.append(f"square-pyramid graph3d data should include named point {point_id.upper()}")
+    required_segments = (
+        ("a", "b"),
+        ("b", "c"),
+        ("c", "d"),
+        ("a", "d"),
+        ("e", "a"),
+        ("e", "b"),
+        ("e", "c"),
+        ("e", "d"),
+        ("e", "f"),
+        ("f", "m"),
+    )
+    for pair in required_segments:
+        if tuple(sorted(pair)) not in segment_pairs:
+            issues.append(f"square-pyramid graph3d data should include segment {''.join(pair).upper()}")
+    if not dashed_pairs:
+        issues.append("square-pyramid graph3d should mark at least one hidden edge/diagonal as dashed")
+    if len(graph3d_face_entries(graph3d_configs)) < 4:
+        issues.append("square-pyramid graph3d diagram should include pyramid faces, not just edge lines")
+
+    def midpoint_issue(target: str, first: str, second: str, label: str) -> str | None:
+        target_coords = point_coords.get(target)
+        first_coords = point_coords.get(first)
+        second_coords = point_coords.get(second)
+        if target_coords is None or first_coords is None or second_coords is None:
+            return None
+        expected = tuple((a + b) / 2 for a, b in zip(first_coords, second_coords, strict=False))
+        if not graph3d_close_coords(target_coords, expected, tolerance=0.08):
+            return f"square-pyramid graph3d point {target.upper()} should be midpoint of {label}"
+        return None
+
+    for issue in (
+        midpoint_issue("o", "d", "b", "D and B"),
+        midpoint_issue("f", "a", "b", "A and B"),
+        midpoint_issue("m", "e", "f", "E and F"),
+    ):
+        if issue:
+            issues.append(issue)
+
+    graph2d_serialized = json.dumps(graph2d_configs, ensure_ascii=False).lower()
+    graph2d_compact = compact_math_text(graph2d_serialized)
+    for term in ("a", "b", "c", "d", "o", "e", "f", "m"):
+        if graph2d_configs and term not in graph2d_compact:
+            issues.append(f"square-pyramid top-view graph2d should preserve label {term.upper()}")
+    if graph2d_configs and not (
+        ("\\vec a" in graph2d_serialized or "\\vec{a}" in graph2d_serialized)
+        and ("\\vec b" in graph2d_serialized or "\\vec{b}" in graph2d_serialized)
+    ):
+        issues.append("square-pyramid top-view graph2d should preserve vector labels a and b")
+
+    parts = args.get("parts")
+    if not isinstance(parts, list) or len(parts) != 3:
+        issues.append("square-pyramid source should become exactly three structured top-level parts")
+        return issues
+    leaves = structured_part_leaf_items(parts)
+    expected_leaf_marks = [1, 1, 4, 2]
+    if [int(leaf.get("marks") or 0) for leaf in leaves] != expected_leaf_marks:
+        issues.append(f"square-pyramid leaf part marks should be {expected_leaf_marks}")
+    if sum(int(leaf.get("marks") or 0) for leaf in leaves) != 8:
+        issues.append("square-pyramid structured marks should total 8")
+    if args.get("marks") not in (0, None) or args.get("questionMarks") not in (0, None):
+        issues.append(
+            "square-pyramid multipart source should keep top-level marks/questionMarks at 0 and preserve marks on parts/subparts"
+        )
+    part_a = next(
+        (part for part in parts if isinstance(part, dict) and str(part.get("label") or "").lower() == "a"), None
+    )
+    subparts = part_a.get("subparts") if isinstance(part_a, dict) else None
+    if not isinstance(subparts, list) or len(subparts) != 2:
+        issues.append("square-pyramid part a should preserve two structured subparts")
+    else:
+        labels = [str(subpart.get("label") or "").lower() for subpart in subparts if isinstance(subpart, dict)]
+        if labels != ["i", "ii"]:
+            issues.append("square-pyramid part a subparts should be labelled i and ii")
+    leaf_terms = (("fe",), ("dm",), ("dm", "fe", "x", "y"), ("dmf", "right angle"))
+    for index, leaf in enumerate(leaves):
+        if index >= len(leaf_terms) or not isinstance(leaf, dict):
+            continue
+        leaf_text = compact_math_text(str(leaf.get("text") or ""))
+        for term in leaf_terms[index]:
+            if compact_math_text(term) not in leaf_text:
+                issues.append(f"square-pyramid leaf part {index}.text should preserve {term!r}")
+        if not isinstance(leaf.get("studentSpaceLines"), int) or leaf["studentSpaceLines"] < 3:
+            issues.append(f"square-pyramid leaf part {index}.studentSpaceLines should be at least 3")
+
+    solution_texts = collect_solution_texts(args)
+    solution_serialized = compact_math_text("\n".join(solution_texts))
+    expected_solution_terms = (
+        ("-0.5a-0.5b+e", "-1/2a-1/2b+e", "-\\frac12a-\\frac12b+e"),
+        ("0.25a+1.25b+0.5e", "1/4a+5/4b+1/2e"),
+        ("-0.75", "-3/4"),
+        ("0.5e", "1/2e"),
+        ("sqrt(3/2)", "\\sqrt{3/2}", "\\sqrt3/2", "sqrt6/2", "\\sqrt6/2", "\\frac{\\sqrt6}{2}"),
+    )
+    for term_options in expected_solution_terms:
+        if not any(compact_math_text(term) in solution_serialized for term in term_options):
+            issues.append(f"square-pyramid solution should preserve one of {term_options!r}")
+    if hidden_mark_total("\n".join(solution_texts)) != 8:
+        issues.append("square-pyramid hidden [[marks:n]] total should be exactly 8")
+    if visible_mark_note_count("\n".join(solution_texts)):
+        issues.append("square-pyramid solution should use hidden [[marks:n]] ticks, not visible mark notes")
+    return issues
+
+
 def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
     issues, args = assert_source_question_common(call)
     if args is None:
@@ -4446,6 +4613,16 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_specialist_prism_call,
         "repairOnFailure": real_prism_repair_failure_output,
     },
+    "real-specialist-square-pyramid": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the square-pyramid 3D diagram and top-view diagram, structured parts and subparts, marks, "
+            "and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_square_pyramid_screenshot_with_key,
+        "assert": assert_real_specialist_square_pyramid_call,
+    },
     "real-specialist-implicit": {
         "prompt": (
             "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
@@ -4540,7 +4717,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-prism",
         "real-specialist-implicit",
     ],
-    "real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism"],
+    "real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism", "real-specialist-square-pyramid"],
     "real-exams": [
         "real-methods-earthquake",
         "real-methods-ev-histogram",
@@ -4552,6 +4729,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-argand",
         "real-specialist-spherical-cap",
         "real-specialist-prism",
+        "real-specialist-square-pyramid",
         "real-specialist-implicit",
     ],
 }
@@ -5867,6 +6045,186 @@ def local_real_specialist_spherical_cap_missing_cross_section_call() -> dict[str
     return call
 
 
+def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
+    pyramid_3d = {
+        "type": "graph3d",
+        "widthPx": 620,
+        "heightPx": 430,
+        "metadata": {"view3d": {"az": 0.95, "el": 0.32, "bank": 0}},
+        "data": {
+            "points": [
+                {"id": "O", "label": "$O$", "coords": [0, 0, 0]},
+                {"id": "A", "label": "$A$", "coords": [1, -1, 0]},
+                {"id": "B", "label": "$B$", "coords": [1, 1, 0]},
+                {"id": "C", "label": "$C$", "coords": [-1, 1, 0]},
+                {"id": "D", "label": "$D$", "coords": [-1, -1, 0]},
+                {"id": "E", "label": "$E$", "coords": [0, 0, 1.6]},
+                {"id": "F", "label": "$F$", "coords": [1, 0, 0]},
+                {"id": "M", "label": "$M$", "coords": [0.5, 0, 0.8]},
+            ],
+            "segments": [
+                {"from": "A", "to": "B"},
+                {"from": "B", "to": "C"},
+                {"from": "C", "to": "D", "strokeStyle": "dashed"},
+                {"from": "D", "to": "A"},
+                {"from": "E", "to": "A"},
+                {"from": "E", "to": "B"},
+                {"from": "E", "to": "C", "strokeStyle": "dashed"},
+                {"from": "E", "to": "D"},
+                {"from": "D", "to": "B", "strokeStyle": "dashed"},
+                {"from": "E", "to": "O", "label": "$\\vec e$", "strokeStyle": "dashed"},
+                {"from": "E", "to": "F"},
+                {"from": "F", "to": "M"},
+            ],
+            "faces": [
+                {"points": ["A", "B", "C", "D"], "fillColor": "#dbeafe", "fillOpacity": 0.08},
+                {"points": ["A", "B", "E"], "fillColor": "#fef3c7", "fillOpacity": 0.12},
+                {"points": ["B", "C", "E"], "fillColor": "#dcfce7", "fillOpacity": 0.1},
+                {"points": ["C", "D", "E"], "fillColor": "#fee2e2", "fillOpacity": 0.08},
+                {"points": ["D", "A", "E"], "fillColor": "#e0e7ff", "fillOpacity": 0.1},
+            ],
+            "xRange": [-1.3, 1.3],
+            "yRange": [-1.3, 1.3],
+            "zRange": [0, 1.9],
+        },
+    }
+    top_view = {
+        "type": "graph2d",
+        "xMin": -1.35,
+        "xMax": 1.35,
+        "yMin": -1.2,
+        "yMax": 1.2,
+        "widthPx": 430,
+        "heightPx": 360,
+        "equalScale": True,
+        "showGrid": False,
+        "showAxes": False,
+        "showAxisNumbers": False,
+        "features": [
+            {"kind": "line_segment", "x1": 1, "y1": -1, "x2": 1, "y2": 1, "color": "#111827"},
+            {"kind": "line_segment", "x1": 1, "y1": 1, "x2": -1, "y2": 1, "color": "#111827"},
+            {"kind": "line_segment", "x1": -1, "y1": 1, "x2": -1, "y2": -1, "color": "#111827"},
+            {"kind": "line_segment", "x1": -1, "y1": -1, "x2": 1, "y2": -1, "color": "#111827"},
+            {"kind": "line_segment", "x1": -1, "y1": -1, "x2": 1, "y2": 1, "color": "#94a3b8"},
+            {"kind": "line_segment", "x1": -1, "y1": 1, "x2": 1, "y2": -1, "color": "#94a3b8"},
+            {"kind": "line_segment", "x1": 0, "y1": 0, "x2": 1, "y2": -1, "label": "$\\vec a$", "color": "#111827"},
+            {"kind": "line_segment", "x1": 0, "y1": 0, "x2": 1, "y2": 1, "label": "$\\vec b$", "color": "#111827"},
+            {"kind": "line_segment", "x1": 0, "y1": 0, "x2": 1, "y2": 0, "color": "#111827"},
+            {"kind": "point", "x": 1, "y": -1, "label": "$A$"},
+            {"kind": "point", "x": 1, "y": 1, "label": "$B$"},
+            {"kind": "point", "x": -1, "y": 1, "label": "$C$"},
+            {"kind": "point", "x": -1, "y": -1, "label": "$D$"},
+            {"kind": "point", "x": 0, "y": 0, "label": "$O/E$"},
+            {"kind": "point", "x": 1, "y": 0, "label": "$F$"},
+            {"kind": "point", "x": 0.5, "y": 0, "label": "$M$"},
+            {"kind": "label", "x": 0.1, "y": 1.1, "label": "Top view"},
+        ],
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionMarks": 0,
+            "questionText": (
+                "A square pyramid is positioned using a coordinate system so that $ABCD$ is a square, "
+                "with point $E$ the vertex of the pyramid. The origin $O$ is the midpoint of $DB$. "
+                "The position vectors for $A$, $B$ and $E$ are denoted respectively by $\\vec a$, "
+                "$\\vec b$ and $\\vec e$. Point $F$ is the midpoint of edge $AB$ and $M$ is the midpoint of $EF$."
+            ),
+            "diagrams": [
+                {"diagramAlign": "left", "graphConfig": pyramid_3d},
+                {"diagramAlign": "right", "graphConfig": top_view},
+            ],
+            "parts": [
+                {
+                    "label": "a",
+                    "text": "In terms of vectors $\\vec a$, $\\vec b$ and $\\vec e$, determine simplified expressions for:",
+                    "marks": 0,
+                    "answerSurface": "none",
+                    "subparts": [
+                        {
+                            "label": "i",
+                            "text": "$\\overrightarrow{FE}$.",
+                            "marks": 1,
+                            "studentSpaceLines": 3,
+                            "includeSolution": True,
+                            "solutionText": (
+                                "$$\\overrightarrow{FE}=\\overrightarrow{FB}+\\overrightarrow{BO}+\\overrightarrow{OE}$$\n"
+                                "$$=\\frac12(\\vec b-\\vec a)-\\vec b+\\vec e"
+                                "=-0.5\\vec a-0.5\\vec b+\\vec e.$$ [[marks:1]]"
+                            ),
+                        },
+                        {
+                            "label": "ii",
+                            "text": "$\\overrightarrow{DM}$.",
+                            "marks": 1,
+                            "studentSpaceLines": 3,
+                            "includeSolution": True,
+                            "solutionText": (
+                                "$$\\overrightarrow{DM}=\\overrightarrow{DA}+\\overrightarrow{AF}+\\overrightarrow{FM}$$\n"
+                                "$$=(\\vec a+\\vec b)+0.5(\\vec b-\\vec a)"
+                                "+0.5(-0.5\\vec a-0.5\\vec b+\\vec e)$$\n"
+                                "$$=0.25\\vec a+1.25\\vec b+0.5\\vec e.$$ [[marks:1]]"
+                            ),
+                        },
+                    ],
+                },
+                {
+                    "label": "b",
+                    "text": (
+                        "Determine the expression for $\\overrightarrow{DM}\\cdot\\overrightarrow{FE}$ "
+                        "in the form $x|\\vec a|^2+y|\\vec e|^2$ where $x$ and $y$ are real constants."
+                    ),
+                    "marks": 4,
+                    "studentSpaceLines": 8,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "Since $\\vec a$, $\\vec b$ and $\\vec e$ are mutually perpendicular, "
+                        "$\\vec a\\cdot\\vec b=\\vec a\\cdot\\vec e=\\vec b\\cdot\\vec e=0$. [[marks:1]]\n"
+                        "$$\\overrightarrow{DM}\\cdot\\overrightarrow{FE}"
+                        "=(0.25\\vec a+1.25\\vec b+0.5\\vec e)"
+                        "\\cdot(-0.5\\vec a-0.5\\vec b+\\vec e).$$ [[marks:1]]\n"
+                        "$$=-0.125|\\vec a|^2-0.625|\\vec b|^2+0.5|\\vec e|^2.$$ [[marks:1]]\n"
+                        "Since $|\\vec a|=|\\vec b|$, "
+                        "$$\\overrightarrow{DM}\\cdot\\overrightarrow{FE}=-0.75|\\vec a|^2+0.5|\\vec e|^2.$$ [[marks:1]]"
+                    ),
+                },
+                {
+                    "label": "c",
+                    "text": (
+                        "If $\\angle DMF$ is to be a right angle, then determine the exact value for "
+                        "$\\frac{|\\vec e|}{|\\vec a|}$."
+                    ),
+                    "marks": 2,
+                    "studentSpaceLines": 5,
+                    "answerSurface": "space",
+                    "includeSolution": True,
+                    "solutionText": (
+                        "For $\\angle DMF$ to be a right angle, "
+                        "$\\overrightarrow{DM}\\cdot\\overrightarrow{FE}=0$. [[marks:1]]\n"
+                        "$$-0.75|\\vec a|^2+0.5|\\vec e|^2=0,$$ so "
+                        "$$\\frac{|\\vec e|^2}{|\\vec a|^2}=\\frac{0.75}{0.5}=\\frac32.$$ "
+                        "Hence $$\\frac{|\\vec e|}{|\\vec a|}=\\sqrt{\\frac32}=\\frac{\\sqrt6}{2}.$$ [[marks:1]]"
+                    ),
+                },
+            ],
+        },
+    )
+
+
+def local_real_specialist_square_pyramid_bad_midpoints_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph_config = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    for point in graph_config["data"]["points"]:
+        if point.get("id") == "F":
+            point["coords"] = [0.8, 0.2, 0]
+        if point.get("id") == "M":
+            point["coords"] = [0.25, 0.25, 0.8]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -6708,6 +7066,18 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "contains malformed escaped dollar inside maths",
         ],
     },
+    "real-specialist-square-pyramid": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_call,
+    },
+    "real-specialist-square-pyramid-bad-midpoints": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_bad_midpoints_call,
+        "expectedIssues": [
+            "point F should be midpoint of A and B",
+            "point M should be midpoint of E and F",
+        ],
+    },
     "graph3d-general-solids": {
         "assert": assert_graph3d_general_solids_call,
         "call": local_graph3d_general_solids_call,
@@ -6763,7 +7133,12 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
-    "local-real-exams-graph3d": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
+    "local-real-exams-graph3d": [
+        "real-specialist-spherical-cap",
+        "real-specialist-prism",
+        "real-specialist-square-pyramid",
+        "graph3d-general-solids",
+    ],
     "local-real-exams-preview": [
         "screenshot-scalar-products",
         "real-methods-ev-histogram",
@@ -6773,11 +7148,17 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-argand",
         "real-specialist-spherical-cap",
         "real-specialist-prism",
+        "real-specialist-square-pyramid",
         "graph3d-general-solids",
         "real-specialist-implicit",
         "real-specialist-ski-modelling",
     ],
-    "local-graph3d-general": ["real-specialist-spherical-cap", "real-specialist-prism", "graph3d-general-solids"],
+    "local-graph3d-general": [
+        "real-specialist-spherical-cap",
+        "real-specialist-prism",
+        "real-specialist-square-pyramid",
+        "graph3d-general-solids",
+    ],
 }
 
 
