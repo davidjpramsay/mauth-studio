@@ -587,6 +587,8 @@
       },
       "semanticChecks": [
         "large modelling graph is converted as native graph2d",
+        "ramp, sloped-ground, and flight-path curves preserve their source domains and labelled landmark points",
+        "graph2d bounds keep the full source modelling scale visible rather than zooming to a plausible crop",
         "multi-page parts, defining equations, marks, and dense working are preserved",
         "local semantic fixture exists before a paid provider call"
       ],

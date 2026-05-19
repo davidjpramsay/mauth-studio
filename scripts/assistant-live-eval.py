@@ -3843,19 +3843,44 @@ def assert_real_specialist_ski_modelling_call(call: dict[str, Any]) -> list[str]
         issues.append("ski-modelling source should not use statsChart, geometricConstruction, network, or graph3d")
     graph_configs = [config for config in collect_diagram_graph_configs(args) if config.get("type") == "graph2d"]
     graph_serialized = json.dumps(graph_configs, ensure_ascii=False).lower()
-    graph_expressions = [
-        compact_math_text(expression) for config in graph_configs for expression in graph2d_function_expressions(config)
-    ]
-    combined_expressions = "\n".join(graph_expressions)
-    if "170" not in combined_expressions or "-0.5" not in combined_expressions:
-        issues.append("ski-modelling graph2d should encode the sloped ground y = 170 - 0.5x")
-    if not any(term in combined_expressions for term in ("log((740-x)/640)", "ln((740-x)/640)", "log(740-x/640)")):
-        issues.append("ski-modelling graph2d should encode the Cartesian flight curve")
+    graph_functions = graph2d_visible_function_entries(graph_configs)
+    if len(graph_functions) < 3:
+        issues.append("ski-modelling graph2d should include at least three visible source curves")
+    if not graph2d_has_function(
+        graph_configs,
+        ("120+60", "100-x", "/100", ("^2", "**2")),
+        domain_min=0,
+        domain_max=100,
+        tolerance=0.75,
+    ):
+        issues.append("ski-modelling graph2d should encode the ramp descent over 0 <= x <= 100")
+    if not graph2d_has_function(
+        graph_configs,
+        ("170", ("-0.5*x", "-0.5x", "-x/2", "-1/2*x", "-1/2x"), "x"),
+        domain_min=100,
+        domain_max=340,
+        tolerance=0.75,
+    ):
+        issues.append("ski-modelling graph2d should encode the sloped ground y = 170 - 0.5x over 100 <= x <= 340")
+    if not graph2d_has_function(
+        graph_configs,
+        ("120", "-1000", ("log", "ln"), "740-x", "640", ("^2", "**2")),
+        domain_min=100,
+        domain_max=255.916,
+        tolerance=0.75,
+    ):
+        issues.append("ski-modelling graph2d should encode the Cartesian flight curve over 100 <= x <= 255.916")
+    if not any(graph2d_preserves_ski_modelling_axes(config) for config in graph_configs):
+        issues.append("ski-modelling graph2d should preserve large source axes/bounds and visible axis labels")
+    if not graph2d_has_point_feature(graph_configs, "$B$", 0, 180, tolerance=0.75):
+        issues.append("ski-modelling graph2d should include point $B$ near (0, 180)")
+    if not graph2d_has_point_feature(graph_configs, "$E$", 100, 120, tolerance=0.75):
+        issues.append("ski-modelling graph2d should include point $E$ near (100, 120)")
+    if not graph2d_has_point_feature(graph_configs, None, 255.915887, 42.04205652, tolerance=0.75):
+        issues.append("ski-modelling graph2d should include landing point near (255.916, 42.042)")
     for label in ("$B$", "$E$"):
         if label.lower() not in graph_serialized:
             issues.append(f"ski-modelling graph2d should include labelled point {label}")
-    if not any(term in graph_serialized for term in ("255.915", "255.916", "42.042")):
-        issues.append("ski-modelling graph2d should include or support the landing point semantics")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 5:
@@ -3918,6 +3943,124 @@ def graph2d_function_expressions(graph_config: dict[str, Any]) -> list[str]:
             return expressions
     expression = str(graph_config.get("expression") or "").strip()
     return [expression] if expression else []
+
+
+def graph2d_visible_function_entries(graph_configs: dict[str, Any] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+    configs = graph_configs if isinstance(graph_configs, list) else [graph_configs]
+    entries: list[dict[str, Any]] = []
+    for config in configs:
+        functions = config.get("functions") if isinstance(config, dict) else None
+        if not isinstance(functions, list):
+            continue
+        entries.extend(
+            function
+            for function in functions
+            if isinstance(function, dict)
+            and function.get("show") is not False
+            and str(function.get("expression") or "").strip()
+        )
+    return entries
+
+
+def graph2d_numeric(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            return float(value)
+    return None
+
+
+def graph2d_number_near(value: Any, expected: float, tolerance: float) -> bool:
+    number = graph2d_numeric(value)
+    return number is not None and abs(number - expected) <= tolerance
+
+
+def graph2d_function_has_terms(function: dict[str, Any], required_terms: tuple[str | tuple[str, ...], ...]) -> bool:
+    expression = compact_math_text(str(function.get("expression") or ""))
+    if not expression:
+        return False
+    for term_options in required_terms:
+        choices = term_options if isinstance(term_options, tuple) else (term_options,)
+        if not any(compact_math_text(choice) in expression for choice in choices):
+            return False
+    return True
+
+
+def graph2d_function_has_domain(
+    function: dict[str, Any],
+    *,
+    domain_min: float,
+    domain_max: float,
+    tolerance: float,
+) -> bool:
+    return graph2d_number_near(function.get("domainMin"), domain_min, tolerance) and graph2d_number_near(
+        function.get("domainMax"), domain_max, tolerance
+    )
+
+
+def graph2d_has_function(
+    graph_configs: list[dict[str, Any]],
+    required_terms: tuple[str | tuple[str, ...], ...],
+    *,
+    domain_min: float,
+    domain_max: float,
+    tolerance: float = 1e-6,
+) -> bool:
+    return any(
+        graph2d_function_has_terms(function, required_terms)
+        and graph2d_function_has_domain(
+            function,
+            domain_min=domain_min,
+            domain_max=domain_max,
+            tolerance=tolerance,
+        )
+        for function in graph2d_visible_function_entries(graph_configs)
+    )
+
+
+def graph2d_preserves_ski_modelling_axes(graph_config: dict[str, Any]) -> bool:
+    if graph_config.get("showAxes") is not True or graph_config.get("showAxisLabels") is not True:
+        return False
+    if graph_config.get("showGrid") is not True or graph_config.get("showAxisNumbers") is not True:
+        return False
+    bounds = (
+        graph2d_numeric(graph_config.get("xMin")),
+        graph2d_numeric(graph_config.get("xMax")),
+        graph2d_numeric(graph_config.get("yMin")),
+        graph2d_numeric(graph_config.get("yMax")),
+    )
+    if any(bound is None for bound in bounds):
+        return False
+    x_min, x_max, y_min, y_max = (float(bound) for bound in bounds if bound is not None)
+    return x_min <= 5 and x_max >= 340 and y_min <= 5 and y_max >= 180
+
+
+def graph2d_has_point_feature(
+    graph_configs: list[dict[str, Any]],
+    label: str | None,
+    x: float,
+    y: float,
+    *,
+    tolerance: float,
+) -> bool:
+    expected_label = compact_math_text(label) if label is not None else None
+    for config in graph_configs:
+        features = config.get("features") if isinstance(config, dict) else None
+        if not isinstance(features, list):
+            continue
+        for feature in features:
+            if not isinstance(feature, dict) or feature.get("kind") != "point":
+                continue
+            if expected_label is not None and compact_math_text(str(feature.get("label") or "")) != expected_label:
+                continue
+            if graph2d_number_near(feature.get("x"), x, tolerance) and graph2d_number_near(
+                feature.get("y"), y, tolerance
+            ):
+                return True
+    return False
 
 
 def expression_looks_linear(expression: str) -> bool:
@@ -6921,6 +7064,23 @@ def local_real_specialist_ski_modelling_bad_graph_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_ski_modelling_bad_domains_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_ski_modelling_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["xMax"] = 150
+    graph_config["showAxisLabels"] = False
+    graph_config["functions"][0]["domainMax"] = 340
+    graph_config["functions"][1]["domainMin"] = 0
+    graph_config["functions"][1]["domainMax"] = 100
+    graph_config["functions"][2]["domainMax"] = 340
+    for feature in graph_config["features"]:
+        if isinstance(feature, dict) and approximately(feature.get("x"), 255.915887, tolerance=0.01):
+            feature["x"] = 300
+            feature["y"] = 20
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_ski_modelling_bad_solution_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_ski_modelling_call()))
     parts = call["mauthArguments"]["parts"]
@@ -7225,10 +7385,23 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_specialist_ski_modelling_call,
         "call": local_real_specialist_ski_modelling_bad_graph_call,
         "expectedIssues": [
+            "ski-modelling graph2d should include at least three visible source curves",
+            "ski-modelling graph2d should encode the ramp descent",
             "ski-modelling graph2d should encode the sloped ground",
             "ski-modelling graph2d should encode the Cartesian flight curve",
-            "labelled point $E$",
-            "landing point semantics",
+            "point $E$ near",
+            "landing point near",
+        ],
+    },
+    "real-specialist-ski-modelling-bad-domains": {
+        "assert": assert_real_specialist_ski_modelling_call,
+        "call": local_real_specialist_ski_modelling_bad_domains_call,
+        "expectedIssues": [
+            "ski-modelling graph2d should encode the ramp descent over",
+            "ski-modelling graph2d should encode the sloped ground",
+            "ski-modelling graph2d should encode the Cartesian flight curve over",
+            "ski-modelling graph2d should preserve large source axes/bounds",
+            "ski-modelling graph2d should include landing point near",
         ],
     },
     "real-specialist-ski-modelling-bad-solution": {
