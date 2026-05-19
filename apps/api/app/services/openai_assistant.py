@@ -21,6 +21,7 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_ASSISTANT_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_PLANNER_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_CONTEXT_CHARS = 12000
+SOURCE_CONVERSION_BRAIN_CONTEXT_CHARS = 22000
 DEFAULT_DOCUMENT_CONTEXT_CHARS = 8000
 MAX_ASSISTANT_ATTACHMENTS = 6
 MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
@@ -3146,6 +3147,81 @@ def assistant_tool_definitions(
     ]
 
 
+def assistant_instruction_profile(
+    intent: AssistantRequestIntent,
+    *,
+    attachments: list[AssistantAttachment] | None = None,
+    tool_outputs: list[AssistantToolOutput] | None = None,
+) -> str:
+    if tool_outputs:
+        return "repair"
+    if intent.kind == "append_source_question" or (attachments and intent.asks_to_write_question):
+        return "sourceConversion"
+    if intent.kind == "add_diagram":
+        return "diagramFollowup"
+    if intent.kind in {"solution_or_marking", "write_all_solutions"}:
+        return "solutionEdit"
+    if intent.kind in {"layout_check", "response_space", "formatting"}:
+        return "layout"
+    return "general"
+
+
+def instruction_profile_brain_text(profile: str, brain_text: str) -> str:
+    if profile != "sourceConversion" or len(brain_text) <= SOURCE_CONVERSION_BRAIN_CONTEXT_CHARS:
+        return brain_text
+    suffix = "\n...[source-conversion brain context truncated]"
+    limit = max(0, SOURCE_CONVERSION_BRAIN_CONTEXT_CHARS - len(suffix))
+    return f"{brain_text[:limit]}{suffix}"
+
+
+def source_conversion_assistant_instructions(
+    *,
+    tool_hint: str,
+    attachment_text: str,
+    summary_text: str,
+    brain_text: str,
+) -> str:
+    return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
+
+Instruction profile: sourceConversion. Convert exactly the current attached/pasted source question into native editable Mauth content through the provided direct Mauth function.
+
+{tool_hint}
+
+Source-conversion tool contract:
+- Use the focused direct tool named in the routing hint, normally mauth_convert_source_question. Do not inspect first when the compact summary already gives the target question or next append position.
+- If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in the same replacement payload, before structured parts when the teacher asks for parts under the diagram. Use exactly one of diagram or diagrams; for multiple source diagrams, use diagrams and omit diagram. Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "The diagram shows...".
+- Preserve source wording, marks, mathematical notation, line breaks that carry meaning, diagram/table placement, and official worked solutions when requested or supplied.
+- For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels.
+- For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
+- For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested. Do not duplicate those same ticks in solutionText.
+- Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
+
+Native diagram rules:
+- Choose renderer by source intent: graph2d for coordinate/function/slope-field/Argand/locus/implicit graphs; statsChart for histograms, columns, probability tables/charts, density/normal curves, and blank sketch axes; graph3d for 3D points, edges, faces, prisms, pyramids, cones, cylinders, spheres, and spherical caps; vector2d or vectorRayDiagram for coordinate vectors and scalar-product ray diagrams; geometricConstruction/Penrose for schematic theorem geometry; setDiagram for Venn/set diagrams.
+- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.
+- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
+- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For regions/loci, define boundary functions first and reference them by supported indexed region features.
+- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
+
+Attachment contract:
+- Current request attachments:
+{attachment_text}
+- Inspect attachments directly and use them as source material. Screenshots/images may contain question text, diagrams, or formatting cues; key/text attachments may contain official solutions.
+- Do not claim you cannot see an attachment when one is present. If content is unreadable, say exactly what was unclear and ask for a higher-resolution file only after attempting the relevant Mauth tool path.
+
+Mauth conventions:
+- Write complete teacher-ready mathematics, not placeholders or planning notes.
+- Use $...$ for inline maths and $$...$$ for display maths. Preserve LaTeX backslashes exactly in JSON strings. Do not use \\[...\\], \\(...\\), escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$, or $\\$400$.
+- Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless explicitly asked.
+
+Current compact document summary:
+{summary_text}
+
+Mauth rule-brain context:
+{brain_text}
+"""
+
+
 def assistant_instructions(
     document_summary: dict[str, Any] | None = None,
     messages: list[AssistantChatMessage] | None = None,
@@ -3163,11 +3239,21 @@ def assistant_instructions(
     )
     brain_text = assistant_brain_context(current_messages, tool_outputs, selected_brain_files, attachments)
     tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
+    intent = classify_request_intent(compact_summary, current_messages, attachments)
+    profile = assistant_instruction_profile(intent, attachments=attachments, tool_outputs=tool_outputs)
+    brain_text = instruction_profile_brain_text(profile, brain_text)
     attachment_lines = [
         f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
         for attachment in attachments or []
     ]
     attachment_text = "\n".join(attachment_lines) if attachment_lines else "No attachments."
+    if profile == "sourceConversion":
+        return source_conversion_assistant_instructions(
+            tool_hint=tool_hint,
+            attachment_text=attachment_text,
+            summary_text=summary_text,
+            brain_text=brain_text,
+        )
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
 Operate through the provided Mauth functions only. Never describe raw React state, DOM edits, or browser-cache edits as an implementation path.

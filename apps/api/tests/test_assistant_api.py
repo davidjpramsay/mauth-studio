@@ -481,6 +481,41 @@ def test_focused_question_prompt_uses_smaller_instructions_than_full_context(mon
     assert '"q12"' not in focused
 
 
+def test_source_conversion_instruction_profile_stays_under_shape_budget(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_BRAIN_CONTEXT_CHARS", "24000")
+    summary = {"questions": [{"id": "q1", "index": 0, "modules": [], "parts": []}]}
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content=(
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the 3D coordinate prism diagram, structured parts, marks, and include the worked solutions."
+        ),
+    )
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="source-1",
+            name="prism-source.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        ),
+        openai_assistant.AssistantAttachment(
+            id="key-1",
+            name="official-key.txt",
+            mimeType="text/plain",
+            dataUrl="data:text/plain;base64,abc",
+            sizeBytes=3,
+        ),
+    ]
+
+    instructions = openai_assistant.assistant_instructions(summary, [message], attachments=attachments)
+
+    assert "Instruction profile: sourceConversion" in instructions
+    assert "include it in diagram or diagrams in the same replacement payload" in instructions
+    assert "parts[i].text" in instructions
+    assert len(instructions) < 30000
+
+
 def test_brain_menu_selection_maps_to_instruction_files():
     menu = openai_assistant.assistant_brain_menu()
     assert {entry["id"] for entry in menu} >= {"question", "diagram", "solutions", "formatting"}
