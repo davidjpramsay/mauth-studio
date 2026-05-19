@@ -1252,6 +1252,32 @@ def test_source_question_tool_schema_stays_compact():
     assert "Use exactly one of graphConfig or vectorRayDiagram" in part_properties["diagram"]["description"]
 
 
+def test_source_question_table_only_schema_omits_diagram_payloads():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(include_diagram_fields=False)
+    serialized = json.dumps(tool, ensure_ascii=False)
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    subpart_properties = part_properties["subparts"]["items"]["properties"]
+
+    assert len(serialized) < 15000
+    assert "diagram" not in properties
+    assert "diagrams" not in properties
+    assert "solutionDiagram" not in properties
+    assert "diagram" not in part_properties
+    assert "diagram" not in subpart_properties
+    assert "table" in properties
+    assert "solutionTable" in properties
+
+
+def test_source_diagram_type_detection_covers_related_rates_geometry():
+    text = (
+        "Create Question 1 from the attached Specialist exam screenshot. "
+        "Preserve the lighthouse related-rates diagram and worked solution."
+    )
+
+    assert openai_assistant.source_conversion_diagram_types_for_text(text) == ["geometricConstruction"]
+
+
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
     tool = openai_assistant.mauth_author_add_diagram_tool_definition()
     properties = tool["parameters"]["properties"]
@@ -1640,6 +1666,50 @@ def test_deterministic_brain_selection_includes_formatting_for_pdf_source_questi
         "diagram.json",
         "formatting.json",
     ]
+
+
+def test_table_only_source_conversion_skips_diagram_brain_and_schema():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content=(
+                "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+                "Preserve the confidence-interval table, structured parts and subparts, marks, and include the worked solutions."
+            ),
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="confidence-intervals.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    ids = openai_assistant.deterministic_brain_ids_for_request(
+        messages,
+        tool_outputs=None,
+        document_summary={"questions": []},
+        attachments=attachments,
+    )
+    tools = openai_assistant.assistant_tool_definitions(
+        messages,
+        tool_outputs=None,
+        attachments=attachments,
+        document_summary={"questions": []},
+    )
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": []},
+        messages,
+        attachments=attachments,
+    )
+
+    assert ids == ["question", "solutions"]
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    assert "diagram" not in tools[0]["parameters"]["properties"]
+    assert "table/text-only source conversion" in instructions
+    assert "Native diagram rules:" not in instructions
 
 
 def test_deterministic_brain_selection_defers_general_chat_to_planner():

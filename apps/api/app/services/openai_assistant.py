@@ -239,6 +239,7 @@ def ordered_supported_diagram_types(values: list[str] | None = None) -> list[str
 
 
 def source_conversion_diagram_types_for_text(text: str) -> list[str] | None:
+    text = text.lower()
     diagram_types: list[str] = []
 
     def include(diagram_type: str) -> None:
@@ -291,12 +292,77 @@ def source_conversion_diagram_types_for_text(text: str) -> list[str] | None:
         include("graph3d")
     if any(term in text for term in ("venn", "set diagram")):
         include("setDiagram")
-    if any(term in text for term in ("circle theorem", "tangent", "chord", "schematic geometry")):
+    if any(
+        term in text
+        for term in (
+            "circle theorem",
+            "tangent",
+            "chord",
+            "schematic geometry",
+            "geometry diagram",
+            "schematic diagram",
+            "related rates",
+            "related-rates",
+            "lighthouse",
+        )
+    ):
         include("geometricConstruction")
     if "network" in text:
         include("network")
 
     return ordered_supported_diagram_types(diagram_types) if diagram_types else None
+
+
+def source_conversion_table_only_for_text(text: str) -> bool:
+    text = text.lower()
+    table_terms = (
+        "table",
+        "confidence interval",
+        "confidence-interval",
+        "confidence intervals",
+        "confidence-intervals",
+    )
+    if not any(term in text for term in table_terms):
+        return False
+    diagram_like_terms = (
+        "diagram",
+        "graph",
+        "chart",
+        "histogram",
+        "curve",
+        "axis",
+        "axes",
+        "plot",
+        "sketch",
+        "draw",
+        "shade",
+        "locus",
+        "argand",
+        "slope field",
+        "direction field",
+        "implicit curve",
+        "vector",
+        "3d",
+        "3-d",
+        "three-dimensional",
+        "prism",
+        "pyramid",
+        "cone",
+        "cylinder",
+        "sphere",
+        "solid",
+        "venn",
+        "set diagram",
+        "network",
+        "geometry",
+        "tangent",
+        "chord",
+    )
+    return not any(term in text for term in diagram_like_terms)
+
+
+def source_conversion_diagram_fields_enabled(text: str) -> bool:
+    return not source_conversion_table_only_for_text(text)
 
 
 def assistant_model() -> str:
@@ -802,7 +868,10 @@ def deterministic_brain_ids_for_request(
 
     if intent.kind in {"write_question", "append_source_question"} or attached_source_question_request:
         include("question")
-        if intent.has_source_attachment or intent.asks_for_diagram or intent.source_prompt_mentions_diagram:
+        source_diagram_fields = source_conversion_diagram_fields_enabled(text)
+        if (intent.has_source_attachment and source_diagram_fields) or (
+            source_diagram_fields and (intent.asks_for_diagram or intent.source_prompt_mentions_diagram)
+        ):
             include("diagram")
         if intent.asks_for_solution or any(
             term in (attachment.name or "").lower() for attachment in attachments or [] for term in ("key", "solution")
@@ -2393,105 +2462,125 @@ def source_conversion_table_schema(description: str) -> dict[str, Any]:
     }
 
 
-def source_conversion_part_schema(diagram_types: list[str] | None = None) -> dict[str, Any]:
-    diagram = source_conversion_compact_diagram_block_schema("Optional native diagram for this part.", diagram_types)
+def source_conversion_part_schema(
+    diagram_types: list[str] | None = None, *, include_diagram_fields: bool = True
+) -> dict[str, Any]:
     table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
-    subpart_diagram = source_conversion_compact_diagram_block_schema(
-        "Optional native diagram for this subpart.", diagram_types
-    )
     subpart_table = source_conversion_table_schema(
         "Optional table for this subpart. Use blank strings for student cells."
     )
+    subpart_properties: dict[str, Any] = {
+        "label": {"type": "string"},
+        "text": {
+            "type": "string",
+            "description": "Visible subpart prompt without a typed '(i)' label. Do not leave marked subparts blank.",
+        },
+        "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+        "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "solutionText": {
+            "type": "string",
+            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+        },
+        "includeSolution": {"type": "boolean"},
+        "table": subpart_table,
+        "tables": {"type": "array", "items": subpart_table},
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTables": {
+            "type": "array",
+            "items": source_conversion_table_schema("One completed solution-copy table."),
+        },
+        "pageBreakBefore": {"type": "boolean"},
+    }
+    if include_diagram_fields:
+        subpart_diagram = source_conversion_compact_diagram_block_schema(
+            "Optional native diagram for this subpart.", diagram_types
+        )
+        subpart_properties.update(
+            {
+                "diagram": subpart_diagram,
+                "diagrams": {"type": "array", "items": subpart_diagram},
+                "solutionDiagram": source_conversion_compact_diagram_block_schema(
+                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+                ),
+                "solutionDiagrams": {
+                    "type": "array",
+                    "items": source_conversion_compact_diagram_block_schema(
+                        "One completed solution-copy diagram.", diagram_types
+                    ),
+                },
+            }
+        )
     subpart_schema = {
         "type": "object",
-        "properties": {
-            "label": {"type": "string"},
-            "text": {
-                "type": "string",
-                "description": "Visible subpart prompt without a typed '(i)' label. Do not leave marked subparts blank.",
-            },
-            "marks": {"type": "integer", "minimum": 0, "maximum": 100},
-            "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-            "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
-            "solutionText": {
-                "type": "string",
-                "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
-            },
-            "includeSolution": {"type": "boolean"},
-            "diagram": subpart_diagram,
-            "diagrams": {"type": "array", "items": subpart_diagram},
-            "solutionDiagram": source_conversion_compact_diagram_block_schema(
-                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-            ),
-            "solutionDiagrams": {
-                "type": "array",
-                "items": source_conversion_compact_diagram_block_schema(
-                    "One completed solution-copy diagram.", diagram_types
-                ),
-            },
-            "table": subpart_table,
-            "tables": {"type": "array", "items": subpart_table},
-            "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
-            "solutionTables": {
-                "type": "array",
-                "items": source_conversion_table_schema("One completed solution-copy table."),
-            },
-            "pageBreakBefore": {"type": "boolean"},
-        },
+        "properties": subpart_properties,
         "required": ["text", "marks"],
         "additionalProperties": False,
     }
+    part_properties: dict[str, Any] = {
+        "label": {"type": "string"},
+        "text": {
+            "type": "string",
+            "description": "Visible part prompt without a typed '(a)' label. Do not leave marked parts blank.",
+        },
+        "marks": {"type": "integer", "minimum": 0, "maximum": 100},
+        "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "solutionText": {
+            "type": "string",
+            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+        },
+        "includeSolution": {"type": "boolean"},
+        "table": table,
+        "tables": {"type": "array", "items": table},
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTables": {
+            "type": "array",
+            "items": source_conversion_table_schema("One completed solution-copy table."),
+        },
+        "subparts": {
+            "type": "array",
+            "description": (
+                "Nested source subparts such as (i) and (ii). Use this instead of flattening subparts into text."
+            ),
+            "items": subpart_schema,
+        },
+        "pageBreakBefore": {"type": "boolean"},
+    }
+    if include_diagram_fields:
+        diagram = source_conversion_compact_diagram_block_schema(
+            "Optional native diagram for this part.", diagram_types
+        )
+        part_properties.update(
+            {
+                "diagram": diagram,
+                "diagrams": {"type": "array", "items": diagram},
+                "solutionDiagram": source_conversion_compact_diagram_block_schema(
+                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+                ),
+                "solutionDiagrams": {
+                    "type": "array",
+                    "items": source_conversion_compact_diagram_block_schema(
+                        "One completed solution-copy diagram.", diagram_types
+                    ),
+                },
+            }
+        )
     return {
         "type": "object",
-        "properties": {
-            "label": {"type": "string"},
-            "text": {
-                "type": "string",
-                "description": "Visible part prompt without a typed '(a)' label. Do not leave marked parts blank.",
-            },
-            "marks": {"type": "integer", "minimum": 0, "maximum": 100},
-            "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-            "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
-            "solutionText": {
-                "type": "string",
-                "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
-            },
-            "includeSolution": {"type": "boolean"},
-            "diagram": diagram,
-            "diagrams": {"type": "array", "items": diagram},
-            "solutionDiagram": source_conversion_compact_diagram_block_schema(
-                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-            ),
-            "solutionDiagrams": {
-                "type": "array",
-                "items": source_conversion_compact_diagram_block_schema(
-                    "One completed solution-copy diagram.", diagram_types
-                ),
-            },
-            "table": table,
-            "tables": {"type": "array", "items": table},
-            "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
-            "solutionTables": {
-                "type": "array",
-                "items": source_conversion_table_schema("One completed solution-copy table."),
-            },
-            "subparts": {
-                "type": "array",
-                "description": (
-                    "Nested source subparts such as (i) and (ii). Use this instead of flattening subparts into text."
-                ),
-                "items": subpart_schema,
-            },
-            "pageBreakBefore": {"type": "boolean"},
-        },
+        "properties": part_properties,
         "required": ["text", "marks"],
         "additionalProperties": False,
     }
 
 
 def mauth_convert_source_question_tool_definition(
-    *, require_diagram: bool = False, diagram_types: list[str] | None = None
+    *,
+    require_diagram: bool = False,
+    diagram_types: list[str] | None = None,
+    include_diagram_fields: bool = True,
 ) -> dict[str, Any]:
+    include_diagram_fields = include_diagram_fields or require_diagram
     required_fields = ["questionNumber", "marks", "questionText"]
     if require_diagram:
         required_fields.append("diagram")
@@ -2501,48 +2590,57 @@ def mauth_convert_source_question_tool_definition(
         if require_diagram
         else "Optional native source diagram. Use when the source has a visible mathematical diagram."
     )
-    diagram = source_conversion_diagram_block_schema(diagram_description, diagram_types)
     table = source_conversion_table_schema(
         "Optional source table. Use blank strings only for student-completion cells."
     )
-    return {
-        "type": "function",
-        "name": "mauth_convert_source_question",
-        "description": (
-            "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
-            "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
-            "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
-            "For currency values, write \\$400 as text or $400$ as a numeric value; never write $\\$400$ inside maths. "
-            "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
-            "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
-            "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "questionNumber": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "description": "1-based target. If exactly one past current count, Mauth appends it.",
-                },
-                "questionId": {"type": "string"},
-                "marks": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 100,
-                    "description": "Use 0 when parts/subparts carry marks.",
-                },
-                "questionText": {
-                    "type": "string",
-                    "description": "Stem text only. Do not type 'Question 1'. Use structured parts for (a), (b), ...",
-                },
-                "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-                "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
-                "solutionText": {
-                    "type": "string",
-                    "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks.",
-                },
-                "includeSolution": {"type": "boolean"},
+    properties: dict[str, Any] = {
+        "questionNumber": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based target. If exactly one past current count, Mauth appends it.",
+        },
+        "questionId": {"type": "string"},
+        "marks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Use 0 when parts/subparts carry marks.",
+        },
+        "questionText": {
+            "type": "string",
+            "description": "Stem text only. Do not type 'Question 1'. Use structured parts for (a), (b), ...",
+        },
+        "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
+        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "solutionText": {
+            "type": "string",
+            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks.",
+        },
+        "includeSolution": {"type": "boolean"},
+        "table": table,
+        "tables": {"type": "array", "items": table},
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTables": {
+            "type": "array",
+            "items": source_conversion_table_schema("One completed solution-copy table."),
+        },
+        "preserveExistingDiagrams": {"type": "boolean"},
+        "parts": {
+            "type": "array",
+            "description": (
+                "Structured source parts. Put visible part tasks here; use subparts for nested (i)/(ii) items; "
+                "do not create blank marked parts. If parts carry marks, top-level marks must be 0."
+            ),
+            "items": source_conversion_part_schema(
+                diagram_types,
+                include_diagram_fields=include_diagram_fields,
+            ),
+        },
+    }
+    if include_diagram_fields:
+        diagram = source_conversion_diagram_block_schema(diagram_description, diagram_types)
+        properties.update(
+            {
                 "diagram": diagram,
                 "diagrams": {
                     "type": "array",
@@ -2559,23 +2657,23 @@ def mauth_convert_source_question_tool_definition(
                         "One completed solution-copy diagram.", diagram_types
                     ),
                 },
-                "table": table,
-                "tables": {"type": "array", "items": table},
-                "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
-                "solutionTables": {
-                    "type": "array",
-                    "items": source_conversion_table_schema("One completed solution-copy table."),
-                },
-                "preserveExistingDiagrams": {"type": "boolean"},
-                "parts": {
-                    "type": "array",
-                    "description": (
-                        "Structured source parts. Put visible part tasks here; use subparts for nested (i)/(ii) items; "
-                        "do not create blank marked parts. If parts carry marks, top-level marks must be 0."
-                    ),
-                    "items": source_conversion_part_schema(diagram_types),
-                },
-            },
+            }
+        )
+    return {
+        "type": "function",
+        "name": "mauth_convert_source_question",
+        "description": (
+            "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
+            "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
+            "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
+            "For currency values, write \\$400 as text or $400$ as a numeric value; never write $\\$400$ inside maths. "
+            "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
+            "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
+            "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": properties,
             "required": required_fields,
             "additionalProperties": False,
         },
@@ -2989,9 +3087,9 @@ def assistant_tool_definitions(
 ) -> list[dict[str, Any]]:
     current_messages = latest_user_messages(messages)
     text = request_text(current_messages, tool_outputs)
-    source_diagram_types = source_conversion_diagram_types_for_text(
-        request_text(current_messages, tool_outputs, attachments)
-    )
+    source_request_text = request_text(current_messages, tool_outputs, attachments)
+    source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
+    source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
     compact_summary = compact_document_summary(document_summary, current_messages)
     intent = classify_request_intent(compact_summary, current_messages, attachments)
     repair_targets = tool_output_target_names(tool_outputs)
@@ -3064,7 +3162,9 @@ def assistant_tool_definitions(
         if repair_targets & {"mauth_convert_source_question"}:
             return [
                 mauth_convert_source_question_tool_definition(
-                    require_diagram=require_repaired_diagram, diagram_types=source_diagram_types
+                    require_diagram=require_repaired_diagram,
+                    diagram_types=source_diagram_types,
+                    include_diagram_fields=source_diagram_fields,
                 )
             ]
         return [mauth_question_upsert_tool_definition(require_diagram=require_repaired_diagram)]
@@ -3113,7 +3213,9 @@ def assistant_tool_definitions(
     if has_specific_question and asks_to_convert_source_question:
         return [
             mauth_convert_source_question_tool_definition(
-                require_diagram=require_source_diagram, diagram_types=source_diagram_types
+                require_diagram=require_source_diagram,
+                diagram_types=source_diagram_types,
+                include_diagram_fields=source_diagram_fields,
             )
         ]
     if has_specific_question and asks_to_write_question:
@@ -3140,7 +3242,9 @@ def assistant_tool_definitions(
 
     return [
         mauth_convert_source_question_tool_definition(
-            require_diagram=require_source_diagram, diagram_types=source_diagram_types
+            require_diagram=require_source_diagram,
+            diagram_types=source_diagram_types,
+            include_diagram_fields=source_diagram_fields,
         )
         if asks_to_convert_source_question
         else mauth_question_upsert_tool_definition(require_diagram=require_source_diagram),
@@ -3181,13 +3285,78 @@ def instruction_profile_brain_text(profile: str, brain_text: str) -> str:
     return f"{brain_text[:limit]}{suffix}"
 
 
+def source_conversion_diagram_contract(diagram_fields_enabled: bool) -> str:
+    if diagram_fields_enabled:
+        return (
+            "- If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in "
+            "the same replacement payload, before structured parts when the teacher asks for parts under the diagram. "
+            "Use exactly one of diagram or diagrams; for multiple source diagrams, use diagrams and omit diagram. "
+            "Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "
+            '"The diagram shows...".'
+        )
+    return (
+        "- This request is routed as table/text-only source conversion. Use table/tables and "
+        "solutionTable/solutionTables for source tables; do not invent a diagram payload."
+    )
+
+
+def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram_types: list[str] | None) -> str:
+    if not diagram_fields_enabled:
+        return ""
+    allowed = ordered_supported_diagram_types(diagram_types)
+    if set(allowed) == set(SUPPORTED_DIAGRAM_TYPES):
+        chooser = (
+            "graph2d for coordinate/function/slope-field/Argand/locus/implicit graphs; statsChart for histograms, "
+            "columns, probability tables/charts, density/normal curves, and blank sketch axes; graph3d for 3D points, "
+            "edges, faces, prisms, pyramids, cones, cylinders, spheres, and spherical caps; vector2d or "
+            "vectorRayDiagram for coordinate vectors and scalar-product ray diagrams; geometricConstruction/Penrose "
+            "for schematic theorem geometry; setDiagram for Venn/set diagrams."
+        )
+    else:
+        chooser = source_conversion_renderer_guide(allowed)
+    lines = [
+        "Native diagram rules:",
+        f"- Choose renderer by source intent: {chooser}",
+        "- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.",
+    ]
+    if "vector2d" in allowed:
+        lines.append(
+            "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
+        )
+    if "graph2d" in allowed:
+        lines.append(
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For regions/loci, define boundary functions first and reference them by supported indexed region features."
+        )
+    if "graph3d" in allowed:
+        lines.append(
+            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
+        )
+    if "statsChart" in allowed:
+        lines.append(
+            "- For statsChart source diagrams, use manualFrequencies/manualProbabilities when the source gives exact bar heights, density/normal for distribution curves, and blankAxes for student sketch axes."
+        )
+    if "geometricConstruction" in allowed:
+        lines.append(
+            "- For geometricConstruction/Penrose source diagrams, preserve named points, lengths, angles, tangents, chords, and relationships with supported Substance instead of a prose diagram description."
+        )
+    if "setDiagram" in allowed:
+        lines.append(
+            "- For setDiagram sources, preserve shaded regions, labels, and counts as structured set-region data."
+        )
+    return "\n".join(lines)
+
+
 def source_conversion_assistant_instructions(
     *,
     tool_hint: str,
     attachment_text: str,
     summary_text: str,
     brain_text: str,
+    diagram_fields_enabled: bool = True,
+    diagram_types: list[str] | None = None,
 ) -> str:
+    diagram_contract = source_conversion_diagram_contract(diagram_fields_enabled)
+    native_diagram_rules = source_conversion_native_diagram_rules(diagram_fields_enabled, diagram_types)
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
 Instruction profile: sourceConversion. Convert exactly the current attached/pasted source question into native editable Mauth content through the provided direct Mauth function.
@@ -3196,19 +3365,14 @@ Instruction profile: sourceConversion. Convert exactly the current attached/past
 
 Source-conversion tool contract:
 - Use the focused direct tool named in the routing hint, normally mauth_convert_source_question. Do not inspect first when the compact summary already gives the target question or next append position.
-- If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in the same replacement payload, before structured parts when the teacher asks for parts under the diagram. Use exactly one of diagram or diagrams; for multiple source diagrams, use diagrams and omit diagram. Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "The diagram shows...".
+{diagram_contract}
 - Preserve source wording, marks, mathematical notation, line breaks that carry meaning, diagram/table placement, and official worked solutions when requested or supplied.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels.
 - For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested. Do not duplicate those same ticks in solutionText.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
 
-Native diagram rules:
-- Choose renderer by source intent: graph2d for coordinate/function/slope-field/Argand/locus/implicit graphs; statsChart for histograms, columns, probability tables/charts, density/normal curves, and blank sketch axes; graph3d for 3D points, edges, faces, prisms, pyramids, cones, cylinders, spheres, and spherical caps; vector2d or vectorRayDiagram for coordinate vectors and scalar-product ray diagrams; geometricConstruction/Penrose for schematic theorem geometry; setDiagram for Venn/set diagrams.
-- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.
-- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
-- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For regions/loci, define boundary functions first and reference them by supported indexed region features.
-- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
+{native_diagram_rules}
 
 Attachment contract:
 - Current request attachments:
@@ -3255,11 +3419,16 @@ def assistant_instructions(
     ]
     attachment_text = "\n".join(attachment_lines) if attachment_lines else "No attachments."
     if profile == "sourceConversion":
+        source_request_text = request_text(current_messages, attachments=attachments)
+        source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
+        source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
         return source_conversion_assistant_instructions(
             tool_hint=tool_hint,
             attachment_text=attachment_text,
             summary_text=summary_text,
             brain_text=brain_text,
+            diagram_fields_enabled=source_diagram_fields,
+            diagram_types=source_diagram_types,
         )
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
