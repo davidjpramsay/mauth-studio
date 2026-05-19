@@ -253,6 +253,34 @@ function graphExpressionLooksLinear(expression: string) {
   return true;
 }
 
+function graphConfigText(config: GraphConfig) {
+  return JSON.stringify(config).toLowerCase();
+}
+
+function hasGraph2dLatexVectorLabel(config: GraphConfig, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\\\vec\\s*(?:\\{\\s*${escaped}\\s*\\}|\\s+${escaped}\\b)`, "i").test(graphConfigText(config));
+}
+
+function inspectGraph2dVectorLabels(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
+  if (config.type !== "graph2d") return [];
+  if (!/\btop view\b/i.test(contextText)) return [];
+  if (!/\\vec\s*\{?\s*a\s*\}?/i.test(contextText) || !/\\vec\s*\{?\s*b\s*\}?/i.test(contextText)) return [];
+
+  const missing = ["a", "b"].filter((label) => !hasGraph2dLatexVectorLabel(config, label));
+  if (!missing.length) return [];
+  return [
+    {
+      code: "graph2d-source-vector-labels-missing",
+      severity: "warning",
+      message: `Top-view graph should preserve source vector label${missing.length === 1 ? "" : "s"} ${missing
+        .map((label) => `\\vec ${label}`)
+        .join(", ")}.`,
+      path: "graphConfig.features",
+    },
+  ];
+}
+
 interface SourceGraphEquation {
   expression: string;
   normalized: string;
@@ -794,6 +822,14 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
       path: "graphConfig.data.segments",
     });
   }
+  if (/\bpyramid\b/i.test(contextText) && faces.length < 4 && solids.length === 0) {
+    warnings.push({
+      code: "graph3d-pyramid-faces-missing",
+      severity: "warning",
+      message: "3D pyramid source diagram should include polygon faces for the base and triangular sides, not just edge lines.",
+      path: "graphConfig.data.faces",
+    });
+  }
   for (const kind of ["cone", "cylinder", "sphere"] as const) {
     if (!new RegExp(`\\b${kind}\\b`, "i").test(contextText)) continue;
     const hasSolidKind = solids.some((solid) => String(solid.kind ?? solid.type ?? "").toLowerCase() === kind);
@@ -820,16 +856,17 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
       });
     }
   }
-  const compactContext = contextText.replace(/\s+/g, "").toLowerCase();
-  for (const pair of ["bt", "am"]) {
+  const pointIds = graph3dPointIds(points);
+  for (const pair of expectedGraph3dSegmentPairs(contextText)) {
     const [first, second] = pair;
+    if (!pointIds.has(first) || !pointIds.has(second)) continue;
     const hasPair = segments.some((segment) => {
       const pointPair = Array.isArray(segment.points) ? segment.points : [];
       const from = String(segment.from ?? pointPair[0] ?? "").toLowerCase();
       const to = String(segment.to ?? pointPair[1] ?? "").toLowerCase();
       return (from === first && to === second) || (from === second && to === first);
     });
-    if (compactContext.includes(pair) && !hasPair) {
+    if (!hasPair) {
       warnings.push({
         code: "graph3d-named-segment-missing",
         severity: "warning",
@@ -839,6 +876,46 @@ function inspectGraph3d(config: GraphConfig, contextText: string): MauthDiagramI
     }
   }
   return warnings;
+}
+
+function graph3dPointIds(points: Array<Record<string, unknown>>) {
+  const ids = new Set<string>();
+  for (const point of points) {
+    for (const value of [point.id, point.name, point.label]) {
+      if (typeof value !== "string") continue;
+      const normalized = normalizedMathText(value)
+        .replace(/[^A-Za-z0-9]+/g, "")
+        .toLowerCase();
+      if (/^[a-z][a-z0-9]*$/.test(normalized)) ids.add(normalized);
+    }
+  }
+  return ids;
+}
+
+function addSegmentPair(pairs: Set<string>, rawPair: string) {
+  const normalized = rawPair.replace(/[^A-Za-z]/g, "").toLowerCase();
+  if (!/^[a-z]{2}$/.test(normalized)) return;
+  pairs.add(normalized);
+}
+
+function expectedGraph3dSegmentPairs(contextText: string) {
+  const pairs = new Set<string>();
+  for (const match of contextText.matchAll(/\\overrightarrow\s*\{\s*([A-Za-z])\s*([A-Za-z])\s*\}/g)) {
+    addSegmentPair(pairs, `${match[1]}${match[2]}`);
+  }
+  for (const match of contextText.matchAll(/\\angle\s*([A-Za-z])\s*([A-Za-z])\s*([A-Za-z])/g)) {
+    addSegmentPair(pairs, `${match[1]}${match[2]}`);
+    addSegmentPair(pairs, `${match[2]}${match[3]}`);
+  }
+  for (const match of contextText.matchAll(
+    /\b(?:[Ll]ine|[Ss]egment|[Ee]dge|[Dd]iagonal|[Rr]ay|[Vv]ector)\s+\$?([A-Z]{2})\$?(?![A-Za-z])/g,
+  )) {
+    addSegmentPair(pairs, match[1]);
+  }
+  for (const match of contextText.matchAll(/\b(?:[Mm]idpoint)\s+of\s+\$?([A-Z]{2})\$?(?![A-Za-z])/g)) {
+    addSegmentPair(pairs, match[1]);
+  }
+  return [...pairs];
 }
 
 function inspectStatsChart(config: GraphConfig): MauthDiagramInspectionWarning[] {
@@ -1050,6 +1127,7 @@ export function inspectMauthDiagram(config: GraphConfig, contextText: string): M
     ...intent.warnings,
     ...inspectImageSource(config),
     ...inspectGraph2d(config, contextText),
+    ...inspectGraph2dVectorLabels(config, contextText),
     ...inspectGraph3d(config, contextText),
     ...inspectStatsChart(config),
     ...inspectStatsChartIntent(config, contextText),
@@ -1082,6 +1160,7 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph2d-source-point-missing" ||
     warning.code === "graph2d-source-axes-hidden" ||
     warning.code === "graph2d-source-axis-labels-hidden" ||
+    warning.code === "graph2d-source-vector-labels-missing" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||
@@ -1100,6 +1179,7 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph3d-points-missing" ||
     warning.code === "graph3d-segments-missing" ||
     warning.code === "graph3d-named-segment-missing" ||
+    warning.code === "graph3d-pyramid-faces-missing" ||
     warning.code === "graph3d-solid-kind-missing" ||
     warning.code.startsWith("penrose-")
   );

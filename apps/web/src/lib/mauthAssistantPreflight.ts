@@ -248,6 +248,9 @@ function diagramInspectionExpected(code: string) {
   if (code.startsWith("graph2d-source-")) {
     return "Preserve each explicitly stated graph equation, domain, coordinate point, and visible coordinate-axis setting in the native graph2d graphConfig.";
   }
+  if (code.startsWith("graph3d-")) {
+    return "Preserve named 3D vertices, edges, diagonals, angle rays, and polygon faces in graphConfig.data.points/data.segments/data.faces.";
+  }
   if (code === "scalar-product-vector-labels-missing") {
     return "Add visible vector labels for every vector named in the scalar products. For vector2d, use metadata.vector2d.vectors names/labels; for Penrose, use direct `Label A $\\mathbf{a}$` statements.";
   }

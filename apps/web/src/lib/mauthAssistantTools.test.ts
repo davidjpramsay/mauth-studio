@@ -353,6 +353,42 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   assert(graph3dWarnings.some((warning) => warning.code === "graph3d-points-missing"));
   assert(graph3dWarnings.some((warning) => warning.code === "graph3d-segments-missing"));
 
+  const pyramidWarnings = inspectMauthDiagram(
+    {
+      type: "graph3d",
+      data: {
+        points: [
+          { id: "D", coords: [-1, -1, 0] },
+          { id: "M", coords: [0.5, 0, 0.8] },
+          { id: "F", coords: [1, 0, 0] },
+          { id: "E", coords: [0, 0, 1.6] },
+        ],
+        segments: [
+          { from: "D", to: "M" },
+          { from: "E", to: "F" },
+        ],
+        faces: [{ points: ["A", "B", "C", "D"] }],
+      },
+      metadata: { view3d: { az: 1, el: 0.3, bank: 0 } },
+    },
+    "A square pyramid is shown. Point M is the midpoint of EF. If $\\angle DMF$ is to be a right angle, determine the value.",
+  ).warnings;
+  assert(pyramidWarnings.some((warning) => warning.code === "graph3d-pyramid-faces-missing"));
+  assert(pyramidWarnings.some((warning) => warning.code === "graph3d-named-segment-missing" && warning.message.includes("MF")));
+
+  const topViewWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      showAxes: false,
+      features: [
+        { kind: "line_segment", x1: 0, y1: 0, x2: 1, y2: -1, label: "$\\mathbf{a}$" },
+        { kind: "line_segment", x1: 0, y1: 0, x2: 1, y2: 1, label: "$\\mathbf{b}$" },
+      ],
+    },
+    "The top view shows position vectors $\\vec a$ and $\\vec b$.",
+  ).warnings;
+  assert(topViewWarnings.some((warning) => warning.code === "graph2d-source-vector-labels-missing"));
+
   const coneWarnings = inspectMauthDiagram(
     {
       type: "graph3d",

@@ -6722,6 +6722,25 @@ def local_real_specialist_square_pyramid_bad_midpoints_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_square_pyramid_live_missing_faces_labels_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph3d["data"]["segments"] = [
+        segment
+        for segment in graph3d["data"]["segments"]
+        if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"f", "m"}
+    ]
+    graph3d["data"]["faces"] = graph3d["data"]["faces"][:1]
+    top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    for feature in top_view["features"]:
+        if feature.get("label") == "$\\vec a$":
+            feature["label"] = "$\\mathbf{a}$"
+        if feature.get("label") == "$\\vec b$":
+            feature["label"] = "$\\mathbf{b}$"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -7652,6 +7671,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "point F should be midpoint of A and B",
             "point M should be midpoint of E and F",
+        ],
+    },
+    "real-specialist-square-pyramid-live-missing-faces-labels": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_live_missing_faces_labels_call,
+        "expectedIssues": [
+            "segment FM",
+            "pyramid faces",
+            "vector labels a and b",
         ],
     },
     "graph3d-general-solids": {

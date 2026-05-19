@@ -3325,11 +3325,11 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For regions/loci, define boundary functions first and reference them by supported indexed region features."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment, not segment or vector, and preserve source vector labels such as \\vec a. For regions/loci, define boundary functions first and reference them by supported indexed region features."
         )
     if "graph3d" in allowed:
         lines.append(
-            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
+            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. For an angle such as \\angle DMF, include both DM and MF segments. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
         )
     if "statsChart" in allowed:
         lines.append(
