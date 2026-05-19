@@ -2023,9 +2023,15 @@ def assert_real_lighthouse_question_call(call: dict[str, Any]) -> list[str]:
     if not solution_texts:
         issues.append("official-key source should produce a worked solution")
     solution_serialized = compact_math_text("\n".join(solution_texts))
-    for term in ("pi/10", "tan", "sec", "78.54"):
-        if term not in solution_serialized:
-            issues.append(f"lighthouse solution should preserve {term!r}")
+    expected_solution_terms = (
+        ("pi/10",),
+        ("tan",),
+        ("\\sec^2\\theta", "sec^2\\theta", "sec2\\theta"),
+        ("78.54",),
+    )
+    for term_options in expected_solution_terms:
+        if not any(term in solution_serialized for term in term_options):
+            issues.append(f"lighthouse solution should preserve one of {term_options!r}")
     if hidden_mark_total("\n".join(solution_texts)) != 5:
         issues.append("lighthouse hidden [[marks:n]] total should be exactly 5")
     if visible_mark_note_count("\n".join(solution_texts)):
@@ -4821,6 +4827,89 @@ def local_real_methods_dice_game_split_solution_table_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_lighthouse_call() -> dict[str, Any]:
+    lighthouse_diagram = {
+        "type": "geometricConstruction",
+        "widthPx": 520,
+        "heightPx": 320,
+        "data": {},
+        "style": "geometry",
+        "options": {
+            "penrosePreset": "geometry",
+            "scalePercent": 100,
+            "substanceSource": (
+                "Point L, C, P\n"
+                "NamedSegment LC, CP, LP\n"
+                "LengthLabel lcLabel, xLabel, angleTheta\n"
+                "Label L $L$\n"
+                "Label C $C$\n"
+                "Label P $P$\n"
+                "Label lcLabel $50\\ \\text{m}$\n"
+                "Label xLabel $x$\n"
+                "Label angleTheta $\\theta$\n"
+                "Segment(LC, L, C)\n"
+                "Segment(CP, C, P)\n"
+                "VectorSegment(LP, L, P)\n"
+                "RightAngle(L, C, P)\n"
+                "LabelsSegment(lcLabel, L, C)\n"
+                "LabelsSegment(xLabel, C, P)\n"
+                "LabelsAngle(angleTheta, C, L, P)\n"
+            ),
+        },
+    }
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 5,
+            "questionText": (
+                "A beam of light completes three revolutions each minute from a lighthouse $L$ that is "
+                "50 metres from a coastline. Determine the speed of the beam of light moving along the coast "
+                "when it is at point $P$, 100 metres up the coast, correct to the nearest 0.01 metres per second."
+            ),
+            "diagram": {"diagramAlign": "left", "graphConfig": lighthouse_diagram},
+            "studentSpaceLines": 10,
+            "includeSolution": True,
+            "solutionText": (
+                "$$\\frac{d\\theta}{dt}=\\frac{3\\times2\\pi}{60}=\\frac{\\pi}{10}\\text{ radians per second}.$$ [[marks:1]]\n"
+                "In right $\\triangle LCP$, $\\tan\\theta=\\frac{x}{50}$, so $x=50\\tan\\theta$. [[marks:1]]\n"
+                "When $x=100$, $\\tan\\theta=2$, hence $\\sec^2\\theta=5$. [[marks:1]]\n"
+                "$$\\frac{dx}{dt}=50\\sec^2\\theta\\frac{d\\theta}{dt}.$$ [[marks:1]]\n"
+                "$$\\frac{dx}{dt}=50(5)\\left(\\frac{\\pi}{10}\\right)=25\\pi=78.54\\text{ m/sec}.$$ [[marks:1]]"
+            ),
+        }
+    )
+
+
+def local_real_specialist_lighthouse_bad_renderer_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_lighthouse_call()))
+    call["mauthArguments"]["diagram"]["graphConfig"] = {
+        "type": "graph2d",
+        "xMin": -1,
+        "xMax": 110,
+        "yMin": -5,
+        "yMax": 60,
+        "functions": [{"kind": "expression", "expression": "-0.5*x + 50"}],
+        "features": [
+            {"kind": "point", "x": 0, "y": 50, "label": "$L$"},
+            {"kind": "point", "x": 0, "y": 0, "label": "$C$"},
+            {"kind": "point", "x": 100, "y": 0, "label": "$P$"},
+        ],
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_lighthouse_bad_solution_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_lighthouse_call()))
+    call["mauthArguments"]["solutionText"] = (
+        "$$\\frac{d\\theta}{dt}=3\\times2\\pi.$$ [[marks:1]]\n"
+        "$$x=50\\tan\\theta.$$ [[marks:1]]\n"
+        "$$\\frac{dx}{dt}=50\\cos^2\\theta\\frac{d\\theta}{dt}=12.57\\text{ m/sec}.$$ [[marks:3]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_stats_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -5740,6 +5829,27 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_methods_dice_game_bad_profit_table_call,
         "expectedIssues": [
             "dice-game solution should map profit probabilities",
+        ],
+    },
+    "real-specialist-lighthouse": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_call,
+    },
+    "real-specialist-lighthouse-bad-renderer": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_bad_renderer_call,
+        "expectedIssues": [
+            "lighthouse right-triangle diagram should use geometricConstruction",
+            "lighthouse right-triangle diagram should not use graph2d",
+        ],
+    },
+    "real-specialist-lighthouse-bad-solution": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_bad_solution_call,
+        "expectedIssues": [
+            "lighthouse solution should preserve one of ('pi/10'",
+            "lighthouse solution should preserve one of ('\\\\sec^2\\\\theta'",
+            "lighthouse solution should preserve one of ('78.54'",
         ],
     },
     "real-specialist-stats": {

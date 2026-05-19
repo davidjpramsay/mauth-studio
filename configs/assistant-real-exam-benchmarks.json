@@ -414,7 +414,7 @@
     },
     {
       "id": "real-specialist-lighthouse",
-      "status": "needs-local",
+      "status": "active",
       "requestClass": "source-conversion",
       "course": "Mathematics Specialist",
       "source": {
@@ -436,7 +436,7 @@
         }
       ],
       "evals": {
-        "localCase": null,
+        "localCase": "real-specialist-lighthouse",
         "liveCase": "real-specialist-lighthouse",
         "previewReplay": false
       },
@@ -450,7 +450,7 @@
         "lengths/rates and named points match the source",
         "official solution and five marks are preserved"
       ],
-      "freeGates": ["add local semantic fixture before another paid rerun"],
+      "freeGates": ["pnpm eval:assistant:local"],
       "paidGate": "pnpm eval:assistant:live:real-exams:core"
     },
     {
