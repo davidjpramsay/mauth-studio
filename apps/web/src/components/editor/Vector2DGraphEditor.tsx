@@ -1,10 +1,9 @@
 import type { GraphConfig } from "@mauth-studio/shared";
-import { PlusCircle, Shuffle, Trash2 } from "lucide-react";
+import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_VECTOR_2D_GRAPH,
-  DEFAULT_VECTOR_2D_METADATA,
   VECTOR_2D_ANNOTATION_COLOR,
   VECTOR_2D_COLORS,
   defaultVector2DName,
@@ -19,19 +18,10 @@ import {
   type Vector2DLabelStyle,
 } from "@/lib/diagramVector2d";
 
-type Vector2DPreset = "single" | "two-origin" | "addition" | "component-guides";
-
 const VECTOR_2D_LABEL_STYLES: Array<{ value: Vector2DLabelStyle; label: string }> = [
   { value: "boldLower", label: "Bold lower-case" },
   { value: "arrow", label: "Arrow over points" },
   { value: "custom", label: "Custom LaTeX" },
-];
-
-const VECTOR_2D_PRESETS: Array<{ value: Vector2DPreset; label: string }> = [
-  { value: "single", label: "Single vector" },
-  { value: "two-origin", label: "Two from origin" },
-  { value: "addition", label: "Addition triangle" },
-  { value: "component-guides", label: "Guide solution" },
 ];
 
 function optionalNumber(value: string) {
@@ -40,84 +30,6 @@ function optionalNumber(value: string) {
 
 function numberInputValue(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
-
-function vector2dPresetVectors(preset: Vector2DPreset): Vector2DControlEntry[] {
-  if (preset === "single") {
-    return [
-      {
-        id: "a",
-        name: "a",
-        label: "",
-        start: [0, 0],
-        components: [3, 2],
-        color: VECTOR_2D_COLORS[1],
-        showComponents: false,
-      },
-    ];
-  }
-
-  if (preset === "addition") {
-    return [
-      {
-        id: "a",
-        name: "a",
-        label: "",
-        start: [0, 0],
-        components: [2, 1],
-        color: VECTOR_2D_COLORS[0],
-        showComponents: false,
-      },
-      {
-        id: "b",
-        name: "b",
-        label: "",
-        start: [2, 1],
-        components: [2, 2],
-        color: VECTOR_2D_COLORS[1],
-        showComponents: false,
-      },
-      {
-        id: "a-plus-b",
-        name: "a+b",
-        label: "",
-        start: [0, 0],
-        components: [4, 3],
-        color: VECTOR_2D_COLORS[2],
-        showComponents: false,
-      },
-    ];
-  }
-
-  const showComponents = preset === "component-guides";
-  return DEFAULT_VECTOR_2D_METADATA.vector2d.vectors.map((vector) => ({
-    ...vector,
-    start: vector.start as [number, number],
-    components: vector.components as [number, number],
-    showComponents,
-  }));
-}
-
-function vector2dPresetGraph(preset: Vector2DPreset): GraphConfig {
-  const vectors = vector2dPresetVectors(preset);
-  const yMin = preset === "two-origin" || preset === "component-guides" ? -4 : -1;
-  const yMax = preset === "two-origin" || preset === "component-guides" ? 4 : 4;
-  const xMax = preset === "single" || preset === "addition" ? 5 : 6;
-  return {
-    ...DEFAULT_VECTOR_2D_GRAPH,
-    xMin: -1,
-    xMax,
-    yMin,
-    yMax,
-    widthPx: preset === "single" ? 420 : 520,
-    heightPx: preset === "single" ? 300 : 320,
-    metadata: {
-      vector2d: {
-        labelStyle: "boldLower",
-        vectors,
-      },
-    },
-  };
 }
 
 type Vector2DGraphEditorProps = {
@@ -198,9 +110,6 @@ export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorPro
   const removeVector = (vectorIndex: number) => {
     if (vectors.length <= 1) return;
     patchVectors(vectors.filter((_, index) => index !== vectorIndex));
-  };
-  const applyPreset = (preset: Vector2DPreset) => {
-    onChange(vector2dPresetGraph(preset));
   };
   const updateStart = (vectorIndex: number, axis: 0 | 1, value: number) => {
     const vector = vectors[vectorIndex];
@@ -327,18 +236,6 @@ export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorPro
             ))}
           </select>
         </label>
-      </section>
-
-      <section className="flex flex-col gap-2 border-t pt-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Presets</div>
-        <div className="flex flex-wrap gap-2">
-          {VECTOR_2D_PRESETS.map((preset) => (
-            <Button key={preset.value} type="button" variant="outline" size="sm" onClick={() => applyPreset(preset.value)}>
-              <Shuffle data-icon="inline-start" />
-              {preset.label}
-            </Button>
-          ))}
-        </div>
       </section>
 
       <section className="flex flex-col gap-2 border-t pt-3">
