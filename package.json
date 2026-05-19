@@ -12,6 +12,7 @@
     "smoke:assistant:self": "node --experimental-strip-types scripts/assistant-self-smoke.mts",
     "smoke:file-manager": "node scripts/file-manager-smoke.mjs",
     "eval:assistant:local": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --local --case local",
+    "eval:assistant:shape": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams --image-max-long-edge 775 --provider-instruction-char-cap 40000 --provider-tool-schema-char-cap 23000 --provider-input-char-cap 170000 --provider-image-pixel-cap 1600000 --cost-plan",
     "eval:assistant:live": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --max-cases 1 --max-cost 0.35 --stop-on-failure",
     "eval:assistant:live:core": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case core --max-cases 1 --max-cost 0.35 --stop-on-failure",
     "eval:assistant:live:diagrams": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case diagram-routing --max-cases 1 --max-cost 0.30 --stop-on-failure",

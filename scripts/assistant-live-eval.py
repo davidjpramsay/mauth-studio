@@ -59,6 +59,8 @@ QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
+DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP = 0
+DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP = 0
 
 
 def apply_image_max_long_edge_override(value: int | None) -> None:
@@ -1300,6 +1302,8 @@ def print_cost_plan(
     max_cost: float,
     max_cases: int | None,
     case_cost_cap: float,
+    provider_instruction_char_cap: int,
+    provider_tool_schema_char_cap: int,
     provider_input_char_cap: int,
     provider_image_pixel_cap: int,
     paid_enabled: bool,
@@ -1316,6 +1320,14 @@ def print_cost_plan(
     print(f"- planned paid cases this run: {len(planned_cases)}")
     print(f"- run max-cost cap: ${max_cost:.2f}")
     print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
+    instruction_cap_label = (
+        f"{provider_instruction_char_cap:,} per case" if provider_instruction_char_cap > 0 else "disabled"
+    )
+    schema_cap_label = (
+        f"{provider_tool_schema_char_cap:,} per case" if provider_tool_schema_char_cap > 0 else "disabled"
+    )
+    print(f"- provider instruction char cap: {instruction_cap_label}")
+    print(f"- provider tool-schema char cap: {schema_cap_label}")
     print(f"- provider input char cap: {provider_input_char_cap:,} per case")
     print(f"- provider image pixel cap: {provider_image_pixel_cap:,} per case")
     image_max_long_edge = assistant_image_max_long_edge()
@@ -1326,6 +1338,8 @@ def print_cost_plan(
     print("  - pnpm eval:assistant:local")
     print("  - pnpm smoke:assistant:preview for renderer-heavy cases")
     print("- cases:")
+    over_instruction_budget_cases: list[tuple[str, int]] = []
+    over_schema_budget_cases: list[tuple[str, int]] = []
     over_char_budget_cases: list[tuple[str, int]] = []
     over_pixel_budget_cases: list[tuple[str, int]] = []
     for selected_case in planned_cases:
@@ -1334,6 +1348,20 @@ def print_cost_plan(
         print(f"  - {selected_case}: class={case_class}; {benchmark_label(benchmark)}")
         shape = provider_request_shape_for_case(selected_case, model=model)
         print(f"    request shape: {request_shape_label(shape)}")
+        instruction_chars = shape.get("instructionChars")
+        if (
+            isinstance(instruction_chars, int)
+            and provider_instruction_char_cap > 0
+            and instruction_chars > provider_instruction_char_cap
+        ):
+            over_instruction_budget_cases.append((selected_case, instruction_chars))
+        tool_schema_chars = shape.get("toolSchemaChars")
+        if (
+            isinstance(tool_schema_chars, int)
+            and provider_tool_schema_char_cap > 0
+            and tool_schema_chars > provider_tool_schema_char_cap
+        ):
+            over_schema_budget_cases.append((selected_case, tool_schema_chars))
         input_chars = shape.get("inputChars")
         if isinstance(input_chars, int) and provider_input_char_cap > 0 and input_chars > provider_input_char_cap:
             over_char_budget_cases.append((selected_case, input_chars))
@@ -1342,6 +1370,26 @@ def print_cost_plan(
             over_pixel_budget_cases.append((selected_case, provider_image_pixels))
     if len(planned_cases) < len(selected_cases):
         print(f"- skipped by --max-cases: {len(selected_cases) - len(planned_cases)} case(s)")
+    if over_instruction_budget_cases:
+        print("- provider instruction budget: blocked")
+        for selected_case, instruction_chars in over_instruction_budget_cases:
+            print(f"  - {selected_case}: {instruction_chars:,} chars > {provider_instruction_char_cap:,} cap")
+        return 1
+    print(
+        "- provider instruction budget: ok"
+        if provider_instruction_char_cap > 0
+        else "- provider instruction budget: disabled"
+    )
+    if over_schema_budget_cases:
+        print("- provider tool-schema budget: blocked")
+        for selected_case, tool_schema_chars in over_schema_budget_cases:
+            print(f"  - {selected_case}: {tool_schema_chars:,} chars > {provider_tool_schema_char_cap:,} cap")
+        return 1
+    print(
+        "- provider tool-schema budget: ok"
+        if provider_tool_schema_char_cap > 0
+        else "- provider tool-schema budget: disabled"
+    )
     if over_char_budget_cases:
         print("- provider input budget: blocked")
         for selected_case, input_chars in over_char_budget_cases:
@@ -7983,6 +8031,8 @@ async def run_eval(
     max_cost: float = 1.5,
     max_cases: int | None = None,
     case_cost_cap: float = DEFAULT_LIVE_CASE_COST_CAP,
+    provider_instruction_char_cap: int = DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP,
+    provider_tool_schema_char_cap: int = DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP,
     provider_input_char_cap: int = DEFAULT_PROVIDER_INPUT_CHAR_CAP,
     provider_image_pixel_cap: int = DEFAULT_PROVIDER_IMAGE_PIXEL_CAP,
     stop_on_failure: bool = False,
@@ -8006,6 +8056,34 @@ async def run_eval(
             print(f"\nSTOP: estimated cost cap reached before {selected_case}. Cap: ${max_cost:.2f}.")
             break
         shape = provider_request_shape_for_case(selected_case, model=model)
+        instruction_chars = shape.get("instructionChars")
+        if (
+            isinstance(instruction_chars, int)
+            and provider_instruction_char_cap > 0
+            and instruction_chars > provider_instruction_char_cap
+        ):
+            print(
+                f"\nBLOCKED: {selected_case} provider instructions are {instruction_chars:,} chars, "
+                f"above the {provider_instruction_char_cap:,} char cap. Run the cost plan and narrow brain context first.",
+                file=sys.stderr,
+            )
+            results.append((selected_case, 2, 0.0, 0))
+            blocked = True
+            break
+        tool_schema_chars = shape.get("toolSchemaChars")
+        if (
+            isinstance(tool_schema_chars, int)
+            and provider_tool_schema_char_cap > 0
+            and tool_schema_chars > provider_tool_schema_char_cap
+        ):
+            print(
+                f"\nBLOCKED: {selected_case} provider tool schema is {tool_schema_chars:,} chars, "
+                f"above the {provider_tool_schema_char_cap:,} char cap. Run the cost plan and narrow the tool surface first.",
+                file=sys.stderr,
+            )
+            results.append((selected_case, 2, 0.0, 0))
+            blocked = True
+            break
         input_chars = shape.get("inputChars")
         if isinstance(input_chars, int) and provider_input_char_cap > 0 and input_chars > provider_input_char_cap:
             print(
@@ -8151,6 +8229,18 @@ def main() -> int:
         help="Stop a paid live eval group after any single case costs at least this much.",
     )
     parser.add_argument(
+        "--provider-instruction-char-cap",
+        type=int,
+        default=DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP,
+        help="Block planned/paid cases whose provider instructions exceed this many characters. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--provider-tool-schema-char-cap",
+        type=int,
+        default=DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP,
+        help="Block planned/paid cases whose exposed tool schema exceeds this many characters. Use 0 to disable.",
+    )
+    parser.add_argument(
         "--provider-input-char-cap",
         type=int,
         default=DEFAULT_PROVIDER_INPUT_CHAR_CAP,
@@ -8193,6 +8283,14 @@ def main() -> int:
     args = parser.parse_args(raw_args)
     if args.image_max_long_edge is not None and args.image_max_long_edge < 0:
         parser.error("--image-max-long-edge must be greater than or equal to 0")
+    for cap_name in (
+        "provider_instruction_char_cap",
+        "provider_tool_schema_char_cap",
+        "provider_input_char_cap",
+        "provider_image_pixel_cap",
+    ):
+        if getattr(args, cap_name) < 0:
+            parser.error(f"--{cap_name.replace('_', '-')} must be greater than or equal to 0")
     apply_image_max_long_edge_override(args.image_max_long_edge)
     if args.list_cases:
         return list_eval_taxonomy()
@@ -8207,6 +8305,8 @@ def main() -> int:
             max_cost=args.max_cost,
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
+            provider_instruction_char_cap=args.provider_instruction_char_cap,
+            provider_tool_schema_char_cap=args.provider_tool_schema_char_cap,
             provider_input_char_cap=args.provider_input_char_cap,
             provider_image_pixel_cap=args.provider_image_pixel_cap,
             paid_enabled=args.allow_paid and not args.cost_plan,
@@ -8219,6 +8319,8 @@ def main() -> int:
             max_cost=args.max_cost,
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
+            provider_instruction_char_cap=args.provider_instruction_char_cap,
+            provider_tool_schema_char_cap=args.provider_tool_schema_char_cap,
             provider_input_char_cap=args.provider_input_char_cap,
             provider_image_pixel_cap=args.provider_image_pixel_cap,
             stop_on_failure=args.stop_on_failure,
