@@ -1439,7 +1439,7 @@ test("high-level question authoring builds source scalar-product vector diagrams
   );
   assert.deepEqual(
     vector2d?.segmentLabels?.map((label) => label.offsetPx),
-    [18, 18, 18, -18],
+    [24, 24, 24, -24],
   );
   assert.equal(vector2d?.angleMarkers?.length, 2);
   assert.equal(

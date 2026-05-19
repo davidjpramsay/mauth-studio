@@ -299,7 +299,7 @@ function sourceVectorBounds(points: Array<[number, number]>, widthPx: number, he
 
 function defaultSourceSegmentOffsetPx(components: [number, number]) {
   const angle = ((Math.atan2(components[1], components[0]) * 180) / Math.PI + 360) % 360;
-  return angle <= 60 ? -18 : 18;
+  return angle <= 60 ? -24 : 24;
 }
 
 function sourceSegmentLabel(
