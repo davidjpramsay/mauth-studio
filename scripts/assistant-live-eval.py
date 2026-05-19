@@ -57,6 +57,7 @@ MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = re.compile(r"(?<!\\)\$\\\$(?=\\?[A-Za-z0
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
+DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -1226,9 +1227,13 @@ def request_shape_label(shape: dict[str, Any]) -> str:
     )
     image_detail = attachment_stats.get("imageDetail") or "unknown"
     max_long_edge = attachment_stats.get("imageMaxLongEdge") or "unknown"
-    raw_image_pixels = attachment_stats.get("rawImagePixels") if isinstance(attachment_stats.get("rawImagePixels"), int) else 0
+    raw_image_pixels = (
+        attachment_stats.get("rawImagePixels") if isinstance(attachment_stats.get("rawImagePixels"), int) else 0
+    )
     provider_image_pixels = (
-        attachment_stats.get("providerImagePixels") if isinstance(attachment_stats.get("providerImagePixels"), int) else 0
+        attachment_stats.get("providerImagePixels")
+        if isinstance(attachment_stats.get("providerImagePixels"), int)
+        else 0
     )
     pixel_label = (
         f", pixels={provider_image_pixels:,}/{raw_image_pixels:,}" if raw_image_pixels or provider_image_pixels else ""
@@ -1246,6 +1251,12 @@ def request_shape_label(shape: dict[str, Any]) -> str:
     )
 
 
+def provider_image_pixels_for_shape(shape: dict[str, Any]) -> int:
+    attachment_stats = shape.get("attachmentStats") if isinstance(shape.get("attachmentStats"), dict) else {}
+    provider_image_pixels = attachment_stats.get("providerImagePixels")
+    return provider_image_pixels if isinstance(provider_image_pixels, int) else 0
+
+
 def print_cost_plan(
     case_name: str,
     *,
@@ -1254,6 +1265,7 @@ def print_cost_plan(
     max_cases: int | None,
     case_cost_cap: float,
     provider_input_char_cap: int,
+    provider_image_pixel_cap: int,
     paid_enabled: bool,
 ) -> int:
     selected_cases = selected_live_cases(case_name)
@@ -1269,12 +1281,14 @@ def print_cost_plan(
     print(f"- run max-cost cap: ${max_cost:.2f}")
     print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
     print(f"- provider input char cap: {provider_input_char_cap:,} per case")
+    print(f"- provider image pixel cap: {provider_image_pixel_cap:,} per case")
     print("- no-cost gates before paid real-exam work:")
     print("  - pnpm eval:assistant:benchmarks")
     print("  - pnpm eval:assistant:local")
     print("  - pnpm smoke:assistant:preview for renderer-heavy cases")
     print("- cases:")
-    over_budget_cases: list[tuple[str, int]] = []
+    over_char_budget_cases: list[tuple[str, int]] = []
+    over_pixel_budget_cases: list[tuple[str, int]] = []
     for selected_case in planned_cases:
         case_class = live_eval_case_class(selected_case)
         benchmark = benchmark_index.get(selected_case)
@@ -1283,15 +1297,24 @@ def print_cost_plan(
         print(f"    request shape: {request_shape_label(shape)}")
         input_chars = shape.get("inputChars")
         if isinstance(input_chars, int) and provider_input_char_cap > 0 and input_chars > provider_input_char_cap:
-            over_budget_cases.append((selected_case, input_chars))
+            over_char_budget_cases.append((selected_case, input_chars))
+        provider_image_pixels = provider_image_pixels_for_shape(shape)
+        if provider_image_pixel_cap > 0 and provider_image_pixels > provider_image_pixel_cap:
+            over_pixel_budget_cases.append((selected_case, provider_image_pixels))
     if len(planned_cases) < len(selected_cases):
         print(f"- skipped by --max-cases: {len(selected_cases) - len(planned_cases)} case(s)")
-    if over_budget_cases:
+    if over_char_budget_cases:
         print("- provider input budget: blocked")
-        for selected_case, input_chars in over_budget_cases:
+        for selected_case, input_chars in over_char_budget_cases:
             print(f"  - {selected_case}: {input_chars:,} chars > {provider_input_char_cap:,} cap")
         return 1
     print("- provider input budget: ok")
+    if over_pixel_budget_cases:
+        print("- provider image pixel budget: blocked")
+        for selected_case, provider_image_pixels in over_pixel_budget_cases:
+            print(f"  - {selected_case}: {provider_image_pixels:,} pixels > {provider_image_pixel_cap:,} cap")
+        return 1
+    print("- provider image pixel budget: ok")
     if paid_enabled:
         print("- paid execution: enabled by --allow-paid")
     else:
@@ -7015,6 +7038,7 @@ async def run_eval(
     max_cases: int | None = None,
     case_cost_cap: float = DEFAULT_LIVE_CASE_COST_CAP,
     provider_input_char_cap: int = DEFAULT_PROVIDER_INPUT_CHAR_CAP,
+    provider_image_pixel_cap: int = DEFAULT_PROVIDER_IMAGE_PIXEL_CAP,
     stop_on_failure: bool = False,
     verbose: bool = False,
 ) -> int:
@@ -7041,6 +7065,16 @@ async def run_eval(
             print(
                 f"\nBLOCKED: {selected_case} provider input is {input_chars:,} chars, "
                 f"above the {provider_input_char_cap:,} char cap. Run the cost plan and shrink source attachments first.",
+                file=sys.stderr,
+            )
+            results.append((selected_case, 2, 0.0, 0))
+            blocked = True
+            break
+        provider_image_pixels = provider_image_pixels_for_shape(shape)
+        if provider_image_pixel_cap > 0 and provider_image_pixels > provider_image_pixel_cap:
+            print(
+                f"\nBLOCKED: {selected_case} provider image payload is {provider_image_pixels:,} pixels, "
+                f"above the {provider_image_pixel_cap:,} pixel cap. Crop/split/downscale attachments first.",
                 file=sys.stderr,
             )
             results.append((selected_case, 2, 0.0, 0))
@@ -7177,6 +7211,12 @@ def main() -> int:
         help="Block planned/paid cases whose provider input JSON exceeds this many characters. Use 0 to disable.",
     )
     parser.add_argument(
+        "--provider-image-pixel-cap",
+        type=int,
+        default=DEFAULT_PROVIDER_IMAGE_PIXEL_CAP,
+        help="Block planned/paid cases whose provider image payload exceeds this many pixels. Use 0 to disable.",
+    )
+    parser.add_argument(
         "--max-cases",
         type=int,
         default=None,
@@ -7210,6 +7250,7 @@ def main() -> int:
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
             provider_input_char_cap=args.provider_input_char_cap,
+            provider_image_pixel_cap=args.provider_image_pixel_cap,
             paid_enabled=args.allow_paid and not args.cost_plan,
         )
     return asyncio.run(
@@ -7221,6 +7262,7 @@ def main() -> int:
             max_cases=args.max_cases,
             case_cost_cap=args.case_cost_cap,
             provider_input_char_cap=args.provider_input_char_cap,
+            provider_image_pixel_cap=args.provider_image_pixel_cap,
             stop_on_failure=args.stop_on_failure,
             verbose=args.verbose,
         )
