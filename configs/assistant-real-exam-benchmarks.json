@@ -220,7 +220,7 @@
       ],
       "evals": {
         "localCase": "real-specialist-confidence-intervals",
-        "liveCase": null,
+        "liveCase": "real-specialist-confidence-intervals",
         "previewReplay": true
       },
       "expected": {
@@ -234,7 +234,7 @@
         "official worked solutions and hidden mark ticks total 12"
       ],
       "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
-      "paidGate": null
+      "paidGate": "pnpm eval:assistant:live -- --case real-specialist-confidence-intervals --max-cost 0.25 --case-cost-cap 0.20 --stop-on-failure --allow-paid"
     },
     {
       "id": "real-specialist-slope-field",

@@ -1649,7 +1649,7 @@ test("high-level question authoring rejects malformed escaped-dollar maths", () 
     arguments: {
       questionNumber: 1,
       marks: 0,
-      questionText: "A rectangular prism has a main diagonal.",
+      questionText: "A random sample has mean $\\$400$.",
       parts: [
         {
           text: "Determine the vector equation for $\\$\\overrightarrow{BT}$.",
@@ -1663,6 +1663,9 @@ test("high-level question authoring rejects malformed escaped-dollar maths", () 
 
   assert.equal(result.ok, false);
   assert.equal(result.document, undefined);
+  assert(
+    data.validationIssues?.some((issue) => issue.path === "arguments.questionText" && issue.message.includes("malformed escaped dollar")),
+  );
   assert(
     data.validationIssues?.some((issue) => issue.path === "arguments.parts[0].text" && issue.message.includes("malformed escaped dollar")),
   );

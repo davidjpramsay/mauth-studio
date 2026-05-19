@@ -53,7 +53,7 @@ from app.services.openai_assistant import (  # noqa: E402
 from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
-MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = re.compile(r"(?<!\\)\$\\\$(?=\\?[A-Za-z])")
+MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = re.compile(r"(?<!\\)\$\\\$(?=\\?[A-Za-z0-9])")
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
@@ -297,6 +297,35 @@ def sample_specialist_stats_screenshot_with_key() -> list[AssistantAttachment]:
             workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
             start_line=480,
             end_line=589,
+        ),
+    ]
+
+
+def sample_specialist_confidence_intervals_screenshot_with_key() -> list[AssistantAttachment]:
+    return [
+        attachment_png_from_path(
+            "2021-mas-q17-confidence-intervals-p1.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q17_confidence_intervals_p1.png",
+            ),
+        ),
+        attachment_png_from_path(
+            "2021-mas-q17-confidence-intervals-p2.png",
+            workbench_fixture(
+                "assistant-evals",
+                "2021-mas-calculator-assumed",
+                "crops",
+                "q17_confidence_intervals_p2.png",
+            ),
+        ),
+        attachment_text_from_path_lines(
+            "2021-mas-q17-official-key.txt",
+            workbench_fixture("assistant-evals", "source-text", "2021-mas-ca-key.txt"),
+            start_line=715,
+            end_line=858,
         ),
     ]
 
@@ -2134,14 +2163,29 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
 
 
 def source_table_rows(args: dict[str, Any]) -> list[list[str]]:
-    tables = args.get("tables")
-    if isinstance(tables, list):
-        rows: list[list[str]] = []
-        for table in tables:
-            rows.extend(table_rows(table))
-        return rows
-    table = args.get("table")
-    return table_rows(table)
+    rows: list[list[str]] = []
+    for table in collect_source_tables(args):
+        rows.extend(table_rows(table))
+    return rows
+
+
+def collect_source_tables(value: Any) -> list[dict[str, Any]]:
+    tables: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        table = value.get("table")
+        if isinstance(table, dict):
+            tables.append(table)
+        table_list = value.get("tables")
+        if isinstance(table_list, list):
+            tables.extend(table_item for table_item in table_list if isinstance(table_item, dict))
+        for key, inner_value in value.items():
+            if key in {"table", "tables", "solutionTable", "solutionTables"}:
+                continue
+            tables.extend(collect_source_tables(inner_value))
+    elif isinstance(value, list):
+        for item in value:
+            tables.extend(collect_source_tables(item))
+    return tables
 
 
 def confidence_interval_table_has_row(rows: list[list[str]], row_label: str, required_terms: tuple[str, ...]) -> bool:
@@ -2248,7 +2292,7 @@ def assert_real_specialist_confidence_intervals_call(call: dict[str, Any]) -> li
         ("0.166",),
         ("cannotdetermine", "cannotbedetermine"),
         ("unknown", "randomsampling"),
-        ("95%islessthan99%", "95<99"),
+        ("95%islessthan99%", "95<99", "95%confidencelevelusesasmallercriticalvalue"),
         ("0.707", "1/sqrt2"),
         ("0.8",),
     )
@@ -4298,6 +4342,15 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "attachments": sample_specialist_stats_screenshot_with_key,
         "assert": assert_real_specialist_stats_call,
     },
+    "real-specialist-confidence-intervals": {
+        "prompt": (
+            "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+            "Preserve the confidence-interval table, structured parts and subparts, marks, and include the worked solutions."
+        ),
+        "summary": sample_document_summary,
+        "attachments": sample_specialist_confidence_intervals_screenshot_with_key,
+        "assert": assert_real_specialist_confidence_intervals_call,
+    },
     "real-methods-earthquake": {
         "prompt": (
             "Create Question 1 from the attached Methods exam screenshots and official marking-key excerpt. "
@@ -4448,6 +4501,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
     "real-exams-core": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
+    "real-exams-tables": ["real-specialist-confidence-intervals"],
     "real-exams-methods-stats": ["real-methods-ev-histogram", "real-methods-dice-game"],
     "real-exams-extended": [
         "real-specialist-slope-field",
@@ -4463,6 +4517,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "real-methods-dice-game",
         "real-specialist-lighthouse",
         "real-specialist-stats",
+        "real-specialist-confidence-intervals",
         "real-specialist-slope-field",
         "real-specialist-argand",
         "real-specialist-spherical-cap",
@@ -5353,6 +5408,34 @@ def local_real_specialist_confidence_intervals_bad_solution_call() -> dict[str, 
     parts[5]["subparts"][0]["solutionText"] = "B has the smaller width. [[marks:1]]"
     parts[5]["subparts"][1]["solutionText"] = "D has the smaller width. [[marks:1]]"
     call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_confidence_intervals_live_escaped_currency_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    args = call["mauthArguments"]
+    args["questionText"] = args["questionText"].replace("$400$", "$\\$400$")
+    table = args.pop("tables")[0]
+    part_e = args["parts"][4]
+    part_e["text"] = (
+        "Four different confidence intervals (A, B, C and D) are obtained for the mean amount spent via "
+        "online shopping by Perth residents in December 2020.\n\n"
+        f"{part_e['text']}"
+    )
+    part_e["table"] = table
+    args["parts"][1]["text"] = "Calculate the standard deviation of the sample mean, correct to $\\$0.01$."
+    args["parts"][2]["text"] = (
+        "In terms of $n$, what sample size would yield a 95% confidence interval of width $\\$50$? Show your reasoning."
+    )
+    args["parts"][3]["text"] = (
+        "What is the probability that another sample of size $2n$ would produce a sample mean "
+        "that differs from $\\mu$ by more than $\\$50$?"
+    )
+    args["parts"][5]["subparts"][0]["solutionText"] = (
+        "A has the smaller width because a 95% confidence level uses a smaller critical value "
+        "than a 99% confidence level, with the same $n$ and $s$. [[marks:1]]"
+    )
+    call["arguments"] = args
     return call
 
 
@@ -6437,6 +6520,11 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "confidence-interval solution should preserve one of ('95%islessthan99%'",
             "confidence-interval solution should preserve one of ('0.707'",
         ],
+    },
+    "real-specialist-confidence-intervals-live-escaped-currency": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_escaped_currency_call,
+        "expectedIssues": ["contains malformed escaped dollar inside maths"],
     },
     "real-specialist-slope-field": {
         "assert": assert_real_specialist_slope_field_call,

@@ -2153,7 +2153,7 @@ const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
 const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
-const MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = /(^|[^\\])\$\\\$(?=\\?[A-Za-z])/;
+const MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = /(^|[^\\])\$\\\$(?=\\?[A-Za-z0-9])/;
 const AUTHOR_TEXT_FIELD_KEYS = new Set(["questionText", "text", "prompt", "partText", "solutionText", "solution", "label"]);
 
 function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
@@ -2162,7 +2162,7 @@ function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthA
       issues.push({
         path,
         message: "contains malformed escaped dollar inside maths",
-        expected: "write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$",
+        expected: "write inline maths as $\\overrightarrow{BT}$ and currency as \\$400 or $400$, not $\\$\\overrightarrow{BT}$ or $\\$400$",
       });
     }
     return;
