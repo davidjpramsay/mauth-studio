@@ -98,6 +98,12 @@ function vector2dAngleMarkers(config: GraphConfig) {
   return recordArray(vector2d.angleMarkers);
 }
 
+function vector2dSegmentLabels(config: GraphConfig) {
+  const metadataVector2d = graphMetadata(config).vector2d;
+  const vector2d: Record<string, unknown> = isRecord(metadataVector2d) ? metadataVector2d : {};
+  return recordArray(vector2d.segmentLabels);
+}
+
 function vector2dVectors(config: GraphConfig) {
   const metadataVector2d = graphMetadata(config).vector2d;
   const vector2d: Record<string, unknown> = isRecord(metadataVector2d) ? metadataVector2d : {};
@@ -158,6 +164,24 @@ function angleLabelDegrees(value: unknown) {
     .replace(/\^\{\\circ\}/gi, "^\\circ");
   const match = source.match(/^([+-]?\d+(?:\.\d+)?)(?:\^\\circ|\\circ)?$/i);
   return match ? Number(match[1]) : undefined;
+}
+
+function scalarSegmentLabelNeedsTextUnits(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  if (!/\bunits?\b/i.test(value)) return false;
+  return !/\\(?:text|mathrm)\s*\{\s*units?\s*\}/i.test(value);
+}
+
+function scalarAngleLabelNeedsCirc(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const source = value
+    .trim()
+    .replace(/^\${1,2}|\${1,2}$/g, "")
+    .replace(/^\\\(|\\\)$/g, "")
+    .replace(/\s+/g, "");
+  if (/\\circ\b|\\circ\}/i.test(source)) return false;
+  if (/°|\\degree\b|degrees?/i.test(source)) return true;
+  return /^-?\d+(?:\.\d+)?$/.test(source);
 }
 
 function vector2dMarkerAngleDistance(config: GraphConfig, marker: Record<string, unknown>) {
@@ -439,6 +463,24 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
       severity: "warning",
       message: "Scalar-product source ray diagrams should normally hide vector2d axes and grid unless the source shows axes.",
       path: "graphConfig.showAxes",
+    });
+  }
+  const unsafeSegmentLabel = vector2dSegmentLabels(config).find((entry) => scalarSegmentLabelNeedsTextUnits(entry.label));
+  if (unsafeSegmentLabel) {
+    warnings.push({
+      code: "scalar-product-segment-label-tex-unsafe",
+      severity: "warning",
+      message: "Scalar-product vector magnitude labels that include units should use MathJax-safe text, for example 2\\ \\text{units}.",
+      path: "graphConfig.metadata.vector2d.segmentLabels",
+    });
+  }
+  const unsafeAngleLabel = angleMarkers.find((entry) => scalarAngleLabelNeedsCirc(entry.label));
+  if (unsafeAngleLabel) {
+    warnings.push({
+      code: "scalar-product-angle-label-tex-unsafe",
+      severity: "warning",
+      message: "Scalar-product angle labels should use MathJax-safe degree notation such as 45^\\circ.",
+      path: "graphConfig.metadata.vector2d.angleMarkers",
     });
   }
   return warnings;
@@ -776,6 +818,8 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "scalar-product-right-angle-geometry-mismatch" ||
     warning.code === "scalar-product-angle-marker-geometry-mismatch" ||
     warning.code === "scalar-product-vector2d-axes-visible" ||
+    warning.code === "scalar-product-segment-label-tex-unsafe" ||
+    warning.code === "scalar-product-angle-label-tex-unsafe" ||
     warning.code === "vector2d-labels-missing" ||
     warning.code === "stats-chart-probabilities-not-normalised" ||
     warning.code === "stats-chart-probability-out-of-range" ||

@@ -1554,6 +1554,27 @@ def marker_pair(marker: dict[str, Any]) -> set[str]:
     return {str(marker.get("from") or ""), str(marker.get("to") or "")}
 
 
+def scalar_segment_label_tex_safe(value: Any) -> bool:
+    label = str(value or "")
+    if not re.search(r"\bunits?\b", label, flags=re.IGNORECASE):
+        return True
+    return bool(re.search(r"\\(?:text|mathrm)\s*\{\s*units?\s*\}", label, flags=re.IGNORECASE))
+
+
+def scalar_angle_label_tex_safe(value: Any) -> bool:
+    label = str(value or "").strip()
+    if not label:
+        return True
+    stripped = re.sub(r"^\${1,2}|\${1,2}$", "", label)
+    stripped = re.sub(r"^\\\(|\\\)$", "", stripped)
+    compact = re.sub(r"\s+", "", stripped)
+    if re.search(r"\\circ\b|\\circ\}", compact, flags=re.IGNORECASE):
+        return True
+    if re.search(r"°|\\degree\b|degrees?", compact, flags=re.IGNORECASE):
+        return False
+    return not bool(re.fullmatch(r"[+-]?\d+(?:\.\d+)?", compact))
+
+
 def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "diagram.vectorRayDiagram") -> list[str]:
     issues: list[str] = []
     vectors = vector_ray.get("vectors")
@@ -1645,6 +1666,10 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
     segment_labels = vector2d.get("segmentLabels")
     if not isinstance(segment_labels, list) or len(segment_labels) < 4:
         issues.append("native vector2d diagram should preserve magnitude labels")
+    elif any(
+        isinstance(label, dict) and not scalar_segment_label_tex_safe(label.get("label")) for label in segment_labels
+    ):
+        issues.append("native vector2d magnitude labels should use TeX-safe \\text{units}")
     angle_markers = vector2d.get("angleMarkers")
     if not isinstance(angle_markers, list) or not any(
         isinstance(marker, dict) and marker.get("rightAngle") is True for marker in angle_markers
@@ -1664,6 +1689,10 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
         for marker in angle_markers
     ):
         issues.append("native vector2d diagram 45 degree marker should span the labelled rays c and d")
+    if isinstance(angle_markers, list) and any(
+        isinstance(marker, dict) and not scalar_angle_label_tex_safe(marker.get("label")) for marker in angle_markers
+    ):
+        issues.append("native vector2d angle labels should use TeX-safe ^\\circ notation")
     return issues
 
 
@@ -4924,6 +4953,82 @@ def local_screenshot_scalar_products_call() -> dict[str, Any]:
     )
 
 
+def local_screenshot_scalar_products_bad_raw_labels_call() -> dict[str, Any]:
+    return local_source_question_call(
+        {
+            "questionNumber": 1,
+            "marks": 0,
+            "questionText": "Evaluate the following scalar products exactly.",
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "vector2d",
+                    "widthPx": 560,
+                    "heightPx": 380,
+                    "xMin": -2.6,
+                    "xMax": 2.6,
+                    "yMin": -2.1,
+                    "yMax": 3.4,
+                    "showAxes": False,
+                    "showGrid": False,
+                    "showAxisLabels": False,
+                    "showAxisNumbers": False,
+                    "metadata": {
+                        "vector2d": {
+                            "labelStyle": "custom",
+                            "vectors": [
+                                {
+                                    "id": "a",
+                                    "name": "a",
+                                    "label": "\\mathbf{a}",
+                                    "start": [0, 0],
+                                    "components": [-1.638, -1.147],
+                                },
+                                {
+                                    "id": "b",
+                                    "name": "b",
+                                    "label": "\\mathbf{b}",
+                                    "start": [0, 0],
+                                    "components": [-1.147, 1.638],
+                                },
+                                {
+                                    "id": "c",
+                                    "name": "c",
+                                    "label": "\\mathbf{c}",
+                                    "start": [0, 0],
+                                    "components": [0.521, 2.954],
+                                },
+                                {
+                                    "id": "d",
+                                    "name": "d",
+                                    "label": "\\mathbf{d}",
+                                    "start": [0, 0],
+                                    "components": [1.638, 1.147],
+                                },
+                            ],
+                            "segmentLabels": [
+                                {"vectorId": "a", "label": "2 units"},
+                                {"vectorId": "b", "label": "2 units"},
+                                {"vectorId": "c", "label": "3 units"},
+                                {"vectorId": "d", "label": "2 units"},
+                            ],
+                            "angleMarkers": [
+                                {"from": "b", "to": "d", "rightAngle": True, "radius": 0.42},
+                                {"from": "c", "to": "d", "label": "45°", "radius": 0.72},
+                            ],
+                        },
+                    },
+                },
+            },
+            "parts": [
+                {"label": "a", "text": "$\\mathbf{a}\\cdot\\mathbf{b}$", "marks": 1, "studentSpaceLines": 3},
+                {"label": "b", "text": "$\\mathbf{a}\\cdot\\mathbf{d}$", "marks": 2, "studentSpaceLines": 3},
+                {"label": "c", "text": "$\\mathbf{c}\\cdot\\mathbf{d}$", "marks": 2, "studentSpaceLines": 3},
+            ],
+        }
+    )
+
+
 def local_real_methods_earthquake_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -6831,6 +6936,14 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "screenshot-scalar-products": {
         "assert": assert_screenshot_scalar_products_call,
         "call": local_screenshot_scalar_products_call,
+    },
+    "screenshot-scalar-products-bad-raw-labels": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_bad_raw_labels_call,
+        "expectedIssues": [
+            "native vector2d magnitude labels should use TeX-safe \\text{units}",
+            "native vector2d angle labels should use TeX-safe ^\\circ notation",
+        ],
     },
     "real-methods-earthquake": {
         "assert": assert_real_methods_earthquake_call,

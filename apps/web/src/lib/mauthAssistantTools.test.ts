@@ -345,6 +345,25 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
     },
     "Evaluate $\\mathbf{b}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$ from the scalar product diagram.",
   ).warnings;
+  const scalarUnsafeLabelWarnings = inspectMauthDiagram(
+    {
+      type: "vector2d",
+      showAxes: false,
+      showGrid: false,
+      metadata: {
+        vector2d: {
+          labelStyle: "custom",
+          vectors: [
+            { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.52, 2.95] },
+            { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.638, 1.147] },
+          ],
+          segmentLabels: [{ vectorId: "d", label: "2 units" }],
+          angleMarkers: [{ from: "c", to: "d", label: "45°" }],
+        },
+      },
+    },
+    "Evaluate $\\mathbf{c}\\cdot\\mathbf{d}$ from the scalar product diagram.",
+  ).warnings;
   const rightAngleMismatch = scalarMismatchWarnings.find((warning) => warning.code === "scalar-product-right-angle-geometry-mismatch");
   assert(rightAngleMismatch);
   assert.equal(isAssistantDiagramInspectionWarningBlocking(rightAngleMismatch), true);
@@ -362,6 +381,16 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   assert(
     scalarWarnings.some(
       (warning) => warning.code === "scalar-product-angle-marker-missing" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    scalarUnsafeLabelWarnings.some(
+      (warning) => warning.code === "scalar-product-segment-label-tex-unsafe" && isAssistantDiagramInspectionWarningBlocking(warning),
+    ),
+  );
+  assert(
+    scalarUnsafeLabelWarnings.some(
+      (warning) => warning.code === "scalar-product-angle-label-tex-unsafe" && isAssistantDiagramInspectionWarningBlocking(warning),
     ),
   );
   assert(
