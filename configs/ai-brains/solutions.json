@@ -47,6 +47,7 @@
     "When a solution step is mostly algebra with only short connective words such as Since or so, prefer one display-math line using \\text{...} for those words so it aligns visually with surrounding display equations.",
     "When a binomial coefficient, sum, product, integral, or similar large expression appears inside a fraction numerator or denominator, explicitly add \\displaystyle before that nested expression unless the user asks for compact notation.",
     "Use the same symbols and notation as the question.",
+    "When converting source exams with an official marking key, preserve final numeric answers and stated rounding from the key exactly. Do not replace a key value such as -0.475 with a neighbouring recomputed value such as -0.474.",
     "When writing vertical systems or grouped equations, use \\begin{aligned}...\\end{aligned}, not \\begin{aligned*}. Add small row gaps such as \\\\[2pt] only when the solution lines look cramped.",
     "For random variables, use notation such as $\\mu_X$ and $\\sigma_X$ for mean and standard deviation when appropriate; match the subscript to the random variable name, and avoid informal sd notation in worked equations.",
     "Use $...$ for inline maths and $$...$$ for display equations. Do not emit \\(...\\) or \\[...\\] delimiters.",

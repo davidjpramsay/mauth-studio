@@ -1389,7 +1389,8 @@ test("real-exam style source payloads survive authoring, inspection, and layout 
       arguments: {
         questionNumber: 1,
         marks: 0,
-        questionText: "The equation $x^3+y^3=3xy+y$ implicitly defines a curve with points A and B on the $x$-axis.",
+        questionText:
+          "The equation $x^3+y^3=3xy+y$ implicitly defines the curve shown below. The slope of the curve at the origin $O$ and points $A$ and $B$ is equal to zero.",
         diagram: {
           graphConfig: {
             type: "graph2d",
@@ -1400,8 +1401,8 @@ test("real-exam style source payloads survive authoring, inspection, and layout 
             functions: [{ kind: "relation", expression: "x^3 + y^3 = 3xy + y", color: "#1d4ed8" }],
             features: [
               { kind: "point", x: 0, y: 0, label: "$O$" },
-              { kind: "point", x: -0.475, y: 0, label: "$A$" },
-              { kind: "point", x: 0.225, y: 0, label: "$B$" },
+              { kind: "point", x: -0.475, y: 0.225, label: "$A$" },
+              { kind: "point", x: 1.395, y: 1.947, label: "$B$" },
             ],
           },
         },
@@ -1413,10 +1414,11 @@ test("real-exam style source payloads survive authoring, inspection, and layout 
             solutionText: "$$\\frac{dy}{dx}=\\frac{3y-3x^2}{3y^2-3x-1}.$$ [[marks:3]]",
           },
           {
-            text: "Find the $x$ coordinates of A and B.",
+            text: "Show that the equation determining the $x$ coordinates for points $A$ and $B$ is $x^4-2x-1=0$, and hence determine the coordinates of point $A$ correct to 0.001.",
             marks: 3,
             studentSpaceLines: 6,
-            solutionText: "$$x^4-2x^2-x=0,$$ giving $x=-0.475$ and $x=0.225$. [[marks:3]]",
+            solutionText:
+              "A zero slope requires $y=x^2$. Substituting gives $$x^6-2x^3-x^2=0,$$ so for non-origin points $$x^4-2x-1=0.$$ Hence $A=(-0.475,0.225)$ to 0.001. [[marks:3]]",
           },
         ],
       },
@@ -3014,6 +3016,8 @@ test("rejects graph2d fields misplaced under data and options", () => {
               kind: "diagram",
               graphConfig: {
                 type: "graph2d",
+                axisLabels: { x: "x", y: "y" },
+                gridStep: 1,
                 data: {
                   xRange: [-2, 2],
                   yRange: [-2, 2],
@@ -3032,7 +3036,9 @@ test("rejects graph2d fields misplaced under data and options", () => {
                 },
                 functions: [
                   {
+                    kind: "implicit",
                     expression: "sqrt(0.5*x^2 - x + 0.25)",
+                    equation: "x^3+y^3=3*x*y+y",
                     domain: [0, 4],
                     style: { color: "#dc2626", strokeWidth: 2 },
                   },
@@ -3048,12 +3054,16 @@ test("rejects graph2d fields misplaced under data and options", () => {
   const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
 
   assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.axisLabels"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.gridStep"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.functions"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.features"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.xRange"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.showGrid"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.width"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.options.axisLabels"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].kind"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].equation"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].domain"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions[0].style"));
 });
@@ -3077,6 +3087,7 @@ test("rejects graph2d feature type and style wrapper fields", () => {
                     type: "point",
                     x: 0,
                     y: 0.5,
+                    text: "$x$",
                     style: { color: "#111827", size: 5 },
                   },
                 ],
@@ -3092,6 +3103,7 @@ test("rejects graph2d feature type and style wrapper fields", () => {
 
   assert.equal(result.ok, false);
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].type"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].text"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].style"));
 });
 

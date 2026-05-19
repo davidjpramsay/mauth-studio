@@ -3755,9 +3755,12 @@ def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
         return issues
 
     serialized = call_text(call).lower()
-    for term in ("implicitly defines", "curve", "slope", "origin", "points a and b"):
+    compact_serialized = compact_math_text(serialized)
+    for term in ("implicitly defines", "curve", "slope", "origin"):
         if term not in serialized:
             issues.append(f"implicit-curve source conversion should preserve {term!r}")
+    if compact_math_text("points A and B") not in compact_serialized:
+        issues.append("implicit-curve source conversion should preserve 'points A and B'")
     if "x" not in serialized or "y" not in serialized:
         issues.append("implicit-curve source conversion should preserve x/y variables")
 
@@ -3766,12 +3769,35 @@ def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"implicit curve source diagram should use graph2d, got {sorted(graph_types)!r}")
     if any(graph_type in graph_types for graph_type in ("statsChart", "geometricConstruction", "network")):
         issues.append("implicit curve source should not use statsChart, geometricConstruction, or network")
-    graph_serialized = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
-    compact_graph_serialized = compact_math_text(graph_serialized)
-    if not all(term in compact_graph_serialized for term in ("x^3", "y^3", "3xy")):
+    graph_configs = collect_diagram_graph_configs(args)
+    implicit_relation_functions: list[dict[str, Any]] = []
+    for config_path, config in collect_diagram_graph_configs_with_paths(args):
+        if config.get("type") != "graph2d":
+            continue
+        if "axisLabels" in config:
+            issues.append("implicit curve graph2d should use showAxisLabels, not unsupported axisLabels")
+        if "gridStep" in config:
+            issues.append("implicit curve graph2d should use gridMajorStep/gridMinorStep, not unsupported gridStep")
+        functions = config.get("functions")
+        if not isinstance(functions, list):
+            continue
+        for index, function in enumerate(functions):
+            if not isinstance(function, dict):
+                continue
+            if graph2d_function_preserves_implicit_curve(function):
+                implicit_relation_functions.append(function)
+                if function.get("kind") != "relation":
+                    issues.append(
+                        f"{config_path}.functions[{index}] should encode implicit curves with kind:'relation', not {function.get('kind')!r}"
+                    )
+            elif function.get("kind") == "implicit":
+                issues.append(
+                    f"{config_path}.functions[{index}].kind should be 'relation'; graph2d does not support kind:'implicit'"
+                )
+    if not implicit_relation_functions:
         issues.append("implicit curve graph2d should encode the relation x^3 + y^3 = 3xy + y")
     graph_point_labels: set[str] = set()
-    for config in collect_diagram_graph_configs(args):
+    for config in graph_configs:
         data = config.get("data") if isinstance(config.get("data"), dict) else {}
         candidate_lists = [config.get("features"), config.get("points"), data.get("features"), data.get("points")]
         for candidates in candidate_lists:
@@ -3787,13 +3813,21 @@ def assert_real_specialist_implicit_call(call: dict[str, Any]) -> list[str]:
     for label in ("o", "a", "b"):
         if label not in graph_point_labels:
             issues.append(f"implicit curve graph should preserve point label {label.upper()}")
+    expected_points = (
+        ("$O$", 0.0, 0.0, "origin O"),
+        ("$A$", -0.475, 0.225, "point A near (-0.475, 0.225)"),
+        ("$B$", 1.395, 1.947, "point B near (1.395, 1.947)"),
+    )
+    for label, x, y, description in expected_points:
+        if not graph2d_has_point_feature(graph_configs, label, x, y, tolerance=0.035):
+            issues.append(f"implicit curve graph should include {description}")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 2:
         issues.append("implicit curve source should become exactly two structured parts")
         return issues
     expected_marks = [3, 3]
-    expected_terms = (("implicit", "dy"), ("x", "coordinates", "a"))
+    expected_terms = (("implicit", "dy"), ("x", "coordinates", "a", "b", "x^4"))
     for index, part in enumerate(parts):
         if not isinstance(part, dict):
             issues.append(f"parts[{index}] should be an object")
@@ -3987,6 +4021,17 @@ def graph2d_function_has_terms(function: dict[str, Any], required_terms: tuple[s
         if not any(compact_math_text(choice) in expression for choice in choices):
             return False
     return True
+
+
+def compact_algebra_text(text: str) -> str:
+    return compact_math_text(text).replace("*", "").replace("\\times", "").replace(".", "")
+
+
+def graph2d_function_preserves_implicit_curve(function: dict[str, Any]) -> bool:
+    expression = compact_algebra_text(str(function.get("expression") or ""))
+    if not all(term in expression for term in ("x^3", "y^3", "3xy")):
+        return False
+    return bool(re.search(r"(^|[=+\-])y($|[=+\-])", expression))
 
 
 def graph2d_function_has_domain(
@@ -4306,6 +4351,22 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
     for config_path, config in collect_diagram_graph_configs_with_paths(args):
         if config.get("type") != "graph2d":
             continue
+        if "axisLabels" in config:
+            issues.append(
+                {
+                    "path": f"{config_path}.axisLabels",
+                    "message": "graph2d does not read axisLabels.",
+                    "expected": "showAxisLabels for renderer-owned x/y labels",
+                }
+            )
+        if "gridStep" in config:
+            issues.append(
+                {
+                    "path": f"{config_path}.gridStep",
+                    "message": "graph2d does not support gridStep.",
+                    "expected": "gridMajorStep/gridMinorStep or gridMajorStepX/gridMajorStepY",
+                }
+            )
         data = config.get("data")
         if isinstance(data, dict):
             for key in ("functions", "features"):
@@ -4353,11 +4414,47 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                             "expected": f"{config_path}.{key if key not in {'width', 'height'} else key + 'Px'}",
                         }
                     )
+            if "axisLabels" in options:
+                issues.append(
+                    {
+                        "path": f"{config_path}.options.axisLabels",
+                        "message": "graph2d options.axisLabels is not read by the renderer.",
+                        "expected": "showAxisLabels for renderer-owned x/y labels",
+                    }
+                )
         functions = config.get("functions")
         if isinstance(functions, list):
             for index, function in enumerate(functions):
                 if not isinstance(function, dict):
                     continue
+                if not isinstance(function.get("expression"), str) or not str(function.get("expression") or "").strip():
+                    expected = "expression"
+                    if "equation" in function:
+                        expected = "move equation into expression"
+                    issues.append(
+                        {
+                            "path": f"{config_path}.functions[{index}].expression",
+                            "message": "graph2d functions must include a non-empty expression field.",
+                            "expected": expected,
+                        }
+                    )
+                if "equation" in function:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.functions[{index}].equation",
+                            "message": "graph2d does not support equation as a function field.",
+                            "expected": "expression",
+                        }
+                    )
+                kind = function.get("kind")
+                if kind is not None and kind not in {"expression", "piecewise", "relation"}:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.functions[{index}].kind",
+                            "message": "graph2d function kind must be expression, piecewise, or relation.",
+                            "expected": "relation for implicit equations",
+                        }
+                    )
                 if "domain" in function:
                     issues.append(
                         {
@@ -4404,6 +4501,14 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                                 "expected": "graphConfig.functions plus functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex",
                             }
                         )
+                if "text" in feature:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].text",
+                            "message": "graph2d features use label, not text.",
+                            "expected": "label",
+                        }
+                    )
                 if "opacity" in feature:
                     issues.append(
                         {
@@ -4553,6 +4658,77 @@ def real_slope_field_repair_failure_output(call: dict[str, Any], first_issues: l
                 "path": "arguments.diagram.graphConfig",
                 "message": issue,
                 "expected": "source-faithful native graph2d slope-field payload",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth graph2d validation failed.",
+    )
+
+
+def real_implicit_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues = graph2d_validation_issues_from_call(call)
+    for issue in first_issues:
+        if "encode the relation" in issue or "kind:'relation'" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.functions",
+                    "message": (
+                        "Implicit graph2d curves must be a supported relation function. Use "
+                        "kind:'relation' with expression x^3 + y^3 = 3*x*y + y, or the equivalent "
+                        "x^3 + y^3 - 3*x*y - y = 0."
+                    ),
+                    "expected": "graphConfig.functions[{ kind:'relation', expression:'x^3 + y^3 = 3*x*y + y' }]",
+                }
+            )
+        if "point A near" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.features",
+                    "message": "The implicit-curve source graph should include point A at approximately (-0.475, 0.225).",
+                    "expected": "{ kind:'point', x:-0.475, y:0.225, label:'$A$' }",
+                }
+            )
+        if "point B near" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.features",
+                    "message": "The implicit-curve source graph should include point B at approximately (1.395, 1.947).",
+                    "expected": "{ kind:'point', x:1.395, y:1.947, label:'$B$' }",
+                }
+            )
+        if "-0.475" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[1].solutionText",
+                    "message": "Use the official 0.001-rounded coordinate for point A from the marking key.",
+                    "expected": "A=(-0.475,0.225)",
+                }
+            )
+        if "unsupported axisLabels" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.axisLabels",
+                    "message": "graph2d does not read axisLabels.",
+                    "expected": "showAxisLabels for renderer-owned x/y labels",
+                }
+            )
+        if "unsupported gridStep" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.gridStep",
+                    "message": "graph2d does not support gridStep.",
+                    "expected": "gridMajorStep/gridMinorStep or gridMajorStepX/gridMajorStepY",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig",
+                "message": issue,
+                "expected": "source-faithful native graph2d implicit relation with labelled curve points",
             }
             for issue in first_issues[:8]
         ]
@@ -4803,6 +4979,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_implicit_screenshot_with_key,
         "assert": assert_real_specialist_implicit_call,
+        "repairOnFailure": real_implicit_repair_failure_output,
     },
     "repair-circle-diagram": {
         "prompt": "Please add the diagram to question 1 that goes along with the question.",
@@ -6842,8 +7019,8 @@ def local_real_specialist_implicit_call() -> dict[str, Any]:
         ],
         "features": [
             {"kind": "point", "x": 0, "y": 0, "label": "$O$"},
-            {"kind": "point", "x": -0.475, "y": 0, "label": "$A$"},
-            {"kind": "point", "x": 0.225, "y": 0, "label": "$B$"},
+            {"kind": "point", "x": -0.475, "y": 0.225, "label": "$A$"},
+            {"kind": "point", "x": 1.395, "y": 1.947, "label": "$B$"},
         ],
     }
     return local_source_question_call(
@@ -6852,8 +7029,8 @@ def local_real_specialist_implicit_call() -> dict[str, Any]:
             "marks": 0,
             "questionMarks": 0,
             "questionText": (
-                "The equation $x^3+y^3=3xy+y$ implicitly defines a curve with slope "
-                "at the origin and points A and B on the $x$-axis."
+                "The equation $x^3+y^3=3xy+y$ implicitly defines the curve shown below. "
+                "The slope of the curve at the origin $O$ and points $A$ and $B$ is equal to zero."
             ),
             "diagram": {"diagramAlign": "center", "graphConfig": graph_config},
             "parts": [
@@ -6870,15 +7047,18 @@ def local_real_specialist_implicit_call() -> dict[str, Any]:
                 },
                 {
                     "label": "b",
-                    "text": "Find the $x$ coordinates of A and B.",
+                    "text": (
+                        "Show that the equation that determines the $x$ coordinates for points $A$ and $B$ is "
+                        "given by $x^4-2x-1=0$, and hence determine the coordinates for point $A$ correct to 0.001."
+                    ),
                     "marks": 3,
                     "studentSpaceLines": 6,
                     "includeSolution": True,
                     "solutionText": (
-                        "At $y=0$, $x^3=0$ gives the origin; using the tangent condition gives "
-                        "$$x^4-2x^2-x=0.$$ [[marks:1]]\n"
-                        "The relevant roots are approximately $x=-0.475$ and $x=0.225$, so "
-                        "$A(-0.475,0)$ and $B(0.225,0)$. [[marks:2]]"
+                        "For a slope of zero, the numerator must be zero, so $y=x^2$. [[marks:1]]\n"
+                        "Substituting $y=x^2$ gives $$x^6-2x^3-x^2=0,$$ hence for non-origin points "
+                        "$$x^4-2x-1=0.$$ [[marks:1]]\n"
+                        "Using CAS, point $A$ is $(-0.475,0.225)$ correct to 0.001. [[marks:1]]"
                     ),
                 },
             ],
@@ -6891,6 +7071,40 @@ def local_real_specialist_implicit_bad_relation_call() -> dict[str, Any]:
     graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
     graph_config["functions"][0]["expression"] = "x^2 + y^2 = 1"
     graph_config["features"] = [feature for feature in graph_config["features"] if feature.get("label") != "$B$"]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_implicit_bad_schema_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_implicit_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["axisLabels"] = {"x": "$x$", "y": "$y$"}
+    graph_config["gridStep"] = 1
+    graph_config["functions"][0]["kind"] = "implicit"
+    graph_config["functions"][0]["expression"] = "x^3 + y^3 - 3*x*y - y = 0"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_implicit_bad_points_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_implicit_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["features"] = [
+        {"kind": "point", "x": 0, "y": 0, "label": "$O$"},
+        {"kind": "point", "x": -0.475, "y": 0, "label": "$A$"},
+        {"kind": "point", "x": 0.225, "y": 0, "label": "$B$"},
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_implicit_bad_rounding_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_implicit_call()))
+    call["mauthArguments"]["parts"][1]["solutionText"] = (
+        "For a slope of zero, $y=x^2$. [[marks:1]]\n"
+        "Substituting gives $$x^2(x^4-2x-1)=0.$$ [[marks:1]]\n"
+        "Hence $A=(-0.474,0.225)$ correct to 0.001. [[marks:1]]"
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -7375,6 +7589,30 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "graph2d should encode the relation",
             "point label B",
+        ],
+    },
+    "real-specialist-implicit-bad-schema": {
+        "assert": assert_real_specialist_implicit_call,
+        "call": local_real_specialist_implicit_bad_schema_call,
+        "expectedIssues": [
+            "kind:'relation'",
+            "unsupported axisLabels",
+            "unsupported gridStep",
+        ],
+    },
+    "real-specialist-implicit-bad-points": {
+        "assert": assert_real_specialist_implicit_call,
+        "call": local_real_specialist_implicit_bad_points_call,
+        "expectedIssues": [
+            "point A near",
+            "point B near",
+        ],
+    },
+    "real-specialist-implicit-bad-rounding": {
+        "assert": assert_real_specialist_implicit_call,
+        "call": local_real_specialist_implicit_bad_rounding_call,
+        "expectedIssues": [
+            "solution should preserve '-0.475'",
         ],
     },
     "real-specialist-ski-modelling": {

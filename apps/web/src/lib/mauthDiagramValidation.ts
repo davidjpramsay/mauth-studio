@@ -43,11 +43,13 @@ const GRAPH_FEATURE_STROKE_STYLES = new Set(["none", "solid", "dashed"]);
 const GRAPH_FEATURE_INTERSECTION_TARGETS = new Set(["function", "xAxis", "yAxis"]);
 const GRAPH_FEATURE_CLIP_SIDES = new Set(["above", "below", "left", "right", "inside", "outside"]);
 const GRAPH_AXES = new Set(["x", "y"]);
+const UNSUPPORTED_GRAPH_FUNCTION_FIELDS = new Map([["equation", "Use expression for every graph2d function or relation."]]);
 const UNSUPPORTED_GRAPH_FEATURE_FIELDS = new Map([
   ["expressionTop", "Use graphConfig.functions plus functionAIndex/functionBIndex on a region feature."],
   ["expressionBottom", "Use graphConfig.functions plus functionAIndex/functionBIndex on a region feature."],
   ["opacity", "Use fillOpacity for graph2d region shading opacity."],
   ["fillColor", "Use color for graph2d feature colour."],
+  ["text", "Use label for graph2d feature text."],
 ]);
 const GRAPH_AXIS_LABEL_INTERVAL_MODES = new Set(["auto", "manual"]);
 const GRAPH_EXTENSION_MODES = new Set(["auto", "manual"]);
@@ -76,6 +78,10 @@ const GRAPH2D_OPTIONS_TOP_LEVEL_FIELDS = new Map([
   ["gridMajorStepY", "graphConfig.gridMajorStepY"],
   ["axisLabelStepX", "graphConfig.axisLabelStepX"],
   ["axisLabelStepY", "graphConfig.axisLabelStepY"],
+]);
+const GRAPH2D_UNSUPPORTED_TOP_LEVEL_FIELDS = new Map([
+  ["axisLabels", "Use showAxisLabels for the renderer-owned x/y axis letters; graph2d does not read axisLabels."],
+  ["gridStep", "Use gridMajorStep/gridMinorStep, or gridMajorStepX/gridMajorStepY for per-axis spacing."],
 ]);
 const GRAPH3D_UNSUPPORTED_METADATA_FIELDS = new Map([
   ["axisLabels", "Graph3d axis labels are renderer-owned; do not put axisLabels in metadata."],
@@ -524,6 +530,10 @@ function validateGraphFunctions(config: Record<string, unknown>, path: string, i
         "{ color?, strokeWidth?, strokeStyle? }",
       );
     }
+    for (const [key, expected] of UNSUPPORTED_GRAPH_FUNCTION_FIELDS) {
+      if (!hasOwn(entry, key)) continue;
+      addIssue(issues, `${entryPath}.${key}`, "is not a supported graph2d function field", expected);
+    }
 
     const pieces = optionalArray(entry, "pieces", entryPath, issues);
     pieces?.forEach((piece, pieceIndex) => {
@@ -656,6 +666,11 @@ function validateSlopeField(config: Record<string, unknown>, path: string, issue
 }
 
 function validateGraph2DFieldPlacement(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  for (const [key, expected] of GRAPH2D_UNSUPPORTED_TOP_LEVEL_FIELDS) {
+    if (!hasOwn(config, key)) continue;
+    addIssue(issues, `${path}.${key}`, "is not a supported graph2d field", expected);
+  }
+
   const data = isRecord(config.data) ? config.data : undefined;
   if (data) {
     for (const [key, expected] of GRAPH2D_DATA_TOP_LEVEL_FIELDS) {
