@@ -42,6 +42,7 @@ from app.services.openai_assistant import (  # noqa: E402
     DOCX_MIME_TYPE,
     assistant_attachment_payload_stats,
     assistant_configured,
+    assistant_image_max_long_edge,
     assistant_instructions,
     assistant_tool_definitions,
     brain_files_for_request,
@@ -58,6 +59,12 @@ QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
+
+
+def apply_image_max_long_edge_override(value: int | None) -> None:
+    if value is None:
+        return
+    os.environ["ASSISTANT_IMAGE_MAX_LONG_EDGE"] = str(value)
 
 
 def sample_document_summary() -> dict[str, Any]:
@@ -1311,6 +1318,9 @@ def print_cost_plan(
     print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
     print(f"- provider input char cap: {provider_input_char_cap:,} per case")
     print(f"- provider image pixel cap: {provider_image_pixel_cap:,} per case")
+    image_max_long_edge = assistant_image_max_long_edge()
+    image_max_long_edge_label = str(image_max_long_edge) if image_max_long_edge > 0 else "disabled"
+    print(f"- provider image max long edge: {image_max_long_edge_label}")
     print("- no-cost gates before paid real-exam work:")
     print("  - pnpm eval:assistant:benchmarks")
     print("  - pnpm eval:assistant:local")
@@ -8153,6 +8163,15 @@ def main() -> int:
         help="Block planned/paid cases whose provider image payload exceeds this many pixels. Use 0 to disable.",
     )
     parser.add_argument(
+        "--image-max-long-edge",
+        type=int,
+        default=None,
+        help=(
+            "Override ASSISTANT_IMAGE_MAX_LONG_EDGE for provider image optimisation in this eval. "
+            "Use 0 to disable downscaling."
+        ),
+    )
+    parser.add_argument(
         "--max-cases",
         type=int,
         default=None,
@@ -8172,6 +8191,9 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="Print full provider tool payloads.")
     raw_args = [arg for arg in sys.argv[1:] if arg != "--"]
     args = parser.parse_args(raw_args)
+    if args.image_max_long_edge is not None and args.image_max_long_edge < 0:
+        parser.error("--image-max-long-edge must be greater than or equal to 0")
+    apply_image_max_long_edge_override(args.image_max_long_edge)
     if args.list_cases:
         return list_eval_taxonomy()
     if args.dump_local_calls:
