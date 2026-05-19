@@ -216,6 +216,83 @@ def test_extracts_stringified_nested_tool_arguments_from_openai_response():
     assert call["mauthArguments"] == arguments
 
 
+def test_source_conversion_tool_calls_normalize_part_based_mark_totals():
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_convert_source_question",
+                "arguments": json.dumps(
+                    {
+                        "questionNumber": 1,
+                        "marks": 8,
+                        "questionMarks": 8,
+                        "questionText": "A rectangular prism is shown.",
+                        "parts": [
+                            {"label": "a", "text": "Find the vector equation of $BT$.", "marks": 2},
+                            {"label": "b", "text": "Find the sphere through the vertices.", "marks": 3},
+                            {"label": "c", "text": "Show $AM$ and $BT$ do not intersect.", "marks": 3},
+                        ],
+                    }
+                ),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["arguments"]["marks"] == 8
+    assert call["arguments"]["questionMarks"] == 8
+    assert call["mauthArguments"]["marks"] == 0
+    assert call["mauthArguments"]["questionMarks"] == 0
+    assert [part["marks"] for part in call["mauthArguments"]["parts"]] == [2, 3, 3]
+
+
+def test_source_conversion_tool_calls_prune_unsupported_graph3d_metadata():
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_convert_source_question",
+                "arguments": json.dumps(
+                    {
+                        "questionNumber": 1,
+                        "marks": 0,
+                        "questionText": "A rectangular prism is shown.",
+                        "diagram": {
+                            "graphConfig": {
+                                "type": "graph3d",
+                                "data": {
+                                    "points": [{"id": "A", "coords": [0, 0, 0]}],
+                                    "segments": [],
+                                },
+                                "metadata": {
+                                    "view3d": {"az": -2.35, "el": 0.28, "bank": 0},
+                                    "showAxes": True,
+                                    "axisLabels": ["$x$", "$y$", "$z$"],
+                                    "bounds": {"x": [0, 2]},
+                                    "pointLabels": True,
+                                },
+                            }
+                        },
+                    }
+                ),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["arguments"]["diagram"]["graphConfig"]["metadata"]["showAxes"] is True
+    assert call["mauthArguments"]["diagram"]["graphConfig"]["metadata"] == {
+        "view3d": {"az": -2.35, "el": 0.28, "bank": 0}
+    }
+
+
 def test_extracts_action_array_nested_tool_arguments_from_openai_response():
     actions = [{"type": "formatting.update", "patch": {"lineHeight": 1.32}}]
     response = {
@@ -267,7 +344,8 @@ def test_extracts_high_level_authoring_tool_arguments_from_openai_response():
     [call] = openai_assistant.tool_calls(response)
 
     assert call["mauthToolName"] == "mauth.author.replaceQuestion"
-    assert call["mauthArguments"] == arguments
+    assert call["arguments"]["arguments"]["marks"] == 4
+    assert call["mauthArguments"] == {**arguments, "marks": 0}
 
 
 def test_extracts_direct_high_level_authoring_tool_arguments_from_openai_response():
@@ -302,7 +380,8 @@ def test_extracts_direct_high_level_authoring_tool_arguments_from_openai_respons
 
     assert call["name"] == "mauth_author_replace_question"
     assert call["mauthToolName"] == "mauth.author.replaceQuestion"
-    assert call["mauthArguments"] == arguments
+    assert call["arguments"]["marks"] == 4
+    assert call["mauthArguments"] == {**arguments, "marks": 0}
 
 
 def test_extracts_direct_add_diagram_tool_arguments_from_openai_response():
@@ -1168,6 +1247,8 @@ def test_source_question_tool_schema_stays_compact():
     assert len(serialized) < 24000
     assert "metadata.vector2d.vectors[]" in properties["diagram"]["properties"]["graphConfig"]["description"]
     assert "Use exactly one of graphConfig or vectorRayDiagram" in properties["solutionDiagram"]["description"]
+    assert "questionMarks" not in properties
+    assert "top-level marks must be 0" in properties["parts"]["description"]
     assert "Use exactly one of graphConfig or vectorRayDiagram" in part_properties["diagram"]["description"]
 
 

@@ -1115,6 +1115,31 @@ test("high-level question authoring preserves structured subparts", () => {
   assert.equal(hiddenMarkTotal(allSolutionText(question)), 2);
 });
 
+test("high-level question authoring ignores copied top-level totals when parts carry marks", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 8,
+      questionMarks: 8,
+      questionText: "A rectangular prism is shown.",
+      parts: [
+        { label: "a", text: "Find the vector equation of $BT$.", marks: 2, studentSpaceLines: 3 },
+        { label: "b", text: "Find the sphere through the vertices.", marks: 3, studentSpaceLines: 4 },
+        { label: "c", text: "Show $AM$ and $BT$ do not intersect.", marks: 3, studentSpaceLines: 4 },
+      ],
+    },
+  });
+  const question = result.document?.questions[0];
+
+  assert.equal(result.ok, true);
+  assert.equal(question?.marks, 0);
+  assert.deepEqual(
+    question?.parts.map((part) => part.marks),
+    [2, 3, 3],
+  );
+});
+
 test("real-exam style source payloads survive authoring, inspection, and layout checks", () => {
   const cases: Array<{
     id: string;
@@ -3187,6 +3212,42 @@ test("accepts structured graph3d point and segment data", () => {
   const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "prism-3d");
   assert.equal(diagram?.kind, "diagram");
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
+});
+
+test("high-level question authoring prunes unsupported graph3d metadata", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 2,
+      questionText: "A rectangular prism is shown.",
+      diagram: {
+        graphConfig: {
+          type: "graph3d",
+          data: {
+            points: [
+              { id: "O", coords: [0, 0, 0] },
+              { id: "A", coords: [2, 0, 0] },
+            ],
+            segments: [{ from: "O", to: "A" }],
+          },
+          metadata: {
+            view3d: { az: -2.35, el: 0.28, bank: 0 },
+            showAxes: true,
+            axisLabels: ["$x$", "$y$", "$z$"],
+            bounds: { x: [-0.3, 2.4] },
+            pointLabels: true,
+          },
+        },
+      },
+    },
+  });
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.kind === "diagram");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(diagram?.kind === "diagram" ? diagram.graphConfig.metadata : undefined, {
+    view3d: { az: -2.35, el: 0.28, bank: 0 },
+  });
 });
 
 test("accepts graph3d faces and solid primitives", () => {

@@ -670,6 +670,10 @@ function partOrder(blocks: readonly ContentBlock[], subparts: readonly MauthSubp
   return [...blockOrder(blocks), ...subparts.map((subpart) => ({ kind: "subpart" as const, id: subpart.id }))];
 }
 
+function authoredPartsCarryMarks(parts: readonly MauthPartLike[]) {
+  return parts.some((part) => Number(part.marks || 0) > 0 || (part.subparts ?? []).some((subpart) => Number(subpart.marks || 0) > 0));
+}
+
 function positiveInteger(value: unknown, fallback: number, min = 1, max = 40) {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -2676,10 +2680,26 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
   return rawInput as Vector2DSourceDiagramInput;
 }
 
+function normalizedAssistantGraphConfig(graphConfig: Record<string, unknown>) {
+  if (graphConfig.type !== "graph3d") return graphConfig as unknown as GraphConfig;
+  const metadata = isRecord(graphConfig.metadata) ? graphConfig.metadata : undefined;
+  if (!metadata) return graphConfig as unknown as GraphConfig;
+  const view3d = isRecord(metadata.view3d) ? metadata.view3d : undefined;
+  const normalized = { ...graphConfig };
+  if (view3d) {
+    normalized.metadata = {
+      view3d: Object.fromEntries(["az", "el", "bank"].filter((key) => hasOwn(view3d, key)).map((key) => [key, view3d[key]])),
+    };
+  } else {
+    delete normalized.metadata;
+  }
+  return normalized as unknown as GraphConfig;
+}
+
 function graphConfigFromAssistantDiagramEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {
   const sourceVectorInput = sourceVectorDiagramInputFromEntry(entry, entryPath, issues);
   if (sourceVectorInput) return buildVector2DSourceDiagramConfig(sourceVectorInput);
-  return isRecord(entry.graphConfig) ? (entry.graphConfig as unknown as GraphConfig) : undefined;
+  return isRecord(entry.graphConfig) ? normalizedAssistantGraphConfig(entry.graphConfig) : undefined;
 }
 
 interface DiagramBlocksFromArgsOptions {
@@ -3250,6 +3270,7 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
   const marks = positiveInteger(args.marks, question.marks || 1, 0, 100);
   const contentBlocks = contentBlocksForAuthorQuestion(args, question.id, issues, question);
   const parts = authorPartsFromArgs(args, question.id, issues);
+  const partBasedMarks = authoredPartsCarryMarks(parts);
   if (issues.length) {
     return {
       error: formatMauthActionValidationIssues(issues),
@@ -3259,7 +3280,7 @@ function parseAuthorReplaceQuestionActions<Q extends MauthQuestionLike, F extend
 
   const generatedQuestion = {
     ...question,
-    marks: parts.length ? positiveInteger(args.questionMarks, 0, 0, 100) : marks,
+    marks: parts.length ? (partBasedMarks ? 0 : positiveInteger(args.questionMarks, 0, 0, 100)) : marks,
     contentBlocks,
     parts,
     itemOrder: questionOrder(contentBlocks, parts),

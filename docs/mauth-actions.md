@@ -91,6 +91,8 @@ Use `pnpm eval:assistant:list` to print the current machine-readable tool/eval t
 
 High-level diagram authoring also performs a cheap deterministic intent check before apply. For obvious classroom patterns, the tool rejects the wrong renderer with a repairable `arguments.diagram.graphConfig.type` issue: schematic circle/tangent/chord theorem geometry should be `geometricConstruction`, scalar-product source ray diagrams and coordinate/component vectors should be `vector2d`, histograms/column/probability charts should be `statsChart`, Venn/set diagrams should be `setDiagram`, coordinate/function graphs should be `graph2d`, and network diagrams should be `network`.
 
+Source-conversion aliases keep provider payloads narrow before they reach the app. Multipart source questions should put marks on parts/subparts and keep top-level `marks` at `0`; the provider-facing `mauth_convert_source_question` schema does not expose `questionMarks`. The API and high-level authoring boundary also prune unsupported `graph3d.metadata` fields so only `metadata.view3d.{az,el,bank}` survives before validation.
+
 The intended AI workflow is:
 
 1. Use focused high-level tools where they fit: `mauth.question.upsert`, `mauth.author.addDiagram`, `mauth.author.ensureSolutions`, `mauth.solutions.writeAll`, `mauth.layout.check`, `mauth.author.adjustResponseSpaces`, or `mauth.format.apply`. At the provider boundary, prefer the task-specific aliases for source conversion, diagram creation, solution writing, whole-test solution keys, layout checking, and formatting when exposed.

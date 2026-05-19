@@ -168,6 +168,8 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_fix_question_formatting": "mauth.format.apply",
     "mauth_check_document_layout": "mauth.layout.check",
 }
+QUESTION_AUTHORING_TOOL_NAMES = {"mauth.question.upsert", "mauth.author.replaceQuestion"}
+GRAPH3D_VIEW_KEYS = ("az", "el", "bank")
 
 MODEL_PRICING_USD_PER_1M = {
     "gpt-5.5": {
@@ -1895,7 +1897,8 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
         ),
         "graph3d": (
             "Use graph3d. Put named vertices in data.points, edges/diagonals in data.segments, polygon faces in "
-            "data.faces, curved solids in data.solids, and camera as metadata.view3d:{az,el,bank}."
+            "data.faces, curved solids in data.solids, and camera as metadata.view3d:{az,el,bank}; "
+            "metadata must not include axes, labels, bounds, or pointLabels."
         ),
         "vector2d": (
             "Use vector2d for coordinate/component vectors, or vectorRayDiagram for no-axis scalar-product ray screenshots. "
@@ -2523,8 +2526,12 @@ def mauth_convert_source_question_tool_definition(
                     "description": "1-based target. If exactly one past current count, Mauth appends it.",
                 },
                 "questionId": {"type": "string"},
-                "marks": {"type": "integer", "minimum": 0, "maximum": 100},
-                "questionMarks": {"type": "integer", "minimum": 0, "maximum": 100},
+                "marks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Use 0 when parts/subparts carry marks.",
+                },
                 "questionText": {
                     "type": "string",
                     "description": "Stem text only. Do not type 'Question 1'. Use structured parts for (a), (b), ...",
@@ -2564,7 +2571,7 @@ def mauth_convert_source_question_tool_definition(
                     "type": "array",
                     "description": (
                         "Structured source parts. Put visible part tasks here; use subparts for nested (i)/(ii) items; "
-                        "do not create blank marked parts."
+                        "do not create blank marked parts. If parts carry marks, top-level marks must be 0."
                     ),
                     "items": source_conversion_part_schema(diagram_types),
                 },
@@ -3811,6 +3818,67 @@ def mauth_arguments_from_tool_arguments(arguments: dict[str, Any], mauth_tool_na
     return repair_latex_control_characters(fallback_arguments) if fallback_arguments else {}
 
 
+def _has_positive_mark(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return value > 0
+    if isinstance(value, str):
+        with suppress(ValueError):
+            return float(value) > 0
+    return False
+
+
+def _parts_carry_marks(parts: Any) -> bool:
+    if not isinstance(parts, list):
+        return False
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        if _has_positive_mark(part.get("marks")):
+            return True
+        if _parts_carry_marks(part.get("subparts")):
+            return True
+    return False
+
+
+def _normalized_graph3d_payload(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_normalized_graph3d_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    normalized = {key: _normalized_graph3d_payload(item) for key, item in value.items()}
+    if normalized.get("type") != "graph3d":
+        return normalized
+
+    metadata = normalized.get("metadata")
+    if not isinstance(metadata, dict):
+        return normalized
+
+    view3d = metadata.get("view3d")
+    if isinstance(view3d, dict):
+        normalized["metadata"] = {"view3d": {key: view3d[key] for key in GRAPH3D_VIEW_KEYS if key in view3d}}
+    else:
+        normalized.pop("metadata", None)
+    return normalized
+
+
+def normalized_mauth_arguments(arguments: dict[str, Any], mauth_tool_name: str | None) -> dict[str, Any]:
+    if mauth_tool_name not in QUESTION_AUTHORING_TOOL_NAMES:
+        return arguments
+    normalized = _normalized_graph3d_payload(arguments)
+    if not isinstance(normalized, dict):
+        return arguments
+    if not _parts_carry_marks(normalized.get("parts")):
+        return normalized
+    if "marks" in normalized:
+        normalized["marks"] = 0
+    if "questionMarks" in normalized:
+        normalized["questionMarks"] = 0
+    return normalized
+
+
 def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     for item in response.get("output", []):
@@ -3822,6 +3890,10 @@ def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
         mauth_tool_name = direct_mauth_tool_name or (
             arguments.get("name") if isinstance(arguments.get("name"), str) else None
         )
+        mauth_arguments = (
+            arguments if direct_mauth_tool_name else mauth_arguments_from_tool_arguments(arguments, mauth_tool_name)
+        )
+        mauth_arguments = normalized_mauth_arguments(mauth_arguments, mauth_tool_name)
         call_id = item.get("call_id") if isinstance(item.get("call_id"), str) else None
         if call_id is None:
             call_id = item.get("id") if isinstance(item.get("id"), str) else ""
@@ -3832,9 +3904,7 @@ def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
                 "name": provider_tool_name,
                 "arguments": arguments,
                 "mauthToolName": mauth_tool_name,
-                "mauthArguments": arguments
-                if direct_mauth_tool_name
-                else mauth_arguments_from_tool_arguments(arguments, mauth_tool_name),
+                "mauthArguments": mauth_arguments,
             }
         )
     return calls
