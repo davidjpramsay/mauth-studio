@@ -111,6 +111,7 @@ Follow-ups for Codex-level in-app assistant parity:
 - Add visible provider settings/status beyond backend `.env`, while keeping API keys out of the frontend.
 - Add streaming progress for provider responses and long tool chains without bypassing the visible tool/action log.
 - Extend the current Assistant attachment intake with a production upload/extraction pipeline: explicit teacher consent, persistent asset storage, extraction caching for large source files, and metadata for curriculum/source snippets. The current chat path already accepts screenshots/images, PDFs, Word `.docx`, and text-like files for provider calls.
+- Investigate the Mathsnip/Mathpix API path for improving source-import accuracy while reducing model-token and provider costs. Treat OCR as `PDF/image -> layout blocks -> per-block text/math/table OCR -> diagram primitive extraction/rebuild -> structured editable Mauth question`, not as generic image-to-LaTeX or "send screenshot to GPT and hope". Compare accuracy, cost, latency, privacy/consent requirements, coordinate/layout preservation, table extraction, diagram reconstruction, and how cleanly the output maps into Mauth blocks, native diagram renderers, `mauth.question.upsert`, and a teacher review/correction layer. The target is 80-90% editable semantic reconstruction with preserved content, bounding boxes, reading order, block types, relationships, source provenance, and human verification.
 
 ## Solution Visibility Toggle
 
