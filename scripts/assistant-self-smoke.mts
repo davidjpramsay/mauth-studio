@@ -3,6 +3,8 @@ import process from "node:process";
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike } from "../apps/web/src/lib/mauthActions.ts";
+import { runMauthAssistantAdapterTool, type MauthAssistantAdapterHost } from "../apps/web/src/lib/mauthAssistantAdapter.ts";
+import { validateAssistantDiagramSemanticsBeforeCommit } from "../apps/web/src/lib/mauthAssistantPreflight.ts";
 import { inspectMauthDocument, runMauthAssistantTool, type MauthAssistantToolCall } from "../apps/web/src/lib/mauthAssistantTools.ts";
 
 interface TestFrontMatter {
@@ -15,10 +17,11 @@ interface TestFormattingConfig {
 }
 
 type TestDocument = MauthDocumentLike<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>;
+type SmokeToolResult = ReturnType<typeof runMauthAssistantTool> | Awaited<ReturnType<typeof runMauthAssistantAdapterTool>>;
 
 interface ScenarioContext {
   document: TestDocument;
-  results: ReturnType<typeof runMauthAssistantTool>[];
+  results: SmokeToolResult[];
 }
 
 interface SmokeScenario {
@@ -27,6 +30,7 @@ interface SmokeScenario {
   assistantPlan: string;
   start: () => TestDocument;
   calls: MauthAssistantToolCall[];
+  useAdapterPreflight?: boolean;
   expectToolFailure?: boolean;
   evaluate: (context: ScenarioContext) => string[];
 }
@@ -234,6 +238,27 @@ function failIf(condition: boolean, message: string) {
   return condition ? [message] : [];
 }
 
+function adapterHarness(initialDocument: TestDocument) {
+  let document = initialDocument;
+  const commits: TestDocument[] = [];
+  const host: MauthAssistantAdapterHost<MauthQuestionLike, TestFrontMatter, TestFormattingConfig> = {
+    getDocument: () => document,
+    commitDocument: (nextDocument) => {
+      document = nextDocument as TestDocument;
+      commits.push(document);
+    },
+    validateDocumentBeforeCommit: (nextDocument, context, changedIds) =>
+      validateAssistantDiagramSemanticsBeforeCommit(nextDocument, context, changedIds),
+  };
+  return {
+    host,
+    commits,
+    get document() {
+      return document;
+    },
+  };
+}
+
 const scenarios: SmokeScenario[] = [
   {
     id: "next-missing-question-is-appended",
@@ -324,6 +349,88 @@ const scenarios: SmokeScenario[] = [
         ...failIf(
           !warnings.some((warning) => warning.code === "graph2d-straight-line-mismatch"),
           "preview inspection should flag nonlinear graph2d functions for a straight-line prompt",
+        ),
+      ];
+    },
+  },
+  {
+    id: "source-graph2d-consistency-blocks-bad-diagram",
+    prompt: "The assistant converts a source modelling question but makes the graph plausible instead of source-faithful.",
+    assistantPlan:
+      "Use mauth.question.upsert for the source question. Commit preflight should reject a graph2d diagram whose equations, domains, coordinate points, or axis-label settings do not match the explicit source text, returning repairable graph2d-source-* issues.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Original question."), spaceBlock("q1-space", 6)])]),
+    useAdapterPreflight: true,
+    expectToolFailure: true,
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 1,
+          marks: 0,
+          questionText: [
+            "A skier leaves the ramp at point $E(100,120)$.",
+            "The sloped ground is $y=170-0.5x$ for $100\\le x\\le340$.",
+            "The Cartesian equation for the flight path is $y=120-1000\\left(\\ln\\left(\\frac{740-x}{640}\\right)\\right)^2$ for $100\\le x\\le255.916$.",
+            "The landing point is $(255.916,42.042)$ on the coordinate graph.",
+          ].join(" "),
+          diagram: {
+            graphConfig: {
+              type: "graph2d",
+              xMin: 0,
+              xMax: 150,
+              yMin: 0,
+              yMax: 210,
+              showAxes: true,
+              showGrid: true,
+              showAxisLabels: false,
+              functions: [
+                { kind: "expression", expression: "170 - x", domainMin: 0, domainMax: 100 },
+                { kind: "expression", expression: "120 - 1000*(log((740 - x)/640))^2", domainMin: 100, domainMax: 340 },
+              ],
+              features: [{ kind: "point", x: 0, y: 180, label: "$B$" }],
+            },
+          },
+          parts: [{ text: "Calculate the time taken for the skier to land.", marks: 3, studentSpaceLines: 6 }],
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => {
+      const result = results[0] as
+        | {
+            ok?: boolean;
+            data?: { validationIssues?: Array<{ message?: string; expected?: string }> };
+            warnings?: Array<{ code?: string; message?: string }>;
+          }
+        | undefined;
+      const validationIssues = result?.data?.validationIssues ?? [];
+      const warningCodes = result?.warnings?.map((warning) => warning.code) ?? [];
+      const combinedRepairText = validationIssues.map((issue) => `${issue.message ?? ""} ${issue.expected ?? ""}`).join("\n");
+      return [
+        ...failIf(result?.ok !== false, "bad source graph2d payload should fail commit preflight"),
+        ...failIf(
+          document.questions[0].contentBlocks[0]?.kind !== "text",
+          "failed source conversion should leave original question untouched",
+        ),
+        ...failIf(diagrams(document).length !== 0, "failed source conversion should not commit the bad graph2d diagram"),
+        ...failIf(
+          !warningCodes.includes("assistant-diagram-inspection-invalid"),
+          "commit preflight should report assistant diagram inspection failure",
+        ),
+        ...failIf(
+          !validationIssues.some((issue) => issue.message?.includes("no visible graph2d function or relation matches")),
+          "validation issues should name the missing explicit graph2d equation",
+        ),
+        ...failIf(
+          !validationIssues.some((issue) => issue.message?.includes("does not preserve that domain")),
+          "validation issues should name the mismatched explicit graph2d domain",
+        ),
+        ...failIf(
+          !validationIssues.some((issue) => issue.message?.includes("no matching point feature")),
+          "validation issues should name the missing explicit graph2d point",
+        ),
+        ...failIf(
+          !combinedRepairText.includes("Preserve each explicitly stated graph equation"),
+          "repair expectation should tell the assistant to preserve stated equations/domains/points/axes",
         ),
       ];
     },
@@ -954,32 +1061,41 @@ const scenarios: SmokeScenario[] = [
   },
 ];
 
-function runScenario(scenario: SmokeScenario) {
+async function runScenario(scenario: SmokeScenario) {
   let document = scenario.start();
-  const results: ReturnType<typeof runMauthAssistantTool>[] = [];
+  const results: SmokeToolResult[] = [];
 
-  for (const call of scenario.calls) {
-    const result = runMauthAssistantTool(document, call, {
-      validateDocument: (nextDocument) => {
-        const inspection = inspectMauthDocument(nextDocument);
-        return {
-          questions: inspection.counts.questions,
-          marksTotal: inspection.counts.marksTotal,
-          modules: inspection.counts.modules,
-        };
-      },
-      validateSolutions: (questions) => {
-        const solutionOnlyModules = questions
-          .flatMap((item) => allBlocks(documentFixture([item])))
-          .filter((block) => block.visibility === "solution").length;
-        return {
-          questions: questions.length,
-          solutionOnlyModules,
-        };
-      },
-    });
-    results.push(result);
-    if (result.ok && result.document) document = result.document as TestDocument;
+  if (scenario.useAdapterPreflight) {
+    const harness = adapterHarness(document);
+    for (const call of scenario.calls) {
+      const result = await runMauthAssistantAdapterTool(harness.host, call);
+      results.push(result);
+      document = harness.document;
+    }
+  } else {
+    for (const call of scenario.calls) {
+      const result = runMauthAssistantTool(document, call, {
+        validateDocument: (nextDocument) => {
+          const inspection = inspectMauthDocument(nextDocument);
+          return {
+            questions: inspection.counts.questions,
+            marksTotal: inspection.counts.marksTotal,
+            modules: inspection.counts.modules,
+          };
+        },
+        validateSolutions: (questions) => {
+          const solutionOnlyModules = questions
+            .flatMap((item) => allBlocks(documentFixture([item])))
+            .filter((block) => block.visibility === "solution").length;
+          return {
+            questions: questions.length,
+            solutionOnlyModules,
+          };
+        },
+      });
+      results.push(result);
+      if (result.ok && result.document) document = result.document as TestDocument;
+    }
   }
 
   const unexpectedToolFailures = scenario.expectToolFailure
@@ -1001,7 +1117,8 @@ function runScenario(scenario: SmokeScenario) {
   };
 }
 
-const reports = scenarios.map(runScenario);
+const reports = [];
+for (const scenario of scenarios) reports.push(await runScenario(scenario));
 const failedReports = reports.filter((report) => report.failures.length);
 
 for (const report of reports) {
