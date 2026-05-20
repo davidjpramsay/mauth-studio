@@ -7179,6 +7179,23 @@ def local_real_specialist_square_pyramid_missing_angle_segment_call() -> dict[st
     return call
 
 
+def local_real_specialist_square_pyramid_missing_midpoint_angle_ray_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph3d["data"]["segments"] = [
+        segment
+        for segment in graph3d["data"]["segments"]
+        if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"f", "m"}
+    ]
+    if not any(
+        {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} == {"e", "f"}
+        for segment in graph3d["data"]["segments"]
+    ):
+        graph3d["data"]["segments"].append({"from": "F", "to": "E", "label": "$\\overrightarrow{FE}$"})
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_bad_top_view_geometry_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
     top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
@@ -8290,6 +8307,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_square_pyramid_missing_angle_segment_call,
         "expectedIssues": [
             "segment DM",
+        ],
+    },
+    "real-specialist-square-pyramid-missing-midpoint-angle-ray": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_missing_midpoint_angle_ray_call,
+        "expectedIssues": [
+            "segment FM",
         ],
     },
     "real-specialist-square-pyramid-bad-top-view-geometry": {

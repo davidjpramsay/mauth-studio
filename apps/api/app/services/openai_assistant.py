@@ -1760,6 +1760,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "and data.solids:[{kind:'cone'|'cylinder'|'sphere'|'circle'|'sphereCap',...}] for curved solids. "
                     "Preserve source line/ray/vector notation in text and segment labels; do not rewrite a source line "
                     "BT/\\overleftrightarrow{BT} as \\overrightarrow{BT}. "
+                    "When part text names an angle at a midpoint, include the actual two angle rays as segments; "
+                    "for \\angle DMF with M on EF, include DM and MF, not only the whole FE edge. "
                     "Use sphereCap with center, radius, height/depth, and axis/normal for spherical caps rather "
                     "than drawing a full sphere; include a segment or dimension label '$h$' when the source labels cap depth h. "
                     "Use show:false to hide graph3d helper points/segments/solids; do not use visible:false. "
@@ -3419,7 +3421,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph3d" in allowed:
         lines.append(
-            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\\overleftrightarrow{BT} as \\overrightarrow{BT}. For a pyramid, include the base face and each triangular side face. For an angle such as \\angle DMF, include both DM and MF segments. For spherical caps whose source labels depth h, include a segment or data.dimensions entry labelled $h$. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
+            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\\overleftrightarrow{BT} as \\overrightarrow{BT}. For a pyramid, include the base face and each triangular side face. For an angle such as \\angle DMF, include both actual angle rays DM and MF; if M is a midpoint on EF, the full FE edge does not replace the needed MF segment. For spherical caps whose source labels depth h, include a segment or data.dimensions entry labelled $h$. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
         )
     if "statsChart" in allowed:
         lines.append(
