@@ -1400,7 +1400,9 @@ def focused_tool_hint(
                 "line_segment with x1/y1/x2/y2, and fillOpacity for shading. Use region_between_curves, not "
                 "region_between. Preserve the source "
                 "or marking-key reference for argument bounds: a locus may combine |z-i| with Arg(z), so do not "
-                "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument."
+                "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument. Draw stated "
+                "argument-boundary rays from the origin with line_segment features or equivalent boundary functions, "
+                "and keep the shifted-circle centre/radius separate from those rays."
             )
         if has_source_attachment and any(
             term in text
@@ -1759,6 +1761,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus xMin/xMax; use fillOpacity, "
                     "not region_between, polygon/free_label, functionIndex1/functionIndex2, domainMin/domainMax, "
                     "points/coords, expressionTop/expressionBottom/opacity/fillColor/strokeColor fields. "
+                    "For Argand loci with argument bounds, preserve the Arg(z) reference and draw the boundary rays from the origin; "
+                    "do not fold those rays into a shifted circle such as |z-i|. "
                     "For graph3d source solids, use data.points:[{id,label,coords:[x,y,z]}], "
                     "data.segments:[{from,to,label?,strokeStyle?}] with strokeStyle:'dashed' or dashed:true "
                     "for hidden edges, data.faces:[{points:[...]}] for polygon faces on prisms/pyramids "
@@ -1989,7 +1993,8 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
             "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField belongs under data. "
             "For locus/region shading, define boundary functions first and use supported indexed region features; "
             "use region_between_curves or region_curve_axis, xMin/xMax, and fillOpacity, not region_between, "
-            "functionIndex1/functionIndex2, domainMin/domainMax, polygon/free_label, points/coords, fillColor, opacity, or strokeColor."
+            "functionIndex1/functionIndex2, domainMin/domainMax, polygon/free_label, points/coords, fillColor, opacity, or strokeColor. "
+            "For Argand loci, keep Arg(z) boundary rays from the origin separate from shifted circle boundaries."
         ),
         "statsChart": (
             "Use statsChart. Use density/normal/blankAxes for statistical curves and sketch axes; for histograms or "
@@ -3429,7 +3434,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; use labelX/labelY to separate coincident or projected labels such as E and O. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; use labelX/labelY to separate coincident or projected labels such as E and O. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries."
         )
     if "graph3d" in allowed:
         lines.append(
@@ -3565,7 +3570,7 @@ Tool-call contract:
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
-- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, domainMin/domainMax, or opacity.
+- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces with points arrays for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\overleftrightarrow{{BT}} as \overrightarrow{{BT}}. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder; include a segment or data.dimensions label '$h$' when the source labels cap depth h. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
 - Preserve LaTeX backslashes exactly in JSON strings and use $...$ / $$...$$, not \[...\] or \(...\). For currency, write \\$400 as text or $400$ as a numeric value; never write $\\$400$.

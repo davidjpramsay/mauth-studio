@@ -1839,6 +1839,105 @@ def compact_math_text(text: str) -> str:
     return compact
 
 
+def graph2d_line_segment_angle_from_origin(feature: dict[str, Any]) -> float | None:
+    if feature.get("kind") != "line_segment":
+        return None
+    x1 = finite_number(feature.get("x1"))
+    y1 = finite_number(feature.get("y1"))
+    x2 = finite_number(feature.get("x2"))
+    y2 = finite_number(feature.get("y2"))
+    if x1 is None or y1 is None or x2 is None or y2 is None:
+        return None
+    endpoint_tolerance = 0.15
+    if abs(x1) <= endpoint_tolerance and abs(y1) <= endpoint_tolerance:
+        dx = x2 - x1
+        dy = y2 - y1
+    elif abs(x2) <= endpoint_tolerance and abs(y2) <= endpoint_tolerance:
+        dx = x1 - x2
+        dy = y1 - y2
+    else:
+        return None
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+        return None
+    import math
+
+    return math.degrees(math.atan2(dy, dx)) % 360
+
+
+def argand_graph_has_shifted_circle(graph_serialized: str) -> bool:
+    if "|z-i|" in graph_serialized or "centredati" in graph_serialized or "centeredi" in graph_serialized:
+        return True
+    has_implicit_shifted_circle = "x^2" in graph_serialized and "y-1" in graph_serialized and "=4" in graph_serialized
+    has_branch_shifted_circle = "sqrt(4-x^2)" in graph_serialized and (
+        "+1" in graph_serialized or "1+" in graph_serialized
+    )
+    return has_implicit_shifted_circle or has_branch_shifted_circle
+
+
+def argand_graph_has_origin_circle(graph_serialized: str) -> bool:
+    return ("x^2+y^2=4" in graph_serialized or "y^2+x^2=4" in graph_serialized) and "y-1" not in graph_serialized
+
+
+def argand_function_marks_argument_boundary(function_text: str, target_angle: int) -> bool:
+    if target_angle == 30:
+        return any(
+            term in function_text
+            for term in (
+                "pi/6",
+                "tan(pi/6)",
+                "1/sqrt(3)",
+                "sqrt(3)/3",
+                "0.577",
+                "0.58",
+            )
+        )
+    if target_angle == 150:
+        return any(
+            term in function_text
+            for term in (
+                "5pi/6",
+                "tan(5pi/6)",
+                "-1/sqrt(3)",
+                "-sqrt(3)/3",
+                "-0.577",
+                "-0.58",
+            )
+        )
+    return False
+
+
+def argand_graph_has_argument_boundary_rays(configs: list[dict[str, Any]]) -> bool:
+    angles: list[float] = []
+    function_text_parts: list[str] = []
+    for config in configs:
+        if config.get("type") != "graph2d":
+            continue
+        functions = config.get("functions")
+        if isinstance(functions, list):
+            function_text_parts.extend(
+                compact_math_text(json.dumps(function, ensure_ascii=False))
+                for function in functions
+                if isinstance(function, dict)
+            )
+        features = config.get("features")
+        if not isinstance(features, list):
+            continue
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            angle = graph2d_line_segment_angle_from_origin(feature)
+            if angle is not None:
+                angles.append(angle)
+    function_text = "\n".join(function_text_parts)
+    has_lower_boundary = any(
+        angle_distance_degrees(angle, 30) <= 8 for angle in angles
+    ) or argand_function_marks_argument_boundary(function_text, 30)
+    has_upper_boundary = any(
+        angle_distance_degrees(angle, 150) <= 8 for angle in angles
+    ) or argand_function_marks_argument_boundary(function_text, 150)
+    return has_lower_boundary and has_upper_boundary
+
+
 def has_compact_vector_label(serialized: str, label: str) -> bool:
     serialized = serialized.replace("\\\\", "\\")
     escaped = re.escape(label)
@@ -3219,14 +3318,21 @@ def assert_real_specialist_argand_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"argand plane and locus diagrams should use graph2d, got {sorted(graph_types)!r}")
     if any(graph_type in graph_types for graph_type in ("statsChart", "setDiagram", "network")):
         issues.append("argand/locus source should not use statsChart, setDiagram, or network")
-    graph_serialized_raw = json.dumps(collect_diagram_graph_configs(args), ensure_ascii=False).lower()
+    graph_configs = collect_diagram_graph_configs(args)
+    graph_serialized_raw = json.dumps(graph_configs, ensure_ascii=False).lower()
     graph_serialized = compact_math_text(graph_serialized_raw)
     for term in ("re", "im", "z1", "z2"):
         if term not in graph_serialized and term not in serialized:
             issues.append(f"argand diagram should preserve {term!r} labels")
     if not any(term in graph_serialized for term in ("circle", "x^2", "y-1", "region", "shade", "locus")):
         issues.append("argand locus graph should encode the circular shaded region semantics")
-    for config in collect_diagram_graph_configs(args):
+    if argand_graph_has_origin_circle(graph_serialized) and not argand_graph_has_shifted_circle(graph_serialized):
+        issues.append("argand locus graph should not draw the circle centred at the origin")
+    if not argand_graph_has_shifted_circle(graph_serialized):
+        issues.append("argand locus graph should preserve shifted circle centre i and radius 2")
+    if not argand_graph_has_argument_boundary_rays(graph_configs):
+        issues.append("argand locus graph should include Arg(z) boundary rays at pi/6 and 5pi/6")
+    for config in graph_configs:
         if config.get("type") != "graph2d":
             continue
         features = config.get("features")
@@ -6720,6 +6826,30 @@ def local_real_specialist_argand_call() -> dict[str, Any]:
                 "fillOpacity": 0.2,
                 "label": "locus shaded circle",
             },
+            {
+                "kind": "line_segment",
+                "x1": 0,
+                "y1": 0,
+                "x2": 2,
+                "y2": 1.155,
+                "color": "#0f172a",
+                "strokeStyle": "dashed",
+                "label": "$\\arg(z)=\\frac{\\pi}{6}$",
+                "labelX": 2.15,
+                "labelY": 1.25,
+            },
+            {
+                "kind": "line_segment",
+                "x1": 0,
+                "y1": 0,
+                "x2": -2,
+                "y2": 1.155,
+                "color": "#0f172a",
+                "strokeStyle": "dashed",
+                "label": "$\\arg(z)=\\frac{5\\pi}{6}$",
+                "labelX": -2.55,
+                "labelY": 1.25,
+            },
         ],
     }
     return local_source_question_call(
@@ -6797,6 +6927,24 @@ def local_real_specialist_argand_bad_shifted_arg_call() -> dict[str, Any]:
         "$$\\frac{\\pi}{6}\\le \\arg(z-i)\\le \\frac{5\\pi}{6},$$ "
         "so shade the circular sector above $i$. [[marks:3]]"
     )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_argand_missing_argument_rays_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    features = call["mauthArguments"]["diagram"]["graphConfig"]["features"]
+    call["mauthArguments"]["diagram"]["graphConfig"]["features"] = [
+        feature for feature in features if feature.get("kind") != "line_segment"
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_argand_origin_circle_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    functions = call["mauthArguments"]["diagram"]["graphConfig"]["functions"]
+    functions[0]["expression"] = "x^2 + y^2 = 4"
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -8274,6 +8422,21 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_argand_bad_shifted_arg_call,
         "expectedIssues": [
             "official Arg(z) bounds",
+        ],
+    },
+    "real-specialist-argand-missing-argument-rays": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_missing_argument_rays_call,
+        "expectedIssues": [
+            "Arg(z) boundary rays",
+        ],
+    },
+    "real-specialist-argand-origin-circle": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_origin_circle_call,
+        "expectedIssues": [
+            "shifted circle centre i",
+            "circle centred at the origin",
         ],
     },
     "real-specialist-spherical-cap": {
