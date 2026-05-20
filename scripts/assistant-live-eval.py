@@ -5498,6 +5498,108 @@ def real_implicit_repair_failure_output(call: dict[str, Any], first_issues: list
     )
 
 
+def real_source_graph2d_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues = graph2d_validation_issues_from_call(call)
+    for issue in first_issues:
+        if "should use graph2d" in issue or "should not use" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.type",
+                    "message": issue,
+                    "expected": "graph2d",
+                }
+            )
+        elif "xAxisLabel" in issue or "yAxisLabel" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig",
+                    "message": issue,
+                    "expected": "source-faithful graph2d axis labels",
+                }
+            )
+        elif "xMin" in issue or "xMax" in issue or "yMin" in issue or "yMax" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig",
+                    "message": issue,
+                    "expected": "source-faithful graph2d bounds",
+                }
+            )
+        elif "graph2d" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig",
+                    "message": issue,
+                    "expected": "source-faithful native graph2d payload",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig",
+                "message": issue,
+                "expected": "source-faithful native graph2d payload",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth graph2d source-fidelity validation failed.",
+    )
+
+
+def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues: list[dict[str, Any]] = []
+    for issue in first_issues:
+        if "should use statsChart" in issue or "should not be converted as a generic graph2d" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.type",
+                    "message": issue,
+                    "expected": "statsChart",
+                }
+            )
+        elif "chartType" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data.chartType",
+                    "message": issue,
+                    "expected": "source-appropriate statsChart chartType",
+                }
+            )
+        elif "histogram/count chart" in issue or "bar heights" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data.xValues/frequencies",
+                    "message": issue,
+                    "expected": "source exact bin centres/categories and visible counts",
+                }
+            )
+        elif "statsChart" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data",
+                    "message": issue,
+                    "expected": "source-faithful statsChart fields and data",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig.data",
+                "message": issue,
+                "expected": "source-faithful statsChart fields and data",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth statsChart source-fidelity validation failed.",
+    )
+
+
 def real_prism_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues = graph3d_validation_issues_from_call(call)
     if not validation_issues:
@@ -5645,6 +5747,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_stats_screenshot_with_key,
         "assert": assert_real_specialist_stats_call,
+        "repairOnFailure": real_source_stats_chart_repair_failure_output,
     },
     "real-specialist-confidence-intervals": {
         "prompt": (
@@ -5663,6 +5766,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_methods_earthquake_screenshot_with_key,
         "assert": assert_real_methods_earthquake_call,
+        "repairOnFailure": real_source_graph2d_repair_failure_output,
     },
     "real-methods-ev-histogram": {
         "prompt": (
@@ -5672,6 +5776,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_methods_ev_histogram_screenshot_with_key,
         "assert": assert_real_methods_ev_histogram_call,
+        "repairOnFailure": real_source_stats_chart_repair_failure_output,
     },
     "real-methods-dice-game": {
         "prompt": (
@@ -5681,6 +5786,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_methods_dice_game_screenshot_with_key,
         "assert": assert_real_methods_dice_game_call,
+        "repairOnFailure": real_source_stats_chart_repair_failure_output,
     },
     "real-specialist-slope-field": {
         "prompt": (
