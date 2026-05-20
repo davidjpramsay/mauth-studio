@@ -2809,6 +2809,19 @@ def label_mentions_symbol(label: str, symbol: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(symbol.lower())}(?![a-z0-9])", normalized) is not None
 
 
+def uses_directed_segment_notation(text: str, segment: str) -> bool:
+    normalized = text.lower().replace(" ", "")
+    segment_lower = segment.lower()
+    return any(
+        pattern in normalized
+        for pattern in (
+            f"\\overrightarrow{{{segment_lower}}}",
+            f"\\vec{{{segment_lower}}}",
+            f"\\vec{segment_lower}",
+        )
+    )
+
+
 def graph3d_close_coords(
     actual: tuple[float, float, float] | None,
     expected: tuple[float, float, float],
@@ -3706,6 +3719,11 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     for pair in segment_pairs:
         if any(point in {"xaxis", "yaxis", "zaxis"} for point in pair):
             issues.append("3d prism graph3d data should not include axis helper segments")
+    for label in graph3d_label_texts(graph3d_configs):
+        if uses_directed_segment_notation(label, "BT"):
+            issues.append("3d prism graph3d label for line BT should not use directed vector/ray notation")
+        if uses_directed_segment_notation(label, "AM"):
+            issues.append("3d prism graph3d label for line AM should not use directed vector/ray notation")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 3:
@@ -3727,6 +3745,13 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
         for term in expected_terms[index]:
             if term not in part_text:
                 issues.append(f"parts[{index}].text should preserve {term!r}")
+        if index == 0 and uses_directed_segment_notation(part_text, "BT"):
+            issues.append("3d prism part (a) should preserve main diagonal line BT notation")
+        if index == 2:
+            if uses_directed_segment_notation(part_text, "AM"):
+                issues.append("3d prism part (c) should preserve line AM notation")
+            if uses_directed_segment_notation(part_text, "BT"):
+                issues.append("3d prism part (c) should preserve line BT notation")
         if not isinstance(part.get("studentSpaceLines"), int) or part["studentSpaceLines"] < 3:
             issues.append(f"parts[{index}].studentSpaceLines should be at least 3")
 
@@ -7104,6 +7129,22 @@ def local_real_specialist_prism_bad_latex_artifact_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_prism_bad_line_notation_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[0]["text"] = "Determine the vector equation for the prism's main diagonal $\\overrightarrow{BT}$."
+    parts[2]["text"] = (
+        "Prove, using a vector method, that line $\\overrightarrow{AM}$ does not intersect $\\overrightarrow{BT}$."
+    )
+    for segment in call["mauthArguments"]["diagram"]["graphConfig"]["data"]["segments"]:
+        if segment.get("from") == "B" and segment.get("to") == "T":
+            segment["label"] = "$\\overrightarrow{BT}$"
+        if segment.get("from") == "A" and segment.get("to") == "M":
+            segment["label"] = "$\\overrightarrow{AM}$"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_fraction_sphere_solution_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_prism_call()))
     part_b = call["mauthArguments"]["parts"][1]
@@ -7922,6 +7963,17 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_prism_bad_latex_artifact_call,
         "expectedIssues": [
             "contains malformed escaped dollar inside maths",
+        ],
+    },
+    "real-specialist-prism-bad-line-notation": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_bad_line_notation_call,
+        "expectedIssues": [
+            "label for line BT should not use directed vector/ray notation",
+            "label for line AM should not use directed vector/ray notation",
+            "part (a) should preserve main diagonal line BT notation",
+            "part (c) should preserve line AM notation",
+            "part (c) should preserve line BT notation",
         ],
     },
     "real-specialist-square-pyramid": {
