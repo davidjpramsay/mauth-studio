@@ -3646,6 +3646,12 @@ def graph3d_common_schema_issues(configs: list[dict[str, Any]], label: str) -> l
         if isinstance(data, dict):
             if "vertices" in data:
                 issues.append(f"{label} graph3d point list should use data.points, not data.vertices")
+            if "edges" in data:
+                issues.append(f"{label} graph3d segments should use data.segments, not data.edges")
+            if "dimensionLines" in data:
+                issues.append(f"{label} graph3d dimension lines should use data.dimensions, not data.dimensionLines")
+            if "surfaces" in data:
+                issues.append(f"{label} graph3d curved solids should use data.solids, not data.surfaces")
             points = data.get("points") if isinstance(data.get("points"), list) else data.get("vertices")
             for point in points if isinstance(points, list) else []:
                 if not isinstance(point, dict):
@@ -5682,6 +5688,20 @@ def graph3d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
         data = config.get("data")
         if not isinstance(data, dict):
             continue
+        for key, expected in (
+            ("vertices", "data.points"),
+            ("edges", "data.segments"),
+            ("dimensionLines", "data.dimensions"),
+            ("surfaces", "data.solids"),
+        ):
+            if key in data:
+                issues.append(
+                    {
+                        "path": f"{config_path}.data.{key}",
+                        "message": f"graph3d provider aliases are normalized at the assistant boundary; emit {expected} directly.",
+                        "expected": expected,
+                    }
+                )
         for key in ("points", "vertices", "segments", "edges", "dimensions", "dimensionLines", "faces", "solids"):
             values = data.get(key)
             if not isinstance(values, list):
@@ -8707,6 +8727,21 @@ def local_graph3d_general_solids_face_vertices_alias_call() -> dict[str, Any]:
     return call
 
 
+def local_graph3d_general_solids_raw_aliases_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_graph3d_general_solids_call()))
+    for diagram in call["mauthArguments"]["diagrams"]:
+        graph_config = diagram["graphConfig"]
+        data = graph_config["data"]
+        if isinstance(data.get("segments"), list):
+            data["edges"] = data.pop("segments")
+        if isinstance(data.get("dimensions"), list):
+            data["dimensionLines"] = data.pop("dimensions")
+        if isinstance(data.get("solids"), list):
+            data["surfaces"] = data.pop("solids")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_implicit_call() -> dict[str, Any]:
     graph_config = {
         "type": "graph2d",
@@ -9522,6 +9557,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_graph3d_general_solids_face_vertices_alias_call,
         "expectedIssues": [
             "faces should use points, not vertices",
+        ],
+    },
+    "graph3d-general-solids-raw-aliases": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_raw_aliases_call,
+        "expectedIssues": [
+            "segments should use data.segments, not data.edges",
+            "dimension lines should use data.dimensions, not data.dimensionLines",
+            "curved solids should use data.solids, not data.surfaces",
         ],
     },
     "real-specialist-implicit": {

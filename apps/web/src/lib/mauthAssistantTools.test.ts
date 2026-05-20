@@ -3681,7 +3681,7 @@ test("accepts graph3d faces and solid primitives", () => {
   assert.equal(Array.isArray(data?.dimensions), true);
 });
 
-test("normalizes graph3d vertices aliases to canonical points", () => {
+test("normalizes graph3d aliases to canonical fields", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",
     arguments: {
@@ -3701,11 +3701,13 @@ test("normalizes graph3d vertices aliases to canonical points", () => {
                     { id: "A", coords: [2, 0, 0] },
                     { id: "B", coords: [0, 2, 0] },
                   ],
-                  segments: [
+                  edges: [
                     { from: "O", to: "A" },
                     { from: "O", to: "B" },
                   ],
                   faces: [{ vertices: ["O", "A", "B"], fillColor: "#dbeafe", fillOpacity: 0.18 }],
+                  dimensionLines: [{ from: "O", to: "A", label: "$r$" }],
+                  surfaces: [{ kind: "cone", baseCenter: "O", apex: "B", radius: 2 }],
                 },
                 metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
               },
@@ -3720,14 +3722,26 @@ test("normalizes graph3d vertices aliases to canonical points", () => {
   const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "solid-3d-alias");
   const data = (diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined) as Record<string, unknown> | undefined;
   const faces = data?.faces as Array<Record<string, unknown>> | undefined;
+  const segments = data?.segments as Array<Record<string, unknown>> | undefined;
+  const dimensions = data?.dimensions as Array<Record<string, unknown>> | undefined;
+  const solids = data?.solids as Array<Record<string, unknown>> | undefined;
   assert.deepEqual(data?.points, [
     { id: "O", coords: [0, 0, 0] },
     { id: "A", coords: [2, 0, 0] },
     { id: "B", coords: [0, 2, 0] },
   ]);
   assert.equal(Object.prototype.hasOwnProperty.call(data ?? {}, "vertices"), false);
+  assert.deepEqual(segments, [
+    { from: "O", to: "A" },
+    { from: "O", to: "B" },
+  ]);
+  assert.equal(Object.prototype.hasOwnProperty.call(data ?? {}, "edges"), false);
   assert.deepEqual(faces?.[0]?.points, ["O", "A", "B"]);
   assert.equal(Object.prototype.hasOwnProperty.call(faces?.[0] ?? {}, "vertices"), false);
+  assert.deepEqual(dimensions, [{ from: "O", to: "A", label: "$r$" }]);
+  assert.equal(Object.prototype.hasOwnProperty.call(data ?? {}, "dimensionLines"), false);
+  assert.deepEqual(solids, [{ kind: "cone", baseCenter: "O", apex: "B", radius: 2 }]);
+  assert.equal(Object.prototype.hasOwnProperty.call(data ?? {}, "surfaces"), false);
 });
 
 test("rejects unsupported graph3d camera metadata shape", () => {

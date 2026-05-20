@@ -293,7 +293,7 @@ def test_source_conversion_tool_calls_prune_unsupported_graph3d_metadata():
     }
 
 
-def test_source_conversion_tool_calls_normalize_graph3d_vertices_aliases():
+def test_source_conversion_tool_calls_normalize_graph3d_aliases():
     response = {
         "output": [
             {
@@ -315,8 +315,10 @@ def test_source_conversion_tool_calls_normalize_graph3d_vertices_aliases():
                                         {"id": "A", "coords": [2, 0, 0]},
                                         {"id": "B", "coords": [0, 2, 0]},
                                     ],
-                                    "segments": [{"from": "O", "to": "A"}, {"from": "O", "to": "B"}],
+                                    "edges": [{"from": "O", "to": "A"}, {"from": "O", "to": "B"}],
                                     "faces": [{"vertices": ["O", "A", "B"], "fillOpacity": 0.18}],
+                                    "dimensionLines": [{"from": "O", "to": "A", "label": "$r$"}],
+                                    "surfaces": [{"kind": "cone", "baseCenter": "O", "apex": "B", "radius": 2}],
                                 },
                                 "metadata": {"view3d": {"az": 1.2, "el": 0.35, "bank": 0}},
                             }
@@ -331,14 +333,23 @@ def test_source_conversion_tool_calls_normalize_graph3d_vertices_aliases():
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
 
     assert "vertices" in call["arguments"]["diagram"]["graphConfig"]["data"]
+    assert "edges" in call["arguments"]["diagram"]["graphConfig"]["data"]
+    assert "dimensionLines" in call["arguments"]["diagram"]["graphConfig"]["data"]
+    assert "surfaces" in call["arguments"]["diagram"]["graphConfig"]["data"]
     assert data["points"] == [
         {"id": "O", "coords": [0, 0, 0]},
         {"id": "A", "coords": [2, 0, 0]},
         {"id": "B", "coords": [0, 2, 0]},
     ]
     assert "vertices" not in data
+    assert data["segments"] == [{"from": "O", "to": "A"}, {"from": "O", "to": "B"}]
+    assert "edges" not in data
     assert data["faces"][0]["points"] == ["O", "A", "B"]
     assert "vertices" not in data["faces"][0]
+    assert data["dimensions"] == [{"from": "O", "to": "A", "label": "$r$"}]
+    assert "dimensionLines" not in data
+    assert data["solids"] == [{"kind": "cone", "baseCenter": "O", "apex": "B", "radius": 2}]
+    assert "surfaces" not in data
 
 
 def test_extracts_action_array_nested_tool_arguments_from_openai_response():

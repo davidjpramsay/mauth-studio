@@ -4363,6 +4363,15 @@ def _normalized_graph3d_payload(value: Any) -> Any:
         if not isinstance(graph3d_data.get("points"), list) and isinstance(data.get("vertices"), list):
             graph3d_data["points"] = data["vertices"]
         graph3d_data.pop("vertices", None)
+        if not isinstance(graph3d_data.get("segments"), list) and isinstance(data.get("edges"), list):
+            graph3d_data["segments"] = data["edges"]
+        graph3d_data.pop("edges", None)
+        if not isinstance(graph3d_data.get("dimensions"), list) and isinstance(data.get("dimensionLines"), list):
+            graph3d_data["dimensions"] = data["dimensionLines"]
+        graph3d_data.pop("dimensionLines", None)
+        if not isinstance(graph3d_data.get("solids"), list) and isinstance(data.get("surfaces"), list):
+            graph3d_data["solids"] = data["surfaces"]
+        graph3d_data.pop("surfaces", None)
         faces = data.get("faces")
         if isinstance(faces, list):
             graph3d_data["faces"] = [

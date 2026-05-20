@@ -2827,6 +2827,18 @@ function normalizedGraph3dData(data: Record<string, unknown>) {
     normalized.points = data.vertices;
   }
   delete normalized.vertices;
+  if (!Array.isArray(normalized.segments) && Array.isArray(data.edges)) {
+    normalized.segments = data.edges;
+  }
+  delete normalized.edges;
+  if (!Array.isArray(normalized.dimensions) && Array.isArray(data.dimensionLines)) {
+    normalized.dimensions = data.dimensionLines;
+  }
+  delete normalized.dimensionLines;
+  if (!Array.isArray(normalized.solids) && Array.isArray(data.surfaces)) {
+    normalized.solids = data.surfaces;
+  }
+  delete normalized.surfaces;
   if (Array.isArray(data.faces)) {
     normalized.faces = data.faces.map((face) => {
       if (!isRecord(face)) return face;
