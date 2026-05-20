@@ -15,7 +15,7 @@ export interface MauthActionValidationResult {
 }
 
 const ACTION_TYPE_SET = new Set<string>(MAUTH_DOCUMENT_ACTION_TYPES);
-const CONTENT_BLOCK_KINDS = new Set(["text", "choices", "table", "diagram", "space", "pageBreak"]);
+const CONTENT_BLOCK_KINDS = new Set(["text", "choices", "table", "diagram", "columns", "space", "pageBreak"]);
 const CONTENT_VISIBILITY = new Set(["always", "student", "solution"]);
 const ALIGNMENTS = new Set(["left", "center", "right"]);
 const DIAGRAM_TEXT_SIDES = new Set(["none", "left", "right"]);
@@ -184,6 +184,21 @@ function validateContentBlock(value: unknown, path: string, issues: MauthActionV
     enumField(value, "diagramAlign", path, ALIGNMENTS, issues, true);
     enumField(value, "diagramTextSide", path, DIAGRAM_TEXT_SIDES, issues, true);
     validateMauthDiagramConfig(value.graphConfig, `${path}.graphConfig`, issues);
+    return;
+  }
+
+  if (value.kind === "columns") {
+    if (value.columnCount !== undefined && value.columnCount !== 2 && value.columnCount !== 3 && value.columnCount !== 4) {
+      addIssue(issues, `${path}.columnCount`, "must be 2, 3, or 4", "2 | 3 | 4");
+    }
+    const columns = arrayField(value, "columns", path, issues);
+    columns?.forEach((column, columnIndex) => {
+      if (!Array.isArray(column)) {
+        addIssue(issues, `${path}.columns[${columnIndex}]`, "must be an array of content blocks", "ContentBlock[]");
+        return;
+      }
+      column.forEach((block, blockIndex) => validateContentBlock(block, `${path}.columns[${columnIndex}][${blockIndex}]`, issues));
+    });
     return;
   }
 

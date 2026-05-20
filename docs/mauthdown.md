@@ -2,7 +2,7 @@
 
 Mauthdown is the source format for editable maths tests. It is Markdown with a small set of explicit containers so humans, AI tools, and the app can all edit the same document without guessing the structure.
 
-The format is intentionally not a Word or Pages clone. It stores test meaning first: title-page data, document formatting config, questions, parts, subparts, marks, choice lists, tables, diagrams, spaces, and page breaks. The app then applies formatting rules when it renders the test.
+The format is intentionally not a Word or Pages clone. It stores test meaning first: title-page data, document formatting config, questions, parts, subparts, marks, choice lists, tables, diagrams, columns, spaces, and page breaks. The app then applies formatting rules when it renders the test.
 
 ## File Shape
 
@@ -184,6 +184,27 @@ Supported `align` values are `left`, `center`, and `right`.
 Supported `cellAlign` values are `left`, `center`, and `right`.
 
 Tables are currently plain grids: the first row is an ordinary row, not a special header row.
+
+### Columns
+
+```md
+:::columns count=2
+:::column
+:::diagram type="graph3d" align="center"
+...
+:::
+:::/column
+:::column
+:::diagram type="graph2d" align="center"
+...
+:::
+:::/column
+:::/columns
+```
+
+Use columns when the source deliberately places ordinary modules side by side, such as a 3D view beside a top view or two related diagrams on the same row. Supported counts are 2, 3, and 4. Columns may contain normal modules such as text, diagrams, tables, answer spaces, and solution modules.
+
+Do not fake columns with blank spaces, large tables, or prose descriptions. For high-level assistant source conversion, use `diagrams` plus `diagramLayout: "columns"` and `diagramColumns` matching the source.
 
 ### Space
 

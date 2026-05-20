@@ -2161,6 +2161,17 @@ def assistant_author_subpart_schema() -> dict[str, Any]:
                     "One native Mauth diagram block for this subpart, shaped as { graphConfig, diagramAlign? }."
                 ),
             },
+            "diagramLayout": {
+                "type": "string",
+                "enum": ["stacked", "columns"],
+                "description": "Use columns when multiple source diagrams for this subpart are intentionally side by side.",
+            },
+            "diagramColumns": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 4,
+                "description": "Number of side-by-side diagram columns when diagramLayout is columns.",
+            },
             "solutionDiagram": compact_assistant_diagram_block_schema(
                 "Optional completed solution-copy diagram for this subpart when answerSurface is diagram."
             ),
@@ -2313,6 +2324,20 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "One native Mauth diagram block shaped as { graphConfig, diagramAlign? }."
                     ),
                 },
+                "diagramLayout": {
+                    "type": "string",
+                    "enum": ["stacked", "columns"],
+                    "description": (
+                        "Use columns when the source places multiple top-level diagrams side by side. "
+                        "Use stacked when the source diagrams are one above another."
+                    ),
+                },
+                "diagramColumns": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 4,
+                    "description": "Number of side-by-side diagram columns when diagramLayout is columns.",
+                },
                 "solutionDiagram": compact_assistant_diagram_block_schema(
                     "Optional completed solution-copy diagram for answerSurface: diagram. Pair it with the student blank/partial "
                     "diagram so the solution copy shows the completed graph/labelled diagram in the same position and size."
@@ -2407,6 +2432,17 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                 "items": compact_assistant_diagram_block_schema(
                                     "One native Mauth diagram block for this part, shaped as { graphConfig, diagramAlign? }."
                                 ),
+                            },
+                            "diagramLayout": {
+                                "type": "string",
+                                "enum": ["stacked", "columns"],
+                                "description": "Use columns when multiple source diagrams for this part are intentionally side by side.",
+                            },
+                            "diagramColumns": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 4,
+                                "description": "Number of side-by-side diagram columns when diagramLayout is columns.",
                             },
                             "solutionDiagram": compact_assistant_diagram_block_schema(
                                 "Optional completed solution-copy diagram for this part when answerSurface is diagram."
@@ -2525,6 +2561,12 @@ def source_conversion_part_schema(
             "Optional native diagram for this subpart.", diagram_types
         )
         subpart_properties["diagrams"] = {"type": "array", "items": subpart_diagram}
+        subpart_properties["diagramLayout"] = {
+            "type": "string",
+            "enum": ["stacked", "columns"],
+            "description": "Use columns for side-by-side source diagrams.",
+        }
+        subpart_properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
         subpart_properties["solutionDiagrams"] = {
             "type": "array",
             "items": source_conversion_compact_diagram_block_schema(
@@ -2577,6 +2619,12 @@ def source_conversion_part_schema(
             "Optional native diagram for this part.", diagram_types
         )
         part_properties["diagrams"] = {"type": "array", "items": diagram}
+        part_properties["diagramLayout"] = {
+            "type": "string",
+            "enum": ["stacked", "columns"],
+            "description": "Use columns for side-by-side source diagrams.",
+        }
+        part_properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
         part_properties["solutionDiagrams"] = {
             "type": "array",
             "items": source_conversion_compact_diagram_block_schema(
@@ -2670,6 +2718,12 @@ def mauth_convert_source_question_tool_definition(
             ),
             "items": source_conversion_compact_diagram_block_schema("One native source diagram.", diagram_types),
         }
+        properties["diagramLayout"] = {
+            "type": "string",
+            "enum": ["stacked", "columns"],
+            "description": "Use columns for side-by-side top-level source diagrams.",
+        }
+        properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
         properties["solutionDiagrams"] = {
             "type": "array",
             "items": source_conversion_compact_diagram_block_schema(
@@ -3348,6 +3402,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         "Native diagram rules:",
         f"- Choose renderer by source intent: {chooser}",
         "- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.",
+        "- If the source intentionally places multiple diagrams side by side, put them in diagrams and set diagramLayout:'columns' with diagramColumns 2, 3, or 4. Do not fake columns with blank spaces, prose, or manually aligned text.",
         "- If rendered feedback reports label collisions or 3D label quality warnings, repair label placement or camera/dimension helpers while preserving the source geometry.",
     ]
     if source_conversion_diagram_collection_only(diagram_types):
@@ -3402,6 +3457,7 @@ Source-conversion tool contract:
 - Use the focused direct tool named in the routing hint, normally mauth_convert_source_question. Do not inspect first when the compact summary already gives the target question or next append position.
 {diagram_contract}
 - Preserve source wording, marks, mathematical notation, line breaks that carry meaning, diagram/table placement, and official worked solutions when requested or supplied.
+- If the source places multiple diagrams side by side, put them in diagrams and set diagramLayout:"columns" with diagramColumns matching the source. Do not stack them vertically or fake columns with blank spaces.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels.
 - For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested. Do not duplicate those same ticks in solutionText.

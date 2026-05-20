@@ -254,6 +254,9 @@ function collectDocumentDiagrams(document: TestDocument) {
   const visitBlocks = (blocks: readonly ContentBlock[] | undefined) => {
     for (const block of blocks ?? []) {
       if (block.kind === "diagram" && block.graphConfig) diagrams.push({ block, graphConfig: block.graphConfig });
+      if (block.kind === "columns") {
+        for (const column of block.columns) visitBlocks(column);
+      }
     }
   };
   const visitSubparts = (subparts: readonly MauthSubpartLike[] | undefined) => {
@@ -274,11 +277,19 @@ function collectDocumentDiagrams(document: TestDocument) {
 
 function blocksFromQuestions(questions: readonly MauthQuestionLike[]) {
   const blocks: ContentBlock[] = [];
+  const pushBlocks = (items: readonly ContentBlock[] | undefined) => {
+    for (const block of items ?? []) {
+      blocks.push(block);
+      if (block.kind === "columns") {
+        for (const column of block.columns) pushBlocks(column);
+      }
+    }
+  };
   for (const questionItem of questions) {
-    blocks.push(...questionItem.contentBlocks);
+    pushBlocks(questionItem.contentBlocks);
     for (const part of questionItem.parts ?? []) {
-      blocks.push(...part.contentBlocks);
-      for (const subpart of part.subparts ?? []) blocks.push(...subpart.contentBlocks);
+      pushBlocks(part.contentBlocks);
+      for (const subpart of part.subparts ?? []) pushBlocks(subpart.contentBlocks);
     }
   }
   return blocks;

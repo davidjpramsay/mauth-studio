@@ -3808,6 +3808,21 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
         issues.append(f"square-pyramid 3D diagram should use graph3d, got {sorted(graph_types)!r}")
     if "graph2d" not in graph_types:
         issues.append(f"square-pyramid top-view diagram should use graph2d, got {sorted(graph_types)!r}")
+    if len(args.get("diagrams") or []) >= 2 and args.get("diagramLayout") not in {
+        "columns",
+        "sideBySide",
+        "side-by-side",
+        "side_by_side",
+    }:
+        issues.append("square-pyramid source should preserve side-by-side diagrams with diagramLayout columns")
+    if args.get("diagramLayout") in {"columns", "sideBySide", "side-by-side", "side_by_side"} and args.get(
+        "diagramColumns"
+    ) not in {
+        2,
+        "2",
+        None,
+    }:
+        issues.append("square-pyramid side-by-side diagram layout should use two columns")
     if any(graph_type in graph_types for graph_type in ("statsChart", "network", "setDiagram", "vector2d")):
         issues.append("square-pyramid source should not use statsChart, network, setDiagram, or vector2d")
 
@@ -7060,6 +7075,8 @@ def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
                 {"diagramAlign": "left", "graphConfig": pyramid_3d},
                 {"diagramAlign": "right", "graphConfig": top_view},
             ],
+            "diagramLayout": "columns",
+            "diagramColumns": 2,
             "parts": [
                 {
                     "label": "a",

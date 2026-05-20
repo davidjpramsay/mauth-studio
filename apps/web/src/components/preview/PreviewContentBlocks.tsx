@@ -10,6 +10,7 @@ import type {
   TableCellAlignment,
 } from "@mauth-studio/shared";
 
+import { normalizeColumnsBlock } from "@/lib/contentBlockNormalization";
 import { cn } from "@/lib/utils";
 
 type EditorContentBlock = ContentBlock;
@@ -127,6 +128,56 @@ function TablePreview({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function columnBlockAnchor(parentAnchor: string | undefined, columnIndex: number, block: EditorContentBlock) {
+  return parentAnchor ? `${parentAnchor}/c:${columnIndex + 1}/b:${block.id}` : undefined;
+}
+
+function ColumnsPreview({
+  block,
+  blockAnchor,
+  activePreviewAnchor,
+  measureOnly,
+  showSolutions,
+  onGraphConfigChange,
+  runtime,
+  renderers,
+}: {
+  block: Extract<EditorContentBlock, { kind: "columns" }>;
+  blockAnchor?: string;
+  activePreviewAnchor?: string;
+  measureOnly: boolean;
+  showSolutions: boolean;
+  onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
+  runtime: PreviewContentRuntime;
+  renderers: PreviewContentRenderers;
+}) {
+  const columnsBlock = normalizeColumnsBlock(block);
+  return (
+    <div
+      data-scroll-anchor={blockAnchor}
+      data-preview-module-anchor={blockAnchor ? "true" : undefined}
+      data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+      className="test-columns-block"
+      style={{ "--test-column-count": String(columnsBlock.columnCount) } as CSSProperties & Record<`--${string}`, string>}
+    >
+      {columnsBlock.columns.map((column, columnIndex) => (
+        <div key={`${block.id}-column-${columnIndex}`} className="test-column">
+          <PreviewContentBlocks
+            blocks={column}
+            measureOnly={measureOnly}
+            showSolutions={showSolutions}
+            activePreviewAnchor={activePreviewAnchor}
+            blockAnchorFor={(childBlock) => columnBlockAnchor(blockAnchor, columnIndex, childBlock)}
+            onGraphConfigChange={onGraphConfigChange}
+            runtime={runtime}
+            renderers={renderers}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -430,6 +481,21 @@ function DiagramBesideContentBlock({
           })}
         </SolutionMarkedSurface>
       </div>
+    );
+  }
+
+  if (block.kind === "columns") {
+    return (
+      <ColumnsPreview
+        block={block}
+        blockAnchor={blockAnchor}
+        activePreviewAnchor={activePreviewAnchor}
+        measureOnly={measureOnly}
+        showSolutions={showSolutions}
+        onGraphConfigChange={undefined}
+        runtime={runtime}
+        renderers={renderers}
+      />
     );
   }
 
@@ -836,6 +902,22 @@ export function PreviewContentBlocks({
             })}
           </SolutionMarkedSurface>
         </div>,
+      );
+      continue;
+    }
+    if (block.kind === "columns") {
+      renderedBlocks.push(
+        <ColumnsPreview
+          key={block.id}
+          block={block}
+          blockAnchor={blockAnchor}
+          activePreviewAnchor={activePreviewAnchor}
+          measureOnly={measureOnly}
+          showSolutions={showSolutions}
+          onGraphConfigChange={onGraphConfigChange}
+          runtime={runtime}
+          renderers={renderers}
+        />,
       );
       continue;
     }

@@ -1,6 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight, ImagePlus, ListOrdered, PlusCircle, SeparatorHorizontal, Table2, Trash2, Type } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Columns3,
+  ImagePlus,
+  ListOrdered,
+  PlusCircle,
+  SeparatorHorizontal,
+  Table2,
+  Trash2,
+  Type,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -118,6 +129,7 @@ export function ContentInsertionActions({
   onAddChoices,
   onAddTable,
   onAddDiagram,
+  onAddColumns,
   onAddSpace,
   extraActions = [],
 }: {
@@ -130,6 +142,7 @@ export function ContentInsertionActions({
   onAddChoices?: () => void;
   onAddTable?: () => void;
   onAddDiagram?: () => void;
+  onAddColumns?: () => void;
   onAddSpace?: () => void;
   extraActions?: InsertionAction[];
 }) {
@@ -173,6 +186,14 @@ export function ContentInsertionActions({
           tooltip: `${actionVerb} a diagram block here`,
           icon: <ImagePlus className="size-4" aria-hidden="true" />,
           onClick: onAddDiagram,
+        }
+      : null,
+    onAddColumns
+      ? {
+          label: "Columns",
+          tooltip: `${actionVerb} a 2-column content container`,
+          icon: <Columns3 className="size-4" aria-hidden="true" />,
+          onClick: onAddColumns,
         }
       : null,
     onAddSpace

@@ -661,11 +661,72 @@ function summarizeSuccessfulPreviewAction<Q extends MauthQuestionLike, F extends
   updatePreviewCounts(summary);
 }
 
+function contentBlocksWithoutBlock(
+  blocks: readonly ContentBlock[],
+  blockId: string,
+): { contentBlocks: ContentBlock[]; blockFound: boolean } {
+  let blockFound = false;
+  const contentBlocks: ContentBlock[] = [];
+  for (const block of blocks) {
+    if (block.id === blockId) {
+      blockFound = true;
+      continue;
+    }
+    if (block.kind !== "columns") {
+      contentBlocks.push(block);
+      continue;
+    }
+    let nestedBlockFound = false;
+    const columns = block.columns.map((column) => {
+      const updated = contentBlocksWithoutBlock(column, blockId);
+      if (updated.blockFound) nestedBlockFound = true;
+      return updated.contentBlocks;
+    });
+    if (nestedBlockFound) {
+      blockFound = true;
+      contentBlocks.push({ ...block, columns } as ContentBlock);
+    } else {
+      contentBlocks.push(block);
+    }
+  }
+  return { contentBlocks, blockFound };
+}
+
 function contentWithDeletedBlock(container: ScopedContentContainer, blockId: string) {
+  const result = contentBlocksWithoutBlock(container.contentBlocks, blockId);
   return {
-    contentBlocks: container.contentBlocks.filter((block) => block.id !== blockId),
-    ...(container.itemOrder ? { itemOrder: container.itemOrder.filter((item) => orderItemKey(item) !== `block:${blockId}`) } : {}),
+    patch: {
+      contentBlocks: result.contentBlocks,
+      ...(container.itemOrder ? { itemOrder: container.itemOrder.filter((item) => orderItemKey(item) !== `block:${blockId}`) } : {}),
+    },
+    blockFound: result.blockFound,
   };
+}
+
+function contentBlocksWithUpdatedBlock(
+  blocks: readonly ContentBlock[],
+  blockId: string,
+  patcher: (block: ContentBlock) => ContentBlock,
+): { contentBlocks: ContentBlock[]; blockFound: boolean } {
+  let blockFound = false;
+  const contentBlocks = blocks.map((block) => {
+    if (block.id === blockId) {
+      blockFound = true;
+      return patcher(block);
+    }
+    if (block.kind !== "columns") return block;
+
+    let nestedBlockFound = false;
+    const columns = block.columns.map((column) => {
+      const updated = contentBlocksWithUpdatedBlock(column, blockId, patcher);
+      if (updated.blockFound) nestedBlockFound = true;
+      return updated.contentBlocks;
+    });
+    if (!nestedBlockFound) return block;
+    blockFound = true;
+    return { ...block, columns } as ContentBlock;
+  });
+  return { contentBlocks, blockFound };
 }
 
 function contentWithReorderedBlock(
@@ -869,11 +930,11 @@ function updateBlockInScope<Q extends MauthQuestionLike>(
 ): BlockPatchResult<Q> {
   let blockFound = false;
   const result = patchScopedContainer(questions, scope, options, (container) => ({
-    contentBlocks: container.contentBlocks.map((block) => {
-      if (block.id !== blockId) return block;
-      blockFound = true;
-      return patcher(block);
-    }),
+    ...(() => {
+      const updated = contentBlocksWithUpdatedBlock(container.contentBlocks, blockId, patcher);
+      blockFound = updated.blockFound;
+      return { contentBlocks: updated.contentBlocks };
+    })(),
   }));
   return { ...result, blockFound };
 }
@@ -1291,8 +1352,9 @@ export function applyMauthAction<Q extends MauthQuestionLike>(
   if (action.type === "module.delete") {
     let blockFound = false;
     const result = patchScopedContainer(questions, action.scope, options, (container) => {
-      blockFound = container.contentBlocks.some((block) => block.id === action.blockId);
-      return contentWithDeletedBlock(container, action.blockId);
+      const updated = contentWithDeletedBlock(container, action.blockId);
+      blockFound = updated.blockFound;
+      return updated.patch;
     });
     if (!result.found) return fail(action, questions, "Module scope was not found.", action.blockId);
     if (!blockFound) return fail(action, questions, "Module was not found.", action.blockId);

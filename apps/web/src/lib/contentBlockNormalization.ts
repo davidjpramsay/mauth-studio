@@ -1,4 +1,11 @@
-import type { ChoiceListLayout, ChoiceNumberingStyle, ContentBlock, DiagramAlignment, TableCellAlignment } from "@mauth-studio/shared";
+import type {
+  ChoiceListLayout,
+  ChoiceNumberingStyle,
+  ColumnCount,
+  ContentBlock,
+  DiagramAlignment,
+  TableCellAlignment,
+} from "@mauth-studio/shared";
 
 type EditorContentBlock = ContentBlock;
 
@@ -14,6 +21,13 @@ export function normalizeChoiceNumberingStyle(value: unknown): ChoiceNumberingSt
 
 export function normalizeChoiceListLayout(value: unknown): ChoiceListLayout {
   return value === "two-column" || value === "inline" || value === "vertical" ? value : "vertical";
+}
+
+export function normalizeColumnCount(value: unknown): ColumnCount {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (numberValue === 3) return 3;
+  if (numberValue === 4) return 4;
+  return 2;
 }
 
 export function normalizeChoiceItems(value: unknown): string[] {
@@ -60,6 +74,18 @@ export function normalizeTableBlock(block: Extract<EditorContentBlock, { kind: "
 }
 
 export type NormalizedTableBlock = ReturnType<typeof normalizeTableBlock>;
+
+export function normalizeColumnsBlock(block: Extract<EditorContentBlock, { kind: "columns" }>) {
+  const columnCount = normalizeColumnCount(block.columnCount ?? block.columns?.length);
+  const rawColumns = Array.isArray(block.columns) ? block.columns : [];
+  const columns = Array.from({ length: columnCount }, (_, index) => {
+    const column = rawColumns[index];
+    return Array.isArray(column) ? column.filter((item): item is EditorContentBlock => Boolean(item && typeof item === "object")) : [];
+  });
+  return { ...block, columnCount, columns };
+}
+
+export type NormalizedColumnsBlock = ReturnType<typeof normalizeColumnsBlock>;
 
 export function plainTableRows(table: NormalizedTableBlock) {
   return table.showHeader ? [table.headers, ...table.rows] : table.rows;

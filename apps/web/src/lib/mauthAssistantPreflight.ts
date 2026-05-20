@@ -45,8 +45,17 @@ function changedSet(changedIds: readonly string[]) {
   return new Set(changedIds);
 }
 
+function columnBlocks(block: ContentBlock): ContentBlock[] {
+  if (block.kind !== "columns") return [];
+  return block.columns.flatMap((column) => (Array.isArray(column) ? column : []));
+}
+
+function flattenBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
+  return blocks.flatMap((block) => [block, ...flattenBlocks(columnBlocks(block))]);
+}
+
 function blockChanged(blocks: readonly ContentBlock[], ids: Set<string>) {
-  return blocks.some((block) => ids.has(block.id));
+  return flattenBlocks(blocks).some((block) => ids.has(block.id));
 }
 
 function shouldValidateContainer(containerId: string, blocks: readonly ContentBlock[], ids: Set<string>, inheritedChanged: boolean) {
@@ -65,12 +74,12 @@ function solutionMarkingIssuesForContainer({
   path: string;
 }) {
   const issues: MauthAssistantDocumentPreflightIssue[] = [];
-  const solutionBlocks = blocks.filter(isSolutionMarkedBlock);
+  const solutionBlocks = flattenBlocks(blocks).filter(isSolutionMarkedBlock);
   if (!solutionBlocks.length) return issues;
 
   let hiddenMarkTotal = 0;
   solutionBlocks.forEach((block, blockIndex) => {
-    const blockPath = `${path}.contentBlocks[${blocks.indexOf(block)}]`;
+    const blockPath = `${path}.contentBlocks`;
     hiddenMarkTotal += blockMarkTickTotal(block);
     if (block.kind !== "text") return;
 
@@ -165,7 +174,7 @@ function collectSolutionMarkingIssues<Q extends MauthQuestionLike>(questions: re
 }
 
 function diagramCountInBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.filter((block) => block.kind === "diagram").length;
+  return flattenBlocks(blocks).filter((block) => block.kind === "diagram").length;
 }
 
 function diagramCountInPart(part: MauthPartLike) {
@@ -218,7 +227,7 @@ function collectDiagramPreservationIssues<Q extends MauthQuestionLike>(
 }
 
 function visibleTextFromBlocks(blocks: readonly ContentBlock[]) {
-  return blocks
+  return flattenBlocks(blocks)
     .filter((block): block is Extract<ContentBlock, { kind: "text" }> => block.kind === "text" && blockVisibility(block) !== "solution")
     .map((block) => block.text);
 }
@@ -273,17 +282,24 @@ function collectDiagramInspectionIssues<Q extends MauthQuestionLike>(questions: 
   const validateAll = ids.size === 0;
   const issues: MauthAssistantDocumentPreflightIssue[] = [];
 
-  function collectBlocks(blocks: readonly ContentBlock[], pathPrefix: string, inheritedChanged: boolean, questionText: string) {
+  function collectBlocks(blocks: readonly ContentBlock[], blocksPath: string, inheritedChanged: boolean, questionText: string) {
     blocks.forEach((block, blockIndex) => {
       const blockChanged = inheritedChanged || ids.has(block.id);
-      if (block.kind !== "diagram" || !blockChanged) return;
-      const inspection = inspectMauthDiagram(block.graphConfig, questionText);
-      for (const warning of inspection.warnings.filter(isAssistantDiagramInspectionWarningBlocking)) {
-        issues.push({
-          path: `${pathPrefix}.contentBlocks[${blockIndex}].${warning.path ?? "graphConfig"}`,
-          message: warning.message,
-          expected: diagramInspectionExpected(warning.code),
-          targetId: block.id,
+      const blockPath = `${blocksPath}[${blockIndex}]`;
+      if (block.kind === "diagram" && blockChanged) {
+        const inspection = inspectMauthDiagram(block.graphConfig, questionText);
+        for (const warning of inspection.warnings.filter(isAssistantDiagramInspectionWarningBlocking)) {
+          issues.push({
+            path: `${blockPath}.${warning.path ?? "graphConfig"}`,
+            message: warning.message,
+            expected: diagramInspectionExpected(warning.code),
+            targetId: block.id,
+          });
+        }
+      }
+      if (block.kind === "columns") {
+        block.columns.forEach((column, columnIndex) => {
+          collectBlocks(column, `${blockPath}.columns[${columnIndex}]`, blockChanged, questionText);
         });
       }
     });
@@ -293,13 +309,13 @@ function collectDiagramInspectionIssues<Q extends MauthQuestionLike>(questions: 
     const questionChanged = validateAll || ids.has(question.id);
     const questionPath = `questions[${questionIndex}]`;
     const questionText = questionTextFragments(question).join("\n");
-    collectBlocks(question.contentBlocks, questionPath, questionChanged, questionText);
+    collectBlocks(question.contentBlocks, `${questionPath}.contentBlocks`, questionChanged, questionText);
 
     question.parts?.forEach((part, partIndex) => {
       const partChanged = questionChanged || ids.has(part.id);
       const partPath = `${questionPath}.parts[${partIndex}]`;
       const partText = [questionText, ...partTextFragments(part)].join("\n");
-      collectBlocks(part.contentBlocks, partPath, partChanged, partText);
+      collectBlocks(part.contentBlocks, `${partPath}.contentBlocks`, partChanged, partText);
 
       part.subparts?.forEach((subpart, subpartIndex) => {
         const subpartChanged = partChanged || ids.has(subpart.id);
@@ -310,7 +326,7 @@ function collectDiagramInspectionIssues<Q extends MauthQuestionLike>(questions: 
           typeof subpart.text === "string" ? subpart.text : "",
           ...visibleTextFromBlocks(subpart.contentBlocks),
         ].join("\n");
-        collectBlocks(subpart.contentBlocks, subpartPath, subpartChanged, subpartText);
+        collectBlocks(subpart.contentBlocks, `${subpartPath}.contentBlocks`, subpartChanged, subpartText);
       });
     });
   });

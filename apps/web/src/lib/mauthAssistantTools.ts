@@ -1,4 +1,4 @@
-import type { ContentBlock, ContentBlockVisibility, GraphConfig, TextContentBlock } from "@mauth-studio/shared";
+import type { ColumnCount, ContentBlock, ContentBlockVisibility, GraphConfig, TextContentBlock } from "@mauth-studio/shared";
 
 import {
   applyMauthDocumentActions,
@@ -111,6 +111,9 @@ export interface MauthBlockInspection {
   tableColumns?: number;
   diagramType?: string;
   diagramAlign?: string;
+  columnCount?: number;
+  columnModuleCounts?: number[];
+  columns?: MauthBlockInspection[][];
   lines?: number;
 }
 
@@ -159,6 +162,7 @@ export interface MauthDocumentInspection {
     choiceModules: number;
     tableModules: number;
     diagramModules: number;
+    columnsModules: number;
     spaceModules: number;
     pageBreakModules: number;
     studentOnlyModules: number;
@@ -706,6 +710,15 @@ function blockVisibility(block: ContentBlock): ContentBlockVisibility {
   return "always";
 }
 
+function columnBlocks(block: ContentBlock): ContentBlock[] {
+  if (block.kind !== "columns") return [];
+  return block.columns.flatMap((column) => (Array.isArray(column) ? column : []));
+}
+
+function flattenContentBlocks(blocks: readonly ContentBlock[] | undefined): ContentBlock[] {
+  return (blocks ?? []).flatMap((block) => [block, ...flattenContentBlocks(columnBlocks(block))]);
+}
+
 function blockMarkTicks(block: ContentBlock) {
   if (blockVisibility(block) !== "solution") return 0;
   return positiveInteger(block.markTicks, 0, 0, 20);
@@ -757,6 +770,18 @@ function inspectBlock(block: ContentBlock): MauthBlockInspection {
       diagramAlign: block.diagramAlign,
     };
   }
+  if (block.kind === "columns") {
+    const columns = block.columns.map((column) => column.map(inspectBlock));
+    return {
+      ...base,
+      id: block.id,
+      kind: block.kind,
+      visibility,
+      columnCount: block.columnCount ?? block.columns.length,
+      columnModuleCounts: block.columns.map((column) => column.length),
+      columns,
+    };
+  }
   if (block.kind === "space") {
     return {
       ...base,
@@ -793,11 +818,11 @@ function inspectPart(part: MauthPartLike): MauthPartInspection {
 }
 
 function allQuestionBlocks(question: MauthQuestionLike) {
-  const blocks: ContentBlock[] = [...question.contentBlocks];
+  const blocks: ContentBlock[] = [...flattenContentBlocks(question.contentBlocks)];
   for (const part of question.parts ?? []) {
-    blocks.push(...part.contentBlocks);
+    blocks.push(...flattenContentBlocks(part.contentBlocks));
     for (const subpart of part.subparts ?? []) {
-      blocks.push(...subpart.contentBlocks);
+      blocks.push(...flattenContentBlocks(subpart.contentBlocks));
     }
   }
   return blocks;
@@ -822,6 +847,7 @@ function countBlock(block: ContentBlock, counts: MauthDocumentInspection["counts
   if (block.kind === "choices") counts.choiceModules += 1;
   if (block.kind === "table") counts.tableModules += 1;
   if (block.kind === "diagram") counts.diagramModules += 1;
+  if (block.kind === "columns") counts.columnsModules += 1;
   if (block.kind === "space") {
     counts.spaceModules += 1;
     counts.studentSpaceLines += block.lines;
@@ -842,6 +868,7 @@ export function inspectMauthDocument<Q extends MauthQuestionLike, F extends obje
     choiceModules: 0,
     tableModules: 0,
     diagramModules: 0,
+    columnsModules: 0,
     spaceModules: 0,
     pageBreakModules: 0,
     studentOnlyModules: 0,
@@ -941,36 +968,71 @@ interface PreviewBlockEntry {
 }
 
 function previewBlockEntries(question: MauthQuestionLike): PreviewBlockEntry[] {
-  const entries: PreviewBlockEntry[] = question.contentBlocks.map((block) => ({
-    block,
-    anchor: questionBlockAnchor(question.id, block.id),
-    owner: "question",
-    ownerKind: "question",
-    questionId: question.id,
-  }));
+  const entriesForBlocks = (
+    blocks: readonly ContentBlock[],
+    anchorForBlock: (block: ContentBlock) => string,
+    owner: string,
+    ownerKind: PreviewBlockEntry["ownerKind"],
+    questionId: string,
+    partId?: string,
+    subpartId?: string,
+  ): PreviewBlockEntry[] =>
+    blocks.flatMap((block) => {
+      const anchor = anchorForBlock(block);
+      const entry: PreviewBlockEntry = {
+        block,
+        anchor,
+        owner,
+        ownerKind,
+        questionId,
+        ...(partId ? { partId } : {}),
+        ...(subpartId ? { subpartId } : {}),
+      };
+      if (block.kind !== "columns") return [entry];
+      const nestedEntries = block.columns.flatMap((column, columnIndex) =>
+        entriesForBlocks(
+          column,
+          (child) => `${anchor}/c:${columnIndex + 1}/b:${child.id}`,
+          owner,
+          ownerKind,
+          questionId,
+          partId,
+          subpartId,
+        ),
+      );
+      return [entry, ...nestedEntries];
+    });
+
+  const entries: PreviewBlockEntry[] = entriesForBlocks(
+    question.contentBlocks,
+    (block) => questionBlockAnchor(question.id, block.id),
+    "question",
+    "question",
+    question.id,
+  );
 
   for (const part of question.parts ?? []) {
     entries.push(
-      ...part.contentBlocks.map((block) => ({
-        block,
-        anchor: partBlockAnchor(question.id, part.id, block.id),
-        owner: `part:${part.id}`,
-        ownerKind: "part" as const,
-        questionId: question.id,
-        partId: part.id,
-      })),
+      ...entriesForBlocks(
+        part.contentBlocks,
+        (block) => partBlockAnchor(question.id, part.id, block.id),
+        `part:${part.id}`,
+        "part",
+        question.id,
+        part.id,
+      ),
     );
     for (const subpart of part.subparts ?? []) {
       entries.push(
-        ...subpart.contentBlocks.map((block) => ({
-          block,
-          anchor: subpartBlockAnchor(question.id, part.id, subpart.id, block.id),
-          owner: `subpart:${subpart.id}`,
-          ownerKind: "subpart" as const,
-          questionId: question.id,
-          partId: part.id,
-          subpartId: subpart.id,
-        })),
+        ...entriesForBlocks(
+          subpart.contentBlocks,
+          (block) => subpartBlockAnchor(question.id, part.id, subpart.id, block.id),
+          `subpart:${subpart.id}`,
+          "subpart",
+          question.id,
+          part.id,
+          subpart.id,
+        ),
       );
     }
   }
@@ -1023,11 +1085,11 @@ function compactBlockInspectionWithAnchor(entry: PreviewBlockEntry): MauthBlockI
 }
 
 function textBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.filter((block): block is TextContentBlock => block.kind === "text");
+  return flattenContentBlocks(blocks).filter((block): block is TextContentBlock => block.kind === "text");
 }
 
 function hiddenMarksInBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.reduce((sum, block) => {
+  return flattenContentBlocks(blocks).reduce((sum, block) => {
     const surfaceTicks = blockMarkTicks(block);
     if (block.kind !== "text") return sum + surfaceTicks;
     if (blockVisibility(block) !== "solution" && !isLikelySolutionText(block)) return sum;
@@ -1042,17 +1104,20 @@ function visibleMarkNotesInBlocks(blocks: readonly ContentBlock[]) {
 }
 
 function studentSpaceLinesInBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.reduce((sum, block) => (block.kind === "space" && blockVisibility(block) === "student" ? sum + block.lines : sum), 0);
+  return flattenContentBlocks(blocks).reduce(
+    (sum, block) => (block.kind === "space" && blockVisibility(block) === "student" ? sum + block.lines : sum),
+    0,
+  );
 }
 
 function studentAnswerSurfaceCountInBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.filter(
+  return flattenContentBlocks(blocks).filter(
     (block) => blockVisibility(block) === "student" && (block.kind === "space" || block.kind === "table" || block.kind === "diagram"),
   ).length;
 }
 
 function solutionModulesInBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.filter((block) => blockVisibility(block) === "solution" || isLikelySolutionText(block));
+  return flattenContentBlocks(blocks).filter((block) => blockVisibility(block) === "solution" || isLikelySolutionText(block));
 }
 
 function nonSolutionTextPresent(blocks: readonly ContentBlock[]) {
@@ -1508,6 +1573,12 @@ function addOversizedDiagramIssues(
   issues: MauthLayoutCheckIssue[],
 ) {
   for (const block of blocks) {
+    if (block.kind === "columns") {
+      block.columns.forEach((column, columnIndex) => {
+        addOversizedDiagramIssues(column, (blockId) => `${anchorForBlock(block.id)}/c:${columnIndex + 1}/b:${blockId}`, issues);
+      });
+      continue;
+    }
     if (block.kind !== "diagram") continue;
     const width = numericGraphSizeValue(block.graphConfig, "widthPx") ?? numericGraphSizeValue(block.graphConfig, "width");
     const height = numericGraphSizeValue(block.graphConfig, "heightPx") ?? numericGraphSizeValue(block.graphConfig, "height");
@@ -1969,11 +2040,20 @@ function contentBlocksForScope<Q extends MauthQuestionLike, F extends object, C 
   return part.subparts?.find((item) => item.id === scope.subpartId)?.contentBlocks ?? [];
 }
 
+function findBlockById(blocks: readonly ContentBlock[], blockId: string): ContentBlock | undefined {
+  for (const block of blocks) {
+    if (block.id === blockId) return block;
+    const nested = findBlockById(columnBlocks(block), blockId);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
 function existingBlockForAction<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   action: Extract<MauthDocumentAction, { type: "module.update" }>,
 ) {
-  return contentBlocksForScope(document, action.scope).find((block) => block.id === action.blockId);
+  return findBlockById(contentBlocksForScope(document, action.scope), action.blockId);
 }
 
 function sanitizePatchContentBlocks(patch: Record<string, unknown>) {
@@ -2429,6 +2509,12 @@ function hasVisibleMarkNote(value: string) {
 }
 
 function sanitizeAssistantSolutionBlock(block: ContentBlock): ContentBlock {
+  if (block.kind === "columns") {
+    return {
+      ...block,
+      columns: block.columns.map((column) => sanitizeAssistantContentBlocks(column)),
+    } as ContentBlock;
+  }
   if (!isSolutionTextBlock(block) || (!hasVisibleMarkNote(block.text) && !hasMarkAnnotation(block.text))) return block;
   return { ...block, text: solutionBlockText(block.text) };
 }
@@ -2458,7 +2544,7 @@ function sanitizeAssistantQuestion<T extends MauthQuestionLike>(question: T): T 
 }
 
 function rawAssistantTextFragmentsFromBlocks(blocks: readonly ContentBlock[] | undefined) {
-  return (blocks ?? [])
+  return flattenContentBlocks(blocks)
     .filter((block): block is TextContentBlock => block.kind === "text" && block.visibility !== "solution")
     .map((block) => block.text);
 }
@@ -2942,6 +3028,38 @@ function withSolutionSurfaceMarkTicks(blocks: ContentBlock[], marks: number) {
   });
 }
 
+function diagramLayoutFromArgs(args: Record<string, unknown>) {
+  const value = args.diagramLayout ?? args.diagramArrangement ?? args.layout;
+  if (value === "columns" || value === "sideBySide" || value === "side-by-side" || value === "side_by_side") return "columns";
+  return "stacked";
+}
+
+function columnCountFromArgs(args: Record<string, unknown>, blockCount: number): ColumnCount {
+  const fallback = Math.max(2, Math.min(4, blockCount));
+  const value = positiveInteger(args.diagramColumns ?? args.columnCount ?? args.columns, fallback, 2, 4);
+  if (value === 3) return 3;
+  if (value === 4) return 4;
+  return 2;
+}
+
+function columnsBlockFromBlocks(scopeId: string, blocks: readonly ContentBlock[], columnCount: ColumnCount): ContentBlock {
+  const columns: ContentBlock[][] = Array.from({ length: columnCount }, () => []);
+  blocks.forEach((block, index) => {
+    columns[Math.min(index, columnCount - 1)]?.push(block);
+  });
+  return {
+    id: authorBlockId(scopeId, "columns"),
+    kind: "columns",
+    columnCount,
+    columns,
+  } as ContentBlock;
+}
+
+function diagramBlocksWithRequestedLayout(args: Record<string, unknown>, scopeId: string, blocks: ContentBlock[]) {
+  if (blocks.length <= 1 || diagramLayoutFromArgs(args) !== "columns") return blocks;
+  return [columnsBlockFromBlocks(scopeId, blocks, columnCountFromArgs(args, blocks.length))];
+}
+
 function appendAnswerSurfaceReplacementSlot(
   blocks: ContentBlock[],
   studentBlocks: ContentBlock[],
@@ -3042,7 +3160,7 @@ function contentBlocksForAuthorQuestion(
     );
     blocks.push(...questionTables);
   } else {
-    blocks.push(...questionDiagrams);
+    blocks.push(...diagramBlocksWithRequestedLayout(args, questionId, questionDiagrams));
   }
 
   if (answerSurface === "table") {
@@ -3148,7 +3266,7 @@ function contentBlocksForAuthorPart(
     );
     blocks.push(...partTables);
   } else {
-    blocks.push(...partDiagrams);
+    blocks.push(...diagramBlocksWithRequestedLayout(args, partId, partDiagrams));
   }
 
   if (answerSurface === "table") {
@@ -4274,13 +4392,13 @@ function findBlockEntryInDocument(
   blockId: string,
 ): { question: MauthQuestionLike; scope: MauthContentScope; block: ContentBlock } | undefined {
   for (const question of document.questions) {
-    const questionBlock = question.contentBlocks.find((block) => block.id === blockId);
+    const questionBlock = findBlockById(question.contentBlocks, blockId);
     if (questionBlock) return { question, scope: { kind: "question", questionId: question.id }, block: questionBlock };
     for (const part of question.parts ?? []) {
-      const partBlock = part.contentBlocks.find((block) => block.id === blockId);
+      const partBlock = findBlockById(part.contentBlocks, blockId);
       if (partBlock) return { question, scope: { kind: "part", questionId: question.id, partId: part.id }, block: partBlock };
       for (const subpart of part.subparts ?? []) {
-        const subpartBlock = subpart.contentBlocks.find((block) => block.id === blockId);
+        const subpartBlock = findBlockById(subpart.contentBlocks, blockId);
         if (subpartBlock) {
           return {
             question,
@@ -4306,11 +4424,12 @@ function diagramAlignmentAction(
     return undefined;
   }
   const blocks = contentBlocksForFormatTarget(target);
+  const flattenedBlocks = flattenContentBlocks(blocks);
   const explicitBlockId = blockIdFromFormatEntry(entry);
   const diagramIndex = positiveInteger(entry.diagramIndex ?? entry.index, 1, 1, 100) - 1;
   const diagram =
-    (explicitBlockId ? blocks.find((block) => block.id === explicitBlockId) : undefined) ??
-    blocks.filter((block) => block.kind === "diagram")[diagramIndex];
+    (explicitBlockId ? findBlockById(blocks, explicitBlockId) : undefined) ??
+    flattenedBlocks.filter((block) => block.kind === "diagram")[diagramIndex];
   if (!diagram) {
     issues.push({
       path: explicitBlockId ? `${path}.diagramId` : `${path}.diagramIndex`,
@@ -4418,6 +4537,20 @@ function mergeAdjacentStudentSpaces(blocks: readonly ContentBlock[]): ContentBlo
       };
       changed = true;
       continue;
+    }
+    if (block.kind === "columns") {
+      let columnsChanged = false;
+      const columns = block.columns.map((column) => {
+        const merged = mergeAdjacentStudentSpaces(column);
+        if (!merged) return column;
+        columnsChanged = true;
+        return merged;
+      });
+      if (columnsChanged) {
+        nextBlocks.push({ ...block, columns } as ContentBlock);
+        changed = true;
+        continue;
+      }
     }
     nextBlocks.push(block);
   }

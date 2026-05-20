@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -146,7 +148,7 @@ class GraphConfig(BaseModel):
 
 class ContentBlock(BaseModel):
     id: str | None = None
-    kind: Literal["text", "choices", "table", "diagram", "space", "pageBreak"]
+    kind: Literal["text", "choices", "table", "diagram", "columns", "space", "pageBreak"]
     text: str | None = None
     choices: list[str] = Field(default_factory=list)
     numberingStyle: Literal["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"] | None = "roman"
@@ -159,6 +161,8 @@ class ContentBlock(BaseModel):
     lines: float | None = None
     diagramAlign: Literal["left", "center", "right"] | None = None
     graphConfig: GraphConfig | None = None
+    columnCount: Literal[2, 3, 4] | None = None
+    columns: list[list[ContentBlock]] = Field(default_factory=list)
 
 
 class DiagramSpec(BaseModel):

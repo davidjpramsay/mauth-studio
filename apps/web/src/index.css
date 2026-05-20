@@ -1696,6 +1696,24 @@
     margin-right: 0;
   }
 
+  .test-columns-block {
+    align-items: start;
+    display: grid;
+    gap: var(--test-column-gap, 1rem);
+    grid-template-columns: repeat(var(--test-column-count, 2), minmax(0, 1fr));
+    margin: 0.3rem 0 0.18rem;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .test-column {
+    min-width: 0;
+  }
+
+  .test-column > .test-content-stack {
+    gap: calc(var(--test-content-gap, 0.72rem) * 0.72);
+  }
+
   .test-table {
     border-collapse: collapse;
     color: inherit;

@@ -434,10 +434,12 @@ export type ContentBlock =
   | ChoiceListContentBlock
   | TableContentBlock
   | DiagramContentBlock
+  | ColumnsContentBlock
   | SpaceContentBlock
   | PageBreakContentBlock;
 export type DiagramAlignment = "left" | "center" | "right";
 export type DiagramTextSide = "none" | "left" | "right";
+export type ColumnCount = 2 | 3 | 4;
 export type ChoiceNumberingStyle = "roman" | "upper-alpha" | "lower-alpha" | "decimal" | "bullet";
 export type ChoiceListLayout = "vertical" | "two-column" | "inline";
 export type TableCellAlignment = "left" | "center" | "right";
@@ -480,6 +482,13 @@ export interface DiagramContentBlock extends ContentBlockVisibilityOptions {
   diagramAlign?: DiagramAlignment;
   diagramTextSide?: DiagramTextSide;
   graphConfig: GraphConfig;
+}
+
+export interface ColumnsContentBlock extends ContentBlockVisibilityOptions {
+  id: string;
+  kind: "columns";
+  columnCount?: ColumnCount;
+  columns: ContentBlock[][];
 }
 
 export interface SpaceContentBlock extends ContentBlockVisibilityOptions {

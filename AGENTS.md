@@ -66,6 +66,7 @@ Mauthdown is the AI-friendly file format for tests. Prefer explicit containers:
 - `:::choices`
 - `:::table`
 - `:::diagram`
+- `:::columns`
 - `:::space`
 - `:::page-break`
 

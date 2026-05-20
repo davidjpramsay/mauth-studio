@@ -35,38 +35,48 @@ function hiddenMarkTotal(text: string) {
   return [...text.matchAll(/\[\[\s*marks\s*:\s*(\d+)\s*\]\]/gi)].reduce((sum, match) => sum + Number(match[1] ?? 0), 0);
 }
 
+function flattenBlocks(blocks: readonly ContentBlock[] | undefined): ContentBlock[] {
+  return (blocks ?? []).flatMap((block) =>
+    block.kind === "columns" ? [block, ...block.columns.flatMap((column) => flattenBlocks(column))] : [block],
+  );
+}
+
 function allQuestionText(questionItem?: MauthQuestionLike) {
   const parts = questionItem?.parts ?? [];
-  const blocks = questionItem?.contentBlocks ?? [];
+  const blocks = flattenBlocks(questionItem?.contentBlocks);
   return [
     ...blocks.map((block) => (block.kind === "text" ? block.text : "")),
     ...parts.flatMap((partItem) => [
       partItem.text ?? "",
-      ...partItem.contentBlocks.map((block) => (block.kind === "text" ? block.text : "")),
+      ...flattenBlocks(partItem.contentBlocks).map((block) => (block.kind === "text" ? block.text : "")),
       ...(partItem.subparts ?? []).flatMap((subpart) => [
         subpart.text ?? "",
-        ...subpart.contentBlocks.map((block) => (block.kind === "text" ? block.text : "")),
+        ...flattenBlocks(subpart.contentBlocks).map((block) => (block.kind === "text" ? block.text : "")),
       ]),
     ]),
   ].join("\n");
 }
 
 function allSolutionText(questionItem?: MauthQuestionLike) {
-  const blocks = questionItem?.contentBlocks ?? [];
+  const blocks = flattenBlocks(questionItem?.contentBlocks);
   const parts = questionItem?.parts ?? [];
   return [
     ...blocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
     ...parts.flatMap((partItem) => [
-      ...partItem.contentBlocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
+      ...flattenBlocks(partItem.contentBlocks)
+        .filter((block) => block.kind === "text" && block.visibility === "solution")
+        .map((block) => block.text),
       ...(partItem.subparts ?? []).flatMap((subpart) =>
-        subpart.contentBlocks.filter((block) => block.kind === "text" && block.visibility === "solution").map((block) => block.text),
+        flattenBlocks(subpart.contentBlocks)
+          .filter((block) => block.kind === "text" && block.visibility === "solution")
+          .map((block) => block.text),
       ),
     ]),
   ].join("\n");
 }
 
 function questionDiagrams(questionItem?: MauthQuestionLike) {
-  return (questionItem?.contentBlocks ?? []).filter((block) => block.kind === "diagram");
+  return flattenBlocks(questionItem?.contentBlocks).filter((block) => block.kind === "diagram");
 }
 
 function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
@@ -1159,6 +1169,55 @@ test("high-level question authoring appends the next missing question", () => {
   assert.equal(appended.contentBlocks[1].kind === "diagram" ? appended.contentBlocks[1].graphConfig.type : "", "graph2d");
   assert.equal(appended.contentBlocks[2].kind, "space");
   assert.equal(appended.contentBlocks[2].visibility, "student");
+});
+
+test("high-level question authoring preserves side-by-side source diagrams with columns", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 2,
+      questionText: "The source shows the 3D view and top view side by side.",
+      diagramLayout: "columns",
+      diagramColumns: 2,
+      diagrams: [
+        {
+          graphConfig: {
+            type: "graph3d",
+            data: {
+              points: [{ id: "A", label: "$A$", coords: [0, 0, 0] }],
+              segments: [],
+              faces: [],
+            },
+          },
+        },
+        {
+          graphConfig: {
+            type: "graph2d",
+            showAxes: false,
+            showGrid: false,
+            features: [{ kind: "point", x: 0, y: 0, label: "$A$" }],
+          },
+        },
+      ],
+    },
+  });
+  const blocks = result.document?.questions[1].contentBlocks ?? [];
+  const columns = blocks.find((block) => block.kind === "columns");
+
+  assert.equal(result.ok, true);
+  assert.equal(columns?.kind, "columns");
+  assert.equal(columns?.kind === "columns" ? columns.columnCount : 0, 2);
+  assert.deepEqual(
+    columns?.kind === "columns"
+      ? columns.columns.map((column) => column.map((block) => (block.kind === "diagram" ? block.graphConfig.type : block.kind)))
+      : [],
+    [["graph3d"], ["graph2d"]],
+  );
+  assert.equal(
+    blocks.some((block) => block.kind === "diagram"),
+    false,
+  );
 });
 
 test("high-level question authoring preserves structured subparts", () => {

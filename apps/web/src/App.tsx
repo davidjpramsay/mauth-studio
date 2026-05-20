@@ -11,6 +11,7 @@ import type {
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
+  ColumnCount,
   ContentBlock,
   ContentBlockVisibility,
   DiagramAlignment,
@@ -42,6 +43,7 @@ import {
   Moon,
   Plus,
   PlusCircle,
+  Columns3,
   Redo2,
   Save,
   SeparatorHorizontal,
@@ -142,6 +144,8 @@ import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
   normalizeChoiceNumberingStyle,
+  normalizeColumnCount,
+  normalizeColumnsBlock,
   normalizeDiagramAlignment,
   normalizeTableBlock,
   normalizeTableCellAlignment,
@@ -506,7 +510,7 @@ type EditorPart = Omit<QuestionPart, "contentBlocks" | "subparts"> & {
 };
 type OrderedQuestionItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "part"; id: string; part: EditorPart };
 type OrderedPartItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "subpart"; id: string; subpart: EditorSubpart };
-type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "space";
+type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "space";
 
 interface QuestionBlock {
   id: string;
@@ -546,7 +550,7 @@ interface SubsectionDropIntent {
 type DropPlacement = "before" | "after" | "inside";
 type MoveDirection = -1 | 1;
 type PanelDragRegion = "header" | "body";
-type TocItemKind = "title" | "question" | "pageBreak" | "text" | "choices" | "table" | "diagram" | "space" | "part" | "subpart";
+type TocItemKind = "title" | "question" | "pageBreak" | "text" | "choices" | "table" | "diagram" | "columns" | "space" | "part" | "subpart";
 
 const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
 const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
@@ -1164,6 +1168,15 @@ function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): 
   return { id: id("space"), kind: "space", lines, ...blockVisibilityFields(visibility) };
 }
 
+function columnsBlock(columnCount: ColumnCount = 2): EditorContentBlock {
+  return {
+    id: id("columns"),
+    kind: "columns",
+    columnCount,
+    columns: Array.from({ length: columnCount }, () => [textBlock()]),
+  };
+}
+
 function solutionSlotBlocks(lines = DEFAULT_SOLUTION_SLOT_LINES): EditorContentBlock[] {
   return [spaceBlock(lines, "student"), textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")];
 }
@@ -1172,6 +1185,7 @@ function contentBlockForKind(kind: ContentBlockKind): EditorContentBlock {
   if (kind === "choices") return choiceListBlock();
   if (kind === "table") return tableBlock();
   if (kind === "diagram") return diagramBlock();
+  if (kind === "columns") return columnsBlock();
   if (kind === "space") return spaceBlock();
   return textBlock();
 }
@@ -2246,6 +2260,20 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
       ];
     }
 
+    if (record.kind === "columns") {
+      const columnCount = normalizeColumnCount(record.columnCount ?? (Array.isArray(record.columns) ? record.columns.length : 2));
+      const rawColumns = Array.isArray(record.columns) ? record.columns : [];
+      return [
+        {
+          id: blockId,
+          kind: "columns",
+          columnCount,
+          columns: Array.from({ length: columnCount }, (_, index) => normalizeContentBlocks(rawColumns[index])),
+          ...blockVisibilityFields(visibility),
+        },
+      ];
+    }
+
     if (record.kind === "space") {
       return [
         {
@@ -3140,10 +3168,17 @@ function visibleContentBlocks(blocks: EditorContentBlock[], showSolutions: boole
   return blocks.filter((block) => isContentBlockVisible(block, showSolutions));
 }
 
-function firstTextSource(blocks: EditorContentBlock[], showSolutions = true) {
+function firstTextSource(blocks: EditorContentBlock[], showSolutions = true): string {
   const visibleBlocks = visibleContentBlocks(blocks, showSolutions);
   const textBlock = visibleBlocks.find((block) => block.kind === "text");
   if (textBlock?.kind === "text") return textBlock.text?.replace(/\s+/g, " ").trim() || "";
+  const columnsBlock = visibleBlocks.find((block) => block.kind === "columns");
+  if (columnsBlock?.kind === "columns") {
+    const nestedText = normalizeColumnsBlock(columnsBlock)
+      .columns.map((column) => firstTextSource(column, showSolutions))
+      .find(Boolean);
+    if (nestedText) return nestedText;
+  }
   const choicesBlock = visibleBlocks.find((block) => block.kind === "choices");
   if (choicesBlock?.kind === "choices") return normalizeChoiceItems(choicesBlock.choices).filter(Boolean).join("; ");
   const tableContentBlock = visibleBlocks.find((block) => block.kind === "table");
@@ -3979,8 +4014,14 @@ function PreviewContentBlocks(props: AppPreviewContentBlocksProps) {
   return <PreviewContentBlocksBase {...props} runtime={previewContentRuntime} renderers={previewContentRenderers} />;
 }
 
-function contentBlocksHaveDiagram(blocks: EditorContentBlock[], showSolutions = true) {
-  return blocks.some((block) => block.kind === "diagram" && isContentBlockVisible(block, showSolutions));
+function contentBlocksHaveDiagram(blocks: EditorContentBlock[], showSolutions = true): boolean {
+  return blocks.some((block) => {
+    if (!isContentBlockVisible(block, showSolutions)) return false;
+    if (block.kind === "diagram") return true;
+    if (block.kind === "columns")
+      return normalizeColumnsBlock(block).columns.some((column) => contentBlocksHaveDiagram(column, showSolutions));
+    return false;
+  });
 }
 
 interface PreviewSegment {
@@ -5277,6 +5318,216 @@ interface DiagramBlockEditorProps {
   onChange: (graphConfig: GraphConfig) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
   onRemove: () => void;
+}
+
+type EditorColumnsBlock = Extract<EditorContentBlock, { kind: "columns" }>;
+type ColumnsChildBlockKind = Exclude<ContentBlockKind, "columns">;
+
+const COLUMN_COUNT_OPTIONS: Array<{ value: ColumnCount; label: string }> = [
+  { value: 2, label: "2 columns" },
+  { value: 3, label: "3 columns" },
+  { value: 4, label: "4 columns" },
+];
+
+interface ColumnsBlockEditorProps {
+  label: string;
+  title?: ReactNode;
+  block: EditorColumnsBlock;
+  showSolutions?: boolean;
+  dragHandle?: ReactNode;
+  muted?: boolean;
+  active?: boolean;
+  openSignal?: number;
+  onChange: (patch: Partial<EditorColumnsBlock>) => void;
+  onRemove: () => void;
+}
+
+function ColumnsBlockEditor({
+  label,
+  title,
+  block,
+  showSolutions = true,
+  dragHandle,
+  muted = false,
+  active = false,
+  openSignal,
+  onChange,
+  onRemove,
+}: ColumnsBlockEditorProps) {
+  const normalized = normalizeColumnsBlock(block);
+  const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
+  const updateColumnCount = (value: unknown) => {
+    const columnCount = normalizeColumnCount(value);
+    const columns = Array.from({ length: columnCount }, (_, index) => normalized.columns[index] ?? [textBlock()]);
+    updateColumns(columns, columnCount);
+  };
+  const addColumnBlock = (columnIndex: number, kind: ColumnsChildBlockKind) => {
+    const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, contentBlockForKind(kind)] : column));
+    updateColumns(columns);
+  };
+  const updateColumnBlock = (columnIndex: number, blockId: string, patch: Record<string, unknown>) => {
+    const columns = normalized.columns.map((column, index) =>
+      index === columnIndex
+        ? column.map((child) => (child.id === blockId ? ({ ...child, ...patch } as EditorContentBlock) : child))
+        : column,
+    );
+    updateColumns(columns);
+  };
+  const removeColumnBlock = (columnIndex: number, blockId: string) => {
+    const columns = normalized.columns.map((column, index) =>
+      index === columnIndex ? column.filter((child) => child.id !== blockId) : column,
+    );
+    updateColumns(columns);
+  };
+
+  const renderColumnChildBlock = (columnIndex: number, child: EditorContentBlock, childIndex: number) => {
+    const childNumber = childIndex + 1;
+    const childLabelPrefix = `Column ${columnIndex + 1}`;
+
+    if (child.kind === "space") {
+      return (
+        <SpaceBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} answer space ${childNumber}`}
+          title={<InlineSummaryTitle label={`Answer space ${childNumber}`} summary={spaceBlockSummary(child.lines)} />}
+          lines={child.lines}
+          muted
+          onChange={(lines) => updateColumnBlock(columnIndex, child.id, { lines })}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    if (child.kind === "diagram") {
+      return (
+        <DiagramBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} diagram ${childNumber}`}
+          graphConfig={child.graphConfig}
+          alignment={child.diagramAlign}
+          showSolutions={showSolutions}
+          muted
+          onChange={(graphConfig) => updateColumnBlock(columnIndex, child.id, { graphConfig })}
+          onAlignmentChange={(diagramAlign) => updateColumnBlock(columnIndex, child.id, { diagramAlign })}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    if (child.kind === "choices") {
+      return (
+        <ChoiceListBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} choice list ${childNumber}`}
+          title={<InlineSummaryTitle label={`Choice list ${childNumber}`} summary={choiceListSummary(child)} />}
+          block={child}
+          numberingStyleOptions={CHOICE_NUMBERING_STYLES}
+          layoutOptions={CHOICE_LIST_LAYOUTS}
+          muted
+          onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    if (child.kind === "table") {
+      return (
+        <TableBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} table ${childNumber}`}
+          title={<InlineSummaryTitle label={`Table ${childNumber}`} summary={tableBlockSummary(child)} />}
+          block={child}
+          diagramAlignments={DIAGRAM_ALIGNMENTS}
+          cellAlignments={TABLE_CELL_ALIGNMENTS}
+          muted
+          onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    if (child.kind === "columns") {
+      return (
+        <ColumnsBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} nested columns ${childNumber}`}
+          title={<InlineSummaryTitle label={`Nested columns ${childNumber}`} summary={columnsBlockSummary(child)} />}
+          block={child}
+          showSolutions={showSolutions}
+          muted
+          onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    if (child.kind === "text") {
+      return (
+        <TextBlockEditor
+          key={child.id}
+          label={`${childLabelPrefix} text ${childNumber}`}
+          title={<InlineSummaryTitle label={`Text ${childNumber}`} summary={textBlockSummary(child.text ?? "")} />}
+          text={child.text ?? ""}
+          muted
+          minHeightClassName="min-h-[74px]"
+          onChange={(text) => updateColumnBlock(columnIndex, child.id, { text })}
+          onRemove={() => removeColumnBlock(columnIndex, child.id)}
+        />
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <CollapsiblePanel
+      title={title ?? <InlineSummaryTitle label={label} summary={columnsBlockSummary(block)} />}
+      leading={dragHandle}
+      actions={
+        <>
+          <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
+            Layout
+            <select
+              value={normalized.columnCount}
+              onChange={(event) => updateColumnCount(event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              {COLUMN_COUNT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+        </>
+      }
+      className={cn(muted && "bg-muted/25")}
+      bodyClassName="space-y-3"
+      active={active}
+      openSignal={openSignal}
+    >
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}>
+        {normalized.columns.map((column, columnIndex) => (
+          <section key={columnIndex} className="min-w-0 space-y-3 rounded-md border bg-background p-3">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Column {columnIndex + 1}</div>
+            {column.length ? (
+              <div className="space-y-3">{column.map((child, childIndex) => renderColumnChildBlock(columnIndex, child, childIndex))}</div>
+            ) : null}
+            <ContentInsertionActions
+              buttonLabel="Add"
+              className="pt-1"
+              onAddText={() => addColumnBlock(columnIndex, "text")}
+              onAddChoices={() => addColumnBlock(columnIndex, "choices")}
+              onAddTable={() => addColumnBlock(columnIndex, "table")}
+              onAddDiagram={() => addColumnBlock(columnIndex, "diagram")}
+              onAddSpace={() => addColumnBlock(columnIndex, "space")}
+            />
+          </section>
+        ))}
+      </div>
+    </CollapsiblePanel>
+  );
 }
 
 function storageStatusTone(status: HeaderSaveStatus) {
@@ -6694,12 +6945,19 @@ function diagramBlockSummary(block: Extract<EditorContentBlock, { kind: "diagram
   return diagramConfigSummary(block.graphConfig);
 }
 
+function columnsBlockSummary(block: Extract<EditorContentBlock, { kind: "columns" }>) {
+  const columns = normalizeColumnsBlock(block);
+  const moduleCount = columns.columns.reduce((sum, column) => sum + column.length, 0);
+  return `${columns.columnCount} columns, ${moduleCount} module${moduleCount === 1 ? "" : "s"}`;
+}
+
 function tocBlockLabel(block: EditorContentBlock, blockIndex: number) {
   const itemNumber = blockIndex + 1;
   if (block.kind === "text") return `Text ${itemNumber}`;
   if (block.kind === "choices") return `Choices ${itemNumber}`;
   if (block.kind === "table") return `Table ${itemNumber}`;
   if (block.kind === "diagram") return `Diagram ${itemNumber}`;
+  if (block.kind === "columns") return `Columns ${itemNumber}`;
   if (block.kind === "space") return `Space ${itemNumber}`;
   return `Block ${itemNumber}`;
 }
@@ -6709,6 +6967,7 @@ function tocBlockSummary(block: EditorContentBlock) {
   if (block.kind === "choices") return choiceListSummary(block);
   if (block.kind === "table") return tableBlockSummary(block);
   if (block.kind === "diagram") return diagramBlockSummary(block);
+  if (block.kind === "columns") return columnsBlockSummary(block);
   if (block.kind === "space") {
     const lines = spaceLines(block.lines);
     return `${lines} line${lines === 1 ? "" : "s"}`;
@@ -6720,6 +6979,7 @@ function tocBlockKind(block: EditorContentBlock): TocItemKind {
   if (block.kind === "choices") return "choices";
   if (block.kind === "table") return "table";
   if (block.kind === "diagram") return "diagram";
+  if (block.kind === "columns") return "columns";
   if (block.kind === "space") return "space";
   return "text";
 }
@@ -6842,6 +7102,7 @@ function TocItemIcon({ kind }: { kind: TocItemKind }) {
   if (kind === "diagram") return <ImagePlus className="size-4" aria-hidden="true" />;
   if (kind === "table") return <Table2 className="size-4" aria-hidden="true" />;
   if (kind === "choices") return <ListOrdered className="size-4" aria-hidden="true" />;
+  if (kind === "columns") return <Columns3 className="size-4" aria-hidden="true" />;
   if (kind === "space") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   return <Type className="size-4" aria-hidden="true" />;
 }
@@ -10842,6 +11103,24 @@ export default function App() {
       );
     }
 
+    if (block.kind === "columns") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <ColumnsBlockEditor
+            label={`Columns block ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Columns block ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
+            block={block}
+            showSolutions={showSolutions}
+            dragHandle={subsectionDragHandle(blockTarget, `Drag columns block ${blockIndex + 1}`)}
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
+            onRemove={() => removeQuestionBlock(question.id, block.id)}
+          />
+        </div>,
+      );
+    }
+
     if (block.kind === "choices") {
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
@@ -10972,6 +11251,25 @@ export default function App() {
       );
     }
 
+    if (block.kind === "columns") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <ColumnsBlockEditor
+            label={`Part columns ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Part columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
+            block={block}
+            showSolutions={showSolutions}
+            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part columns ${blockIndex + 1}`)}
+            muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
+            onRemove={() => removePartBlock(question.id, part, block.id)}
+          />
+        </div>,
+      );
+    }
+
     if (block.kind === "choices") {
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
@@ -11096,6 +11394,27 @@ export default function App() {
             openSignal={blockOpenSignal}
             onChange={(graphConfig) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { graphConfig })}
             onAlignmentChange={(diagramAlign) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramAlign })}
+            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
+          />
+        </div>,
+      );
+    }
+
+    if (block.kind === "columns") {
+      return withInsertAfter(
+        <div key={block.id} {...wrapperProps}>
+          <ColumnsBlockEditor
+            label={`Subpart columns ${blockIndex + 1}`}
+            title={<InlineSummaryTitle label={`Subpart columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
+            block={block}
+            showSolutions={showSolutions}
+            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart columns ${blockIndex + 1}`)}
+            muted
+            active={blockActive}
+            openSignal={blockOpenSignal}
+            onChange={(patch) =>
+              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
+            }
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
         </div>,
@@ -11323,6 +11642,7 @@ export default function App() {
             onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
             onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
             onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
+            onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns")}
             onAddSpace={() =>
               subpartUsesSolutionSpace
                 ? addSubpartSolutionSlot(question.id, part, subpart)
@@ -11471,6 +11791,7 @@ export default function App() {
               onAddChoices={() => addPartBlock(question.id, part, "choices")}
               onAddTable={() => addPartBlock(question.id, part, "table")}
               onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
+              onAddColumns={() => addPartBlock(question.id, part, "columns")}
               onAddSpace={() => (partUsesSolutionSpace ? addPartSolutionSlot(question.id, part) : addPartBlock(question.id, part, "space"))}
               spaceActionLabel={partUsesSolutionSpace ? "Answer + solution" : "Space"}
               spaceActionTooltip={
@@ -11881,6 +12202,7 @@ export default function App() {
                                 onAddChoices={() => addQuestionBlock(question.id, "choices")}
                                 onAddTable={() => addQuestionBlock(question.id, "table")}
                                 onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                onAddColumns={() => addQuestionBlock(question.id, "columns")}
                                 onAddSpace={() =>
                                   questionUsesSolutionSpace ? addQuestionSolutionSlot(question.id) : addQuestionBlock(question.id, "space")
                                 }

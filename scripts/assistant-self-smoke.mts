@@ -192,11 +192,19 @@ function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean;
 
 function allBlocks(document: TestDocument) {
   const blocks: ContentBlock[] = [];
+  const pushBlocks = (items: readonly ContentBlock[] | undefined) => {
+    for (const block of items ?? []) {
+      blocks.push(block);
+      if (block.kind === "columns") {
+        for (const column of block.columns) pushBlocks(column);
+      }
+    }
+  };
   for (const item of document.questions) {
-    blocks.push(...item.contentBlocks);
+    pushBlocks(item.contentBlocks);
     for (const partItem of item.parts ?? []) {
-      blocks.push(...partItem.contentBlocks);
-      for (const subpart of partItem.subparts ?? []) blocks.push(...subpart.contentBlocks);
+      pushBlocks(partItem.contentBlocks);
+      for (const subpart of partItem.subparts ?? []) pushBlocks(subpart.contentBlocks);
     }
   }
   return blocks;
@@ -207,7 +215,17 @@ function questionBlocks(document: TestDocument, questionIndex = 0) {
 }
 
 function diagrams(document: TestDocument, questionIndex = 0) {
-  return questionBlocks(document, questionIndex).filter((block) => block.kind === "diagram");
+  const blocks: ContentBlock[] = [];
+  const pushBlocks = (items: readonly ContentBlock[] | undefined) => {
+    for (const block of items ?? []) {
+      blocks.push(block);
+      if (block.kind === "columns") {
+        for (const column of block.columns) pushBlocks(column);
+      }
+    }
+  };
+  pushBlocks(questionBlocks(document, questionIndex));
+  return blocks.filter((block) => block.kind === "diagram");
 }
 
 function studentSpaces(document: TestDocument, questionIndex = 0) {

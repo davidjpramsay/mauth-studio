@@ -85,7 +85,21 @@ class FormattingEngine:
             return cls._choices_html(block)
         if block.get("kind") == "table":
             return cls._table_block_html(block)
+        if block.get("kind") == "columns":
+            return cls._columns_html(block)
         return f'<div class="text-block">{cls._mixed_math_html(block.get("text", ""))}</div>'
+
+    @classmethod
+    def _columns_html(cls, block: dict) -> str:
+        columns = block.get("columns") if isinstance(block.get("columns"), list) else []
+        column_count = (
+            block.get("columnCount") if block.get("columnCount") in {2, 3, 4} else max(2, min(4, len(columns) or 2))
+        )
+        rendered_columns = []
+        for index in range(column_count):
+            column_blocks = columns[index] if index < len(columns) and isinstance(columns[index], list) else []
+            rendered_columns.append(f'<div class="content-column">{cls._content_blocks_html(column_blocks)}</div>')
+        return f'<div class="content-columns content-columns-{column_count}">{"".join(rendered_columns)}</div>'
 
     @classmethod
     def _choices_html(cls, block: dict) -> str:

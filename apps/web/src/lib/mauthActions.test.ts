@@ -201,6 +201,44 @@ test("adds, updates, deletes, and reorders question modules", () => {
   );
 });
 
+test("updates and deletes modules nested inside columns", () => {
+  const columnsBlock: ContentBlock = {
+    id: "cols",
+    kind: "columns",
+    columnCount: 2,
+    columns: [[textBlock("c1", "Left")], [textBlock("c2", "Right")]],
+  };
+  const initial = [question("q1", [columnsBlock])];
+
+  const updated = applyMauthAction(initial, {
+    type: "module.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "c2",
+    patch: { text: "Right updated" },
+  });
+  assert.equal(updated.ok, true);
+  const updatedColumns = updated.questions[0].contentBlocks[0];
+  assert.equal(updatedColumns.kind, "columns");
+  assert.equal(updatedColumns.kind === "columns" ? updatedColumns.columns[1][0]?.kind : "", "text");
+  assert.equal(
+    updatedColumns.kind === "columns" && updatedColumns.columns[1][0]?.kind === "text" ? updatedColumns.columns[1][0].text : "",
+    "Right updated",
+  );
+
+  const deleted = applyMauthAction(updated.questions, {
+    type: "module.delete",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "c1",
+  });
+  assert.equal(deleted.ok, true);
+  const deletedColumns = deleted.questions[0].contentBlocks[0];
+  assert.equal(deletedColumns.kind, "columns");
+  assert.deepEqual(deletedColumns.kind === "columns" ? deletedColumns.columns.map((column) => column.map((block) => block.id)) : [], [
+    [],
+    ["c2"],
+  ]);
+});
+
 test("adds, deletes, and reorders parts while preserving itemOrder", () => {
   const initial = [
     normalizeLabels({
