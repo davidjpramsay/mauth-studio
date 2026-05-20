@@ -55,6 +55,10 @@ const UNSUPPORTED_GRAPH_FEATURE_FIELDS = new Map([
   ["from", "Use x1/y1 on graph2d line_segment features."],
   ["to", "Use x2/y2 on graph2d line_segment features."],
   ["strokeColor", "Use color for graph2d feature stroke colour."],
+  ["functionIndex1", "Use functionAIndex for region_between_curves."],
+  ["functionIndex2", "Use functionBIndex for region_between_curves."],
+  ["domainMin", "Use xMin for graph2d region feature bounds."],
+  ["domainMax", "Use xMax for graph2d region feature bounds."],
 ]);
 const GRAPH_AXIS_LABEL_INTERVAL_MODES = new Set(["auto", "manual"]);
 const GRAPH_EXTENSION_MODES = new Set(["auto", "manual"]);

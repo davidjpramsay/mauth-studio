@@ -93,6 +93,10 @@ GRAPH2D_UNSUPPORTED_FEATURE_FIELDS = {
     "from": ("graph2d line_segment features use numeric x1/y1 endpoints.", "x1 and y1"),
     "to": ("graph2d line_segment features use numeric x2/y2 endpoints.", "x2 and y2"),
     "strokeColor": ("graph2d feature stroke colour must use color.", "color"),
+    "functionIndex1": ("graph2d region_between_curves uses functionAIndex.", "functionAIndex"),
+    "functionIndex2": ("graph2d region_between_curves uses functionBIndex.", "functionBIndex"),
+    "domainMin": ("graph2d region feature bounds use xMin.", "xMin"),
+    "domainMax": ("graph2d region feature bounds use xMax.", "xMax"),
 }
 
 
@@ -6614,6 +6618,48 @@ def local_real_specialist_spherical_cap_live_polygon_shading_call() -> dict[str,
     return call
 
 
+def local_real_specialist_spherical_cap_live_region_alias_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph2d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph2d["functions"] = [
+        {
+            "kind": "expression",
+            "expression": "sqrt(20*x-x^2)",
+            "domainMin": 0,
+            "domainMax": 20,
+            "color": "#000000",
+            "strokeWidth": 2,
+        },
+        {
+            "kind": "expression",
+            "expression": "-sqrt(20*x-x^2)",
+            "domainMin": 0,
+            "domainMax": 20,
+            "color": "#000000",
+            "strokeWidth": 2,
+        },
+        {
+            "kind": "expression",
+            "expression": "0",
+            "domainMin": 0,
+            "domainMax": 20,
+            "color": "#777777",
+            "strokeWidth": 1,
+        },
+    ]
+    graph2d["features"][0] = {
+        "kind": "region_between",
+        "functionIndex1": 0,
+        "functionIndex2": 2,
+        "domainMin": 0,
+        "domainMax": 4,
+        "color": "#d9d9d9",
+        "opacity": 0.75,
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
     pyramid_3d = {
         "type": "graph3d",
@@ -7736,6 +7782,19 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "features[0].strokeColor",
             "feature kind 'free_label' is not supported",
             "features[2].coords",
+        ],
+    },
+    "real-specialist-spherical-cap-live-region-alias": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_live_region_alias_call,
+        "expectedIssues": [
+            "shaded generating region",
+            "feature kind 'region_between' is not supported",
+            "features[0].functionIndex1",
+            "features[0].functionIndex2",
+            "features[0].domainMin",
+            "features[0].domainMax",
+            "features[0].opacity",
         ],
     },
     "real-specialist-prism": {

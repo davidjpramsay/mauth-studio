@@ -1393,10 +1393,12 @@ def focused_tool_hint(
                 " For source Argand/locus diagrams, use graphConfig.type graph2d with Re/Im labels, point features "
                 "for complex numbers, relation/expression functions for circle/ray boundaries, and supported indexed "
                 "region features for shading. Do not invent graph2d feature kinds such as polygon/free_label or "
-                "feature fields such as points, coords, expressionTop, expressionBottom, opacity, fillColor, or "
+                "feature fields such as points, coords, functionIndex1/functionIndex2, domainMin/domainMax, "
+                "expressionTop, expressionBottom, opacity, fillColor, or "
                 "strokeColor; use functions plus functionAIndex/functionBIndex or "
-                "baseFeatureIndex/clipFunctionIndex/clipSide, label features with x/y, line_segment with x1/y1/x2/y2, "
-                "and fillOpacity for shading. Preserve the source "
+                "baseFeatureIndex/clipFunctionIndex/clipSide, xMin/xMax bounds, label features with x/y, "
+                "line_segment with x1/y1/x2/y2, and fillOpacity for shading. Use region_between_curves, not "
+                "region_between. Preserve the source "
                 "or marking-key reference for argument bounds: a locus may combine |z-i| with Arg(z), so do not "
                 "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument."
             )
@@ -1742,10 +1744,11 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "For graph2d function domains, use domainMin/domainMax and style with color/strokeWidth/strokeStyle "
                     "directly on the function. Graph2d features use kind, not type, and style with direct color/size/strokeWidth fields; "
                     "use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments. "
-                    "For shaded graph2d locus/region diagrams, define boundary functions first, then use indexed "
+                    "For shaded graph2d locus/region diagrams, define boundary functions first, then use exact supported "
                     "region_between_curves, region_curve_axis, or region_clipped_by_curve features with "
-                    "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide; use fillOpacity, "
-                    "not polygon/free_label, points/coords, expressionTop/expressionBottom/opacity/fillColor/strokeColor fields. "
+                    "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus xMin/xMax; use fillOpacity, "
+                    "not region_between, polygon/free_label, functionIndex1/functionIndex2, domainMin/domainMax, "
+                    "points/coords, expressionTop/expressionBottom/opacity/fillColor/strokeColor fields. "
                     "For graph3d source solids, use data.points:[{id,label,coords:[x,y,z]}], "
                     "data.segments:[{from,to,label?,strokeStyle?}] with strokeStyle:'dashed' or dashed:true "
                     "for hidden edges, data.faces:[{points:[...]}] for polygon faces on prisms/pyramids, "
@@ -1848,8 +1851,10 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                         "description": (
                             "Top-level graph2d features. Use kind, not type. Put color, size, strokeWidth, and "
                             "strokeStyle directly on the feature; do not use a style wrapper. Use label with x/y for "
-                            "free text labels and line_segment with x1/y1/x2/y2 for segments; do not use polygon, "
-                            "free_label, points, coords, from/to, fillColor, or strokeColor."
+                            "free text labels and line_segment with x1/y1/x2/y2 for segments; for shaded regions use "
+                            "region_between_curves or region_curve_axis with xMin/xMax and fillOpacity. Do not use polygon, "
+                            "region_between, free_label, points, coords, from/to, functionIndex1/functionIndex2, "
+                            "domainMin/domainMax, fillColor, opacity, or strokeColor."
                         ),
                         "items": {
                             "type": "object",
@@ -1964,7 +1969,8 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
         "graph2d": (
             "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField belongs under data. "
             "For locus/region shading, define boundary functions first and use supported indexed region features; "
-            "do not use polygon/free_label, points/coords, fillColor, or strokeColor."
+            "use region_between_curves or region_curve_axis, xMin/xMax, and fillOpacity, not region_between, "
+            "functionIndex1/functionIndex2, domainMin/domainMax, polygon/free_label, points/coords, fillColor, opacity, or strokeColor."
         ),
         "statsChart": (
             "Use statsChart. Use density/normal/blankAxes for statistical curves and sketch axes; for histograms or "
@@ -3344,7 +3350,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features; do not use polygon point lists or fillColor/strokeColor aliases."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases."
         )
     if "graph3d" in allowed:
         lines.append(
@@ -3479,7 +3485,7 @@ Tool-call contract:
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
-- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For regions/loci, define boundary functions first and reference them by supported region feature indices.
+- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, domainMin/domainMax, or opacity.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
 - Preserve LaTeX backslashes exactly in JSON strings and use $...$ / $$...$$, not \[...\] or \(...\). For currency, write \\$400 as text or $400$ as a numeric value; never write $\\$400$.

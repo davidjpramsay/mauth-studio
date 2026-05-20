@@ -3339,6 +3339,50 @@ test("rejects graph2d polygon and free-label feature aliases", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[1].coords"));
 });
 
+test("rejects graph2d region kind and index aliases", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-region-between-alias",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                functions: [{ expression: "sqrt(20*x-x^2)" }, { expression: "0" }],
+                features: [
+                  {
+                    kind: "region_between",
+                    functionIndex1: 0,
+                    functionIndex2: 1,
+                    domainMin: 0,
+                    domainMax: 4,
+                    opacity: 0.75,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].kind"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].functionIndex1"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].functionIndex2"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].domainMin"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].domainMax"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].opacity"));
+});
+
 test("accepts structured graph3d point and segment data", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",
