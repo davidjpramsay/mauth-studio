@@ -383,6 +383,10 @@ function graph3dPointReference(value: unknown, path: string, pointNames: Set<str
   addIssue(issues, path, "must be a point id, coordinate triple, or point object", "point id | [x,y,z] | { x, y, z }");
 }
 
+function rejectGraph3DVisibleAlias(entry: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  if (hasOwn(entry, "visible")) addIssue(issues, `${path}.visible`, "is not read by graph3d; use show instead", "show");
+}
+
 function requiredGraph3dPointReference(
   record: Record<string, unknown>,
   key: string,
@@ -856,6 +860,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       }
       optionalString(entry, "label", entryPath, issues);
       optionalString(entry, "color", entryPath, issues);
+      rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
     });
 
@@ -886,6 +891,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalString(entry, "strokeStyle", entryPath, issues);
       optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
       optionalBoolean(entry, "dashed", entryPath, issues);
+      rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
     });
 
@@ -909,6 +915,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         optionalString(entry, "strokeStyle", entryPath, issues);
         optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
         optionalBoolean(entry, "dashed", entryPath, issues);
+        rejectGraph3DVisibleAlias(entry, entryPath, issues);
         optionalBoolean(entry, "show", entryPath, issues);
       });
     }
@@ -939,6 +946,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalNumber(entry, "opacity", entryPath, issues, { min: 0, max: 1 });
       optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
       optionalBoolean(entry, "dashed", entryPath, issues);
+      rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
       if (hasOwn(entry, "style"))
         addIssue(issues, `${entryPath}.style`, "must use graph3d face fillColor/strokeColor fields, not style", "fillColor/strokeColor");
@@ -987,6 +995,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
         optionalNumber(entry, "stepsU", entryPath, issues, { integer: true, min: 8 });
         optionalNumber(entry, "stepsV", entryPath, issues, { integer: true, min: 2 });
+        rejectGraph3DVisibleAlias(entry, entryPath, issues);
         optionalBoolean(entry, "show", entryPath, issues);
         if (hasOwn(entry, "normal")) numberTriple(entry.normal, `${entryPath}.normal`, issues);
         if (hasOwn(entry, "axis")) numberTriple(entry.axis, `${entryPath}.axis`, issues);

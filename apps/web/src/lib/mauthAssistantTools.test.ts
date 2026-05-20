@@ -3425,6 +3425,45 @@ test("accepts structured graph3d point and segment data", () => {
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
 });
 
+test("rejects graph3d visible aliases", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "graph3d-visible-alias",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  points: [
+                    { id: "A", coords: [0, 0, 0], visible: false },
+                    { id: "B", coords: [2, 0, 0] },
+                  ],
+                  segments: [{ from: "A", to: "B", visible: true }],
+                  solids: [{ kind: "sphere", center: [1, 1, 1], radius: 1, visible: true }],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.points[0].visible"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.segments[0].visible"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.solids[0].visible"));
+});
+
 test("high-level question authoring prunes unsupported graph3d metadata", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",

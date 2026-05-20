@@ -2787,6 +2787,28 @@ def graph3d_semantics(
     return point_coords, segment_pairs, dashed_pairs
 
 
+def graph3d_label_texts(configs: list[dict[str, Any]]) -> list[str]:
+    labels: list[str] = []
+    for config in configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        for key in ("points", "vertices", "segments", "edges", "dimensions", "dimensionLines", "faces", "solids"):
+            values = data.get(key)
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                if isinstance(value, dict) and isinstance(value.get("label"), str):
+                    labels.append(value["label"])
+    return labels
+
+
+def label_mentions_symbol(label: str, symbol: str) -> bool:
+    normalized = re.sub(r"\\text\{([^}]*)\}", r"\1", label.lower())
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return re.search(rf"(?<![a-z0-9]){re.escape(symbol.lower())}(?![a-z0-9])", normalized) is not None
+
+
 def graph3d_close_coords(
     actual: tuple[float, float, float] | None,
     expected: tuple[float, float, float],
@@ -3508,8 +3530,15 @@ def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]
                 value = view3d.get(key)
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     issues.append(f"spherical-cap graph3d view3d.{key} should be numeric")
-    if "h" not in graph3d_serialized:
-        issues.append("spherical-cap graph3d diagram should preserve the visible depth label h")
+    if not any(label_mentions_symbol(label, "h") for label in graph3d_label_texts(graph3d_configs)):
+        issues.append(
+            "spherical-cap graph3d diagram should preserve the visible depth label h on a segment or dimension"
+        )
+    for validation_issue in graph3d_validation_issues_from_call(call):
+        issues.append(
+            "spherical-cap graph3d validation issue at "
+            f"{validation_issue.get('path')}: {validation_issue.get('message')}"
+        )
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 2:
@@ -4696,6 +4725,19 @@ def graph3d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
         data = config.get("data")
         if not isinstance(data, dict):
             continue
+        for key in ("points", "vertices", "segments", "edges", "dimensions", "dimensionLines", "faces", "solids"):
+            values = data.get(key)
+            if not isinstance(values, list):
+                continue
+            for index, entry in enumerate(values):
+                if isinstance(entry, dict) and "visible" in entry:
+                    issues.append(
+                        {
+                            "path": f"{config_path}.data.{key}[{index}].visible",
+                            "message": "graph3d does not read visible; use show instead.",
+                            "expected": "show",
+                        }
+                    )
         points = data.get("points")
         if isinstance(points, list):
             for index, point in enumerate(points):
@@ -6660,6 +6702,27 @@ def local_real_specialist_spherical_cap_live_region_alias_call() -> dict[str, An
     return call
 
 
+def local_real_specialist_spherical_cap_missing_graph3d_h_label_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph3d = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    for segment in graph3d["data"].get("segments", []):
+        if isinstance(segment, dict):
+            segment.pop("label", None)
+    graph3d["data"].pop("dimensions", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_spherical_cap_live_graph3d_visible_alias_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph3d = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    graph3d["data"]["points"][0]["visible"] = False
+    graph3d["data"]["segments"][0]["visible"] = True
+    graph3d["data"]["solids"][0]["visible"] = True
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
     pyramid_3d = {
         "type": "graph3d",
@@ -7795,6 +7858,22 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "features[0].domainMin",
             "features[0].domainMax",
             "features[0].opacity",
+        ],
+    },
+    "real-specialist-spherical-cap-missing-graph3d-h-label": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_missing_graph3d_h_label_call,
+        "expectedIssues": [
+            "graph3d diagram should preserve the visible depth label h",
+        ],
+    },
+    "real-specialist-spherical-cap-live-graph3d-visible-alias": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_live_graph3d_visible_alias_call,
+        "expectedIssues": [
+            "data.points[0].visible",
+            "data.segments[0].visible",
+            "data.solids[0].visible",
         ],
     },
     "real-specialist-prism": {
