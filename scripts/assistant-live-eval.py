@@ -3298,6 +3298,18 @@ def graph3d_face_entries(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return faces
 
 
+def graph3d_face_point_sets(configs: list[dict[str, Any]]) -> set[frozenset[str]]:
+    face_sets: set[frozenset[str]] = set()
+    for face in graph3d_face_entries(configs):
+        points = face.get("points") if isinstance(face.get("points"), list) else face.get("vertices")
+        if not isinstance(points, list):
+            continue
+        point_set = frozenset(graph3d_point_key(point) for point in points if graph3d_point_key(point))
+        if point_set:
+            face_sets.add(point_set)
+    return face_sets
+
+
 def graph3d_common_schema_issues(configs: list[dict[str, Any]], label: str) -> list[str]:
     issues: list[str] = []
     for config in configs:
@@ -3500,7 +3512,6 @@ def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]
         )
 
     graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
-    graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
     solids = graph3d_solid_entries(graph3d_configs)
     solid_kinds = {graph3d_solid_kind(solid) for solid in solids}
     if "spherecap" not in solid_kinds and "sphericalcap" not in solid_kinds:
@@ -3818,6 +3829,7 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
         ("e", "b"),
         ("e", "c"),
         ("e", "d"),
+        ("d", "m"),
         ("e", "f"),
         ("f", "m"),
     )
@@ -3826,8 +3838,21 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
             issues.append(f"square-pyramid graph3d data should include segment {''.join(pair).upper()}")
     if not dashed_pairs:
         issues.append("square-pyramid graph3d should mark at least one hidden edge/diagonal as dashed")
-    if not any(len(graph3d_face_entries([config])) >= 4 for config in graph3d_configs):
-        issues.append("square-pyramid graph3d diagram should include pyramid faces, not just edge lines")
+    required_face_sets = (
+        ("a", "b", "c", "d"),
+        ("a", "b", "e"),
+        ("b", "c", "e"),
+        ("c", "d", "e"),
+        ("a", "d", "e"),
+    )
+    face_sets = graph3d_face_point_sets(graph3d_configs)
+    for face_points in required_face_sets:
+        if frozenset(face_points) not in face_sets:
+            issues.append(
+                f"square-pyramid graph3d pyramid faces should include face {''.join(point.upper() for point in face_points)}"
+            )
+    if len(face_sets) < 5:
+        issues.append("square-pyramid graph3d diagram should include all five pyramid faces, not just edge lines")
 
     def midpoint_issue(target: str, first: str, second: str, label: str) -> str | None:
         target_coords = point_coords.get(target)
@@ -3857,6 +3882,52 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
         has_compact_vector_label(graph2d_serialized, "a") and has_compact_vector_label(graph2d_serialized, "b")
     ):
         issues.append("square-pyramid top-view graph2d should preserve vector labels a and b")
+    if graph2d_configs:
+        top_view_points = graph2d_labelled_point_coords(graph2d_configs, ("a", "b", "c", "d", "o", "e", "f", "m"))
+        top_view_point = {label: values[0] if values else None for label, values in top_view_points.items()}
+        if (
+            top_view_point.get("o") is None
+            and top_view_point.get("e") is not None
+            and graph2d_has_symbol_label(graph2d_configs, "o")
+        ):
+            top_view_point["o"] = top_view_point["e"]
+        for label, coords in top_view_point.items():
+            if coords is None:
+                issues.append(f"square-pyramid top-view graph2d should include labelled point {label.upper()}")
+        for first, second in (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"), ("d", "b"), ("c", "a")):
+            if not graph2d_has_segment_between(graph2d_configs, top_view_point.get(first), top_view_point.get(second)):
+                issues.append(f"square-pyramid top-view graph2d should include segment {first.upper()}{second.upper()}")
+        for first, second, vector_label in (("o", "a", "a"), ("o", "b", "b")):
+            if not graph2d_has_vector_ray_toward(
+                graph2d_configs,
+                top_view_point.get(first),
+                top_view_point.get(second),
+                label=vector_label,
+            ):
+                issues.append(
+                    f"square-pyramid top-view graph2d should include vector {vector_label} ray from {first.upper()} toward {second.upper()}"
+                )
+        if not graph2d_close_point(top_view_point.get("o"), top_view_point.get("e")):
+            issues.append("square-pyramid top-view graph2d should project E onto O")
+
+        def top_view_midpoint_issue(target: str, first: str, second: str, label: str) -> str | None:
+            target_coords = top_view_point.get(target)
+            first_coords = top_view_point.get(first)
+            second_coords = top_view_point.get(second)
+            if target_coords is None or first_coords is None or second_coords is None:
+                return None
+            expected = tuple((a + b) / 2 for a, b in zip(first_coords, second_coords, strict=False))
+            if not graph2d_close_point(target_coords, expected):
+                return f"square-pyramid top-view graph2d point {target.upper()} should be midpoint of {label}"
+            return None
+
+        for issue in (
+            top_view_midpoint_issue("o", "d", "b", "D and B"),
+            top_view_midpoint_issue("f", "a", "b", "A and B"),
+            top_view_midpoint_issue("m", "e", "f", "E and F"),
+        ):
+            if issue:
+                issues.append(issue)
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 3:
@@ -4268,6 +4339,156 @@ def graph2d_has_point_feature(
                 feature.get("y"), y, tolerance
             ):
                 return True
+    return False
+
+
+def graph2d_labelled_point_coords(
+    graph_configs: list[dict[str, Any]],
+    labels: tuple[str, ...],
+) -> dict[str, list[tuple[float, float]]]:
+    coords: dict[str, list[tuple[float, float]]] = {label: [] for label in labels}
+    for config in graph_configs:
+        features = config.get("features") if isinstance(config, dict) else None
+        if not isinstance(features, list):
+            continue
+        for feature in features:
+            if not isinstance(feature, dict) or feature.get("kind") != "point":
+                continue
+            x_value = graph2d_numeric(feature.get("x"))
+            y_value = graph2d_numeric(feature.get("y"))
+            if x_value is None or y_value is None:
+                continue
+            label_text = str(feature.get("label") or "")
+            for label in labels:
+                if label_mentions_symbol(label_text, label):
+                    coords[label].append((float(x_value), float(y_value)))
+    return coords
+
+
+def graph2d_has_symbol_label(graph_configs: list[dict[str, Any]], label: str) -> bool:
+    for config in graph_configs:
+        features = config.get("features") if isinstance(config, dict) else None
+        if not isinstance(features, list):
+            continue
+        for feature in features:
+            if isinstance(feature, dict) and label_mentions_symbol(str(feature.get("label") or ""), label):
+                return True
+    return False
+
+
+def graph2d_close_point(
+    actual: tuple[float, float] | None,
+    expected: tuple[float, float] | None,
+    *,
+    tolerance: float = 0.08,
+) -> bool:
+    return (
+        actual is not None
+        and expected is not None
+        and all(
+            abs(actual_value - expected_value) <= tolerance
+            for actual_value, expected_value in zip(actual, expected, strict=False)
+        )
+    )
+
+
+def graph2d_line_segments(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for config in configs:
+        features = config.get("features") if isinstance(config, dict) else None
+        if not isinstance(features, list):
+            continue
+        for feature in features:
+            if isinstance(feature, dict) and feature.get("kind") == "line_segment":
+                segments.append(feature)
+    return segments
+
+
+def graph2d_segment_endpoint_pair(segment: dict[str, Any]) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    x1 = graph2d_numeric(segment.get("x1"))
+    y1 = graph2d_numeric(segment.get("y1"))
+    x2 = graph2d_numeric(segment.get("x2"))
+    y2 = graph2d_numeric(segment.get("y2"))
+    if x1 is None or y1 is None or x2 is None or y2 is None:
+        return None
+    return (float(x1), float(y1)), (float(x2), float(y2))
+
+
+def graph2d_has_segment_between(
+    graph_configs: list[dict[str, Any]],
+    first: tuple[float, float] | None,
+    second: tuple[float, float] | None,
+    *,
+    label: str | None = None,
+    tolerance: float = 0.08,
+) -> bool:
+    if first is None or second is None:
+        return False
+    for segment in graph2d_line_segments(graph_configs):
+        endpoints = graph2d_segment_endpoint_pair(segment)
+        if endpoints is None:
+            continue
+        start, end = endpoints
+        endpoints_match = (
+            graph2d_close_point(start, first, tolerance=tolerance)
+            and graph2d_close_point(end, second, tolerance=tolerance)
+        ) or (
+            graph2d_close_point(start, second, tolerance=tolerance)
+            and graph2d_close_point(end, first, tolerance=tolerance)
+        )
+        if not endpoints_match:
+            continue
+        if label is None or has_compact_vector_label(str(segment.get("label") or ""), label):
+            return True
+    return False
+
+
+def graph2d_point_on_ray(
+    start: tuple[float, float] | None,
+    point: tuple[float, float] | None,
+    target: tuple[float, float] | None,
+    *,
+    tolerance: float = 0.08,
+) -> bool:
+    if start is None or point is None or target is None:
+        return False
+    vx = point[0] - start[0]
+    vy = point[1] - start[1]
+    tx = target[0] - start[0]
+    ty = target[1] - start[1]
+    ray_length = (vx * vx + vy * vy) ** 0.5
+    target_length = (tx * tx + ty * ty) ** 0.5
+    if ray_length <= tolerance or target_length <= tolerance:
+        return False
+    cross = abs(vx * ty - vy * tx)
+    dot = vx * tx + vy * ty
+    return cross <= tolerance * max(ray_length, target_length, 1.0) and dot > 0
+
+
+def graph2d_has_vector_ray_toward(
+    graph_configs: list[dict[str, Any]],
+    start: tuple[float, float] | None,
+    target: tuple[float, float] | None,
+    *,
+    label: str,
+    tolerance: float = 0.08,
+) -> bool:
+    if start is None or target is None:
+        return False
+    for segment in graph2d_line_segments(graph_configs):
+        if not has_compact_vector_label(str(segment.get("label") or ""), label):
+            continue
+        endpoints = graph2d_segment_endpoint_pair(segment)
+        if endpoints is None:
+            continue
+        segment_start, segment_end = endpoints
+        if graph2d_close_point(segment_start, start, tolerance=tolerance) and graph2d_point_on_ray(
+            start,
+            segment_end,
+            target,
+            tolerance=tolerance,
+        ):
+            return True
     return False
 
 
@@ -6776,6 +6997,7 @@ def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
                 {"from": "E", "to": "D"},
                 {"from": "D", "to": "B", "strokeStyle": "dashed"},
                 {"from": "E", "to": "O", "label": "$\\vec e$", "strokeStyle": "dashed"},
+                {"from": "D", "to": "M"},
                 {"from": "E", "to": "F"},
                 {"from": "F", "to": "M"},
             ],
@@ -6924,6 +7146,64 @@ def local_real_specialist_square_pyramid_bad_midpoints_call() -> dict[str, Any]:
             point["coords"] = [0.8, 0.2, 0]
         if point.get("id") == "M":
             point["coords"] = [0.25, 0.25, 0.8]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_square_pyramid_missing_angle_segment_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph3d["data"]["segments"] = [
+        segment
+        for segment in graph3d["data"]["segments"]
+        if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"d", "m"}
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_square_pyramid_bad_top_view_geometry_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    top_view["features"] = [
+        feature
+        for feature in top_view["features"]
+        if not (
+            feature.get("kind") == "line_segment"
+            and graph2d_number_near(feature.get("x1"), -1, 0.01)
+            and graph2d_number_near(feature.get("y1"), 1, 0.01)
+            and graph2d_number_near(feature.get("x2"), 1, 0.01)
+            and graph2d_number_near(feature.get("y2"), -1, 0.01)
+        )
+    ]
+    for feature in top_view["features"]:
+        if feature.get("kind") == "point" and feature.get("label") == "$F$":
+            feature["x"] = 0.7
+            feature["y"] = 0.2
+        if feature.get("kind") == "point" and feature.get("label") == "$M$":
+            feature["x"] = 0.2
+            feature["y"] = 0.1
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_square_pyramid_short_top_view_vector_rays_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    for feature in top_view["features"]:
+        if feature.get("kind") == "line_segment" and feature.get("label") == "$\\vec a$":
+            feature["x2"] = 0.45
+            feature["y2"] = -0.45
+            feature["endArrow"] = True
+        if feature.get("kind") == "line_segment" and feature.get("label") == "$\\vec b$":
+            feature["x2"] = 0.45
+            feature["y2"] = 0.45
+            feature["endArrow"] = True
+        if feature.get("kind") == "point" and feature.get("label") == "$O/E$":
+            feature["label"] = "$E$"
+            feature["labelX"] = 0.02
+            feature["labelY"] = 0.16
+    top_view["features"].append({"kind": "label", "x": -0.12, "y": -0.18, "label": "$O$"})
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -7987,6 +8267,26 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "point F should be midpoint of A and B",
             "point M should be midpoint of E and F",
         ],
+    },
+    "real-specialist-square-pyramid-missing-angle-segment": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_missing_angle_segment_call,
+        "expectedIssues": [
+            "segment DM",
+        ],
+    },
+    "real-specialist-square-pyramid-bad-top-view-geometry": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_bad_top_view_geometry_call,
+        "expectedIssues": [
+            "top-view graph2d should include segment CA",
+            "top-view graph2d point F should be midpoint of A and B",
+            "top-view graph2d point M should be midpoint of E and F",
+        ],
+    },
+    "real-specialist-square-pyramid-short-top-view-vector-rays": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_short_top_view_vector_rays_call,
     },
     "real-specialist-square-pyramid-live-missing-faces-labels": {
         "assert": assert_real_specialist_square_pyramid_call,
