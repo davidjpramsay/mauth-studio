@@ -1011,7 +1011,12 @@ function dedupeWarnings(warnings: readonly BrowserRenderedWarning[]) {
 }
 
 function blockingMetricWarnings(metrics: { warnings?: BrowserRenderedWarning[] }) {
-  const blockingCodes = new Set(["rendered-diagram-failed", "rendered-diagram-clipped"]);
+  const blockingCodes = new Set([
+    "rendered-diagram-failed",
+    "rendered-diagram-clipped",
+    "rendered-diagram-label-collision",
+    "rendered-graph3d-label-quality",
+  ]);
   return (metrics.warnings ?? []).filter((warning) => warning.code && blockingCodes.has(warning.code));
 }
 

@@ -3348,6 +3348,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         "Native diagram rules:",
         f"- Choose renderer by source intent: {chooser}",
         "- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.",
+        "- If rendered feedback reports label collisions or 3D label quality warnings, repair label placement or camera/dimension helpers while preserving the source geometry.",
     ]
     if source_conversion_diagram_collection_only(diagram_types):
         lines.append(

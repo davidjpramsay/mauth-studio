@@ -243,6 +243,7 @@ Status: prototype implemented.
 Follow-ups:
 
 - Move module settings into a right-side inspector panel, similar to Apple-style inspectors. Keep each editor module focused on its main content and immediate editing surface, and put secondary controls such as alignment, visibility, sizing, diagram/chart options, labels, presets, spacing, and advanced metadata in the inspector for the selected module/question/part.
+- Add a source-faithful columns/container module for layouts where the paper intentionally places ordinary content side by side. It should support 2, 3, or 4 columns containing normal modules such as diagrams, text, tables, spaces, and solution surfaces; round-trip through Mauthdown/actions; preserve drag/drop and undo/history; render cleanly in print; and give the assistant a structured way to reproduce side-by-side source diagrams instead of stacking them vertically or faking columns with blank space.
 - Add a separate blank-page structure item instead of allowing duplicate page breaks.
 - Keep browser-testing drag/drop and accidental-click behaviour, especially on narrow screens and touch-like input.
 - Keep selection outlines focused on the innermost selected module and avoid parent highlight noise.
