@@ -486,6 +486,8 @@ function validateCommonGraphConfig(config: Record<string, unknown>, path: string
   optionalString(config, "latex", path, issues);
   optionalString(config, "style", path, issues);
   optionalString(config, "penrosePreset", path, issues);
+  optionalString(config, "xAxisLabel", path, issues);
+  optionalString(config, "yAxisLabel", path, issues);
   optionalString(config, "gridMajorColor", path, issues);
   optionalString(config, "gridMinorColor", path, issues);
   optionalRecord(config, "metadata", path, issues);

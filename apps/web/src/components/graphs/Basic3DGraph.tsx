@@ -410,11 +410,12 @@ function labelLatexSource(value: string) {
 function render3DLatexLabel(label: string) {
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   const latex = labelLatexSource(label);
+  const sourceAttr = `data-mauth-label-text="${escapeHtml(latex)}"`;
   try {
     const html = renderMathJaxSvg(latex, false);
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
   }
 }
 

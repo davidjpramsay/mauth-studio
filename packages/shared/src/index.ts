@@ -192,6 +192,8 @@ export interface GraphConfig {
   showArrows?: boolean;
   showAxisLabels?: boolean;
   showAxisNumbers?: boolean;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
   axisLabelIntervalMode?: "auto" | "manual";
   axisLabelStepX?: number;
   axisLabelStepY?: number;

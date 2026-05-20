@@ -657,13 +657,15 @@ function stripLatexDelimiters(value: string) {
 function expectedLabelText(value: unknown) {
   if (typeof value !== "string") return "";
   return stripLatexDelimiters(value)
-    .replace(/\\\\(?:mathbf|vec|overrightarrow|overleftrightarrow)\\s*\\{([^}]*)\\}/g, "$1")
-    .replace(/\\\\text\\s*\\{([^}]*)\\}/g, "$1")
-    .replace(/\\\\(?:left|right|displaystyle|textstyle)\\b/g, "")
+    .replace(/\\\\+underset\\s*\\{\\s*\\\\+sim\\s*\\}\\s*\\{\\s*([^}]*)\\s*\\}/g, "$1")
+    .replace(/\\\\+(?:mathbf|vec|overrightarrow|overleftrightarrow)\\s*\\{([^}]*)\\}/g, "$1")
+    .replace(/\\\\+(?:text|mathrm)\\s*\\{([^}]*)\\}/g, "$1")
+    .replace(/\\\\+(?:mathbf|vec|text|mathrm)\\s+([A-Za-z0-9]+)/g, "$1")
+    .replace(/\\\\+(?:left|right|displaystyle|textstyle)\\b/g, "")
     .replace(/[{}$]/g, " ")
-    .replace(/\\\\/g, " ")
-    .replace(/\\\\[,;:! ]/g, " ")
-    .replace(/\\\\_/g, "_")
+    .replace(/\\\\+[,;:! ]/g, " ")
+    .replace(/\\\\+_/g, "_")
+    .replace(/\\\\+/g, " ")
     .trim();
 }
 
@@ -678,6 +680,7 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
     }
     for (const feature of Array.isArray(config.features) ? config.features : []) {
       if (feature?.kind !== "point") continue;
+      if (feature?.show === false) continue;
       const label = expectedLabelText(feature.label);
       if (label) labels.push(label);
     }
@@ -689,10 +692,12 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
   }
   if (type === "graph3d" || type === "basic3d") {
     for (const point of Array.isArray(config.data?.points) ? config.data.points : []) {
+      if (point?.show === false) continue;
       const label = expectedLabelText(point?.label);
       if (label) labels.push(label);
     }
     for (const segment of Array.isArray(config.data?.segments) ? config.data.segments : []) {
+      if (segment?.show === false) continue;
       const label = expectedLabelText(segment?.label);
       if (label) labels.push(label);
     }
@@ -700,14 +705,17 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
   if (type === "vector2d") {
     const vector2d = config.metadata?.vector2d ?? {};
     for (const vector of Array.isArray(vector2d.vectors) ? vector2d.vectors : []) {
+      if (vector?.show === false) continue;
       const label = expectedLabelText(vector?.label ?? vector?.name ?? vector?.id);
       if (label) labels.push(label);
     }
     for (const segmentLabel of Array.isArray(vector2d.segmentLabels) ? vector2d.segmentLabels : []) {
+      if (segmentLabel?.show === false) continue;
       const label = expectedLabelText(segmentLabel?.label);
       if (label) labels.push(label);
     }
     for (const angleMarker of Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : []) {
+      if (angleMarker?.show === false) continue;
       const label = expectedLabelText(angleMarker?.label);
       if (label) labels.push(label);
     }
@@ -997,6 +1005,9 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   if (metric.requiredLabels.length > 0 && metric.labelCount === 0) {
     failures.push(`${label} rendered no label surfaces for expected labels: ${metric.requiredLabels.join(", ")}`);
   }
+  if (metric.missingLabels.length > 0) {
+    failures.push(`${label} missing expected label text: ${metric.missingLabels.join(", ")}`);
+  }
   if (/could not render|mathjax-error|error rendering|failed to render/i.test(metric.text)) {
     failures.push(`${label} contains render error text: ${metric.text}`);
   }
@@ -1113,8 +1124,25 @@ async function runBrowserReplay(
                 .toLowerCase()
                 .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
                 .replace(/[^a-z0-9]+/g, "");
+            const labelSearchText = (value: string) =>
+              value
+                .replace(/\\+underset\s*\{\s*\\+sim\s*\}\s*\{\s*([^}]*)\s*\}/g, "$1")
+                .replace(/\\+(?:mathbf|vec|overrightarrow|overleftrightarrow)\s*\{([^}]*)\}/g, "$1")
+                .replace(/\\+(?:text|mathrm)\s*\{([^}]*)\}/g, "$1")
+                .replace(/\\+(?:mathbf|vec|text|mathrm)\s+([A-Za-z0-9]+)/g, "$1")
+                .replace(/\\+(?:left|right|displaystyle|textstyle)\b/g, "")
+                .replace(/[{}$]/g, " ")
+                .replace(/\\+[,;:! ]/g, " ")
+                .replace(/\\+_/g, "_")
+                .replace(/\\+/g, " ");
+            const labelSources = Array.from(frame.querySelectorAll("[data-mauth-label-text]")).map(
+              (element) => element.getAttribute("data-mauth-label-text") ?? "",
+            );
+            const labelSurfaceText = Array.from(frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text"))
+              .map((element) => element.textContent ?? "")
+              .join(" ");
             const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
-            const normalizedText = normalizeLabel(frame.textContent ?? "");
+            const normalizedLabelText = normalizeLabel([labelSurfaceText, ...labelSources.map(labelSearchText)].join(" "));
             const colorProbe = document.createElement("span");
             colorProbe.style.display = "none";
             document.body.appendChild(colorProbe);
@@ -1148,7 +1176,7 @@ async function runBrowserReplay(
               renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
               text,
               requiredLabels,
-              missingLabels: requiredLabels.filter((label) => !normalizedText.includes(normalizeLabel(label))),
+              missingLabels: requiredLabels.filter((label) => !normalizedLabelText.includes(normalizeLabel(label))),
             };
           }),
         )

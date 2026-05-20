@@ -184,10 +184,11 @@ function renderLatexLabelHtml(latex: string, color: string) {
   const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : "#0f172a";
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   if (!source) return "";
+  const sourceAttr = `data-mauth-label-text="${escapeHtml(source)}"`;
   try {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, false)}</span>`;
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, false)}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
   }
 }
 
@@ -915,8 +916,8 @@ export function Vector2DGraph({
       );
 
       if (showAxisLabels) {
-        createAxisLabelText(board, xMax + xAxisExtension, 0, "x", [-10, 8], "middle", "bottom");
-        createAxisLabelText(board, 0, yMax + yAxisExtension, "y", [8, -8], "left", "bottom");
+        createAxisLabelText(board, xMax + xAxisExtension, 0, graphConfig?.xAxisLabel?.trim() || "x", [-10, 8], "middle", "bottom");
+        createAxisLabelText(board, 0, yMax + yAxisExtension, graphConfig?.yAxisLabel?.trim() || "y", [8, -8], "left", "bottom");
       }
     }
 

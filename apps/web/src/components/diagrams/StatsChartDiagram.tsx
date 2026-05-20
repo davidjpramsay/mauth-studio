@@ -145,23 +145,33 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     >
       <div ref={containerRef} className="size-full" />
       {labelMath.title && title ? (
-        <div className="pointer-events-none absolute left-12 right-6 top-2 flex justify-center text-center text-black">
+        <div
+          className="pointer-events-none absolute left-12 right-6 top-2 flex justify-center text-center text-black"
+          data-mauth-label-text={title}
+        >
           <MathText source={title} />
         </div>
       ) : null}
       {labelMath.x && xLabel ? (
-        <div className="pointer-events-none absolute bottom-2 left-14 right-6 flex justify-center text-center text-black">
+        <div
+          className="pointer-events-none absolute bottom-2 left-14 right-6 flex justify-center text-center text-black"
+          data-mauth-label-text={xLabel}
+        >
           <MathText source={xLabel} />
         </div>
       ) : null}
       {horizontalYLabel ? (
         <div
           className={`pointer-events-none absolute left-12 right-6 flex justify-start text-left text-black ${title ? "top-7" : "top-1"}`}
+          data-mauth-label-text={yLabel}
         >
           <MathText source={yLabel} />
         </div>
       ) : labelMath.y && yLabel ? (
-        <div className="pointer-events-none absolute bottom-12 left-1 top-12 flex w-10 items-center justify-center text-center text-black">
+        <div
+          className="pointer-events-none absolute bottom-12 left-1 top-12 flex w-10 items-center justify-center text-center text-black"
+          data-mauth-label-text={yLabel}
+        >
           <div className="-rotate-90 whitespace-nowrap">
             <MathText source={yLabel} />
           </div>
