@@ -1252,6 +1252,27 @@ def test_source_question_tool_schema_stays_compact():
     assert "Use exactly one of graphConfig or vectorRayDiagram" in part_properties["diagram"]["description"]
 
 
+def test_multi_renderer_source_question_schema_uses_diagrams_only():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(
+        require_diagram=True,
+        diagram_types=["graph3d", "graph2d"],
+    )
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    subpart_properties = part_properties["subparts"]["items"]["properties"]
+
+    assert tool["parameters"]["required"] == ["questionNumber", "marks", "questionText", "diagrams"]
+    assert "diagram" not in properties
+    assert "solutionDiagram" not in properties
+    assert "diagram" not in part_properties
+    assert "solutionDiagram" not in part_properties
+    assert "diagram" not in subpart_properties
+    assert "solutionDiagram" not in subpart_properties
+    assert "diagrams" in properties
+    assert "diagrams" in part_properties
+    assert "diagrams" in subpart_properties
+
+
 def test_source_question_table_only_schema_omits_diagram_payloads():
     tool = openai_assistant.mauth_convert_source_question_tool_definition(include_diagram_fields=False)
     serialized = json.dumps(tool, ensure_ascii=False)

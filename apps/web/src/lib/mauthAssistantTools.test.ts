@@ -389,6 +389,22 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
   ).warnings;
   assert(topViewWarnings.some((warning) => warning.code === "graph2d-source-vector-labels-missing"));
 
+  const topViewUndersetWarnings = inspectMauthDiagram(
+    {
+      type: "graph2d",
+      showAxes: false,
+      features: [
+        { kind: "line_segment", x1: 0, y1: 0, x2: 1, y2: -1, label: "$\\underset{\\sim}{a}$" },
+        { kind: "line_segment", x1: 0, y1: 0, x2: 1, y2: 1, label: "$\\underset{\\sim}{b}$" },
+      ],
+    },
+    "The top view shows position vectors $\\underset{\\sim}{a}$ and $\\underset{\\sim}{b}$.",
+  ).warnings;
+  assert.equal(
+    topViewUndersetWarnings.some((warning) => warning.code === "graph2d-source-vector-labels-missing"),
+    false,
+  );
+
   const coneWarnings = inspectMauthDiagram(
     {
       type: "graph3d",

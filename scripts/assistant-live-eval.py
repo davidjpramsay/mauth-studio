@@ -1756,6 +1756,7 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
 
 def compact_math_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text.lower())
+    compact = re.sub(r"\\underset\{\\sim\}\{([^{}]+)\}", r"\1", compact)
     compact = re.sub(r"\\d?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"\1/\2", compact)
     compact = re.sub(r"\\d?frac([^\\{}])([^\\{}])", r"\1/\2", compact)
     replacements = {
@@ -1779,6 +1780,15 @@ def compact_math_text(text: str) -> str:
     for source, replacement in replacements.items():
         compact = compact.replace(source, replacement)
     return compact
+
+
+def has_compact_vector_label(serialized: str, label: str) -> bool:
+    serialized = serialized.replace("\\\\", "\\")
+    escaped = re.escape(label)
+    return bool(
+        re.search(rf"\\vec\s*(?:\{{\s*{escaped}\s*\}}|\s+{escaped}\b)", serialized)
+        or re.search(rf"\\underset\s*\{{\s*\\sim\s*\}}\s*\{{\s*{escaped}\s*\}}", serialized)
+    )
 
 
 def part_math_text(part: dict[str, Any]) -> str:
@@ -3720,7 +3730,7 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
             issues.append(f"square-pyramid graph3d data should include segment {''.join(pair).upper()}")
     if not dashed_pairs:
         issues.append("square-pyramid graph3d should mark at least one hidden edge/diagonal as dashed")
-    if len(graph3d_face_entries(graph3d_configs)) < 4:
+    if not any(len(graph3d_face_entries([config])) >= 4 for config in graph3d_configs):
         issues.append("square-pyramid graph3d diagram should include pyramid faces, not just edge lines")
 
     def midpoint_issue(target: str, first: str, second: str, label: str) -> str | None:
@@ -3748,8 +3758,7 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
         if graph2d_configs and term not in graph2d_compact:
             issues.append(f"square-pyramid top-view graph2d should preserve label {term.upper()}")
     if graph2d_configs and not (
-        ("\\vec a" in graph2d_serialized or "\\vec{a}" in graph2d_serialized)
-        and ("\\vec b" in graph2d_serialized or "\\vec{b}" in graph2d_serialized)
+        has_compact_vector_label(graph2d_serialized, "a") and has_compact_vector_label(graph2d_serialized, "b")
     ):
         issues.append("square-pyramid top-view graph2d should preserve vector labels a and b")
 
@@ -6741,6 +6750,34 @@ def local_real_specialist_square_pyramid_live_missing_faces_labels_call() -> dic
     return call
 
 
+def local_real_specialist_square_pyramid_live_duplicate_missing_fm_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    call["mauthArguments"]["diagram"] = json.loads(json.dumps(call["mauthArguments"]["diagrams"][0]))
+    graph3d_configs = [
+        call["mauthArguments"]["diagram"]["graphConfig"],
+        call["mauthArguments"]["diagrams"][0]["graphConfig"],
+    ]
+    for graph3d in graph3d_configs:
+        graph3d["data"]["segments"] = [
+            segment
+            for segment in graph3d["data"]["segments"]
+            if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"f", "m"}
+        ]
+        graph3d["data"]["faces"] = [
+            {"points": ["A", "B", "E"], "fillColor": "#fef3c7", "fillOpacity": 0.12},
+            {"points": ["B", "C", "E"], "fillColor": "#dcfce7", "fillOpacity": 0.1},
+            {"points": ["D", "A", "E"], "fillColor": "#e0e7ff", "fillOpacity": 0.1},
+        ]
+    top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    for feature in top_view["features"]:
+        if feature.get("label") == "$\\vec a$":
+            feature["label"] = "$\\underset{\\sim}{a}$"
+        if feature.get("label") == "$\\vec b$":
+            feature["label"] = "$\\underset{\\sim}{b}$"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -7680,6 +7717,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "segment FM",
             "pyramid faces",
             "vector labels a and b",
+        ],
+    },
+    "real-specialist-square-pyramid-live-duplicate-missing-fm": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_live_duplicate_missing_fm_call,
+        "expectedIssues": [
+            "either diagram or diagrams",
+            "segment FM",
+            "pyramid faces",
         ],
     },
     "graph3d-general-solids": {

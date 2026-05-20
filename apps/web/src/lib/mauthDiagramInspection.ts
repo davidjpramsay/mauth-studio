@@ -196,6 +196,7 @@ function vector2dMarkerAngleDistance(config: GraphConfig, marker: Record<string,
 
 function normalizedMathText(rawText: string) {
   return rawText
+    .replace(/\\underset\s*\{\s*\\sim\s*\}\s*\{\s*([^}]+)\s*\}/g, "$1")
     .replace(/\\mathbf\s*\{\s*([^}]+)\s*\}/g, "$1")
     .replace(/\\vec\s*\{\s*([^}]+)\s*\}/g, "$1")
     .replace(/\\overrightarrow\s*\{\s*([^}]+)\s*\}/g, "$1")
@@ -254,27 +255,63 @@ function graphExpressionLooksLinear(expression: string) {
 }
 
 function graphConfigText(config: GraphConfig) {
-  return JSON.stringify(config).toLowerCase();
+  return JSON.stringify(config).replace(/\\\\/g, "\\").toLowerCase();
 }
 
-function hasGraph2dLatexVectorLabel(config: GraphConfig, label: string) {
+type SourceGraph2dVectorLabel = {
+  label: string;
+  style: "vec" | "underset";
+};
+
+function sourceGraph2dVectorLabelKey(entry: SourceGraph2dVectorLabel) {
+  return `${entry.style}:${entry.label}`;
+}
+
+function expectedGraph2dVectorLabels(contextText: string) {
+  const labels = new Map<string, SourceGraph2dVectorLabel>();
+  for (const match of contextText.matchAll(/\\vec\s*(?:\{\s*([a-z])\s*\}|\s+([a-z])\b)/gi)) {
+    const label = (match[1] ?? match[2] ?? "").toLowerCase();
+    if (!label) continue;
+    const entry = { label, style: "vec" as const };
+    labels.set(sourceGraph2dVectorLabelKey(entry), entry);
+  }
+  for (const match of contextText.matchAll(/\\underset\s*\{\s*\\sim\s*\}\s*\{\s*([a-z])\s*\}/gi)) {
+    const label = (match[1] ?? "").toLowerCase();
+    if (!label) continue;
+    const entry = { label, style: "underset" as const };
+    labels.set(sourceGraph2dVectorLabelKey(entry), entry);
+  }
+  return [...labels.values()];
+}
+
+function sourceGraph2dVectorLabelText(entry: SourceGraph2dVectorLabel) {
+  return entry.style === "vec" ? `\\vec ${entry.label}` : `\\underset{\\sim}{${entry.label}}`;
+}
+
+function hasGraph2dLatexVectorLabel(config: GraphConfig, entry: SourceGraph2dVectorLabel) {
+  const label = entry.label;
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\\\vec\\s*(?:\\{\\s*${escaped}\\s*\\}|\\s+${escaped}\\b)`, "i").test(graphConfigText(config));
+  const source = graphConfigText(config);
+  if (entry.style === "underset") {
+    return new RegExp(`\\\\underset\\s*\\{\\s*\\\\sim\\s*\\}\\s*\\{\\s*${escaped}\\s*\\}`, "i").test(source);
+  }
+  return new RegExp(`\\\\vec\\s*(?:\\{\\s*${escaped}\\s*\\}|\\s+${escaped}\\b)`, "i").test(source);
 }
 
 function inspectGraph2dVectorLabels(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
   if (config.type !== "graph2d") return [];
   if (!/\btop view\b/i.test(contextText)) return [];
-  if (!/\\vec\s*\{?\s*a\s*\}?/i.test(contextText) || !/\\vec\s*\{?\s*b\s*\}?/i.test(contextText)) return [];
+  const expectedLabels = expectedGraph2dVectorLabels(contextText);
+  if (!expectedLabels.length) return [];
 
-  const missing = ["a", "b"].filter((label) => !hasGraph2dLatexVectorLabel(config, label));
+  const missing = expectedLabels.filter((entry) => !hasGraph2dLatexVectorLabel(config, entry));
   if (!missing.length) return [];
   return [
     {
       code: "graph2d-source-vector-labels-missing",
       severity: "warning",
       message: `Top-view graph should preserve source vector label${missing.length === 1 ? "" : "s"} ${missing
-        .map((label) => `\\vec ${label}`)
+        .map(sourceGraph2dVectorLabelText)
         .join(", ")}.`,
       path: "graphConfig.features",
     },

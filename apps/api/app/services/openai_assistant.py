@@ -2462,8 +2462,15 @@ def source_conversion_table_schema(description: str) -> dict[str, Any]:
     }
 
 
+def source_conversion_diagram_collection_only(diagram_types: list[str] | None) -> bool:
+    return diagram_types is not None and len(ordered_supported_diagram_types(diagram_types)) > 1
+
+
 def source_conversion_part_schema(
-    diagram_types: list[str] | None = None, *, include_diagram_fields: bool = True
+    diagram_types: list[str] | None = None,
+    *,
+    include_diagram_fields: bool = True,
+    diagram_collection_only: bool = False,
 ) -> dict[str, Any]:
     table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
     subpart_table = source_conversion_table_schema(
@@ -2496,21 +2503,18 @@ def source_conversion_part_schema(
         subpart_diagram = source_conversion_compact_diagram_block_schema(
             "Optional native diagram for this subpart.", diagram_types
         )
-        subpart_properties.update(
-            {
-                "diagram": subpart_diagram,
-                "diagrams": {"type": "array", "items": subpart_diagram},
-                "solutionDiagram": source_conversion_compact_diagram_block_schema(
-                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-                ),
-                "solutionDiagrams": {
-                    "type": "array",
-                    "items": source_conversion_compact_diagram_block_schema(
-                        "One completed solution-copy diagram.", diagram_types
-                    ),
-                },
-            }
-        )
+        subpart_properties["diagrams"] = {"type": "array", "items": subpart_diagram}
+        subpart_properties["solutionDiagrams"] = {
+            "type": "array",
+            "items": source_conversion_compact_diagram_block_schema(
+                "One completed solution-copy diagram.", diagram_types
+            ),
+        }
+        if not diagram_collection_only:
+            subpart_properties["diagram"] = subpart_diagram
+            subpart_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+            )
     subpart_schema = {
         "type": "object",
         "properties": subpart_properties,
@@ -2551,21 +2555,18 @@ def source_conversion_part_schema(
         diagram = source_conversion_compact_diagram_block_schema(
             "Optional native diagram for this part.", diagram_types
         )
-        part_properties.update(
-            {
-                "diagram": diagram,
-                "diagrams": {"type": "array", "items": diagram},
-                "solutionDiagram": source_conversion_compact_diagram_block_schema(
-                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-                ),
-                "solutionDiagrams": {
-                    "type": "array",
-                    "items": source_conversion_compact_diagram_block_schema(
-                        "One completed solution-copy diagram.", diagram_types
-                    ),
-                },
-            }
-        )
+        part_properties["diagrams"] = {"type": "array", "items": diagram}
+        part_properties["solutionDiagrams"] = {
+            "type": "array",
+            "items": source_conversion_compact_diagram_block_schema(
+                "One completed solution-copy diagram.", diagram_types
+            ),
+        }
+        if not diagram_collection_only:
+            part_properties["diagram"] = diagram
+            part_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+            )
     return {
         "type": "object",
         "properties": part_properties,
@@ -2582,8 +2583,9 @@ def mauth_convert_source_question_tool_definition(
 ) -> dict[str, Any]:
     include_diagram_fields = include_diagram_fields or require_diagram
     required_fields = ["questionNumber", "marks", "questionText"]
+    diagram_collection_only = source_conversion_diagram_collection_only(diagram_types)
     if require_diagram:
-        required_fields.append("diagram")
+        required_fields.append("diagrams" if diagram_collection_only else "diagram")
     diagram_description = (
         "Required for this request because the source/request asks for a visible mathematical diagram. Recreate it as "
         "native Mauth data; do not replace it with prose."
@@ -2634,31 +2636,30 @@ def mauth_convert_source_question_tool_definition(
             "items": source_conversion_part_schema(
                 diagram_types,
                 include_diagram_fields=include_diagram_fields,
+                diagram_collection_only=diagram_collection_only,
             ),
         },
     }
     if include_diagram_fields:
         diagram = source_conversion_diagram_block_schema(diagram_description, diagram_types)
-        properties.update(
-            {
-                "diagram": diagram,
-                "diagrams": {
-                    "type": "array",
-                    "items": source_conversion_compact_diagram_block_schema(
-                        "One native source diagram.", diagram_types
-                    ),
-                },
-                "solutionDiagram": source_conversion_compact_diagram_block_schema(
-                    "Completed solution-copy diagram.", diagram_types
-                ),
-                "solutionDiagrams": {
-                    "type": "array",
-                    "items": source_conversion_compact_diagram_block_schema(
-                        "One completed solution-copy diagram.", diagram_types
-                    ),
-                },
-            }
-        )
+        properties["diagrams"] = {
+            "type": "array",
+            "description": (
+                "Native source diagrams. Use this field for multiple source diagrams; do not also send diagram."
+            ),
+            "items": source_conversion_compact_diagram_block_schema("One native source diagram.", diagram_types),
+        }
+        properties["solutionDiagrams"] = {
+            "type": "array",
+            "items": source_conversion_compact_diagram_block_schema(
+                "One completed solution-copy diagram.", diagram_types
+            ),
+        }
+        if not diagram_collection_only:
+            properties["diagram"] = diagram
+            properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                "Completed solution-copy diagram.", diagram_types
+            )
     return {
         "type": "function",
         "name": "mauth_convert_source_question",
@@ -3285,8 +3286,16 @@ def instruction_profile_brain_text(profile: str, brain_text: str) -> str:
     return f"{brain_text[:limit]}{suffix}"
 
 
-def source_conversion_diagram_contract(diagram_fields_enabled: bool) -> str:
+def source_conversion_diagram_contract(diagram_fields_enabled: bool, diagram_types: list[str] | None = None) -> str:
     if diagram_fields_enabled:
+        if source_conversion_diagram_collection_only(diagram_types):
+            return (
+                "- If the source attachment includes visible mathematical diagrams, include them in diagrams in "
+                "the same replacement payload, before structured parts when the teacher asks for parts under the diagrams. "
+                "The schema for this request exposes diagrams, not diagram, because multiple native diagrams are expected. "
+                "Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "
+                '"The diagram shows...".'
+            )
         return (
             "- If the source attachment includes a visible mathematical diagram, include it in diagram or diagrams in "
             "the same replacement payload, before structured parts when the teacher asks for parts under the diagram. "
@@ -3319,17 +3328,21 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         f"- Choose renderer by source intent: {chooser}",
         "- Keep renderer fields inside diagram.graphConfig. Do not put type/data/options directly on diagram, and do not use config as a shortcut.",
     ]
+    if source_conversion_diagram_collection_only(diagram_types):
+        lines.append(
+            "- This source needs multiple native diagrams. Put every diagram in the top-level diagrams array; do not send a separate top-level diagram field."
+        )
     if "vector2d" in allowed:
         lines.append(
             "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment, not segment or vector, and preserve source vector labels such as \\vec a. For regions/loci, define boundary functions first and reference them by supported indexed region features."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For source line work and top views, use feature kind line_segment, not segment or vector, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features."
         )
     if "graph3d" in allowed:
         lines.append(
-            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. For an angle such as \\angle DMF, include both DM and MF segments. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
+            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. For a pyramid, include the base face and each triangular side face. For an angle such as \\angle DMF, include both DM and MF segments. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
         )
     if "statsChart" in allowed:
         lines.append(
@@ -3355,7 +3368,7 @@ def source_conversion_assistant_instructions(
     diagram_fields_enabled: bool = True,
     diagram_types: list[str] | None = None,
 ) -> str:
-    diagram_contract = source_conversion_diagram_contract(diagram_fields_enabled)
+    diagram_contract = source_conversion_diagram_contract(diagram_fields_enabled, diagram_types)
     native_diagram_rules = source_conversion_native_diagram_rules(diagram_fields_enabled, diagram_types)
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
