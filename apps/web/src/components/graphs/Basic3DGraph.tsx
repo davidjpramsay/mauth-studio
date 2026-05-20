@@ -407,15 +407,22 @@ function labelLatexSource(value: string) {
   return `\\text{${escapeLatexText(stripped)}}`;
 }
 
-function render3DLatexLabel(label: string) {
+function labelDataAttributes(attributes: Record<string, string | undefined> = {}) {
+  return Object.entries(attributes)
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}="${escapeHtml(value)}"`)
+    .join(" ");
+}
+
+function render3DLatexLabel(label: string, attributes: Record<string, string | undefined> = {}) {
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   const latex = labelLatexSource(label);
-  const sourceAttr = `data-mauth-label-text="${escapeHtml(latex)}"`;
+  const labelAttrs = labelDataAttributes({ "data-mauth-label-text": latex, ...attributes });
   try {
     const html = renderMathJaxSvg(latex, false);
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
   }
 }
 
@@ -502,7 +509,11 @@ function renderGraph3DFace(view: Basic3DView, face: Graph3DFaceEntry, labelOffse
         centroid[1] / face.coords.length + labelOffset,
         centroid[2] / face.coords.length + labelOffset,
       ];
-      view.create("text3d", [labelPoint, render3DLatexLabel(face.label)], LATEX_3D_LABEL_ATTRIBUTES);
+      view.create(
+        "text3d",
+        [labelPoint, render3DLatexLabel(face.label, { "data-mauth-label-role": "graph3d-face-label" })],
+        LATEX_3D_LABEL_ATTRIBUTES,
+      );
     }
   } catch {
     // Keep the rest of the 3D diagram rendering even if an optional face primitive is unsupported.
@@ -809,7 +820,14 @@ export function Basic3DGraph({
             ];
             view?.create(
               "text3d",
-              [[midpoint[0] + labelOffset, midpoint[1] + labelOffset, midpoint[2] + labelOffset], render3DLatexLabel(segment.label)],
+              [
+                [midpoint[0] + labelOffset, midpoint[1] + labelOffset, midpoint[2] + labelOffset],
+                render3DLatexLabel(segment.label, {
+                  "data-mauth-label-role": "graph3d-segment-label",
+                  "data-mauth-segment-from": segment.from,
+                  "data-mauth-segment-to": segment.to,
+                }),
+              ],
               LATEX_3D_LABEL_ATTRIBUTES,
             );
           }
@@ -828,7 +846,7 @@ export function Basic3DGraph({
               "text3d",
               [
                 [point.coords[0] + labelOffset, point.coords[1] + labelOffset, point.coords[2] + labelOffset],
-                render3DLatexLabel(point.label),
+                render3DLatexLabel(point.label, { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id }),
               ],
               {
                 ...LATEX_3D_LABEL_ATTRIBUTES,
@@ -838,9 +856,21 @@ export function Basic3DGraph({
             );
           }
         });
-      view.create("text3d", [[ranges[0][1] + labelOffset, 0, 0], render3DLatexLabel("x")], LATEX_3D_LABEL_ATTRIBUTES);
-      view.create("text3d", [[0, ranges[1][1] + labelOffset, 0], render3DLatexLabel("y")], LATEX_3D_LABEL_ATTRIBUTES);
-      view.create("text3d", [[0, 0, ranges[2][1] + labelOffset], render3DLatexLabel("z")], LATEX_3D_LABEL_ATTRIBUTES);
+      view.create(
+        "text3d",
+        [[ranges[0][1] + labelOffset, 0, 0], render3DLatexLabel("x", { "data-mauth-label-role": "axis-label" })],
+        LATEX_3D_LABEL_ATTRIBUTES,
+      );
+      view.create(
+        "text3d",
+        [[0, ranges[1][1] + labelOffset, 0], render3DLatexLabel("y", { "data-mauth-label-role": "axis-label" })],
+        LATEX_3D_LABEL_ATTRIBUTES,
+      );
+      view.create(
+        "text3d",
+        [[0, 0, ranges[2][1] + labelOffset], render3DLatexLabel("z", { "data-mauth-label-role": "axis-label" })],
+        LATEX_3D_LABEL_ATTRIBUTES,
+      );
     } catch {
       board.create("text", [-4.8, 4.8, "3D graph adapter"], LABEL_ATTRIBUTES);
     }

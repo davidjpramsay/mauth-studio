@@ -91,9 +91,9 @@ function isDuplicateNumericTickCollision(leftText: string, rightText: string) {
 }
 
 function likelyLabelCollisions(diagramRoot: HTMLElement) {
-  const selectors = "svg text, .jxg-latex-label, mjx-container[jax='SVG']";
+  const selectors = "[data-mauth-label-text], svg text, .annotation-text";
   const rawCandidates = Array.from(diagramRoot.querySelectorAll<Element>(selectors)).filter((element) => {
-    const text = compactText(element.textContent ?? "", 40);
+    const text = compactText(element.getAttribute("data-mauth-label-text") ?? element.textContent ?? "", 40);
     const rect = element.getBoundingClientRect();
     return Boolean(text) && metricElementVisible(element) && rect.width > 4 && rect.height > 4;
   });
@@ -101,7 +101,7 @@ function likelyLabelCollisions(diagramRoot: HTMLElement) {
     (candidate, index) => !rawCandidates.some((other, otherIndex) => otherIndex !== index && other.contains(candidate)),
   );
   const entries = candidates.map((candidate) => ({
-    text: compactText(candidate.textContent ?? "", 40),
+    text: compactText(candidate.getAttribute("data-mauth-label-text") ?? candidate.textContent ?? "", 40),
     rect: candidate.getBoundingClientRect(),
   }));
   const collisions: NonNullable<NonNullable<MauthRenderedPreviewAnchorMetrics["diagram"]>["labelCollisionPairs"]> = [];

@@ -64,6 +64,9 @@ interface BrowserDiagramMetric {
   text: string;
   requiredLabels: string[];
   missingLabels: string[];
+  labelCollisionCount: number;
+  labelCollisionPairs: string[];
+  vector2dAngleMarkerIssues: string[];
 }
 
 interface BrowserRenderedWarning {
@@ -623,6 +626,7 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const requiredLabels = expectedDiagramLabels(config);
   const expectedFunctionColors = expectedGraph2DFunctionColors(config);
   const graph3dExpectations = expectedGraph3DExpectations(config);
+  const vector2dAngleMarkers = expectedVector2DAngleMarkers(config);
   let content: React.ReactNode;
   if (type === "statsChart") content = <StatsChartDiagram graphConfig={config} />;
   else if (type === "vector2d") content = <Vector2DGraph graphConfig={config} />;
@@ -641,6 +645,7 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
       data-graph3d-segment-count={graph3dExpectations.segmentCount}
       data-graph3d-face-count={graph3dExpectations.faceCount}
       data-graph3d-solid-kinds={JSON.stringify(graph3dExpectations.solidKinds)}
+      data-vector2d-angle-markers={JSON.stringify(vector2dAngleMarkers)}
     >
       {content}
     </div>
@@ -727,6 +732,22 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
     }
   }
   return [...new Set(labels)].filter((label) => label.length <= 48);
+}
+
+function expectedVector2DAngleMarkers(graphConfig?: GraphConfig | null) {
+  const config = (graphConfig ?? {}) as any;
+  const vector2d = config.metadata?.vector2d ?? {};
+  if (String(config.type ?? "") !== "vector2d") return [];
+  return (Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : [])
+    .filter((marker: any) => marker?.show !== false)
+    .map((marker: any, index: number) => ({
+      id: String(marker?.id ?? "angle-marker-" + (index + 1)),
+      from: String(marker?.from ?? marker?.vectorA ?? ""),
+      to: String(marker?.to ?? marker?.vectorB ?? ""),
+      rightAngle: marker?.rightAngle === true || marker?.kind === "rightAngle" || marker?.type === "rightAngle",
+      label: expectedLabelText(marker?.label),
+    }))
+    .filter((marker: any) => marker.from && marker.to);
 }
 
 function expectedGraph2DFunctionColors(graphConfig?: GraphConfig | null) {
@@ -1008,6 +1029,12 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   if (metric.missingLabels.length > 0) {
     failures.push(`${label} missing expected label text: ${metric.missingLabels.join(", ")}`);
   }
+  if (metric.type === "vector2d" && metric.labelCollisionCount > 0) {
+    failures.push(`${label} has overlapping vector labels: ${metric.labelCollisionPairs.join("; ")}`);
+  }
+  if (metric.type === "vector2d" && metric.vector2dAngleMarkerIssues.length > 0) {
+    failures.push(`${label} has angle-marker render issues: ${metric.vector2dAngleMarkerIssues.join("; ")}`);
+  }
   if (/could not render|mathjax-error|error rendering|failed to render/i.test(metric.text)) {
     failures.push(`${label} contains render error text: ${metric.text}`);
   }
@@ -1111,6 +1138,13 @@ async function runBrowserReplay(
             const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
             const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
             const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
+            const expectedVector2DAngleMarkers = JSON.parse(frame.getAttribute("data-vector2d-angle-markers") || "[]") as Array<{
+              id: string;
+              from: string;
+              to: string;
+              rightAngle: boolean;
+              label: string;
+            }>;
             const rect = frame.getBoundingClientRect();
             const primitives = Array.from(
               frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
@@ -1124,6 +1158,25 @@ async function runBrowserReplay(
                 .toLowerCase()
                 .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
                 .replace(/[^a-z0-9]+/g, "");
+            const normalizedNumericLabel = (value: string) => {
+              const normalized = value.trim().replace(/−/g, "-").replace(/\s+/g, "");
+              return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalized : null;
+            };
+            const isDuplicateNumericTickCollision = (left: string, right: string) => {
+              const leftValue = normalizedNumericLabel(left);
+              const rightValue = normalizedNumericLabel(right);
+              return Boolean(leftValue && rightValue && leftValue === rightValue);
+            };
+            const collisionArea = (left: DOMRect, right: DOMRect) => {
+              const width = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
+              const height = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+              return width * height;
+            };
+            const visibleElement = (element: Element) => {
+              const box = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return box.width > 4 && box.height > 4 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+            };
             const labelSearchText = (value: string) =>
               value
                 .replace(/\\+underset\s*\{\s*\\+sim\s*\}\s*\{\s*([^}]*)\s*\}/g, "$1")
@@ -1138,6 +1191,50 @@ async function runBrowserReplay(
             const labelSources = Array.from(frame.querySelectorAll("[data-mauth-label-text]")).map(
               (element) => element.getAttribute("data-mauth-label-text") ?? "",
             );
+            const labelEntries = Array.from(frame.querySelectorAll("[data-mauth-label-text]"))
+              .filter(visibleElement)
+              .map((element) => {
+                const box = element.getBoundingClientRect();
+                return {
+                  text: labelSearchText(element.getAttribute("data-mauth-label-text") ?? ""),
+                  normalizedText: normalizeLabel(labelSearchText(element.getAttribute("data-mauth-label-text") ?? "")),
+                  role: element.getAttribute("data-mauth-label-role") ?? "",
+                  markerId: element.getAttribute("data-mauth-angle-marker-id") ?? "",
+                  rect: box,
+                  area: Math.max(1, box.width * box.height),
+                };
+              });
+            const labelCollisionPairs: string[] = [];
+            for (let i = 0; i < labelEntries.length; i += 1) {
+              for (let j = i + 1; j < labelEntries.length; j += 1) {
+                const overlapArea = collisionArea(labelEntries[i].rect, labelEntries[j].rect);
+                const overlapRatio = overlapArea / Math.min(labelEntries[i].area, labelEntries[j].area);
+                if (
+                  overlapArea > 8 &&
+                  overlapRatio > 0.06 &&
+                  !isDuplicateNumericTickCollision(labelEntries[i].text, labelEntries[j].text)
+                ) {
+                  labelCollisionPairs.push(`${labelEntries[i].text || "label"} overlaps ${labelEntries[j].text || "label"}`);
+                }
+              }
+            }
+            const renderedAngleMarkers = Array.from(frame.querySelectorAll("[data-mauth-vector-angle-marker]")).map((element) => ({
+              id: element.getAttribute("data-mauth-angle-marker-id") ?? "",
+              from: element.getAttribute("data-mauth-angle-marker-from") ?? "",
+              to: element.getAttribute("data-mauth-angle-marker-to") ?? "",
+              rightAngle: element.getAttribute("data-mauth-angle-marker-right-angle") === "true",
+            }));
+            const angleLabelIds = new Set(labelEntries.filter((entry) => entry.role === "angle-label").map((entry) => entry.markerId));
+            const vector2dAngleMarkerIssues = expectedVector2DAngleMarkers.flatMap((marker) => {
+              const issues: string[] = [];
+              const rendered = renderedAngleMarkers.some(
+                (entry) =>
+                  entry.id === marker.id && entry.from === marker.from && entry.to === marker.to && entry.rightAngle === marker.rightAngle,
+              );
+              if (!rendered) issues.push(`missing rendered ${marker.rightAngle ? "right-angle" : "angle"} marker ${marker.id}`);
+              if (marker.label && !angleLabelIds.has(marker.id)) issues.push(`missing rendered angle label for marker ${marker.id}`);
+              return issues;
+            });
             const labelSurfaceText = Array.from(frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text"))
               .map((element) => element.textContent ?? "")
               .join(" ");
@@ -1177,6 +1274,9 @@ async function runBrowserReplay(
               text,
               requiredLabels,
               missingLabels: requiredLabels.filter((label) => !normalizedLabelText.includes(normalizeLabel(label))),
+              labelCollisionCount: labelCollisionPairs.length,
+              labelCollisionPairs: labelCollisionPairs.slice(0, 6),
+              vector2dAngleMarkerIssues,
             };
           }),
         )

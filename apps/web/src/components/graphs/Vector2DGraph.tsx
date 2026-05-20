@@ -74,7 +74,7 @@ type JXGElement = {
   Y?: () => number;
   coords?: { usrCoords?: number[] };
   isDraggable?: boolean;
-  rendNode?: HTMLElement;
+  rendNode?: HTMLElement | SVGElement;
   moveTo?: (coordinates: [number, number], time?: number) => void;
   on?: (event: string, callback: (...args: unknown[]) => void) => void;
 };
@@ -179,16 +179,31 @@ function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function renderLatexLabelHtml(latex: string, color: string) {
+function labelDataAttributes(attributes: Record<string, string | undefined> = {}) {
+  return Object.entries(attributes)
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}="${escapeHtml(value)}"`)
+    .join(" ");
+}
+
+function setRenderedDataAttributes(element: unknown, attributes: Record<string, string | undefined>) {
+  const node = (element as JXGElement).rendNode;
+  if (!node) return;
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value) node.setAttribute(key, value);
+  }
+}
+
+function renderLatexLabelHtml(latex: string, color: string, attributes: Record<string, string | undefined> = {}) {
   const source = latex.trim();
   const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : "#0f172a";
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   if (!source) return "";
-  const sourceAttr = `data-mauth-label-text="${escapeHtml(source)}"`;
+  const labelAttrs = labelDataAttributes({ "data-mauth-label-text": source, ...attributes });
   try {
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, false)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, false)}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
   }
 }
 
@@ -501,7 +516,21 @@ function drawSegmentLabel(board: JXG.Board, vector: Vector2DEntry, label: Vector
   const [defaultX, defaultY] = offsetUserByPixels(board, baseX, baseY, offsetX, offsetY);
   const x = Number.isFinite(label.labelX) ? (label.labelX as number) : defaultX;
   const y = Number.isFinite(label.labelY) ? (label.labelY as number) : defaultY;
-  createVectorLabelText(board, x, y, label.label, label.color, onMove);
+  createVectorLabelText(board, x, y, label.label, label.color, onMove, {
+    "data-mauth-label-role": "segment-label",
+    "data-mauth-segment-label-id": label.id,
+    "data-mauth-vector-id": vector.id,
+  });
+}
+
+function angleMarkerDataAttributes(marker: Vector2DAngleMarker) {
+  return {
+    "data-mauth-vector-angle-marker": "true",
+    "data-mauth-angle-marker-id": marker.id,
+    "data-mauth-angle-marker-from": marker.from,
+    "data-mauth-angle-marker-to": marker.to,
+    "data-mauth-angle-marker-right-angle": marker.rightAngle ? "true" : "false",
+  };
 }
 
 function drawRightAngleMarker(board: JXG.Board, marker: Vector2DAngleMarker, first: Vector2DEntry, second: Vector2DEntry) {
@@ -523,8 +552,11 @@ function drawRightAngleMarker(board: JXG.Board, marker: Vector2DAngleMarker, fir
     withLabel: false,
     layer: GRAPH_LAYERS.vectorGuide,
   } as Record<string, unknown>;
-  board.create("segment", [p1, p2], attrs);
-  board.create("segment", [p2, p3], attrs);
+  const firstSegment = board.create("segment", [p1, p2], attrs);
+  const secondSegment = board.create("segment", [p2, p3], attrs);
+  const markerAttrs = angleMarkerDataAttributes(marker);
+  setRenderedDataAttributes(firstSegment, markerAttrs);
+  setRenderedDataAttributes(secondSegment, markerAttrs);
 }
 
 function drawAngleArc(board: JXG.Board, marker: Vector2DAngleMarker, first: Vector2DEntry, second: Vector2DEntry) {
@@ -539,7 +571,7 @@ function drawAngleArc(board: JXG.Board, marker: Vector2DAngleMarker, first: Vect
     xs.push(vertex[0] + Math.cos(angle) * marker.radius);
     ys.push(vertex[1] + Math.sin(angle) * marker.radius);
   }
-  board.create("curve", [xs, ys], {
+  const arc = board.create("curve", [xs, ys], {
     strokeColor: marker.color,
     highlightStrokeColor: marker.color,
     strokeWidth: 1.6,
@@ -547,6 +579,7 @@ function drawAngleArc(board: JXG.Board, marker: Vector2DAngleMarker, first: Vect
     highlight: false,
     layer: GRAPH_LAYERS.vectorGuide,
   } as Record<string, unknown>);
+  setRenderedDataAttributes(arc, angleMarkerDataAttributes(marker));
 }
 
 function drawAngleMarker(
@@ -567,7 +600,13 @@ function drawAngleMarker(
   const labelRadius = marker.radius * 1.45;
   const labelX = Number.isFinite(marker.labelX) ? (marker.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius;
   const labelY = Number.isFinite(marker.labelY) ? (marker.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius;
-  createVectorLabelText(board, labelX, labelY, marker.label, marker.color, onLabelMove);
+  createVectorLabelText(board, labelX, labelY, marker.label, marker.color, onLabelMove, {
+    "data-mauth-label-role": "angle-label",
+    "data-mauth-angle-marker-id": marker.id,
+    "data-mauth-angle-marker-from": marker.from,
+    "data-mauth-angle-marker-to": marker.to,
+    "data-mauth-angle-marker-right-angle": marker.rightAngle ? "true" : "false",
+  });
 }
 
 function createVectorLabelText(
@@ -577,12 +616,13 @@ function createVectorLabelText(
   latex: string,
   color: string,
   onMove?: (x: number, y: number) => void,
+  attributes: Record<string, string | undefined> = {},
 ) {
   if (!latex.trim()) return;
   const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : "#0f172a";
   const labelInteractionCss = ` user-select: none; -webkit-user-select: none; touch-action: none;${onMove ? " cursor: move;" : ""}`;
   const labelCss = `${GRAPH_LABEL_FONT_CSS} color: ${safeColor};${labelInteractionCss}`;
-  const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, safeColor)], {
+  const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, safeColor, attributes)], {
     fixed: !onMove,
     highlight: false,
     strokeColor: safeColor,
@@ -623,7 +663,7 @@ function createAxisLabelText(
   anchorY: "top" | "middle" | "bottom",
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
-  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR)], {
+  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, { "data-mauth-label-role": "axis-label" })], {
     fixed: true,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -959,6 +999,7 @@ export function Vector2DGraph({
           labelLatex,
           vector.color,
           onGraphConfigChange ? (x, y) => commitVectorLabelPosition(vectorIndex, x, y) : undefined,
+          { "data-mauth-label-role": "vector", "data-mauth-vector-id": vector.id },
         );
       }
     });
