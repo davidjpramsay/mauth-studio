@@ -169,7 +169,8 @@ function angleLabelDegrees(value: unknown) {
 function scalarSegmentLabelNeedsTextUnits(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return false;
   if (!/\bunits?\b/i.test(value)) return false;
-  return !/\\(?:text|mathrm)\s*\{\s*units?\s*\}/i.test(value);
+  const source = value.trim().replace(/^\${1,2}|\${1,2}$/g, "");
+  return !/(?:\\[,;:! ]|~|\s)\\(?:text|mathrm)\s*\{\s*units?\s*\}|\\(?:text|mathrm)\s*\{\s+units?\s*\}/i.test(source);
 }
 
 function scalarAngleLabelNeedsCirc(value: unknown) {
@@ -800,7 +801,8 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
     warnings.push({
       code: "scalar-product-segment-label-tex-unsafe",
       severity: "warning",
-      message: "Scalar-product vector magnitude labels that include units should use MathJax-safe text, for example 2\\ \\text{units}.",
+      message:
+        "Scalar-product vector magnitude labels that include units should use MathJax-safe text with spacing, for example 2\\ \\text{units}.",
       path: "graphConfig.metadata.vector2d.segmentLabels",
     });
   }

@@ -485,7 +485,7 @@ test("inspects diagram-specific semantic issues for assistant repair", () => {
             { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.52, 2.95] },
             { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.638, 1.147] },
           ],
-          segmentLabels: [{ vectorId: "d", label: "2 units" }],
+          segmentLabels: [{ vectorId: "d", label: "2\\text{units}" }],
           angleMarkers: [{ from: "c", to: "d", label: "45°" }],
         },
       },

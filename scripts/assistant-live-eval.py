@@ -1650,10 +1650,17 @@ def marker_pair(marker: dict[str, Any]) -> set[str]:
 
 
 def scalar_segment_label_tex_safe(value: Any) -> bool:
-    label = str(value or "")
+    label = str(value or "").strip()
     if not re.search(r"\bunits?\b", label, flags=re.IGNORECASE):
         return True
-    return bool(re.search(r"\\(?:text|mathrm)\s*\{\s*units?\s*\}", label, flags=re.IGNORECASE))
+    stripped = re.sub(r"^\${1,2}|\${1,2}$", "", label)
+    return bool(
+        re.search(
+            r"(?:\\[,;:! ]|~|\s)\\(?:text|mathrm)\s*\{\s*units?\s*\}|\\(?:text|mathrm)\s*\{\s+units?\s*\}",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def scalar_angle_label_tex_safe(value: Any) -> bool:
@@ -1713,6 +1720,17 @@ def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "
         if value not in serialized:
             issues.append(f"vectorRayDiagram should preserve visible value {value!r}")
 
+    length_labels = [
+        entry.get("lengthLabel")
+        for entry in vector_entries.values()
+        if isinstance(entry, dict) and entry.get("lengthLabel") is not False
+    ]
+    segment_labels = vector_ray.get("segmentLabels")
+    if isinstance(segment_labels, list):
+        length_labels.extend(label.get("label") for label in segment_labels if isinstance(label, dict))
+    if any(not scalar_segment_label_tex_safe(label) for label in length_labels):
+        issues.append("vectorRayDiagram magnitude labels should use TeX-safe \\ \\text{units}")
+
     markers = vector_ray.get("angleMarkers")
     if not isinstance(markers, list) or not markers:
         issues.append("vectorRayDiagram.angleMarkers should include right-angle and 45 degree markers")
@@ -1731,6 +1749,8 @@ def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "
             for marker in markers
         ):
             issues.append("vectorRayDiagram 45 degree marker should span the labelled rays c and d")
+        if any(isinstance(marker, dict) and not scalar_angle_label_tex_safe(marker.get("label")) for marker in markers):
+            issues.append("vectorRayDiagram angle labels should use TeX-safe ^\\circ notation")
     return issues
 
 
@@ -5698,14 +5718,14 @@ def local_screenshot_scalar_products_call() -> dict[str, Any]:
                     "widthPx": 560,
                     "heightPx": 380,
                     "vectors": [
-                        {"id": "a", "length": 2, "angleDeg": 215, "lengthLabel": "2 units"},
-                        {"id": "b", "length": 2, "angleDeg": 125, "lengthLabel": "2\\text{units}"},
+                        {"id": "a", "length": 2, "angleDeg": 215, "lengthLabel": "2\\ \\text{units}"},
+                        {"id": "b", "length": 2, "angleDeg": 125, "lengthLabel": "2\\ \\text{units}"},
                         {"id": "c", "length": 3, "angleDeg": 80, "lengthLabel": "3\\ \\text{units}"},
                         {"id": "d", "length": 2, "angleDeg": 35, "lengthLabel": "$2\\ \\text{units}$"},
                     ],
                     "angleMarkers": [
                         {"from": "b", "to": "d", "rightAngle": True, "radius": 0.42},
-                        {"from": "c", "to": "d", "label": "45°", "radius": 0.72},
+                        {"from": "c", "to": "d", "label": "45^\\circ", "radius": 0.72},
                     ],
                 },
             },
@@ -5716,6 +5736,28 @@ def local_screenshot_scalar_products_call() -> dict[str, Any]:
             ],
         }
     )
+
+
+def local_screenshot_scalar_products_bad_compact_labels_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_screenshot_scalar_products_call()))
+    vector_ray = call["mauthArguments"]["diagram"]["vectorRayDiagram"]
+    vector_ray["vectors"][0]["lengthLabel"] = "2units"
+    vector_ray["vectors"][1]["lengthLabel"] = "2\\text{units}"
+    vector_ray["vectors"][2]["lengthLabel"] = "3 units"
+    vector_ray["angleMarkers"][1]["label"] = "45 degrees"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_screenshot_scalar_products_bad_marker_pairs_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_screenshot_scalar_products_call()))
+    vector_ray = call["mauthArguments"]["diagram"]["vectorRayDiagram"]
+    vector_ray["angleMarkers"] = [
+        {"from": "a", "to": "b", "rightAngle": True, "radius": 0.42},
+        {"from": "a", "to": "d", "label": "45^\\circ", "radius": 0.72},
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
 
 
 def local_screenshot_scalar_products_bad_raw_labels_call() -> dict[str, Any]:
@@ -8052,6 +8094,22 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "native vector2d magnitude labels should use TeX-safe \\text{units}",
             "native vector2d angle labels should use TeX-safe ^\\circ notation",
+        ],
+    },
+    "screenshot-scalar-products-bad-compact-labels": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_bad_compact_labels_call,
+        "expectedIssues": [
+            "vectorRayDiagram magnitude labels should use TeX-safe \\ \\text{units}",
+            "vectorRayDiagram angle labels should use TeX-safe ^\\circ notation",
+        ],
+    },
+    "screenshot-scalar-products-bad-marker-pairs": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_bad_marker_pairs_call,
+        "expectedIssues": [
+            "right-angle marker should span the perpendicular rays b and d",
+            "45 degree marker should span the labelled rays c and d",
         ],
     },
     "real-methods-earthquake": {

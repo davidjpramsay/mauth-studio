@@ -1630,14 +1630,16 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
         "metadata.vector2d.vectors[] entry must include id, name, start:[x,y], and components:[dx,dy]. "
         "Use labelStyle:'custom' with labels such as '\\\\mathbf{a}' for source scalar-product ray diagrams. "
         "Use metadata.vector2d.segmentLabels[] with vectorId matching a vector id for magnitude labels, and "
-        "metadata.vector2d.angleMarkers[] with from/to matching vector ids for angle or right-angle markers."
+        "metadata.vector2d.angleMarkers[] with from/to matching vector ids for angle or right-angle markers. "
+        "Use spaced TeX labels such as 2\\\\ \\\\text{units} and 45^\\\\circ, not 2\\\\text{units} or 45°."
     )
     vector_ray_diagram_schema = {
         "type": "object",
         "description": (
             "Compact builder for source-faithful scalar-product ray/vector diagrams with no axes. Use this instead "
             "of hand-building vector2d graphConfig when converting screenshots with common-origin rays, magnitude "
-            "labels, right-angle markers, and angle labels. Angles are standard degrees: 0 is right, 90 is up."
+            "labels, right-angle markers, and angle labels. Use lengthLabel values such as 2\\\\ \\\\text{units} "
+            "and angle marker labels such as 45^\\\\circ. Angles are standard degrees: 0 is right, 90 is up."
         ),
         "properties": {
             "widthPx": {"type": "number", "minimum": 120, "maximum": 900},
@@ -2037,7 +2039,8 @@ def source_conversion_diagram_block_schema(description: str, diagram_types: list
             "type": "object",
             "description": (
                 "Compact no-axis scalar-product ray/vector diagram. Include vectors with id/name, length or "
-                "components, angleDeg, lengthLabel, and optional angleMarkers."
+                "components, angleDeg, lengthLabel such as 2\\\\ \\\\text{units}, and optional angleMarkers "
+                "with labels such as 45^\\\\circ."
             ),
             "properties": {
                 "widthPx": {"type": "number"},
@@ -3422,7 +3425,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "vector2d" in allowed:
         lines.append(
-            "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
+            "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Use spaced TeX magnitude labels such as 2\\ \\text{units} and angle labels such as 45^\\circ. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
         )
     if "graph2d" in allowed:
         lines.append(
