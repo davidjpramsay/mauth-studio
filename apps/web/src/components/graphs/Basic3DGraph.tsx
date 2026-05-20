@@ -31,6 +31,15 @@ type Graph3DSegmentEntry = {
   dashed?: boolean;
   show: boolean;
 };
+type Graph3DDimensionEntry = {
+  from: Point3DCoords;
+  to: Point3DCoords;
+  label?: string;
+  color?: string;
+  dashed?: boolean;
+  strokeWidth?: number;
+  show: boolean;
+};
 type Graph3DFaceEntry = {
   coords: Point3DCoords[];
   label?: string;
@@ -42,6 +51,7 @@ type Graph3DFaceEntry = {
   show: boolean;
 };
 type Graph3DSolidKind = "circle" | "cone" | "cylinder" | "sphere" | "spherecap" | "sphericalcap";
+type Graph3DRenderStyle = "surface" | "wireframe" | "outline";
 type Graph3DSolidEntry = {
   kind: Graph3DSolidKind;
   center?: Point3DCoords;
@@ -55,6 +65,7 @@ type Graph3DSolidEntry = {
   fillOpacity: number;
   strokeColor?: string;
   strokeWidth?: number;
+  renderStyle: Graph3DRenderStyle;
   stepsU: number;
   stepsV: number;
   show: boolean;
@@ -149,6 +160,13 @@ function stringValue(value: unknown, fallback = "") {
 
 function colorValue(value: unknown, fallback?: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function graph3dRenderStyle(value: unknown): Graph3DRenderStyle {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (normalized === "wireframe" || normalized === "wire" || normalized === "mesh") return "wireframe";
+  if (normalized === "outline" || normalized === "edges") return "outline";
+  return "surface";
 }
 
 function vectorAdd(left: Point3DCoords, right: Point3DCoords): Point3DCoords {
@@ -263,6 +281,30 @@ function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: 
   });
 }
 
+function graph3dDimensions(graphConfig: GraphConfig | null | undefined, pointMap: Map<string, Graph3DPointEntry>): Graph3DDimensionEntry[] {
+  const data = graph3dData(graphConfig);
+  const rawDimensions = Array.isArray(data.dimensions) ? data.dimensions : Array.isArray(data.dimensionLines) ? data.dimensionLines : [];
+  return rawDimensions.flatMap((rawDimension): Graph3DDimensionEntry[] => {
+    const dimension = asRecord(rawDimension);
+    if (!dimension) return [];
+    const pointPair = Array.isArray(dimension.points) ? dimension.points : undefined;
+    const from = pointCoordsFromValue(dimension.from ?? dimension.start ?? pointPair?.[0], pointMap);
+    const to = pointCoordsFromValue(dimension.to ?? dimension.end ?? pointPair?.[1], pointMap);
+    if (!from || !to) return [];
+    return [
+      {
+        from,
+        to,
+        label: typeof dimension.label === "string" ? dimension.label : undefined,
+        color: colorValue(dimension.color, colorValue(dimension.strokeColor, "#6b7280")),
+        dashed: dimension.dashed === true || dimension.strokeStyle === "dashed",
+        strokeWidth: positiveNumber(dimension.strokeWidth, 1.3),
+        show: dimension.show !== false,
+      },
+    ];
+  });
+}
+
 function graph3dFaces(graphConfig: GraphConfig | null | undefined, pointMap: Map<string, Graph3DPointEntry>): Graph3DFaceEntry[] {
   const data = graph3dData(graphConfig);
   const rawFaces = Array.isArray(data.faces) ? data.faces : [];
@@ -329,6 +371,7 @@ function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Ma
         fillOpacity: clampedOpacity(solid.fillOpacity ?? solid.opacity, 0.16),
         strokeColor: colorValue(solid.strokeColor, colorValue(solid.color, "#1f2937")),
         strokeWidth: positiveNumber(solid.strokeWidth, 1.4),
+        renderStyle: graph3dRenderStyle(solid.renderStyle ?? solid.display ?? solid.mode),
         stepsU: Math.max(8, Math.floor(positiveNumber(solid.stepsU, 32))),
         stepsV: Math.max(2, Math.floor(positiveNumber(solid.stepsV, 10))),
         show: solid.show !== false,
@@ -570,10 +613,13 @@ function solidStrokeAttributes(solid: Graph3DSolidEntry) {
 }
 
 function surfaceAttributes(solid: Graph3DSolidEntry) {
+  const surfaceMode = solid.renderStyle === "surface";
   return {
     ...solidStrokeAttributes(solid),
+    strokeWidth: surfaceMode ? Math.min(0.8, solid.strokeWidth ?? 0.8) : solid.strokeWidth,
+    strokeOpacity: surfaceMode ? 0.28 : 0.75,
     fillColor: solid.fillColor ?? "#93c5fd",
-    fillOpacity: solid.fillOpacity,
+    fillOpacity: solid.renderStyle === "wireframe" ? 0 : solid.fillOpacity,
     gradient: null,
     stepsU: solid.stepsU,
     stepsV: solid.stepsV,
@@ -628,27 +674,70 @@ function renderGraph3DFace(
   }
 }
 
+function renderGraph3DDimension(
+  view: Basic3DView,
+  dimension: Graph3DDimensionEntry,
+  labelContext: Graph3DLabelContext,
+  labelOffset: number,
+  avoidCoords: Point3DCoords[],
+) {
+  if (!dimension.show) return;
+  const color = dimension.color ?? "#6b7280";
+  renderCurve3D(view, dimension.from, dimension.to, {
+    strokeColor: color,
+    strokeWidth: dimension.strokeWidth ?? 1.3,
+    dash: dimension.dashed ? 2 : 0,
+    highlight: false,
+  });
+  for (const coords of [dimension.from, dimension.to]) {
+    view.create("point3d", coords, {
+      ...POINT_3D_ATTRIBUTES,
+      fillColor: color,
+      strokeColor: color,
+      size: 2,
+      withLabel: false,
+    });
+  }
+  if (dimension.label?.trim()) {
+    const midpoint: Point3DCoords = [
+      (dimension.from[0] + dimension.to[0]) / 2,
+      (dimension.from[1] + dimension.to[1]) / 2,
+      (dimension.from[2] + dimension.to[2]) / 2,
+    ];
+    view.create(
+      "text3d",
+      [
+        graph3dLabelPoint(midpoint, labelContext, labelOffset * 1.6, avoidCoords),
+        render3DLatexLabel(dimension.label, { "data-mauth-label-role": "graph3d-dimension-label" }),
+      ],
+      LATEX_3D_LABEL_ATTRIBUTES,
+    );
+  }
+}
+
 function renderCone3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   if (!solid.baseCenter || !solid.apex) return;
   const axis = vectorSubtract(solid.apex, solid.baseCenter);
   const { u, v } = basisFromNormal(axis);
-  try {
-    view.create(
-      "parametricsurface3d",
-      [
-        (angle: number, t: number) =>
-          solid.baseCenter![0] + axis[0] * t + solid.radius * (1 - t) * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
-        (angle: number, t: number) =>
-          solid.baseCenter![1] + axis[1] * t + solid.radius * (1 - t) * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
-        (angle: number, t: number) =>
-          solid.baseCenter![2] + axis[2] * t + solid.radius * (1 - t) * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
-        [0, Math.PI * 2],
-        [0, 1],
-      ],
-      surfaceAttributes(solid),
-    );
-  } catch {
-    // The outline fallback below still communicates the source solid faithfully.
+  if (solid.renderStyle !== "outline") {
+    try {
+      view.create(
+        "parametricsurface3d",
+        [
+          (angle: number, t: number) =>
+            solid.baseCenter![0] + axis[0] * t + solid.radius * (1 - t) * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
+          (angle: number, t: number) =>
+            solid.baseCenter![1] + axis[1] * t + solid.radius * (1 - t) * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
+          (angle: number, t: number) =>
+            solid.baseCenter![2] + axis[2] * t + solid.radius * (1 - t) * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
+          [0, Math.PI * 2],
+          [0, 1],
+        ],
+        surfaceAttributes(solid),
+      );
+    } catch {
+      // The outline fallback below still communicates the source solid faithfully.
+    }
   }
   renderCircleCurve3D(view, solid.baseCenter, axis, solid.radius, solidStrokeAttributes(solid));
   for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
@@ -660,20 +749,25 @@ function renderCylinder3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   if (!solid.baseCenter || !solid.topCenter) return;
   const axis = vectorSubtract(solid.topCenter, solid.baseCenter);
   const { u, v } = basisFromNormal(axis);
-  try {
-    view.create(
-      "parametricsurface3d",
-      [
-        (angle: number, t: number) => solid.baseCenter![0] + axis[0] * t + solid.radius * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
-        (angle: number, t: number) => solid.baseCenter![1] + axis[1] * t + solid.radius * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
-        (angle: number, t: number) => solid.baseCenter![2] + axis[2] * t + solid.radius * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
-        [0, Math.PI * 2],
-        [0, 1],
-      ],
-      surfaceAttributes(solid),
-    );
-  } catch {
-    // The outline fallback below still communicates the source solid faithfully.
+  if (solid.renderStyle !== "outline") {
+    try {
+      view.create(
+        "parametricsurface3d",
+        [
+          (angle: number, t: number) =>
+            solid.baseCenter![0] + axis[0] * t + solid.radius * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
+          (angle: number, t: number) =>
+            solid.baseCenter![1] + axis[1] * t + solid.radius * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
+          (angle: number, t: number) =>
+            solid.baseCenter![2] + axis[2] * t + solid.radius * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
+          [0, Math.PI * 2],
+          [0, 1],
+        ],
+        surfaceAttributes(solid),
+      );
+    } catch {
+      // The outline fallback below still communicates the source solid faithfully.
+    }
   }
   renderCircleCurve3D(view, solid.baseCenter, axis, solid.radius, solidStrokeAttributes(solid));
   renderCircleCurve3D(view, solid.topCenter, axis, solid.radius, solidStrokeAttributes(solid));
@@ -689,16 +783,18 @@ function renderCylinder3D(view: Basic3DView, solid: Graph3DSolidEntry) {
 
 function renderSphere3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   if (!solid.center) return;
-  try {
-    const centerPoint = view.create("point3d", solid.center, HIDDEN_3D_POINT_ATTRIBUTES);
-    const radiusPoint = view.create(
-      "point3d",
-      [solid.center[0] + solid.radius, solid.center[1], solid.center[2]],
-      HIDDEN_3D_POINT_ATTRIBUTES,
-    );
-    view.create("sphere3d", [centerPoint, radiusPoint], surfaceAttributes(solid));
-  } catch {
-    // The three great circles below are a stable wireframe fallback.
+  if (solid.renderStyle !== "outline") {
+    try {
+      const centerPoint = view.create("point3d", solid.center, HIDDEN_3D_POINT_ATTRIBUTES);
+      const radiusPoint = view.create(
+        "point3d",
+        [solid.center[0] + solid.radius, solid.center[1], solid.center[2]],
+        HIDDEN_3D_POINT_ATTRIBUTES,
+      );
+      view.create("sphere3d", [centerPoint, radiusPoint], surfaceAttributes(solid));
+    } catch {
+      // The three great circles below are a stable wireframe fallback.
+    }
   }
   renderCircleCurve3D(view, solid.center, [0, 0, 1], solid.radius, solidStrokeAttributes(solid));
   renderCircleCurve3D(view, solid.center, [0, 1, 0], solid.radius, solidStrokeAttributes(solid));
@@ -725,39 +821,43 @@ function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
     );
   };
 
-  try {
-    view.create(
-      "parametricsurface3d",
-      [
-        (angle: number, t: number) => capPoint(angle, t)[0],
-        (angle: number, t: number) => capPoint(angle, t)[1],
-        (angle: number, t: number) => capPoint(angle, t)[2],
-        [0, Math.PI * 2],
-        [0, 1],
-      ],
-      surfaceAttributes(solid),
-    );
-  } catch {
-    // The outline below still shows the cap depth and circular section.
+  if (solid.renderStyle !== "outline") {
+    try {
+      view.create(
+        "parametricsurface3d",
+        [
+          (angle: number, t: number) => capPoint(angle, t)[0],
+          (angle: number, t: number) => capPoint(angle, t)[1],
+          (angle: number, t: number) => capPoint(angle, t)[2],
+          [0, Math.PI * 2],
+          [0, 1],
+        ],
+        surfaceAttributes(solid),
+      );
+    } catch {
+      // The outline below still shows the cap depth and circular section.
+    }
   }
 
-  try {
-    view.create(
-      "parametricsurface3d",
-      [
-        (angle: number, radial: number) => baseCenter[0] + radial * baseRadius * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
-        (angle: number, radial: number) => baseCenter[1] + radial * baseRadius * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
-        (angle: number, radial: number) => baseCenter[2] + radial * baseRadius * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
-        [0, Math.PI * 2],
-        [0, 1],
-      ],
-      {
-        ...surfaceAttributes(solid),
-        fillOpacity: Math.min(0.22, Math.max(0.06, solid.fillOpacity)),
-      },
-    );
-  } catch {
-    // The base circle below is the stable fallback for the flat cut face.
+  if (solid.renderStyle !== "outline") {
+    try {
+      view.create(
+        "parametricsurface3d",
+        [
+          (angle: number, radial: number) => baseCenter[0] + radial * baseRadius * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
+          (angle: number, radial: number) => baseCenter[1] + radial * baseRadius * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
+          (angle: number, radial: number) => baseCenter[2] + radial * baseRadius * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
+          [0, Math.PI * 2],
+          [0, 1],
+        ],
+        {
+          ...surfaceAttributes(solid),
+          fillOpacity: solid.renderStyle === "wireframe" ? 0 : Math.min(0.22, Math.max(0.06, solid.fillOpacity)),
+        },
+      );
+    } catch {
+      // The base circle below is the stable fallback for the flat cut face.
+    }
   }
 
   renderCircleCurve3D(view, baseCenter, w, baseRadius, solidStrokeAttributes(solid));
@@ -803,6 +903,17 @@ export function Basic3DGraph({
     widthPx: graphConfig?.widthPx ?? null,
     heightPx: graphConfig?.heightPx ?? null,
   });
+  const labelExpectations = useMemo(() => {
+    const points = graph3dPoints(graphConfig);
+    const pointMap = new Map(points.map((point) => [point.id, point]));
+    const pointIds = new Set(pointMap.keys());
+    return {
+      pointLabelCount: points.filter((point) => point.show && point.label.trim()).length,
+      segmentLabelCount: graph3dSegments(graphConfig, pointIds).filter((segment) => segment.show && segment.label?.trim()).length,
+      faceLabelCount: graph3dFaces(graphConfig, pointMap).filter((face) => face.show && face.label?.trim()).length,
+      dimensionLabelCount: graph3dDimensions(graphConfig, pointMap).filter((dimension) => dimension.show && dimension.label?.trim()).length,
+    };
+  }, [graphConfig]);
 
   useLayoutEffect(() => {
     graphConfigRef.current = graphConfig;
@@ -899,6 +1010,7 @@ export function Basic3DGraph({
       const faces = graph3dFaces(renderGraphConfig, pointMap);
       const solids = graph3dSolids(renderGraphConfig, pointMap);
       const segments = graph3dSegments(renderGraphConfig, new Set(pointMap.keys()));
+      const dimensions = graph3dDimensions(renderGraphConfig, pointMap);
       const ranges = graphRanges;
       const labelOffset = Math.max(
         0.18,
@@ -949,6 +1061,7 @@ export function Basic3DGraph({
             );
           }
         });
+      dimensions.forEach((dimension) => renderGraph3DDimension(view!, dimension, labelContext, labelOffset, commonLabelAvoidCoords));
 
       points
         .filter((point) => point.show)
@@ -1022,6 +1135,11 @@ export function Basic3DGraph({
     <div
       id={boardId}
       className="overflow-hidden bg-white"
+      data-mauth-diagram-type="graph3d"
+      data-mauth-graph3d-point-label-count={labelExpectations.pointLabelCount}
+      data-mauth-graph3d-segment-label-count={labelExpectations.segmentLabelCount}
+      data-mauth-graph3d-face-label-count={labelExpectations.faceLabelCount}
+      data-mauth-graph3d-dimension-label-count={labelExpectations.dimensionLabelCount}
       style={{
         height: graphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT,
         maxWidth: "100%",

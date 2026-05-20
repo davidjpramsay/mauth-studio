@@ -876,6 +876,70 @@ test("attaches rendered diagram failures to diagram inspection", () => {
   assert(diagram?.warnings.some((warning) => warning.code === "rendered-diagram-failed"));
 });
 
+test("attaches graph3d rendered label quality warnings to diagram inspection", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    {
+      assistantContext: {
+        renderedMetrics: {
+          available: true,
+          source: "browser-preview",
+          activeAnchor: "q:q1/b:d1",
+          pageCount: 1,
+          pages: [
+            {
+              pageIndex: 0,
+              pageNumber: 1,
+              usedHeightPx: 200,
+              totalHeightPx: 1000,
+              remainingHeightPx: 800,
+              usedPercent: 20,
+              anchorCount: 1,
+              overflow: false,
+            },
+          ],
+          anchors: [
+            {
+              anchor: "q:q1/b:d1",
+              kind: "questionBlock",
+              role: "module",
+              pageIndex: 0,
+              pageNumber: 1,
+              selected: false,
+              viewportRect: { left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, x: 10, y: 20 },
+              diagram: {
+                found: true,
+                rendered: true,
+                expectedGraph3DPointLabelCount: 9,
+                graph3DPointLabelCount: 8,
+                graph3DLabelQualityIssues: ["rendered 8/9 expected point labels", "label C extends outside the diagram frame"],
+              },
+              warnings: [
+                {
+                  code: "rendered-graph3d-label-quality",
+                  severity: "warning",
+                  anchor: "q:q1/b:d1",
+                  message:
+                    "The selected 3D diagram has label placement issues: rendered 8/9 expected point labels; label C extends outside the diagram frame.",
+                },
+              ],
+            },
+          ],
+          warnings: [],
+        },
+      },
+    },
+  );
+  const inspection = result.data as MauthPreviewInspection;
+  const diagram = inspection.question?.diagrams[0];
+
+  assert.equal(result.ok, true);
+  assert.equal(diagram?.rendered?.available, true);
+  assert(diagram?.warnings.some((warning) => warning.code === "rendered-graph3d-label-quality"));
+  assert(inspection.warnings.some((warning) => warning.code === "rendered-graph3d-label-quality"));
+});
+
 test("previews actions without mutating the original document", () => {
   const document = documentFixture();
   const result = runMauthAssistantTool(document, {
@@ -3330,10 +3394,14 @@ test("accepts graph3d faces and solid primitives", () => {
                   ],
                   faces: [{ points: ["O", "A", "B"], fillColor: "#dbeafe", fillOpacity: 0.18 }],
                   solids: [
-                    { kind: "cone", baseCenter: "O", apex: "T", radius: 2, fillOpacity: 0.12 },
-                    { kind: "sphere", center: [1, 1, 1], radius: 1.5, strokeColor: "#1d4ed8" },
-                    { kind: "cylinder", baseCenter: [4, 0, 0], topCenter: [4, 0, 3], radius: 1 },
+                    { kind: "cone", baseCenter: "O", apex: "T", radius: 2, fillOpacity: 0.12, renderStyle: "surface" },
+                    { kind: "sphere", center: [1, 1, 1], radius: 1.5, strokeColor: "#1d4ed8", renderStyle: "outline" },
+                    { kind: "cylinder", baseCenter: [4, 0, 0], topCenter: [4, 0, 3], radius: 1, renderStyle: "wireframe" },
                     { kind: "sphereCap", center: [8, 0, 0], radius: 2, height: 0.8, axis: [1, 0, 0] },
+                  ],
+                  dimensions: [
+                    { from: [4, 0, 0], to: [4, 0, 3], label: "$h$", color: "#6b7280" },
+                    { from: [4, 0, 0], to: [5, 0, 0], label: "$r$", strokeStyle: "dashed" },
                   ],
                 },
                 metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
@@ -3351,6 +3419,7 @@ test("accepts graph3d faces and solid primitives", () => {
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph3d");
   assert.equal(Array.isArray(data?.faces), true);
   assert.equal(Array.isArray(data?.solids), true);
+  assert.equal(Array.isArray(data?.dimensions), true);
 });
 
 test("rejects unsupported graph3d camera metadata shape", () => {

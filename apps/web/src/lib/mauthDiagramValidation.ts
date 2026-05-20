@@ -880,6 +880,30 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalBoolean(entry, "show", entryPath, issues);
     });
 
+    const dimensionLists = [
+      { key: "dimensions", values: optionalArray(data, "dimensions", `${path}.data`, issues) },
+      { key: "dimensionLines", values: optionalArray(data, "dimensionLines", `${path}.data`, issues) },
+    ];
+    for (const dimensionList of dimensionLists) {
+      dimensionList.values?.forEach((entry, index) => {
+        const entryPath = `${path}.data.${dimensionList.key}[${index}]`;
+        if (!isRecord(entry)) {
+          addIssue(issues, entryPath, "must be a graph3d dimension object", "{ from, to, label }");
+          return;
+        }
+        const pointsValue = Array.isArray(entry.points) ? entry.points : undefined;
+        graph3dPointReference(entry.from ?? entry.start ?? pointsValue?.[0], `${entryPath}.from`, pointNames, issues);
+        graph3dPointReference(entry.to ?? entry.end ?? pointsValue?.[1], `${entryPath}.to`, pointNames, issues);
+        optionalString(entry, "label", entryPath, issues);
+        optionalString(entry, "color", entryPath, issues);
+        optionalString(entry, "strokeColor", entryPath, issues);
+        optionalString(entry, "strokeStyle", entryPath, issues);
+        optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+        optionalBoolean(entry, "dashed", entryPath, issues);
+        optionalBoolean(entry, "show", entryPath, issues);
+      });
+    }
+
     const faces = optionalArray(data, "faces", `${path}.data`, issues);
     faces?.forEach((entry, index) => {
       const entryPath = `${path}.data.faces[${index}]`;
@@ -933,6 +957,16 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
           );
         }
         optionalString(entry, "type", entryPath, issues);
+        for (const styleKey of ["renderStyle", "display", "mode"] as const) {
+          optionalString(entry, styleKey, entryPath, issues);
+          const styleValue = entry[styleKey];
+          if (
+            typeof styleValue === "string" &&
+            !["surface", "wireframe", "wire", "mesh", "outline", "edges"].includes(styleValue.trim().toLowerCase())
+          ) {
+            addIssue(issues, `${entryPath}.${styleKey}`, "must be surface, wireframe, or outline", "surface | wireframe | outline");
+          }
+        }
         optionalString(entry, "color", entryPath, issues);
         optionalString(entry, "fillColor", entryPath, issues);
         optionalString(entry, "strokeColor", entryPath, issues);

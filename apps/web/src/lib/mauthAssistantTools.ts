@@ -215,6 +215,15 @@ export interface MauthRenderedPreviewAnchorMetrics {
       leftRect: MauthRenderedPreviewRect;
       rightRect: MauthRenderedPreviewRect;
     }>;
+    expectedGraph3DPointLabelCount?: number;
+    expectedGraph3DSegmentLabelCount?: number;
+    expectedGraph3DFaceLabelCount?: number;
+    expectedGraph3DDimensionLabelCount?: number;
+    graph3DPointLabelCount?: number;
+    graph3DSegmentLabelCount?: number;
+    graph3DFaceLabelCount?: number;
+    graph3DDimensionLabelCount?: number;
+    graph3DLabelQualityIssues?: string[];
     tooSmall?: boolean;
     tooLarge?: boolean;
   };
@@ -1175,7 +1184,7 @@ function renderedDiagramInspection(anchor: string, renderedMetrics?: MauthPrevie
   if (!renderedMetrics?.available) return undefined;
   const renderedAnchor = renderedMetrics.anchors.find((item) => item.anchor === anchor);
   if (!renderedAnchor?.diagram) return undefined;
-  const warnings = renderedAnchor.warnings.filter((warning) => warning.code.startsWith("rendered-diagram-"));
+  const warnings = renderedAnchor.warnings.filter((warning) => warning.code.startsWith("rendered-"));
   return {
     available: true,
     rendered: renderedAnchor.diagram.rendered,
@@ -1850,6 +1859,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
+      "For graph3d curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",

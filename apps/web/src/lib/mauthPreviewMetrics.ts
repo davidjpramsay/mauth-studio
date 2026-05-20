@@ -79,6 +79,12 @@ function collisionArea(a: DOMRect, b: DOMRect) {
   return width * height;
 }
 
+function rectDistance(left: DOMRect, right: DOMRect) {
+  const dx = Math.max(0, Math.max(left.left, right.left) - Math.min(left.right, right.right));
+  const dy = Math.max(0, Math.max(left.top, right.top) - Math.min(left.bottom, right.bottom));
+  return Math.hypot(dx, dy);
+}
+
 function normalizedNumericLabel(value: string) {
   const normalized = value.trim().replace(/−/g, "-").replace(/\s+/g, "");
   return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalized : null;
@@ -90,7 +96,23 @@ function isDuplicateNumericTickCollision(leftText: string, rightText: string) {
   return Boolean(left && right && left === right);
 }
 
-function likelyLabelCollisions(diagramRoot: HTMLElement) {
+function labelSearchText(value: string) {
+  return compactText(
+    value
+      .replace(/\\+underset\s*\{\s*\\+sim\s*\}\s*\{\s*([^}]*)\s*\}/g, "$1")
+      .replace(/\\+(?:mathbf|vec|overrightarrow|overleftrightarrow)\s*\{([^}]*)\}/g, "$1")
+      .replace(/\\+(?:text|mathrm)\s*\{([^}]*)\}/g, "$1")
+      .replace(/\\+(?:mathbf|vec|text|mathrm)\s+([A-Za-z0-9]+)/g, "$1")
+      .replace(/\\+(?:left|right|displaystyle|textstyle)\b/g, "")
+      .replace(/[{}$]/g, " ")
+      .replace(/\\+[,;:! ]/g, " ")
+      .replace(/\\+_/g, "_")
+      .replace(/\\+/g, " "),
+    40,
+  );
+}
+
+function labelEntries(diagramRoot: HTMLElement) {
   const selectors = "[data-mauth-label-text], svg text, .annotation-text";
   const rawCandidates = Array.from(diagramRoot.querySelectorAll<Element>(selectors)).filter((element) => {
     const text = compactText(element.getAttribute("data-mauth-label-text") ?? element.textContent ?? "", 40);
@@ -100,10 +122,15 @@ function likelyLabelCollisions(diagramRoot: HTMLElement) {
   const candidates = rawCandidates.filter(
     (candidate, index) => !rawCandidates.some((other, otherIndex) => otherIndex !== index && other.contains(candidate)),
   );
-  const entries = candidates.map((candidate) => ({
-    text: compactText(candidate.getAttribute("data-mauth-label-text") ?? candidate.textContent ?? "", 40),
+  return candidates.map((candidate) => ({
+    text: labelSearchText(candidate.getAttribute("data-mauth-label-text") ?? candidate.textContent ?? ""),
+    role: candidate.getAttribute("data-mauth-label-role") ?? "",
     rect: candidate.getBoundingClientRect(),
   }));
+}
+
+function likelyLabelCollisions(diagramRoot: HTMLElement) {
+  const entries = labelEntries(diagramRoot);
   const collisions: NonNullable<NonNullable<MauthRenderedPreviewAnchorMetrics["diagram"]>["labelCollisionPairs"]> = [];
   for (let i = 0; i < entries.length; i += 1) {
     for (let j = i + 1; j < entries.length; j += 1) {
@@ -120,6 +147,71 @@ function likelyLabelCollisions(diagramRoot: HTMLElement) {
     }
   }
   return collisions;
+}
+
+function graph3DLabelMetrics(diagramRoot: HTMLElement) {
+  const graph3dRoot = diagramRoot.matches('[data-mauth-diagram-type="graph3d"]')
+    ? diagramRoot
+    : diagramRoot.querySelector<HTMLElement>('[data-mauth-diagram-type="graph3d"]');
+  if (!graph3dRoot) return {};
+  const entries = labelEntries(graph3dRoot).filter((entry) => entry.role.startsWith("graph3d-"));
+  const expectedGraph3DPointLabelCount = Number(graph3dRoot.getAttribute("data-mauth-graph3d-point-label-count") || 0);
+  const expectedGraph3DSegmentLabelCount = Number(graph3dRoot.getAttribute("data-mauth-graph3d-segment-label-count") || 0);
+  const expectedGraph3DFaceLabelCount = Number(graph3dRoot.getAttribute("data-mauth-graph3d-face-label-count") || 0);
+  const expectedGraph3DDimensionLabelCount = Number(graph3dRoot.getAttribute("data-mauth-graph3d-dimension-label-count") || 0);
+  const graph3DPointLabelCount = entries.filter((entry) => entry.role === "graph3d-point-label").length;
+  const graph3DSegmentLabelCount = entries.filter((entry) => entry.role === "graph3d-segment-label").length;
+  const graph3DFaceLabelCount = entries.filter((entry) => entry.role === "graph3d-face-label").length;
+  const graph3DDimensionLabelCount = entries.filter((entry) => entry.role === "graph3d-dimension-label").length;
+  const frame = graph3dRoot.getBoundingClientRect();
+  const graph3DLabelQualityIssues: string[] = [];
+
+  if (graph3DPointLabelCount < expectedGraph3DPointLabelCount) {
+    graph3DLabelQualityIssues.push(`rendered ${graph3DPointLabelCount}/${expectedGraph3DPointLabelCount} expected point labels`);
+  }
+  if (graph3DSegmentLabelCount < expectedGraph3DSegmentLabelCount) {
+    graph3DLabelQualityIssues.push(`rendered ${graph3DSegmentLabelCount}/${expectedGraph3DSegmentLabelCount} expected segment labels`);
+  }
+  if (graph3DFaceLabelCount < expectedGraph3DFaceLabelCount) {
+    graph3DLabelQualityIssues.push(`rendered ${graph3DFaceLabelCount}/${expectedGraph3DFaceLabelCount} expected face labels`);
+  }
+  if (graph3DDimensionLabelCount < expectedGraph3DDimensionLabelCount) {
+    graph3DLabelQualityIssues.push(
+      `rendered ${graph3DDimensionLabelCount}/${expectedGraph3DDimensionLabelCount} expected dimension labels`,
+    );
+  }
+  for (const entry of entries) {
+    if (
+      entry.rect.left < frame.left - 1 ||
+      entry.rect.right > frame.right + 1 ||
+      entry.rect.top < frame.top - 1 ||
+      entry.rect.bottom > frame.bottom + 1
+    ) {
+      graph3DLabelQualityIssues.push(`label ${entry.text || "label"} extends outside the diagram frame`);
+    }
+  }
+  for (let i = 0; i < entries.length; i += 1) {
+    for (let j = i + 1; j < entries.length; j += 1) {
+      const distance = rectDistance(entries[i].rect, entries[j].rect);
+      if (distance > 0 && distance < 3) {
+        graph3DLabelQualityIssues.push(
+          `label ${entries[i].text || "label"} is crowded near ${entries[j].text || "label"} (${roundMetric(distance)}px)`,
+        );
+      }
+    }
+  }
+
+  return {
+    expectedGraph3DPointLabelCount,
+    expectedGraph3DSegmentLabelCount,
+    expectedGraph3DFaceLabelCount,
+    expectedGraph3DDimensionLabelCount,
+    graph3DPointLabelCount,
+    graph3DSegmentLabelCount,
+    graph3DFaceLabelCount,
+    graph3DDimensionLabelCount,
+    ...(graph3DLabelQualityIssues.length ? { graph3DLabelQualityIssues: graph3DLabelQualityIssues.slice(0, 8) } : {}),
+  };
 }
 
 function anchorRole(element: HTMLElement): MauthRenderedPreviewAnchorMetrics["role"] {
@@ -171,6 +263,7 @@ function findDiagramMetrics(element: HTMLElement): MauthRenderedPreviewAnchorMet
   const clipped = diagramRoot.scrollWidth > diagramRoot.clientWidth + 1 || diagramRoot.scrollHeight > diagramRoot.clientHeight + 1;
   const tooSmall = renderedGraphic && !errorMatch && (rect.width < 80 || rect.height < 60);
   const labelCollisionPairs = renderedGraphic && !errorMatch ? likelyLabelCollisions(diagramRoot) : [];
+  const graph3DLabels = renderedGraphic && !errorMatch ? graph3DLabelMetrics(diagramRoot) : {};
   return {
     found: true,
     rendered: renderedGraphic && !errorMatch,
@@ -184,6 +277,7 @@ function findDiagramMetrics(element: HTMLElement): MauthRenderedPreviewAnchorMet
           labelCollisionPairs: labelCollisionPairs.slice(0, 6),
         }
       : {}),
+    ...graph3DLabels,
   };
 }
 
@@ -262,6 +356,14 @@ function anchorMetrics(
       message: `The selected diagram has ${diagram.labelCollisionCount} likely overlapping label pair${
         diagram.labelCollisionCount === 1 ? "" : "s"
       }.${sampleText}`,
+    });
+  }
+  if (diagram?.found && diagram.rendered && diagram.graph3DLabelQualityIssues?.length) {
+    warnings.push({
+      code: "rendered-graph3d-label-quality",
+      severity: "warning",
+      anchor,
+      message: `The selected 3D diagram has label placement issues: ${diagram.graph3DLabelQualityIssues.slice(0, 3).join("; ")}.`,
     });
   }
   if (diagram?.found && diagram.rendered && diagram.tooSmall) {

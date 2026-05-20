@@ -62,9 +62,11 @@ interface BrowserDiagramMetric {
   expectedGraph3DPointLabelCount: number;
   expectedGraph3DSegmentLabelCount: number;
   expectedGraph3DFaceLabelCount: number;
+  expectedGraph3DDimensionLabelCount: number;
   graph3DPointLabelCount: number;
   graph3DSegmentLabelCount: number;
   graph3DFaceLabelCount: number;
+  graph3DDimensionLabelCount: number;
   expectedGraph3DSolidKinds: string[];
   renderedGraphic: boolean;
   text: string;
@@ -654,6 +656,7 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
       data-graph3d-point-label-count={graph3dExpectations.pointLabelCount}
       data-graph3d-segment-label-count={graph3dExpectations.segmentLabelCount}
       data-graph3d-face-label-count={graph3dExpectations.faceLabelCount}
+      data-graph3d-dimension-label-count={graph3dExpectations.dimensionLabelCount}
       data-graph3d-solid-kinds={JSON.stringify(graph3dExpectations.solidKinds)}
       data-vector2d-angle-markers={JSON.stringify(vector2dAngleMarkers)}
     >
@@ -714,6 +717,16 @@ function expectedDiagramLabels(graphConfig?: GraphConfig | null) {
     for (const segment of Array.isArray(config.data?.segments) ? config.data.segments : []) {
       if (segment?.show === false) continue;
       const label = expectedLabelText(segment?.label);
+      if (label) labels.push(label);
+    }
+    const dimensions = Array.isArray(config.data?.dimensions)
+      ? config.data.dimensions
+      : Array.isArray(config.data?.dimensionLines)
+        ? config.data.dimensionLines
+        : [];
+    for (const dimension of dimensions) {
+      if (dimension?.show === false) continue;
+      const label = expectedLabelText(dimension?.label);
       if (label) labels.push(label);
     }
   }
@@ -779,11 +792,21 @@ function expectedGraph3DExpectations(graphConfig?: GraphConfig | null) {
   const type = String(config.type ?? "");
   const data = config.data && typeof config.data === "object" ? config.data : {};
   if (type !== "graph3d" && type !== "basic3d") {
-    return { pointCount: 0, segmentCount: 0, faceCount: 0, pointLabelCount: 0, segmentLabelCount: 0, faceLabelCount: 0, solidKinds: [] as string[] };
+    return {
+      pointCount: 0,
+      segmentCount: 0,
+      faceCount: 0,
+      pointLabelCount: 0,
+      segmentLabelCount: 0,
+      faceLabelCount: 0,
+      dimensionLabelCount: 0,
+      solidKinds: [] as string[],
+    };
   }
   const points = Array.isArray(data.points) ? data.points : Array.isArray(data.vertices) ? data.vertices : [];
   const segments = Array.isArray(data.segments) ? data.segments : Array.isArray(data.edges) ? data.edges : [];
   const faces = Array.isArray(data.faces) ? data.faces : [];
+  const dimensions = Array.isArray(data.dimensions) ? data.dimensions : Array.isArray(data.dimensionLines) ? data.dimensionLines : [];
   const solids = Array.isArray(data.solids) ? data.solids : Array.isArray(data.surfaces) ? data.surfaces : [];
   return {
     pointCount: points.length,
@@ -792,6 +815,7 @@ function expectedGraph3DExpectations(graphConfig?: GraphConfig | null) {
     pointLabelCount: points.filter((point: any) => point?.show !== false && expectedLabelText(point?.label)).length,
     segmentLabelCount: segments.filter((segment: any) => segment?.show !== false && expectedLabelText(segment?.label)).length,
     faceLabelCount: faces.filter((face: any) => face?.show !== false && expectedLabelText(face?.label)).length,
+    dimensionLabelCount: dimensions.filter((dimension: any) => dimension?.show !== false && expectedLabelText(dimension?.label)).length,
     solidKinds: [
       ...new Set(
         solids
@@ -1263,9 +1287,11 @@ async function runBrowserReplay(
             const graph3DPointLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-point-label").length;
             const graph3DSegmentLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-segment-label").length;
             const graph3DFaceLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-face-label").length;
+            const graph3DDimensionLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-dimension-label").length;
             const expectedGraph3DPointLabelCount = Number(frame.getAttribute("data-graph3d-point-label-count") || 0);
             const expectedGraph3DSegmentLabelCount = Number(frame.getAttribute("data-graph3d-segment-label-count") || 0);
             const expectedGraph3DFaceLabelCount = Number(frame.getAttribute("data-graph3d-face-label-count") || 0);
+            const expectedGraph3DDimensionLabelCount = Number(frame.getAttribute("data-graph3d-dimension-label-count") || 0);
             const graph3DLabelQualityIssues: string[] = [];
             if (type === "graph3d" || type === "basic3d") {
               if (graph3DPointLabelCount < expectedGraph3DPointLabelCount) {
@@ -1280,6 +1306,11 @@ async function runBrowserReplay(
               }
               if (graph3DFaceLabelCount < expectedGraph3DFaceLabelCount) {
                 graph3DLabelQualityIssues.push(`rendered ${graph3DFaceLabelCount}/${expectedGraph3DFaceLabelCount} expected face labels`);
+              }
+              if (graph3DDimensionLabelCount < expectedGraph3DDimensionLabelCount) {
+                graph3DLabelQualityIssues.push(
+                  `rendered ${graph3DDimensionLabelCount}/${expectedGraph3DDimensionLabelCount} expected dimension labels`,
+                );
               }
               for (const entry of graph3DLabels) {
                 if (
@@ -1338,10 +1369,12 @@ async function runBrowserReplay(
               expectedGraph3DPointLabelCount,
               expectedGraph3DSegmentLabelCount,
               expectedGraph3DFaceLabelCount,
+              expectedGraph3DDimensionLabelCount,
               expectedGraph3DSolidKinds,
               graph3DPointLabelCount,
               graph3DSegmentLabelCount,
               graph3DFaceLabelCount,
+              graph3DDimensionLabelCount,
               labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
               renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
               text,

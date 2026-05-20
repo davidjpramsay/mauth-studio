@@ -6992,8 +6992,8 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                 {"id": "ConeR", "label": "$r=2$", "coords": [2, 0, 0], "show": False},
             ],
             "segments": [
-                {"from": "ConeO", "to": "ConeV", "label": "$h=5$", "strokeStyle": "dashed"},
-                {"from": "ConeO", "to": "ConeR", "label": "$r=2$"},
+                {"from": "ConeO", "to": "ConeV", "strokeStyle": "dashed"},
+                {"from": "ConeO", "to": "ConeR"},
             ],
             "solids": [
                 {
@@ -7004,7 +7004,12 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                     "fillColor": "#fde68a",
                     "fillOpacity": 0.2,
                     "strokeColor": "#92400e",
+                    "renderStyle": "surface",
                 }
+            ],
+            "dimensions": [
+                {"from": "ConeO", "to": "ConeV", "label": "$h=5$", "dashed": True},
+                {"from": "ConeO", "to": "ConeR", "label": "$r=2$"},
             ],
             "xRange": [-2.6, 2.6],
             "yRange": [-2.6, 2.6],
@@ -7023,8 +7028,8 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                 {"id": "CylR", "label": "$r=1.5$", "coords": [1.5, 0, 0], "show": False},
             ],
             "segments": [
-                {"from": "CylB", "to": "CylT", "label": "$h=4$", "strokeStyle": "dashed"},
-                {"from": "CylB", "to": "CylR", "label": "$r=1.5$"},
+                {"from": "CylB", "to": "CylT", "strokeStyle": "dashed"},
+                {"from": "CylB", "to": "CylR"},
             ],
             "solids": [
                 {
@@ -7035,7 +7040,12 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                     "fillColor": "#bfdbfe",
                     "fillOpacity": 0.2,
                     "strokeColor": "#1d4ed8",
+                    "renderStyle": "outline",
                 }
+            ],
+            "dimensions": [
+                {"from": "CylB", "to": "CylT", "label": "$h=4$", "dashed": True},
+                {"from": "CylB", "to": "CylR", "label": "$r=1.5$"},
             ],
             "xRange": [-2.1, 2.1],
             "yRange": [-2.1, 2.1],
@@ -7052,7 +7062,7 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                 {"id": "SphereC", "label": "$C$", "coords": [0, 0, 0], "show": False},
                 {"id": "SphereP", "label": "$P$", "coords": [2, 0, 0], "show": False},
             ],
-            "segments": [{"from": "SphereC", "to": "SphereP", "label": "$r=2$"}],
+            "segments": [{"from": "SphereC", "to": "SphereP"}],
             "solids": [
                 {
                     "kind": "sphere",
@@ -7061,8 +7071,10 @@ def local_graph3d_general_solids_call() -> dict[str, Any]:
                     "fillColor": "#ddd6fe",
                     "fillOpacity": 0.16,
                     "strokeColor": "#5b21b6",
+                    "renderStyle": "wireframe",
                 }
             ],
+            "dimensions": [{"from": "SphereC", "to": "SphereP", "label": "$r=2$"}],
             "xRange": [-2.5, 2.5],
             "yRange": [-2.5, 2.5],
             "zRange": [-2.5, 2.5],
