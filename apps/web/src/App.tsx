@@ -5507,12 +5507,14 @@ function ColumnsBlockEditor({
       active={active}
       openSignal={openSignal}
     >
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}>
+      <div className="grid min-w-0 gap-3" style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}>
         {normalized.columns.map((column, columnIndex) => (
           <section key={columnIndex} className="min-w-0 space-y-3 rounded-md border bg-background p-3">
             <div className="text-xs font-semibold uppercase text-muted-foreground">Column {columnIndex + 1}</div>
             {column.length ? (
-              <div className="space-y-3">{column.map((child, childIndex) => renderColumnChildBlock(columnIndex, child, childIndex))}</div>
+              <div className="min-w-0 space-y-3">
+                {column.map((child, childIndex) => renderColumnChildBlock(columnIndex, child, childIndex))}
+              </div>
             ) : null}
             <ContentInsertionActions
               buttonLabel="Add"

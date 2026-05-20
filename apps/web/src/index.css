@@ -216,6 +216,25 @@
     z-index: 1;
   }
 
+  .table-editor-controls {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .table-editor-controls label {
+    min-width: 0;
+  }
+
+  .table-editor-controls input,
+  .table-editor-controls select {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
   .graph-editor-controls {
     max-width: 100%;
     min-width: 0;

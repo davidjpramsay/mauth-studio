@@ -101,7 +101,7 @@ export function TableBlockEditor({
       openSignal={openSignal}
     >
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_96px_96px]">
+        <div className="table-editor-controls">
           <label className="flex flex-col gap-2 text-xs font-medium">
             Position
             <select

@@ -55,10 +55,10 @@ export function CollapsiblePanel({
   }, [openSignal]);
 
   return (
-    <section className={cn("rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
+    <section className={cn("min-w-0 rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
       <div
         data-panel-region="header"
-        className={cn("flex flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
+        className={cn("flex min-w-0 flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
       >
         <Button
           type="button"
@@ -74,7 +74,7 @@ export function CollapsiblePanel({
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
-          className="flex min-w-36 flex-1 flex-col items-start gap-0.5 text-left"
+          className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left sm:min-w-36"
           aria-expanded={open}
         >
           <span className="block max-w-full truncate text-sm font-semibold">{title}</span>
@@ -83,7 +83,7 @@ export function CollapsiblePanel({
         {actions ? <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
       </div>
       {open ? (
-        <div data-panel-region="body" className={cn("border-t p-3", bodyClassName)}>
+        <div data-panel-region="body" className={cn("min-w-0 border-t p-3", bodyClassName)}>
           {children}
         </div>
       ) : null}
