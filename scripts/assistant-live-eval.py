@@ -3681,54 +3681,69 @@ def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
         )
     issues.extend(graph3d_common_schema_issues(graph3d_configs, "graph3d solid-family"))
 
-    point_coords, segment_pairs, _dashed_pairs = graph3d_semantics(graph3d_configs)
-    expected_pyramid_coords = {
-        "a": (0.0, 0.0, 0.0),
-        "b": (4.0, 0.0, 0.0),
-        "c": (4.0, 4.0, 0.0),
-        "d": (0.0, 4.0, 0.0),
-        "v": (2.0, 2.0, 3.0),
-    }
-    for point_id, coords in expected_pyramid_coords.items():
-        if not graph3d_close_coords(point_coords.get(point_id), coords):
-            issues.append(f"graph3d pyramid point {point_id.upper()} should have coordinates {coords}")
-    for pair in (("a", "b"), ("b", "c"), ("c", "d"), ("a", "d"), ("a", "v"), ("b", "v"), ("c", "v"), ("d", "v")):
-        if tuple(sorted(pair)) not in segment_pairs:
-            issues.append(f"graph3d pyramid should include segment {''.join(pair).upper()}")
-    if len(graph3d_face_entries(graph3d_configs)) < 5:
-        issues.append("graph3d pyramid diagram should include polygon faces, not just edge lines")
-
-    solids = graph3d_solid_entries(graph3d_configs)
-    solid_kinds = {graph3d_solid_kind(solid) for solid in solids}
-    for required_kind in ("cone", "cylinder", "sphere"):
-        if required_kind not in solid_kinds:
-            issues.append(f"graph3d solid-family graph3d data should include a {required_kind} solid")
-    for solid in solids:
-        kind = graph3d_solid_kind(solid)
-        if kind == "cone" and ("baseCenter" not in solid or ("apex" not in solid and "height" not in solid)):
-            issues.append("graph3d cone solid should include baseCenter plus apex or height")
-        if kind == "cylinder" and ("baseCenter" not in solid or ("topCenter" not in solid and "height" not in solid)):
-            issues.append("graph3d cylinder solid should include baseCenter plus topCenter or height")
-        if kind == "sphere" and "center" not in solid:
-            issues.append("graph3d sphere solid should include center")
-        if kind in {"cone", "cylinder", "sphere"}:
-            radius = solid.get("radius")
-            if isinstance(radius, bool) or not isinstance(radius, (int, float)) or radius <= 0:
-                issues.append(f"graph3d {kind} solid should include a positive radius")
-            render_style = str(solid.get("renderStyle") or "")
-            if render_style not in {"surface", "wireframe", "outline"}:
-                issues.append(f"graph3d {kind} solid should include renderStyle surface, wireframe, or outline")
-
-    dimensions = graph3d_dimension_entries(graph3d_configs)
-    dimension_label_text = " ".join(str(dimension.get("label") or "") for dimension in dimensions)
-    for symbol in ("h", "r"):
-        if not any(label_mentions_symbol(str(dimension.get("label") or ""), symbol) for dimension in dimensions):
-            issues.append(f"graph3d solid-family diagrams should include a labelled {symbol} dimension")
-    for dimension in dimensions:
-        if "from" not in dimension or "to" not in dimension:
-            issues.append("graph3d dimension entries should include from and to endpoints")
-    if not dimension_label_text.strip():
-        issues.append("graph3d solid-family diagrams should preserve height/radius labels in data.dimensions")
+    issues.extend(
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "graph3d",
+                    "label": "graph3d pyramid",
+                    "pointCoords": {
+                        "a": (0.0, 0.0, 0.0),
+                        "b": (4.0, 0.0, 0.0),
+                        "c": (4.0, 4.0, 0.0),
+                        "d": (0.0, 4.0, 0.0),
+                        "v": (2.0, 2.0, 3.0),
+                    },
+                    "segments": (
+                        ("a", "b"),
+                        ("b", "c"),
+                        ("c", "d"),
+                        ("a", "d"),
+                        ("a", "v"),
+                        ("b", "v"),
+                        ("c", "v"),
+                        ("d", "v"),
+                    ),
+                    "faces": (("a", "b", "c", "d"), ("a", "b", "v"), ("b", "c", "v"), ("c", "d", "v"), ("d", "a", "v")),
+                    "minFaces": 5,
+                    "minFacesMessage": "graph3d pyramid diagram should include polygon faces, not just edge lines",
+                },
+                {
+                    "type": "graph3d",
+                    "label": "graph3d solid-family",
+                    "solidSpecs": (
+                        {
+                            "kind": "cone",
+                            "requiredFields": ("baseCenter",),
+                            "requiredAnyFields": (("apex", "height"),),
+                            "positiveNumberFields": ("radius",),
+                            "renderStyles": ("surface", "wireframe", "outline"),
+                        },
+                        {
+                            "kind": "cylinder",
+                            "requiredFields": ("baseCenter",),
+                            "requiredAnyFields": (("topCenter", "height"),),
+                            "positiveNumberFields": ("radius",),
+                            "renderStyles": ("surface", "wireframe", "outline"),
+                        },
+                        {
+                            "kind": "sphere",
+                            "requiredFields": ("center",),
+                            "positiveNumberFields": ("radius",),
+                            "renderStyles": ("surface", "wireframe", "outline"),
+                        },
+                    ),
+                    "dimensionSymbols": ("h", "r"),
+                    "requireDimensionEndpoints": True,
+                    "requireDimensionLabelText": True,
+                    "requireDimensionLabelTextMessage": (
+                        "graph3d solid-family diagrams should preserve height/radius labels in data.dimensions"
+                    ),
+                },
+            ],
+        )
+    )
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 4:
@@ -3825,50 +3840,41 @@ def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]
     graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
     solids = graph3d_solid_entries(graph3d_configs)
     solid_kinds = {graph3d_solid_kind(solid) for solid in solids}
-    if "spherecap" not in solid_kinds and "sphericalcap" not in solid_kinds:
-        issues.append("spherical-cap graph3d data should use a sphereCap solid, not a full sphere placeholder")
     if "sphere" in solid_kinds and "spherecap" not in solid_kinds and "sphericalcap" not in solid_kinds:
         issues.append("spherical-cap graph3d data should not represent the cap as only a full sphere")
-    cap_solids = [solid for solid in solids if graph3d_solid_kind(solid) in {"spherecap", "sphericalcap"}]
-    for index, solid in enumerate(cap_solids):
-        radius = solid.get("radius")
-        if (
-            isinstance(radius, bool)
-            or not isinstance(radius, (int, float))
-            or not approximately(radius, 10, tolerance=0.25)
-        ):
-            issues.append(f"spherical-cap graph3d sphereCap[{index}].radius should preserve source radius 10")
-        height = solid.get("height", solid.get("depth"))
-        if isinstance(height, bool) or not isinstance(height, (int, float)) or height <= 0:
-            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include a positive height/depth")
-        if "axis" not in solid and "normal" not in solid:
-            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include the cap axis/normal")
-        if "center" not in solid:
-            issues.append(f"spherical-cap graph3d sphereCap[{index}] should include the sphere center")
-    for config in graph3d_configs:
-        data = config.get("data")
-        if isinstance(data, dict):
-            for segment in data.get("segments") if isinstance(data.get("segments"), list) else []:
-                if isinstance(segment, dict) and "style" in segment:
-                    issues.append("spherical-cap graph3d segments should use strokeStyle/dashed, not style")
-        metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
-        for key in ("axisLabels", "showAxes", "showGrid"):
-            if key in metadata:
-                issues.append(f"spherical-cap graph3d metadata should not include unsupported {key}")
-        view3d = metadata.get("view3d") if isinstance(metadata.get("view3d"), dict) else {}
-        if not view3d:
-            issues.append("spherical-cap graph3d data should preserve metadata.view3d")
-        else:
-            if "camera" in view3d:
-                issues.append("spherical-cap graph3d view should use az/el/bank, not camera.eye")
-            for key in ("az", "el", "bank"):
-                value = view3d.get(key)
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    issues.append(f"spherical-cap graph3d view3d.{key} should be numeric")
-    if not any(label_mentions_symbol(label, "h") for label in graph3d_label_texts(graph3d_configs)):
-        issues.append(
-            "spherical-cap graph3d diagram should preserve the visible depth label h on a segment or dimension"
+    issues.extend(graph3d_common_schema_issues(graph3d_configs, "spherical-cap"))
+    issues.extend(
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "graph3d",
+                    "label": "spherical-cap",
+                    "solidSpecs": (
+                        {
+                            "kind": ("sphereCap", "sphericalCap"),
+                            "display": "sphereCap",
+                            "missingMessage": (
+                                "spherical-cap graph3d data should use a sphereCap solid, not a full sphere placeholder"
+                            ),
+                            "requiredFields": ("center",),
+                            "requiredAnyFields": (("axis", "normal"),),
+                            "positiveAnyNumberFields": (("height", "depth"),),
+                            "numberFields": {"radius": 10},
+                            "numberTolerance": 0.25,
+                        },
+                    ),
+                    "labelSymbols": ("h",),
+                    "labelSymbolMessages": {
+                        "h": (
+                            "spherical-cap graph3d diagram should preserve the visible depth label h "
+                            "on a segment or dimension"
+                        ),
+                    },
+                },
+            ],
         )
+    )
     for validation_issue in graph3d_validation_issues_from_call(call):
         issues.append(
             "spherical-cap graph3d validation issue at "
@@ -4139,43 +4145,47 @@ def assert_real_specialist_square_pyramid_call(call: dict[str, Any]) -> list[str
     graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
     issues.extend(graph3d_common_schema_issues(graph3d_configs, "square-pyramid"))
 
-    point_coords, segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
-    for point_id in ("a", "b", "c", "d", "e", "f", "m", "o"):
-        if point_id not in point_coords:
-            issues.append(f"square-pyramid graph3d data should include named point {point_id.upper()}")
-    required_segments = (
-        ("a", "b"),
-        ("b", "c"),
-        ("c", "d"),
-        ("a", "d"),
-        ("e", "a"),
-        ("e", "b"),
-        ("e", "c"),
-        ("e", "d"),
-        ("d", "m"),
-        ("e", "f"),
-        ("f", "m"),
+    point_coords = graph3d_semantics(graph3d_configs)[0]
+    issues.extend(
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "graph3d",
+                    "label": "square-pyramid",
+                    "pointIds": ("a", "b", "c", "d", "e", "f", "m", "o"),
+                    "segments": (
+                        ("a", "b"),
+                        ("b", "c"),
+                        ("c", "d"),
+                        ("a", "d"),
+                        ("e", "a"),
+                        ("e", "b"),
+                        ("e", "c"),
+                        ("e", "d"),
+                        ("d", "m"),
+                        ("e", "f"),
+                        ("f", "m"),
+                    ),
+                    "requireAnyDashed": True,
+                    "requireAnyDashedMessage": (
+                        "square-pyramid graph3d should mark at least one hidden edge/diagonal as dashed"
+                    ),
+                    "faces": (
+                        ("a", "b", "c", "d"),
+                        ("a", "b", "e"),
+                        ("b", "c", "e"),
+                        ("c", "d", "e"),
+                        ("a", "d", "e"),
+                    ),
+                    "minFaces": 5,
+                    "minFacesMessage": (
+                        "square-pyramid graph3d diagram should include all five pyramid faces, not just edge lines"
+                    ),
+                },
+            ],
+        )
     )
-    for pair in required_segments:
-        if tuple(sorted(pair)) not in segment_pairs:
-            issues.append(f"square-pyramid graph3d data should include segment {''.join(pair).upper()}")
-    if not dashed_pairs:
-        issues.append("square-pyramid graph3d should mark at least one hidden edge/diagonal as dashed")
-    required_face_sets = (
-        ("a", "b", "c", "d"),
-        ("a", "b", "e"),
-        ("b", "c", "e"),
-        ("c", "d", "e"),
-        ("a", "d", "e"),
-    )
-    face_sets = graph3d_face_point_sets(graph3d_configs)
-    for face_points in required_face_sets:
-        if frozenset(face_points) not in face_sets:
-            issues.append(
-                f"square-pyramid graph3d pyramid faces should include face {''.join(point.upper() for point in face_points)}"
-            )
-    if len(face_sets) < 5:
-        issues.append("square-pyramid graph3d diagram should include all five pyramid faces, not just edge lines")
 
     def midpoint_issue(target: str, first: str, second: str, label: str) -> str | None:
         target_coords = point_coords.get(target)
@@ -4627,6 +4637,104 @@ def source_fidelity_graph3d_pair(pair: Any) -> tuple[tuple[str, str], str] | Non
     return tuple(sorted((first, second))), f"{first.upper()}{second.upper()}"
 
 
+def source_fidelity_values(value: Any) -> tuple[Any, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, tuple | list | set):
+        return tuple(value)
+    return (value,)
+
+
+def source_fidelity_graph3d_solid_key(value: Any) -> str:
+    return re.sub(r"[^a-z]", "", str(value or "").lower())
+
+
+def source_fidelity_graph3d_solid_spec_issues(
+    solids: list[dict[str, Any]],
+    solid_spec: dict[str, Any],
+    *,
+    label: str,
+) -> list[str]:
+    issues: list[str] = []
+    kind_choices = tuple(
+        key
+        for key in (source_fidelity_graph3d_solid_key(kind) for kind in source_fidelity_values(solid_spec.get("kind")))
+        if key
+    )
+    if not kind_choices:
+        return issues
+    display_kind = str(solid_spec.get("display") or source_fidelity_values(solid_spec.get("kind"))[0])
+    matching_solids = [solid for solid in solids if graph3d_solid_kind(solid) in kind_choices]
+    if not matching_solids:
+        missing_message = solid_spec.get("missingMessage")
+        issues.append(
+            missing_message
+            if isinstance(missing_message, str)
+            else f"{label} graph3d data should include a {display_kind} solid"
+        )
+        return issues
+    allowed_render_styles = tuple(str(style) for style in source_fidelity_values(solid_spec.get("renderStyles")))
+    number_fields = solid_spec.get("numberFields")
+    required_any_fields = tuple(
+        tuple(str(field) for field in source_fidelity_values(field_options))
+        for field_options in source_fidelity_values(solid_spec.get("requiredAnyFields"))
+    )
+    positive_any_number_fields = tuple(
+        tuple(str(field) for field in source_fidelity_values(field_options))
+        for field_options in source_fidelity_values(solid_spec.get("positiveAnyNumberFields"))
+    )
+    for index, solid in enumerate(matching_solids):
+        for field in source_fidelity_values(solid_spec.get("requiredFields")):
+            field_name = str(field)
+            if field_name not in solid:
+                issues.append(f"{label} graph3d {display_kind}[{index}] should include {field_name}")
+        for field_options in required_any_fields:
+            if field_options and not any(field in solid for field in field_options):
+                issues.append(f"{label} graph3d {display_kind}[{index}] should include {' or '.join(field_options)}")
+        for field in source_fidelity_values(solid_spec.get("positiveNumberFields")):
+            field_name = str(field)
+            value = solid.get(field_name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                issues.append(f"{label} graph3d {display_kind} solid should include a positive {field_name}")
+        for field_options in positive_any_number_fields:
+            if not field_options:
+                continue
+            if not any(
+                not isinstance(solid.get(field), bool)
+                and isinstance(solid.get(field), (int, float))
+                and solid[field] > 0
+                for field in field_options
+            ):
+                issues.append(
+                    f"{label} graph3d {display_kind}[{index}] should include a positive {'/'.join(field_options)}"
+                )
+        if isinstance(number_fields, dict):
+            for field_name, expected_value in number_fields.items():
+                value = solid.get(str(field_name))
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not approximately(
+                        value,
+                        float(expected_value),
+                        tolerance=float(solid_spec.get("numberTolerance", 1e-6)),
+                    )
+                ):
+                    issues.append(
+                        f"{label} graph3d {display_kind}[{index}].{field_name} "
+                        f"should preserve source {field_name} {float(expected_value):g}"
+                    )
+        if allowed_render_styles:
+            render_style = str(solid.get("renderStyle") or "")
+            if render_style not in allowed_render_styles:
+                issues.append(
+                    f"{label} graph3d {display_kind} solid should include renderStyle "
+                    f"{', '.join(allowed_render_styles[:-1]) + ', or ' if len(allowed_render_styles) > 1 else ''}"
+                    f"{allowed_render_styles[-1]}"
+                )
+    return issues
+
+
 def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) -> list[str]:
     graph_configs = collect_diagram_graph_configs(args)
     issues: list[str] = []
@@ -4715,6 +4823,10 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
             graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
             point_coords, segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
             coord_tolerance = float(spec.get("coordTolerance", 0.02))
+            for point_id in spec.get("pointIds") or ():
+                key = graph3d_point_key(point_id)
+                if key and key not in point_coords:
+                    issues.append(f"{label} graph3d data should include named point {key.upper()}")
             point_specs = spec.get("pointCoords")
             if isinstance(point_specs, dict):
                 for point_id, coords in point_specs.items():
@@ -4740,6 +4852,13 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
                 pair_key, display_pair = pair_spec
                 if pair_key not in dashed_pairs:
                     issues.append(f"{label} graph3d segment {display_pair} should be dashed/dotted like the source")
+            if spec.get("requireAnyDashed") and not dashed_pairs:
+                message = spec.get("requireAnyDashedMessage")
+                issues.append(
+                    message
+                    if isinstance(message, str)
+                    else f"{label} graph3d should mark at least one hidden edge/diagonal as dashed"
+                )
             face_sets = graph3d_face_point_sets(graph3d_configs)
             for face in spec.get("faces") or ():
                 if not isinstance(face, tuple | list):
@@ -4750,6 +4869,54 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
                 if frozenset(face_points) not in face_sets:
                     display_face = "".join(point.upper() for point in face_points)
                     issues.append(f"{label} graph3d faces should include face {display_face}")
+            min_faces = spec.get("minFaces")
+            if isinstance(min_faces, int) and len(face_sets) < min_faces:
+                message = spec.get("minFacesMessage")
+                issues.append(
+                    message
+                    if isinstance(message, str)
+                    else f"{label} graph3d diagram should include at least {min_faces} faces, not just edge lines"
+                )
+            solids = graph3d_solid_entries(graph3d_configs)
+            for solid_spec in spec.get("solidSpecs") or ():
+                if isinstance(solid_spec, dict):
+                    issues.extend(source_fidelity_graph3d_solid_spec_issues(solids, solid_spec, label=label))
+            dimension_entries = graph3d_dimension_entries(graph3d_configs)
+            for symbol in spec.get("dimensionSymbols") or ():
+                if not any(
+                    label_mentions_symbol(str(dimension.get("label") or ""), str(symbol))
+                    for dimension in dimension_entries
+                ):
+                    issues.append(f"{label} graph3d diagrams should include a labelled {symbol} dimension")
+            if spec.get("requireDimensionEndpoints"):
+                for dimension in dimension_entries:
+                    if "from" not in dimension or "to" not in dimension:
+                        issues.append(f"{label} graph3d dimension entries should include from and to endpoints")
+            if (
+                spec.get("requireDimensionLabelText")
+                and not " ".join(str(dimension.get("label") or "") for dimension in dimension_entries).strip()
+            ):
+                message = spec.get("requireDimensionLabelTextMessage")
+                issues.append(
+                    message
+                    if isinstance(message, str)
+                    else f"{label} graph3d diagrams should preserve dimension labels in data.dimensions"
+                )
+            for symbol in spec.get("labelSymbols") or ():
+                if not any(
+                    label_mentions_symbol(label_text, str(symbol))
+                    for label_text in graph3d_label_texts(graph3d_configs)
+                ):
+                    message = (
+                        spec.get("labelSymbolMessages", {}).get(symbol)
+                        if isinstance(spec.get("labelSymbolMessages"), dict)
+                        else None
+                    )
+                    issues.append(
+                        message
+                        if isinstance(message, str)
+                        else f"{label} graph3d diagram should preserve visible label {symbol}"
+                    )
     return issues
 
 
@@ -7567,6 +7734,18 @@ def local_real_specialist_spherical_cap_full_sphere_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_spherical_cap_bad_solid_fields_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph3d = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    solid = graph3d["data"]["solids"][0]
+    solid["radius"] = 8
+    solid.pop("height", None)
+    solid.pop("axis", None)
+    solid.pop("center", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_spherical_cap_equivalent_solution_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
     part_b = call["mauthArguments"]["parts"][1]
@@ -8402,6 +8581,28 @@ def local_graph3d_general_solids_missing_dimensions_render_style_call() -> dict[
     return call
 
 
+def local_graph3d_general_solids_bad_solid_fields_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_graph3d_general_solids_call()))
+    for diagram in call["mauthArguments"]["diagrams"]:
+        for solid in diagram["graphConfig"]["data"].get("solids", []):
+            if not isinstance(solid, dict):
+                continue
+            kind = graph3d_solid_kind(solid)
+            if kind == "cone":
+                solid.pop("baseCenter", None)
+                solid.pop("apex", None)
+                solid["radius"] = -2
+            if kind == "cylinder":
+                solid.pop("baseCenter", None)
+                solid.pop("topCenter", None)
+                solid["radius"] = 0
+            if kind == "sphere":
+                solid.pop("center", None)
+                solid["radius"] = None
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_graph3d_general_solids_face_vertices_alias_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_graph3d_general_solids_call()))
     for diagram in call["mauthArguments"]["diagrams"]:
@@ -8991,6 +9192,16 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "not represent the cap as only a full sphere",
         ],
     },
+    "real-specialist-spherical-cap-bad-solid-fields": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_bad_solid_fields_call,
+        "expectedIssues": [
+            "sphereCap[0] should include center",
+            "sphereCap[0] should include axis or normal",
+            "sphereCap[0] should include a positive height/depth",
+            "sphereCap[0].radius should preserve source radius 10",
+        ],
+    },
     "real-specialist-spherical-cap-missing-cross-section": {
         "assert": assert_real_specialist_spherical_cap_call,
         "call": local_real_specialist_spherical_cap_missing_cross_section_call,
@@ -9177,6 +9388,20 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "renderStyle surface, wireframe, or outline",
             "labelled h dimension",
             "labelled r dimension",
+        ],
+    },
+    "graph3d-general-solids-bad-solid-fields": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_bad_solid_fields_call,
+        "expectedIssues": [
+            "cone[0] should include baseCenter",
+            "cone[0] should include apex or height",
+            "cone solid should include a positive radius",
+            "cylinder[0] should include baseCenter",
+            "cylinder[0] should include topCenter or height",
+            "cylinder solid should include a positive radius",
+            "sphere[0] should include center",
+            "sphere solid should include a positive radius",
         ],
     },
     "graph3d-general-solids-face-vertices-alias": {
