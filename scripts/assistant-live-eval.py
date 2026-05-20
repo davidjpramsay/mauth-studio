@@ -2401,7 +2401,6 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
             "statistics distribution/blank-axis source should not be converted as a generic graph2d function graph"
         )
     stats_chart_types: list[str] = []
-    data_objects = stats_chart_data_objects(args)
     for config in collect_diagram_graph_configs(args):
         if config.get("type") != "statsChart":
             continue
@@ -2419,17 +2418,23 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
         issues.append(
             f"statistics chartTypes should be supported native statsChart types, got {unsupported_stats_types!r}"
         )
-    if "density" not in stats_chart_types:
-        issues.append("statistics source probability-density graph should use statsChart chartType='density'")
     issues.extend(
-        stats_chart_label_issues(data_objects, label="statistics density source", x_terms=("response", "time"))
-    )
-    issues.extend(
-        stats_chart_point_issues(
-            data_objects,
-            ((1.0, 0.03), (2.1, 0.2), (2.7, 0.18), (5.0, 0.02)),
-            label="statistics density source",
-            tolerance=0.015,
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "statsChart",
+                    "label": "statistics source probability-density graph",
+                    "chartTypes": ("density",),
+                },
+                {
+                    "type": "statsChart",
+                    "label": "statistics density source",
+                    "xLabelTerms": ("response", "time"),
+                    "points": ((1.0, 0.03), (2.1, 0.2), (2.7, 0.18), (5.0, 0.02)),
+                    "pointTolerance": 0.015,
+                },
+            ],
         )
     )
 
@@ -2648,31 +2653,31 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"earthquake source graph should use graph2d, got {sorted(graph_types)!r}")
     if "statsChart" in graph_types or "geometricConstruction" in graph_types:
         issues.append("earthquake linear coordinate graph should not use statsChart or geometricConstruction")
-    graph_configs = collect_diagram_graph_configs(args)
     issues.extend(
-        graph2d_axis_label_issues(
-            graph_configs,
-            label="earthquake source graph",
-            x_terms=("log", "M_0"),
-            y_terms=("M_w",),
-        )
-    )
-    issues.extend(
-        graph2d_bounds_issues(
-            graph_configs,
-            {"xMin": 8, "xMax": 16, "yMin": 0, "yMax": 5},
-            label="earthquake source graph",
-            tolerance=0.05,
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "graph2d",
+                    "label": "earthquake source graph",
+                    "xLabelTerms": ("log", "M_0"),
+                    "yLabelTerms": ("M_w",),
+                    "bounds": {"xMin": 8, "xMax": 16, "yMin": 0, "yMax": 5},
+                    "boundsTolerance": 0.05,
+                    "serializedTerms": (
+                        {
+                            "terms": ("2/3", "0.666", "0.667", "0.666666"),
+                            "message": "earthquake graph2d line should encode slope 2/3",
+                        },
+                        {"terms": ("-6",), "message": "earthquake graph2d line should encode vertical intercept -6"},
+                    ),
+                },
+            ],
         )
     )
 
-    graph_serialized = json.dumps(graph_config, ensure_ascii=False).lower()
     if "log" not in serialized or "m_0" not in serialized.replace("{", "").replace("}", ""):
         issues.append("earthquake payload should keep log10(M_0) axis/variable notation")
-    if not any(term in graph_serialized for term in ("2/3", "0.666", "0.667", "0.666666")):
-        issues.append("earthquake graph2d line should encode slope 2/3")
-    if "-6" not in graph_serialized:
-        issues.append("earthquake graph2d line should encode vertical intercept -6")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 4:
@@ -3092,41 +3097,41 @@ def assert_real_methods_ev_histogram_call(call: dict[str, Any]) -> list[str]:
     if "graph2d" in graph_types:
         issues.append("ev histogram should not be converted as a generic graph2d function graph")
 
-    data_objects = stats_chart_data_objects(args)
-    chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
-    if "histogram" not in chart_types:
-        issues.append("ev source histogram should use statsChart chartType='histogram'")
     issues.extend(
-        stats_chart_field_value_issues(
-            data_objects,
-            {
-                "dataMode": "manualFrequencies",
-                "barType": "continuous",
-                "yAxisMode": "frequency",
-                "binSize": 20,
-            },
-            label="ev histogram source",
-        )
-    )
-    issues.extend(
-        stats_chart_label_issues(data_objects, label="ev histogram source", x_terms=("W",), y_terms=("Frequency",))
-    )
-    issues.extend(stats_chart_range_issues(data_objects, (260, 440), label="ev histogram source"))
-    issues.extend(
-        stats_histogram_count_issues(
-            data_objects,
-            {
-                270: 4,
-                290: 8,
-                310: 10,
-                330: 12,
-                350: 18,
-                370: 40,
-                390: 54,
-                410: 34,
-                430: 20,
-            },
-            label="ev",
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "statsChart",
+                    "label": "ev source histogram",
+                    "chartTypes": ("histogram",),
+                },
+                {
+                    "type": "statsChart",
+                    "label": "ev histogram source",
+                    "fieldValues": {
+                        "dataMode": "manualFrequencies",
+                        "barType": "continuous",
+                        "yAxisMode": "frequency",
+                        "binSize": 20,
+                    },
+                    "xLabelTerms": ("W",),
+                    "yLabelTerms": ("Frequency",),
+                    "range": (260, 440),
+                    "histogramCounts": {
+                        270: 4,
+                        290: 8,
+                        310: 10,
+                        330: 12,
+                        350: 18,
+                        370: 40,
+                        390: 54,
+                        410: 34,
+                        430: 20,
+                    },
+                    "countLabel": "ev",
+                },
+            ],
         )
     )
 
@@ -3191,44 +3196,40 @@ def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"dice-game source frequency chart should use statsChart, got {sorted(graph_types)!r}")
     if "graph2d" in graph_types:
         issues.append("dice-game frequency chart should not be converted as a generic graph2d graph")
-    data_objects = stats_chart_data_objects(args)
-    chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
-    if "histogram" not in chart_types:
-        issues.append("dice-game source frequency chart should use statsChart chartType='histogram'")
     issues.extend(
-        stats_chart_field_value_issues(
-            data_objects,
-            {
-                "dataMode": "manualFrequencies",
-                "barType": "discrete",
-                "yAxisMode": "frequency",
-            },
-            label="dice-game source frequency chart",
-        )
-    )
-    issues.extend(
-        stats_chart_label_issues(data_objects, label="dice-game source frequency chart", x_terms=("x",), y_terms=("f",))
-    )
-    issues.extend(
-        stats_histogram_count_issues(
-            data_objects,
-            {
-                1: 66,
-                2: 113,
-                3: 108,
-                4: 57,
-                5: 57,
-                6: 40,
-                7: 26,
-                8: 13,
-                9: 6,
-                10: 3,
-                11: 4,
-                12: 5,
-                13: 2,
-            },
-            label="dice-game",
-            allow_normalised_probabilities=True,
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "statsChart",
+                    "label": "dice-game source frequency chart",
+                    "chartTypes": ("histogram",),
+                    "fieldValues": {
+                        "dataMode": "manualFrequencies",
+                        "barType": "discrete",
+                        "yAxisMode": "frequency",
+                    },
+                    "xLabelTerms": ("x",),
+                    "yLabelTerms": ("f",),
+                    "histogramCounts": {
+                        1: 66,
+                        2: 113,
+                        3: 108,
+                        4: 57,
+                        5: 57,
+                        6: 40,
+                        7: 26,
+                        8: 13,
+                        9: 6,
+                        10: 3,
+                        11: 4,
+                        12: 5,
+                        13: 2,
+                    },
+                    "countLabel": "dice-game",
+                    "allowNormalisedProbabilities": True,
+                },
+            ],
         )
     )
 
@@ -3949,7 +3950,6 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
     point_ids: set[str] = set()
     segment_pairs: set[tuple[str, str]] = set()
-    point_coords, semantic_segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
     for config in graph3d_configs:
         data = config.get("data")
         if not isinstance(data, dict):
@@ -3996,47 +3996,45 @@ def assert_real_specialist_prism_call(call: dict[str, Any]) -> list[str]:
     for axis_point_id in ("xaxis", "yaxis", "zaxis"):
         if axis_point_id in point_ids:
             issues.append(f"3d prism graph3d data should not include axis helper point {axis_point_id}")
-    expected_coords = {
-        "o": (0.0, 0.0, 0.0),
-        "a": (2.0, 0.0, 0.0),
-        "b": (2.0, 4.0, 0.0),
-        "c": (0.0, 4.0, 0.0),
-        "t": (0.0, 0.0, 3.0),
-        "d": (2.0, 0.0, 3.0),
-        "e": (2.0, 4.0, 3.0),
-        "f": (0.0, 4.0, 3.0),
-        "m": (0.0, 2.0, 1.5),
-    }
-    for point_id, coords in expected_coords.items():
-        if not graph3d_close_coords(point_coords.get(point_id), coords):
-            issues.append(f"3d prism graph3d point {point_id.upper()} should have coordinates {coords}")
-    required_segments = (
-        ("o", "a"),
-        ("a", "b"),
-        ("b", "c"),
-        ("o", "c"),
-        ("o", "t"),
-        ("a", "d"),
-        ("b", "e"),
-        ("c", "f"),
-        ("t", "d"),
-        ("d", "e"),
-        ("e", "f"),
-        ("t", "f"),
-        ("b", "t"),
-        ("a", "m"),
+    issues.extend(
+        source_fidelity_issues(
+            args,
+            [
+                {
+                    "type": "graph3d",
+                    "label": "3d prism",
+                    "pointCoords": {
+                        "o": (0.0, 0.0, 0.0),
+                        "a": (2.0, 0.0, 0.0),
+                        "b": (2.0, 4.0, 0.0),
+                        "c": (0.0, 4.0, 0.0),
+                        "t": (0.0, 0.0, 3.0),
+                        "d": (2.0, 0.0, 3.0),
+                        "e": (2.0, 4.0, 3.0),
+                        "f": (0.0, 4.0, 3.0),
+                        "m": (0.0, 2.0, 1.5),
+                    },
+                    "segments": (
+                        ("o", "a"),
+                        ("a", "b"),
+                        ("b", "c"),
+                        ("o", "c"),
+                        ("o", "t"),
+                        ("a", "d"),
+                        ("b", "e"),
+                        ("c", "f"),
+                        ("t", "d"),
+                        ("d", "e"),
+                        ("e", "f"),
+                        ("t", "f"),
+                        ("b", "t"),
+                        ("a", "m"),
+                    ),
+                    "dashedSegments": (("o", "c"), ("o", "t")),
+                }
+            ],
+        )
     )
-    for pair in required_segments:
-        sorted_pair = tuple(sorted(pair))
-        if (
-            sorted_pair not in segment_pairs
-            and sorted_pair not in semantic_segment_pairs
-            and "".join(pair) not in graph3d_serialized
-        ):
-            issues.append(f"3d prism graph3d data should include segment {''.join(pair).upper()}")
-    for pair in (("o", "c"), ("o", "t")):
-        if tuple(sorted(pair)) not in dashed_pairs:
-            issues.append(f"3d prism graph3d segment {''.join(pair).upper()} should be dashed/dotted like the source")
     for pair in segment_pairs:
         if any(point in {"xaxis", "yaxis", "zaxis"} for point in pair):
             issues.append("3d prism graph3d data should not include axis helper segments")
@@ -4606,6 +4604,152 @@ def graph2d_bounds_issues(
         if any(graph2d_number_near(config.get(key), expected_value, tolerance) for config in graph2d_configs):
             continue
         issues.append(f"{label} graph2d {key} should preserve source value {expected_value:g}")
+    return issues
+
+
+def source_fidelity_serialized_term_issue(graph_configs: list[dict[str, Any]], check: dict[str, Any]) -> str | None:
+    graph_serialized = compact_math_text(json.dumps(graph_configs, ensure_ascii=False))
+    raw_terms = check.get("terms")
+    term_options = raw_terms if isinstance(raw_terms, tuple | list) else (raw_terms,)
+    if any(isinstance(term, str) and compact_math_text(term) in graph_serialized for term in term_options):
+        return None
+    message = check.get("message")
+    return message if isinstance(message, str) else "source graph should preserve required graph term"
+
+
+def source_fidelity_graph3d_pair(pair: Any) -> tuple[tuple[str, str], str] | None:
+    if not isinstance(pair, tuple | list) or len(pair) < 2:
+        return None
+    first = graph3d_point_key(pair[0])
+    second = graph3d_point_key(pair[1])
+    if not first or not second:
+        return None
+    return tuple(sorted((first, second))), f"{first.upper()}{second.upper()}"
+
+
+def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) -> list[str]:
+    graph_configs = collect_diagram_graph_configs(args)
+    issues: list[str] = []
+    for spec in specs:
+        label = str(spec.get("label") or "source")
+        diagram_type = spec.get("type")
+        if diagram_type == "graph2d":
+            graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
+            if spec.get("xLabelTerms") or spec.get("yLabelTerms"):
+                issues.extend(
+                    graph2d_axis_label_issues(
+                        graph2d_configs,
+                        label=label,
+                        x_terms=tuple(spec.get("xLabelTerms") or ()),
+                        y_terms=tuple(spec.get("yLabelTerms") or ()),
+                    )
+                )
+            bounds = spec.get("bounds")
+            if isinstance(bounds, dict):
+                issues.extend(
+                    graph2d_bounds_issues(
+                        graph2d_configs,
+                        {str(key): float(value) for key, value in bounds.items() if isinstance(value, int | float)},
+                        label=label,
+                        tolerance=float(spec.get("boundsTolerance", 1e-6)),
+                    )
+                )
+            for check in spec.get("serializedTerms") or ():
+                if isinstance(check, dict):
+                    issue = source_fidelity_serialized_term_issue(graph2d_configs, check)
+                    if issue:
+                        issues.append(issue)
+        elif diagram_type == "statsChart":
+            data_objects = stats_chart_data_objects(args)
+            chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
+            for chart_type in spec.get("chartTypes") or ():
+                if str(chart_type) not in chart_types:
+                    issues.append(f"{label} should use statsChart chartType='{chart_type}'")
+            field_values = spec.get("fieldValues")
+            if isinstance(field_values, dict):
+                issues.extend(stats_chart_field_value_issues(data_objects, field_values, label=label))
+            if spec.get("xLabelTerms") or spec.get("yLabelTerms"):
+                issues.extend(
+                    stats_chart_label_issues(
+                        data_objects,
+                        label=label,
+                        x_terms=tuple(spec.get("xLabelTerms") or ()),
+                        y_terms=tuple(spec.get("yLabelTerms") or ()),
+                    )
+                )
+            range_value = spec.get("range")
+            if isinstance(range_value, tuple | list) and len(range_value) >= 2:
+                issues.extend(
+                    stats_chart_range_issues(
+                        data_objects,
+                        (float(range_value[0]), float(range_value[1])),
+                        label=label,
+                        tolerance=float(spec.get("rangeTolerance", 1e-6)),
+                    )
+                )
+            counts = spec.get("histogramCounts")
+            if isinstance(counts, dict):
+                issues.extend(
+                    stats_histogram_count_issues(
+                        data_objects,
+                        {float(key): int(value) for key, value in counts.items()},
+                        label=str(spec.get("countLabel") or label),
+                        allow_normalised_probabilities=bool(spec.get("allowNormalisedProbabilities")),
+                    )
+                )
+            points = spec.get("points")
+            if isinstance(points, tuple | list):
+                issues.extend(
+                    stats_chart_point_issues(
+                        data_objects,
+                        tuple(
+                            (float(point[0]), float(point[1]))
+                            for point in points
+                            if isinstance(point, tuple | list) and len(point) >= 2
+                        ),
+                        label=label,
+                        tolerance=float(spec.get("pointTolerance", 1e-6)),
+                    )
+                )
+        elif diagram_type == "graph3d":
+            graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
+            point_coords, segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
+            coord_tolerance = float(spec.get("coordTolerance", 0.02))
+            point_specs = spec.get("pointCoords")
+            if isinstance(point_specs, dict):
+                for point_id, coords in point_specs.items():
+                    if not isinstance(coords, tuple | list) or len(coords) < 3:
+                        continue
+                    key = graph3d_point_key(point_id)
+                    if not key:
+                        continue
+                    expected = (float(coords[0]), float(coords[1]), float(coords[2]))
+                    if not graph3d_close_coords(point_coords.get(key), expected, tolerance=coord_tolerance):
+                        issues.append(f"{label} graph3d point {key.upper()} should have coordinates {expected}")
+            for pair in spec.get("segments") or ():
+                pair_spec = source_fidelity_graph3d_pair(pair)
+                if pair_spec is None:
+                    continue
+                pair_key, display_pair = pair_spec
+                if pair_key not in segment_pairs:
+                    issues.append(f"{label} graph3d data should include segment {display_pair}")
+            for pair in spec.get("dashedSegments") or ():
+                pair_spec = source_fidelity_graph3d_pair(pair)
+                if pair_spec is None:
+                    continue
+                pair_key, display_pair = pair_spec
+                if pair_key not in dashed_pairs:
+                    issues.append(f"{label} graph3d segment {display_pair} should be dashed/dotted like the source")
+            face_sets = graph3d_face_point_sets(graph3d_configs)
+            for face in spec.get("faces") or ():
+                if not isinstance(face, tuple | list):
+                    continue
+                face_points = tuple(graph3d_point_key(point) for point in face)
+                if not face_points or not all(face_points):
+                    continue
+                if frozenset(face_points) not in face_sets:
+                    display_face = "".join(point.upper() for point in face_points)
+                    issues.append(f"{label} graph3d faces should include face {display_face}")
     return issues
 
 
