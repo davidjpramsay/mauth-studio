@@ -695,6 +695,8 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For graph3d source solids" in graph3d
     assert "For scalar-product source diagrams" not in graph3d
     assert "For statsChart source diagrams" not in graph3d
+    assert "middle letter is the vertex" in graph3d
+    assert "M-F" in graph3d
 
     assert "For statsChart source diagrams" in stats
     assert "For graph3d source solids" not in stats
