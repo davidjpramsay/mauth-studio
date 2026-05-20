@@ -59,6 +59,12 @@ interface BrowserDiagramMetric {
   expectedGraph3DPointCount: number;
   expectedGraph3DSegmentCount: number;
   expectedGraph3DFaceCount: number;
+  expectedGraph3DPointLabelCount: number;
+  expectedGraph3DSegmentLabelCount: number;
+  expectedGraph3DFaceLabelCount: number;
+  graph3DPointLabelCount: number;
+  graph3DSegmentLabelCount: number;
+  graph3DFaceLabelCount: number;
   expectedGraph3DSolidKinds: string[];
   renderedGraphic: boolean;
   text: string;
@@ -67,6 +73,7 @@ interface BrowserDiagramMetric {
   labelCollisionCount: number;
   labelCollisionPairs: string[];
   vector2dAngleMarkerIssues: string[];
+  graph3DLabelQualityIssues: string[];
 }
 
 interface BrowserRenderedWarning {
@@ -644,6 +651,9 @@ function MauthDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
       data-graph3d-point-count={graph3dExpectations.pointCount}
       data-graph3d-segment-count={graph3dExpectations.segmentCount}
       data-graph3d-face-count={graph3dExpectations.faceCount}
+      data-graph3d-point-label-count={graph3dExpectations.pointLabelCount}
+      data-graph3d-segment-label-count={graph3dExpectations.segmentLabelCount}
+      data-graph3d-face-label-count={graph3dExpectations.faceLabelCount}
       data-graph3d-solid-kinds={JSON.stringify(graph3dExpectations.solidKinds)}
       data-vector2d-angle-markers={JSON.stringify(vector2dAngleMarkers)}
     >
@@ -769,7 +779,7 @@ function expectedGraph3DExpectations(graphConfig?: GraphConfig | null) {
   const type = String(config.type ?? "");
   const data = config.data && typeof config.data === "object" ? config.data : {};
   if (type !== "graph3d" && type !== "basic3d") {
-    return { pointCount: 0, segmentCount: 0, faceCount: 0, solidKinds: [] as string[] };
+    return { pointCount: 0, segmentCount: 0, faceCount: 0, pointLabelCount: 0, segmentLabelCount: 0, faceLabelCount: 0, solidKinds: [] as string[] };
   }
   const points = Array.isArray(data.points) ? data.points : Array.isArray(data.vertices) ? data.vertices : [];
   const segments = Array.isArray(data.segments) ? data.segments : Array.isArray(data.edges) ? data.edges : [];
@@ -779,6 +789,9 @@ function expectedGraph3DExpectations(graphConfig?: GraphConfig | null) {
     pointCount: points.length,
     segmentCount: segments.length,
     faceCount: faces.length,
+    pointLabelCount: points.filter((point: any) => point?.show !== false && expectedLabelText(point?.label)).length,
+    segmentLabelCount: segments.filter((segment: any) => segment?.show !== false && expectedLabelText(segment?.label)).length,
+    faceLabelCount: faces.filter((face: any) => face?.show !== false && expectedLabelText(face?.label)).length,
     solidKinds: [
       ...new Set(
         solids
@@ -1035,6 +1048,12 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   if (metric.type === "vector2d" && metric.vector2dAngleMarkerIssues.length > 0) {
     failures.push(`${label} has angle-marker render issues: ${metric.vector2dAngleMarkerIssues.join("; ")}`);
   }
+  if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.labelCollisionCount > 0) {
+    failures.push(`${label} has overlapping graph3d labels: ${metric.labelCollisionPairs.join("; ")}`);
+  }
+  if ((metric.type === "graph3d" || metric.type === "basic3d") && metric.graph3DLabelQualityIssues.length > 0) {
+    failures.push(`${label} has graph3d label quality issues: ${metric.graph3DLabelQualityIssues.join("; ")}`);
+  }
   if (/could not render|mathjax-error|error rendering|failed to render/i.test(metric.text)) {
     failures.push(`${label} contains render error text: ${metric.text}`);
   }
@@ -1172,6 +1191,11 @@ async function runBrowserReplay(
               const height = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
               return width * height;
             };
+            const rectDistance = (left: DOMRect, right: DOMRect) => {
+              const dx = Math.max(0, Math.max(left.left, right.left) - Math.min(left.right, right.right));
+              const dy = Math.max(0, Math.max(left.top, right.top) - Math.min(left.bottom, right.bottom));
+              return Math.hypot(dx, dy);
+            };
             const visibleElement = (element: Element) => {
               const box = element.getBoundingClientRect();
               const style = window.getComputedStyle(element);
@@ -1235,6 +1259,49 @@ async function runBrowserReplay(
               if (marker.label && !angleLabelIds.has(marker.id)) issues.push(`missing rendered angle label for marker ${marker.id}`);
               return issues;
             });
+            const graph3DLabels = labelEntries.filter((entry) => entry.role.startsWith("graph3d-"));
+            const graph3DPointLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-point-label").length;
+            const graph3DSegmentLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-segment-label").length;
+            const graph3DFaceLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-face-label").length;
+            const expectedGraph3DPointLabelCount = Number(frame.getAttribute("data-graph3d-point-label-count") || 0);
+            const expectedGraph3DSegmentLabelCount = Number(frame.getAttribute("data-graph3d-segment-label-count") || 0);
+            const expectedGraph3DFaceLabelCount = Number(frame.getAttribute("data-graph3d-face-label-count") || 0);
+            const graph3DLabelQualityIssues: string[] = [];
+            if (type === "graph3d" || type === "basic3d") {
+              if (graph3DPointLabelCount < expectedGraph3DPointLabelCount) {
+                graph3DLabelQualityIssues.push(
+                  `rendered ${graph3DPointLabelCount}/${expectedGraph3DPointLabelCount} expected point labels`,
+                );
+              }
+              if (graph3DSegmentLabelCount < expectedGraph3DSegmentLabelCount) {
+                graph3DLabelQualityIssues.push(
+                  `rendered ${graph3DSegmentLabelCount}/${expectedGraph3DSegmentLabelCount} expected segment labels`,
+                );
+              }
+              if (graph3DFaceLabelCount < expectedGraph3DFaceLabelCount) {
+                graph3DLabelQualityIssues.push(`rendered ${graph3DFaceLabelCount}/${expectedGraph3DFaceLabelCount} expected face labels`);
+              }
+              for (const entry of graph3DLabels) {
+                if (
+                  entry.rect.left < rect.left - 1 ||
+                  entry.rect.right > rect.right + 1 ||
+                  entry.rect.top < rect.top - 1 ||
+                  entry.rect.bottom > rect.bottom + 1
+                ) {
+                  graph3DLabelQualityIssues.push(`label ${entry.text || "label"} extends outside the diagram frame`);
+                }
+              }
+              for (let i = 0; i < graph3DLabels.length; i += 1) {
+                for (let j = i + 1; j < graph3DLabels.length; j += 1) {
+                  const distance = rectDistance(graph3DLabels[i].rect, graph3DLabels[j].rect);
+                  if (distance > 0 && distance < 3) {
+                    graph3DLabelQualityIssues.push(
+                      `label ${graph3DLabels[i].text || "label"} is crowded near ${graph3DLabels[j].text || "label"} (${Math.round(distance * 10) / 10}px)`,
+                    );
+                  }
+                }
+              }
+            }
             const labelSurfaceText = Array.from(frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text"))
               .map((element) => element.textContent ?? "")
               .join(" ");
@@ -1268,7 +1335,13 @@ async function runBrowserReplay(
               expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
               expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
               expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
+              expectedGraph3DPointLabelCount,
+              expectedGraph3DSegmentLabelCount,
+              expectedGraph3DFaceLabelCount,
               expectedGraph3DSolidKinds,
+              graph3DPointLabelCount,
+              graph3DSegmentLabelCount,
+              graph3DFaceLabelCount,
               labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
               renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
               text,
@@ -1277,6 +1350,7 @@ async function runBrowserReplay(
               labelCollisionCount: labelCollisionPairs.length,
               labelCollisionPairs: labelCollisionPairs.slice(0, 6),
               vector2dAngleMarkerIssues,
+              graph3DLabelQualityIssues: graph3DLabelQualityIssues.slice(0, 8),
             };
           }),
         )

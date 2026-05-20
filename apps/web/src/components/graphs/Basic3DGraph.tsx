@@ -14,6 +14,8 @@ const DEFAULT_3D_VIEW_STATE = {
   bank: 0,
 };
 type Point3DCoords = [number, number, number];
+type Point2DCoords = [number, number];
+type Graph3DRanges = [[number, number], [number, number], [number, number]];
 type Graph3DPointEntry = {
   id: string;
   label: string;
@@ -56,6 +58,10 @@ type Graph3DSolidEntry = {
   stepsU: number;
   stepsV: number;
   show: boolean;
+};
+type Graph3DLabelContext = {
+  viewState: Basic3DViewState;
+  frame: { minX: number; maxX: number; minY: number; maxY: number; center: Point2DCoords };
 };
 const AXIS_3D_LABEL_ATTRIBUTES = {
   label: LABEL_ATTRIBUTES,
@@ -349,13 +355,108 @@ function rangeFromPoints(points: Graph3DPointEntry[], axisIndex: number, fallbac
   return [Number((min - pad).toFixed(6)), Number((max + pad).toFixed(6))] as [number, number];
 }
 
-function graph3dRanges(graphConfig: GraphConfig | null | undefined, points: Graph3DPointEntry[]) {
+function graph3dRanges(graphConfig: GraphConfig | null | undefined, points: Graph3DPointEntry[]): Graph3DRanges {
   const data = graph3dData(graphConfig);
   return [
     rangeFromValue(data.xRange) ?? rangeFromPoints(points, 0, [-5, 5]),
     rangeFromValue(data.yRange) ?? rangeFromPoints(points, 1, [-5, 5]),
     rangeFromValue(data.zRange) ?? rangeFromPoints(points, 2, [-5, 5]),
-  ] as [[number, number], [number, number], [number, number]];
+  ] as Graph3DRanges;
+}
+
+const GRAPH_3D_LABEL_DIRECTIONS: Point3DCoords[] = [
+  [1, 1, 1],
+  [1, 1, -1],
+  [1, -1, 1],
+  [1, -1, -1],
+  [-1, 1, 1],
+  [-1, 1, -1],
+  [-1, -1, 1],
+  [-1, -1, -1],
+];
+
+function graph3dFrameCorners(ranges: Graph3DRanges): Point3DCoords[] {
+  return ranges[0].flatMap((x) => ranges[1].flatMap((y) => ranges[2].map((z) => [x, y, z] as Point3DCoords)));
+}
+
+function projectGraph3DPoint(coords: Point3DCoords, viewState: Basic3DViewState): Point2DCoords {
+  const azCos = Math.cos(viewState.az);
+  const azSin = Math.sin(viewState.az);
+  const elCos = Math.cos(viewState.el);
+  const elSin = Math.sin(viewState.el);
+  const rawX = -coords[0] * azCos + coords[1] * azSin;
+  const rawY = coords[0] * azSin * elSin + coords[1] * azCos * elSin - coords[2] * elCos;
+  if (Math.abs(viewState.bank) <= 1e-9) return [rawX, rawY];
+  const bankCos = Math.cos(viewState.bank);
+  const bankSin = Math.sin(viewState.bank);
+  return [rawX * bankCos - rawY * bankSin, rawX * bankSin + rawY * bankCos];
+}
+
+function graph3dLabelContext(ranges: Graph3DRanges, viewState: Basic3DViewState): Graph3DLabelContext {
+  const projectedCorners = graph3dFrameCorners(ranges).map((corner) => projectGraph3DPoint(corner, viewState));
+  const xValues = projectedCorners.map((corner) => corner[0]);
+  const yValues = projectedCorners.map((corner) => corner[1]);
+  const minX = Math.min(...xValues);
+  const maxX = Math.max(...xValues);
+  const minY = Math.min(...yValues);
+  const maxY = Math.max(...yValues);
+  return {
+    viewState,
+    frame: {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      center: [(minX + maxX) / 2, (minY + maxY) / 2],
+    },
+  };
+}
+
+function screenDistance(left: Point2DCoords, right: Point2DCoords) {
+  return Math.hypot(left[0] - right[0], left[1] - right[1]);
+}
+
+function normalizedScreenDot(left: Point2DCoords, right: Point2DCoords) {
+  const denominator = Math.hypot(left[0], left[1]) * Math.hypot(right[0], right[1]);
+  if (denominator <= 1e-9) return 0;
+  return (left[0] * right[0] + left[1] * right[1]) / denominator;
+}
+
+function graph3dLabelPoint(
+  coords: Point3DCoords,
+  context: Graph3DLabelContext,
+  labelOffset: number,
+  avoidCoords: Point3DCoords[] = [],
+): Point3DCoords {
+  const source = projectGraph3DPoint(coords, context.viewState);
+  const avoidPoints = avoidCoords.map((point) => projectGraph3DPoint(point, context.viewState));
+  const sourceOutward: Point2DCoords = [source[0] - context.frame.center[0], source[1] - context.frame.center[1]];
+  let bestPoint = vectorAdd(coords, vectorScale(GRAPH_3D_LABEL_DIRECTIONS[0], labelOffset));
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const direction of GRAPH_3D_LABEL_DIRECTIONS) {
+    const candidate = vectorAdd(coords, vectorScale(direction, labelOffset));
+    const projected = projectGraph3DPoint(candidate, context.viewState);
+    const edgeClearance = Math.min(
+      projected[0] - context.frame.minX,
+      context.frame.maxX - projected[0],
+      projected[1] - context.frame.minY,
+      context.frame.maxY - projected[1],
+    );
+    const nearestAvoidPoint = avoidPoints.length
+      ? Math.min(...avoidPoints.map((point) => screenDistance(projected, point)))
+      : screenDistance(projected, source);
+    const candidateVector: Point2DCoords = [projected[0] - source[0], projected[1] - source[1]];
+    const outwardScore = normalizedScreenDot(candidateVector, sourceOutward);
+    const outsidePenalty = edgeClearance < 0 ? Math.abs(edgeClearance) * 5 : 0;
+    const score = edgeClearance * 1.8 + nearestAvoidPoint * 1.4 + outwardScore * 0.35 - outsidePenalty;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPoint = candidate;
+    }
+  }
+
+  return bestPoint;
 }
 
 function roundedViewValue(value: number) {
@@ -479,7 +580,13 @@ function surfaceAttributes(solid: Graph3DSolidEntry) {
   };
 }
 
-function renderGraph3DFace(view: Basic3DView, face: Graph3DFaceEntry, labelOffset: number) {
+function renderGraph3DFace(
+  view: Basic3DView,
+  face: Graph3DFaceEntry,
+  labelContext: Graph3DLabelContext,
+  labelOffset: number,
+  avoidCoords: Point3DCoords[],
+) {
   if (!face.show) return;
   try {
     view.create("polygon3d", face.coords, {
@@ -504,11 +611,12 @@ function renderGraph3DFace(view: Basic3DView, face: Graph3DFaceEntry, labelOffse
         (sum, coords) => [sum[0] + coords[0], sum[1] + coords[1], sum[2] + coords[2]],
         [0, 0, 0],
       );
-      const labelPoint: Point3DCoords = [
-        centroid[0] / face.coords.length + labelOffset,
-        centroid[1] / face.coords.length + labelOffset,
-        centroid[2] / face.coords.length + labelOffset,
-      ];
+      const labelPoint = graph3dLabelPoint(
+        [centroid[0] / face.coords.length, centroid[1] / face.coords.length, centroid[2] / face.coords.length],
+        labelContext,
+        labelOffset,
+        avoidCoords,
+      );
       view.create(
         "text3d",
         [labelPoint, render3DLatexLabel(face.label, { "data-mauth-label-role": "graph3d-face-label" })],
@@ -796,9 +904,18 @@ export function Basic3DGraph({
         0.18,
         Math.max(ranges[0][1] - ranges[0][0], ranges[1][1] - ranges[1][0], ranges[2][1] - ranges[2][0]) * 0.035,
       );
+      const axisLabelOffset = labelOffset * 3;
+      const labelContext = graph3dLabelContext(ranges, persistedViewState);
+      const pointCoords = points.map((point) => point.coords);
+      const axisLabelCoords: Point3DCoords[] = [
+        [ranges[0][1] + axisLabelOffset, 0, 0],
+        [0, ranges[1][1] + axisLabelOffset, 0],
+        [0, 0, ranges[2][1] + axisLabelOffset],
+      ];
+      const commonLabelAvoidCoords = [...pointCoords, ...axisLabelCoords];
 
       solids.forEach((solid) => renderGraph3DSolid(view!, solid));
-      faces.forEach((face) => renderGraph3DFace(view!, face, labelOffset));
+      faces.forEach((face) => renderGraph3DFace(view!, face, labelContext, labelOffset, commonLabelAvoidCoords));
 
       segments
         .filter((segment) => segment.show)
@@ -821,7 +938,7 @@ export function Basic3DGraph({
             view?.create(
               "text3d",
               [
-                [midpoint[0] + labelOffset, midpoint[1] + labelOffset, midpoint[2] + labelOffset],
+                graph3dLabelPoint(midpoint, labelContext, labelOffset * 2.2, commonLabelAvoidCoords),
                 render3DLatexLabel(segment.label, {
                   "data-mauth-label-role": "graph3d-segment-label",
                   "data-mauth-segment-from": segment.from,
@@ -842,33 +959,33 @@ export function Basic3DGraph({
             fillColor: point.color ?? POINT_3D_ATTRIBUTES.fillColor,
           });
           if (point.label.trim()) {
+            const otherPointCoords = [
+              ...points.filter((otherPoint) => otherPoint.id !== point.id).map((otherPoint) => otherPoint.coords),
+              ...axisLabelCoords,
+            ];
             view?.create(
               "text3d",
               [
-                [point.coords[0] + labelOffset, point.coords[1] + labelOffset, point.coords[2] + labelOffset],
+                graph3dLabelPoint(point.coords, labelContext, labelOffset * 1.35, otherPointCoords),
                 render3DLatexLabel(point.label, { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id }),
               ],
-              {
-                ...LATEX_3D_LABEL_ATTRIBUTES,
-                anchorX: "left",
-                anchorY: "bottom",
-              },
+              LATEX_3D_LABEL_ATTRIBUTES,
             );
           }
         });
       view.create(
         "text3d",
-        [[ranges[0][1] + labelOffset, 0, 0], render3DLatexLabel("x", { "data-mauth-label-role": "axis-label" })],
+        [axisLabelCoords[0], render3DLatexLabel("x", { "data-mauth-label-role": "axis-label" })],
         LATEX_3D_LABEL_ATTRIBUTES,
       );
       view.create(
         "text3d",
-        [[0, ranges[1][1] + labelOffset, 0], render3DLatexLabel("y", { "data-mauth-label-role": "axis-label" })],
+        [axisLabelCoords[1], render3DLatexLabel("y", { "data-mauth-label-role": "axis-label" })],
         LATEX_3D_LABEL_ATTRIBUTES,
       );
       view.create(
         "text3d",
-        [[0, 0, ranges[2][1] + labelOffset], render3DLatexLabel("z", { "data-mauth-label-role": "axis-label" })],
+        [axisLabelCoords[2], render3DLatexLabel("z", { "data-mauth-label-role": "axis-label" })],
         LATEX_3D_LABEL_ATTRIBUTES,
       );
     } catch {
