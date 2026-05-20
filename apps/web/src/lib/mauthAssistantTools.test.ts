@@ -3615,6 +3615,55 @@ test("accepts graph3d faces and solid primitives", () => {
   assert.equal(Array.isArray(data?.dimensions), true);
 });
 
+test("normalizes graph3d vertices aliases to canonical points", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "solid-3d-alias",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph3d",
+                data: {
+                  vertices: [
+                    { id: "O", coords: [0, 0, 0] },
+                    { id: "A", coords: [2, 0, 0] },
+                    { id: "B", coords: [0, 2, 0] },
+                  ],
+                  segments: [
+                    { from: "O", to: "A" },
+                    { from: "O", to: "B" },
+                  ],
+                  faces: [{ vertices: ["O", "A", "B"], fillColor: "#dbeafe", fillOpacity: 0.18 }],
+                },
+                metadata: { view3d: { az: 1.2, el: 0.35, bank: 0 } },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "solid-3d-alias");
+  const data = (diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined) as Record<string, unknown> | undefined;
+  const faces = data?.faces as Array<Record<string, unknown>> | undefined;
+  assert.deepEqual(data?.points, [
+    { id: "O", coords: [0, 0, 0] },
+    { id: "A", coords: [2, 0, 0] },
+    { id: "B", coords: [0, 2, 0] },
+  ]);
+  assert.equal(Object.prototype.hasOwnProperty.call(data ?? {}, "vertices"), false);
+  assert.deepEqual(faces?.[0]?.points, ["O", "A", "B"]);
+  assert.equal(Object.prototype.hasOwnProperty.call(faces?.[0] ?? {}, "vertices"), false);
+});
+
 test("rejects unsupported graph3d camera metadata shape", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

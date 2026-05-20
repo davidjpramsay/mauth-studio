@@ -293,6 +293,54 @@ def test_source_conversion_tool_calls_prune_unsupported_graph3d_metadata():
     }
 
 
+def test_source_conversion_tool_calls_normalize_graph3d_vertices_aliases():
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_convert_source_question",
+                "arguments": json.dumps(
+                    {
+                        "questionNumber": 1,
+                        "marks": 0,
+                        "questionText": "A triangular face is shown.",
+                        "diagram": {
+                            "graphConfig": {
+                                "type": "graph3d",
+                                "data": {
+                                    "vertices": [
+                                        {"id": "O", "coords": [0, 0, 0]},
+                                        {"id": "A", "coords": [2, 0, 0]},
+                                        {"id": "B", "coords": [0, 2, 0]},
+                                    ],
+                                    "segments": [{"from": "O", "to": "A"}, {"from": "O", "to": "B"}],
+                                    "faces": [{"vertices": ["O", "A", "B"], "fillOpacity": 0.18}],
+                                },
+                                "metadata": {"view3d": {"az": 1.2, "el": 0.35, "bank": 0}},
+                            }
+                        },
+                    }
+                ),
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+
+    assert "vertices" in call["arguments"]["diagram"]["graphConfig"]["data"]
+    assert data["points"] == [
+        {"id": "O", "coords": [0, 0, 0]},
+        {"id": "A", "coords": [2, 0, 0]},
+        {"id": "B", "coords": [0, 2, 0]},
+    ]
+    assert "vertices" not in data
+    assert data["faces"][0]["points"] == ["O", "A", "B"]
+    assert "vertices" not in data["faces"][0]
+
+
 def test_extracts_action_array_nested_tool_arguments_from_openai_response():
     actions = [{"type": "formatting.update", "patch": {"lineHeight": 1.32}}]
     response = {

@@ -1930,7 +1930,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
-      "For graph3d curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
+      "For graph3d, use data.points for named vertices and data.faces entries with points arrays, not vertices arrays; for curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",
       "Preview generated actions with mauth.actions.preview.",
@@ -2056,13 +2056,18 @@ function existingBlockForAction<Q extends MauthQuestionLike, F extends object, C
   return findBlockById(contentBlocksForScope(document, action.scope), action.blockId);
 }
 
+function sanitizePatchGraphConfig(patch: Record<string, unknown>) {
+  return isRecord(patch.graphConfig) ? { ...patch, graphConfig: normalizedAssistantGraphConfig(patch.graphConfig) } : patch;
+}
+
 function sanitizePatchContentBlocks(patch: Record<string, unknown>) {
-  return Array.isArray(patch.contentBlocks)
+  const sanitizedPatch = sanitizePatchGraphConfig(patch);
+  return Array.isArray(sanitizedPatch.contentBlocks)
     ? {
-        ...patch,
-        contentBlocks: sanitizeAssistantContentBlocks(patch.contentBlocks as ContentBlock[]),
+        ...sanitizedPatch,
+        contentBlocks: sanitizeAssistantContentBlocks(sanitizedPatch.contentBlocks as ContentBlock[]),
       }
-    : patch;
+    : sanitizedPatch;
 }
 
 function sanitizePatchParts(patch: Record<string, unknown>) {
@@ -2109,17 +2114,24 @@ function sanitizeAssistantAction<Q extends MauthQuestionLike, F extends object, 
   if (action.type === "module.add" || action.type === "solutionSlot.add") {
     return { ...action, blocks: sanitizeAssistantContentBlocks(action.blocks) };
   }
-  if (action.type === "module.update" && typeof action.patch.text === "string") {
-    const existingBlock = existingBlockForAction(document, action);
-    const nextText = action.patch.text;
-    const isSolutionPatch =
-      (existingBlock && isSolutionTextBlock(existingBlock)) ||
-      action.patch.visibility === "solution" ||
-      action.patch.solutionOnly === true ||
-      SOLUTION_HEADING_PATTERN.test(nextText);
-    if (isSolutionPatch && (hasVisibleMarkNote(nextText) || hasMarkAnnotation(nextText))) {
-      return { ...action, patch: { ...action.patch, text: solutionBlockText(nextText) } };
+  if (action.type === "diagram.update") {
+    return { ...action, graphConfig: normalizedAssistantGraphConfig(action.graphConfig as unknown as Record<string, unknown>) };
+  }
+  if (action.type === "module.update") {
+    const normalizedPatch = sanitizePatchGraphConfig(action.patch);
+    if (typeof normalizedPatch.text === "string") {
+      const existingBlock = existingBlockForAction(document, action);
+      const nextText = normalizedPatch.text;
+      const isSolutionPatch =
+        (existingBlock && isSolutionTextBlock(existingBlock)) ||
+        normalizedPatch.visibility === "solution" ||
+        normalizedPatch.solutionOnly === true ||
+        SOLUTION_HEADING_PATTERN.test(nextText);
+      if (isSolutionPatch && (hasVisibleMarkNote(nextText) || hasMarkAnnotation(nextText))) {
+        return { ...action, patch: { ...normalizedPatch, text: solutionBlockText(nextText) } };
+      }
     }
+    if (normalizedPatch !== action.patch) return { ...action, patch: normalizedPatch };
   }
   return action;
 }
@@ -2508,11 +2520,17 @@ function hasVisibleMarkNote(value: string) {
   );
 }
 
-function sanitizeAssistantSolutionBlock(block: ContentBlock): ContentBlock {
+function sanitizeAssistantContentBlock(block: ContentBlock): ContentBlock {
   if (block.kind === "columns") {
     return {
       ...block,
       columns: block.columns.map((column) => sanitizeAssistantContentBlocks(column)),
+    } as ContentBlock;
+  }
+  if (block.kind === "diagram" && isRecord(block.graphConfig)) {
+    return {
+      ...block,
+      graphConfig: normalizedAssistantGraphConfig(block.graphConfig),
     } as ContentBlock;
   }
   if (!isSolutionTextBlock(block) || (!hasVisibleMarkNote(block.text) && !hasMarkAnnotation(block.text))) return block;
@@ -2520,7 +2538,7 @@ function sanitizeAssistantSolutionBlock(block: ContentBlock): ContentBlock {
 }
 
 function sanitizeAssistantContentBlocks(blocks: readonly ContentBlock[]) {
-  return blocks.map(sanitizeAssistantSolutionBlock);
+  return blocks.map(sanitizeAssistantContentBlock);
 }
 
 function sanitizeAssistantSubpart<T extends MauthSubpartLike>(subpart: T): T {
@@ -2785,10 +2803,14 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
 
 function normalizedAssistantGraphConfig(graphConfig: Record<string, unknown>) {
   if (graphConfig.type !== "graph3d") return graphConfig as unknown as GraphConfig;
-  const metadata = isRecord(graphConfig.metadata) ? graphConfig.metadata : undefined;
-  if (!metadata) return graphConfig as unknown as GraphConfig;
-  const view3d = isRecord(metadata.view3d) ? metadata.view3d : undefined;
   const normalized = { ...graphConfig };
+  const data = isRecord(graphConfig.data) ? graphConfig.data : undefined;
+  if (data) {
+    normalized.data = normalizedGraph3dData(data);
+  }
+  const metadata = isRecord(graphConfig.metadata) ? graphConfig.metadata : undefined;
+  if (!metadata) return normalized as unknown as GraphConfig;
+  const view3d = isRecord(metadata.view3d) ? metadata.view3d : undefined;
   if (view3d) {
     normalized.metadata = {
       view3d: Object.fromEntries(["az", "el", "bank"].filter((key) => hasOwn(view3d, key)).map((key) => [key, view3d[key]])),
@@ -2797,6 +2819,26 @@ function normalizedAssistantGraphConfig(graphConfig: Record<string, unknown>) {
     delete normalized.metadata;
   }
   return normalized as unknown as GraphConfig;
+}
+
+function normalizedGraph3dData(data: Record<string, unknown>) {
+  const normalized = { ...data };
+  if (!Array.isArray(normalized.points) && Array.isArray(data.vertices)) {
+    normalized.points = data.vertices;
+  }
+  delete normalized.vertices;
+  if (Array.isArray(data.faces)) {
+    normalized.faces = data.faces.map((face) => {
+      if (!isRecord(face)) return face;
+      const normalizedFace = { ...face };
+      if (!Array.isArray(normalizedFace.points) && Array.isArray(face.vertices)) {
+        normalizedFace.points = face.vertices;
+      }
+      delete normalizedFace.vertices;
+      return normalizedFace;
+    });
+  }
+  return normalized;
 }
 
 function graphConfigFromAssistantDiagramEntry(entry: Record<string, unknown>, entryPath: string, issues: MauthActionValidationIssue[]) {

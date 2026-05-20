@@ -3330,6 +3330,8 @@ def graph3d_common_schema_issues(configs: list[dict[str, Any]], label: str) -> l
         data = config.get("data")
         point_ids: set[str] = set()
         if isinstance(data, dict):
+            if "vertices" in data:
+                issues.append(f"{label} graph3d point list should use data.points, not data.vertices")
             points = data.get("points") if isinstance(data.get("points"), list) else data.get("vertices")
             for point in points if isinstance(points, list) else []:
                 if not isinstance(point, dict):
@@ -3352,7 +3354,11 @@ def graph3d_common_schema_issues(configs: list[dict[str, Any]], label: str) -> l
                 if any(point in {"xaxis", "yaxis", "zaxis"} for point in (from_id, to_id)):
                     issues.append(f"{label} graph3d data should not include axis helper segments")
             for face in data.get("faces") if isinstance(data.get("faces"), list) else []:
-                if isinstance(face, dict) and "style" in face:
+                if not isinstance(face, dict):
+                    continue
+                if "vertices" in face:
+                    issues.append(f"{label} graph3d faces should use points, not vertices")
+                if "style" in face:
                     issues.append(f"{label} graph3d faces should use fillColor/strokeColor, not style")
         metadata = config.get("metadata") if isinstance(config.get("metadata"), dict) else {}
         for key in ("axisLabels", "showAxes", "showGrid"):
@@ -7717,6 +7723,18 @@ def local_graph3d_general_solids_missing_dimensions_render_style_call() -> dict[
     return call
 
 
+def local_graph3d_general_solids_face_vertices_alias_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_graph3d_general_solids_call()))
+    for diagram in call["mauthArguments"]["diagrams"]:
+        graph_config = diagram["graphConfig"]
+        data = graph_config["data"]
+        for face in data.get("faces", []):
+            if isinstance(face, dict) and isinstance(face.get("points"), list):
+                face["vertices"] = face.pop("points")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_implicit_call() -> dict[str, Any]:
     graph_config = {
         "type": "graph2d",
@@ -8409,6 +8427,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "renderStyle surface, wireframe, or outline",
             "labelled h dimension",
             "labelled r dimension",
+        ],
+    },
+    "graph3d-general-solids-face-vertices-alias": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_face_vertices_alias_call,
+        "expectedIssues": [
+            "faces should use points, not vertices",
         ],
     },
     "real-specialist-implicit": {
