@@ -50,6 +50,11 @@ const UNSUPPORTED_GRAPH_FEATURE_FIELDS = new Map([
   ["opacity", "Use fillOpacity for graph2d region shading opacity."],
   ["fillColor", "Use color for graph2d feature colour."],
   ["text", "Use label for graph2d feature text."],
+  ["points", "Use graph2d region features for shading or x1/y1/x2/y2 for line_segment endpoints."],
+  ["coords", "Use x and y directly on graph2d point and label features."],
+  ["from", "Use x1/y1 on graph2d line_segment features."],
+  ["to", "Use x2/y2 on graph2d line_segment features."],
+  ["strokeColor", "Use color for graph2d feature stroke colour."],
 ]);
 const GRAPH_AXIS_LABEL_INTERVAL_MODES = new Set(["auto", "manual"]);
 const GRAPH_EXTENSION_MODES = new Set(["auto", "manual"]);

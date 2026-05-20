@@ -3288,6 +3288,57 @@ test("rejects graph2d invented region expression fields", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].clipSide"));
 });
 
+test("rejects graph2d polygon and free-label feature aliases", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-spherical-cap-region",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                functions: [{ kind: "relation", expression: "x^2 + y^2 = 20*x" }],
+                features: [
+                  {
+                    kind: "polygon",
+                    points: [
+                      [0, 0],
+                      [4, 0],
+                      [4, 8],
+                    ],
+                    fillColor: "#dbeafe",
+                    strokeColor: "none",
+                  },
+                  {
+                    kind: "free_label",
+                    coords: [4, -1.2],
+                    label: "$h$",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].kind"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].points"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].fillColor"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[0].strokeColor"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[1].kind"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.features[1].coords"));
+});
+
 test("accepts structured graph3d point and segment data", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

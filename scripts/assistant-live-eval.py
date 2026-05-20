@@ -61,6 +61,39 @@ DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
 DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP = 0
 DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP = 0
+GRAPH2D_FEATURE_KINDS = {
+    "point",
+    "point_between_points",
+    "region_between_curves",
+    "region_curve_axis",
+    "turning_point",
+    "intersection",
+    "tangent",
+    "line_segment",
+    "label",
+    "region_clipped_by_curve",
+}
+GRAPH2D_UNSUPPORTED_FEATURE_FIELDS = {
+    "expressionTop": (
+        "graph2d region features must reference boundary functions by index, not inline expressions.",
+        "graphConfig.functions plus functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex",
+    ),
+    "expressionBottom": (
+        "graph2d region features must reference boundary functions by index, not inline expressions.",
+        "graphConfig.functions plus functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex",
+    ),
+    "text": ("graph2d features use label, not text.", "label"),
+    "opacity": ("graph2d region shading opacity must use fillOpacity.", "fillOpacity"),
+    "fillColor": ("graph2d feature colour must use color.", "color"),
+    "points": (
+        "graph2d does not support polygon point-list features.",
+        "region_between_curves/region_curve_axis/region_clipped_by_curve or line_segment with x1/y1/x2/y2",
+    ),
+    "coords": ("graph2d label and point features use x/y coordinates directly.", "x and y"),
+    "from": ("graph2d line_segment features use numeric x1/y1 endpoints.", "x1 and y1"),
+    "to": ("graph2d line_segment features use numeric x2/y2 endpoints.", "x2 and y2"),
+    "strokeColor": ("graph2d feature stroke colour must use color.", "color"),
+}
 
 
 def apply_image_max_long_edge_override(value: int | None) -> None:
@@ -3421,6 +3454,11 @@ def assert_real_specialist_spherical_cap_call(call: dict[str, Any]) -> list[str]
     for term in ("h", "10", "20"):
         if graph2d_configs and term not in graph2d_serialized_raw:
             issues.append(f"spherical-cap graph2d cross-section should preserve diagram label/value {term!r}")
+    for validation_issue in graph2d_validation_issues_from_call(call):
+        issues.append(
+            "spherical-cap graph2d validation issue at "
+            f"{validation_issue.get('path')}: {validation_issue.get('message')}"
+        )
 
     graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
     graph3d_serialized = json.dumps(graph3d_configs, ensure_ascii=False).lower()
@@ -4559,39 +4597,24 @@ def graph2d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
                             "expected": "color/size/strokeWidth/strokeStyle",
                         }
                     )
-                for key in ("expressionTop", "expressionBottom"):
+                kind = feature.get("kind")
+                if kind is not None and (not isinstance(kind, str) or kind not in GRAPH2D_FEATURE_KINDS):
+                    issues.append(
+                        {
+                            "path": f"{config_path}.features[{index}].kind",
+                            "message": f"graph2d feature kind {kind!r} is not supported.",
+                            "expected": "one of " + ", ".join(sorted(GRAPH2D_FEATURE_KINDS)),
+                        }
+                    )
+                for key, (message, expected) in GRAPH2D_UNSUPPORTED_FEATURE_FIELDS.items():
                     if key in feature:
                         issues.append(
                             {
                                 "path": f"{config_path}.features[{index}].{key}",
-                                "message": "graph2d region features must reference boundary functions by index, not inline expressions.",
-                                "expected": "graphConfig.functions plus functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex",
+                                "message": message,
+                                "expected": expected,
                             }
                         )
-                if "text" in feature:
-                    issues.append(
-                        {
-                            "path": f"{config_path}.features[{index}].text",
-                            "message": "graph2d features use label, not text.",
-                            "expected": "label",
-                        }
-                    )
-                if "opacity" in feature:
-                    issues.append(
-                        {
-                            "path": f"{config_path}.features[{index}].opacity",
-                            "message": "graph2d region shading opacity must use fillOpacity.",
-                            "expected": "fillOpacity",
-                        }
-                    )
-                if "fillColor" in feature:
-                    issues.append(
-                        {
-                            "path": f"{config_path}.features[{index}].fillColor",
-                            "message": "graph2d feature colour must use color.",
-                            "expected": "color",
-                        }
-                    )
     return issues
 
 
@@ -6551,6 +6574,46 @@ def local_real_specialist_spherical_cap_missing_cross_section_call() -> dict[str
     return call
 
 
+def local_real_specialist_spherical_cap_live_polygon_shading_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_spherical_cap_call()))
+    graph2d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph2d["functions"] = [
+        {
+            "kind": "expression",
+            "expression": "sqrt(20*x - x^2)",
+            "domainMin": 0,
+            "domainMax": 20,
+            "color": "#111827",
+        },
+        {
+            "kind": "expression",
+            "expression": "-sqrt(20*x - x^2)",
+            "domainMin": 0,
+            "domainMax": 20,
+            "color": "#111827",
+        },
+    ]
+    graph2d["features"] = [
+        {
+            "kind": "polygon",
+            "points": [
+                [0, 0],
+                [4, 0],
+                [4, 8],
+            ],
+            "fillColor": "#dbeafe",
+            "strokeColor": "none",
+            "fillOpacity": 0.4,
+        },
+        {"kind": "line_segment", "x1": 4, "y1": 0, "x2": 4, "y2": 8, "strokeWidth": 1.4, "color": "#111827"},
+        {"kind": "free_label", "coords": [4, -1.25], "label": "$h$"},
+        {"kind": "free_label", "coords": [10, -1.25], "label": "$10$"},
+        {"kind": "free_label", "coords": [20, -1.25], "label": "$20$"},
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_call() -> dict[str, Any]:
     pyramid_3d = {
         "type": "graph3d",
@@ -7660,6 +7723,19 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_spherical_cap_missing_cross_section_call,
         "expectedIssues": [
             "cross-section should use graph2d",
+        ],
+    },
+    "real-specialist-spherical-cap-live-polygon-shading": {
+        "assert": assert_real_specialist_spherical_cap_call,
+        "call": local_real_specialist_spherical_cap_live_polygon_shading_call,
+        "expectedIssues": [
+            "shaded generating region",
+            "feature kind 'polygon' is not supported",
+            "features[0].points",
+            "features[0].fillColor",
+            "features[0].strokeColor",
+            "feature kind 'free_label' is not supported",
+            "features[2].coords",
         ],
     },
     "real-specialist-prism": {
