@@ -345,6 +345,13 @@ function postEditInspectionExpected(warning: MauthPreviewInspectionWarning, repa
     if (warning.code === "scalar-product-angle-label-tex-unsafe") {
       return `Repair this scalar-product vector diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and TeX-safe angle labels such as 45^\\circ.${targetInstruction}`;
     }
+    if (
+      warning.code === "scalar-product-vector-label-placement-missing" ||
+      warning.code === "scalar-product-segment-label-placement-missing" ||
+      warning.code === "scalar-product-angle-label-placement-missing"
+    ) {
+      return `Repair this scalar-product vector diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and explicit vector2d labelX/labelY or offsetPx values so labels stay clear of the rays.${targetInstruction}`;
+    }
     return `Repair this diagram by calling mauth.author.addDiagram with diagramId: "${warning.targetId}" and a corrected native graphConfig.${targetInstruction}`;
   }
   if (warning.code === "rendered-response-space-outline-missing") {

@@ -185,6 +185,16 @@ function scalarAngleLabelNeedsCirc(value: unknown) {
   return /^-?\d+(?:\.\d+)?$/.test(source);
 }
 
+function hasExplicitLabelPosition(entry: Record<string, unknown>) {
+  return finiteNumberValue(entry.labelX) !== undefined && finiteNumberValue(entry.labelY) !== undefined;
+}
+
+function segmentLabelHasPlacement(entry: Record<string, unknown>) {
+  return (
+    hasExplicitLabelPosition(entry) || finiteNumberValue(entry.offsetPx) !== undefined || finiteNumberValue(entry.offset) !== undefined
+  );
+}
+
 function vector2dMarkerAngleDistance(config: GraphConfig, marker: Record<string, unknown>) {
   const vectors = vector2dVectors(config);
   const first = vector2dByReference(vectors, marker.from ?? marker.vectorA);
@@ -719,7 +729,8 @@ function inspectScalarProductLabels(config: GraphConfig, contextText: string): M
 }
 
 function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
-  if (!expectedScalarVectorLabels(contextText).length) return [];
+  const expectedLabels = expectedScalarVectorLabels(contextText);
+  if (!expectedLabels.length) return [];
   const warnings: MauthDiagramInspectionWarning[] = [];
   if (config.type === "geometricConstruction") {
     const source = graphSubstanceSource(config);
@@ -746,6 +757,8 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
 
   if (config.type !== "vector2d") return [];
   const angleMarkers = vector2dAngleMarkers(config);
+  const vectors = vector2dVectors(config);
+  const scalarProductContext = /\bscalar products?\b|\bdot products?\b/i.test(contextText);
   if (/(?:90\s*(?:°|degrees?)|right angle|perpendicular)/i.test(contextText) && !angleMarkers.some((entry) => entry.rightAngle === true)) {
     warnings.push({
       code: "scalar-product-right-angle-missing",
@@ -762,6 +775,22 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
       message: "Scalar-product ray diagram mentions an angle, but the vector2d diagram has no angle marker.",
       path: "graphConfig.metadata.vector2d.angleMarkers",
     });
+  }
+  if (scalarProductContext) {
+    const missingVectorLabelPositions = expectedLabels.filter((label) => {
+      const vector = vector2dByReference(vectors, label);
+      return vector && !hasExplicitLabelPosition(vector);
+    });
+    if (missingVectorLabelPositions.length) {
+      warnings.push({
+        code: "scalar-product-vector-label-placement-missing",
+        severity: "warning",
+        message: `Scalar-product source ray diagrams should set explicit labelX/labelY positions for vector labels ${missingVectorLabelPositions.join(
+          ", ",
+        )} so labels stay clear of the common origin and rays.`,
+        path: "graphConfig.metadata.vector2d.vectors",
+      });
+    }
   }
   angleMarkers.forEach((marker, markerIndex) => {
     const distance = vector2dMarkerAngleDistance(config, marker);
@@ -787,6 +816,14 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
         path: `graphConfig.metadata.vector2d.angleMarkers[${markerIndex}]`,
       });
     }
+    if (scalarProductContext && marker.rightAngle !== true && marker.label && !hasExplicitLabelPosition(marker)) {
+      warnings.push({
+        code: "scalar-product-angle-label-placement-missing",
+        severity: "warning",
+        message: `Scalar-product angle marker label ${String(marker.label)} should set explicit labelX/labelY so it does not overlap the rays or right-angle marker.`,
+        path: `graphConfig.metadata.vector2d.angleMarkers[${markerIndex}]`,
+      });
+    }
   });
   if ((config.showAxes !== false || config.showGrid !== false) && /\bscalar products?\b|\bdot products?\b/i.test(contextText)) {
     warnings.push({
@@ -803,6 +840,19 @@ function inspectScalarProductAngleMarkers(config: GraphConfig, contextText: stri
       severity: "warning",
       message:
         "Scalar-product vector magnitude labels that include units should use MathJax-safe text with spacing, for example 2\\ \\text{units}.",
+      path: "graphConfig.metadata.vector2d.segmentLabels",
+    });
+  }
+  const unplacedSegmentLabel = vector2dSegmentLabels(config).find(
+    (entry) =>
+      scalarProductContext && typeof entry.label === "string" && /\bunits?\b/i.test(entry.label) && !segmentLabelHasPlacement(entry),
+  );
+  if (unplacedSegmentLabel) {
+    warnings.push({
+      code: "scalar-product-segment-label-placement-missing",
+      severity: "warning",
+      message:
+        "Scalar-product vector magnitude labels should use labelX/labelY or offsetPx so unit labels stay clear of the common origin and vector rays.",
       path: "graphConfig.metadata.vector2d.segmentLabels",
     });
   }
@@ -1208,6 +1258,9 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "scalar-product-vector2d-axes-visible" ||
     warning.code === "scalar-product-segment-label-tex-unsafe" ||
     warning.code === "scalar-product-angle-label-tex-unsafe" ||
+    warning.code === "scalar-product-vector-label-placement-missing" ||
+    warning.code === "scalar-product-segment-label-placement-missing" ||
+    warning.code === "scalar-product-angle-label-placement-missing" ||
     warning.code === "vector2d-labels-missing" ||
     warning.code === "stats-chart-probabilities-not-normalised" ||
     warning.code === "stats-chart-probability-out-of-range" ||

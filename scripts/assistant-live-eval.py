@@ -1677,6 +1677,18 @@ def scalar_angle_label_tex_safe(value: Any) -> bool:
     return not bool(re.fullmatch(r"[+-]?\d+(?:\.\d+)?", compact))
 
 
+def has_label_position(entry: dict[str, Any]) -> bool:
+    return finite_number(entry.get("labelX")) is not None and finite_number(entry.get("labelY")) is not None
+
+
+def segment_label_has_position(entry: dict[str, Any]) -> bool:
+    return (
+        has_label_position(entry)
+        or finite_number(entry.get("offsetPx")) is not None
+        or finite_number(entry.get("offset")) is not None
+    )
+
+
 def assert_vector_ray_diagram_shape(vector_ray: dict[str, Any], *, path: str = "diagram.vectorRayDiagram") -> list[str]:
     issues: list[str] = []
     vectors = vector_ray.get("vectors")
@@ -1778,6 +1790,16 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
     vectors = vector2d.get("vectors")
     if not isinstance(vectors, list) or len(vectors) < 4:
         issues.append("native vector2d diagram should include all four labelled vectors")
+    else:
+        unpositioned_vectors = [
+            str(vector.get("id") or vector.get("name") or "")
+            for vector in vectors
+            if isinstance(vector, dict)
+            and str(vector.get("id") or vector.get("name") or "") in {"a", "b", "c", "d"}
+            and not has_label_position(vector)
+        ]
+        if unpositioned_vectors:
+            issues.append("native vector2d vector labels should set labelX/labelY for source ray label placement")
     segment_labels = vector2d.get("segmentLabels")
     if not isinstance(segment_labels, list) or len(segment_labels) < 4:
         issues.append("native vector2d diagram should preserve magnitude labels")
@@ -1785,6 +1807,13 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
         isinstance(label, dict) and not scalar_segment_label_tex_safe(label.get("label")) for label in segment_labels
     ):
         issues.append("native vector2d magnitude labels should use TeX-safe \\text{units}")
+    elif any(
+        isinstance(label, dict)
+        and re.search(r"\bunits?\b", str(label.get("label") or ""), flags=re.IGNORECASE)
+        and not segment_label_has_position(label)
+        for label in segment_labels
+    ):
+        issues.append("native vector2d magnitude labels should set labelX/labelY or offsetPx")
     angle_markers = vector2d.get("angleMarkers")
     if not isinstance(angle_markers, list) or not any(
         isinstance(marker, dict) and marker.get("rightAngle") is True for marker in angle_markers
@@ -1808,6 +1837,14 @@ def assert_vector2d_or_vector_ray_diagram(args: dict[str, Any], *, path: str = "
         isinstance(marker, dict) and not scalar_angle_label_tex_safe(marker.get("label")) for marker in angle_markers
     ):
         issues.append("native vector2d angle labels should use TeX-safe ^\\circ notation")
+    if isinstance(angle_markers, list) and any(
+        isinstance(marker, dict)
+        and "45" in str(marker.get("label") or "")
+        and marker.get("rightAngle") is not True
+        and not has_label_position(marker)
+        for marker in angle_markers
+    ):
+        issues.append("native vector2d angle labels should set labelX/labelY")
     return issues
 
 
@@ -6547,6 +6584,47 @@ def local_screenshot_scalar_products_bad_raw_labels_call() -> dict[str, Any]:
     )
 
 
+def local_screenshot_scalar_products_native_vector2d_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_screenshot_scalar_products_bad_raw_labels_call()))
+    vector2d = call["mauthArguments"]["diagram"]["graphConfig"]["metadata"]["vector2d"]
+    label_positions = {
+        "a": (-2.05, -1.42),
+        "b": (-1.22, 1.9),
+        "c": (0.68, 3.22),
+        "d": (1.96, 1.42),
+    }
+    for vector in vector2d["vectors"]:
+        vector_id = str(vector.get("id") or "")
+        if vector_id in label_positions:
+            vector["labelX"], vector["labelY"] = label_positions[vector_id]
+    for label, offset in zip(vector2d["segmentLabels"], (24, 24, 24, -24), strict=False):
+        label["label"] = label["label"].replace(" units", "\\ \\text{units}")
+        label["offsetPx"] = offset
+    vector2d["angleMarkers"][1]["label"] = "45^\\circ"
+    vector2d["angleMarkers"][1]["labelX"] = 0.72
+    vector2d["angleMarkers"][1]["labelY"] = 1.08
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_screenshot_scalar_products_bad_native_label_placement_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_screenshot_scalar_products_native_vector2d_call()))
+    vector2d = call["mauthArguments"]["diagram"]["graphConfig"]["metadata"]["vector2d"]
+    for vector in vector2d["vectors"]:
+        vector.pop("labelX", None)
+        vector.pop("labelY", None)
+    for label in vector2d["segmentLabels"]:
+        label.pop("labelX", None)
+        label.pop("labelY", None)
+        label.pop("offsetPx", None)
+        label.pop("offset", None)
+    for marker in vector2d["angleMarkers"]:
+        marker.pop("labelX", None)
+        marker.pop("labelY", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_methods_earthquake_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -8926,12 +9004,25 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_screenshot_scalar_products_call,
         "call": local_screenshot_scalar_products_call,
     },
+    "screenshot-scalar-products-native-vector2d": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_native_vector2d_call,
+    },
     "screenshot-scalar-products-bad-raw-labels": {
         "assert": assert_screenshot_scalar_products_call,
         "call": local_screenshot_scalar_products_bad_raw_labels_call,
         "expectedIssues": [
             "native vector2d magnitude labels should use TeX-safe \\text{units}",
             "native vector2d angle labels should use TeX-safe ^\\circ notation",
+        ],
+    },
+    "screenshot-scalar-products-bad-native-label-placement": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_bad_native_label_placement_call,
+        "expectedIssues": [
+            "native vector2d vector labels should set labelX/labelY",
+            "native vector2d magnitude labels should set labelX/labelY or offsetPx",
+            "native vector2d angle labels should set labelX/labelY",
         ],
     },
     "screenshot-scalar-products-bad-compact-labels": {

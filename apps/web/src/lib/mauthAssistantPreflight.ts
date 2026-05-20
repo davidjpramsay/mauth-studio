@@ -274,6 +274,15 @@ function diagramInspectionExpected(code: string) {
   if (code === "scalar-product-angle-label-tex-unsafe") {
     return "Use TeX-safe angle labels such as 45^\\circ in graphConfig.metadata.vector2d.angleMarkers.";
   }
+  if (code === "scalar-product-vector-label-placement-missing") {
+    return "Set labelX and labelY on graphConfig.metadata.vector2d.vectors entries so scalar-product ray labels sit near the ray tips and away from the common origin.";
+  }
+  if (code === "scalar-product-segment-label-placement-missing") {
+    return "Set labelX/labelY or offsetPx on graphConfig.metadata.vector2d.segmentLabels so unit labels do not overlap the rays.";
+  }
+  if (code === "scalar-product-angle-label-placement-missing") {
+    return "Set labelX and labelY on the labelled graphConfig.metadata.vector2d.angleMarkers entry so the degree label does not overlap rays or other markers.";
+  }
   return "A native diagram whose renderer choice, labels, and declared geometry match the question prompt.";
 }
 

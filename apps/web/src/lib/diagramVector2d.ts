@@ -302,6 +302,24 @@ function defaultSourceSegmentOffsetPx(components: [number, number]) {
   return angle <= 60 ? -24 : 24;
 }
 
+function roundedSourceCoordinate(value: number) {
+  return Number(value.toFixed(6));
+}
+
+function sourceUnitVector(components: [number, number]): [number, number] {
+  const length = Math.hypot(components[0], components[1]);
+  return length > 1e-9 ? [components[0] / length, components[1] / length] : [1, 0];
+}
+
+function defaultSourceVectorLabelPosition(start: [number, number], components: [number, number]): [number, number] {
+  const end: [number, number] = [start[0] + components[0], start[1] + components[1]];
+  const direction = sourceUnitVector(components);
+  return [
+    roundedSourceCoordinate(end[0] + direction[0] * 0.28 + direction[1] * 0.14),
+    roundedSourceCoordinate(end[1] + direction[1] * 0.28 + direction[0] * 0.14),
+  ];
+}
+
 function sourceSegmentLabel(
   vectorId: string,
   label: string,
@@ -324,20 +342,56 @@ function sourceSegmentLabel(
   };
 }
 
-function sourceAngleMarker(entry: Vector2DSourceAngleMarkerInput, index: number) {
+function shortestSourceAngleDelta(from: number, to: number) {
+  let delta = to - from;
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  return delta;
+}
+
+function defaultSourceAngleLabelPosition(
+  first: { start: [number, number]; components: [number, number] },
+  second: { components: [number, number] },
+  radius: number,
+): [number, number] {
+  const startAngle = Math.atan2(first.components[1], first.components[0]);
+  const middleAngle = startAngle + shortestSourceAngleDelta(startAngle, Math.atan2(second.components[1], second.components[0])) / 2;
+  const labelRadius = radius * 1.75;
+  return [
+    roundedSourceCoordinate(first.start[0] + Math.cos(middleAngle) * labelRadius),
+    roundedSourceCoordinate(first.start[1] + Math.sin(middleAngle) * labelRadius),
+  ];
+}
+
+function sourceAngleMarker(
+  entry: Vector2DSourceAngleMarkerInput,
+  index: number,
+  vectorsById: Map<string, { start: [number, number]; components: [number, number] }>,
+) {
   const from = String(entry.from ?? entry.vectorA ?? "").trim();
   const to = String(entry.to ?? entry.vectorB ?? "").trim();
   if (!from || !to) return null;
-  const labelX = finiteOptionalVectorNumber(entry.labelX);
-  const labelY = finiteOptionalVectorNumber(entry.labelY);
+  const rightAngle = entry.rightAngle === true || entry.kind === "rightAngle" || entry.type === "rightAngle";
+  const radius = Math.max(0.05, positiveVectorNumber(entry.radius, rightAngle ? 0.38 : 0.62));
+  const label = normalizeSourceAngleLabel(entry.label);
+  const defaultLabelPosition =
+    !rightAngle && label
+      ? defaultSourceAngleLabelPosition(
+          vectorsById.get(from) ?? { start: [0, 0], components: [1, 0] },
+          vectorsById.get(to) ?? { components: [1, 0] },
+          radius,
+        )
+      : undefined;
+  const labelX = finiteOptionalVectorNumber(entry.labelX) ?? defaultLabelPosition?.[0];
+  const labelY = finiteOptionalVectorNumber(entry.labelY) ?? defaultLabelPosition?.[1];
 
   return {
     id: String(entry.id ?? `angle-marker-${index + 1}`),
     from,
     to,
-    label: normalizeSourceAngleLabel(entry.label),
-    rightAngle: entry.rightAngle === true || entry.kind === "rightAngle" || entry.type === "rightAngle",
-    radius: Math.max(0.05, positiveVectorNumber(entry.radius, entry.rightAngle === true ? 0.38 : 0.62)),
+    label,
+    rightAngle,
+    radius,
     color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
     ...(labelX !== undefined ? { labelX } : {}),
     ...(labelY !== undefined ? { labelY } : {}),
@@ -472,9 +526,11 @@ export function buildVector2DSourceDiagramConfig(input: Vector2DSourceDiagramInp
     const name = String(entry.name ?? entry.id ?? fallbackName).trim() || fallbackName;
     const start = optionalVectorPair(entry.start) ?? [0, 0];
     const components = componentsFromSourceVector(entry, start);
-    const labelX = finiteOptionalVectorNumber(entry.labelX);
-    const labelY = finiteOptionalVectorNumber(entry.labelY);
+    const defaultLabelPosition = defaultSourceVectorLabelPosition(start, components);
+    const labelX = finiteOptionalVectorNumber(entry.labelX) ?? defaultLabelPosition[0];
+    const labelY = finiteOptionalVectorNumber(entry.labelY) ?? defaultLabelPosition[1];
     points.push(start, [start[0] + components[0], start[1] + components[1]]);
+    points.push([labelX, labelY]);
 
     if (entry.lengthLabel !== false) {
       const label =
@@ -506,9 +562,13 @@ export function buildVector2DSourceDiagramConfig(input: Vector2DSourceDiagramInp
     }
   }
 
+  const vectorsById = new Map(vectors.map((vector) => [vector.id, { start: vector.start, components: vector.components }]));
   const angleMarkers = (input.angleMarkers ?? [])
-    .map(sourceAngleMarker)
+    .map((entry, index) => sourceAngleMarker(entry, index, vectorsById))
     .filter((entry): entry is NonNullable<ReturnType<typeof sourceAngleMarker>> => !!entry);
+  angleMarkers.forEach((marker) => {
+    if (marker.label.trim() && marker.labelX !== undefined && marker.labelY !== undefined) points.push([marker.labelX, marker.labelY]);
+  });
 
   const bounds = sourceVectorBounds(points, widthPx, heightPx);
   const xMin = finiteVectorNumberOrUndefined(input.xMin) ?? bounds.minX;

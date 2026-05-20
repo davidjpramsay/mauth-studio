@@ -1739,6 +1739,72 @@ test("high-level question authoring builds source scalar-product vector diagrams
   );
 });
 
+test("compact source scalar-product vector diagrams get stable label positions", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 2,
+      marks: 0,
+      questionText: "Evaluate the following scalar products exactly.",
+      diagram: {
+        vectorRayDiagram: {
+          vectors: [
+            { id: "a", length: 2, angleDeg: 215, lengthLabel: "2\\ \\text{units}" },
+            { id: "b", length: 2, angleDeg: 125, lengthLabel: "2\\ \\text{units}" },
+            { id: "c", length: 3, angleDeg: 80, lengthLabel: "3\\ \\text{units}" },
+            { id: "d", length: 2, angleDeg: 35, lengthLabel: "2\\ \\text{units}" },
+          ],
+          angleMarkers: [
+            { from: "b", to: "d", rightAngle: true, radius: 0.42 },
+            { from: "c", to: "d", label: "45^\\circ", radius: 0.72 },
+          ],
+        },
+      },
+      parts: [
+        { text: "$\\mathbf{a}\\cdot\\mathbf{b}$", marks: 1, answerSurface: "none" },
+        { text: "$\\mathbf{a}\\cdot\\mathbf{d}$", marks: 2, answerSurface: "none" },
+        { text: "$\\mathbf{c}\\cdot\\mathbf{d}$", marks: 2, answerSurface: "none" },
+      ],
+    },
+  });
+  const appended = result.document?.questions[1];
+  const diagram = appended?.contentBlocks.find((block) => block.kind === "diagram");
+  const graphConfig = diagram?.kind === "diagram" ? diagram.graphConfig : undefined;
+  const vector2d = graphConfig?.metadata?.vector2d as
+    | {
+        vectors?: Array<Record<string, unknown>>;
+        segmentLabels?: Array<Record<string, unknown>>;
+        angleMarkers?: Array<Record<string, unknown>>;
+      }
+    | undefined;
+  const warnings = graphConfig
+    ? inspectMauthDiagram(
+        graphConfig,
+        "Evaluate $\\mathbf{a}\\cdot\\mathbf{b}$, $\\mathbf{a}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$.",
+      ).warnings
+    : [];
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    vector2d?.vectors?.every((vector) => typeof vector.labelX === "number" && typeof vector.labelY === "number"),
+    true,
+  );
+  assert.equal(
+    vector2d?.segmentLabels?.every((label) => typeof label.offsetPx === "number"),
+    true,
+  );
+  assert.equal(
+    vector2d?.angleMarkers?.some(
+      (marker) => marker.label === "45^\\circ" && typeof marker.labelX === "number" && typeof marker.labelY === "number",
+    ),
+    true,
+  );
+  assert.equal(
+    warnings.some((warning) => isAssistantDiagramInspectionWarningBlocking(warning)),
+    false,
+  );
+});
+
 test("high-level question authoring rejects mismatched compact vector angle markers before apply", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",

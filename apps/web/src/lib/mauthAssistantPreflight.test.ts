@@ -243,6 +243,52 @@ test("assistant diagram preflight accepts source-faithful scalar-product vector2
             vector2d: {
               labelStyle: "custom",
               vectors: [
+                { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4], labelX: -2.1, labelY: -1.65 },
+                { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.29, 1.53], labelX: -1.55, labelY: 1.85 },
+                { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9], labelX: 0.45, labelY: 3.18 },
+                { id: "d", name: "d", label: "\\mathbf{d}", start: [0, 0], components: [1.65, 1.4], labelX: 2.0, labelY: 1.6 },
+              ],
+              segmentLabels: [
+                { vectorId: "a", label: "2\\ \\text{units}", offsetPx: 24 },
+                { vectorId: "b", label: "2\\ \\text{units}", offsetPx: 24 },
+                { vectorId: "c", label: "3\\ \\text{units}", offsetPx: 24 },
+                { vectorId: "d", label: "2\\ \\text{units}", offsetPx: -24 },
+              ],
+              angleMarkers: [
+                { from: "b", to: "d", rightAngle: true, radius: 0.35 },
+                { from: "c", to: "d", label: "45^\\circ", radius: 0.55, labelX: 0.55, labelY: 0.82 },
+              ],
+            },
+          },
+        }),
+        spaceBlock("s1"),
+      ],
+      5,
+    ),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+
+  assert.equal(result.ok, true);
+});
+
+test("assistant diagram preflight gives scalar-product label placement repair hints", () => {
+  const document = documentFixture(
+    question(
+      "q1",
+      [
+        textBlock(
+          "t1",
+          "Evaluate the following scalar products exactly: $\\mathbf{a}\\cdot\\mathbf{b}$, $\\mathbf{a}\\cdot\\mathbf{d}$ and $\\mathbf{c}\\cdot\\mathbf{d}$.",
+        ),
+        vector2dDiagramBlock("d1", {
+          type: "vector2d",
+          showAxes: false,
+          showGrid: false,
+          metadata: {
+            vector2d: {
+              labelStyle: "custom",
+              vectors: [
                 { id: "a", name: "a", label: "\\mathbf{a}", start: [0, 0], components: [-1.65, -1.4] },
                 { id: "b", name: "b", label: "\\mathbf{b}", start: [0, 0], components: [-1.29, 1.53] },
                 { id: "c", name: "c", label: "\\mathbf{c}", start: [0, 0], components: [0.25, 2.9] },
@@ -268,8 +314,11 @@ test("assistant diagram preflight accepts source-faithful scalar-product vector2
   );
 
   const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.author.addDiagram", reason: "test" }, ["d1"]);
+  const expectedText = (result.validationIssues ?? []).map((issue) => issue.expected ?? "").join("\n");
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  assert.match(expectedText, /labelX and labelY/);
+  assert.match(expectedText, /offsetPx/);
 });
 
 test("assistant diagram preflight gives scalar-product raw-label repair hints", () => {
