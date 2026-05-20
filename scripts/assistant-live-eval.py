@@ -3285,6 +3285,20 @@ def graph3d_solid_kind(value: dict[str, Any]) -> str:
     return re.sub(r"[^a-z]", "", str(value.get("kind") or value.get("type") or "").lower())
 
 
+def graph3d_dimension_entries(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    dimensions: list[dict[str, Any]] = []
+    for config in configs:
+        data = config.get("data")
+        if not isinstance(data, dict):
+            continue
+        for key in ("dimensions", "dimensionLines"):
+            values = data.get(key)
+            if not isinstance(values, list):
+                continue
+            dimensions.extend(value for value in values if isinstance(value, dict))
+    return dimensions
+
+
 def graph3d_face_entries(configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     faces: list[dict[str, Any]] = []
     for config in configs:
@@ -3418,6 +3432,20 @@ def assert_graph3d_general_solids_call(call: dict[str, Any]) -> list[str]:
             radius = solid.get("radius")
             if isinstance(radius, bool) or not isinstance(radius, (int, float)) or radius <= 0:
                 issues.append(f"graph3d {kind} solid should include a positive radius")
+            render_style = str(solid.get("renderStyle") or "")
+            if render_style not in {"surface", "wireframe", "outline"}:
+                issues.append(f"graph3d {kind} solid should include renderStyle surface, wireframe, or outline")
+
+    dimensions = graph3d_dimension_entries(graph3d_configs)
+    dimension_label_text = " ".join(str(dimension.get("label") or "") for dimension in dimensions)
+    for symbol in ("h", "r"):
+        if not any(label_mentions_symbol(str(dimension.get("label") or ""), symbol) for dimension in dimensions):
+            issues.append(f"graph3d solid-family diagrams should include a labelled {symbol} dimension")
+    for dimension in dimensions:
+        if "from" not in dimension or "to" not in dimension:
+            issues.append("graph3d dimension entries should include from and to endpoints")
+    if not dimension_label_text.strip():
+        issues.append("graph3d solid-family diagrams should preserve height/radius labels in data.dimensions")
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 4:
@@ -7676,6 +7704,19 @@ def local_graph3d_general_solids_placeholders_call() -> dict[str, Any]:
     return call
 
 
+def local_graph3d_general_solids_missing_dimensions_render_style_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_graph3d_general_solids_call()))
+    for diagram in call["mauthArguments"]["diagrams"]:
+        graph_config = diagram["graphConfig"]
+        data = graph_config["data"]
+        data.pop("dimensions", None)
+        for solid in data.get("solids", []):
+            if isinstance(solid, dict):
+                solid.pop("renderStyle", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_implicit_call() -> dict[str, Any]:
     graph_config = {
         "type": "graph2d",
@@ -8359,6 +8400,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "graph3d solid-family graph3d data should include a cone solid",
             "graph3d solid-family graph3d data should include a cylinder solid",
             "graph3d solid-family graph3d data should include a sphere solid",
+        ],
+    },
+    "graph3d-general-solids-missing-dimensions-render-style": {
+        "assert": assert_graph3d_general_solids_call,
+        "call": local_graph3d_general_solids_missing_dimensions_render_style_call,
+        "expectedIssues": [
+            "renderStyle surface, wireframe, or outline",
+            "labelled h dimension",
+            "labelled r dimension",
         ],
     },
     "real-specialist-implicit": {
