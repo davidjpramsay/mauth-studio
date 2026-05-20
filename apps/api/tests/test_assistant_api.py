@@ -643,6 +643,92 @@ def test_source_conversion_instruction_profile_stays_under_shape_budget(monkeypa
     assert len(instructions) < 30000
 
 
+def source_conversion_instructions_for_prompt(prompt: str, attachment_name: str) -> str:
+    summary = {"questions": [{"id": "q1", "index": 0, "modules": [], "parts": []}]}
+    messages = [openai_assistant.AssistantChatMessage(role="user", content=prompt)]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            id="source-1",
+            name=attachment_name,
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+    deterministic_ids = openai_assistant.deterministic_brain_ids_for_request(
+        messages,
+        tool_outputs=None,
+        document_summary=summary,
+        attachments=attachments,
+    )
+    brain_files = openai_assistant.brain_files_from_ids(deterministic_ids)
+    return openai_assistant.assistant_instructions(summary, messages, None, brain_files, attachments)
+
+
+def test_source_conversion_brain_context_is_renderer_focused():
+    scalar = source_conversion_instructions_for_prompt(
+        (
+            "Can you make question 1 from the attached screenshot. Write the question with the diagram entered "
+            "underneath and then put the parts under the diagram. It is a scalar product vector-ray diagram."
+        ),
+        "scalar-products.png",
+    )
+    graph3d = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist exam screenshot. Preserve the 3D cylinder diagram "
+            "with h and r dimensions and worked solution."
+        ),
+        "cylinder-graph3d.png",
+    )
+    stats = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Methods exam screenshot. Preserve the statistics column graph, "
+            "table, marks, and worked solutions."
+        ),
+        "stats-column-graph.png",
+    )
+
+    assert "For scalar-product source diagrams" in scalar
+    assert "For graph3d source solids" not in scalar
+    assert "For statsChart source diagrams" not in scalar
+
+    assert "For graph3d source solids" in graph3d
+    assert "For scalar-product source diagrams" not in graph3d
+    assert "For statsChart source diagrams" not in graph3d
+
+    assert "For statsChart source diagrams" in stats
+    assert "For graph3d source solids" not in stats
+    assert "For scalar-product source diagrams" not in stats
+
+
+def test_source_conversion_renderer_instruction_budgets_are_focused():
+    scalar = source_conversion_instructions_for_prompt(
+        (
+            "Can you make question 1 from the attached screenshot. Write the question with the diagram entered "
+            "underneath and then put the parts under the diagram. It is a scalar product vector-ray diagram."
+        ),
+        "scalar-products.png",
+    )
+    graph3d = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist exam screenshot. Preserve the 3D cylinder diagram "
+            "with h and r dimensions and worked solution."
+        ),
+        "cylinder-graph3d.png",
+    )
+    stats = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Methods exam screenshot. Preserve the statistics column graph, "
+            "table, marks, and worked solutions."
+        ),
+        "stats-column-graph.png",
+    )
+
+    assert len(scalar) < 23500
+    assert len(graph3d) < 28500
+    assert len(stats) < 26000
+
+
 def test_brain_menu_selection_maps_to_instruction_files():
     menu = openai_assistant.assistant_brain_menu()
     assert {entry["id"] for entry in menu} >= {"question", "diagram", "solutions", "formatting"}

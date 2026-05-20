@@ -21,7 +21,7 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_ASSISTANT_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_PLANNER_MODEL = "gpt-5.4-mini"
 DEFAULT_BRAIN_CONTEXT_CHARS = 12000
-SOURCE_CONVERSION_BRAIN_CONTEXT_CHARS = 22000
+SOURCE_CONVERSION_BRAIN_CONTEXT_CHARS = 18000
 DEFAULT_DOCUMENT_CONTEXT_CHARS = 8000
 MAX_ASSISTANT_ATTACHMENTS = 6
 MAX_ASSISTANT_ATTACHMENT_DATA_CHARS = 18_000_000
@@ -468,6 +468,10 @@ def compact_string_items(
     *,
     max_items: int,
     keep_first: int = 2,
+    request_term_blocklist: tuple[str, ...] = (),
+    include_request_terms: bool = True,
+    other_keywords: tuple[str, ...] = (),
+    require_focus_dominance: bool = False,
 ) -> list[str]:
     if not isinstance(values, list):
         return []
@@ -477,31 +481,181 @@ def compact_string_items(
         if isinstance(value, str):
             selected.append(value)
 
-    request_terms = tuple(
-        term for term in re.findall(r"[a-zA-Z]{4,}", text) if term not in {"please", "would", "could", "current"}
+    request_terms = (
+        tuple(
+            term
+            for term in re.findall(r"[a-zA-Z]{4,}", text)
+            if term not in {"please", "would", "could", "current"} and term not in request_term_blocklist
+        )
+        if include_request_terms
+        else ()
     )
     all_keywords = (*keywords, *request_terms)
+
+    def matches(keyword: str, lower: str) -> bool:
+        if not keyword:
+            return False
+        if re.fullmatch(r"[a-z0-9]+", keyword):
+            return re.search(rf"\b{re.escape(keyword)}\b", lower) is not None
+        return keyword in lower
+
     for value in values[keep_first:]:
         if not isinstance(value, str) or value in selected:
             continue
         lower = value.lower()
-        if any(keyword in lower for keyword in all_keywords):
+        if require_focus_dominance:
+            focus_hits = sum(1 for keyword in all_keywords if matches(keyword, lower))
+            if focus_hits <= 0:
+                continue
+            other_hits = sum(1 for keyword in other_keywords if matches(keyword, lower))
+            if other_hits and focus_hits < 3:
+                continue
+        if any(matches(keyword, lower) for keyword in all_keywords):
             selected.append(value)
         if len(selected) >= max_items:
             break
 
-    for value in values[keep_first:]:
-        if len(selected) >= max_items:
-            break
-        if isinstance(value, str) and value not in selected:
-            selected.append(value)
+    if not require_focus_dominance:
+        for value in values[keep_first:]:
+            if len(selected) >= max_items:
+                break
+            if isinstance(value, str) and value not in selected:
+                selected.append(value)
 
     return selected
 
 
-def compact_brain_config(data: dict[str, Any], file_name: str = "", text: str = "") -> dict[str, Any]:
+SOURCE_CONVERSION_REQUEST_TERM_BLOCKLIST = (
+    "attached",
+    "attachment",
+    "convert",
+    "create",
+    "diagram",
+    "exam",
+    "excerpt",
+    "include",
+    "marking",
+    "marks",
+    "paper",
+    "preserve",
+    "question",
+    "screenshot",
+    "source",
+    "structured",
+    "worked",
+)
+
+
+def source_conversion_diagram_brain_keywords(diagram_types: list[str] | None) -> tuple[str, ...]:
+    allowed = set(ordered_supported_diagram_types(diagram_types))
+    if not allowed:
+        return ()
+
+    terms: list[str] = []
+
+    def include(*values: str) -> None:
+        for value in values:
+            if value not in terms:
+                terms.append(value)
+
+    if "vector2d" in allowed:
+        include(
+            "vector2d",
+            "vectorraydiagram",
+            "scalar-product",
+            "scalar product",
+            "angle-marker",
+            "angle marker",
+            "anglemarkers",
+            "components",
+        )
+    if "graph2d" in allowed:
+        include(
+            "graph2d",
+            "argand",
+            "locus",
+            "slope-field",
+            "slope field",
+            "direction-field",
+            "implicit",
+            "region",
+            "regions",
+            "line_segment",
+        )
+    if "graph3d" in allowed:
+        include(
+            "graph3d",
+            "3d",
+            "3-d",
+            "three-dimensional",
+            "prism",
+            "pyramid",
+            "cone",
+            "cylinder",
+            "sphere",
+            "spherical",
+            "solid",
+            "solids",
+            "face",
+            "faces",
+            "dimension",
+            "dimensions",
+            "surface",
+            "wireframe",
+            "outline",
+        )
+    if "statsChart" in allowed:
+        include(
+            "statschart",
+            "statistical",
+            "statistics",
+            "histogram",
+            "frequency",
+            "relative-frequency",
+            "relative frequency",
+            "probability",
+            "density",
+            "normal",
+            "column",
+            "blank axes",
+        )
+    if "geometricConstruction" in allowed:
+        include(
+            "geometricconstruction",
+            "penrose",
+            "circle",
+            "tangent",
+            "chord",
+            "theorem",
+            "geometry",
+            "construction",
+            "substance",
+            "rightangle",
+            "labelsangle",
+        )
+    if "setDiagram" in allowed:
+        include("setdiagram", "venn", "set", "sets", "region", "regions", "shade", "shading", "count", "counts")
+    if "network" in allowed:
+        include("network", "node", "nodes", "link", "links")
+    if "image" in allowed:
+        include("image", "bitmap", "photo", "uploaded", "upload")
+
+    return tuple(terms)
+
+
+def compact_brain_config(
+    data: dict[str, Any],
+    file_name: str = "",
+    text: str = "",
+    *,
+    keyword_override: tuple[str, ...] | None = None,
+    other_keyword_override: tuple[str, ...] = (),
+    rule_max_items: int | None = None,
+    rule_keep_first: int | None = None,
+    check_max_items: int | None = None,
+) -> dict[str, Any]:
     compact = {key: data[key] for key in ("id", "name", "purpose", "owns", "mustNotOwn") if key in data}
-    generic_keywords = (
+    generic_keywords = keyword_override or (
         "assistant",
         "author",
         "mauth",
@@ -515,6 +669,8 @@ def compact_brain_config(data: dict[str, Any], file_name: str = "", text: str = 
         "validation",
         "tool",
     )
+    request_term_blocklist = SOURCE_CONVERSION_REQUEST_TERM_BLOCKLIST if keyword_override is not None else ()
+    include_request_terms = keyword_override is None
 
     if "compositionRules" in data:
         compact["compositionRules"] = compact_string_items(
@@ -523,11 +679,35 @@ def compact_brain_config(data: dict[str, Any], file_name: str = "", text: str = 
             generic_keywords,
             max_items=12 if file_name == "index.json" else 8,
             keep_first=3 if file_name == "index.json" else 1,
+            request_term_blocklist=request_term_blocklist,
+            include_request_terms=include_request_terms,
+            other_keywords=other_keyword_override,
+            require_focus_dominance=keyword_override is not None,
         )
     if "rules" in data:
-        compact["rules"] = compact_string_items(data["rules"], text, generic_keywords, max_items=18, keep_first=4)
+        compact["rules"] = compact_string_items(
+            data["rules"],
+            text,
+            generic_keywords,
+            max_items=rule_max_items if rule_max_items is not None else 18,
+            keep_first=rule_keep_first if rule_keep_first is not None else 4,
+            request_term_blocklist=request_term_blocklist,
+            include_request_terms=include_request_terms,
+            other_keywords=other_keyword_override,
+            require_focus_dominance=keyword_override is not None,
+        )
     if "checks" in data:
-        compact["checks"] = compact_string_items(data["checks"], text, generic_keywords, max_items=8, keep_first=2)
+        compact["checks"] = compact_string_items(
+            data["checks"],
+            text,
+            generic_keywords,
+            max_items=check_max_items if check_max_items is not None else 8,
+            keep_first=2,
+            request_term_blocklist=request_term_blocklist,
+            include_request_terms=include_request_terms,
+            other_keywords=other_keyword_override,
+            require_focus_dominance=keyword_override is not None,
+        )
     return compact
 
 
@@ -710,6 +890,7 @@ def assistant_brain_context(
     tool_outputs: list[AssistantToolOutput] | None = None,
     brain_files: list[str] | None = None,
     attachments: list[AssistantAttachment] | None = None,
+    source_conversion_diagram_types: list[str] | None = None,
 ) -> str:
     limit = assistant_brain_context_limit()
     if limit <= 0:
@@ -722,7 +903,29 @@ def assistant_brain_context(
     for file_name in brain_files:
         path = brain_dir / file_name
         try:
-            brains.append(compact_brain_config(json.loads(path.read_text(encoding="utf-8")), file_name, text))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if file_name == "diagram.json" and source_conversion_diagram_types:
+                renderer_keywords = source_conversion_diagram_brain_keywords(source_conversion_diagram_types)
+                other_renderer_keywords = tuple(
+                    keyword
+                    for keyword in source_conversion_diagram_brain_keywords(SUPPORTED_DIAGRAM_TYPES)
+                    if keyword not in renderer_keywords
+                )
+                renderer_count = len(ordered_supported_diagram_types(source_conversion_diagram_types))
+                brains.append(
+                    compact_brain_config(
+                        data,
+                        file_name,
+                        text,
+                        keyword_override=renderer_keywords,
+                        other_keyword_override=other_renderer_keywords,
+                        rule_max_items=14 if renderer_count > 1 else 10,
+                        rule_keep_first=0,
+                        check_max_items=5,
+                    )
+                )
+            else:
+                brains.append(compact_brain_config(data, file_name, text))
         except (OSError, json.JSONDecodeError):
             continue
 
@@ -3527,10 +3730,25 @@ def assistant_instructions(
         if compact_summary and summary_limit > 0
         else "No document summary supplied."
     )
-    brain_text = assistant_brain_context(current_messages, tool_outputs, selected_brain_files, attachments)
-    tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
     intent = classify_request_intent(compact_summary, current_messages, attachments)
     profile = assistant_instruction_profile(intent, attachments=attachments, tool_outputs=tool_outputs)
+    source_request_text = (
+        request_text(current_messages, attachments=attachments) if profile == "sourceConversion" else ""
+    )
+    source_diagram_types = (
+        source_conversion_diagram_types_for_text(source_request_text) if profile == "sourceConversion" else None
+    )
+    source_diagram_fields = (
+        source_conversion_diagram_fields_enabled(source_request_text) if profile == "sourceConversion" else True
+    )
+    brain_text = assistant_brain_context(
+        current_messages,
+        tool_outputs,
+        selected_brain_files,
+        attachments,
+        source_conversion_diagram_types=source_diagram_types if source_diagram_fields else None,
+    )
+    tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
     brain_text = instruction_profile_brain_text(profile, brain_text)
     attachment_lines = [
         f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
@@ -3538,9 +3756,6 @@ def assistant_instructions(
     ]
     attachment_text = "\n".join(attachment_lines) if attachment_lines else "No attachments."
     if profile == "sourceConversion":
-        source_request_text = request_text(current_messages, attachments=attachments)
-        source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
-        source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
         return source_conversion_assistant_instructions(
             tool_hint=tool_hint,
             attachment_text=attachment_text,
