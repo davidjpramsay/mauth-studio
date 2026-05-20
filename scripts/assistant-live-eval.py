@@ -2401,6 +2401,7 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
             "statistics distribution/blank-axis source should not be converted as a generic graph2d function graph"
         )
     stats_chart_types: list[str] = []
+    data_objects = stats_chart_data_objects(args)
     for config in collect_diagram_graph_configs(args):
         if config.get("type") != "statsChart":
             continue
@@ -2420,6 +2421,17 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
         )
     if "density" not in stats_chart_types:
         issues.append("statistics source probability-density graph should use statsChart chartType='density'")
+    issues.extend(
+        stats_chart_label_issues(data_objects, label="statistics density source", x_terms=("response", "time"))
+    )
+    issues.extend(
+        stats_chart_point_issues(
+            data_objects,
+            ((1.0, 0.03), (2.1, 0.2), (2.7, 0.18), (5.0, 0.02)),
+            label="statistics density source",
+            tolerance=0.015,
+        )
+    )
 
     parts = args.get("parts")
     if not isinstance(parts, list) or len(parts) != 3:
@@ -2636,6 +2648,23 @@ def assert_real_methods_earthquake_call(call: dict[str, Any]) -> list[str]:
         issues.append(f"earthquake source graph should use graph2d, got {sorted(graph_types)!r}")
     if "statsChart" in graph_types or "geometricConstruction" in graph_types:
         issues.append("earthquake linear coordinate graph should not use statsChart or geometricConstruction")
+    graph_configs = collect_diagram_graph_configs(args)
+    issues.extend(
+        graph2d_axis_label_issues(
+            graph_configs,
+            label="earthquake source graph",
+            x_terms=("log", "M_0"),
+            y_terms=("M_w",),
+        )
+    )
+    issues.extend(
+        graph2d_bounds_issues(
+            graph_configs,
+            {"xMin": 8, "xMax": 16, "yMin": 0, "yMax": 5},
+            label="earthquake source graph",
+            tolerance=0.05,
+        )
+    )
 
     graph_serialized = json.dumps(graph_config, ensure_ascii=False).lower()
     if "log" not in serialized or "m_0" not in serialized.replace("{", "").replace("}", ""):
@@ -2763,6 +2792,97 @@ def stats_histogram_count_issues(
         if allow_normalised_probabilities and abs(probability_values.get(key, -1) - expected_probability) < 0.002:
             continue
         issues.append(f"{label} histogram/count chart should preserve value {value:g} with count {expected_count}")
+    return issues
+
+
+def stats_chart_field_value_issues(
+    data_objects: list[dict[str, Any]],
+    expected_fields: dict[str, Any],
+    *,
+    label: str,
+) -> list[str]:
+    issues: list[str] = []
+    for field, expected_value in expected_fields.items():
+        if any(data.get(field) == expected_value for data in data_objects):
+            continue
+        issues.append(f"{label} statsChart should preserve {field} {expected_value!r}")
+    return issues
+
+
+def stats_chart_label_issues(
+    data_objects: list[dict[str, Any]],
+    *,
+    label: str,
+    x_terms: tuple[str, ...] = (),
+    y_terms: tuple[str, ...] = (),
+) -> list[str]:
+    issues: list[str] = []
+    if x_terms and not any(
+        all(compact_math_text(term) in compact_math_text(str(data.get("xLabel") or "")) for term in x_terms)
+        for data in data_objects
+    ):
+        issues.append(f"{label} statsChart xLabel should preserve {'/'.join(x_terms)}")
+    if y_terms and not any(
+        all(compact_math_text(term) in compact_math_text(str(data.get("yLabel") or "")) for term in y_terms)
+        for data in data_objects
+    ):
+        issues.append(f"{label} statsChart yLabel should preserve {'/'.join(y_terms)}")
+    return issues
+
+
+def stats_chart_range_issues(
+    data_objects: list[dict[str, Any]],
+    expected_range: tuple[float, float],
+    *,
+    label: str,
+    tolerance: float = 1e-6,
+) -> list[str]:
+    for data in data_objects:
+        range_value = data.get("range")
+        if (
+            isinstance(range_value, list)
+            and len(range_value) >= 2
+            and all(not isinstance(value, bool) and isinstance(value, (int, float)) for value in range_value[:2])
+            and abs(float(range_value[0]) - expected_range[0]) <= tolerance
+            and abs(float(range_value[1]) - expected_range[1]) <= tolerance
+        ):
+            return []
+    return [f"{label} statsChart should preserve range [{expected_range[0]:g}, {expected_range[1]:g}]"]
+
+
+def stats_chart_point_issues(
+    data_objects: list[dict[str, Any]],
+    expected_points: tuple[tuple[float, float], ...],
+    *,
+    label: str,
+    tolerance: float,
+) -> list[str]:
+    observed_points: list[tuple[float, float]] = []
+    for data in data_objects:
+        points = data.get("points")
+        if not isinstance(points, list):
+            continue
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            x_value = point.get("x")
+            y_value = point.get("y")
+            if (
+                isinstance(x_value, bool)
+                or isinstance(y_value, bool)
+                or not isinstance(x_value, (int, float))
+                or not isinstance(y_value, (int, float))
+            ):
+                continue
+            observed_points.append((float(x_value), float(y_value)))
+    issues: list[str] = []
+    for expected_x, expected_y in expected_points:
+        if any(
+            abs(actual_x - expected_x) <= tolerance and abs(actual_y - expected_y) <= tolerance
+            for actual_x, actual_y in observed_points
+        ):
+            continue
+        issues.append(f"{label} statsChart should preserve source point ({expected_x:g}, {expected_y:g})")
     return issues
 
 
@@ -2977,6 +3097,22 @@ def assert_real_methods_ev_histogram_call(call: dict[str, Any]) -> list[str]:
     if "histogram" not in chart_types:
         issues.append("ev source histogram should use statsChart chartType='histogram'")
     issues.extend(
+        stats_chart_field_value_issues(
+            data_objects,
+            {
+                "dataMode": "manualFrequencies",
+                "barType": "continuous",
+                "yAxisMode": "frequency",
+                "binSize": 20,
+            },
+            label="ev histogram source",
+        )
+    )
+    issues.extend(
+        stats_chart_label_issues(data_objects, label="ev histogram source", x_terms=("W",), y_terms=("Frequency",))
+    )
+    issues.extend(stats_chart_range_issues(data_objects, (260, 440), label="ev histogram source"))
+    issues.extend(
         stats_histogram_count_issues(
             data_objects,
             {
@@ -3059,6 +3195,20 @@ def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
     chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
     if "histogram" not in chart_types:
         issues.append("dice-game source frequency chart should use statsChart chartType='histogram'")
+    issues.extend(
+        stats_chart_field_value_issues(
+            data_objects,
+            {
+                "dataMode": "manualFrequencies",
+                "barType": "discrete",
+                "yAxisMode": "frequency",
+            },
+            label="dice-game source frequency chart",
+        )
+    )
+    issues.extend(
+        stats_chart_label_issues(data_objects, label="dice-game source frequency chart", x_terms=("x",), y_terms=("f",))
+    )
     issues.extend(
         stats_histogram_count_issues(
             data_objects,
@@ -4419,6 +4569,44 @@ def graph2d_numeric(value: Any) -> float | None:
 def graph2d_number_near(value: Any, expected: float, tolerance: float) -> bool:
     number = graph2d_numeric(value)
     return number is not None and abs(number - expected) <= tolerance
+
+
+def graph2d_axis_label_issues(
+    graph_configs: list[dict[str, Any]],
+    *,
+    label: str,
+    x_terms: tuple[str, ...] = (),
+    y_terms: tuple[str, ...] = (),
+) -> list[str]:
+    issues: list[str] = []
+    graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
+    if x_terms and not any(
+        all(compact_math_text(term) in compact_math_text(str(config.get("xAxisLabel") or "")) for term in x_terms)
+        for config in graph2d_configs
+    ):
+        issues.append(f"{label} graph2d xAxisLabel should preserve {'/'.join(x_terms)}")
+    if y_terms and not any(
+        all(compact_math_text(term) in compact_math_text(str(config.get("yAxisLabel") or "")) for term in y_terms)
+        for config in graph2d_configs
+    ):
+        issues.append(f"{label} graph2d yAxisLabel should preserve {'/'.join(y_terms)}")
+    return issues
+
+
+def graph2d_bounds_issues(
+    graph_configs: list[dict[str, Any]],
+    expected_bounds: dict[str, float],
+    *,
+    label: str,
+    tolerance: float = 1e-6,
+) -> list[str]:
+    graph2d_configs = [config for config in graph_configs if config.get("type") == "graph2d"]
+    issues: list[str] = []
+    for key, expected_value in expected_bounds.items():
+        if any(graph2d_number_near(config.get(key), expected_value, tolerance) for config in graph2d_configs):
+            continue
+        issues.append(f"{label} graph2d {key} should preserve source value {expected_value:g}")
+    return issues
 
 
 def graph2d_function_has_terms(function: dict[str, Any], required_terms: tuple[str | tuple[str, ...], ...]) -> bool:
@@ -6015,6 +6203,18 @@ def local_real_methods_earthquake_bad_line_call() -> dict[str, Any]:
     return call
 
 
+def local_real_methods_earthquake_bad_axes_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_earthquake_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["xAxisLabel"] = "$x$"
+    graph_config["yAxisLabel"] = "$y$"
+    graph_config["xMin"] = 0
+    graph_config["xMax"] = 20
+    graph_config["yMax"] = 10
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_methods_ev_histogram_call() -> dict[str, Any]:
     histogram_counts = {
         270: 4,
@@ -6152,6 +6352,20 @@ def local_real_methods_ev_histogram_bad_counts_call() -> dict[str, Any]:
     return call
 
 
+def local_real_methods_ev_histogram_bad_source_fields_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["dataMode"] = "rawValues"
+    data["barType"] = "discrete"
+    data["yAxisMode"] = "relativeFrequency"
+    data["binSize"] = 10
+    data["range"] = [0, 1]
+    data["xLabel"] = "$X$"
+    data["yLabel"] = "Density"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_methods_dice_game_call() -> dict[str, Any]:
     frequency_counts = {1: 66, 2: 113, 3: 108, 4: 57, 5: 57, 6: 40, 7: 26, 8: 13, 9: 6, 10: 3, 11: 4, 12: 5, 13: 2}
     return local_source_question_call(
@@ -6269,6 +6483,18 @@ def local_real_methods_dice_game_bad_profit_table_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_dice_game_call()))
     part_c = call["mauthArguments"]["parts"][2]
     part_c["solutionText"] = "$$P(Y=-1)=0.349,\\quad P(Y=0)=0.208,\\quad P(Y=1)=0.443.$$ [[marks:3]]"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_bad_chart_fields_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["dataMode"] = "raw"
+    data["barType"] = "continuous"
+    data["yAxisMode"] = "relativeFrequency"
+    data["xLabel"] = "$t$"
+    data["yLabel"] = "Probability"
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -6513,6 +6739,19 @@ def local_real_specialist_stats_bad_renderer_call() -> dict[str, Any]:
         "yMax": 0.25,
         "functions": [{"expression": "0.2e^{-x^2}"}],
     }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_stats_bad_density_points_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["xLabel"] = "$x$"
+    data["points"] = [
+        {"x": 1.0, "y": 0.03},
+        {"x": 2.1, "y": 0.02},
+        {"x": 5.0, "y": 0.02},
+    ]
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -8272,6 +8511,16 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "graph2d line should encode vertical intercept -6",
         ],
     },
+    "real-methods-earthquake-bad-axes": {
+        "assert": assert_real_methods_earthquake_call,
+        "call": local_real_methods_earthquake_bad_axes_call,
+        "expectedIssues": [
+            "graph2d xAxisLabel should preserve log/M_0",
+            "graph2d yAxisLabel should preserve M_w",
+            "graph2d xMin should preserve source value 8",
+            "graph2d yMax should preserve source value 5",
+        ],
+    },
     "real-methods-ev-histogram": {
         "assert": assert_real_methods_ev_histogram_call,
         "call": local_real_methods_ev_histogram_call,
@@ -8289,6 +8538,16 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_methods_ev_histogram_bad_counts_call,
         "expectedIssues": [
             "histogram/count chart should preserve value 430 with count 20",
+        ],
+    },
+    "real-methods-ev-histogram-bad-source-fields": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_bad_source_fields_call,
+        "expectedIssues": [
+            "statsChart should preserve dataMode 'manualFrequencies'",
+            "statsChart should preserve binSize 20",
+            "statsChart xLabel should preserve W",
+            "statsChart should preserve range [260, 440]",
         ],
     },
     "real-methods-dice-game": {
@@ -8312,6 +8571,17 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_methods_dice_game_bad_profit_table_call,
         "expectedIssues": [
             "dice-game solution should map profit probabilities",
+        ],
+    },
+    "real-methods-dice-game-bad-chart-fields": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_bad_chart_fields_call,
+        "expectedIssues": [
+            "statsChart should preserve dataMode 'manualFrequencies'",
+            "statsChart should preserve barType 'discrete'",
+            "statsChart should preserve yAxisMode 'frequency'",
+            "statsChart xLabel should preserve x",
+            "statsChart yLabel should preserve f",
         ],
     },
     "real-specialist-lighthouse": {
@@ -8346,6 +8616,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "statistics source graphs should use statsChart",
             "should not be converted as a generic graph2d",
             "probability-density graph should use statsChart chartType='density'",
+        ],
+    },
+    "real-specialist-stats-bad-density-points": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_bad_density_points_call,
+        "expectedIssues": [
+            "statsChart xLabel should preserve response/time",
+            "statsChart should preserve source point (2.1, 0.2)",
+            "statsChart should preserve source point (2.7, 0.18)",
         ],
     },
     "real-specialist-confidence-intervals": {
