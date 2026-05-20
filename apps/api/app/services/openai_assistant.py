@@ -1642,7 +1642,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
             "Compact builder for source-faithful scalar-product ray/vector diagrams with no axes. Use this instead "
             "of hand-building vector2d graphConfig when converting screenshots with common-origin rays, magnitude "
             "labels, right-angle markers, and angle labels. Use lengthLabel values such as 2\\\\ \\\\text{units} "
-            "and angle marker labels such as 45^\\\\circ. Angles are standard degrees: 0 is right, 90 is up."
+            "and angle marker labels such as 45^\\\\circ. Angle markers may span non-adjacent source rays when "
+            "another labelled ray lies inside the marked sector. Angles are standard degrees: 0 is right, 90 is up."
         ),
         "properties": {
             "widthPx": {"type": "number", "minimum": 120, "maximum": 900},
@@ -1705,7 +1706,10 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
             },
             "angleMarkers": {
                 "type": "array",
-                "description": "Angle or right-angle markers between vector ids.",
+                "description": (
+                    "Angle or right-angle markers between vector ids. Use the actual source sector endpoints, "
+                    "not merely adjacent rays; nested source angle markings are allowed."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -2049,7 +2053,8 @@ def source_conversion_diagram_block_schema(description: str, diagram_types: list
             "description": (
                 "Compact no-axis scalar-product ray/vector diagram. Include vectors with id/name, length or "
                 "components, angleDeg, lengthLabel such as 2\\\\ \\\\text{units}, and optional angleMarkers "
-                "with labels such as 45^\\\\circ."
+                "with labels such as 45^\\\\circ. Angle markers may be nested; use the source sector endpoints "
+                "rather than simply adjacent rays."
             ),
             "properties": {
                 "widthPx": {"type": "number"},
@@ -3434,7 +3439,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "vector2d" in allowed:
         lines.append(
-            "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Use spaced TeX magnitude labels such as 2\\ \\text{units} and angle labels such as 45^\\circ. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
+            "- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Use spaced TeX magnitude labels such as 2\\ \\text{units} and angle labels such as 45^\\circ. Angle markers must reference the actual two rays bounding the source angle, not merely adjacent rays; a nested marker can span outer rays even when another labelled ray lies inside that sector. For the common four-ray exam source with a right-angle square over b,d and a nested 45^\\circ arc over c,d, keep b perpendicular to d and use markers b-to-d and c-to-d. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers."
         )
     if "graph2d" in allowed:
         lines.append(
@@ -3574,7 +3579,7 @@ Tool-call contract:
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
 - For statsChart source diagrams, preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question.
-- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
+- For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle, not merely adjacent rays; nested source markings may span outer rays with another labelled ray inside. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
 - For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces with points arrays for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\overleftrightarrow{{BT}} as \overrightarrow{{BT}}. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder; include a segment or data.dimensions label '$h$' when the source labels cap depth h. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
@@ -3587,7 +3592,7 @@ Attachment contract:
 - If an attachment is present, inspect it directly and use it as source material for the teacher request. Screenshots/images may contain question text, diagrams, or formatting cues. PDFs may contain source exams or assessment pages. Word and text-like files are extracted to readable text before the provider call.
 - For conversion from attached PDFs/screenshots/Word/text files, preserve original line breaks, inline-vs-display maths intent, diagrams, marks, and pagination when the teacher asks for fidelity. Keep the first pass focused if the teacher asks for only one question or one visible page.
 - When the source shows "a)", "b)", "c)" or similar, convert them to structured parts whose text contains the visible part expression or instruction. If the source diagram belongs between the stem and the parts, put it in question-level diagram/diagrams and then emit parts underneath it; do not make empty parts.
-- For source vector diagrams with only magnitudes, angles, and labelled rays from a common point, recreate the diagram as an editable native vector2d diagram with axes/grid hidden. Use vector components as source-faithful ray directions, metadata.vector2d.segmentLabels for magnitudes, and metadata.vector2d.angleMarkers for right-angle/angle labels. Angle-marker endpoints must be the actual two rays bounding the marked angle in the source. Use geometricConstruction/Penrose for theorem geometry, not for source ray diagrams where relative ray placement must match the screenshot.
+- For source vector diagrams with only magnitudes, angles, and labelled rays from a common point, recreate the diagram as an editable native vector2d diagram with axes/grid hidden. Use vector components as source-faithful ray directions, metadata.vector2d.segmentLabels for magnitudes, and metadata.vector2d.angleMarkers for right-angle/angle labels. Angle-marker endpoints must be the actual two rays bounding the marked angle in the source, not just adjacent rays; nested markings may span outer rays with another labelled ray inside. Use geometricConstruction/Penrose for theorem geometry, not for source ray diagrams where relative ray placement must match the screenshot.
 - Do not claim you cannot see an attachment when the request includes one. If the content is unreadable, say exactly what was unclear and ask for a higher-resolution file only after attempting the relevant Mauth tool path.
 
 Authoring quality bar:

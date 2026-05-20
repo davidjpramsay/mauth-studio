@@ -6508,6 +6508,20 @@ def local_screenshot_scalar_products_bad_marker_pairs_call() -> dict[str, Any]:
     return call
 
 
+def local_screenshot_scalar_products_live_right_angle_bc_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_screenshot_scalar_products_call()))
+    vector_ray = call["mauthArguments"]["diagram"]["vectorRayDiagram"]
+    for vector in vector_ray["vectors"]:
+        if vector.get("id") == "b":
+            vector["angleDeg"] = 170
+    vector_ray["angleMarkers"] = [
+        {"from": "c", "to": "d", "label": "45^\\circ", "radius": 0.72},
+        {"from": "b", "to": "c", "rightAngle": True, "radius": 0.42},
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_screenshot_scalar_products_bad_raw_labels_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -9039,6 +9053,14 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "right-angle marker should span the perpendicular rays b and d",
             "45 degree marker should span the labelled rays c and d",
+        ],
+    },
+    "screenshot-scalar-products-live-right-angle-bc": {
+        "assert": assert_screenshot_scalar_products_call,
+        "call": local_screenshot_scalar_products_live_right_angle_bc_call,
+        "expectedIssues": [
+            "vectorRayDiagram should make b perpendicular to d",
+            "vectorRayDiagram right-angle marker should span the perpendicular rays b and d",
         ],
     },
     "real-methods-earthquake": {
