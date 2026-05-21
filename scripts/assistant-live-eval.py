@@ -1900,6 +1900,33 @@ def graph_config_types(args: dict[str, Any]) -> set[str]:
     return {str(config.get("type")) for config in collect_diagram_graph_configs(args) if config.get("type")}
 
 
+def empty_table_payload_issues(value: Any, path: str = "arguments") -> list[str]:
+    issues: list[str] = []
+    if isinstance(value, dict):
+        for key, inner_value in value.items():
+            child_path = f"{path}.{key}"
+            if key in {"table", "solutionTable"}:
+                if not isinstance(inner_value, dict):
+                    issues.append(f"{child_path} should be omitted unless it is a table object with at least one row")
+                elif not isinstance(inner_value.get("rows"), list) or not inner_value["rows"]:
+                    issues.append(f"{child_path} is an empty table placeholder and should be omitted")
+                continue
+            if key in {"tables", "solutionTables"}:
+                if isinstance(inner_value, list) and not inner_value:
+                    issues.append(f"{child_path} is an empty table list and should be omitted")
+                    continue
+                if isinstance(inner_value, list):
+                    for index, table in enumerate(inner_value):
+                        if not isinstance(table, dict) or not isinstance(table.get("rows"), list) or not table["rows"]:
+                            issues.append(f"{child_path}[{index}] is an empty table placeholder and should be omitted")
+                    continue
+            issues.extend(empty_table_payload_issues(inner_value, child_path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            issues.extend(empty_table_payload_issues(item, f"{path}[{index}]"))
+    return issues
+
+
 def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict[str, Any] | None]:
     issues: list[str] = []
     if call.get("mauthToolName") != QUESTION_UPSERT_TOOL_NAME:
@@ -1913,6 +1940,7 @@ def assert_source_question_common(call: dict[str, Any]) -> tuple[list[str], dict
     solution_text = str(args.get("solutionText") or "")
     issues.extend(text_quality_issues(args))
     issues.extend(artifact_solution_text_mark_issues(args))
+    issues.extend(empty_table_payload_issues(args))
     if "(a)" in question_text.lower() or "(b)" in question_text.lower():
         issues.append("questionText should not contain typed automatic part labels")
     if "\\[" in question_text or "\\]" in question_text:
@@ -2990,7 +3018,12 @@ def assert_real_specialist_confidence_intervals_call(call: dict[str, Any]) -> li
         ("0.166",),
         ("cannotdetermine", "cannotbedetermine"),
         ("unknown", "randomsampling"),
-        ("95%islessthan99%", "95<99", "95%confidencelevelusesasmallercriticalvalue"),
+        (
+            "95%islessthan99%",
+            "95%,islessthanthatofb,99%",
+            "95<99",
+            "95%confidencelevelusesasmallercriticalvalue",
+        ),
         ("0.707", "1/sqrt2"),
         ("0.8",),
     )
@@ -6327,6 +6360,77 @@ def real_source_graph2d_repair_failure_output(call: dict[str, Any], first_issues
     )
 
 
+def real_lighthouse_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues: list[dict[str, Any]] = []
+    for issue in first_issues:
+        if "should use geometricConstruction" in issue or "should not use" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.type",
+                    "message": issue,
+                    "expected": "geometricConstruction",
+                }
+            )
+        elif "Unexpected ensure token" in issue or "styleSource" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.options.styleSource",
+                    "message": issue,
+                    "expected": (
+                        "omit custom Penrose styleSource/domainSource. Keep graphConfig.type='geometricConstruction' "
+                        "and repair only graphConfig.options.substanceSource with supported geometry preset predicates; "
+                        "do not switch this lighthouse source diagram to graph2d."
+                    ),
+                }
+            )
+        elif "render through Penrose" in issue or "Penrose Substance" in issue or "Variable " in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.options.substanceSource",
+                    "message": issue,
+                    "expected": (
+                        "renderable Penrose Substance. Declare Point L, C, P and NamedSegment LC, CP, LP; "
+                        "label existing points directly with Label L $L$, Label C $C$, Label P $P$; "
+                        "do not invent undeclared point-label variables such as LLabel/CLabel/PLabel. "
+                        "Attach length/angle labels with LabelsSegment/LabelsAngle. Use RightAngle(L, C, P) "
+                        "for the visible corner marker; PerpendicularToSegment needs a declared Line first, "
+                        "not a NamedSegment such as LC. Keep graphConfig.type='geometricConstruction'; do not "
+                        "repair this source diagram by switching to graph2d."
+                    ),
+                }
+            )
+        elif "right angle" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.options.substanceSource",
+                    "message": issue,
+                    "expected": "RightAngle(L, C, P) or an equivalent perpendicular relation at C",
+                }
+            )
+        elif "solution should" in issue or "hidden [[marks:n]]" in issue or "visible mark" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.solutionText",
+                    "message": issue,
+                    "expected": "official-key solution with pi/10, tan, sec^2(theta), 78.54, and hidden [[marks:n]] ticks totalling 5",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagram.graphConfig.options.substanceSource",
+                "message": issue,
+                "expected": "source-faithful renderable geometricConstruction/Penrose lighthouse diagram",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth geometricConstruction source-fidelity validation failed.",
+    )
+
+
 def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues: list[dict[str, Any]] = []
     for issue in first_issues:
@@ -6402,6 +6506,60 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
         tool_name=call.get("mauthToolName"),
         validation_issues=validation_issues,
         message="Mauth statsChart source-fidelity validation failed.",
+    )
+
+
+def real_confidence_intervals_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues: list[dict[str, Any]] = []
+    for issue in first_issues:
+        if "empty table placeholder" in issue or "empty table list" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.table/tables/solutionTable/solutionTables",
+                    "message": issue,
+                    "expected": (
+                        "omit empty table, tables, solutionTable, and solutionTables fields. Include only the real "
+                        "confidence-interval source table with rows A-D."
+                    ),
+                }
+            )
+        elif "table should preserve" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.tables",
+                    "message": issue,
+                    "expected": "one real table with headers confidence interval, sample size, sample standard deviation, confidence level and rows A-D",
+                }
+            )
+        elif "solution should preserve" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionText",
+                    "message": issue,
+                    "expected": "official-key solution terms including 300-500, 51.02, 16n, 0.166, cannot determine, A smaller than B, and C smaller than D",
+                }
+            )
+        elif "contains malformed escaped dollar" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.questionText/parts[].text",
+                    "message": issue,
+                    "expected": "currency outside maths such as \\$400, or plain numeric maths such as $400$; never put \\$ inside $...$",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments",
+                "message": issue,
+                "expected": "source-faithful structured confidence-interval question with exactly the real source table",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth confidence-interval source-fidelity validation failed.",
     )
 
 
@@ -6630,6 +6788,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_lighthouse_screenshot_with_key,
         "assert": assert_real_lighthouse_question_call,
+        "repairOnFailure": real_lighthouse_repair_failure_output,
     },
     "real-specialist-stats": {
         "prompt": (
@@ -6649,6 +6808,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_confidence_intervals_screenshot_with_key,
         "assert": assert_real_specialist_confidence_intervals_call,
+        "repairOnFailure": real_confidence_intervals_repair_failure_output,
     },
     "real-methods-earthquake": {
         "prompt": (
@@ -7775,6 +7935,93 @@ def local_real_specialist_lighthouse_bad_solution_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_lighthouse_live_undeclared_label_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_lighthouse_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["options"]["substanceSource"] = (
+        "Point L, C, P\n"
+        "NamedSegment LC, CP, LP\n"
+        "Label LLabel $L$\n"
+        "Label CLabel $C$\n"
+        "Label PLabel $P$\n"
+        "Label lenLC $50\\ \\text{m}$\n"
+        "Label lenCP $x$\n"
+        "Label thetaLabel $\\theta$\n"
+        "Segment(LC, L, C)\n"
+        "Segment(CP, C, P)\n"
+        "VectorSegment(LP, L, P)\n"
+        "LabelsSegment(lenLC, L, C)\n"
+        "LabelsSegment(lenCP, C, P)\n"
+        "LabelsAngle(thetaLabel, C, L, P)\n"
+        "Perpendicular(LC, CP)\n"
+        "Label L $L$\n"
+        "Label C $C$\n"
+        "Label P $P$\n"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_lighthouse_live_segment_perpendicular_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_lighthouse_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["options"]["substanceSource"] = (
+        "Point L, C, P\n"
+        "NamedSegment LC, CP, LP\n"
+        "Line coast\n"
+        "Label L $L$\n"
+        "Label C $C$\n"
+        "Label P $P$\n"
+        "Label lab50 $50\\ \\text{m}$\n"
+        "Label labx $x$\n"
+        "Label labTheta $\\theta$\n"
+        "LineThrough(coast, C, P)\n"
+        "Segment(LC, L, C)\n"
+        "Segment(CP, C, P)\n"
+        "VectorSegment(LP, L, P)\n"
+        "PerpendicularToSegment(LC, C, P)\n"
+        "LabelsSegment(lab50, L, C)\n"
+        "LabelsSegment(labx, C, P)\n"
+        "LabelsAngle(labTheta, C, L, P)\n"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_lighthouse_live_custom_style_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_lighthouse_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["options"]["substanceSource"] = (
+        "Point L, C, P\n"
+        "NamedSegment LC, CP, LP\n"
+        "Label L $L$\n"
+        "Label C $C$\n"
+        "Label P $P$\n"
+        "Label lengthLC $50\\ \\text{m}$\n"
+        "Label lengthCP $x$\n"
+        "Label thetaLabel $\\theta$\n"
+        "Segment(LC, L, C)\n"
+        "Segment(CP, C, P)\n"
+        "Segment(LP, L, P)\n"
+        "RightAngle(L, C, P)\n"
+        "LabelsSegment(lengthLC, LC)\n"
+        "LabelsSegment(lengthCP, CP)\n"
+        "LabelsAngle(thetaLabel, C, L, P)\n"
+    )
+    graph_config["options"]["styleSource"] = (
+        "canvas {\n"
+        "  width = 430\n"
+        "  height = 210\n"
+        "}\n"
+        "forall Point p {\n"
+        "  p.textLayering = 2\n"
+        "}\n"
+        "ensure L above C\n"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_stats_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -8080,6 +8327,47 @@ def local_real_specialist_confidence_intervals_live_escaped_currency_call() -> d
         "than a 99% confidence level, with the same $n$ and $s$. [[marks:1]]"
     )
     call["arguments"] = args
+    return call
+
+
+def local_real_specialist_confidence_intervals_live_relative_confidence_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    subpart_i = call["mauthArguments"]["parts"][5]["subparts"][0]
+    subpart_i["solutionText"] = (
+        "Confidence interval A will have the smaller width, since its confidence level, 95%, "
+        "is less than that of B, 99%. [[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def add_empty_table_placeholders(value: Any) -> None:
+    if isinstance(value, dict):
+        value.setdefault(
+            "table",
+            {"id": "empty-table", "headers": [], "rows": [], "showHeader": False, "tableAlign": "center"},
+        )
+        value.setdefault("tables", [])
+        value.setdefault(
+            "solutionTable",
+            {"id": "empty-solution-table", "headers": [], "rows": [], "showHeader": False, "tableAlign": "center"},
+        )
+        value.setdefault("solutionTables", [])
+        for key, inner_value in list(value.items()):
+            if key in {"table", "tables", "solutionTable", "solutionTables"}:
+                continue
+            add_empty_table_placeholders(inner_value)
+    elif isinstance(value, list):
+        for item in value:
+            add_empty_table_placeholders(item)
+
+
+def local_real_specialist_confidence_intervals_live_empty_table_placeholders_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    add_empty_table_placeholders(call["mauthArguments"])
+    # Preserve the one real source table after adding the empty placeholders.
+    call["mauthArguments"]["tables"] = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()["mauthArguments"]["tables"]))
+    call["arguments"] = call["mauthArguments"]
     return call
 
 
@@ -9991,6 +10279,31 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "lighthouse solution should preserve one of ('78.54'",
         ],
     },
+    "real-specialist-lighthouse-live-undeclared-label": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_live_undeclared_label_call,
+        "expectedIssues": [
+            "lighthouse geometricConstruction should render through Penrose",
+            "Variable LLabel",
+        ],
+    },
+    "real-specialist-lighthouse-live-segment-perpendicular": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_live_segment_perpendicular_call,
+        "expectedIssues": [
+            "lighthouse geometricConstruction should render through Penrose",
+            "NamedSegment",
+            "Line",
+        ],
+    },
+    "real-specialist-lighthouse-live-custom-style": {
+        "assert": assert_real_lighthouse_question_call,
+        "call": local_real_specialist_lighthouse_live_custom_style_call,
+        "expectedIssues": [
+            "lighthouse geometricConstruction should render through Penrose",
+            "Unexpected ensure token",
+        ],
+    },
     "real-specialist-stats": {
         "assert": assert_real_specialist_stats_call,
         "call": local_real_specialist_stats_call,
@@ -10057,6 +10370,18 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_specialist_confidence_intervals_call,
         "call": local_real_specialist_confidence_intervals_live_escaped_currency_call,
         "expectedIssues": ["contains malformed escaped dollar inside maths"],
+    },
+    "real-specialist-confidence-intervals-live-relative-wording": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_relative_confidence_wording_call,
+    },
+    "real-specialist-confidence-intervals-live-empty-table-placeholders": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_empty_table_placeholders_call,
+        "expectedIssues": [
+            "empty table placeholder and should be omitted",
+            "empty table list and should be omitted",
+        ],
     },
     "real-specialist-slope-field": {
         "assert": assert_real_specialist_slope_field_call,

@@ -184,6 +184,7 @@ const COMMON_UNSUPPORTED_PENROSE_PREDICATES: Array<{
     expected: "Declare `Ray rayName` and draw it with RayFrom(rayName, startPoint, throughPoint).",
   },
 ];
+const PENROSE_DECLARATION_TYPES = new Set(["Point", "Circle", "Line", "Ray", "NamedSegment", "LengthLabel"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -1295,10 +1296,62 @@ function countSimplePenroseArgs(value: string) {
     .filter(Boolean).length;
 }
 
+function penroseDeclaredNames(source: string, declarationTypes = PENROSE_DECLARATION_TYPES) {
+  const names = new Set<string>();
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.includes("(")) continue;
+    const match = line.match(/^([A-Za-z][A-Za-z0-9_]*)\s+(.+)$/);
+    const declarationType = match?.[1];
+    const declarationBody = match?.[2];
+    if (!declarationType || !declarationBody || !declarationTypes.has(declarationType)) continue;
+    for (const item of declarationBody.split(",")) {
+      const name = item.trim().split(/\s+/)[0];
+      if (name && PENROSE_IDENTIFIER_PATTERN.test(name)) names.add(name);
+    }
+  }
+  return names;
+}
+
+function penroseLabelTargets(source: string) {
+  const names = new Set<string>();
+  for (const match of source.matchAll(/^\s*Label\s+([A-Za-z][A-Za-z0-9_]*)\s+\$/gm)) {
+    const target = match[1];
+    if (target) names.add(target);
+  }
+  return names;
+}
+
+function penrosePlacedLabelTargets(source: string) {
+  const names = new Set<string>();
+  for (const predicateName of ["LabelsSegment", "LabelsAngle", "LabelsCircle", "LabelsLine"]) {
+    for (const args of penroseCallArguments(source, predicateName)) {
+      const firstArg = args.split(",")[0]?.trim();
+      if (firstArg && PENROSE_IDENTIFIER_PATTERN.test(firstArg)) names.add(firstArg);
+    }
+  }
+  return names;
+}
+
+function validatePenroseLabelTargets(source: string, path: string, issues: MauthActionValidationIssue[]) {
+  const declaredNames = penroseDeclaredNames(source);
+  const placedLabels = penrosePlacedLabelTargets(source);
+  for (const target of penroseLabelTargets(source)) {
+    if (declaredNames.has(target) || placedLabels.has(target)) continue;
+    addIssue(
+      issues,
+      path,
+      `labels undeclared Penrose variable ${target}`,
+      "For point labels, label the existing point directly, e.g. `Label L $L$`; segment/angle labels must be attached with LabelsSegment/LabelsAngle.",
+    );
+  }
+}
+
 function validatePenroseSubstanceSource(source: string, path: string, issues: MauthActionValidationIssue[]) {
   for (const item of COMMON_UNSUPPORTED_PENROSE_PREDICATES) {
     if (item.pattern.test(source)) addIssue(issues, path, item.message, item.expected);
   }
+  validatePenroseLabelTargets(source, path, issues);
 
   for (const args of penroseCallArguments(source, "RightAngle")) {
     if (countSimplePenroseArgs(args) !== 3) {
@@ -1306,6 +1359,8 @@ function validatePenroseSubstanceSource(source: string, path: string, issues: Ma
     }
   }
 
+  const lineNames = penroseDeclaredNames(source, new Set(["Line"]));
+  const namedSegmentNames = penroseDeclaredNames(source, new Set(["NamedSegment"]));
   for (const args of penroseCallArguments(source, "PerpendicularToSegment")) {
     if (countSimplePenroseArgs(args) !== 3) {
       addIssue(
@@ -1313,6 +1368,24 @@ function validatePenroseSubstanceSource(source: string, path: string, issues: Ma
         path,
         "PerpendicularToSegment must receive a line name and two point names",
         "PerpendicularToSegment(lineName, A, B)",
+      );
+      continue;
+    }
+    const lineName = args.split(",")[0]?.trim();
+    if (!lineName) continue;
+    if (namedSegmentNames.has(lineName)) {
+      addIssue(
+        issues,
+        path,
+        `PerpendicularToSegment first argument ${lineName} is a NamedSegment, not a Line`,
+        "For a visible right-angle marker, use `RightAngle(L, C, P)`. For a line constraint, declare `Line lineName` and use `PerpendicularToSegment(lineName, A, B)`.",
+      );
+    } else if (!lineNames.has(lineName)) {
+      addIssue(
+        issues,
+        path,
+        `PerpendicularToSegment first argument ${lineName} is not declared as a Line`,
+        "Declare `Line lineName` before `PerpendicularToSegment(lineName, A, B)`, or use `RightAngle(A, B, C)` for a visible right-angle marker.",
       );
     }
   }
@@ -1323,6 +1396,16 @@ function penroseSubstanceSource(config: Record<string, unknown>, path: string, i
   const options = isRecord(config.options) ? config.options : undefined;
   if (!options) return false;
   if (!hasOwn(options, "substanceSource")) return false;
+  for (const key of ["styleSource", "domainSource"]) {
+    if (hasOwn(options, key)) {
+      addIssue(
+        issues,
+        `${path}.options.${key}`,
+        `custom Penrose ${key === "styleSource" ? "Style" : "Domain"} source is not accepted in assistant-authored diagrams`,
+        "Omit custom Penrose Style/Domain; use the geometry/set preset and graphConfig.options.substanceSource only.",
+      );
+    }
+  }
   if (typeof options.substanceSource !== "string" || !options.substanceSource.trim()) {
     addIssue(issues, `${path}.options.substanceSource`, "must be a non-empty Penrose Substance string", "Point A, B");
     return false;

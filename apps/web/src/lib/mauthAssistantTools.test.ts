@@ -4094,6 +4094,116 @@ test("rejects unsupported Penrose Substance predicates before applying diagrams"
   assert.match(messages, /PerpendicularToSegment must receive/);
 });
 
+test("rejects Penrose point labels on undeclared label variables", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: [
+              "Point L, C, P",
+              "NamedSegment LC, CP, LP",
+              "Label LLabel $L$",
+              "Label CLabel $C$",
+              "Label PLabel $P$",
+              "Label lenLC $50\\ \\text{m}$",
+              "Segment(LC, L, C)",
+              "Segment(CP, C, P)",
+              "VectorSegment(LP, L, P)",
+              "LabelsSegment(lenLC, L, C)",
+              "RightAngle(L, C, P)",
+            ].join("\n"),
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const messages = (data.validationIssues ?? []).map((issue) => issue.message).join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(messages, /undeclared Penrose variable LLabel/);
+  assert.match(messages, /undeclared Penrose variable CLabel/);
+  assert.match(messages, /undeclared Penrose variable PLabel/);
+  assert.doesNotMatch(messages, /undeclared Penrose variable lenLC/);
+});
+
+test("rejects Penrose PerpendicularToSegment with a segment first argument", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: [
+              "Point L, C, P",
+              "NamedSegment LC, CP, LP",
+              "Line coast",
+              "Label L $L$",
+              "Label C $C$",
+              "Label P $P$",
+              "LineThrough(coast, C, P)",
+              "Segment(LC, L, C)",
+              "Segment(CP, C, P)",
+              "VectorSegment(LP, L, P)",
+              "PerpendicularToSegment(LC, C, P)",
+            ].join("\n"),
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const messages = (data.validationIssues ?? []).map((issue) => `${issue.message} ${issue.expected ?? ""}`).join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(messages, /LC is a NamedSegment, not a Line/);
+  assert.match(messages, /RightAngle\(L, C, P\)/);
+});
+
+test("rejects custom Penrose style source in assistant-authored diagrams", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometricConstruction",
+          data: {},
+          options: {
+            substanceSource: [
+              "Point L, C, P",
+              "NamedSegment LC, CP, LP",
+              "Label L $L$",
+              "Label C $C$",
+              "Label P $P$",
+              "Segment(LC, L, C)",
+              "Segment(CP, C, P)",
+              "Segment(LP, L, P)",
+              "RightAngle(L, C, P)",
+            ].join("\n"),
+            styleSource: "ensure L above C",
+          },
+        },
+      },
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string; expected?: string }> };
+  const issueText = (data.validationIssues ?? []).map((issue) => `${issue.path} ${issue.message} ${issue.expected ?? ""}`).join("\n");
+
+  assert.equal(result.ok, false);
+  assert.match(issueText, /options\.styleSource/);
+  assert.match(issueText, /custom Penrose Style source is not accepted/);
+  assert.match(issueText, /substanceSource only/);
+});
+
 test("rejects malformed coordinate vector and set diagram action payloads", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

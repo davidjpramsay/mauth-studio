@@ -603,7 +603,11 @@ Tangent(tangentA, gamma, A)
 :::
 ````
 
-The app supplies the geometry Domain and Style preset. For normal use, edit only Substance.
+The app supplies the geometry Domain and Style preset. For normal use, edit only Substance; assistant-authored diagrams should not emit custom `options.styleSource` or `options.domainSource`.
+
+Label declared points directly with the point name, for example `Label L $L$`. Do not invent a separate point-label variable such as `Label LLabel $L$`; use separate label names only for side, angle, circle, or line labels that are attached with predicates such as `LabelsSegment` or `LabelsAngle`.
+
+Use `RightAngle(A, B, C)` for a visible right-angle marker at `B`. `PerpendicularToSegment(lineName, A, B)` constrains a declared `Line` relative to segment `AB`; its first argument must be a `Line`, not a `NamedSegment`.
 
 For tangent-parallel-chord diagrams, use `ParallelToSegment(tangentA, B, C)` so the chord stays a segment while Penrose still constrains it to be parallel to the tangent. Hide auxiliary construction points such as a centre point unless the question names them.
 
