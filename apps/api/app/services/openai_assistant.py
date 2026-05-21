@@ -2731,8 +2731,9 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "solutionDiagram/solutionTable receives the red ticks from the item marks automatically, so "
                         "use solutionText only for a short unmarked note if needed. Never include [[marks:n]] in "
                         "solutionText when a solutionDiagram or solutionTable is present for the same item. "
-                        "Do not write visible [1 mark], (1 mark), or "
-                        "'1 mark for ...' notes. Preserve LaTeX backslashes exactly; in JSON strings this means "
+                        "Do not write visible [1 mark], (1 mark), '1 mark for ...' notes, or marking-key rubric "
+                        "prose such as 'Indicates...', 'States...', or 'Determines...' after hidden ticks. "
+                        "Preserve LaTeX backslashes exactly; in JSON strings this means "
                         "commands such as \\ell and \\frac must be emitted with escaped backslashes, not as control "
                         "characters."
                     ),
@@ -3368,8 +3369,9 @@ def mauth_author_ensure_solutions_tool_definition() -> dict[str, Any]:
                                 "description": (
                                     "Concise worked solution in Mauthdown/MathJax. Put hidden [[marks:n]] annotations at "
                                     "the end of mark-worthy lines so Mauth renders red check marks. The hidden mark total "
-                                    "should match the question/part marks. Do not write visible [1 mark], (1 mark), or "
-                                    "'1 mark for ...' notes."
+                                    "should match the question/part marks. Do not write visible [1 mark], (1 mark), "
+                                    "'1 mark for ...' notes, or marking-key rubric prose such as 'Indicates...' "
+                                    "after hidden ticks."
                                 ),
                             },
                             "parts": {
@@ -4024,7 +4026,7 @@ Source-conversion tool contract:
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels.
 - For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 {artifact_surface_guidance}
-- Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
+- Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
 
 {native_diagram_rules}
 
@@ -4131,7 +4133,7 @@ Tool-call contract:
 - For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
 - Omit table, tables, solutionTable, and solutionTables unless they contain real rows. Do not send empty table objects, "unused" table placeholders, or empty arrays.
 - In mauth_convert_source_question, the schema uses tables and, when table answer-surface fields are exposed, solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
-- Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
+- Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
 - Keep currency symbols outside dollar-delimited maths. Write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.

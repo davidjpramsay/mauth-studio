@@ -1116,6 +1116,7 @@ def visible_mark_note_count(text: str) -> int:
         r"\(\s*\d+\s*marks?\s*\)",
         r"\b\d+\s*marks?\s+for\b",
         r"\bsolution\s*\(\s*\d+\s*marks?\s*\)",
+        r"\[\[\s*marks\s*:\s*\d+\s*\]\]\s*(indicates|states|determines|calculates|constructs|notes|gives)\b",
     )
     return sum(len(re.findall(pattern, text, flags=re.IGNORECASE)) for pattern in patterns)
 
@@ -1681,7 +1682,9 @@ def print_cost_report(case_name: str, *, cost_ledger_path: Path | None, max_case
 def benchmark_renderers(case_name: str, benchmark_index: dict[str, dict[str, Any]] | None = None) -> list[str]:
     benchmarks = benchmark_index if benchmark_index is not None else benchmark_manifest_index()
     benchmark = benchmarks.get(case_name)
-    expected = benchmark.get("expected") if isinstance(benchmark, dict) and isinstance(benchmark.get("expected"), dict) else {}
+    expected = (
+        benchmark.get("expected") if isinstance(benchmark, dict) and isinstance(benchmark.get("expected"), dict) else {}
+    )
     renderers = expected.get("renderers") if isinstance(expected.get("renderers"), list) else []
     return sorted(str(renderer) for renderer in renderers if isinstance(renderer, str))
 
@@ -1771,7 +1774,9 @@ def maybe_select_stale_canaries(
                 }
             )
         elif chosen_case:
-            decisions.append({"case": case_name, "family": family, "decision": "skip", "reason": "family already selected"})
+            decisions.append(
+                {"case": case_name, "family": family, "decision": "skip", "reason": "family already selected"}
+            )
         else:
             decisions.append({"case": case_name, "family": family, "decision": "skip", "reason": str(info["reason"])})
     chosen = [str(info["case"]) for info in chosen_by_family.values()]
@@ -1803,7 +1808,11 @@ def cost_ledger_record(
     reason: str | None = None,
     first_issues: list[str] | None = None,
 ) -> dict[str, Any]:
-    attachment_stats = shape.get("attachmentStats") if isinstance(shape, dict) and isinstance(shape.get("attachmentStats"), dict) else {}
+    attachment_stats = (
+        shape.get("attachmentStats")
+        if isinstance(shape, dict) and isinstance(shape.get("attachmentStats"), dict)
+        else {}
+    )
     record: dict[str, Any] = {
         "version": 1,
         "timestamp": utc_now_iso(),
@@ -1878,10 +1887,7 @@ def print_cost_plan(
     if select_stale_canaries:
         print(f"- stale canary selector: enabled, one case per renderer family, stale after {stale_days} days")
         for decision in canary_decisions:
-            print(
-                f"  - {decision['decision']} {decision['case']} "
-                f"({decision['family']}): {decision['reason']}"
-            )
+            print(f"  - {decision['decision']} {decision['case']} ({decision['family']}): {decision['reason']}")
     else:
         print("- stale canary selector: disabled")
     print(f"- run max-cost cap: ${max_cost:.2f}")
@@ -2166,11 +2172,15 @@ def empty_table_payload_issues(value: Any, path: str = "arguments", *, allow_bla
                         elif is_placeholder_table_id(table):
                             issues.append(f"{child_path}[{index}] is an unused table placeholder and should be omitted")
                         elif key == "solutionTables" and is_blank_table_placeholder(table):
-                            issues.append(f"{child_path}[{index}] is a blank solution table placeholder and should be omitted")
+                            issues.append(
+                                f"{child_path}[{index}] is a blank solution table placeholder and should be omitted"
+                            )
                         elif not local_allow_blank_table and is_blank_table_placeholder(table):
                             issues.append(f"{child_path}[{index}] is a blank table placeholder and should be omitted")
                     continue
-            issues.extend(empty_table_payload_issues(inner_value, child_path, allow_blank_table=local_allow_blank_table))
+            issues.extend(
+                empty_table_payload_issues(inner_value, child_path, allow_blank_table=local_allow_blank_table)
+            )
     elif isinstance(value, list):
         for index, item in enumerate(value):
             issues.extend(empty_table_payload_issues(item, f"{path}[{index}]", allow_blank_table=allow_blank_table))
@@ -2576,12 +2586,12 @@ def argand_graph_has_argument_boundary_rays(configs: list[dict[str, Any]]) -> bo
             angle = graph2d_line_segment_angle_from_origin(feature)
             if angle is not None:
                 angles.append(angle)
-    has_lower_boundary = any(
-        angle_distance_degrees(angle, 30) <= 8 for angle in angles
-    ) or any(argand_function_marks_argument_boundary_ray(function, 30) for function in functions)
-    has_upper_boundary = any(
-        angle_distance_degrees(angle, 150) <= 8 for angle in angles
-    ) or any(argand_function_marks_argument_boundary_ray(function, 150) for function in functions)
+    has_lower_boundary = any(angle_distance_degrees(angle, 30) <= 8 for angle in angles) or any(
+        argand_function_marks_argument_boundary_ray(function, 30) for function in functions
+    )
+    has_upper_boundary = any(angle_distance_degrees(angle, 150) <= 8 for angle in angles) or any(
+        argand_function_marks_argument_boundary_ray(function, 150) for function in functions
+    )
     return has_lower_boundary and has_upper_boundary
 
 
@@ -3120,7 +3130,19 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
             issues.append(f"statistics solution should preserve {term!r}")
     solution_text = "\n".join(solution_texts).lower()
     if all(
-        term not in solution_text for term in ("cannot", "not accepted", "not justified", "does not prove", "not prove")
+        term not in solution_text
+        for term in (
+            "cannot",
+            "not accepted",
+            "not justified",
+            "does not prove",
+            "not prove",
+            "does not establish",
+            "not establish",
+            "does not demonstrate",
+            "does not show",
+            "only supports",
+        )
     ):
         issues.append("statistics solution should reject Anika's teenager-source claim")
     hidden_total = hidden_mark_total("\n".join(solution_texts))
@@ -6775,6 +6797,17 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     ),
                 }
             )
+        elif "visible mark notes" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionText",
+                    "message": issue,
+                    "expected": (
+                        "worked solution lines with hidden [[marks:n]] ticks only. Remove visible marking-key rubric "
+                        "prose such as 'Indicates...', 'States...', 'Determines...', or 'Calculates...' after the ticks"
+                    ),
+                }
+            )
     if not validation_issues:
         validation_issues = [
             {
@@ -8330,14 +8363,7 @@ def local_real_specialist_lighthouse_live_custom_style_call() -> dict[str, Any]:
         "LabelsAngle(thetaLabel, C, L, P)\n"
     )
     graph_config["options"]["styleSource"] = (
-        "canvas {\n"
-        "  width = 430\n"
-        "  height = 210\n"
-        "}\n"
-        "forall Point p {\n"
-        "  p.textLayering = 2\n"
-        "}\n"
-        "ensure L above C\n"
+        "canvas {\n  width = 430\n  height = 210\n}\nforall Point p {\n  p.textLayering = 2\n}\nensure L above C\n"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -8467,6 +8493,30 @@ def local_real_specialist_stats_paired_density_values_call() -> dict[str, Any]:
     points = data.pop("points")
     data["xValues"] = [point["x"] for point in points]
     data["yValues"] = [point["y"] for point in points]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_stats_live_not_establish_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    part_c = call["mauthArguments"]["parts"][2]
+    part_c["solutionText"] = (
+        "The interval from the normal calculation is $1.5708$ to $2.6292$. [[marks:2]]\n"
+        "The sample provides evidence that it was not taken from the adult population, but it does not establish "
+        "that the source was teenagers; it only supports a lower mean than the adult mean. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_stats_live_visible_rubric_prose_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    part_a = call["mauthArguments"]["parts"][0]
+    part_a["solutionText"] = (
+        "$$\\overline T\\sim N\\left(3,0.3^2\\right).$$ [[marks:1]] Indicates or states that the "
+        "sample mean is normally distributed. [[marks:1]] States the parameters of the sample mean distribution.\n"
+        "$$P(2.5<\\overline T<3.5)=0.904.$$ [[marks:1]] Determines the probability correctly."
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -8761,7 +8811,9 @@ def local_real_specialist_confidence_intervals_live_empty_table_placeholders_cal
     call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
     add_empty_table_placeholders(call["mauthArguments"])
     # Preserve the one real source table after adding the empty placeholders.
-    call["mauthArguments"]["tables"] = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()["mauthArguments"]["tables"]))
+    call["mauthArguments"]["tables"] = json.loads(
+        json.dumps(local_real_specialist_confidence_intervals_call()["mauthArguments"]["tables"])
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -10773,6 +10825,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-specialist-stats-paired-density-values": {
         "assert": assert_real_specialist_stats_call,
         "call": local_real_specialist_stats_paired_density_values_call,
+    },
+    "real-specialist-stats-live-not-establish-wording": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_live_not_establish_wording_call,
+    },
+    "real-specialist-stats-live-visible-rubric-prose": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_live_visible_rubric_prose_call,
+        "expectedIssues": ["statistics solution should use hidden [[marks:n]] ticks, not visible mark notes"],
     },
     "real-specialist-confidence-intervals": {
         "assert": assert_real_specialist_confidence_intervals_call,
