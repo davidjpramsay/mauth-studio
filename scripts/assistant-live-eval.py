@@ -6020,6 +6020,14 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     "expected": "source exact bin centres/categories and visible counts",
                 }
             )
+        elif "statsChart should preserve range" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data.range",
+                    "message": issue,
+                    "expected": "source chart range, or for centred histogram bins first centre - binSize/2 to last centre + binSize/2",
+                }
+            )
         elif "chart DSL fields must be under graphConfig.data" in issue:
             validation_issues.append(
                 {
@@ -6978,6 +6986,14 @@ def local_real_methods_ev_histogram_top_level_stats_fields_call() -> dict[str, A
     graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
     data = graph_config.pop("data")
     graph_config.update(data)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_ev_histogram_padded_range_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["range"] = [240, 460]
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -9296,6 +9312,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_methods_ev_histogram_top_level_stats_fields_call,
         "expectedIssues": [
             "statsChart chart DSL fields must be under graphConfig.data",
+        ],
+    },
+    "real-methods-ev-histogram-padded-range": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_padded_range_call,
+        "expectedIssues": [
+            "statsChart should preserve range [260, 440]",
         ],
     },
     "real-methods-ev-histogram-bad-source-fields": {

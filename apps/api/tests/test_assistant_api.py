@@ -719,6 +719,7 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For statsChart source diagrams" in stats
     assert "inside graphConfig.data, not directly on graphConfig" in stats
     assert "chartType, dataMode, xValues" in stats
+    assert "first xValue - binSize/2" in stats
     assert "For graph3d source solids" not in stats
     assert "For scalar-product source diagrams" not in stats
 

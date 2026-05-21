@@ -413,7 +413,7 @@ Histogram / column graph from raw values:
 :::
 ````
 
-For histograms, `bins` means the exact number of intervals. If `binSize` is supplied instead, it means the exact interval width. The app precomputes the interval counts before handing the chart to Plotly so Plotly does not silently choose a different bin layout.
+For histograms, `bins` means the exact number of intervals. If `binSize` is supplied instead, it means the exact interval width. The app precomputes the interval counts before handing the chart to Plotly so Plotly does not silently choose a different bin layout. For manual-frequency histograms with centred `xValues` and `binSize`, set `range` to the bin-edge span from first `xValue - binSize/2` to last `xValue + binSize/2` unless the source axes show another exact range; do not pad the range for aesthetics.
 
 Manual frequency columns:
 
