@@ -89,6 +89,20 @@ interface BrowserColumnMetric {
   height: number;
 }
 
+interface BrowserTableMetric {
+  view?: PreviewReplayView;
+  caseName: string;
+  rowCount: number;
+  maxColumnCount: number;
+  cellCount: number;
+  visibleCellCount: number;
+  rowCellCounts: number[];
+  width: number;
+  height: number;
+  rawPipeText: boolean;
+  rawLatexText: boolean;
+}
+
 interface BrowserRenderedWarning {
   view?: PreviewReplayView;
   code?: string;
@@ -1254,6 +1268,27 @@ function failColumnMetric(metric: BrowserColumnMetric) {
   return failures;
 }
 
+function failTableMetric(metric: BrowserTableMetric) {
+  const failures: string[] = [];
+  const label = `${metric.view ?? "preview"} ${metric.caseName} table`;
+  if (metric.rowCount < 1) failures.push(`${label} rendered with no rows`);
+  if (metric.maxColumnCount < 1) failures.push(`${label} rendered with no columns`);
+  if (metric.cellCount < 1) failures.push(`${label} rendered with no cells`);
+  if (metric.visibleCellCount < metric.cellCount) {
+    failures.push(`${label} rendered only ${metric.visibleCellCount}/${metric.cellCount} visible cells`);
+  }
+  const nonEmptyRowCounts = metric.rowCellCounts.filter((count) => count > 0);
+  if (new Set(nonEmptyRowCounts).size > 1) {
+    failures.push(`${label} rendered non-rectangular rows: ${metric.rowCellCounts.join(", ")}`);
+  }
+  if (metric.width < 40 || metric.height < 20) {
+    failures.push(`${label} rendered too small at ${metric.width}x${metric.height}`);
+  }
+  if (metric.rawPipeText) failures.push(`${label} still contains raw Markdown pipe-table text`);
+  if (metric.rawLatexText) failures.push(`${label} still contains raw LaTeX delimiters`);
+  return failures;
+}
+
 async function runBrowserReplay(
   cases: AppliedReplayCase[],
   outputDir: string,
@@ -1289,6 +1324,7 @@ async function runBrowserReplay(
       renderedMetrics: BrowserRenderedMetrics;
       diagramMetrics: BrowserDiagramMetric[];
       columnMetrics: BrowserColumnMetric[];
+      tableMetrics: BrowserTableMetric[];
     }> = [];
 
     for (const view of views) {
@@ -1303,7 +1339,7 @@ async function runBrowserReplay(
             const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).filter(
               (frame) => !frame.closest(".a4-measure"),
             );
-            return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
+            return frames.length === 0 || frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
           },
           null,
           { timeout: 20_000 },
@@ -1595,17 +1631,56 @@ async function runBrowserReplay(
             }),
         )
       ).map((metric) => ({ ...metric, view }));
+      const tableMetrics = (
+        await page.evaluate(() =>
+          Array.from(document.querySelectorAll("table.test-table"))
+            .filter((table) => !table.closest(".a4-measure"))
+            .map((table) => {
+              const caseName = table.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
+              const rect = table.getBoundingClientRect();
+              const rows = Array.from(table.querySelectorAll("tr"));
+              const cells = Array.from(table.querySelectorAll("th, td"));
+              const rowCellCounts = rows.map((row) => row.children.length);
+              const visibleCells = cells.filter((cell) => {
+                const cellRect = cell.getBoundingClientRect();
+                const style = window.getComputedStyle(cell);
+                return (
+                  cellRect.width > 4 &&
+                  cellRect.height > 4 &&
+                  style.display !== "none" &&
+                  style.visibility !== "hidden" &&
+                  style.opacity !== "0"
+                );
+              });
+              const text = (table.textContent ?? "").replace(/\s+/g, " ").trim();
+              return {
+                caseName,
+                rowCount: rows.length,
+                maxColumnCount: rowCellCounts.length ? Math.max(...rowCellCounts) : 0,
+                cellCount: cells.length,
+                visibleCellCount: visibleCells.length,
+                rowCellCounts,
+                width: Math.round(rect.width * 10) / 10,
+                height: Math.round(rect.height * 10) / 10,
+                rawPipeText: /\|(?:\s*:?-{2,}:?\s*\|)+/.test(text),
+                rawLatexText: /\$[^$\n]{1,120}\$/.test(text),
+              } satisfies BrowserTableMetric;
+            }),
+        )
+      ).map((metric) => ({ ...metric, view }));
       const renderedWarnings = dedupeWarnings((renderedMetrics.warnings ?? []).map((warning) => ({ ...warning, view })));
       renderedMetrics.warnings = renderedWarnings;
       await fs.writeFile(path.join(viewOutputDir, "rendered-metrics.json"), JSON.stringify(renderedMetrics, null, 2));
       await fs.writeFile(path.join(viewOutputDir, "diagram-metrics.json"), JSON.stringify(diagramMetrics, null, 2));
       await fs.writeFile(path.join(viewOutputDir, "column-metrics.json"), JSON.stringify(columnMetrics, null, 2));
-      viewResults.push({ view, renderedMetrics, diagramMetrics, columnMetrics });
+      await fs.writeFile(path.join(viewOutputDir, "table-metrics.json"), JSON.stringify(tableMetrics, null, 2));
+      viewResults.push({ view, renderedMetrics, diagramMetrics, columnMetrics, tableMetrics });
     }
 
     const allRenderedWarnings = dedupeWarnings(viewResults.flatMap((result) => result.renderedMetrics.warnings ?? []));
     const allDiagramMetrics = viewResults.flatMap((result) => result.diagramMetrics);
     const allColumnMetrics = viewResults.flatMap((result) => result.columnMetrics);
+    const allTableMetrics = viewResults.flatMap((result) => result.tableMetrics);
     await fs.writeFile(
       path.join(outputDir, "rendered-metrics.json"),
       JSON.stringify(
@@ -1623,6 +1698,7 @@ async function runBrowserReplay(
     );
     await fs.writeFile(path.join(outputDir, "diagram-metrics.json"), JSON.stringify(allDiagramMetrics, null, 2));
     await fs.writeFile(path.join(outputDir, "column-metrics.json"), JSON.stringify(allColumnMetrics, null, 2));
+    await fs.writeFile(path.join(outputDir, "table-metrics.json"), JSON.stringify(allTableMetrics, null, 2));
 
     const failures = [
       ...blockingMetricWarnings({ warnings: allRenderedWarnings }).map(
@@ -1630,6 +1706,7 @@ async function runBrowserReplay(
       ),
       ...allDiagramMetrics.flatMap(failDiagramMetric),
       ...allColumnMetrics.flatMap(failColumnMetric),
+      ...allTableMetrics.flatMap(failTableMetric),
       ...consoleErrors.map((error) => `console error: ${error}`),
       ...pageErrors.map((error) => `page error: ${error}`),
     ];
@@ -1657,7 +1734,7 @@ async function runBrowserReplay(
     const viewSummary = viewResults
       .map(
         (result) =>
-          `${result.view}:${cases.length} case(s), ${result.diagramMetrics.length} diagram(s), ${result.columnMetrics.length} column block(s)`,
+          `${result.view}:${cases.length} case(s), ${result.diagramMetrics.length} diagram(s), ${result.columnMetrics.length} column block(s), ${result.tableMetrics.length} table(s)`,
       )
       .join("; ");
     console.log(
