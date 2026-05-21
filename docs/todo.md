@@ -5,6 +5,7 @@
 - Treat the in-app assistant as the primary product direction. The target is Codex-level capability inside Mauth for document work: a teacher should be able to ask the app to create, inspect, edit, validate, repair, file, and print-check assessment documents at least as effectively as the current Codex-assisted workflow in this repo.
 - New workflow decisions should ask: can the in-app assistant do this through structured Mauth tools, rule brains, validators, and reversible document actions without needing hidden UI state or raw JSON?
 - Use the saved `DIAGRAM AUDIT GALLERY` test as the main visual regression document for diagram and chart polish.
+- Add a semantic `graph2d` geometry layer for source-faithful 2D exam diagrams: named points, segments, angles, equal-length ticks, equal-angle arcs, right-angle squares, and dashed/helper styling should be one compact renderer payload rather than many tiny freehand feature modules.
 - Keep improving the Files drawer around normal filename workflows. Current baseline: folders, drag/drop moves onto folders/breadcrumbs/empty panes, Shift/Cmd multi-select, keyboard select/open/delete, versions, restore, and ZIP backup/import.
 - Keep solution authoring tied to paired student response surfaces so toggling solutions does not change pagination.
 
@@ -243,6 +244,7 @@ Status: prototype implemented.
 Follow-ups:
 
 - Move module settings into a right-side inspector panel, similar to Apple-style inspectors. Keep each editor module focused on its main content and immediate editing surface, and put secondary controls such as alignment, visibility, sizing, diagram/chart options, labels, presets, spacing, and advanced metadata in the inspector for the selected module/question/part.
+- Simplify diagram editing around semantic objects and an inspector rather than one expanded card per renderer primitive. For `graph2d`, group rows as points, segments, angles, regions, and decorations, and let the selected object own its settings in the inspector so ordinary diagrams do not become bloated lists of tiny line/label modules.
 - Columns/container module baseline is in place for source layouts where the paper intentionally places ordinary content side by side. Keep hardening it with real source cases: nested drag/drop polish, Mauthdown import/export round-trip when the importer is implemented, print edge cases for dense 3/4-column layouts, and more assistant eval coverage beyond the square-pyramid two-diagram case.
 - Add a separate blank-page structure item instead of allowing duplicate page breaks.
 - Keep browser-testing drag/drop and accidental-click behaviour, especially on narrow screens and touch-like input.

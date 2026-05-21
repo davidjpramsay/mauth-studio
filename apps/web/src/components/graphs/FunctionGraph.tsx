@@ -1,5 +1,9 @@
 import { useEffect, useMemo } from "react";
 import type {
+  Graph2DGeometryAngle,
+  Graph2DGeometryData,
+  Graph2DGeometryPoint,
+  Graph2DGeometrySegment,
   Graph2DPolarGridData,
   GraphConfig,
   GraphFeature,
@@ -1401,6 +1405,297 @@ function createLineSegmentFeature(board: JXG.Board, feature: GraphFeature, color
       onLabelMove,
     );
   }
+}
+
+function graph2DGeometryData(graphConfig: GraphConfig): Graph2DGeometryData | null {
+  const geometry = graphDataRecord(graphConfig).geometry2d;
+  return geometry && typeof geometry === "object" && !Array.isArray(geometry) ? (geometry as Graph2DGeometryData) : null;
+}
+
+function geometryPointMap(geometry: Graph2DGeometryData) {
+  const points = new Map<string, Graph2DGeometryPoint>();
+  (geometry.points ?? []).forEach((point) => {
+    if (!point.id || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    points.set(point.id, point);
+  });
+  return points;
+}
+
+function geometrySegmentMap(geometry: Graph2DGeometryData) {
+  const segments = new Map<string, Graph2DGeometrySegment>();
+  (geometry.segments ?? []).forEach((segment) => {
+    if (!segment.id) return;
+    segments.set(segment.id, segment);
+  });
+  return segments;
+}
+
+function geometryAngleMap(geometry: Graph2DGeometryData) {
+  const angles = new Map<string, Graph2DGeometryAngle>();
+  (geometry.angles ?? []).forEach((angle) => {
+    if (!angle.id || !Array.isArray(angle.points) || angle.points.length !== 3) return;
+    angles.set(angle.id, angle);
+  });
+  return angles;
+}
+
+function geometryPointTuple(point?: Graph2DGeometryPoint): [number, number] | null {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  return [point.x, point.y];
+}
+
+function geometrySegmentEndpoints(
+  segment: Graph2DGeometrySegment | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number]] | null {
+  if (!segment) return null;
+  const start = geometryPointTuple(points.get(segment.from));
+  const end = geometryPointTuple(points.get(segment.to));
+  return start && end ? [start, end] : null;
+}
+
+function geometryAnglePoints(
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number], [number, number]] | null {
+  if (!angle) return null;
+  const first = geometryPointTuple(points.get(angle.points[0]));
+  const vertex = geometryPointTuple(points.get(angle.points[1]));
+  const second = geometryPointTuple(points.get(angle.points[2]));
+  return first && vertex && second ? [first, vertex, second] : null;
+}
+
+function pixelDirection(board: JXG.Board, start: [number, number], end: [number, number]) {
+  const unitX = boardUnit(board, "x");
+  const unitY = boardUnit(board, "y");
+  const dxPx = (end[0] - start[0]) * unitX;
+  const dyPx = -(end[1] - start[1]) * unitY;
+  const length = Math.hypot(dxPx, dyPx);
+  if (!Number.isFinite(length) || length < 1e-6) return null;
+  return { x: dxPx / length, y: dyPx / length };
+}
+
+function createPixelSegment(
+  board: JXG.Board,
+  center: [number, number],
+  firstOffset: [number, number],
+  secondOffset: [number, number],
+  color: string,
+  strokeWidth = 1.6,
+) {
+  board.create(
+    "segment",
+    [
+      offsetUserByPixels(board, center[0], center[1], firstOffset[0], firstOffset[1]),
+      offsetUserByPixels(board, center[0], center[1], secondOffset[0], secondOffset[1]),
+    ],
+    {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>,
+  );
+}
+
+function drawGeometryEqualLengthTicks(
+  board: JXG.Board,
+  segment: Graph2DGeometrySegment | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  tickCount: number,
+  sizePx: number,
+) {
+  const endpoints = geometrySegmentEndpoints(segment, points);
+  if (!endpoints) return;
+  const [start, end] = endpoints;
+  const direction = pixelDirection(board, start, end);
+  if (!direction) return;
+  const normal = { x: -direction.y, y: direction.x };
+  const midpoint: [number, number] = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  const count = Math.max(1, Math.min(4, Math.round(tickCount)));
+  const spacingPx = sizePx * 0.65;
+  for (let index = 0; index < count; index += 1) {
+    const alongPx = (index - (count - 1) / 2) * spacingPx;
+    const center = offsetUserByPixels(board, midpoint[0], midpoint[1], direction.x * alongPx, direction.y * alongPx);
+    createPixelSegment(
+      board,
+      center,
+      [-normal.x * sizePx * 0.5, -normal.y * sizePx * 0.5],
+      [normal.x * sizePx * 0.5, normal.y * sizePx * 0.5],
+      color,
+    );
+  }
+}
+
+function shortestAngleDelta(start: number, end: number) {
+  let delta = end - start;
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  return delta;
+}
+
+function drawGeometryAngleArc(
+  board: JXG.Board,
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  radius: number,
+  arcCount: number,
+) {
+  const anglePoints = geometryAnglePoints(angle, points);
+  if (!anglePoints) return;
+  const [first, vertex, second] = anglePoints;
+  const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
+  const delta = shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0]));
+  const count = Math.max(1, Math.min(4, Math.round(arcCount)));
+  for (let arcIndex = 0; arcIndex < count; arcIndex += 1) {
+    const arcRadius = radius + arcIndex * radius * 0.16;
+    const steps = Math.max(8, Math.ceil(Math.abs(delta) / (Math.PI / 24)));
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let step = 0; step <= steps; step += 1) {
+      const theta = startAngle + (delta * step) / steps;
+      xs.push(vertex[0] + Math.cos(theta) * arcRadius);
+      ys.push(vertex[1] + Math.sin(theta) * arcRadius);
+    }
+    board.create("curve", [xs, ys], {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth: 1.6,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+  }
+}
+
+function unitUserVector(from: [number, number], to: [number, number]): [number, number] | null {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length < 1e-9) return null;
+  return [dx / length, dy / length];
+}
+
+function drawGeometryRightAngleMarker(
+  board: JXG.Board,
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  size: number,
+) {
+  const anglePoints = geometryAnglePoints(angle, points);
+  if (!anglePoints) return;
+  const [first, vertex, second] = anglePoints;
+  const firstUnit = unitUserVector(vertex, first);
+  const secondUnit = unitUserVector(vertex, second);
+  if (!firstUnit || !secondUnit) return;
+  const p1: [number, number] = [vertex[0] + firstUnit[0] * size, vertex[1] + firstUnit[1] * size];
+  const p3: [number, number] = [vertex[0] + secondUnit[0] * size, vertex[1] + secondUnit[1] * size];
+  const p2: [number, number] = [p1[0] + secondUnit[0] * size, p1[1] + secondUnit[1] * size];
+  const attrs = {
+    fixed: true,
+    highlight: false,
+    strokeColor: color,
+    highlightStrokeColor: color,
+    strokeWidth: 1.6,
+    layer: GRAPH_LAYERS.point,
+  } as Record<string, unknown>;
+  board.create("segment", [p1, p2], attrs);
+  board.create("segment", [p2, p3], attrs);
+}
+
+function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solutionColor?: string) {
+  const geometry = graph2DGeometryData(graphConfig);
+  if (!geometry) return;
+  const points = geometryPointMap(geometry);
+  const segments = geometrySegmentMap(geometry);
+  const angles = geometryAngleMap(geometry);
+
+  segments.forEach((segment) => {
+    if (segment.show === false) return;
+    const endpoints = geometrySegmentEndpoints(segment, points);
+    if (!endpoints) return;
+    const [start, end] = endpoints;
+    const color = solutionColor ?? segment.color ?? "#000000";
+    board.create("segment", [start, end], {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth: lineWeight(segment.strokeWidth, 2),
+      dash: lineDash(segment.strokeStyle),
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+    if (segment.label?.trim()) {
+      createLabelText(
+        board,
+        Number.isFinite(segment.labelX) ? (segment.labelX as number) : (start[0] + end[0]) / 2,
+        Number.isFinite(segment.labelY) ? (segment.labelY as number) : (start[1] + end[1]) / 2,
+        segment.label,
+        color,
+      );
+    }
+  });
+
+  (geometry.decorations ?? []).forEach((decoration) => {
+    if (decoration.show === false) return;
+    const color = solutionColor ?? decoration.color ?? "#000000";
+    if (decoration.kind === "equalLength") {
+      const tickCount = decoration.tickCount ?? 1;
+      const sizePx = decoration.size ?? 16;
+      (decoration.segments ?? []).forEach((segmentId) =>
+        drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx),
+      );
+    }
+    if (decoration.kind === "equalAngle") {
+      const arcCount = decoration.arcCount ?? 1;
+      const radius = decoration.radius ?? 0.55;
+      (decoration.angles ?? []).forEach((angleId) => drawGeometryAngleArc(board, angles.get(angleId), points, color, radius, arcCount));
+    }
+    if (decoration.kind === "rightAngle") {
+      drawGeometryRightAngleMarker(board, angles.get(decoration.angle ?? ""), points, color, decoration.size ?? 0.35);
+    }
+  });
+
+  angles.forEach((angle) => {
+    if (angle.show === false || !angle.label?.trim()) return;
+    const anglePoints = geometryAnglePoints(angle, points);
+    if (!anglePoints) return;
+    const [first, vertex, second] = anglePoints;
+    const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
+    const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0])) / 2;
+    const labelRadius = (angle.radius ?? 0.55) * 1.45;
+    createLabelText(
+      board,
+      Number.isFinite(angle.labelX) ? (angle.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius,
+      Number.isFinite(angle.labelY) ? (angle.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
+      angle.label,
+      solutionColor ?? angle.color ?? "#000000",
+    );
+  });
+
+  points.forEach((point) => {
+    if (point.show === false) return;
+    const color = solutionColor ?? point.color ?? "#000000";
+    createFeaturePoint(
+      board,
+      point.x,
+      point.y,
+      {
+        kind: "point",
+        label: point.label ?? point.id,
+        labelMode: point.label || point.id ? "name" : "none",
+        labelX: point.labelX,
+        labelY: point.labelY,
+        size: 0.15,
+      },
+      color,
+    );
+  });
 }
 
 function boundedInterval(feature: GraphFeature, graphConfig: GraphConfig) {
@@ -3213,6 +3508,8 @@ export function FunctionGraph({ graphConfig, solutionColor, solutionFeatureColor
         commitFreeLabelPosition,
       );
     });
+
+    renderGraph2DGeometry(board, graphConfig, solutionColor);
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction) || !graphFunction.showLabel) return;

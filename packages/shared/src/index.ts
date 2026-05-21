@@ -172,7 +172,7 @@ export interface GraphConfig {
     | StatsChartData
     | Graph3DData
     | ImageDiagramData
-    | ({ polarGrid?: Graph2DPolarGridData } & Record<string, unknown>);
+    | ({ geometry2d?: Graph2DGeometryData; polarGrid?: Graph2DPolarGridData } & Record<string, unknown>);
   style?: string;
   options?: Record<string, unknown>;
   expression?: string;
@@ -232,6 +232,62 @@ export interface Graph2DPolarGridData {
   color?: string;
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed";
+}
+
+export interface Graph2DGeometryPoint {
+  id: string;
+  x: number;
+  y: number;
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+  color?: string;
+  show?: boolean;
+}
+
+export interface Graph2DGeometrySegment {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
+  show?: boolean;
+}
+
+export interface Graph2DGeometryAngle {
+  id: string;
+  points: [string, string, string];
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+  radius?: number;
+  color?: string;
+  show?: boolean;
+}
+
+export interface Graph2DGeometryDecoration {
+  kind: "equalLength" | "equalAngle" | "rightAngle";
+  id?: string;
+  segments?: string[];
+  angles?: string[];
+  angle?: string;
+  tickCount?: number;
+  arcCount?: number;
+  radius?: number;
+  size?: number;
+  color?: string;
+  show?: boolean;
+}
+
+export interface Graph2DGeometryData {
+  points?: Graph2DGeometryPoint[];
+  segments?: Graph2DGeometrySegment[];
+  angles?: Graph2DGeometryAngle[];
+  decorations?: Graph2DGeometryDecoration[];
 }
 
 export interface GeometricDiagramObject {

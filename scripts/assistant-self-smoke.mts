@@ -269,6 +269,50 @@ function compositeSectorTriangleGraphConfig(options: { badStyle?: boolean } = {}
   } as unknown as GraphConfig;
 }
 
+function geometry2dDecorationsGraphConfig(): GraphConfig {
+  return {
+    type: "graph2d",
+    xMin: -0.8,
+    xMax: 5,
+    yMin: -0.8,
+    yMax: 3.8,
+    widthPx: 360,
+    heightPx: 280,
+    showAxes: false,
+    showGrid: false,
+    showAxisLabels: false,
+    showAxisNumbers: false,
+    equalScale: true,
+    functions: [],
+    features: [],
+    data: {
+      geometry2d: {
+        points: [
+          { id: "A", x: 0, y: 0, label: "$A$" },
+          { id: "B", x: 4, y: 0, label: "$B$" },
+          { id: "C", x: 4, y: 3, label: "$C$" },
+          { id: "D", x: 0, y: 3, label: "$D$" },
+        ],
+        segments: [
+          { id: "AB", from: "A", to: "B", label: "$4\\text{ cm}$", labelX: 1.8, labelY: -0.35 },
+          { id: "BC", from: "B", to: "C", label: "$3\\text{ cm}$", labelX: 4.18, labelY: 1.35 },
+          { id: "CD", from: "C", to: "D" },
+          { id: "DA", from: "D", to: "A" },
+        ],
+        angles: [
+          { id: "ABC", points: ["A", "B", "C"] },
+          { id: "BCD", points: ["B", "C", "D"] },
+        ],
+        decorations: [
+          { kind: "equalLength", segments: ["AB", "CD"], tickCount: 1 },
+          { kind: "equalAngle", angles: ["ABC", "BCD"], arcCount: 2 },
+          { kind: "rightAngle", angle: "ABC" },
+        ],
+      },
+    },
+  } as unknown as GraphConfig;
+}
+
 function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean; includeAngleMarkers?: boolean } = {}): GraphConfig {
   const includeAllLabels = options.includeAllLabels ?? true;
   const includeAngleMarkers = options.includeAngleMarkers ?? true;
@@ -574,6 +618,55 @@ const scenarios: SmokeScenario[] = [
         ...failIf(!/shared internal boundary as a dashed/.test(validationIssueText), "failure should name the dashed internal boundary"),
         ...failIf(!/decorative region labels/.test(validationIssueText), "failure should name decorative region labels"),
         ...failIf(!/restrained black linework/.test(validationIssueText), "failure should name non-neutral styling"),
+      ];
+    },
+  },
+  {
+    id: "graph2d-geometry-decorations-use-semantic-layer",
+    prompt: "Add a source-faithful rectangle geometry diagram with equal side marks, matching angle arcs, and a right-angle marker.",
+    assistantPlan:
+      "Use native graph2d with data.geometry2d points, segments, angles, and decorations instead of many tiny manual tick/arc line_segment features.",
+    start: () => documentFixture([question("q1", 3, [textBlock("q1-text", "Find the area of the rectangle.")])]),
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 1,
+          marks: 3,
+          questionText: "The rectangle $ABCD$ has $AB=4\\text{ cm}$ and $BC=3\\text{ cm}$. Find its area.",
+          diagram: {
+            graphConfig: geometry2dDecorationsGraphConfig(),
+          },
+          studentSpaceLines: 5,
+        },
+      },
+      { name: "mauth.preview.inspect", arguments: { questionNumber: 1 } },
+    ],
+    evaluate: ({ document, results }) => {
+      const diagram = diagrams(document, 0)[0];
+      const graphConfig = diagram?.kind === "diagram" ? diagram.graphConfig : undefined;
+      const geometry2d = (graphConfig?.data as { geometry2d?: Record<string, unknown> } | undefined)?.geometry2d;
+      const decorations = Array.isArray(geometry2d?.decorations) ? geometry2d.decorations : [];
+      const features = Array.isArray(graphConfig?.features) ? graphConfig.features : [];
+      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string }> }> } };
+      const warnings = inspection.question?.diagrams?.[0]?.warnings ?? [];
+      return [
+        ...failIf(graphConfig?.type !== "graph2d", "geometry source diagram should use graph2d"),
+        ...failIf(!geometry2d, "geometry source diagram should use graphConfig.data.geometry2d"),
+        ...failIf(
+          !decorations.some((entry) => (entry as Record<string, unknown>).kind === "equalLength"),
+          "equal side marks should be semantic",
+        ),
+        ...failIf(
+          !decorations.some((entry) => (entry as Record<string, unknown>).kind === "equalAngle"),
+          "equal angle arcs should be semantic",
+        ),
+        ...failIf(
+          !decorations.some((entry) => (entry as Record<string, unknown>).kind === "rightAngle"),
+          "right angle marker should be semantic",
+        ),
+        ...failIf(features.length > 0, "semantic geometry diagram should not need low-level feature ticks/arcs"),
+        ...failIf(warnings.length > 0, `semantic geometry diagram should inspect cleanly; got ${warnings.map((w) => w.code).join(", ")}`),
       ];
     },
   },
