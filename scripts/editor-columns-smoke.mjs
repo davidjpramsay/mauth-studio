@@ -216,10 +216,23 @@ async function main() {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
     const panelElement = await page.getByText("Part columns", { exact: false }).evaluateHandle((element) => element.closest("section"));
+    const panelText = await panelElement.asElement().textContent();
+    assert(!/\bLayout\b/.test(panelText ?? ""), "columns panel should not render the layout selector inline");
+
+    await page.setViewportSize({ width: 1900, height: VIEWPORT.height });
+    await page.getByText("Part columns", { exact: false }).click();
+    const inspector = page.locator("aside").filter({ hasText: "Inspector" }).first();
+    await inspector.getByText("Part columns 1").waitFor();
+    const layoutSelect = inspector.locator("select[aria-label='Part columns 1 layout']");
+    await layoutSelect.waitFor();
+    assert.equal(await page.locator("select[aria-label$='layout']").count(), 1, "layout selector should only appear in inspector");
+    await layoutSelect.selectOption("3");
+    await inspector.getByText("3 columns, 4 modules").waitFor();
+
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });
     console.log(
-      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Screenshot: ${screenshotPath}`,
+      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3. Screenshot: ${screenshotPath}`,
     );
   } catch (error) {
     const bodyText = (

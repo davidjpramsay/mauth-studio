@@ -5329,6 +5329,13 @@ const COLUMN_COUNT_OPTIONS: Array<{ value: ColumnCount; label: string }> = [
   { value: 4, label: "4 columns" },
 ];
 
+function columnsColumnCountPatch(block: EditorColumnsBlock, value: unknown): Partial<EditorColumnsBlock> {
+  const normalized = normalizeColumnsBlock(block);
+  const columnCount = normalizeColumnCount(value);
+  const columns = Array.from({ length: columnCount }, (_, index) => normalized.columns[index] ?? [textBlock()]);
+  return { columnCount, columns };
+}
+
 interface ColumnsBlockEditorProps {
   label: string;
   title?: ReactNode;
@@ -5356,11 +5363,6 @@ function ColumnsBlockEditor({
 }: ColumnsBlockEditorProps) {
   const normalized = normalizeColumnsBlock(block);
   const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
-  const updateColumnCount = (value: unknown) => {
-    const columnCount = normalizeColumnCount(value);
-    const columns = Array.from({ length: columnCount }, (_, index) => normalized.columns[index] ?? [textBlock()]);
-    updateColumns(columns, columnCount);
-  };
   const addColumnBlock = (columnIndex: number, kind: ColumnsChildBlockKind) => {
     const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, contentBlockForKind(kind)] : column));
     updateColumns(columns);
@@ -5483,25 +5485,7 @@ function ColumnsBlockEditor({
     <CollapsiblePanel
       title={title ?? <InlineSummaryTitle label={label} summary={columnsBlockSummary(block)} />}
       leading={dragHandle}
-      actions={
-        <>
-          <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-            Layout
-            <select
-              value={normalized.columnCount}
-              onChange={(event) => updateColumnCount(event.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              {COLUMN_COUNT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
-        </>
-      }
+      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
       className={cn(muted && "bg-muted/25")}
       bodyClassName="space-y-3"
       active={active}
@@ -5529,6 +5513,51 @@ function ColumnsBlockEditor({
         ))}
       </div>
     </CollapsiblePanel>
+  );
+}
+
+interface SelectionInspectorProps {
+  selectedBlock: SelectedEditorBlock | null;
+  onColumnCountChange: (selection: SelectedEditorBlock, value: unknown) => void;
+}
+
+function SelectionInspector({ selectedBlock, onColumnCountChange }: SelectionInspectorProps) {
+  if (!selectedBlock) return null;
+
+  const selectedColumnsBlock = selectedBlock.block.kind === "columns" ? normalizeColumnsBlock(selectedBlock.block) : null;
+
+  return (
+    <aside className="w-full min-w-0 max-w-3xl justify-self-center 2xl:max-w-none 2xl:justify-self-stretch">
+      <div className="overflow-hidden rounded-lg border bg-card shadow-panel 2xl:sticky 2xl:top-0">
+        <div className="border-b p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
+          <div className="mt-1 truncate text-sm font-semibold">{selectedBlock.label}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{selectedBlock.summary}</div>
+        </div>
+
+        {selectedColumnsBlock ? (
+          <div className="space-y-3 p-3">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Layout
+              <select
+                value={selectedColumnsBlock.columnCount}
+                aria-label={`${selectedBlock.label} layout`}
+                onChange={(event) => onColumnCountChange(selectedBlock, event.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground"
+              >
+                {COLUMN_COUNT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : (
+          <div className="p-3 text-sm text-muted-foreground">No settings</div>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -6977,6 +7006,79 @@ function tocBlockSummary(block: EditorContentBlock) {
   return "";
 }
 
+type SelectedEditorBlockScope =
+  | { kind: "question"; questionId: string }
+  | { kind: "part"; questionId: string; partId: string }
+  | { kind: "subpart"; questionId: string; partId: string; subpartId: string };
+
+interface SelectedEditorBlock {
+  scope: SelectedEditorBlockScope;
+  block: EditorContentBlock;
+  label: string;
+  summary: string;
+}
+
+function lowerFirst(value: string) {
+  return value ? `${value[0].toLowerCase()}${value.slice(1)}` : value;
+}
+
+function selectedEditorBlockFromBlocks(
+  contentBlocks: EditorContentBlock[],
+  blockId: string,
+  scope: SelectedEditorBlockScope,
+  labelPrefix = "",
+): SelectedEditorBlock | null {
+  const blocks = contentBlocks.filter((current) => current.kind !== "pageBreak");
+  const blockIndex = blocks.findIndex((current) => current.id === blockId);
+  const block = blockIndex >= 0 ? blocks[blockIndex] : null;
+  if (!block) return null;
+
+  const blockLabel = tocBlockLabel(block, blockIndex);
+  return {
+    scope,
+    block,
+    label: labelPrefix ? `${labelPrefix} ${lowerFirst(blockLabel)}` : blockLabel,
+    summary: tocBlockSummary(block),
+  };
+}
+
+function selectedEditorBlockFromAnchor(questions: QuestionBlock[], anchor: string): SelectedEditorBlock | null {
+  const parsed = parseScrollAnchor(anchor);
+  if (!parsed.questionId || !parsed.blockId) return null;
+
+  const question = questions.find((current) => current.id === parsed.questionId);
+  if (!question) return null;
+
+  if (parsed.kind === "questionBlock") {
+    return selectedEditorBlockFromBlocks(question.contentBlocks, parsed.blockId, { kind: "question", questionId: parsed.questionId });
+  }
+
+  if (parsed.kind === "partBlock" && parsed.partId) {
+    const part = question.parts.find((current) => current.id === parsed.partId);
+    if (!part) return null;
+    return selectedEditorBlockFromBlocks(
+      part.contentBlocks,
+      parsed.blockId,
+      { kind: "part", questionId: parsed.questionId, partId: parsed.partId },
+      "Part",
+    );
+  }
+
+  if (parsed.kind === "subpartBlock" && parsed.partId && parsed.subpartId) {
+    const part = question.parts.find((current) => current.id === parsed.partId);
+    const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+    if (!subpart) return null;
+    return selectedEditorBlockFromBlocks(
+      subpart.contentBlocks,
+      parsed.blockId,
+      { kind: "subpart", questionId: parsed.questionId, partId: parsed.partId, subpartId: parsed.subpartId },
+      "Subpart",
+    );
+  }
+
+  return null;
+}
+
 function tocBlockKind(block: EditorContentBlock): TocItemKind {
   if (block.kind === "choices") return "choices";
   if (block.kind === "table") return "table";
@@ -8157,6 +8259,7 @@ export default function App() {
   const activePageBreakQuestionId = pageBreakQuestionIdFromScrollAnchor(activeTocItemId);
   const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
   const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
+  const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
@@ -9514,6 +9617,23 @@ export default function App() {
       blockId,
       patch: patch as Record<string, unknown>,
     });
+  }
+
+  function updateSelectedColumnsColumnCount(selection: SelectedEditorBlock, value: unknown) {
+    if (selection.block.kind !== "columns") return;
+
+    const patch = columnsColumnCountPatch(selection.block, value) as Partial<EditorContentBlock>;
+    if (selection.scope.kind === "question") {
+      updateContentBlock(selection.scope.questionId, selection.block.id, patch);
+      return;
+    }
+
+    if (selection.scope.kind === "part") {
+      updatePartContentBlock(selection.scope.questionId, selection.scope.partId, selection.block.id, patch);
+      return;
+    }
+
+    updateSubpartContentBlock(selection.scope.questionId, selection.scope.partId, selection.scope.subpartId, selection.block.id, patch);
   }
 
   function updatePreviewGraphConfig(change: PreviewGraphConfigChange) {
@@ -11059,11 +11179,14 @@ export default function App() {
     const blockAnchor = questionBlockScrollAnchor(question.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = isActiveEditorAnchor(blockAnchor);
+    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
+      onPointerDownCapture: activateBlockAnchor,
+      onFocusCapture: activateBlockAnchor,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, blockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, blockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, blockTarget),
@@ -11205,11 +11328,14 @@ export default function App() {
     const blockAnchor = partBlockScrollAnchor(question.id, part.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = isActiveEditorAnchor(blockAnchor);
+    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
+      onPointerDownCapture: activateBlockAnchor,
+      onFocusCapture: activateBlockAnchor,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, partBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, partBlockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, partBlockTarget),
@@ -11354,11 +11480,14 @@ export default function App() {
     const blockAnchor = subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = isActiveEditorAnchor(blockAnchor);
+    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
       className: wrapperClassName,
+      onPointerDownCapture: activateBlockAnchor,
+      onFocusCapture: activateBlockAnchor,
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, subpartBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, subpartBlockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, subpartBlockTarget),
@@ -12027,217 +12156,224 @@ export default function App() {
                   paneMode === "split" && "split-pane-scroll",
                 )}
               >
-                <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-4">
-                  {editingFrontMatter ? (
-                    <div
-                      className={cn(
-                        "rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                        isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
-                      )}
-                      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
-                    >
-                      <div className="flex flex-col gap-3">
-                        <FrontMatterEditor
-                          frontMatter={frontMatter}
-                          logos={logos}
-                          openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                          questionCount={questions.length}
-                          totalMarks={totalMarks}
-                          onChange={updateFrontMatter}
-                          onAddLogo={addLogo}
-                          onUpdateLogo={updateLogo}
-                          onRemoveLogo={removeLogo}
-                        />
-                        <TestFormatEditor
-                          formattingConfig={formattingConfig}
-                          openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                          onFormattingChange={updateFormattingConfig}
-                          onPageChange={updatePageFormat}
-                          onReset={resetTestFormat}
-                        />
+                <div className="mx-auto grid w-full min-w-0 max-w-[calc(48rem+18rem+1rem)] gap-4 2xl:grid-cols-[minmax(0,48rem)_18rem] 2xl:items-start">
+                  <div className="flex w-full min-w-0 max-w-3xl flex-col gap-4 justify-self-center 2xl:justify-self-stretch">
+                    {editingFrontMatter ? (
+                      <div
+                        className={cn(
+                          "rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                          isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
+                        )}
+                        data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+                      >
+                        <div className="flex flex-col gap-3">
+                          <FrontMatterEditor
+                            frontMatter={frontMatter}
+                            logos={logos}
+                            openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                            questionCount={questions.length}
+                            totalMarks={totalMarks}
+                            onChange={updateFrontMatter}
+                            onAddLogo={addLogo}
+                            onUpdateLogo={updateLogo}
+                            onRemoveLogo={removeLogo}
+                          />
+                          <TestFormatEditor
+                            formattingConfig={formattingConfig}
+                            openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                            onFormattingChange={updateFormattingConfig}
+                            onPageChange={updatePageFormat}
+                            onReset={resetTestFormat}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
+                    ) : null}
 
-                  {!editingFrontMatter && editingPageBreak && activePageBreakQuestion ? (
-                    <div className="flex flex-col gap-4">
-                      <div data-scroll-anchor={pageBreakScrollAnchor(activePageBreakQuestion.id)}>
-                        <PageBreakStructurePanel
-                          label={`Page break after Question ${questionDisplayNumber(
-                            frontMatter,
-                            Math.max(
-                              0,
-                              questions.findIndex((question) => question.id === activePageBreakQuestion.id),
-                            ),
-                          )}`}
-                          active={isActiveEditorAnchor(pageBreakScrollAnchor(activePageBreakQuestion.id))}
-                          onRemove={() => removePageBreakAfterQuestion(activePageBreakQuestion.id)}
-                        />
+                    {!editingFrontMatter && editingPageBreak && activePageBreakQuestion ? (
+                      <div className="flex flex-col gap-4">
+                        <div data-scroll-anchor={pageBreakScrollAnchor(activePageBreakQuestion.id)}>
+                          <PageBreakStructurePanel
+                            label={`Page break after Question ${questionDisplayNumber(
+                              frontMatter,
+                              Math.max(
+                                0,
+                                questions.findIndex((question) => question.id === activePageBreakQuestion.id),
+                              ),
+                            )}`}
+                            active={isActiveEditorAnchor(pageBreakScrollAnchor(activePageBreakQuestion.id))}
+                            onRemove={() => removePageBreakAfterQuestion(activePageBreakQuestion.id)}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
+                    ) : null}
 
-                  {!editingFrontMatter && !editingPageBreak ? (
-                    <div className="flex flex-col gap-4">
-                      {questions.map((question, index) => {
-                        if (question.id !== activeQuestion?.id) return null;
+                    {!editingFrontMatter && !editingPageBreak ? (
+                      <div className="flex flex-col gap-4">
+                        {questions.map((question, index) => {
+                          if (question.id !== activeQuestion?.id) return null;
 
-                        const hasParts = question.parts.length > 0;
-                        const questionItems = orderedQuestionItems(question);
-                        const questionAnchor = questionScrollAnchor(question.id);
-                        const questionActive = isActiveEditorAnchor(questionAnchor);
-                        const questionUsesSolutionSpace = !hasParts && safeMarkValue(question.marks) > 0;
-                        const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
-                        const questionSolutionSlotAction = {
-                          label: "Solution slot",
-                          tooltip: "Add paired answer space and solution text",
-                          icon: <FileText className="size-4" aria-hidden="true" />,
-                          onClick: () => addQuestionSolutionSlot(question.id),
-                        };
+                          const hasParts = question.parts.length > 0;
+                          const questionItems = orderedQuestionItems(question);
+                          const questionAnchor = questionScrollAnchor(question.id);
+                          const questionActive = isActiveEditorAnchor(questionAnchor);
+                          const questionUsesSolutionSpace = !hasParts && safeMarkValue(question.marks) > 0;
+                          const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
+                          const questionSolutionSlotAction = {
+                            label: "Solution slot",
+                            tooltip: "Add paired answer space and solution text",
+                            icon: <FileText className="size-4" aria-hidden="true" />,
+                            onClick: () => addQuestionSolutionSlot(question.id),
+                          };
 
-                        return (
-                          <div key={question.id} className="contents">
-                            <article
-                              className={cn(
-                                "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                                questionActive && EDITOR_ACTIVE_PANEL_CLASS,
-                              )}
-                              data-scroll-anchor={questionAnchor}
-                            >
-                              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                    aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      jumpPreviewToQuestion(question.id);
-                                    }}
-                                    className={cn(
-                                      "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
-                                      questionActive &&
-                                        "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                          return (
+                            <div key={question.id} className="contents">
+                              <article
+                                className={cn(
+                                  "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                                  questionActive && EDITOR_ACTIVE_PANEL_CLASS,
+                                )}
+                                data-scroll-anchor={questionAnchor}
+                              >
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                      aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        jumpPreviewToQuestion(question.id);
+                                      }}
+                                      className={cn(
+                                        "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
+                                        questionActive &&
+                                          "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                                      )}
+                                    >
+                                      Question {questionDisplayNumber(frontMatter, index)}
+                                    </Button>
+                                    {hasParts ? (
+                                      <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
+                                        {markLabel(questionMarks(question))}
+                                      </Badge>
+                                    ) : (
+                                      <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+                                        <span className="font-medium text-muted-foreground">Marks</span>
+                                        <input
+                                          aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
+                                          type="number"
+                                          min={0}
+                                          value={question.marks}
+                                          onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
+                                          className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
+                                        />
+                                      </label>
                                     )}
-                                  >
-                                    Question {questionDisplayNumber(frontMatter, index)}
-                                  </Button>
-                                  {hasParts ? (
-                                    <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                                      {markLabel(questionMarks(question))}
-                                    </Badge>
-                                  ) : (
-                                    <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                      <span className="font-medium text-muted-foreground">Marks</span>
-                                      <input
-                                        aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
-                                        type="number"
-                                        min={0}
-                                        value={question.marks}
-                                        onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                                        className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
-                                      />
-                                    </label>
-                                  )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      title={`Remove Question ${index + 1}`}
+                                      aria-label={`Remove Question ${index + 1}`}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        removeQuestion(question.id);
+                                      }}
+                                      className="size-9 shrink-0"
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  </div>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    title={`Remove Question ${index + 1}`}
-                                    aria-label={`Remove Question ${index + 1}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      removeQuestion(question.id);
-                                    }}
-                                    className="size-9 shrink-0"
-                                  >
-                                    <Trash2 />
-                                  </Button>
+
+                                {questionItems.length
+                                  ? containerDropZone(
+                                      { kind: "question", questionId: question.id },
+                                      "start",
+                                      Boolean(draggedSubsection || draggedEditorPageBreak),
+                                    )
+                                  : null}
+                                <div className="flex flex-col gap-3">
+                                  {questionItems.map((item, itemIndex) => {
+                                    const beforeItem: ContainerOrderItem =
+                                      item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
+                                    const beforeDropZone = itemDropZone(
+                                      { kind: "question", questionId: question.id },
+                                      beforeItem,
+                                      Boolean(draggedSubsection || draggedEditorPageBreak),
+                                    );
+
+                                    return item.kind === "block" ? (
+                                      <Fragment key={item.id}>
+                                        {beforeDropZone}
+                                        {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)}
+                                      </Fragment>
+                                    ) : (
+                                      <Fragment key={item.id}>
+                                        {beforeDropZone}
+                                        {item.part.pageBreakBefore
+                                          ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
+                                          : null}
+                                        {renderPartPanel(question, item.part)}
+                                      </Fragment>
+                                    );
+                                  })}
                                 </div>
-                              </div>
-
-                              {questionItems.length
-                                ? containerDropZone(
-                                    { kind: "question", questionId: question.id },
-                                    "start",
-                                    Boolean(draggedSubsection || draggedEditorPageBreak),
-                                  )
-                                : null}
-                              <div className="flex flex-col gap-3">
-                                {questionItems.map((item, itemIndex) => {
-                                  const beforeItem: ContainerOrderItem =
-                                    item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
-                                  const beforeDropZone = itemDropZone(
-                                    { kind: "question", questionId: question.id },
-                                    beforeItem,
-                                    Boolean(draggedSubsection || draggedEditorPageBreak),
-                                  );
-
-                                  return item.kind === "block" ? (
-                                    <Fragment key={item.id}>
-                                      {beforeDropZone}
-                                      {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)}
-                                    </Fragment>
-                                  ) : (
-                                    <Fragment key={item.id}>
-                                      {beforeDropZone}
-                                      {item.part.pageBreakBefore
-                                        ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
-                                        : null}
-                                      {renderPartPanel(question, item.part)}
-                                    </Fragment>
-                                  );
-                                })}
-                              </div>
-                              {containerDropZone(
-                                { kind: "question", questionId: question.id },
-                                "end",
-                                Boolean(draggedSubsection || draggedEditorPageBreak),
-                              )}
-                              <ContentInsertionActions
-                                buttonLabel="Add"
-                                centered
-                                className="mt-4 pt-3"
-                                onAddText={() => addQuestionBlock(question.id, "text")}
-                                onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                onAddTable={() => addQuestionBlock(question.id, "table")}
-                                onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                                onAddColumns={() => addQuestionBlock(question.id, "columns")}
-                                onAddSpace={() =>
-                                  questionUsesSolutionSpace ? addQuestionSolutionSlot(question.id) : addQuestionBlock(question.id, "space")
-                                }
-                                spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
-                                spaceActionTooltip={
-                                  questionUsesSolutionSpace
-                                    ? "Add the default paired student answer space and solution block for this marked question"
-                                    : undefined
-                                }
-                                extraActions={[
-                                  ...(questionUsesSolutionSpace ? [] : [questionSolutionSlotAction]),
-                                  {
-                                    label: "Part",
-                                    tooltip: "Add a lettered question part, such as (a), (b), (c)",
-                                    icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                    onClick: () => addPart(question.id),
-                                  },
-                                  {
-                                    label: "Page break",
-                                    tooltip: nextPartPageBreakTarget
-                                      ? "Add a page-break row before an existing part"
-                                      : "Add a part first, then insert a page-break row before it",
-                                    icon: <FileText className="size-4" aria-hidden="true" />,
-                                    disabled: !nextPartPageBreakTarget,
-                                    onClick: () => addPartPageBreak(question.id),
-                                  },
-                                ]}
-                              />
-                            </article>
-                          </div>
-                        );
-                      })}
-                    </div>
+                                {containerDropZone(
+                                  { kind: "question", questionId: question.id },
+                                  "end",
+                                  Boolean(draggedSubsection || draggedEditorPageBreak),
+                                )}
+                                <ContentInsertionActions
+                                  buttonLabel="Add"
+                                  centered
+                                  className="mt-4 pt-3"
+                                  onAddText={() => addQuestionBlock(question.id, "text")}
+                                  onAddChoices={() => addQuestionBlock(question.id, "choices")}
+                                  onAddTable={() => addQuestionBlock(question.id, "table")}
+                                  onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                  onAddColumns={() => addQuestionBlock(question.id, "columns")}
+                                  onAddSpace={() =>
+                                    questionUsesSolutionSpace
+                                      ? addQuestionSolutionSlot(question.id)
+                                      : addQuestionBlock(question.id, "space")
+                                  }
+                                  spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
+                                  spaceActionTooltip={
+                                    questionUsesSolutionSpace
+                                      ? "Add the default paired student answer space and solution block for this marked question"
+                                      : undefined
+                                  }
+                                  extraActions={[
+                                    ...(questionUsesSolutionSpace ? [] : [questionSolutionSlotAction]),
+                                    {
+                                      label: "Part",
+                                      tooltip: "Add a lettered question part, such as (a), (b), (c)",
+                                      icon: <GitBranch className="size-4" aria-hidden="true" />,
+                                      onClick: () => addPart(question.id),
+                                    },
+                                    {
+                                      label: "Page break",
+                                      tooltip: nextPartPageBreakTarget
+                                        ? "Add a page-break row before an existing part"
+                                        : "Add a part first, then insert a page-break row before it",
+                                      icon: <FileText className="size-4" aria-hidden="true" />,
+                                      disabled: !nextPartPageBreakTarget,
+                                      onClick: () => addPartPageBreak(question.id),
+                                    },
+                                  ]}
+                                />
+                              </article>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  {!editingFrontMatter && !editingPageBreak ? (
+                    <SelectionInspector selectedBlock={selectedEditorBlock} onColumnCountChange={updateSelectedColumnsColumnCount} />
                   ) : null}
                 </div>
               </section>
