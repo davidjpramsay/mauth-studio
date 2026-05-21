@@ -4021,6 +4021,7 @@ Source-conversion tool contract:
 - For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 {artifact_surface_guidance}
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
+- For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
 
 {native_diagram_rules}
 
@@ -4129,6 +4130,7 @@ Tool-call contract:
 - In mauth_convert_source_question, the schema uses tables and, when table answer-surface fields are exposed, solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
 - Keep currency symbols outside dollar-delimited maths. Write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$.
+- For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.

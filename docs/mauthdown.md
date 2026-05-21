@@ -121,6 +121,8 @@ For solution copies, add `[[marks:n]]` at the end of a mark-worthy text or equat
 
 Keep currency symbols outside dollar-delimited maths in question and solution text. Write `$51.02$ dollars`, `\$51.02`, or plain `51.02 dollars`; do not write `$\$51.02$`.
 
+For expected-value, fairness, long-run-profit, or advantage questions, the worked solution should end with a direct conclusion that answers the named party or claim in the prompt. Do not stop at the numeric expected value when the question asks whether a game is profitable, fair, worth doing, or beneficial.
+
 Ordinary question modules are shared automatically between the student copy and the solution copy: text, choices, given-data tables, and given diagrams remain visible in both. Worked-solution text and diagrams are solution modules. Student answer `:::space` blocks are replaced by adjacent solution modules when the solution-visibility toggle is on. The preview/print layout treats each adjacent answer-space/solution pair as one replacement slot and reserves the larger of the two heights, keeping student and solution pagination matched. If the solution is taller than the student space, the screen preview shows a non-printing warning so the author can shorten the solution or increase the student space deliberately.
 
 Blank answer/completion tables are different from given-data tables. A table with empty cells for students to complete is a response surface, so it may be marked student-only and paired with an adjacent solution module. A table that gives values or information for the question should stay shared.

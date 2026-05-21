@@ -4047,12 +4047,26 @@ def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
         for term in ("not fixed", "not independent", "not a fixed number", "not independent")
     ):
         issues.append("dice-game solution should explain why the game is not binomial")
-    charity_profit_wording = "charity" in solution_joined and (
-        "profitable" in solution_joined
-        or "make a profit" in solution_joined
-        or "makes a profit" in solution_joined
-        or "making a profit" in solution_joined
-        or "expected profit for the charity" in solution_joined
+    charity_profit_terms = (
+        "profitable",
+        "make a profit",
+        "makes a profit",
+        "making a profit",
+        "expected profit for the charity",
+        "expected profit to the charity",
+        "charity's expected profit",
+        "charity would profit",
+        "charity will profit",
+        "charity gains",
+        "charity would gain",
+        "charity earns",
+        "charity would earn",
+        "charity makes money",
+        "charity would make money",
+        "positive expected profit",
+    )
+    charity_profit_wording = "charity" in solution_joined and any(
+        term in solution_joined for term in charity_profit_terms
     )
     if not charity_profit_wording:
         issues.append("dice-game solution should state the game is profitable for the charity")
@@ -6802,6 +6816,18 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     ),
                 }
             )
+        elif "profitable for the charity" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionText",
+                    "message": issue,
+                    "expected": (
+                        "an explicit final conclusion that names the party in the prompt, e.g. the player has "
+                        "negative expected profit and the charity has positive expected profit / the game is "
+                        "profitable for the charity"
+                    ),
+                }
+            )
         elif "chart DSL fields must be under graphConfig.data" in issue:
             validation_issues.append(
                 {
@@ -8161,6 +8187,25 @@ def local_real_methods_dice_game_make_profit_wording_call() -> dict[str, Any]:
         "Yes. The expected profit for the player is $-0.094$ dollars per game, so the expected profit "
         "for the charity is $0.094$ dollars per game. In the long run, the charity would be expected "
         "to make a profit. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_charity_gain_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["parts"][4]["solutionText"] = (
+        "Yes. Since the player has expected profit $-0.094$ dollars per game, the charity would gain "
+        "$0.094$ dollars per game on average. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_missing_charity_profit_conclusion_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["parts"][4]["solutionText"] = (
+        "Since $E(Y)=-0.094$, the expected value for the player is negative. [[marks:2]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -10785,6 +10830,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-methods-dice-game-live-make-profit-wording": {
         "assert": assert_real_methods_dice_game_call,
         "call": local_real_methods_dice_game_make_profit_wording_call,
+    },
+    "real-methods-dice-game-live-charity-gain-wording": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_charity_gain_wording_call,
+    },
+    "real-methods-dice-game-live-missing-charity-profit-conclusion": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_missing_charity_profit_conclusion_call,
+        "expectedIssues": ["dice-game solution should state the game is profitable for the charity"],
     },
     "real-specialist-lighthouse": {
         "assert": assert_real_lighthouse_question_call,

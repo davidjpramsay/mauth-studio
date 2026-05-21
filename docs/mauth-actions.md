@@ -65,6 +65,8 @@ The visible editor surface for these document settings lives under `T` in the `T
 
   In text and solution fields, keep currency symbols outside dollar-delimited maths: write `$51.02$ dollars`, `\$51.02`, or plain `51.02 dollars`, not `$\$51.02$`.
 
+  For expected-value, fairness, long-run-profit, and advantage questions, finish `solutionText` with a direct conclusion that names the party or claim from the prompt. A computed expected value alone is not enough when the prompt asks whether someone profits, benefits, or should proceed.
+
 - `mauth.preview.inspect`: return focused context for the current/selected or requested question, including module anchors, selected block, diagram types/alignment, per-diagram warning arrays, answer-space/solution replacement scopes, hidden `[[marks:n]]` totals, visible mark-note warnings, blank part warnings, left/right diagram beside-content hints, conservative diagram semantic warnings, and browser-rendered page/anchor metrics when the preview pane is mounted.
 - `mauth.validation.run`: run document validation, solution validation, or both without changing the document.
 - `mauth.actions.preview`: dry-run one or more document actions and return the proposed document plus preview summary.
