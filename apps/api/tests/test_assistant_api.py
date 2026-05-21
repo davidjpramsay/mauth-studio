@@ -2117,6 +2117,38 @@ def test_source_conversion_diagram_answer_surface_schema_keeps_solution_diagrams
     assert "completed solutionDiagram" in instructions
 
 
+def test_source_conversion_brain_context_is_profile_compacted():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content=(
+                "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+                "Preserve the statistics graphs/table, structured parts, marks, and include the worked solutions."
+            ),
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="stats-source.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": []},
+        messages,
+        attachments=attachments,
+    )
+
+    assert len(instructions) < 20_000
+    assert "statsChart" in instructions
+    assert "manualFrequencies" in instructions
+    assert "hidden [[marks:n]]" in instructions
+    assert "For graph3d diagrams" not in instructions
+
+
 def test_deterministic_brain_selection_defers_general_chat_to_planner():
     ids = openai_assistant.deterministic_brain_ids_for_request(
         [openai_assistant.AssistantChatMessage(role="user", content="What can this assistant do?")],

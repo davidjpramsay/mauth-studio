@@ -772,6 +772,108 @@ def compact_brain_config(
     return compact
 
 
+def source_conversion_brain_compact_config(
+    data: dict[str, Any],
+    file_name: str,
+    text: str,
+    *,
+    source_conversion_diagram_types: list[str] | None = None,
+) -> dict[str, Any]:
+    if file_name == "diagram.json" and source_conversion_diagram_types:
+        renderer_keywords = source_conversion_diagram_brain_keywords(source_conversion_diagram_types)
+        other_renderer_keywords = tuple(
+            keyword
+            for keyword in source_conversion_diagram_brain_keywords(SUPPORTED_DIAGRAM_TYPES)
+            if keyword not in renderer_keywords
+        )
+        renderer_count = len(ordered_supported_diagram_types(source_conversion_diagram_types))
+        return compact_brain_config(
+            data,
+            file_name,
+            text,
+            keyword_override=renderer_keywords,
+            other_keyword_override=other_renderer_keywords,
+            rule_max_items=10 if renderer_count > 1 else 6,
+            rule_keep_first=0,
+            check_max_items=3,
+        )
+
+    if file_name == "question.json":
+        return compact_brain_config(
+            data,
+            file_name,
+            text,
+            keyword_override=(
+                "source",
+                "attachment",
+                "screenshot",
+                "pdf",
+                "word",
+                "part",
+                "subpart",
+                "table",
+                "answer surface",
+                "latex",
+                "currency",
+                "inline",
+                "line break",
+            ),
+            rule_max_items=8,
+            rule_keep_first=1,
+            check_max_items=4,
+        )
+
+    if file_name == "solutions.json":
+        return compact_brain_config(
+            data,
+            file_name,
+            text,
+            keyword_override=(
+                "marking key",
+                "official",
+                "source",
+                "hidden",
+                "visible mark",
+                "currency",
+                "answer surface",
+                "solutiondiagram",
+                "solutiontable",
+                "given",
+                "numeric",
+                "preserve final",
+            ),
+            rule_max_items=8,
+            rule_keep_first=1,
+            check_max_items=4,
+        )
+
+    if file_name == "index.json":
+        compact = compact_brain_config(
+            data,
+            file_name,
+            text,
+            keyword_override=(
+                "source",
+                "question",
+                "solution",
+                "diagram",
+                "table",
+                "validation",
+                "tool",
+                "schema",
+                "marks",
+            ),
+            rule_max_items=6,
+            rule_keep_first=1,
+            check_max_items=3,
+        )
+        if isinstance(compact.get("compositionRules"), list):
+            compact["compositionRules"] = compact["compositionRules"][:5]
+        return compact
+
+    return compact_brain_config(data, file_name, text, rule_max_items=8, rule_keep_first=1, check_max_items=4)
+
+
 def request_text(
     messages: list[AssistantChatMessage] | None = None,
     tool_outputs: list[AssistantToolOutput] | None = None,
@@ -952,6 +1054,7 @@ def assistant_brain_context(
     brain_files: list[str] | None = None,
     attachments: list[AssistantAttachment] | None = None,
     source_conversion_diagram_types: list[str] | None = None,
+    source_conversion_profile: bool = False,
 ) -> str:
     limit = assistant_brain_context_limit()
     if limit <= 0:
@@ -965,24 +1068,13 @@ def assistant_brain_context(
         path = brain_dir / file_name
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            if file_name == "diagram.json" and source_conversion_diagram_types:
-                renderer_keywords = source_conversion_diagram_brain_keywords(source_conversion_diagram_types)
-                other_renderer_keywords = tuple(
-                    keyword
-                    for keyword in source_conversion_diagram_brain_keywords(SUPPORTED_DIAGRAM_TYPES)
-                    if keyword not in renderer_keywords
-                )
-                renderer_count = len(ordered_supported_diagram_types(source_conversion_diagram_types))
+            if source_conversion_profile:
                 brains.append(
-                    compact_brain_config(
+                    source_conversion_brain_compact_config(
                         data,
                         file_name,
                         text,
-                        keyword_override=renderer_keywords,
-                        other_keyword_override=other_renderer_keywords,
-                        rule_max_items=14 if renderer_count > 1 else 10,
-                        rule_keep_first=0,
-                        check_max_items=5,
+                        source_conversion_diagram_types=source_conversion_diagram_types,
                     )
                 )
             else:
@@ -3993,6 +4085,7 @@ def assistant_instructions(
         selected_brain_files,
         attachments,
         source_conversion_diagram_types=source_diagram_types if source_diagram_fields else None,
+        source_conversion_profile=profile == "sourceConversion",
     )
     tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
     brain_text = instruction_profile_brain_text(profile, brain_text)
