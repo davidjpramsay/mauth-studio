@@ -3090,6 +3090,7 @@ def assert_real_specialist_stats_call(call: dict[str, Any]) -> list[str]:
                     "xLabelTerms": ("response", "time"),
                     "points": ((1.0, 0.03), (2.1, 0.2), (2.7, 0.18), (5.0, 0.02)),
                     "pointTolerance": 0.015,
+                    "maxPointCount": 8,
                 },
             ],
         )
@@ -3583,13 +3584,7 @@ def stats_chart_range_issues(
     return [f"{label} statsChart should preserve range [{expected_range[0]:g}, {expected_range[1]:g}]"]
 
 
-def stats_chart_point_issues(
-    data_objects: list[dict[str, Any]],
-    expected_points: tuple[tuple[float, float], ...],
-    *,
-    label: str,
-    tolerance: float,
-) -> list[str]:
+def stats_chart_observed_points(data_objects: list[dict[str, Any]]) -> list[tuple[float, float]]:
     observed_points: list[tuple[float, float]] = []
     for data in data_objects:
         points = data.get("points")
@@ -3609,17 +3604,27 @@ def stats_chart_point_issues(
                 observed_points.append((float(x_value), float(y_value)))
         x_values = data.get("xValues")
         y_values = data.get("yValues")
-        if not isinstance(x_values, list) or not isinstance(y_values, list):
-            continue
-        for x_value, y_value in zip(x_values, y_values, strict=False):
-            if (
-                isinstance(x_value, bool)
-                or isinstance(y_value, bool)
-                or not isinstance(x_value, (int, float))
-                or not isinstance(y_value, (int, float))
-            ):
-                continue
-            observed_points.append((float(x_value), float(y_value)))
+        if isinstance(x_values, list) and isinstance(y_values, list):
+            for x_value, y_value in zip(x_values, y_values, strict=False):
+                if (
+                    isinstance(x_value, bool)
+                    or isinstance(y_value, bool)
+                    or not isinstance(x_value, (int, float))
+                    or not isinstance(y_value, (int, float))
+                ):
+                    continue
+                observed_points.append((float(x_value), float(y_value)))
+    return observed_points
+
+
+def stats_chart_point_issues(
+    data_objects: list[dict[str, Any]],
+    expected_points: tuple[tuple[float, float], ...],
+    *,
+    label: str,
+    tolerance: float,
+) -> list[str]:
+    observed_points = stats_chart_observed_points(data_objects)
     issues: list[str] = []
     for expected_x, expected_y in expected_points:
         if any(
@@ -3629,6 +3634,24 @@ def stats_chart_point_issues(
             continue
         issues.append(f"{label} statsChart should preserve source point ({expected_x:g}, {expected_y:g})")
     return issues
+
+
+def stats_chart_density_anchor_point_count_issues(
+    data_objects: list[dict[str, Any]],
+    *,
+    label: str,
+    max_point_count: int,
+) -> list[str]:
+    if max_point_count <= 0:
+        return []
+    for data in data_objects:
+        if data.get("chartType") != "density":
+            continue
+        if len(stats_chart_observed_points([data])) > max_point_count:
+            return [
+                f"{label} statsChart should preserve source density anchor points instead of an invented smoothed curve"
+            ]
+    return []
 
 
 def structured_part_items(parts: Any) -> list[dict[str, Any]]:
@@ -5579,6 +5602,15 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
                         tolerance=float(spec.get("pointTolerance", 1e-6)),
                     )
                 )
+            max_point_count = spec.get("maxPointCount")
+            if isinstance(max_point_count, int):
+                issues.extend(
+                    stats_chart_density_anchor_point_count_issues(
+                        data_objects,
+                        label=label,
+                        max_point_count=max_point_count,
+                    )
+                )
         elif diagram_type == "graph3d":
             graph3d_configs = [config for config in graph_configs if config.get("type") == "graph3d"]
             point_coords, segment_pairs, dashed_pairs = graph3d_semantics(graph3d_configs)
@@ -6757,6 +6789,17 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     "path": "arguments.diagram.graphConfig.data.range",
                     "message": issue,
                     "expected": "source chart range, or for centred histogram bins first centre - binSize/2 to last centre + binSize/2",
+                }
+            )
+        elif "invented smoothed curve" in issue or "source density anchor points" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data.points",
+                    "message": issue,
+                    "expected": (
+                        "sparse source anchor points from the printed density curve or official key; "
+                        "do not replace the source curve with a newly sampled smoothed/normal-looking curve"
+                    ),
                 }
             )
         elif "chart DSL fields must be under graphConfig.data" in issue:
@@ -10816,6 +10859,7 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_specialist_stats_live_smoothed_density_points_call,
         "expectedIssues": [
             "statsChart xLabel should preserve response/time",
+            "statsChart should preserve source density anchor points instead of an invented smoothed curve",
             "statsChart should preserve source point (1, 0.03)",
             "statsChart should preserve source point (2.1, 0.2)",
             "statsChart should preserve source point (2.7, 0.18)",

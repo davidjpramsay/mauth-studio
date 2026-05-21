@@ -82,7 +82,7 @@
     "For statsChart histogram/column graph displays, use yAxisMode frequency for counts and relativeFrequency for relative frequencies or probability-style bars calculated from raw data.",
     "For source histograms or column graphs where the visible chart gives exact bin centres/categories and counts, use dataMode manualFrequencies with matching xValues and frequencies. Do not put count values in data.values unless they are raw observations to be counted.",
     "For manual-frequency source histograms with centred xValues and binSize, set range to the exact bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source axes show another exact range. Do not pad histogram range for aesthetics.",
-    "For source statistics charts, preserve the source chart semantics as well as the shape: keep xLabel/yLabel text, range/yRange, binSize, barType, yAxisMode, dataMode, and visible density points or bar heights when they are shown in the source or marking key.",
+    "For source statistics charts, preserve the source chart semantics as well as the shape: keep xLabel/yLabel text, range/yRange, binSize, barType, yAxisMode, dataMode, and visible density points or bar heights when they are shown in the source or marking key. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points.",
     "For statsChart histogram/column graph displays, use yLabelOrientation horizontal when the y-axis label should read across the top-left of the chart instead of rotated vertically.",
     "For exact probability bars that should not be calculated from raw data, use dataMode manualProbabilities with matching xValues and probabilities.",
     "Do not unify JSXGraph, Penrose, and Plotly internals.",

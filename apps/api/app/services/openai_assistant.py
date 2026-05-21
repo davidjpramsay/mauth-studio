@@ -1726,18 +1726,11 @@ def focused_tool_hint(
             )
         ):
             diagram_guidance += (
-                " For source statistical graphs, use graphConfig.type statsChart for histograms, column graphs, "
-                "probability density functions, normal curves, and sample-mean distribution sketches wherever the "
-                "native stats chart DSL can represent the display. Use chartType density for arbitrary density curves, "
-                "normal for parameterised normal curves, and blankAxes for student sketch axes. Do not default to graph2d "
-                "just because the source statistical chart has x-y axes. For histograms or column graphs with visible "
-                "bin centres/categories and counts, use dataMode manualFrequencies with matching xValues and frequencies "
-                "rather than overloading values with counts. Put statsChart DSL fields such as chartType, dataMode, "
-                "xValues, frequencies, binSize, range, xLabel, and yLabel inside graphConfig.data, never directly on "
-                "graphConfig. For manual-frequency histograms with centred xValues and binSize, set range to the "
-                "bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows a "
-                "different exact axis range; do not pad the range for aesthetics. Preserve source x/y labels, range/yRange, binSize, "
-                "barType, yAxisMode, dataMode, density points, and bar heights when they are visible in the source."
+                " For source statistical graphs, use statsChart for histograms, column graphs, density/normal curves, "
+                "sample-mean sketches, and probability/frequency displays. Keep statsChart DSL fields under "
+                "graphConfig.data, use manualFrequencies/manualProbabilities for exact bars, and use sparse visible "
+                "anchor points for arbitrary density curves rather than invented smooth/normal points. Preserve labels, "
+                "ranges, binSize, modes, density points, and bar heights."
             )
         if has_source_attachment and any(term in text for term in ("slope field", "direction field", "dy/dx")):
             diagram_guidance += (
@@ -2126,8 +2119,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "xValues/frequencies for visible counts, or manualProbabilities xValues/probabilities for exact probabilities. "
                     "For manual-frequency histograms with centred xValues and binSize, data.range is the bin-edge span "
                     "from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range. "
-                    "For source charts, preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, "
-                    "and visible bar heights from the source. "
+                    "For arbitrary source density curves, use sparse visible anchor points; do not invent extra "
+                    "smooth/normal points. For source charts, preserve labels, range/yRange, binSize, "
+                    "barType, yAxisMode, dataMode, density points, and visible bar heights from the source. "
                     "For graph2d, put xMin/xMax/yMin/yMax, widthPx/heightPx, showGrid/showAxes, functions, and features "
                     "directly on graphConfig. Do not nest those fields under data or options. For graph2d slope fields, "
                     "use data.slopeField:{expression,xValues?,yValues?,xRange?,yRange?,xStep?,yStep?,highlightedPoints?}; "
@@ -2394,8 +2388,8 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
             "data.xValues and data.frequencies. Put chartType/dataMode/xValues/frequencies/range/binSize/xLabel/yLabel "
             "under graphConfig.data, not directly on graphConfig. For manual-frequency histograms, range should be the "
             "bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range. "
-            "Preserve source labels, ranges, bin sizes, modes, "
-            "density points, and visible bar heights."
+            "For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points. "
+            "Preserve source labels, ranges, bin sizes, modes, density points, and visible bar heights."
         ),
         "graph3d": (
             "Use graph3d. Put named vertices in data.points, edges/diagonals in data.segments, polygon faces in "
@@ -3956,7 +3950,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "statsChart" in allowed:
         lines.append(
-            "- For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. Use manualFrequencies/manualProbabilities when the source gives exact bar heights, density/normal for distribution curves, and blankAxes for student sketch axes. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve source x/y labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights."
+            "- For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. Use manualFrequencies/manualProbabilities for exact bars, density/normal for distribution curves, and blankAxes for sketch axes. For arbitrary density curves, use sparse visible anchor points rather than invented smooth/normal points. For centred manual-frequency histograms, set range to first xValue - binSize/2 through last xValue + binSize/2 unless the source shows another exact range; do not pad it. Preserve source labels, ranges, binSize, modes, density points, and bar heights."
         )
     if "geometricConstruction" in allowed:
         lines.append(
@@ -4138,7 +4132,7 @@ Tool-call contract:
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
-- For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
+- For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question. Label declared points directly, e.g. Label L $L$, not Label LLabel $L$. Use RightAngle(A, B, C) for visible right-angle markers; PerpendicularToSegment needs a declared Line first, not a NamedSegment. Do not emit options.styleSource/domainSource; Mauth supplies the Penrose preset style.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle, not merely adjacent rays; nested source markings may span outer rays with another labelled ray inside. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
 - For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions.

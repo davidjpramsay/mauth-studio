@@ -384,7 +384,7 @@ For histogram/column graph displays:
 
 Every statsChart chart DSL field belongs inside the JSON `data` object. Put `chartType`, `dataMode`, `xValues`, `frequencies`/`probabilities`, `values`, `points`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `xLabel`, and `yLabel` under `graphConfig.data`, not directly on `graphConfig`.
 
-For source statistics charts, preserve the chart semantics as well as the visible shape. Keep source `xLabel`/`yLabel`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `dataMode`, and any visible density points or exact bar heights when they are shown in the source or marking key.
+For source statistics charts, preserve the chart semantics as well as the visible shape. Keep source `xLabel`/`yLabel`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `dataMode`, and any visible density points or exact bar heights when they are shown in the source or marking key. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth or normal points.
 
 Histogram / column graph from raw values:
 
