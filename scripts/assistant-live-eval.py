@@ -8246,10 +8246,7 @@ def local_real_methods_dice_game_markdown_table_text_call() -> dict[str, Any]:
         "| $P(Y=y)$ |  |  |  |"
     )
     part_c["solutionText"] = (
-        "| $Y$ | $-1$ | $0$ | $1$ |\n"
-        "|---|---:|---:|---:|\n"
-        "| $P(Y=y)$ | $0.443$ | $0.208$ | $0.349$ |\n\n"
-        "[[marks:3]]"
+        "| $Y$ | $-1$ | $0$ | $1$ |\n|---|---:|---:|---:|\n| $P(Y=y)$ | $0.443$ | $0.208$ | $0.349$ |\n\n[[marks:3]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -11536,15 +11533,45 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     },
 }
 
+LOCAL_REAL_EXAMS_CORE_CASES = ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"]
+LOCAL_REAL_EXAMS_TABLE_CASES = ["real-specialist-confidence-intervals"]
+LOCAL_REAL_EXAMS_METHODS_STATS_CASES = ["real-methods-ev-histogram", "real-methods-dice-game"]
+LOCAL_REAL_EXAMS_EXTENDED_CASES = [
+    "real-specialist-slope-field",
+    "real-specialist-argand",
+    "real-specialist-spherical-cap",
+    "real-specialist-prism",
+    "real-specialist-implicit",
+]
+LOCAL_REAL_EXAMS_GRAPH3D_CASES = [
+    "real-specialist-spherical-cap",
+    "real-specialist-prism",
+    "real-specialist-square-pyramid",
+]
+LOCAL_REAL_EXAM_CANARY_CASES = [
+    "real-methods-earthquake",
+    *LOCAL_REAL_EXAMS_METHODS_STATS_CASES,
+    "real-specialist-lighthouse",
+    "real-specialist-stats",
+    *LOCAL_REAL_EXAMS_TABLE_CASES,
+    "real-specialist-slope-field",
+    "real-specialist-argand",
+    "real-specialist-spherical-cap",
+    "real-specialist-prism",
+    "real-specialist-square-pyramid",
+    "real-specialist-implicit",
+]
+
 LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
     "local": list(LOCAL_EVAL_CASES),
+    "real-exams-core": LOCAL_REAL_EXAMS_CORE_CASES,
+    "real-exams-tables": LOCAL_REAL_EXAMS_TABLE_CASES,
+    "real-exams-methods-stats": LOCAL_REAL_EXAMS_METHODS_STATS_CASES,
+    "real-exams-extended": LOCAL_REAL_EXAMS_EXTENDED_CASES,
+    "real-exams-graph3d": LOCAL_REAL_EXAMS_GRAPH3D_CASES,
+    "real-exams": LOCAL_REAL_EXAM_CANARY_CASES,
     "local-real-exams-extended": list(LOCAL_EVAL_CASES),
-    "local-real-exams-graph3d": [
-        "real-specialist-spherical-cap",
-        "real-specialist-prism",
-        "real-specialist-square-pyramid",
-        "graph3d-general-solids",
-    ],
+    "local-real-exams-graph3d": [*LOCAL_REAL_EXAMS_GRAPH3D_CASES, "graph3d-general-solids"],
     "local-real-exams-preview": [
         "screenshot-scalar-products",
         "real-methods-ev-histogram",
@@ -11560,12 +11587,7 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-implicit",
         "real-specialist-ski-modelling",
     ],
-    "local-graph3d-general": [
-        "real-specialist-spherical-cap",
-        "real-specialist-prism",
-        "real-specialist-square-pyramid",
-        "graph3d-general-solids",
-    ],
+    "local-graph3d-general": [*LOCAL_REAL_EXAMS_GRAPH3D_CASES, "graph3d-general-solids"],
 }
 
 
