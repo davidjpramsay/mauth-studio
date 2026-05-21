@@ -447,8 +447,28 @@ export default defineConfig({
   overflow: hidden;
 }
 
+.replay-page[data-replay-page-mode="a4"] .a4-page-content {
+  height: calc(var(--a4-page-height, 1122.519685px) - var(--a4-page-padding-y, 48px) - var(--a4-page-padding-y, 48px));
+}
+
 .replay-page .a4-page-content {
   min-height: 0;
+}
+
+.replay-measure {
+  left: -10000px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.replay-measure .replay-page,
+.replay-measure .replay-page[data-replay-page-mode="a4"],
+.replay-measure .replay-page[data-replay-page-mode="a4"] .a4-page-content {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 .replay-question {
@@ -921,28 +941,134 @@ function PartPreview({ question, part, index, showSolutions }: { question: any; 
   );
 }
 
-function QuestionPreview({ question, index, showSolutions }: { question: any; index: number; showSolutions: boolean }) {
+function QuestionHeaderPreview({ question, index, showSolutions }: { question: any; index: number; showSolutions: boolean }) {
   return (
-    <section className="test-preview-question-group replay-question" data-scroll-anchor={"q:" + question.id} data-preview-structure-anchor="true">
-      <div className="test-question-header">
-        <span>{index + 1}.</span>
-        <div className="test-question-content">
-          <PreviewContentBlocks
-            blocks={question.contentBlocks ?? []}
-            showSolutions={showSolutions}
-            blockAnchorFor={(block) => "q:" + question.id + "/b:" + block.id}
-          />
-        </div>
-        <span className="test-question-mark">{markLabel(question.marks)}</span>
+    <div className="test-question-header" data-scroll-anchor={"q:" + question.id} data-preview-structure-anchor="true">
+      <span>{index + 1}.</span>
+      <div className="test-question-content">
+        <PreviewContentBlocks
+          blocks={question.contentBlocks ?? []}
+          showSolutions={showSolutions}
+          blockAnchorFor={(block) => "q:" + question.id + "/b:" + block.id}
+        />
       </div>
-      {(question.parts ?? []).map((part: any, partIndex: number) => (
-        <PartPreview key={part.id} question={question} part={part} index={partIndex} showSolutions={showSolutions} />
+      <span className="test-question-mark">{markLabel(question.marks)}</span>
+    </div>
+  );
+}
+
+function questionSegmentNodes(question: any, index: number, showSolutions: boolean) {
+  return [
+    {
+      id: question.id + ":header",
+      node: <QuestionHeaderPreview key={question.id + ":header"} question={question} index={index} showSolutions={showSolutions} />,
+    },
+    ...(question.parts ?? []).map((part: any, partIndex: number) => ({
+      id: String(part.id ?? "part-" + partIndex),
+      node: <PartPreview key={part.id ?? partIndex} question={question} part={part} index={partIndex} showSolutions={showSolutions} />,
+    })),
+  ];
+}
+
+function QuestionPreview({ question, index, showSolutions }: { question: any; index: number; showSolutions: boolean }) {
+  const segments = questionSegmentNodes(question, index, showSolutions);
+  return (
+    <section className="test-preview-question-group replay-question">
+      {segments.map((segment) => (
+        <React.Fragment key={segment.id}>{segment.node}</React.Fragment>
       ))}
     </section>
   );
 }
 
+function cssLength(value: string | null | undefined) {
+  const numeric = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function replayPageContentHeightPx() {
+  const page = document.querySelector<HTMLElement>(".replay-page[data-replay-page-mode='a4']");
+  const style = page ? window.getComputedStyle(page) : null;
+  const pageHeight = cssLength(style?.getPropertyValue("--a4-page-height")) ?? 1122.519685;
+  const paddingY = cssLength(style?.getPropertyValue("--a4-page-padding-y")) ?? 48;
+  return Math.max(200, pageHeight - paddingY * 2);
+}
+
+function paginateSegmentHeights(heights: number[], contentHeight: number) {
+  const pages: number[][] = [];
+  let currentPage: number[] = [];
+  let currentHeight = 0;
+  const segmentGap = 12;
+  const pushCurrentPage = () => {
+    pages.push(currentPage);
+    currentPage = [];
+    currentHeight = 0;
+  };
+  heights.forEach((height, index) => {
+    const measuredHeight = Math.max(0, height);
+    const proposedHeight = currentHeight + (currentPage.length ? segmentGap : 0) + measuredHeight;
+    if (currentPage.length && proposedHeight > contentHeight) pushCurrentPage();
+    currentHeight += (currentPage.length ? segmentGap : 0) + measuredHeight;
+    currentPage.push(index);
+  });
+  if (currentPage.length || !pages.length) pages.push(currentPage);
+  return pages;
+}
+
+function pageIndexesEqual(left: number[][], right: number[][]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function ReplayCase({ replayCase }: { replayCase: (typeof replayCases)[number] }) {
+  const segments = (replayCase.document.questions ?? []).flatMap((question: any, index: number) =>
+    questionSegmentNodes(question, index, showSolutions),
+  );
+  const [a4Pages, setA4Pages] = React.useState<number[][]>([segments.map((_, index) => index)]);
+
+  React.useLayoutEffect(() => {
+    if (pageMode !== "a4") return;
+    const measureRoot = document.querySelector<HTMLElement>("[data-replay-measure-case='" + replayCase.caseName + "']");
+    if (!measureRoot) return;
+    const heights = Array.from(measureRoot.querySelectorAll<HTMLElement>("[data-replay-measure-segment]")).map(
+      (segment) => segment.getBoundingClientRect().height,
+    );
+    const nextPages = paginateSegmentHeights(heights, replayPageContentHeightPx());
+    setA4Pages((currentPages) => (pageIndexesEqual(currentPages, nextPages) ? currentPages : nextPages));
+  }, [replayCase.caseName, segments.length]);
+
+  if (pageMode === "a4") {
+    return (
+      <section data-replay-case={replayCase.caseName}>
+        <p className="replay-case-title">{replayCase.caseName}</p>
+        <div className="a4-measure replay-measure" data-replay-measure-case={replayCase.caseName}>
+          <div className="a4-page replay-page" data-replay-page-mode="a4">
+            <div className="a4-page-content">
+              <section className="test-preview-question-group replay-question">
+                {segments.map((segment) => (
+                  <div key={segment.id} data-replay-measure-segment="true">
+                    {segment.node}
+                  </div>
+                ))}
+              </section>
+            </div>
+          </div>
+        </div>
+        {a4Pages.map((segmentIndexes, pageIndex) => (
+          <div key={pageIndex} className="a4-page replay-page" data-replay-page-mode="a4">
+            <div className="a4-page-content" data-preview-root="true">
+              <section className="test-preview-question-group replay-question">
+                {segmentIndexes.map((segmentIndex) => {
+                  const segment = segments[segmentIndex];
+                  return segment ? <React.Fragment key={segment.id}>{segment.node}</React.Fragment> : null;
+                })}
+              </section>
+            </div>
+          </div>
+        ))}
+      </section>
+    );
+  }
+
   return (
     <section data-replay-case={replayCase.caseName}>
       <p className="replay-case-title">{replayCase.caseName}</p>
@@ -1148,7 +1274,9 @@ async function runBrowserReplay(
         });
         await page.waitForFunction(
           () => {
-            const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]"));
+            const frames = Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).filter(
+              (frame) => !frame.closest(".a4-measure"),
+            );
             return frames.length > 0 && frames.every((frame) => frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox"));
           },
           null,
@@ -1172,7 +1300,11 @@ async function runBrowserReplay(
       const viewOutputDir = path.join(outputDir, view);
       await fs.mkdir(viewOutputDir, { recursive: true });
       for (const replayCase of cases) {
-        await page.locator(`[data-replay-case="${replayCase.caseName}"] .replay-page`).screenshot({
+        const screenshotTarget =
+          pageMode === "a4"
+            ? page.locator(`[data-replay-case="${replayCase.caseName}"]`)
+            : page.locator(`[data-replay-case="${replayCase.caseName}"] .replay-page`);
+        await screenshotTarget.screenshot({
           path: path.join(viewOutputDir, `${replayCase.caseName}.png`),
         });
       }
@@ -1189,219 +1321,226 @@ async function runBrowserReplay(
       });
       const diagramMetrics = (
         await page.evaluate(() =>
-          Array.from(document.querySelectorAll("[data-replay-diagram-frame]")).map((frame) => {
-            const caseName = frame.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
-            const type = frame.getAttribute("data-diagram-type") ?? "";
-            const chartType = frame.getAttribute("data-chart-type") ?? "";
-            const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
-            const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
-            const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
-            const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
-            const expectedVector2DAngleMarkers = JSON.parse(frame.getAttribute("data-vector2d-angle-markers") || "[]") as Array<{
-              id: string;
-              from: string;
-              to: string;
-              rightAngle: boolean;
-              label: string;
-            }>;
-            const rect = frame.getBoundingClientRect();
-            const primitives = Array.from(
-              frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
-            ).filter((element) => {
-              const box = element.getBoundingClientRect();
-              const style = window.getComputedStyle(element);
-              return box.width + box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-            });
-            const normalizeLabel = (value: string) =>
-              value
-                .toLowerCase()
-                .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
-                .replace(/[^a-z0-9]+/g, "");
-            const normalizedNumericLabel = (value: string) => {
-              const normalized = value.trim().replace(/−/g, "-").replace(/\s+/g, "");
-              return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalized : null;
-            };
-            const isDuplicateNumericTickCollision = (left: string, right: string) => {
-              const leftValue = normalizedNumericLabel(left);
-              const rightValue = normalizedNumericLabel(right);
-              return Boolean(leftValue && rightValue && leftValue === rightValue);
-            };
-            const collisionArea = (left: DOMRect, right: DOMRect) => {
-              const width = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
-              const height = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
-              return width * height;
-            };
-            const rectDistance = (left: DOMRect, right: DOMRect) => {
-              const dx = Math.max(0, Math.max(left.left, right.left) - Math.min(left.right, right.right));
-              const dy = Math.max(0, Math.max(left.top, right.top) - Math.min(left.bottom, right.bottom));
-              return Math.hypot(dx, dy);
-            };
-            const visibleElement = (element: Element) => {
-              const box = element.getBoundingClientRect();
-              const style = window.getComputedStyle(element);
-              return box.width > 4 && box.height > 4 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-            };
-            const labelSearchText = (value: string) =>
-              value
-                .replace(/\\+underset\s*\{\s*\\+sim\s*\}\s*\{\s*([^}]*)\s*\}/g, "$1")
-                .replace(/\\+(?:mathbf|vec|overrightarrow|overleftrightarrow)\s*\{([^}]*)\}/g, "$1")
-                .replace(/\\+(?:text|mathrm)\s*\{([^}]*)\}/g, "$1")
-                .replace(/\\+(?:mathbf|vec|text|mathrm)\s+([A-Za-z0-9]+)/g, "$1")
-                .replace(/\\+(?:left|right|displaystyle|textstyle)\b/g, "")
-                .replace(/[{}$]/g, " ")
-                .replace(/\\+[,;:! ]/g, " ")
-                .replace(/\\+_/g, "_")
-                .replace(/\\+/g, " ");
-            const labelSources = Array.from(frame.querySelectorAll("[data-mauth-label-text]")).map(
-              (element) => element.getAttribute("data-mauth-label-text") ?? "",
-            );
-            const labelEntries = Array.from(frame.querySelectorAll("[data-mauth-label-text]"))
-              .filter(visibleElement)
-              .map((element) => {
+          Array.from(document.querySelectorAll("[data-replay-diagram-frame]"))
+            .filter((frame) => !frame.closest(".a4-measure"))
+            .map((frame) => {
+              const caseName = frame.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
+              const type = frame.getAttribute("data-diagram-type") ?? "";
+              const chartType = frame.getAttribute("data-chart-type") ?? "";
+              const hasSlopeField = frame.getAttribute("data-has-slope-field") === "true";
+              const requiredLabels = JSON.parse(frame.getAttribute("data-required-labels") || "[]") as string[];
+              const expectedFunctionColors = JSON.parse(frame.getAttribute("data-function-colors") || "[]") as string[];
+              const expectedGraph3DSolidKinds = JSON.parse(frame.getAttribute("data-graph3d-solid-kinds") || "[]") as string[];
+              const expectedVector2DAngleMarkers = JSON.parse(frame.getAttribute("data-vector2d-angle-markers") || "[]") as Array<{
+                id: string;
+                from: string;
+                to: string;
+                rightAngle: boolean;
+                label: string;
+              }>;
+              const rect = frame.getBoundingClientRect();
+              const primitives = Array.from(
+                frame.querySelectorAll("svg path, svg line, svg polyline, svg polygon, svg ellipse, svg circle, svg rect"),
+              ).filter((element) => {
                 const box = element.getBoundingClientRect();
-                return {
-                  text: labelSearchText(element.getAttribute("data-mauth-label-text") ?? ""),
-                  normalizedText: normalizeLabel(labelSearchText(element.getAttribute("data-mauth-label-text") ?? "")),
-                  role: element.getAttribute("data-mauth-label-role") ?? "",
-                  markerId: element.getAttribute("data-mauth-angle-marker-id") ?? "",
-                  rect: box,
-                  area: Math.max(1, box.width * box.height),
-                };
+                const style = window.getComputedStyle(element);
+                return box.width + box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
               });
-            const labelCollisionPairs: string[] = [];
-            for (let i = 0; i < labelEntries.length; i += 1) {
-              for (let j = i + 1; j < labelEntries.length; j += 1) {
-                const overlapArea = collisionArea(labelEntries[i].rect, labelEntries[j].rect);
-                const overlapRatio = overlapArea / Math.min(labelEntries[i].area, labelEntries[j].area);
-                if (
-                  overlapArea > 8 &&
-                  overlapRatio > 0.06 &&
-                  !isDuplicateNumericTickCollision(labelEntries[i].text, labelEntries[j].text)
-                ) {
-                  labelCollisionPairs.push(`${labelEntries[i].text || "label"} overlaps ${labelEntries[j].text || "label"}`);
-                }
-              }
-            }
-            const renderedAngleMarkers = Array.from(frame.querySelectorAll("[data-mauth-vector-angle-marker]")).map((element) => ({
-              id: element.getAttribute("data-mauth-angle-marker-id") ?? "",
-              from: element.getAttribute("data-mauth-angle-marker-from") ?? "",
-              to: element.getAttribute("data-mauth-angle-marker-to") ?? "",
-              rightAngle: element.getAttribute("data-mauth-angle-marker-right-angle") === "true",
-            }));
-            const angleLabelIds = new Set(labelEntries.filter((entry) => entry.role === "angle-label").map((entry) => entry.markerId));
-            const vector2dAngleMarkerIssues = expectedVector2DAngleMarkers.flatMap((marker) => {
-              const issues: string[] = [];
-              const rendered = renderedAngleMarkers.some(
-                (entry) =>
-                  entry.id === marker.id && entry.from === marker.from && entry.to === marker.to && entry.rightAngle === marker.rightAngle,
+              const normalizeLabel = (value: string) =>
+                value
+                  .toLowerCase()
+                  .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (match) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(match)))
+                  .replace(/[^a-z0-9]+/g, "");
+              const normalizedNumericLabel = (value: string) => {
+                const normalized = value.trim().replace(/−/g, "-").replace(/\s+/g, "");
+                return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalized : null;
+              };
+              const isDuplicateNumericTickCollision = (left: string, right: string) => {
+                const leftValue = normalizedNumericLabel(left);
+                const rightValue = normalizedNumericLabel(right);
+                return Boolean(leftValue && rightValue && leftValue === rightValue);
+              };
+              const collisionArea = (left: DOMRect, right: DOMRect) => {
+                const width = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
+                const height = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+                return width * height;
+              };
+              const rectDistance = (left: DOMRect, right: DOMRect) => {
+                const dx = Math.max(0, Math.max(left.left, right.left) - Math.min(left.right, right.right));
+                const dy = Math.max(0, Math.max(left.top, right.top) - Math.min(left.bottom, right.bottom));
+                return Math.hypot(dx, dy);
+              };
+              const visibleElement = (element: Element) => {
+                const box = element.getBoundingClientRect();
+                const style = window.getComputedStyle(element);
+                return (
+                  box.width > 4 && box.height > 4 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0"
+                );
+              };
+              const labelSearchText = (value: string) =>
+                value
+                  .replace(/\\+underset\s*\{\s*\\+sim\s*\}\s*\{\s*([^}]*)\s*\}/g, "$1")
+                  .replace(/\\+(?:mathbf|vec|overrightarrow|overleftrightarrow)\s*\{([^}]*)\}/g, "$1")
+                  .replace(/\\+(?:text|mathrm)\s*\{([^}]*)\}/g, "$1")
+                  .replace(/\\+(?:mathbf|vec|text|mathrm)\s+([A-Za-z0-9]+)/g, "$1")
+                  .replace(/\\+(?:left|right|displaystyle|textstyle)\b/g, "")
+                  .replace(/[{}$]/g, " ")
+                  .replace(/\\+[,;:! ]/g, " ")
+                  .replace(/\\+_/g, "_")
+                  .replace(/\\+/g, " ");
+              const labelSources = Array.from(frame.querySelectorAll("[data-mauth-label-text]")).map(
+                (element) => element.getAttribute("data-mauth-label-text") ?? "",
               );
-              if (!rendered) issues.push(`missing rendered ${marker.rightAngle ? "right-angle" : "angle"} marker ${marker.id}`);
-              if (marker.label && !angleLabelIds.has(marker.id)) issues.push(`missing rendered angle label for marker ${marker.id}`);
-              return issues;
-            });
-            const graph3DLabels = labelEntries.filter((entry) => entry.role.startsWith("graph3d-"));
-            const graph3DPointLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-point-label").length;
-            const graph3DSegmentLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-segment-label").length;
-            const graph3DFaceLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-face-label").length;
-            const graph3DDimensionLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-dimension-label").length;
-            const expectedGraph3DPointLabelCount = Number(frame.getAttribute("data-graph3d-point-label-count") || 0);
-            const expectedGraph3DSegmentLabelCount = Number(frame.getAttribute("data-graph3d-segment-label-count") || 0);
-            const expectedGraph3DFaceLabelCount = Number(frame.getAttribute("data-graph3d-face-label-count") || 0);
-            const expectedGraph3DDimensionLabelCount = Number(frame.getAttribute("data-graph3d-dimension-label-count") || 0);
-            const graph3DLabelQualityIssues: string[] = [];
-            if (type === "graph3d" || type === "basic3d") {
-              if (graph3DPointLabelCount < expectedGraph3DPointLabelCount) {
-                graph3DLabelQualityIssues.push(
-                  `rendered ${graph3DPointLabelCount}/${expectedGraph3DPointLabelCount} expected point labels`,
-                );
-              }
-              if (graph3DSegmentLabelCount < expectedGraph3DSegmentLabelCount) {
-                graph3DLabelQualityIssues.push(
-                  `rendered ${graph3DSegmentLabelCount}/${expectedGraph3DSegmentLabelCount} expected segment labels`,
-                );
-              }
-              if (graph3DFaceLabelCount < expectedGraph3DFaceLabelCount) {
-                graph3DLabelQualityIssues.push(`rendered ${graph3DFaceLabelCount}/${expectedGraph3DFaceLabelCount} expected face labels`);
-              }
-              if (graph3DDimensionLabelCount < expectedGraph3DDimensionLabelCount) {
-                graph3DLabelQualityIssues.push(
-                  `rendered ${graph3DDimensionLabelCount}/${expectedGraph3DDimensionLabelCount} expected dimension labels`,
-                );
-              }
-              for (const entry of graph3DLabels) {
-                if (
-                  entry.rect.left < rect.left - 1 ||
-                  entry.rect.right > rect.right + 1 ||
-                  entry.rect.top < rect.top - 1 ||
-                  entry.rect.bottom > rect.bottom + 1
-                ) {
-                  graph3DLabelQualityIssues.push(`label ${entry.text || "label"} extends outside the diagram frame`);
-                }
-              }
-              for (let i = 0; i < graph3DLabels.length; i += 1) {
-                for (let j = i + 1; j < graph3DLabels.length; j += 1) {
-                  const distance = rectDistance(graph3DLabels[i].rect, graph3DLabels[j].rect);
-                  if (distance > 0 && distance < 3) {
-                    graph3DLabelQualityIssues.push(
-                      `label ${graph3DLabels[i].text || "label"} is crowded near ${graph3DLabels[j].text || "label"} (${Math.round(distance * 10) / 10}px)`,
-                    );
+              const labelEntries = Array.from(frame.querySelectorAll("[data-mauth-label-text]"))
+                .filter(visibleElement)
+                .map((element) => {
+                  const box = element.getBoundingClientRect();
+                  return {
+                    text: labelSearchText(element.getAttribute("data-mauth-label-text") ?? ""),
+                    normalizedText: normalizeLabel(labelSearchText(element.getAttribute("data-mauth-label-text") ?? "")),
+                    role: element.getAttribute("data-mauth-label-role") ?? "",
+                    markerId: element.getAttribute("data-mauth-angle-marker-id") ?? "",
+                    rect: box,
+                    area: Math.max(1, box.width * box.height),
+                  };
+                });
+              const labelCollisionPairs: string[] = [];
+              for (let i = 0; i < labelEntries.length; i += 1) {
+                for (let j = i + 1; j < labelEntries.length; j += 1) {
+                  const overlapArea = collisionArea(labelEntries[i].rect, labelEntries[j].rect);
+                  const overlapRatio = overlapArea / Math.min(labelEntries[i].area, labelEntries[j].area);
+                  if (
+                    overlapArea > 8 &&
+                    overlapRatio > 0.06 &&
+                    !isDuplicateNumericTickCollision(labelEntries[i].text, labelEntries[j].text)
+                  ) {
+                    labelCollisionPairs.push(`${labelEntries[i].text || "label"} overlaps ${labelEntries[j].text || "label"}`);
                   }
                 }
               }
-            }
-            const labelSurfaceText = Array.from(frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text"))
-              .map((element) => element.textContent ?? "")
-              .join(" ");
-            const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
-            const normalizedLabelText = normalizeLabel([labelSurfaceText, ...labelSources.map(labelSearchText)].join(" "));
-            const colorProbe = document.createElement("span");
-            colorProbe.style.display = "none";
-            document.body.appendChild(colorProbe);
-            const normalizeColor = (value: string) => {
-              colorProbe.style.color = value;
-              return window.getComputedStyle(colorProbe).color;
-            };
-            const expectedColors = new Set(expectedFunctionColors.map(normalizeColor));
-            const functionStrokeCount = primitives.filter((element) => {
-              const stroke = window.getComputedStyle(element).stroke || element.getAttribute("stroke") || "";
-              return expectedColors.has(normalizeColor(stroke));
-            }).length;
-            colorProbe.remove();
-            return {
-              caseName,
-              type,
-              chartType,
-              hasSlopeField,
-              width: Math.round(rect.width * 10) / 10,
-              height: Math.round(rect.height * 10) / 10,
-              primitiveCount: primitives.length,
-              plotlyBarCount: frame.querySelectorAll(".barlayer path").length,
-              plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
-              expectedFunctionColors,
-              functionStrokeCount,
-              expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
-              expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
-              expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
-              expectedGraph3DPointLabelCount,
-              expectedGraph3DSegmentLabelCount,
-              expectedGraph3DFaceLabelCount,
-              expectedGraph3DDimensionLabelCount,
-              expectedGraph3DSolidKinds,
-              graph3DPointLabelCount,
-              graph3DSegmentLabelCount,
-              graph3DFaceLabelCount,
-              graph3DDimensionLabelCount,
-              labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
-              renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
-              text,
-              requiredLabels,
-              missingLabels: requiredLabels.filter((label) => !normalizedLabelText.includes(normalizeLabel(label))),
-              labelCollisionCount: labelCollisionPairs.length,
-              labelCollisionPairs: labelCollisionPairs.slice(0, 6),
-              vector2dAngleMarkerIssues,
-              graph3DLabelQualityIssues: graph3DLabelQualityIssues.slice(0, 8),
-            };
-          }),
+              const renderedAngleMarkers = Array.from(frame.querySelectorAll("[data-mauth-vector-angle-marker]")).map((element) => ({
+                id: element.getAttribute("data-mauth-angle-marker-id") ?? "",
+                from: element.getAttribute("data-mauth-angle-marker-from") ?? "",
+                to: element.getAttribute("data-mauth-angle-marker-to") ?? "",
+                rightAngle: element.getAttribute("data-mauth-angle-marker-right-angle") === "true",
+              }));
+              const angleLabelIds = new Set(labelEntries.filter((entry) => entry.role === "angle-label").map((entry) => entry.markerId));
+              const vector2dAngleMarkerIssues = expectedVector2DAngleMarkers.flatMap((marker) => {
+                const issues: string[] = [];
+                const rendered = renderedAngleMarkers.some(
+                  (entry) =>
+                    entry.id === marker.id &&
+                    entry.from === marker.from &&
+                    entry.to === marker.to &&
+                    entry.rightAngle === marker.rightAngle,
+                );
+                if (!rendered) issues.push(`missing rendered ${marker.rightAngle ? "right-angle" : "angle"} marker ${marker.id}`);
+                if (marker.label && !angleLabelIds.has(marker.id)) issues.push(`missing rendered angle label for marker ${marker.id}`);
+                return issues;
+              });
+              const graph3DLabels = labelEntries.filter((entry) => entry.role.startsWith("graph3d-"));
+              const graph3DPointLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-point-label").length;
+              const graph3DSegmentLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-segment-label").length;
+              const graph3DFaceLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-face-label").length;
+              const graph3DDimensionLabelCount = graph3DLabels.filter((entry) => entry.role === "graph3d-dimension-label").length;
+              const expectedGraph3DPointLabelCount = Number(frame.getAttribute("data-graph3d-point-label-count") || 0);
+              const expectedGraph3DSegmentLabelCount = Number(frame.getAttribute("data-graph3d-segment-label-count") || 0);
+              const expectedGraph3DFaceLabelCount = Number(frame.getAttribute("data-graph3d-face-label-count") || 0);
+              const expectedGraph3DDimensionLabelCount = Number(frame.getAttribute("data-graph3d-dimension-label-count") || 0);
+              const graph3DLabelQualityIssues: string[] = [];
+              if (type === "graph3d" || type === "basic3d") {
+                if (graph3DPointLabelCount < expectedGraph3DPointLabelCount) {
+                  graph3DLabelQualityIssues.push(
+                    `rendered ${graph3DPointLabelCount}/${expectedGraph3DPointLabelCount} expected point labels`,
+                  );
+                }
+                if (graph3DSegmentLabelCount < expectedGraph3DSegmentLabelCount) {
+                  graph3DLabelQualityIssues.push(
+                    `rendered ${graph3DSegmentLabelCount}/${expectedGraph3DSegmentLabelCount} expected segment labels`,
+                  );
+                }
+                if (graph3DFaceLabelCount < expectedGraph3DFaceLabelCount) {
+                  graph3DLabelQualityIssues.push(`rendered ${graph3DFaceLabelCount}/${expectedGraph3DFaceLabelCount} expected face labels`);
+                }
+                if (graph3DDimensionLabelCount < expectedGraph3DDimensionLabelCount) {
+                  graph3DLabelQualityIssues.push(
+                    `rendered ${graph3DDimensionLabelCount}/${expectedGraph3DDimensionLabelCount} expected dimension labels`,
+                  );
+                }
+                for (const entry of graph3DLabels) {
+                  if (
+                    entry.rect.left < rect.left - 1 ||
+                    entry.rect.right > rect.right + 1 ||
+                    entry.rect.top < rect.top - 1 ||
+                    entry.rect.bottom > rect.bottom + 1
+                  ) {
+                    graph3DLabelQualityIssues.push(`label ${entry.text || "label"} extends outside the diagram frame`);
+                  }
+                }
+                for (let i = 0; i < graph3DLabels.length; i += 1) {
+                  for (let j = i + 1; j < graph3DLabels.length; j += 1) {
+                    const distance = rectDistance(graph3DLabels[i].rect, graph3DLabels[j].rect);
+                    if (distance > 0 && distance < 3) {
+                      graph3DLabelQualityIssues.push(
+                        `label ${graph3DLabels[i].text || "label"} is crowded near ${graph3DLabels[j].text || "label"} (${Math.round(distance * 10) / 10}px)`,
+                      );
+                    }
+                  }
+                }
+              }
+              const labelSurfaceText = Array.from(frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text"))
+                .map((element) => element.textContent ?? "")
+                .join(" ");
+              const text = (frame.textContent ?? "").replace(/\\s+/g, " ").trim().slice(0, 240);
+              const normalizedLabelText = normalizeLabel([labelSurfaceText, ...labelSources.map(labelSearchText)].join(" "));
+              const colorProbe = document.createElement("span");
+              colorProbe.style.display = "none";
+              document.body.appendChild(colorProbe);
+              const normalizeColor = (value: string) => {
+                colorProbe.style.color = value;
+                return window.getComputedStyle(colorProbe).color;
+              };
+              const expectedColors = new Set(expectedFunctionColors.map(normalizeColor));
+              const functionStrokeCount = primitives.filter((element) => {
+                const stroke = window.getComputedStyle(element).stroke || element.getAttribute("stroke") || "";
+                return expectedColors.has(normalizeColor(stroke));
+              }).length;
+              colorProbe.remove();
+              return {
+                caseName,
+                type,
+                chartType,
+                hasSlopeField,
+                width: Math.round(rect.width * 10) / 10,
+                height: Math.round(rect.height * 10) / 10,
+                primitiveCount: primitives.length,
+                plotlyBarCount: frame.querySelectorAll(".barlayer path").length,
+                plotlyLineCount: frame.querySelectorAll(".scatterlayer .js-line, .scatterlayer path.js-line").length,
+                expectedFunctionColors,
+                functionStrokeCount,
+                expectedGraph3DPointCount: Number(frame.getAttribute("data-graph3d-point-count") || 0),
+                expectedGraph3DSegmentCount: Number(frame.getAttribute("data-graph3d-segment-count") || 0),
+                expectedGraph3DFaceCount: Number(frame.getAttribute("data-graph3d-face-count") || 0),
+                expectedGraph3DPointLabelCount,
+                expectedGraph3DSegmentLabelCount,
+                expectedGraph3DFaceLabelCount,
+                expectedGraph3DDimensionLabelCount,
+                expectedGraph3DSolidKinds,
+                graph3DPointLabelCount,
+                graph3DSegmentLabelCount,
+                graph3DFaceLabelCount,
+                graph3DDimensionLabelCount,
+                labelCount: frame.querySelectorAll(".jxg-latex-label, foreignObject, text, .annotation-text").length,
+                renderedGraphic: Boolean(frame.querySelector("svg, canvas, img, .js-plotly-plot, .jxgbox")),
+                text,
+                requiredLabels,
+                missingLabels: requiredLabels.filter((label) => !normalizedLabelText.includes(normalizeLabel(label))),
+                labelCollisionCount: labelCollisionPairs.length,
+                labelCollisionPairs: labelCollisionPairs.slice(0, 6),
+                vector2dAngleMarkerIssues,
+                graph3DLabelQualityIssues: graph3DLabelQualityIssues.slice(0, 8),
+              };
+            }),
         )
       ).map((metric) => ({ ...metric, view }));
       const renderedWarnings = dedupeWarnings((renderedMetrics.warnings ?? []).map((warning) => ({ ...warning, view })));
