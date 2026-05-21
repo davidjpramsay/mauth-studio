@@ -3233,6 +3233,51 @@ test("accepts native graph2d slope fields", () => {
   assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.type : "", "graph2d");
 });
 
+test("accepts native graph2d polar guide grids", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "argand-polar-grid",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                xMin: -4.5,
+                xMax: 4.5,
+                yMin: -4.5,
+                yMax: 4.7,
+                data: {
+                  polarGrid: {
+                    radii: [1, 2, 3, 4],
+                    angleLinesDeg: [15, 30, 45, 60, 75, 105, 120, 135, 150, 165],
+                    radius: 4,
+                    color: "#d9d9d9",
+                    strokeWidth: 1,
+                  },
+                },
+                features: [
+                  { kind: "point", x: -1.732, y: 1, label: "$z_1$" },
+                  { kind: "point", x: 1.035, y: -3.864, label: "$z_2$" },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "argand-polar-grid");
+  assert.equal(diagram?.kind, "diagram");
+  assert.deepEqual(diagram?.kind === "diagram" ? diagram.graphConfig.data?.polarGrid?.radii : undefined, [1, 2, 3, 4]);
+});
+
 test("rejects malformed graph2d slope fields", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",

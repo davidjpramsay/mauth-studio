@@ -1,5 +1,12 @@
 import { useEffect, useMemo } from "react";
-import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece, GraphSlopeFieldPoint } from "@mauth-studio/shared";
+import type {
+  Graph2DPolarGridData,
+  GraphConfig,
+  GraphFeature,
+  GraphFunction,
+  GraphFunctionPiece,
+  GraphSlopeFieldPoint,
+} from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
 import { renderMathJaxSvg } from "@/lib/mathjax";
@@ -217,6 +224,16 @@ interface SlopeFieldSpec {
   highlightedPoints?: GraphSlopeFieldPoint[];
 }
 
+interface PolarGridSpec {
+  center: [number, number];
+  radii: number[];
+  angleLinesDeg: number[];
+  radius: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
+}
+
 function graphFunctions(graphConfig?: GraphConfig | null): GraphFunction[] {
   if (!graphConfig) return [];
   if (Array.isArray(graphConfig.functions)) return graphConfig.functions;
@@ -365,6 +382,13 @@ function numberTuple(value: unknown): [number, number] | undefined {
   return left < right ? [left, right] : [right, left];
 }
 
+function pointTuple(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const x = finiteNumberFromUnknown(value[0]);
+  const y = finiteNumberFromUnknown(value[1]);
+  return x === null || y === null ? undefined : [x, y];
+}
+
 function numberList(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number" && Number.isFinite(item)) : undefined;
 }
@@ -414,6 +438,42 @@ function slopeFieldSpec(graphConfig: GraphConfig): SlopeFieldSpec | null {
       ? record.highlightedPoints.flatMap((point) => slopeFieldPoint(point) ?? [])
       : undefined,
   };
+}
+
+function polarGridSpec(graphConfig: GraphConfig): PolarGridSpec | null {
+  const data = graphDataRecord(graphConfig);
+  const raw = data.polarGrid;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Graph2DPolarGridData & Record<string, unknown>;
+  if (record.show === false) return null;
+  const centerTuple = pointTuple(record.center);
+  const radii = (numberList(record.radii) ?? []).filter((radius) => radius > 0);
+  const angleLinesDeg = numberList(record.angleLinesDeg) ?? numberList(record.anglesDeg) ?? [];
+  const angleLinesRad = numberList(record.angleLinesRad);
+  const convertedAngles = angleLinesRad?.map((angle) => (angle * 180) / Math.PI) ?? [];
+  const radius = finiteNumberFromUnknown(record.radius) ?? Math.max(0, ...radii);
+  if (!radii.length && !angleLinesDeg.length && !convertedAngles.length) return null;
+  return {
+    center: centerTuple ?? [0, 0],
+    radii,
+    angleLinesDeg: [...angleLinesDeg, ...convertedAngles],
+    radius: radius > 0 ? radius : Math.max(1, ...radii),
+    color: typeof record.color === "string" ? record.color : undefined,
+    strokeWidth: finiteNumberFromUnknown(record.strokeWidth) ?? undefined,
+    strokeStyle: record.strokeStyle === "dashed" || record.strokeStyle === "solid" ? record.strokeStyle : undefined,
+  };
+}
+
+function normalizedAngleLineDegrees(values: number[]) {
+  const seen = new Set<number>();
+  return values.flatMap((value) => {
+    if (!Number.isFinite(value)) return [];
+    const normalized = ((value % 180) + 180) % 180;
+    const key = Math.round(normalized * 1000);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return normalized;
+  });
 }
 
 function finiteValue(evaluator: (x: number) => number, x: number) {
@@ -723,6 +783,47 @@ function renderSlopeField(
     if (point.label?.trim()) {
       createLabelText(board, point.x, point.y, point.label, color);
     }
+  });
+}
+
+function renderPolarGrid(board: JXG.Board, graphConfig: GraphConfig) {
+  const grid = polarGridSpec(graphConfig);
+  if (!grid) return;
+
+  const [centerX, centerY] = grid.center;
+  const attributes = {
+    fixed: true,
+    highlight: false,
+    strokeColor: grid.color ?? "#d9d9d9",
+    strokeWidth: grid.strokeWidth ?? 1,
+    dash: lineDash(grid.strokeStyle),
+    layer: GRAPH_LAYERS.grid,
+  } as Record<string, unknown>;
+
+  grid.radii.forEach((radius) => {
+    board.create(
+      "curve",
+      [(t: number) => centerX + radius * Math.cos(t), (t: number) => centerY + radius * Math.sin(t), 0, 2 * Math.PI],
+      attributes,
+    );
+  });
+
+  normalizedAngleLineDegrees(grid.angleLinesDeg).forEach((angleDeg) => {
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const dx = grid.radius * Math.cos(angleRad);
+    const dy = grid.radius * Math.sin(angleRad);
+    board.create(
+      "segment",
+      [
+        [centerX - dx, centerY - dy],
+        [centerX + dx, centerY + dy],
+      ],
+      {
+        ...attributes,
+        straightFirst: false,
+        straightLast: false,
+      },
+    );
   });
 }
 
@@ -2951,6 +3052,7 @@ export function FunctionGraph({ graphConfig, solutionColor, solutionFeatureColor
       }
     }
 
+    renderPolarGrid(board, graphConfig);
     renderSlopeField(board, graphConfig, xMajorStep, yMajorStep, xMin, xMax, yMin, yMax);
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {

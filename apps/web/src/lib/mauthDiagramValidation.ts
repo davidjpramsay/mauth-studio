@@ -685,6 +685,31 @@ function validateSlopeField(config: Record<string, unknown>, path: string, issue
   );
 }
 
+function validatePolarGrid(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const data = optionalRecord(config, "data", path, issues);
+  if (!data || !hasOwn(data, "polarGrid")) return;
+  const polarGrid = optionalRecord(data, "polarGrid", `${path}.data`, issues);
+  if (!polarGrid) return;
+  optionalBoolean(polarGrid, "show", `${path}.data.polarGrid`, issues);
+  optionalString(polarGrid, "color", `${path}.data.polarGrid`, issues);
+  optionalEnum(polarGrid, "strokeStyle", `${path}.data.polarGrid`, STROKE_STYLES, issues);
+  optionalNumber(polarGrid, "strokeWidth", `${path}.data.polarGrid`, issues, { positive: true });
+  optionalNumber(polarGrid, "radius", `${path}.data.polarGrid`, issues, { positive: true });
+  numberArray(polarGrid, "radii", `${path}.data.polarGrid`, issues);
+  numberArray(polarGrid, "angleLinesDeg", `${path}.data.polarGrid`, issues);
+  numberArray(polarGrid, "anglesDeg", `${path}.data.polarGrid`, issues);
+  numberArray(polarGrid, "angleLinesRad", `${path}.data.polarGrid`, issues);
+  const center = optionalArray(polarGrid, "center", `${path}.data.polarGrid`, issues);
+  if (center) {
+    if (center.length !== 2) {
+      addIssue(issues, `${path}.data.polarGrid.center`, "must be a pair of finite numbers", "[x, y]");
+    }
+    center.forEach((value, index) => {
+      if (!finiteNumber(value)) addIssue(issues, `${path}.data.polarGrid.center[${index}]`, "must be a finite number", "number");
+    });
+  }
+}
+
 function validateGraph2DFieldPlacement(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   for (const [key, expected] of GRAPH2D_UNSUPPORTED_TOP_LEVEL_FIELDS) {
     if (!hasOwn(config, key)) continue;
@@ -698,7 +723,7 @@ function validateGraph2DFieldPlacement(config: Record<string, unknown>, path: st
       addIssue(
         issues,
         `${path}.data.${key}`,
-        "must be moved out of graphConfig.data; graph2d.data is only for renderer data such as slopeField",
+        "must be moved out of graphConfig.data; graph2d.data is only for renderer data such as slopeField or polarGrid",
         expected,
       );
     }
@@ -753,6 +778,7 @@ function validateCoordinateGraph(config: Record<string, unknown>, path: string, 
   validateGraphFunctions(config, path, issues);
   validateGraphFeatures(config, path, issues);
   validateSlopeField(config, path, issues);
+  validatePolarGrid(config, path, issues);
 }
 
 function validateVector2D(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {

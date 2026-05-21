@@ -1607,7 +1607,10 @@ def focused_tool_hint(
                 "strokeColor; use functions plus functionAIndex/functionBIndex or "
                 "baseFeatureIndex/clipFunctionIndex/clipSide, xMin/xMax bounds, label features with x/y, "
                 "line_segment with x1/y1/x2/y2, and fillOpacity for shading. Use region_between_curves, not "
-                "region_between. Preserve the source "
+                "region_between. Preserve source "
+                "Argand polar-guide backgrounds with data.polarGrid:{radii,angleLinesDeg,radius,color,strokeWidth}; "
+                "angleLinesDeg stores undirected guide-line orientations, so list each orientation once in [0,180), "
+                "not both theta and theta+180, instead of repeating every guide circle and radial guide line as separate functions/features. Preserve the source "
                 "or marking-key reference for argument bounds: a locus may combine |z-i| with Arg(z), so do not "
                 "change Arg(z) to Arg(z-i) unless the source actually uses the shifted argument. Draw stated "
                 "argument-boundary rays from the origin with finite line_segment features or boundary functions whose "
@@ -1988,6 +1991,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus xMin/xMax; use fillOpacity, "
                     "not region_between, polygon/free_label, functionIndex1/functionIndex2, feature domainMin/domainMax, "
                     "points/coords, expressionTop/expressionBottom/opacity/fillColor/strokeColor fields. "
+                    "For Argand polar-guide backgrounds, use graphConfig.data.polarGrid with radii, angleLinesDeg, radius, "
+                    "color, and strokeWidth instead of repeating every guide circle and radial guide line as separate functions/features; "
+                    "angleLinesDeg stores undirected guide-line orientations, so list each orientation once in [0,180), not both theta and theta+180. "
                     "For Argand loci with argument bounds, preserve the Arg(z) reference and draw boundary rays from the origin "
                     "as finite line_segment features or boundary functions with ray-limited domainMin/domainMax; full infinite "
                     "line functions are not enough, and those rays must not be folded into a shifted circle such as |z-i|. "
@@ -2031,7 +2037,7 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "data": {
                         "type": "object",
                         "description": (
-                            "Renderer data. For graph2d, only use this for data.slopeField; do not put graph2d "
+                            "Renderer data. For graph2d, only use this for data.slopeField or data.polarGrid; do not put graph2d "
                             "functions, features, bounds, size, or axes fields here. For graph3d, use "
                             "points:[{id,label,coords:[x,y,z]}], segments:[{from,to,label?,strokeStyle?,dashed?}], "
                             "faces:[{points:[...]}] not vertices, and "
@@ -2221,7 +2227,8 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
 
     guides = {
         "graph2d": (
-            "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField belongs under data. "
+            "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField or polarGrid belongs under data. "
+            "Use data.polarGrid for repeated Argand polar-guide circles/radial guide lines, with angleLinesDeg listing undirected orientations once in [0,180). "
             "For locus/region shading, define boundary functions first and use supported indexed region features; "
             "use region_between_curves or region_curve_axis, xMin/xMax, and fillOpacity, not region_between, "
             "functionIndex1/functionIndex2, feature domainMin/domainMax, polygon/free_label, points/coords, fillColor, opacity, or strokeColor. "
@@ -3673,7 +3680,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField or data.polarGrid under data. For Argand polar-guide backgrounds, use data.polarGrid with radii, angleLinesDeg, radius, color, and strokeWidth instead of repeating every guide circle and radial guide line as separate functions/features; angleLinesDeg stores undirected guide-line orientations, so list each orientation once in [0,180), not both theta and theta+180. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. For source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions."
         )
     if "graph3d" in allowed:
         lines.append(

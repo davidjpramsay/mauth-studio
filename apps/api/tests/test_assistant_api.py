@@ -736,6 +736,7 @@ def test_source_conversion_brain_context_is_renderer_focused():
 
     assert "For graph2d source diagrams" in argand
     assert "Arg(z)" in argand
+    assert "data.polarGrid" in argand
     assert "domainMin/domainMax" in argand
     assert "full infinite line functions" in argand
     assert "For graph3d source solids" not in argand

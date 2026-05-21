@@ -167,7 +167,12 @@ export interface WorkedStep {
 
 export interface GraphConfig {
   type: DiagramType;
-  data?: GeometricDiagramData | StatsChartData | Graph3DData | ImageDiagramData | Record<string, unknown>;
+  data?:
+    | GeometricDiagramData
+    | StatsChartData
+    | Graph3DData
+    | ImageDiagramData
+    | ({ polarGrid?: Graph2DPolarGridData } & Record<string, unknown>);
   style?: string;
   options?: Record<string, unknown>;
   expression?: string;
@@ -214,6 +219,19 @@ export interface GraphConfig {
   functionExtensionLeft?: number;
   functionExtensionRight?: number;
   metadata?: Record<string, unknown>;
+}
+
+export interface Graph2DPolarGridData {
+  show?: boolean;
+  center?: [number, number];
+  radii?: number[];
+  radius?: number;
+  angleLinesDeg?: number[];
+  anglesDeg?: number[];
+  angleLinesRad?: number[];
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
 }
 
 export interface GeometricDiagramObject {

@@ -8212,6 +8212,22 @@ def local_real_specialist_argand_bad_region_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_argand_compact_polar_grid_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["data"] = {
+        "polarGrid": {
+            "radii": [1, 2, 3, 4],
+            "angleLinesDeg": [15, 30, 45, 60, 75, 105, 120, 135, 150, 165],
+            "radius": 4,
+            "color": "#d9d9d9",
+            "strokeWidth": 1,
+        }
+    }
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_argand_bad_shifted_arg_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_argand_call()))
     part_d = call["mauthArguments"]["parts"][3]
@@ -9948,6 +9964,10 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "clipSide should be set",
         ],
     },
+    "real-specialist-argand-compact-polar-grid": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_compact_polar_grid_call,
+    },
     "real-specialist-argand-bad-shifted-arg": {
         "assert": assert_real_specialist_argand_call,
         "call": local_real_specialist_argand_bad_shifted_arg_call,
@@ -10342,6 +10362,7 @@ LOCAL_EVAL_GROUPS: dict[str, list[str]] = {
         "real-specialist-confidence-intervals",
         "real-specialist-slope-field",
         "real-specialist-argand",
+        "real-specialist-argand-compact-polar-grid",
         "real-specialist-spherical-cap",
         "real-specialist-prism",
         "real-specialist-square-pyramid",
