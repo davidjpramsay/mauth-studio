@@ -588,14 +588,67 @@ function compactDiagramSummary(config: GraphConfig): MauthPreviewDiagramSummary 
         show: entry.show === undefined ? undefined : booleanField(entry.show),
       }));
     if (features.length) summary.features = features;
+    const graph2dData: Record<string, unknown> = {};
     if (isRecord(config.data) && isRecord(config.data.slopeField)) {
       const slopeField = compactPlainRecord(
         config.data.slopeField,
         ["expression", "xValues", "yValues", "xRange", "yRange", "xStep", "yStep", "segmentLength", "points", "highlightedPoints"],
         16,
       );
-      if (slopeField) summary.data = { slopeField };
+      if (slopeField) graph2dData.slopeField = slopeField;
     }
+    if (isRecord(config.data) && isRecord(config.data.geometry2d)) {
+      const geometry2d = config.data.geometry2d;
+      const points = recordArray(geometry2d.points)
+        .slice(0, 12)
+        .map((entry) => ({
+          id: stringField(entry.id, 40),
+          label: stringField(entry.label, 80),
+          x: numberField(entry.x),
+          y: numberField(entry.y),
+          show: entry.show === undefined ? undefined : booleanField(entry.show),
+        }));
+      const segments = recordArray(geometry2d.segments)
+        .slice(0, 16)
+        .map((entry) => ({
+          id: stringField(entry.id, 40),
+          from: stringField(entry.from, 40),
+          to: stringField(entry.to, 40),
+          label: stringField(entry.label, 80),
+          strokeStyle: stringField(entry.strokeStyle, 40),
+          show: entry.show === undefined ? undefined : booleanField(entry.show),
+        }));
+      const angles = recordArray(geometry2d.angles)
+        .slice(0, 12)
+        .map((entry) => ({
+          id: stringField(entry.id, 40),
+          points: Array.isArray(entry.points) ? entry.points.slice(0, 3).map((point) => stringField(point, 40)) : undefined,
+          label: stringField(entry.label, 80),
+          rightAngle: booleanField(entry.rightAngle),
+        }));
+      const decorations = recordArray(geometry2d.decorations)
+        .slice(0, 12)
+        .map((entry) => ({
+          kind: stringField(entry.kind, 40),
+          segments: Array.isArray(entry.segments) ? entry.segments.slice(0, 4).map((segment) => stringField(segment, 40)) : undefined,
+          angles: Array.isArray(entry.angles) ? entry.angles.slice(0, 4).map((angle) => stringField(angle, 40)) : undefined,
+          angle: stringField(entry.angle, 40),
+          tickCount: numberField(entry.tickCount),
+          arcCount: numberField(entry.arcCount),
+          label: stringField(entry.label, 80),
+        }));
+      graph2dData.geometry2d = {
+        pointCount: recordArray(geometry2d.points).length,
+        segmentCount: recordArray(geometry2d.segments).length,
+        angleCount: recordArray(geometry2d.angles).length,
+        decorationCount: recordArray(geometry2d.decorations).length,
+        ...(points.length ? { points } : {}),
+        ...(segments.length ? { segments } : {}),
+        ...(angles.length ? { angles } : {}),
+        ...(decorations.length ? { decorations } : {}),
+      };
+    }
+    if (Object.keys(graph2dData).length) summary.data = graph2dData;
     return summary;
   }
 
@@ -1816,7 +1869,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.author.addDiagram",
         description:
-          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }, or from vectorRayDiagram for source-faithful scalar-product ray diagrams. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics including density/normal/blankAxes charts, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
+          "Add or replace a top-level diagram in one existing question from a real Mauth graphConfig wrapped as { graphConfig: { type: ... } }, or from vectorRayDiagram for source-faithful scalar-product ray diagrams. Use diagramId when repairing/replacing an existing diagram. Choose graphConfig.type first: geometricConstruction for Penrose theorem geometry, graph2d for coordinate/function graphs and source-faithful 2D geometry linework via data.geometry2d, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics including density/normal/blankAxes charts, setDiagram for Venn diagrams, graph3d for 3D, or image for uploads.",
       },
       {
         name: "mauth.author.ensureSolutions",
@@ -1929,7 +1982,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
-      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
+      "Choose diagram renderers by classroom intent: geometricConstruction for ruler-style theorem geometry, graph2d for coordinate/function graphs and source-faithful 2D geometry linework via data.geometry2d, vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams, statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes, setDiagram for Venn diagrams, network for networks, and graph3d for 3D.",
       "For graph3d, use data.points for named vertices and data.faces entries with points arrays, not vertices arrays; for curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",

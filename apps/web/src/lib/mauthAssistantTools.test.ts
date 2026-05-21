@@ -136,10 +136,12 @@ test("describes the assistant tool surface and supported action types", () => {
   assert(description.tools.some((tool) => tool.name === "mauth.question.upsert"));
   assert(description.tools.some((tool) => tool.name === "mauth.solutions.writeAll"));
   assert(description.tools.some((tool) => tool.name === "mauth.layout.check"));
+  assert(description.tools.some((tool) => tool.name === "mauth.author.addDiagram" && tool.description.includes("data.geometry2d")));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
   assert(description.workflow.some((step) => step.includes("Preview")));
+  assert(description.workflow.some((step) => step.includes("source-faithful 2D geometry linework")));
 });
 
 test("runs the tool description through the assistant dispatcher", () => {
@@ -3465,6 +3467,22 @@ test("accepts native graph2d semantic geometry decorations", () => {
       : undefined;
   assert.equal(Array.isArray(geometry2d?.decorations), true);
   assert.equal(geometry2d?.decorations?.length, 3);
+
+  const previewResult = runMauthAssistantTool(result.document!, {
+    name: "mauth.preview.inspect",
+    arguments: { questionNumber: 1 },
+  });
+  const preview = previewResult.data as MauthPreviewInspection;
+  const graph2dDiagram = preview.question?.diagrams.find((previewDiagram) => previewDiagram.graphType === "graph2d");
+  const geometrySummary = graph2dDiagram?.summary.data?.geometry2d as Record<string, unknown> | undefined;
+  const decorationSummary = geometrySummary?.decorations as Array<Record<string, unknown>> | undefined;
+
+  assert.equal(previewResult.ok, true);
+  assert.equal(geometrySummary?.pointCount, 4);
+  assert.equal(geometrySummary?.segmentCount, 4);
+  assert.equal(geometrySummary?.angleCount, 2);
+  assert.equal(geometrySummary?.decorationCount, 3);
+  assert(decorationSummary?.some((decoration) => decoration.kind === "rightAngle"));
 });
 
 test("rejects malformed graph2d slope fields", () => {

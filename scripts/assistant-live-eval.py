@@ -2862,6 +2862,52 @@ def assert_graph2d_function_call(call: dict[str, Any]) -> list[str]:
     )
 
 
+def assert_graph2d_geometry2d_decorations_call(call: dict[str, Any]) -> list[str]:
+    issues = assert_diagram_type_call(
+        call,
+        expected_type="graph2d",
+        required_terms=("geometry2d", "equalLength", "equalAngle", "rightAngle"),
+        forbidden_types=("geometricConstruction", "statsChart", "vector2d"),
+    )
+    if call.get("name") != "mauth_make_diagram_for_question":
+        issues.append(f"expected provider alias mauth_make_diagram_for_question, got {call.get('name')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return issues
+    graph_config = diagram_graph_config(args)
+    data = graph_config.get("data")
+    geometry2d = data.get("geometry2d") if isinstance(data, dict) else None
+    if not isinstance(geometry2d, dict):
+        issues.append("source-faithful graph2d geometry should use graphConfig.data.geometry2d")
+        return issues
+
+    point_ids = {str(point.get("id")) for point in geometry2d.get("points", []) if isinstance(point, dict)}
+    segment_ids = {str(segment.get("id")) for segment in geometry2d.get("segments", []) if isinstance(segment, dict)}
+    angle_ids = {str(angle.get("id")) for angle in geometry2d.get("angles", []) if isinstance(angle, dict)}
+    decoration_kinds = {
+        str(decoration.get("kind")) for decoration in geometry2d.get("decorations", []) if isinstance(decoration, dict)
+    }
+    if not {"A", "B", "C", "D"}.issubset(point_ids):
+        issues.append(f"geometry2d points should include A, B, C, and D; got {sorted(point_ids)!r}")
+    if not {"AB", "BC", "CD", "DA"}.issubset(segment_ids):
+        issues.append(f"geometry2d segments should include AB, BC, CD, and DA; got {sorted(segment_ids)!r}")
+    if not {"ABC", "BCD"}.issubset(angle_ids):
+        issues.append(f"geometry2d angles should include ABC and BCD; got {sorted(angle_ids)!r}")
+    if not {"equalLength", "equalAngle", "rightAngle"}.issubset(decoration_kinds):
+        issues.append(
+            "geometry2d decorations should preserve equal-length, equal-angle, and right-angle semantics; "
+            f"got {sorted(decoration_kinds)!r}"
+        )
+    if graph_config.get("features"):
+        issues.append("semantic geometry fixture should not encode same-length/angle/right-angle markers as graph2d features")
+    for validation_issue in graph2d_validation_issues_from_call(call):
+        issues.append(
+            "graph2d geometry2d validation issue at "
+            f"{validation_issue.get('path')}: {validation_issue.get('message')}"
+        )
+    return issues
+
+
 def assert_set_diagram_call(call: dict[str, Any]) -> list[str]:
     return assert_diagram_type_call(
         call,
@@ -7754,6 +7800,58 @@ def local_screenshot_scalar_products_native_vector2d_call() -> dict[str, Any]:
     return call
 
 
+def local_graph2d_geometry2d_decorations_call() -> dict[str, Any]:
+    return local_tool_call(
+        "mauth_make_diagram_for_question",
+        "mauth.author.addDiagram",
+        {
+            "questionNumber": 1,
+            "diagram": {
+                "diagramAlign": "center",
+                "graphConfig": {
+                    "type": "graph2d",
+                    "xMin": -0.75,
+                    "xMax": 4.75,
+                    "yMin": -0.75,
+                    "yMax": 3.75,
+                    "widthPx": 380,
+                    "heightPx": 300,
+                    "equalScale": True,
+                    "showAxes": False,
+                    "showGrid": False,
+                    "showAxisNumbers": False,
+                    "data": {
+                        "geometry2d": {
+                            "points": [
+                                {"id": "A", "x": 0, "y": 0, "label": "$A$"},
+                                {"id": "B", "x": 4, "y": 0, "label": "$B$"},
+                                {"id": "C", "x": 4, "y": 3, "label": "$C$"},
+                                {"id": "D", "x": 0, "y": 3, "label": "$D$"},
+                            ],
+                            "segments": [
+                                {"id": "AB", "from": "A", "to": "B", "label": "$4\\ \\text{cm}$"},
+                                {"id": "BC", "from": "B", "to": "C", "label": "$3\\ \\text{cm}$"},
+                                {"id": "CD", "from": "C", "to": "D", "strokeStyle": "dashed"},
+                                {"id": "DA", "from": "D", "to": "A"},
+                            ],
+                            "angles": [
+                                {"id": "ABC", "points": ["A", "B", "C"]},
+                                {"id": "BCD", "points": ["B", "C", "D"]},
+                            ],
+                            "decorations": [
+                                {"kind": "equalLength", "segments": ["AB", "CD"], "tickCount": 1},
+                                {"kind": "equalAngle", "angles": ["ABC", "BCD"], "arcCount": 1},
+                                {"kind": "rightAngle", "angle": "ABC"},
+                            ],
+                        }
+                    },
+                },
+            },
+            "placement": "beforeStudentSpace",
+        },
+    )
+
+
 def local_screenshot_scalar_products_bad_native_label_placement_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_screenshot_scalar_products_native_vector2d_call()))
     vector2d = call["mauthArguments"]["diagram"]["graphConfig"]["metadata"]["vector2d"]
@@ -10786,6 +10884,10 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "vectorRayDiagram should make b perpendicular to d",
             "vectorRayDiagram right-angle marker should span the perpendicular rays b and d",
         ],
+    },
+    "graph2d-geometry2d-decorations": {
+        "assert": assert_graph2d_geometry2d_decorations_call,
+        "call": local_graph2d_geometry2d_decorations_call,
     },
     "real-methods-earthquake": {
         "assert": assert_real_methods_earthquake_call,
