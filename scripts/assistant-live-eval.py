@@ -56,7 +56,6 @@ from app.services.openai_assistant import (  # noqa: E402
 from app.services.penrose import render_penrose_diagram  # noqa: E402
 
 BAD_CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
-MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = re.compile(r"(?<!\\)\$\\\$(?=\\?[A-Za-z0-9])")
 QUESTION_UPSERT_TOOL_NAME = "mauth.question.upsert"
 DEFAULT_LIVE_CASE_COST_CAP = 0.35
 DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
@@ -1186,9 +1185,48 @@ def control_character_issues(text: str, field_name: str) -> list[str]:
     return issues
 
 
+def is_escaped_dollar_delimiter(text: str, index: int) -> bool:
+    slash_count = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        slash_count += 1
+        cursor -= 1
+    return slash_count % 2 == 1
+
+
+def find_closing_math_delimiter(text: str, start_index: int, delimiter_length: int) -> int:
+    cursor = start_index
+    while cursor < len(text):
+        if text[cursor] != "$" or is_escaped_dollar_delimiter(text, cursor):
+            cursor += 1
+            continue
+        if delimiter_length == 2 and (cursor + 1 >= len(text) or text[cursor + 1] != "$"):
+            cursor += 1
+            continue
+        return cursor
+    return -1
+
+
+def contains_malformed_escaped_dollar_math(text: str) -> bool:
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] != "$" or is_escaped_dollar_delimiter(text, cursor):
+            cursor += 1
+            continue
+        delimiter_length = 2 if cursor + 1 < len(text) and text[cursor + 1] == "$" else 1
+        body_start = cursor + delimiter_length
+        closing_index = find_closing_math_delimiter(text, body_start, delimiter_length)
+        if closing_index == -1:
+            return False
+        if "\\$" in text[body_start:closing_index]:
+            return True
+        cursor = closing_index + delimiter_length
+    return False
+
+
 def latex_artifact_issues(text: str, field_name: str) -> list[str]:
     issues: list[str] = []
-    if MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN.search(text):
+    if contains_malformed_escaped_dollar_math(text):
         issues.append(f"{field_name} contains malformed escaped dollar inside maths")
     return issues
 
@@ -3581,9 +3619,11 @@ def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
 
     serialized = call_text(call).lower()
     compact_serialized = compact_math_text(serialized)
-    for term in ("ulam", "four standard dice", "500", "10 000", "charity", "profit"):
+    for term in ("ulam", "four standard dice", "500", "charity", "profit"):
         if term not in serialized:
             issues.append(f"dice-game source conversion should preserve {term!r}")
+    if not any(term in serialized for term in ("10 000", "10\\,000", "10\\\\,000", "10,000")):
+        issues.append("dice-game source conversion should preserve '10 000'")
 
     graph_types = graph_config_types(args)
     if "statsChart" not in graph_types:
@@ -6290,7 +6330,18 @@ def real_source_graph2d_repair_failure_output(call: dict[str, Any], first_issues
 def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues: list[dict[str, Any]] = []
     for issue in first_issues:
-        if "should use statsChart" in issue or "should not be converted as a generic graph2d" in issue:
+        if "contains control character" in issue or "contains malformed escaped dollar" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].text/solutionText",
+                    "message": issue,
+                    "expected": (
+                        "valid LaTeX text only; for currency, write \\$400 as text, $400$ as a plain numeric "
+                        "amount, or words such as 'negative 9.4 cents'; never put \\$ inside $...$ maths"
+                    ),
+                }
+            )
+        elif "should use statsChart" in issue or "should not be converted as a generic graph2d" in issue:
             validation_issues.append(
                 {
                     "path": "arguments.diagram.graphConfig.type",
@@ -7531,6 +7582,29 @@ def local_real_methods_dice_game_counts_in_values_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_dice_game_call()))
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
     data["values"] = data.pop("frequencies")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_thin_space_simulation_count_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["questionText"] = call["mauthArguments"]["questionText"].replace("10 000", "$10\\,000$")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_live_escaped_currency_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[3]["solutionText"] = (
+        "$$E(Y)=1\\times0.349+0\\times0.208-1\\times0.443=-0.094.$$ [[marks:2]]\n"
+        "$$\\operatorname{Var}(Y)=0.783.$$\n"
+        "The expected value is $-\\$0.094$. [[marks:2]]"
+    )
+    parts[4]["solutionText"] = (
+        "Yes. Since the expected profit for a player is $-\\$0.094$ per game, "
+        "the expected profit for the charity is $\\$0.094$ per game, so the game is profitable for the charity. [[marks:2]]"
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -9840,6 +9914,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "exact count charts should use frequencies, not values",
         ],
+    },
+    "real-methods-dice-game-thin-space-simulation-count": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_thin_space_simulation_count_call,
+    },
+    "real-methods-dice-game-live-escaped-currency": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_live_escaped_currency_call,
+        "expectedIssues": ["contains malformed escaped dollar inside maths"],
     },
     "real-specialist-lighthouse": {
         "assert": assert_real_lighthouse_question_call,

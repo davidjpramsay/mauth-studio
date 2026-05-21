@@ -2266,16 +2266,56 @@ const TRAILING_VISIBLE_MARK_NOTE_PATTERN =
 const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
-const MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN = /(^|[^\\])\$\\\$(?=\\?[A-Za-z0-9])/;
 const AUTHOR_TEXT_FIELD_KEYS = new Set(["questionText", "text", "prompt", "partText", "solutionText", "solution", "label"]);
+
+function isEscapedDollarDelimiter(value: string, index: number) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function findClosingMathDelimiter(value: string, startIndex: number, delimiterLength: 1 | 2) {
+  for (let cursor = startIndex; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== "$" || isEscapedDollarDelimiter(value, cursor)) {
+      continue;
+    }
+    if (delimiterLength === 2 && value[cursor + 1] !== "$") {
+      continue;
+    }
+    return cursor;
+  }
+  return -1;
+}
+
+function containsMalformedEscapedDollarMath(value: string) {
+  for (let cursor = 0; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== "$" || isEscapedDollarDelimiter(value, cursor)) {
+      continue;
+    }
+    const delimiterLength: 1 | 2 = value[cursor + 1] === "$" ? 2 : 1;
+    const bodyStart = cursor + delimiterLength;
+    const closingIndex = findClosingMathDelimiter(value, bodyStart, delimiterLength);
+    if (closingIndex === -1) {
+      return false;
+    }
+    if (value.slice(bodyStart, closingIndex).includes("\\$")) {
+      return true;
+    }
+    cursor = closingIndex + delimiterLength - 1;
+  }
+  return false;
+}
 
 function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
   if (typeof value === "string") {
-    if (MALFORMED_ESCAPED_DOLLAR_MATH_PATTERN.test(value)) {
+    if (containsMalformedEscapedDollarMath(value)) {
       issues.push({
         path,
         message: "contains malformed escaped dollar inside maths",
-        expected: "write inline maths as $\\overrightarrow{BT}$ and currency as \\$400 or $400$, not $\\$\\overrightarrow{BT}$ or $\\$400$",
+        expected:
+          "write inline maths as $\\overrightarrow{BT}$ and currency as \\$400, $400$, or words such as 'negative 9.4 cents'; never put \\$ inside $...$ maths",
       });
     }
     return;

@@ -2096,6 +2096,12 @@ test("high-level question authoring rejects malformed escaped-dollar maths", () 
           marks: 2,
           studentSpaceLines: 6,
         },
+        {
+          text: "Interpret the expected value.",
+          marks: 1,
+          studentSpaceLines: 3,
+          solutionText: "The expected value is $-\\$0.094$ per game.",
+        },
       ],
     },
   });
@@ -2109,6 +2115,25 @@ test("high-level question authoring rejects malformed escaped-dollar maths", () 
   assert(
     data.validationIssues?.some((issue) => issue.path === "arguments.parts[0].text" && issue.message.includes("malformed escaped dollar")),
   );
+  assert(
+    data.validationIssues?.some(
+      (issue) => issue.path === "arguments.parts[1].solutionText" && issue.message.includes("malformed escaped dollar"),
+    ),
+  );
+});
+
+test("high-level question authoring allows currency outside maths between inline maths", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 1,
+      questionText: "For $X$, the charge is \\$400 and $Y$ is the profit.",
+      studentSpaceLines: 3,
+    },
+  });
+
+  assert.equal(result.ok, true);
 });
 
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
