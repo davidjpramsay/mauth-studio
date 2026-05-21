@@ -250,6 +250,25 @@ function visibleGraphFunctionExpressions(config: GraphConfig) {
   return typeof config.expression === "string" && config.expression.trim() ? [config.expression.trim()] : [];
 }
 
+function compositeSectorTriangleContext(contextText: string) {
+  return /\bcomposite\s+(?:shape|area)\b/i.test(contextText) && /\bsector\b/i.test(contextText) && /\btriangle\b/i.test(contextText);
+}
+
+function normalizedLabelText(value: unknown) {
+  return typeof value === "string"
+    ? normalizedMathText(value)
+        .replace(/\\text\s*\{\s*([^}]+)\s*\}/g, "$1")
+        .replace(/[^a-z0-9]+/gi, "")
+        .toLowerCase()
+    : "";
+}
+
+function neutralDiagramColor(value: unknown) {
+  if (value === undefined || value === null || value === "") return true;
+  const normalized = String(value).trim().toLowerCase().replace(/\s+/g, "");
+  return ["black", "#000", "#000000", "#111", "#111111", "#111827", "rgb(0,0,0)", "rgba(0,0,0,1)"].includes(normalized);
+}
+
 function straightLineGraphExpectation(contextText: string) {
   if (/\btwo\s+(?:straight\s+)?lines?\b|\btwo\s+linear\s+(?:equations?|functions?)\b/i.test(contextText)) return 2;
   if (/\bstraight\s+line\b|\blinear\s+(?:equation|function|graph)\b/i.test(contextText)) return 1;
@@ -693,6 +712,49 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
         severity: "warning",
         message: "The prompt mentions an asymptote, but the graph has no dashed/labelled asymptote-like feature.",
         path: "graphConfig.features",
+      });
+    }
+  }
+
+  if (compositeSectorTriangleContext(contextText)) {
+    const visibleLineSegments = features.filter((feature) => feature.kind === "line_segment" && feature.show !== false);
+    const hasDashedSharedBoundary = visibleLineSegments.some((feature) => feature.strokeStyle === "dashed" || feature.dashed === true);
+    if (!hasDashedSharedBoundary) {
+      warnings.push({
+        code: "graph2d-composite-internal-boundary-not-dashed",
+        severity: "warning",
+        message:
+          "Composite sector/triangle area diagrams should draw the shared internal boundary as a dashed construction line, not as an outside solid edge.",
+        path: "graphConfig.features",
+      });
+    }
+
+    const decorativeRegionLabels = features
+      .filter((feature) => feature.kind === "label" && feature.show !== false)
+      .map((feature) => normalizedLabelText(feature.label))
+      .filter((label) => label === "sector" || label === "triangle");
+    if (decorativeRegionLabels.length) {
+      warnings.push({
+        code: "graph2d-composite-decorative-region-labels",
+        severity: "warning",
+        message:
+          "Composite area diagrams should label points, dimensions, and angles only; remove decorative region labels such as sector or triangle unless the source explicitly labels regions.",
+        path: "graphConfig.features",
+      });
+    }
+
+    const visibleStyledItems = [
+      ...recordArray(config.functions).filter((entry) => entry.show !== false),
+      ...features.filter((feature) => feature.show !== false),
+    ];
+    const nonNeutralStyledItem = visibleStyledItems.find((entry) => !neutralDiagramColor(entry.color));
+    if (nonNeutralStyledItem) {
+      warnings.push({
+        code: "graph2d-composite-nonneutral-styling",
+        severity: "warning",
+        message:
+          "Composite area diagrams for tests should use restrained black linework and labels unless the teacher explicitly asks for colour.",
+        path: "graphConfig.functions",
       });
     }
   }
@@ -1250,6 +1312,9 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph2d-source-axes-hidden" ||
     warning.code === "graph2d-source-axis-labels-hidden" ||
     warning.code === "graph2d-source-vector-labels-missing" ||
+    warning.code === "graph2d-composite-internal-boundary-not-dashed" ||
+    warning.code === "graph2d-composite-decorative-region-labels" ||
+    warning.code === "graph2d-composite-nonneutral-styling" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||

@@ -149,6 +149,126 @@ function statsChartConfig(): GraphConfig {
   } as unknown as GraphConfig;
 }
 
+function compositeSectorTriangleGraphConfig(options: { badStyle?: boolean } = {}): GraphConfig {
+  const badStyle = options.badStyle === true;
+  const lineColor = badStyle ? "#be123c" : "#000000";
+  const labelColor = badStyle ? "#1677ff" : "#000000";
+  return {
+    type: "graph2d",
+    functions: [
+      {
+        kind: "expression",
+        expression: "-sqrt(64-x^2)",
+        domainMode: "manual",
+        domainMin: 4,
+        domainMax: 8,
+        functionExtensionMode: "manual",
+        functionExtension: 0,
+        color: lineColor,
+        strokeWidth: 2,
+        show: true,
+        showLabel: false,
+      },
+      {
+        kind: "expression",
+        expression: "-sqrt(1-x^2)",
+        domainMode: "manual",
+        domainMin: 0.5,
+        domainMax: 1,
+        functionExtensionMode: "manual",
+        functionExtension: 0,
+        color: badStyle ? "#b45309" : "#000000",
+        strokeWidth: 1.5,
+        show: true,
+        showLabel: false,
+      },
+    ],
+    features: [
+      {
+        id: "shared-ob",
+        kind: "line_segment",
+        x1: 0,
+        y1: 0,
+        x2: 8,
+        y2: 0,
+        label: "$8\\text{ cm}$",
+        labelMode: "name",
+        labelX: 4,
+        labelY: 0.55,
+        color: lineColor,
+        strokeStyle: badStyle ? "solid" : "dashed",
+        strokeWidth: 2,
+        show: true,
+      },
+      {
+        id: "radius-oa",
+        kind: "line_segment",
+        x1: 0,
+        y1: 0,
+        x2: 4,
+        y2: -6.928,
+        label: "$8\\text{ cm}$",
+        labelMode: "name",
+        labelX: 1.55,
+        labelY: -3.55,
+        color: "#000000",
+        strokeWidth: 2,
+        show: true,
+      },
+      {
+        id: "height-bc",
+        kind: "line_segment",
+        x1: 8,
+        y1: 0,
+        x2: 8,
+        y2: 5,
+        label: "$5\\text{ cm}$",
+        labelMode: "name",
+        labelX: 8.6,
+        labelY: 2.5,
+        color: "#000000",
+        strokeWidth: 2,
+        show: true,
+      },
+      { id: "side-co", kind: "line_segment", x1: 8, y1: 5, x2: 0, y2: 0, color: "#000000", strokeWidth: 2, show: true },
+      { id: "right-angle-a", kind: "line_segment", x1: 7.5, y1: 0, x2: 7.5, y2: 0.5, color: "#000000", strokeWidth: 1, show: true },
+      { id: "right-angle-b", kind: "line_segment", x1: 7.5, y1: 0.5, x2: 8, y2: 0.5, color: "#000000", strokeWidth: 1, show: true },
+      { id: "label-o", kind: "label", x: -0.45, y: 0.35, label: "$O$", labelMode: "name", color: labelColor, show: true },
+      { id: "label-a", kind: "label", x: 4.05, y: -7.18, label: "$A$", labelMode: "name", color: "#000000", show: true },
+      { id: "label-b", kind: "label", x: 8.25, y: -0.25, label: "$B$", labelMode: "name", color: "#000000", show: true },
+      { id: "label-c", kind: "label", x: 8.25, y: 5.15, label: "$C$", labelMode: "name", color: "#000000", show: true },
+      { id: "label-angle", kind: "label", x: 1.3, y: -0.75, label: "$60^\\circ$", labelMode: "name", color: "#000000", show: true },
+      ...(badStyle
+        ? [
+            { id: "label-sector", kind: "label", x: 5.5, y: -3.2, label: "sector", labelMode: "name", color: "#b45309", show: true },
+            { id: "label-triangle", kind: "label", x: 5.2, y: 3.2, label: "triangle", labelMode: "name", color: "#be123c", show: true },
+          ]
+        : []),
+    ],
+    xMin: -1.2,
+    xMax: 9.4,
+    yMin: -7.8,
+    yMax: 6,
+    widthPx: badStyle ? 480 : 360,
+    heightPx: badStyle ? 390 : 300,
+    lockAspectRatio: true,
+    equalScale: true,
+    showGrid: false,
+    showMajorGrid: false,
+    showMinorGrid: false,
+    showAxes: false,
+    showArrows: false,
+    showAxisLabels: false,
+    showAxisNumbers: false,
+    showFunctionArrows: false,
+    axisExtensionMode: "manual",
+    axisExtension: 0,
+    functionExtensionMode: "manual",
+    functionExtension: 0,
+    metadata: { assistantDiagramRole: "composite-area-sector-triangle" },
+  } as unknown as GraphConfig;
+}
+
 function scalarProductVector2dGraphConfig(options: { includeAllLabels?: boolean; includeAngleMarkers?: boolean } = {}): GraphConfig {
   const includeAllLabels = options.includeAllLabels ?? true;
   const includeAngleMarkers = options.includeAngleMarkers ?? true;
@@ -368,6 +488,92 @@ const scenarios: SmokeScenario[] = [
           !warnings.some((warning) => warning.code === "graph2d-straight-line-mismatch"),
           "preview inspection should flag nonlinear graph2d functions for a straight-line prompt",
         ),
+      ];
+    },
+  },
+  {
+    id: "composite-sector-triangle-diagram-uses-exam-style",
+    prompt:
+      "For Question 2, make a composite area question involving a sector and a right-angled triangle, and include a diagram with dimensions.",
+    assistantPlan:
+      "Use mauth.question.upsert with a native graph2d diagram. Keep the composite geometry in restrained black, label only points/dimensions/angles, and draw the shared internal boundary as dashed.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Question 1."), spaceBlock("q1-space", 6)])]),
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 2,
+          marks: 5,
+          questionText:
+            "The diagram shows a composite shape made from a sector $OAB$ with centre $O$ and a right-angled triangle $OBC$, joined along $OB$.\n\nCalculate the area of the composite shape, correct to $1$ decimal place.",
+          diagram: {
+            graphConfig: compositeSectorTriangleGraphConfig(),
+          },
+          studentSpaceLines: 12,
+        },
+      },
+      { name: "mauth.preview.inspect", arguments: { questionNumber: 2 } },
+    ],
+    evaluate: ({ document, results }) => {
+      const diagram = diagrams(document, 1)[0];
+      const graphConfig = diagram?.kind === "diagram" ? diagram.graphConfig : undefined;
+      const features = (Array.isArray(graphConfig?.features) ? graphConfig.features : []) as Array<Record<string, unknown>>;
+      const functions = (Array.isArray(graphConfig?.functions) ? graphConfig.functions : []) as Array<Record<string, unknown>>;
+      const labels = features.map((feature) => String(feature.label ?? "").toLowerCase());
+      const inspection = results[1]?.data as { question?: { diagrams?: Array<{ warnings?: Array<{ code: string }> }> } };
+      const warnings = inspection.question?.diagrams?.[0]?.warnings ?? [];
+      return [
+        ...failIf(graphConfig?.type !== "graph2d", "composite sector/triangle diagram should use graph2d"),
+        ...failIf(Number(graphConfig?.widthPx ?? 0) > 400 || Number(graphConfig?.heightPx ?? 0) > 320, "diagram should be compact"),
+        ...failIf(
+          !features.some((feature) => feature.kind === "line_segment" && feature.strokeStyle === "dashed"),
+          "shared internal boundary should be dashed",
+        ),
+        ...failIf(labels.includes("sector") || labels.includes("triangle"), "diagram should not include decorative sector/triangle labels"),
+        ...failIf(
+          [...features, ...functions].some((entry) => entry.show !== false && entry.color !== "#000000"),
+          "composite diagram linework and labels should be black unless colour is requested",
+        ),
+        ...failIf(
+          warnings.length > 0,
+          `good composite diagram should have no style warnings; got ${warnings.map((w) => w.code).join(", ")}`,
+        ),
+      ];
+    },
+  },
+  {
+    id: "composite-sector-triangle-bad-style-is-rejected",
+    prompt:
+      "The assistant makes a composite area sector/triangle diagram but leaves the shared edge solid, adds decorative labels, and uses colours.",
+    assistantPlan:
+      "Commit preflight should return repairable graph2d-composite-* issues so the assistant repairs the native graph2d payload before reporting success.",
+    start: () => documentFixture([question("q1", 2, [textBlock("q1-text", "Question 1."), spaceBlock("q1-space", 6)])]),
+    useAdapterPreflight: true,
+    expectToolFailure: true,
+    calls: [
+      {
+        name: "mauth.question.upsert",
+        arguments: {
+          questionNumber: 1,
+          marks: 5,
+          questionText:
+            "The diagram shows a composite shape made from a sector $OAB$ with centre $O$ and a right-angled triangle $OBC$, joined along $OB$.\n\nCalculate the area of the composite shape, correct to $1$ decimal place.",
+          diagram: {
+            graphConfig: compositeSectorTriangleGraphConfig({ badStyle: true }),
+          },
+          studentSpaceLines: 12,
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => {
+      const result = results[0] as { ok?: boolean; data?: { validationIssues?: Array<{ message?: string }> } } | undefined;
+      const validationIssueText = (result?.data?.validationIssues ?? []).map((issue) => issue.message ?? "").join("\n");
+      return [
+        ...failIf(result?.ok !== false, "bad composite diagram style should fail commit preflight"),
+        ...failIf(diagrams(document).length !== 0, "failed composite diagram should not be committed"),
+        ...failIf(!/shared internal boundary as a dashed/.test(validationIssueText), "failure should name the dashed internal boundary"),
+        ...failIf(!/decorative region labels/.test(validationIssueText), "failure should name decorative region labels"),
+        ...failIf(!/restrained black linework/.test(validationIssueText), "failure should name non-neutral styling"),
       ];
     },
   },
