@@ -2062,11 +2062,15 @@ def test_source_conversion_given_graph_schema_hides_solution_diagram_surface_fie
     properties = tools[0]["parameters"]["properties"]
     part_properties = properties["parts"]["items"]["properties"]
     assert "diagram" in properties
+    assert "tables" in properties
     assert "solutionDiagram" not in properties
     assert "solutionDiagrams" not in properties
+    assert "solutionTables" not in properties
     assert "solutionDiagram" not in part_properties
     assert "solutionDiagrams" not in part_properties
-    assert "use diagram/diagrams only" in instructions
+    assert "tables" not in part_properties
+    assert "solutionTables" not in part_properties
+    assert "preserve the source artifact only" in instructions
 
 
 def test_source_conversion_diagram_answer_surface_schema_keeps_solution_diagrams():
@@ -2106,9 +2110,11 @@ def test_source_conversion_diagram_answer_surface_schema_keeps_solution_diagrams
     assert "diagram" in properties
     assert "solutionDiagram" in properties
     assert "solutionDiagrams" in properties
+    assert "solutionTables" not in properties
     assert "solutionDiagram" in part_properties
     assert "solutionDiagrams" in part_properties
-    assert "completed solutionTable/solutionDiagram" in instructions
+    assert "solutionTables" not in part_properties
+    assert "completed solutionDiagram" in instructions
 
 
 def test_deterministic_brain_selection_defers_general_chat_to_planner():

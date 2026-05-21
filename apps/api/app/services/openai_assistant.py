@@ -3572,9 +3572,7 @@ def assistant_tool_definitions(
     source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
     source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
     source_diagram_surface_fields = source_conversion_diagram_surface_fields_enabled(source_request_text)
-    source_table_surface_fields = source_diagram_fields or source_conversion_table_surface_fields_enabled(
-        source_request_text
-    )
+    source_table_surface_fields = source_conversion_table_surface_fields_enabled(source_request_text)
     compact_summary = compact_document_summary(document_summary, current_messages)
     intent = classify_request_intent(compact_summary, current_messages, attachments)
     repair_targets = tool_output_target_names(tool_outputs)
@@ -3894,12 +3892,19 @@ def source_conversion_assistant_instructions(
         table_surface_fields_enabled=table_surface_fields_enabled,
     )
     native_diagram_rules = source_conversion_native_diagram_rules(diagram_fields_enabled, diagram_types)
-    if diagram_surface_fields_enabled:
+    if diagram_surface_fields_enabled and table_surface_fields_enabled:
         artifact_surface_guidance = (
             "- For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, "
             "or shade a region, set answerSurface to table or diagram and provide the matching blank/partial "
             "student surface plus completed solutionTable/solutionDiagram when solutions are requested. "
             "Do not duplicate those same ticks in solutionText."
+        )
+    elif diagram_surface_fields_enabled:
+        artifact_surface_guidance = (
+            "- For artifact-answer tasks such as sketching, labelling, drawing a function, or shading directly "
+            "on a graph/diagram, set answerSurface to diagram and provide the matching blank/partial student "
+            "surface plus completed solutionDiagram when solutions are requested. Do not duplicate those same "
+            "ticks in solutionText."
         )
     elif table_surface_fields_enabled:
         artifact_surface_guidance = (
@@ -3980,9 +3985,7 @@ def assistant_instructions(
         source_conversion_diagram_surface_fields_enabled(source_request_text) if profile == "sourceConversion" else True
     )
     source_table_surface_fields = (
-        source_diagram_fields or source_conversion_table_surface_fields_enabled(source_request_text)
-        if profile == "sourceConversion"
-        else True
+        source_conversion_table_surface_fields_enabled(source_request_text) if profile == "sourceConversion" else True
     )
     brain_text = assistant_brain_context(
         current_messages,
