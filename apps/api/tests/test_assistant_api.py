@@ -1471,6 +1471,46 @@ def test_multi_renderer_source_question_schema_uses_diagrams_only():
     assert "diagrams" in subpart_properties
 
 
+def test_source_question_given_diagram_schema_omits_solution_diagram_surfaces():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(
+        require_diagram=True,
+        include_diagram_surface_fields=False,
+    )
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    subpart_properties = part_properties["subparts"]["items"]["properties"]
+
+    assert "diagram" in properties
+    assert "diagrams" in properties
+    assert "solutionDiagram" not in properties
+    assert "solutionDiagrams" not in properties
+    assert "diagram" in part_properties
+    assert "diagrams" in part_properties
+    assert "solutionDiagram" not in part_properties
+    assert "solutionDiagrams" not in part_properties
+    assert "diagram" in subpart_properties
+    assert "diagrams" in subpart_properties
+    assert "solutionDiagram" not in subpart_properties
+    assert "solutionDiagrams" not in subpart_properties
+
+
+def test_source_question_diagram_surface_schema_exposes_solution_diagrams():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(
+        require_diagram=True,
+        include_diagram_surface_fields=True,
+    )
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    subpart_properties = part_properties["subparts"]["items"]["properties"]
+
+    assert "solutionDiagram" in properties
+    assert "solutionDiagrams" in properties
+    assert "solutionDiagram" in part_properties
+    assert "solutionDiagrams" in part_properties
+    assert "solutionDiagram" in subpart_properties
+    assert "solutionDiagrams" in subpart_properties
+
+
 def test_source_question_table_only_schema_omits_diagram_payloads():
     tool = openai_assistant.mauth_convert_source_question_tool_definition(
         include_diagram_fields=False,
@@ -1531,6 +1571,18 @@ def test_source_table_surface_detection_distinguishes_given_tables():
     )
     assert openai_assistant.source_conversion_table_surface_fields_enabled(
         "Create this question and include the completed table from the marking key."
+    )
+
+
+def test_source_diagram_surface_detection_distinguishes_given_diagrams():
+    assert not openai_assistant.source_conversion_diagram_surface_fields_enabled(
+        "Preserve the coordinate graph, structured parts, marks, and include the worked solutions."
+    )
+    assert openai_assistant.source_conversion_diagram_surface_fields_enabled(
+        "Preserve the slope-field graph, solution-curve task, structured parts, marks, and include the worked solutions."
+    )
+    assert openai_assistant.source_conversion_diagram_surface_fields_enabled(
+        "Create this question with the blank axes and completed solution diagram from the marking key."
     )
 
 
@@ -1973,6 +2025,90 @@ def test_table_only_source_conversion_skips_diagram_brain_and_schema():
     assert "table/text-only source conversion" in instructions
     assert "question-level tables array only" in instructions
     assert "Native diagram rules:" not in instructions
+
+
+def test_source_conversion_given_graph_schema_hides_solution_diagram_surface_fields():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content=(
+                "Create Question 1 from the attached Methods exam screenshots and official marking-key excerpt. "
+                "Preserve the coordinate graph, structured parts, marks, and include the worked solutions."
+            ),
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="earthquake.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(
+        messages,
+        tool_outputs=None,
+        attachments=attachments,
+        document_summary={"questions": []},
+    )
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": []},
+        messages,
+        attachments=attachments,
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    properties = tools[0]["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    assert "diagram" in properties
+    assert "solutionDiagram" not in properties
+    assert "solutionDiagrams" not in properties
+    assert "solutionDiagram" not in part_properties
+    assert "solutionDiagrams" not in part_properties
+    assert "use diagram/diagrams only" in instructions
+
+
+def test_source_conversion_diagram_answer_surface_schema_keeps_solution_diagrams():
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content=(
+                "Create Question 1 from the attached Specialist exam screenshots and official marking-key excerpt. "
+                "Preserve the slope-field graph, solution-curve task, structured parts, marks, and include the worked solutions."
+            ),
+        )
+    ]
+    attachments = [
+        openai_assistant.AssistantAttachment(
+            name="slope-field.png",
+            mimeType="image/png",
+            dataUrl="data:image/png;base64,abc",
+            sizeBytes=3,
+        )
+    ]
+
+    tools = openai_assistant.assistant_tool_definitions(
+        messages,
+        tool_outputs=None,
+        attachments=attachments,
+        document_summary={"questions": []},
+    )
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": []},
+        messages,
+        attachments=attachments,
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
+    properties = tools[0]["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    assert "diagram" in properties
+    assert "solutionDiagram" in properties
+    assert "solutionDiagrams" in properties
+    assert "solutionDiagram" in part_properties
+    assert "solutionDiagrams" in part_properties
+    assert "completed solutionTable/solutionDiagram" in instructions
 
 
 def test_deterministic_brain_selection_defers_general_chat_to_planner():

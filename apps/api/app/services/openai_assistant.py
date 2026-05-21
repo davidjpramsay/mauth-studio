@@ -382,6 +382,50 @@ def source_conversion_table_surface_fields_enabled(text: str) -> bool:
     return any(term in text for term in table_surface_terms)
 
 
+def source_conversion_diagram_surface_fields_enabled(text: str) -> bool:
+    text = text.lower()
+    diagram_surface_terms = (
+        "answer surface",
+        'answersurface: "diagram"',
+        "answersurface:'diagram'",
+        "solutiondiagram",
+        "solution diagram",
+        "solutiondiagrams",
+        "solution diagrams",
+        "blank axes",
+        "blank axis",
+        "blank grid",
+        "blank graph",
+        "blank diagram",
+        "complete a graph",
+        "complete the graph",
+        "complete a diagram",
+        "complete the diagram",
+        "draw a function",
+        "draw the function",
+        "draw a graph",
+        "draw the graph",
+        "draw a tangent",
+        "draw the tangent",
+        "draw a slope",
+        "draw the slope",
+        "draw the solution curve",
+        "solution-curve task",
+        "solution curve task",
+        "sketch",
+        "label a graph",
+        "label the graph",
+        "label a diagram",
+        "label the diagram",
+        "shade a region",
+        "shade the region",
+        "shade the graph",
+        "shade on",
+        "sketch axes",
+    )
+    return any(term in text for term in diagram_surface_terms)
+
+
 def assistant_model() -> str:
     return os.environ.get("OPENAI_MODEL", DEFAULT_ASSISTANT_MODEL)
 
@@ -2850,6 +2894,7 @@ def source_conversion_part_schema(
     *,
     include_diagram_fields: bool = True,
     diagram_collection_only: bool = False,
+    include_diagram_surface_fields: bool = True,
     include_table_surface_fields: bool = True,
 ) -> dict[str, Any]:
     table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
@@ -2898,17 +2943,19 @@ def source_conversion_part_schema(
             "description": "Use columns for side-by-side source diagrams.",
         }
         subpart_properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
-        subpart_properties["solutionDiagrams"] = {
-            "type": "array",
-            "items": source_conversion_compact_diagram_block_schema(
-                "One completed solution-copy diagram.", diagram_types
-            ),
-        }
+        if include_diagram_surface_fields:
+            subpart_properties["solutionDiagrams"] = {
+                "type": "array",
+                "items": source_conversion_compact_diagram_block_schema(
+                    "One completed solution-copy diagram.", diagram_types
+                ),
+            }
         if not diagram_collection_only:
             subpart_properties["diagram"] = subpart_diagram
-            subpart_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
-                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-            )
+            if include_diagram_surface_fields:
+                subpart_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+                )
     subpart_schema = {
         "type": "object",
         "properties": subpart_properties,
@@ -2964,17 +3011,19 @@ def source_conversion_part_schema(
             "description": "Use columns for side-by-side source diagrams.",
         }
         part_properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
-        part_properties["solutionDiagrams"] = {
-            "type": "array",
-            "items": source_conversion_compact_diagram_block_schema(
-                "One completed solution-copy diagram.", diagram_types
-            ),
-        }
+        if include_diagram_surface_fields:
+            part_properties["solutionDiagrams"] = {
+                "type": "array",
+                "items": source_conversion_compact_diagram_block_schema(
+                    "One completed solution-copy diagram.", diagram_types
+                ),
+            }
         if not diagram_collection_only:
             part_properties["diagram"] = diagram
-            part_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
-                "Completed solution-copy diagram for answerSurface diagram.", diagram_types
-            )
+            if include_diagram_surface_fields:
+                part_properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                    "Completed solution-copy diagram for answerSurface diagram.", diagram_types
+                )
     return {
         "type": "object",
         "properties": part_properties,
@@ -2988,6 +3037,7 @@ def mauth_convert_source_question_tool_definition(
     require_diagram: bool = False,
     diagram_types: list[str] | None = None,
     include_diagram_fields: bool = True,
+    include_diagram_surface_fields: bool = True,
     include_table_surface_fields: bool = True,
 ) -> dict[str, Any]:
     include_diagram_fields = include_diagram_fields or require_diagram
@@ -3049,6 +3099,7 @@ def mauth_convert_source_question_tool_definition(
                 diagram_types,
                 include_diagram_fields=include_diagram_fields,
                 diagram_collection_only=diagram_collection_only,
+                include_diagram_surface_fields=include_diagram_surface_fields,
                 include_table_surface_fields=include_table_surface_fields,
             ),
         },
@@ -3075,17 +3126,19 @@ def mauth_convert_source_question_tool_definition(
             "description": "Use columns for side-by-side top-level source diagrams.",
         }
         properties["diagramColumns"] = {"type": "integer", "minimum": 2, "maximum": 4}
-        properties["solutionDiagrams"] = {
-            "type": "array",
-            "items": source_conversion_compact_diagram_block_schema(
-                "One completed solution-copy diagram.", diagram_types
-            ),
-        }
+        if include_diagram_surface_fields:
+            properties["solutionDiagrams"] = {
+                "type": "array",
+                "items": source_conversion_compact_diagram_block_schema(
+                    "One completed solution-copy diagram.", diagram_types
+                ),
+            }
         if not diagram_collection_only:
             properties["diagram"] = diagram
-            properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
-                "Completed solution-copy diagram.", diagram_types
-            )
+            if include_diagram_surface_fields:
+                properties["solutionDiagram"] = source_conversion_compact_diagram_block_schema(
+                    "Completed solution-copy diagram.", diagram_types
+                )
     return {
         "type": "function",
         "name": "mauth_convert_source_question",
@@ -3518,6 +3571,7 @@ def assistant_tool_definitions(
     source_request_text = request_text(current_messages, tool_outputs, attachments)
     source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
     source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
+    source_diagram_surface_fields = source_conversion_diagram_surface_fields_enabled(source_request_text)
     source_table_surface_fields = source_diagram_fields or source_conversion_table_surface_fields_enabled(
         source_request_text
     )
@@ -3548,6 +3602,7 @@ def assistant_tool_definitions(
             mauth_convert_source_question_tool_definition(
                 require_diagram=True,
                 diagram_types=source_diagram_types,
+                include_diagram_surface_fields=source_diagram_surface_fields,
                 include_table_surface_fields=source_table_surface_fields,
             )
         ]
@@ -3560,6 +3615,7 @@ def assistant_tool_definitions(
             mauth_convert_source_question_tool_definition(
                 require_diagram=True,
                 diagram_types=source_diagram_types,
+                include_diagram_surface_fields=source_diagram_surface_fields,
                 include_table_surface_fields=source_table_surface_fields,
             )
         ]
@@ -3608,6 +3664,7 @@ def assistant_tool_definitions(
                     require_diagram=require_repaired_diagram,
                     diagram_types=source_diagram_types,
                     include_diagram_fields=source_diagram_fields,
+                    include_diagram_surface_fields=source_diagram_surface_fields,
                     include_table_surface_fields=source_table_surface_fields,
                 )
             ]
@@ -3660,6 +3717,7 @@ def assistant_tool_definitions(
                 require_diagram=require_source_diagram,
                 diagram_types=source_diagram_types,
                 include_diagram_fields=source_diagram_fields,
+                include_diagram_surface_fields=source_diagram_surface_fields,
                 include_table_surface_fields=source_table_surface_fields,
             )
         ]
@@ -3690,6 +3748,7 @@ def assistant_tool_definitions(
             require_diagram=require_source_diagram,
             diagram_types=source_diagram_types,
             include_diagram_fields=source_diagram_fields,
+            include_diagram_surface_fields=source_diagram_surface_fields,
             include_table_surface_fields=source_table_surface_fields,
         )
         if asks_to_convert_source_question
@@ -3825,6 +3884,7 @@ def source_conversion_assistant_instructions(
     summary_text: str,
     brain_text: str,
     diagram_fields_enabled: bool = True,
+    diagram_surface_fields_enabled: bool = True,
     diagram_types: list[str] | None = None,
     table_surface_fields_enabled: bool = True,
 ) -> str:
@@ -3834,6 +3894,25 @@ def source_conversion_assistant_instructions(
         table_surface_fields_enabled=table_surface_fields_enabled,
     )
     native_diagram_rules = source_conversion_native_diagram_rules(diagram_fields_enabled, diagram_types)
+    if diagram_surface_fields_enabled:
+        artifact_surface_guidance = (
+            "- For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, "
+            "or shade a region, set answerSurface to table or diagram and provide the matching blank/partial "
+            "student surface plus completed solutionTable/solutionDiagram when solutions are requested. "
+            "Do not duplicate those same ticks in solutionText."
+        )
+    elif table_surface_fields_enabled:
+        artifact_surface_guidance = (
+            "- For artifact-answer tasks such as complete a table, set answerSurface to table and provide the "
+            "matching blank/partial student table plus completed solutionTable when solutions are requested. "
+            "For ordinary given/source graphs and diagrams, use diagram/diagrams only and put worked answers in "
+            "solutionText."
+        )
+    else:
+        artifact_surface_guidance = (
+            "- For ordinary given/source tables, graphs, and diagrams, preserve the source artifact only and put "
+            "worked answers in solutionText. Do not invent completed solution surfaces unless the schema exposes them."
+        )
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
 Instruction profile: sourceConversion. Convert exactly the current attached/pasted source question into native editable Mauth content through the provided direct Mauth function.
@@ -3847,7 +3926,7 @@ Source-conversion tool contract:
 - If the source places multiple diagrams side by side, put them in diagrams and set diagramLayout:"columns" with diagramColumns matching the source. Do not stack them vertically or fake columns with blank spaces.
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels.
 - For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
-- For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested. Do not duplicate those same ticks in solutionText.
+{artifact_surface_guidance}
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
 
 {native_diagram_rules}
@@ -3897,6 +3976,9 @@ def assistant_instructions(
     source_diagram_fields = (
         source_conversion_diagram_fields_enabled(source_request_text) if profile == "sourceConversion" else True
     )
+    source_diagram_surface_fields = (
+        source_conversion_diagram_surface_fields_enabled(source_request_text) if profile == "sourceConversion" else True
+    )
     source_table_surface_fields = (
         source_diagram_fields or source_conversion_table_surface_fields_enabled(source_request_text)
         if profile == "sourceConversion"
@@ -3923,6 +4005,7 @@ def assistant_instructions(
             summary_text=summary_text,
             brain_text=brain_text,
             diagram_fields_enabled=source_diagram_fields,
+            diagram_surface_fields_enabled=source_diagram_surface_fields,
             diagram_types=source_diagram_types,
             table_surface_fields_enabled=source_table_surface_fields,
         )
