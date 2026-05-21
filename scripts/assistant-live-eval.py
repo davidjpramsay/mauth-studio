@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = ROOT / "apps" / "api"
 WORKBENCH_ROOT = ROOT.parent / "mauth-workbench"
 BENCHMARK_MANIFEST_PATH = ROOT / "configs" / "assistant-real-exam-benchmarks.json"
+DEFAULT_COST_LEDGER_PATH = WORKBENCH_ROOT / "assistant-evals" / "live-cost-ledger.jsonl"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
@@ -61,6 +63,29 @@ DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
 DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP = 0
 DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP = 0
+PAID_CANARY_FAMILY_PRIORITY = {
+    "graph2d+graph3d": 0,
+    "graph3d": 1,
+    "graph2d": 2,
+    "statsChart": 3,
+    "statsChart+table": 4,
+    "geometricConstruction": 5,
+    "table": 6,
+}
+PAID_CANARY_CASE_PRIORITY = {
+    "real-specialist-square-pyramid": 0,
+    "real-specialist-prism": 1,
+    "real-specialist-slope-field": 2,
+    "real-specialist-argand": 3,
+    "real-specialist-implicit": 4,
+    "real-methods-ev-histogram": 5,
+    "real-methods-dice-game": 6,
+    "real-specialist-stats": 7,
+    "real-specialist-spherical-cap": 8,
+    "real-methods-earthquake": 9,
+    "real-specialist-lighthouse": 10,
+    "real-specialist-confidence-intervals": 11,
+}
 GRAPH2D_FEATURE_KINDS = {
     "point",
     "point_between_points",
@@ -1332,6 +1357,245 @@ def provider_image_pixels_for_shape(shape: dict[str, Any]) -> int:
     return provider_image_pixels if isinstance(provider_image_pixels, int) else 0
 
 
+def utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def parse_utc_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    with contextlib.suppress(ValueError):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def read_cost_ledger(path: Path | None) -> list[dict[str, Any]]:
+    if path is None or not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    with contextlib.suppress(OSError):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            with contextlib.suppress(json.JSONDecodeError):
+                record = json.loads(line)
+                if isinstance(record, dict):
+                    records.append(record)
+    return records
+
+
+def append_cost_ledger(path: Path | None, record: dict[str, Any]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def newest_record(current: dict[str, Any] | None, candidate: dict[str, Any]) -> dict[str, Any]:
+    if current is None:
+        return candidate
+    current_time = parse_utc_datetime(current.get("timestamp"))
+    candidate_time = parse_utc_datetime(candidate.get("timestamp"))
+    if current_time is None:
+        return candidate
+    if candidate_time is None:
+        return current
+    return candidate if candidate_time >= current_time else current
+
+
+def latest_records_by_case(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for record in records:
+        case_name = record.get("case")
+        if isinstance(case_name, str):
+            latest[case_name] = newest_record(latest.get(case_name), record)
+    return latest
+
+
+def latest_pass_records_by_case(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for record in records:
+        case_name = record.get("case")
+        if isinstance(case_name, str) and record.get("status") == "PASS":
+            latest[case_name] = newest_record(latest.get(case_name), record)
+    return latest
+
+
+def cost_ledger_label(record: dict[str, Any] | None) -> str:
+    if not record:
+        return "ledger: no prior paid run"
+    status = record.get("status") if isinstance(record.get("status"), str) else "UNKNOWN"
+    timestamp = record.get("timestamp") if isinstance(record.get("timestamp"), str) else "unknown time"
+    cost = record.get("costUsd")
+    cost_label = f"${cost:.4f}" if isinstance(cost, int | float) else "$0.0000"
+    tokens = record.get("tokens")
+    tokens_label = f"{tokens:,}" if isinstance(tokens, int) else "0"
+    repair_count = record.get("repairCount")
+    repair_label = f", repairs={repair_count}" if isinstance(repair_count, int) else ""
+    return f"ledger: latest {status} {timestamp}, {cost_label}, {tokens_label} tokens{repair_label}"
+
+
+def benchmark_renderers(case_name: str, benchmark_index: dict[str, dict[str, Any]] | None = None) -> list[str]:
+    benchmarks = benchmark_index if benchmark_index is not None else benchmark_manifest_index()
+    benchmark = benchmarks.get(case_name)
+    expected = benchmark.get("expected") if isinstance(benchmark, dict) and isinstance(benchmark.get("expected"), dict) else {}
+    renderers = expected.get("renderers") if isinstance(expected.get("renderers"), list) else []
+    return sorted(str(renderer) for renderer in renderers if isinstance(renderer, str))
+
+
+def paid_canary_family(case_name: str, benchmark_index: dict[str, dict[str, Any]] | None = None) -> str:
+    renderers = benchmark_renderers(case_name, benchmark_index)
+    if renderers:
+        return "+".join(renderers)
+    return live_eval_case_class(case_name)
+
+
+def case_needs_paid_canary(
+    case_name: str,
+    *,
+    latest_records: dict[str, dict[str, Any]],
+    latest_pass_records: dict[str, dict[str, Any]],
+    stale_days: int,
+) -> tuple[bool, str]:
+    latest = latest_records.get(case_name)
+    latest_pass = latest_pass_records.get(case_name)
+    if latest is not None and latest.get("status") in {"FAIL", "BLOCKED"}:
+        return True, f"latest live result is {latest.get('status')}"
+    if latest_pass is None:
+        return True, "no prior passing paid run"
+    passed_at = parse_utc_datetime(latest_pass.get("timestamp"))
+    if passed_at is None:
+        return True, "prior pass has no usable timestamp"
+    age = datetime.now(UTC) - passed_at
+    if age > timedelta(days=stale_days):
+        return True, f"last passing paid run is {age.days} days old"
+    return False, f"recent pass within {stale_days} days"
+
+
+def maybe_select_stale_canaries(
+    selected_cases: list[str],
+    *,
+    enabled: bool,
+    cost_ledger_path: Path | None,
+    stale_days: int,
+    benchmark_index: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[dict[str, str]]]:
+    if not enabled:
+        return selected_cases, []
+    records = read_cost_ledger(cost_ledger_path)
+    latest = latest_records_by_case(records)
+    latest_passes = latest_pass_records_by_case(records)
+    chosen_by_family: dict[str, dict[str, Any]] = {}
+    case_infos: list[dict[str, Any]] = []
+    decisions: list[dict[str, str]] = []
+    for order, case_name in enumerate(selected_cases):
+        family = paid_canary_family(case_name, benchmark_index)
+        needs_run, reason = case_needs_paid_canary(
+            case_name,
+            latest_records=latest,
+            latest_pass_records=latest_passes,
+            stale_days=stale_days,
+        )
+        info = {"case": case_name, "family": family, "needsRun": needs_run, "reason": reason, "order": order}
+        case_infos.append(info)
+        if needs_run:
+            current = chosen_by_family.get(family)
+            sort_key = (
+                PAID_CANARY_CASE_PRIORITY.get(case_name, 100),
+                order,
+            )
+            current_key = (
+                PAID_CANARY_CASE_PRIORITY.get(str(current.get("case")), 100) if current else 100,
+                int(current.get("order", 100)) if current else 100,
+            )
+            if current is None or sort_key < current_key:
+                chosen_by_family[family] = info
+    chosen_cases = {str(info["case"]) for info in chosen_by_family.values()}
+    for info in case_infos:
+        case_name = str(info["case"])
+        family = str(info["family"])
+        chosen_info = chosen_by_family.get(family)
+        chosen_case = str(chosen_info["case"]) if chosen_info else None
+        if case_name in chosen_cases:
+            decisions.append({"case": case_name, "family": family, "decision": "run", "reason": str(info["reason"])})
+        elif chosen_case and info["needsRun"]:
+            decisions.append(
+                {
+                    "case": case_name,
+                    "family": family,
+                    "decision": "skip",
+                    "reason": f"higher-priority family canary selected: {chosen_case}",
+                }
+            )
+        elif chosen_case:
+            decisions.append({"case": case_name, "family": family, "decision": "skip", "reason": "family already selected"})
+        else:
+            decisions.append({"case": case_name, "family": family, "decision": "skip", "reason": str(info["reason"])})
+    chosen = [str(info["case"]) for info in chosen_by_family.values()]
+    chosen.sort(
+        key=lambda selected_case: (
+            PAID_CANARY_FAMILY_PRIORITY.get(paid_canary_family(selected_case, benchmark_index), 100),
+            PAID_CANARY_CASE_PRIORITY.get(selected_case, 100),
+            selected_cases.index(selected_case),
+        )
+    )
+    return chosen, decisions
+
+
+def live_eval_status_label(status: int) -> str:
+    return "PASS" if status == 0 else "BLOCKED" if status == 2 else "FAIL"
+
+
+def cost_ledger_record(
+    *,
+    requested_case: str,
+    case_name: str,
+    status: int,
+    cost: float,
+    tokens: int,
+    repair_count: int,
+    model: str | None,
+    shape: dict[str, Any] | None,
+    benchmark_index: dict[str, dict[str, Any]],
+    reason: str | None = None,
+) -> dict[str, Any]:
+    attachment_stats = shape.get("attachmentStats") if isinstance(shape, dict) and isinstance(shape.get("attachmentStats"), dict) else {}
+    record: dict[str, Any] = {
+        "version": 1,
+        "timestamp": utc_now_iso(),
+        "requestedCase": requested_case,
+        "case": case_name,
+        "status": live_eval_status_label(status),
+        "costUsd": round(float(cost), 6),
+        "tokens": tokens,
+        "repairCount": repair_count,
+        "model": model or os.environ.get("OPENAI_MODEL") or "default",
+        "caseClass": live_eval_case_class(case_name),
+        "rendererFamily": paid_canary_family(case_name, benchmark_index),
+        "renderers": benchmark_renderers(case_name, benchmark_index),
+        "imageMaxLongEdge": assistant_image_max_long_edge(),
+    }
+    if reason:
+        record["reason"] = reason
+    if isinstance(shape, dict):
+        record["requestShape"] = {
+            "brainSelection": shape.get("brainSelection"),
+            "brainFiles": shape.get("brainFiles"),
+            "toolNames": shape.get("toolNames"),
+            "instructionChars": shape.get("instructionChars"),
+            "toolSchemaChars": shape.get("toolSchemaChars"),
+            "inputChars": shape.get("inputChars"),
+            "attachmentCount": shape.get("attachmentCount"),
+            "providerAttachmentBytes": attachment_stats.get("providerAttachmentBytes"),
+            "providerImagePixels": attachment_stats.get("providerImagePixels"),
+            "optimizedAttachmentCount": attachment_stats.get("optimizedAttachmentCount"),
+            "imageDetail": attachment_stats.get("imageDetail"),
+        }
+    return record
+
+
 def print_cost_plan(
     case_name: str,
     *,
@@ -1344,10 +1608,21 @@ def print_cost_plan(
     provider_input_char_cap: int,
     provider_image_pixel_cap: int,
     paid_enabled: bool,
+    cost_ledger_path: Path | None,
+    select_stale_canaries: bool,
+    stale_days: int,
 ) -> int:
     selected_cases = selected_live_cases(case_name)
-    planned_cases = selected_cases[:max_cases] if max_cases is not None else selected_cases
     benchmark_index = benchmark_manifest_index()
+    selected_cases, canary_decisions = maybe_select_stale_canaries(
+        selected_cases,
+        enabled=select_stale_canaries,
+        cost_ledger_path=cost_ledger_path,
+        stale_days=stale_days,
+        benchmark_index=benchmark_index,
+    )
+    planned_cases = selected_cases[:max_cases] if max_cases is not None else selected_cases
+    latest_records = latest_records_by_case(read_cost_ledger(cost_ledger_path))
     model_label = model or os.environ.get("OPENAI_MODEL") or "default assistant model"
     print("ASSISTANT LIVE EVAL COST PLAN")
     print(f"- provider configured: {'yes' if assistant_configured() else 'no'}")
@@ -1355,6 +1630,16 @@ def print_cost_plan(
     print(f"- requested case/group: {case_name}")
     print(f"- selected cases: {len(selected_cases)}")
     print(f"- planned paid cases this run: {len(planned_cases)}")
+    print(f"- cost ledger: {cost_ledger_path if cost_ledger_path is not None else 'disabled'}")
+    if select_stale_canaries:
+        print(f"- stale canary selector: enabled, one case per renderer family, stale after {stale_days} days")
+        for decision in canary_decisions:
+            print(
+                f"  - {decision['decision']} {decision['case']} "
+                f"({decision['family']}): {decision['reason']}"
+            )
+    else:
+        print("- stale canary selector: disabled")
     print(f"- run max-cost cap: ${max_cost:.2f}")
     print(f"- post-case spike stop: ${case_cost_cap:.2f} per case")
     instruction_cap_label = (
@@ -1383,6 +1668,7 @@ def print_cost_plan(
         case_class = live_eval_case_class(selected_case)
         benchmark = benchmark_index.get(selected_case)
         print(f"  - {selected_case}: class={case_class}; {benchmark_label(benchmark)}")
+        print(f"    {cost_ledger_label(latest_records.get(selected_case))}")
         shape = provider_request_shape_for_case(selected_case, model=model)
         print(f"    request shape: {request_shape_label(shape)}")
         instruction_chars = shape.get("instructionChars")
@@ -10124,7 +10410,7 @@ async def safe_create_assistant_response(request: AssistantChatRequest) -> tuple
 
 async def run_single_eval(
     case_name: str, model: str | None = None, final_message: bool = False, verbose: bool = False
-) -> tuple[int, float, int]:
+) -> tuple[int, float, int, int]:
     case = EVAL_CASES[case_name]
     prompt = str(case["prompt"])
     summary = case["summary"]()
@@ -10143,7 +10429,7 @@ async def run_single_eval(
     )
     if provider_error or first is None:
         print(provider_error or "BLOCKED: assistant provider returned no response.", file=sys.stderr)
-        return 2, 0.0, 0
+        return 2, 0.0, 0, 0
     first_calls = [as_dict(call) for call in first.get("toolCalls", [])]
     total_cost = usage_cost(first.get("usage"))
     total_tokens = usage_tokens(first.get("usage"))
@@ -10152,7 +10438,7 @@ async def run_single_eval(
 
     if len(first_calls) != 1:
         print(f"FAIL: expected exactly one tool call, got {len(first_calls)}", file=sys.stderr)
-        return 1, total_cost, total_tokens
+        return 1, total_cost, total_tokens, 0
 
     repair_failure = case.get("repairFailure")
     if callable(repair_failure):
@@ -10162,7 +10448,7 @@ async def run_single_eval(
                 print("FAIL:")
                 for issue in first_issues:
                     print(f"- {issue}")
-                return 1, total_cost, total_tokens
+                return 1, total_cost, total_tokens, 0
         tool_output = repair_failure(first_calls[0])
         second, provider_error = await safe_create_assistant_response(
             AssistantChatRequest(
@@ -10180,7 +10466,7 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
-            return 2, total_cost, total_tokens
+            return 2, total_cost, total_tokens, 1
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
@@ -10188,7 +10474,7 @@ async def run_single_eval(
 
         if len(second_calls) != 1:
             print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 1
 
         repair_assert = case.get("repairAssert", assert_call)
         repair_issues = repair_assert(second_calls[0])
@@ -10196,10 +10482,10 @@ async def run_single_eval(
             print("FAIL:")
             for issue in repair_issues:
                 print(f"- {issue}")
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 1
 
         print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-        return 0, total_cost, total_tokens
+        return 0, total_cost, total_tokens, 1
 
     issues = assert_call(first_calls[0])
     repair_on_failure = case.get("repairOnFailure")
@@ -10221,7 +10507,7 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
-            return 2, total_cost, total_tokens
+            return 2, total_cost, total_tokens, 1
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
@@ -10229,23 +10515,23 @@ async def run_single_eval(
 
         if len(second_calls) != 1:
             print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 1
 
         repair_issues = assert_call(second_calls[0])
         if repair_issues:
             print("FAIL:")
             for issue in repair_issues:
                 print(f"- {issue}")
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 1
 
         print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-        return 0, total_cost, total_tokens
+        return 0, total_cost, total_tokens, 1
 
     if issues:
         print("FAIL:")
         for issue in issues:
             print(f"- {issue}")
-        return 1, total_cost, total_tokens
+        return 1, total_cost, total_tokens, 0
 
     if final_message:
         tool_output = {
@@ -10274,20 +10560,20 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no final response.", file=sys.stderr)
-            return 2, total_cost, total_tokens
+            return 2, total_cost, total_tokens, 0
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
         print_provider_response("Final response", second, second_calls, verbose=verbose)
         if second_calls:
             print("FAIL: final response should not need another tool call.", file=sys.stderr)
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 0
         if not str(second.get("message") or "").strip():
             print("FAIL: final response should contain a teacher-facing summary.", file=sys.stderr)
-            return 1, total_cost, total_tokens
+            return 1, total_cost, total_tokens, 0
 
     print(f"PASS: {case_name} succeeded. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-    return 0, total_cost, total_tokens
+    return 0, total_cost, total_tokens, 0
 
 
 async def run_eval(
@@ -10303,17 +10589,35 @@ async def run_eval(
     provider_image_pixel_cap: int = DEFAULT_PROVIDER_IMAGE_PIXEL_CAP,
     stop_on_failure: bool = False,
     verbose: bool = False,
+    cost_ledger_path: Path | None = DEFAULT_COST_LEDGER_PATH,
+    select_stale_canaries: bool = False,
+    stale_days: int = 14,
 ) -> int:
     if not assistant_configured():
         print("OPENAI_API_KEY is not configured; live eval skipped.", file=sys.stderr)
         return 2
 
+    benchmark_index = benchmark_manifest_index()
     selected_cases = selected_live_cases(case_name)
+    selected_cases, canary_decisions = maybe_select_stale_canaries(
+        selected_cases,
+        enabled=select_stale_canaries,
+        cost_ledger_path=cost_ledger_path,
+        stale_days=stale_days,
+        benchmark_index=benchmark_index,
+    )
+    if select_stale_canaries:
+        print("STALE CANARY SELECTION:")
+        for decision in canary_decisions:
+            print(f"- {decision['decision']} {decision['case']} ({decision['family']}): {decision['reason']}")
+        if not selected_cases:
+            print("No stale paid canaries selected. All selected renderer families have recent passing live runs.")
+            return 0
     total_cost = 0.0
     total_tokens = 0
     failed = False
     blocked = False
-    results: list[tuple[str, int, float, int]] = []
+    results: list[tuple[str, int, float, int, int]] = []
     for index, selected_case in enumerate(selected_cases):
         if max_cases is not None and index >= max_cases:
             print(f"\nSTOP: max case limit reached before {selected_case}. Limit: {max_cases}.")
@@ -10333,7 +10637,22 @@ async def run_eval(
                 f"above the {provider_instruction_char_cap:,} char cap. Run the cost plan and narrow brain context first.",
                 file=sys.stderr,
             )
-            results.append((selected_case, 2, 0.0, 0))
+            append_cost_ledger(
+                cost_ledger_path,
+                cost_ledger_record(
+                    requested_case=case_name,
+                    case_name=selected_case,
+                    status=2,
+                    cost=0.0,
+                    tokens=0,
+                    repair_count=0,
+                    model=model,
+                    shape=shape,
+                    benchmark_index=benchmark_index,
+                    reason="provider instruction char cap",
+                ),
+            )
+            results.append((selected_case, 2, 0.0, 0, 0))
             blocked = True
             break
         tool_schema_chars = shape.get("toolSchemaChars")
@@ -10347,7 +10666,22 @@ async def run_eval(
                 f"above the {provider_tool_schema_char_cap:,} char cap. Run the cost plan and narrow the tool surface first.",
                 file=sys.stderr,
             )
-            results.append((selected_case, 2, 0.0, 0))
+            append_cost_ledger(
+                cost_ledger_path,
+                cost_ledger_record(
+                    requested_case=case_name,
+                    case_name=selected_case,
+                    status=2,
+                    cost=0.0,
+                    tokens=0,
+                    repair_count=0,
+                    model=model,
+                    shape=shape,
+                    benchmark_index=benchmark_index,
+                    reason="provider tool schema char cap",
+                ),
+            )
+            results.append((selected_case, 2, 0.0, 0, 0))
             blocked = True
             break
         input_chars = shape.get("inputChars")
@@ -10357,7 +10691,22 @@ async def run_eval(
                 f"above the {provider_input_char_cap:,} char cap. Run the cost plan and shrink source attachments first.",
                 file=sys.stderr,
             )
-            results.append((selected_case, 2, 0.0, 0))
+            append_cost_ledger(
+                cost_ledger_path,
+                cost_ledger_record(
+                    requested_case=case_name,
+                    case_name=selected_case,
+                    status=2,
+                    cost=0.0,
+                    tokens=0,
+                    repair_count=0,
+                    model=model,
+                    shape=shape,
+                    benchmark_index=benchmark_index,
+                    reason="provider input char cap",
+                ),
+            )
+            results.append((selected_case, 2, 0.0, 0, 0))
             blocked = True
             break
         provider_image_pixels = provider_image_pixels_for_shape(shape)
@@ -10367,15 +10716,44 @@ async def run_eval(
                 f"above the {provider_image_pixel_cap:,} pixel cap. Crop/split/downscale attachments first.",
                 file=sys.stderr,
             )
-            results.append((selected_case, 2, 0.0, 0))
+            append_cost_ledger(
+                cost_ledger_path,
+                cost_ledger_record(
+                    requested_case=case_name,
+                    case_name=selected_case,
+                    status=2,
+                    cost=0.0,
+                    tokens=0,
+                    repair_count=0,
+                    model=model,
+                    shape=shape,
+                    benchmark_index=benchmark_index,
+                    reason="provider image pixel cap",
+                ),
+            )
+            results.append((selected_case, 2, 0.0, 0, 0))
             blocked = True
             break
-        status, cost, tokens = await run_single_eval(
+        status, cost, tokens, repair_count = await run_single_eval(
             selected_case, model=model, final_message=final_message, verbose=verbose
         )
         total_cost += cost
         total_tokens += tokens
-        results.append((selected_case, status, cost, tokens))
+        append_cost_ledger(
+            cost_ledger_path,
+            cost_ledger_record(
+                requested_case=case_name,
+                case_name=selected_case,
+                status=status,
+                cost=cost,
+                tokens=tokens,
+                repair_count=repair_count,
+                model=model,
+                shape=shape,
+                benchmark_index=benchmark_index,
+            ),
+        )
+        results.append((selected_case, status, cost, tokens, repair_count))
         failed = failed or status == 1
         blocked = blocked or status == 2
         if status == 2:
@@ -10387,10 +10765,13 @@ async def run_eval(
             print(f"\nSTOP: {selected_case} cost ${cost:.4f}, above the per-case spike stop ${case_cost_cap:.2f}.")
             break
     print("\nSUMMARY:")
-    for selected_case, status, cost, tokens in results:
+    for selected_case, status, cost, tokens, repair_count in results:
         label = "PASS" if status == 0 else "BLOCKED" if status == 2 else "FAIL"
-        print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens")
+        repair_label = f", repairs={repair_count}" if repair_count else ""
+        print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens{repair_label}")
     print(f"\nTOTAL: ${total_cost:.4f}, {total_tokens:,} tokens.")
+    if cost_ledger_path is not None and results:
+        print(f"COST LEDGER: {cost_ledger_path}")
     if failed:
         return 1
     return 2 if blocked else 0
@@ -10543,6 +10924,30 @@ def main() -> int:
         action="store_true",
         help="Actually call the provider for live evals. Without this flag, live evals print a cost plan only.",
     )
+    parser.add_argument(
+        "--cost-ledger",
+        default=str(DEFAULT_COST_LEDGER_PATH),
+        help=(
+            "JSONL file used to record paid live eval costs and pass/fail status. "
+            "Defaults to the sibling mauth-workbench folder."
+        ),
+    )
+    parser.add_argument(
+        "--no-cost-ledger",
+        action="store_true",
+        help="Do not read or write the paid live eval cost ledger.",
+    )
+    parser.add_argument(
+        "--select-stale-canaries",
+        action="store_true",
+        help="From the selected live group, run at most one stale or failing paid case per renderer family.",
+    )
+    parser.add_argument(
+        "--stale-days",
+        type=int,
+        default=14,
+        help="A passing paid canary older than this many days is considered stale.",
+    )
     parser.add_argument("--stop-on-failure", action="store_true", help="Stop after the first failed case.")
     parser.add_argument("--verbose", action="store_true", help="Print full provider tool payloads.")
     raw_args = [arg for arg in sys.argv[1:] if arg != "--"]
@@ -10557,6 +10962,13 @@ def main() -> int:
     ):
         if getattr(args, cap_name) < 0:
             parser.error(f"--{cap_name.replace('_', '-')} must be greater than or equal to 0")
+    if args.stale_days < 0:
+        parser.error("--stale-days must be greater than or equal to 0")
+    cost_ledger_path = None
+    if not args.no_cost_ledger and str(args.cost_ledger).strip():
+        cost_ledger_path = Path(str(args.cost_ledger)).expanduser()
+        if not cost_ledger_path.is_absolute():
+            cost_ledger_path = (ROOT / cost_ledger_path).resolve()
     apply_image_max_long_edge_override(args.image_max_long_edge)
     if args.list_cases:
         return list_eval_taxonomy()
@@ -10576,6 +10988,9 @@ def main() -> int:
             provider_input_char_cap=args.provider_input_char_cap,
             provider_image_pixel_cap=args.provider_image_pixel_cap,
             paid_enabled=args.allow_paid and not args.cost_plan,
+            cost_ledger_path=cost_ledger_path,
+            select_stale_canaries=args.select_stale_canaries,
+            stale_days=args.stale_days,
         )
     return asyncio.run(
         run_eval(
@@ -10591,6 +11006,9 @@ def main() -> int:
             provider_image_pixel_cap=args.provider_image_pixel_cap,
             stop_on_failure=args.stop_on_failure,
             verbose=args.verbose,
+            cost_ledger_path=cost_ledger_path,
+            select_stale_canaries=args.select_stale_canaries,
+            stale_days=args.stale_days,
         )
     )
 
