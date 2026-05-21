@@ -3251,6 +3251,31 @@ function appendAnswerSurfaceReplacementSlot(
   blocks.push(...remainingStudentBlocks.map((block) => withBlockVisibility(block, "student")));
 }
 
+function addMissingTableSurfaceIssues(
+  answerSurface: AuthorAnswerSurface,
+  hasStudentTable: boolean,
+  hasSolutionTable: boolean,
+  includeSolution: boolean,
+  issues: MauthActionValidationIssue[],
+  paths: { table: string; solutionTable: string },
+) {
+  if (answerSurface !== "table") return;
+  if (!hasStudentTable) {
+    issues.push({
+      path: paths.table,
+      message: 'answerSurface "table" needs a student table at the same scope',
+      expected: "table or tables with the blank/partial table students complete",
+    });
+  }
+  if (includeSolution && !hasSolutionTable) {
+    issues.push({
+      path: paths.solutionTable,
+      message: 'answerSurface "table" with a solution needs a completed solutionTable at the same scope',
+      expected: "solutionTable or solutionTables with the completed table; solutionText may only be an unmarked note",
+    });
+  }
+}
+
 function solutionTextContentBlock(
   scopeId: string,
   solutionText: string,
@@ -3297,6 +3322,10 @@ function contentBlocksForAuthorQuestion(
     tablesKey: "solutionTables",
     idSuffix: "solution-table",
     visibility: "solution",
+  });
+  addMissingTableSurfaceIssues(answerSurface, questionTables.length > 0, solutionTables.length > 0, includeSolution, issues, {
+    table: "arguments.table",
+    solutionTable: "arguments.solutionTable",
   });
   const hasSolutionAnswerSurface =
     (answerSurface === "diagram" && solutionDiagrams.length > 0) || (answerSurface === "table" && solutionTables.length > 0);
@@ -3399,6 +3428,10 @@ function contentBlocksForAuthorPart(
     tablesKey: "solutionTables",
     idSuffix: "solution-table",
     visibility: "solution",
+  });
+  addMissingTableSurfaceIssues(answerSurface, partTables.length > 0, solutionTables.length > 0, includeSolution, issues, {
+    table: "arguments.parts[].table",
+    solutionTable: "arguments.parts[].solutionTable",
   });
   const hasSolutionAnswerSurface =
     (answerSurface === "diagram" && solutionDiagrams.length > 0) || (answerSurface === "table" && solutionTables.length > 0);

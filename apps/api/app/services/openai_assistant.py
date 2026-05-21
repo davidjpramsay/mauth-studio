@@ -2560,7 +2560,7 @@ def assistant_author_subpart_schema() -> dict[str, Any]:
             "answerSurface": {
                 "type": "string",
                 "enum": ["space", "diagram", "table", "none"],
-                "description": "Use diagram/table when the subpart answer is drawn/completed directly on that surface.",
+                "description": "Use table only with a same-scope table/tables, and solutionTable/solutionTables when solutions are included.",
             },
             "solutionText": {
                 "type": "string",
@@ -2710,8 +2710,8 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                     "description": (
                         "Use space for normal free-response working. Use diagram when the answer is a sketch/label/shade/draw-on-graph "
                         "surface, and table when the answer is a completed table. In diagram/table modes, do not add a separate "
-                        "studentSpaceLines answer block; provide the student surface and, for solutions, the matching solutionDiagram "
-                        "or solutionTable."
+                        "studentSpaceLines answer block; provide the same-scope student surface and, for solutions, the matching "
+                        "solutionDiagram or solutionTable."
                     ),
                 },
                 "solutionText": {
@@ -2844,7 +2844,7 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                             "answerSurface": {
                                 "type": "string",
                                 "enum": ["space", "diagram", "table", "none"],
-                                "description": "Use diagram/table when the part answer is drawn/completed directly on that surface.",
+                                "description": "Use table only with a same-scope table/tables, and solutionTable/solutionTables when solutions are included.",
                             },
                             "solutionText": {
                                 "type": "string",
@@ -2998,7 +2998,11 @@ def source_conversion_part_schema(
         },
         "marks": {"type": "integer", "minimum": 0, "maximum": 100},
         "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "answerSurface": {
+            "type": "string",
+            "enum": ["space", "diagram", "table", "none"],
+            "description": "Use table only with same-scope table/tables, plus solutionTable/solutionTables when solutions are included.",
+        },
         "solutionText": {
             "type": "string",
             "description": (
@@ -3059,7 +3063,11 @@ def source_conversion_part_schema(
         },
         "marks": {"type": "integer", "minimum": 0, "maximum": 100},
         "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "answerSurface": {
+            "type": "string",
+            "enum": ["space", "diagram", "table", "none"],
+            "description": "Use table only with same-scope table/tables, plus solutionTable/solutionTables when solutions are included.",
+        },
         "solutionText": {
             "type": "string",
             "description": (
@@ -3161,7 +3169,11 @@ def mauth_convert_source_question_tool_definition(
             "description": "Stem text only. Do not type 'Question 1'. Use structured parts for (a), (b), ...",
         },
         "studentSpaceLines": {"type": "integer", "minimum": 1, "maximum": 40},
-        "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
+        "answerSurface": {
+            "type": "string",
+            "enum": ["space", "diagram", "table", "none"],
+            "description": "Use table only with same-scope table/tables, plus solutionTable/solutionTables when solutions are included.",
+        },
         "solutionText": {
             "type": "string",
             "description": (

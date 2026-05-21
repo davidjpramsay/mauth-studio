@@ -2066,6 +2066,47 @@ test("high-level part authoring infers completion tables are answer surfaces", (
   assert.equal(partBlocks[2].markTicks, 2);
 });
 
+test("high-level part authoring rejects table answer surfaces without same-scope tables", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 0,
+      questionText: "Complete the table.",
+      tables: [
+        {
+          rows: [
+            ["$y$", "", "", ""],
+            ["$P(Y=y)$", "", "", ""],
+          ],
+          showHeader: false,
+        },
+      ],
+      parts: [
+        {
+          text: "Complete the probability distribution table for $Y$.",
+          marks: 3,
+          answerSurface: "table",
+          solutionText: "$$P(Y=-1)=0.443,\\quad P(Y=0)=0.208,\\quad P(Y=1)=0.349.$$ [[marks:3]]",
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(
+    data.validationIssues?.some(
+      (issue) => issue.path === "arguments.parts[].table" && issue.message.includes('answerSurface "table" needs'),
+    ),
+  );
+  assert(
+    data.validationIssues?.some(
+      (issue) => issue.path === "arguments.parts[].solutionTable" && issue.message.includes("completed solutionTable"),
+    ),
+  );
+});
+
 test("high-level question authoring rejects skipped question numbers", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.replaceQuestion",
