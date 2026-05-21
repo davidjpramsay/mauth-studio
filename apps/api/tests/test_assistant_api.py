@@ -705,6 +705,13 @@ def test_source_conversion_brain_context_is_renderer_focused():
         ),
         "argand-locus.png",
     )
+    slope = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist slope-field screenshot. Preserve the slope field and "
+            "the requested slope at (0.5,-1)."
+        ),
+        "slope-field.png",
+    )
 
     assert "For scalar-product source diagrams" in scalar
     assert "For graph3d source solids" not in scalar
@@ -715,6 +722,9 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For statsChart source diagrams" not in graph3d
     assert "middle letter is the vertex" in graph3d
     assert "M-F" in graph3d
+    assert "PDF-extraction control characters" in graph3d
+    assert "\\lambda" in graph3d
+    assert "\\mu" in graph3d
 
     assert "For statsChart source diagrams" in stats
     assert "inside graphConfig.data, not directly on graphConfig" in stats
@@ -729,6 +739,12 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "full infinite line functions" in argand
     assert "For graph3d source solids" not in argand
     assert "For statsChart source diagrams" not in argand
+
+    assert "For graph2d source diagrams" in slope
+    assert "highlightedPoints" in slope
+    assert "point features alone are not enough" in slope
+    assert "For graph3d source solids" not in slope
+    assert "For statsChart source diagrams" not in slope
 
 
 def test_source_conversion_renderer_instruction_budgets_are_focused():
@@ -760,11 +776,19 @@ def test_source_conversion_renderer_instruction_budgets_are_focused():
         ),
         "argand-locus.png",
     )
+    slope = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist slope-field screenshot. Preserve the slope field and "
+            "the requested slope at (0.5,-1)."
+        ),
+        "slope-field.png",
+    )
 
     assert len(scalar) < 23500
     assert len(graph3d) < 28500
     assert len(stats) < 26000
     assert len(argand) < 26500
+    assert len(slope) < 26500
 
 
 def test_brain_menu_selection_maps_to_instruction_files():

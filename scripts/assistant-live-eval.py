@@ -5836,6 +5836,14 @@ def graph3d_validation_issues_from_call(call: dict[str, Any]) -> list[dict[str, 
 def real_slope_field_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues = graph2d_validation_issues_from_call(call)
     for issue in first_issues:
+        if "slopeField.highlightedPoints" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data.slopeField.highlightedPoints",
+                    "message": issue,
+                    "expected": "include every source point where the student must calculate or draw a slope segment",
+                }
+            )
         if "solution-curve relation" in issue:
             validation_issues.append(
                 {
@@ -6062,6 +6070,18 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
 
 def real_prism_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues = graph3d_validation_issues_from_call(call)
+    for issue in first_issues:
+        if "contains control character" in issue or "contains malformed escaped dollar" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].text/solutionText",
+                    "message": issue,
+                    "expected": (
+                        "valid LaTeX text only; write line notation as \\overleftrightarrow{BT} or plain BT, "
+                        "and Greek parameters as \\lambda and \\mu"
+                    ),
+                }
+            )
     if not validation_issues:
         validation_issues = [
             {
@@ -6078,6 +6098,81 @@ def real_prism_repair_failure_output(call: dict[str, Any], first_issues: list[st
         tool_name=call.get("mauthToolName"),
         validation_issues=validation_issues,
         message="Mauth graph3d validation failed.",
+    )
+
+
+def real_square_pyramid_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
+    validation_issues = graph3d_validation_issues_from_call(call) + graph2d_validation_issues_from_call(call)
+    for issue in first_issues:
+        if "either diagram or diagrams" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram/arguments.diagrams",
+                    "message": issue,
+                    "expected": "use diagrams only for the source's side-by-side 3D and top-view diagrams; omit diagram",
+                }
+            )
+        elif "graph3d data should include segment EF" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[0].graphConfig.data.segments",
+                    "message": issue,
+                    "expected": "include the source edge E-F as a graph3d segment; M is the midpoint of EF, so EF and FM are both semantically meaningful",
+                }
+            )
+        elif "graph3d data should include segment FM" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[0].graphConfig.data.segments",
+                    "message": issue,
+                    "expected": "include segment F-M as the actual angle ray for angle DMF; E-F alone does not replace F-M",
+                }
+            )
+        elif "vector a ray from O toward A" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[1].graphConfig.features",
+                    "message": issue,
+                    "expected": "a line_segment feature starting at the projected O/E point and pointing toward A, with the vector-a label on that same feature, not as a separate free label",
+                }
+            )
+        elif "vector b ray from O toward B" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[1].graphConfig.features",
+                    "message": issue,
+                    "expected": "a line_segment feature starting at the projected O/E point and pointing toward B, with the vector-b label on that same feature, not as a separate free label",
+                }
+            )
+        elif "pyramid faces" in issue or "faces should include" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[0].graphConfig.data.faces",
+                    "message": issue,
+                    "expected": "include the base face ABCD and every triangular side face ABE, BCE, CDE, and ADE",
+                }
+            )
+        elif "top-view graph2d" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagrams[1].graphConfig.features",
+                    "message": issue,
+                    "expected": "source-faithful graph2d top view with labelled points, diagonals, midpoint points, and labelled vector rays",
+                }
+            )
+    if not validation_issues:
+        validation_issues = [
+            {
+                "path": "arguments.diagrams",
+                "message": issue,
+                "expected": "source-faithful side-by-side graph3d pyramid and graph2d top-view payloads",
+            }
+            for issue in first_issues[:8]
+        ]
+    return validation_failure_output(
+        tool_name=call.get("mauthToolName"),
+        validation_issues=validation_issues,
+        message="Mauth square-pyramid source-fidelity validation failed.",
     )
 
 
@@ -6295,6 +6390,7 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "summary": sample_document_summary,
         "attachments": sample_specialist_square_pyramid_screenshot_with_key,
         "assert": assert_real_specialist_square_pyramid_call,
+        "repairOnFailure": real_square_pyramid_repair_failure_output,
     },
     "real-specialist-implicit": {
         "prompt": (
@@ -7697,6 +7793,14 @@ def local_real_specialist_slope_field_bad_schema_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_slope_field_missing_highlighted_points_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_slope_field_call()))
+    slope_field = call["mauthArguments"]["diagram"]["graphConfig"]["data"]["slopeField"]
+    slope_field.pop("highlightedPoints", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_slope_field_bad_artifact_marks_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_slope_field_call()))
     part_c = call["mauthArguments"]["parts"][2]
@@ -8454,6 +8558,32 @@ def local_real_specialist_square_pyramid_live_duplicate_missing_fm_call() -> dic
     return call
 
 
+def local_real_specialist_square_pyramid_live_unattached_vector_labels_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph3d["data"]["segments"] = [
+        segment
+        for segment in graph3d["data"]["segments"]
+        if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"e", "f"}
+    ]
+    top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
+    for feature in top_view["features"]:
+        if feature.get("kind") == "line_segment" and feature.get("label") == "$\\vec a$":
+            feature.pop("label", None)
+            feature["arrowEnd"] = True
+        if feature.get("kind") == "line_segment" and feature.get("label") == "$\\vec b$":
+            feature.pop("label", None)
+            feature["arrowEnd"] = True
+    top_view["features"].extend(
+        [
+            {"kind": "label", "x": 0.58, "y": -0.58, "label": "$\\vec a$"},
+            {"kind": "label", "x": 0.58, "y": 0.58, "label": "$\\vec b$"},
+        ]
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_prism_call() -> dict[str, Any]:
     return local_source_question_call(
         {
@@ -8603,6 +8733,19 @@ def local_real_specialist_prism_bad_latex_artifact_call() -> dict[str, Any]:
     parts[2]["text"] = (
         "Prove, using a vector method, that line $\\$\\overrightarrow{AM}$ does not "
         "intersect $\\$\\overrightarrow{BT}$."
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_prism_control_character_notation_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_prism_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[0]["text"] = "Determine the vector equation for the prism's main diagonal $\x7fBT$."
+    parts[2]["text"] = "Prove, using a vector method, that line $\x7fAM$ does not intersect $\x7fBT$."
+    parts[2]["solutionText"] = (
+        "For the two lines to intersect, there must be real values of $\x7flambda$ and $\x7fmu$. "
+        "This leads to a contradiction, so $AM$ does not intersect $BT$. [[marks:3]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -9466,6 +9609,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "features[0].type should be named kind",
         ],
     },
+    "real-specialist-slope-field-missing-highlighted-points": {
+        "assert": assert_real_specialist_slope_field_call,
+        "call": local_real_specialist_slope_field_missing_highlighted_points_call,
+        "expectedIssues": [
+            "slopeField.highlightedPoints should include the requested point (0.5, -1)",
+        ],
+    },
     "real-specialist-slope-field-bad-artifact-marks": {
         "assert": assert_real_specialist_slope_field_call,
         "call": local_real_specialist_slope_field_bad_artifact_marks_call,
@@ -9647,6 +9797,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "contains malformed escaped dollar inside maths",
         ],
     },
+    "real-specialist-prism-control-character-notation": {
+        "assert": assert_real_specialist_prism_call,
+        "call": local_real_specialist_prism_control_character_notation_call,
+        "expectedIssues": [
+            "contains control character U+007F",
+        ],
+    },
     "real-specialist-prism-bad-line-notation": {
         "assert": assert_real_specialist_prism_call,
         "call": local_real_specialist_prism_bad_line_notation_call,
@@ -9713,6 +9870,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "either diagram or diagrams",
             "segment FM",
             "pyramid faces",
+        ],
+    },
+    "real-specialist-square-pyramid-live-unattached-vector-labels": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_live_unattached_vector_labels_call,
+        "expectedIssues": [
+            "segment EF",
+            "vector a ray from O toward A",
+            "vector b ray from O toward B",
         ],
     },
     "graph3d-general-solids": {
