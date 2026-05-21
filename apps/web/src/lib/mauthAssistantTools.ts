@@ -2269,6 +2269,7 @@ const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s
 const AUTHOR_TEXT_FIELD_KEYS = new Set(["questionText", "text", "prompt", "partText", "solutionText", "solution", "label"]);
 const INLINE_MATH_PROSE_PATTERN =
   /\b(?:a|an|and|because|by|charity|confidence|correct|deviation|dollars?|each|for|from|game|interval|margin|mean|of|per|player|profit|reasoning|sample|show|standard|the|to|width)\b/i;
+const MARKDOWN_TABLE_PATTERN = /^\s*\|.*\|\s*\n\s*\|(?:\s*:?-{3,}:?\s*\|)+/m;
 
 function isEscapedDollarDelimiter(value: string, index: number) {
   let slashCount = 0;
@@ -2376,6 +2377,14 @@ function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthA
         message: "contains prose inside inline dollar math",
         expected:
           "write literal currency as \\$1 or $1$ dollar; never write raw currency such as $1 game or $0.094 per game where prose is captured inside inline maths",
+      });
+    }
+    if (MARKDOWN_TABLE_PATTERN.test(value)) {
+      issues.push({
+        path,
+        message: "contains Markdown table text",
+        expected:
+          "use native table/tables fields for source tables and solutionTable/solutionTables for completed answer tables; do not put pipe-table Markdown in text fields",
       });
     }
     return;

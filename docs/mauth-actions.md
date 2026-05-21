@@ -69,6 +69,8 @@ The visible editor surface for these document settings lives under `T` in the `T
 
   For completion-table answer surfaces, put the blank student table at the part or subpart that asks students to complete it and provide a completed `solutionTable`/`solutionTables` in the same scope. Do not use only a LaTeX array in `solutionText` as the completed table, and do not put `[[marks:n]]` ticks in `solutionText` when a `solutionTable` is present.
 
+  Use native table fields for source and answer tables. Do not put Markdown pipe tables inside `questionText`, `parts[].text`, or `solutionText`.
+
 - `mauth.preview.inspect`: return focused context for the current/selected or requested question, including module anchors, selected block, diagram types/alignment, per-diagram warning arrays, answer-space/solution replacement scopes, hidden `[[marks:n]]` totals, visible mark-note warnings, blank part warnings, left/right diagram beside-content hints, conservative diagram semantic warnings, and browser-rendered page/anchor metrics when the preview pane is mounted.
 - `mauth.validation.run`: run document validation, solution validation, or both without changing the document.
 - `mauth.actions.preview`: dry-run one or more document actions and return the proposed document plus preview summary.

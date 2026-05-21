@@ -2169,6 +2169,32 @@ test("high-level question authoring rejects raw currency spans that capture pros
   );
 });
 
+test("high-level question authoring rejects Markdown pipe tables in text fields", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 1,
+      questionText: "Use the table below.",
+      parts: [
+        {
+          text: "| $x$ | 1 | 2 |\n|---|---:|---:|\n| $P(X=x)$ | 0.2 | 0.8 |",
+          marks: 1,
+          studentSpaceLines: 3,
+          solutionText: "| $y$ | -1 | 1 |\n|---|---:|---:|\n| $P(Y=y)$ | 0.4 | 0.6 |",
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(data.validationIssues?.some((issue) => issue.path === "arguments.parts[0].text" && issue.message.includes("Markdown table")));
+  assert(
+    data.validationIssues?.some((issue) => issue.path === "arguments.parts[0].solutionText" && issue.message.includes("Markdown table")),
+  );
+});
+
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",

@@ -1230,6 +1230,7 @@ INLINE_MATH_PROSE_PATTERN = re.compile(
     r"\b(?:a|an|and|because|by|charity|confidence|correct|deviation|dollars?|each|for|from|game|interval|margin|mean|of|per|player|profit|reasoning|sample|show|standard|the|to|width)\b",
     re.IGNORECASE,
 )
+MARKDOWN_TABLE_PATTERN = re.compile(r"^\s*\|.*\|\s*\n\s*\|(?:\s*:?-{3,}:?\s*\|)+", re.MULTILINE)
 
 
 def inline_math_body_contains_prose(body: str) -> bool:
@@ -1260,6 +1261,8 @@ def latex_artifact_issues(text: str, field_name: str) -> list[str]:
         if delimiter_length == 1 and inline_math_body_contains_prose(body):
             issues.append(f"{field_name} contains prose inside inline dollar math")
         cursor = closing_index + delimiter_length
+    if MARKDOWN_TABLE_PATTERN.search(text):
+        issues.append(f"{field_name} contains Markdown table text")
     return issues
 
 
@@ -6767,15 +6770,17 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
             or "contains malformed escaped dollar" in issue
             or "contains unclosed dollar math" in issue
             or "contains prose inside inline dollar math" in issue
+            or "contains Markdown table text" in issue
         ):
             validation_issues.append(
                 {
-                    "path": "arguments.parts[].text/solutionText",
+                    "path": "arguments.parts[].text/solutionText/table/solutionTable",
                     "message": issue,
                     "expected": (
                         "valid LaTeX text only; for currency, write \\$400 as text, $400$ as a plain numeric "
                         "amount, or words such as 'negative 9.4 cents'. Never write raw currency spans such "
-                        "as $1 game or escaped currency such as \\$ inside $...$ maths"
+                        "as $1 game or escaped currency such as \\$ inside $...$ maths. Use native table/tables "
+                        "and solutionTable/solutionTables fields instead of Markdown pipe tables in text"
                     ),
                 }
             )
@@ -8225,6 +8230,26 @@ def local_real_methods_dice_game_live_raw_currency_text_call() -> dict[str, Any]
     parts[4]["solutionText"] = (
         "Since $E(Y)=-0.094$, the player's expected profit is negative. Therefore the charity's expected "
         "profit is $0.094 per game, so the game is profitable for the charity. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_markdown_table_text_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    part_c = call["mauthArguments"]["parts"][2]
+    part_c["answerSurface"] = "table"
+    part_c["text"] = (
+        "Using the data above, complete the probability distribution table for $Y$.\n\n"
+        "| $y$ |  |  |  |\n"
+        "|---|---|---|---|\n"
+        "| $P(Y=y)$ |  |  |  |"
+    )
+    part_c["solutionText"] = (
+        "| $Y$ | $-1$ | $0$ | $1$ |\n"
+        "|---|---:|---:|---:|\n"
+        "| $P(Y=y)$ | $0.443$ | $0.208$ | $0.349$ |\n\n"
+        "[[marks:3]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -10890,6 +10915,11 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_methods_dice_game_call,
         "call": local_real_methods_dice_game_live_raw_currency_text_call,
         "expectedIssues": ["contains prose inside inline dollar math"],
+    },
+    "real-methods-dice-game-live-markdown-table-text": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_markdown_table_text_call,
+        "expectedIssues": ["contains Markdown table text"],
     },
     "real-methods-dice-game-live-marked-solution-table": {
         "assert": assert_real_methods_dice_game_call,
