@@ -78,6 +78,17 @@ interface BrowserDiagramMetric {
   graph3DLabelQualityIssues: string[];
 }
 
+interface BrowserColumnMetric {
+  view?: PreviewReplayView;
+  caseName: string;
+  columnCount: number;
+  visibleColumnCount: number;
+  horizontalColumnCount: number;
+  minColumnWidth: number;
+  width: number;
+  height: number;
+}
+
 interface BrowserRenderedWarning {
   view?: PreviewReplayView;
   code?: string;
@@ -1229,6 +1240,20 @@ function failDiagramMetric(metric: BrowserDiagramMetric) {
   return failures;
 }
 
+function failColumnMetric(metric: BrowserColumnMetric) {
+  const failures: string[] = [];
+  const label = `${metric.view ?? "preview"} ${metric.caseName} columns`;
+  if (metric.columnCount < 2) failures.push(`${label} reported fewer than two columns`);
+  if (metric.visibleColumnCount < metric.columnCount) {
+    failures.push(`${label} rendered only ${metric.visibleColumnCount}/${metric.columnCount} visible columns`);
+  }
+  if (metric.horizontalColumnCount < Math.min(metric.columnCount, 2)) {
+    failures.push(`${label} did not render side by side; got ${metric.horizontalColumnCount} horizontal column position(s)`);
+  }
+  if (metric.minColumnWidth < 80) failures.push(`${label} rendered a column narrower than 80px`);
+  return failures;
+}
+
 async function runBrowserReplay(
   cases: AppliedReplayCase[],
   outputDir: string,
@@ -1263,6 +1288,7 @@ async function runBrowserReplay(
       view: PreviewReplayView;
       renderedMetrics: BrowserRenderedMetrics;
       diagramMetrics: BrowserDiagramMetric[];
+      columnMetrics: BrowserColumnMetric[];
     }> = [];
 
     for (const view of views) {
@@ -1543,15 +1569,43 @@ async function runBrowserReplay(
             }),
         )
       ).map((metric) => ({ ...metric, view }));
+      const columnMetrics = (
+        await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".test-columns-block"))
+            .filter((block) => !block.closest(".a4-measure"))
+            .map((block) => {
+              const caseName = block.closest("[data-replay-case]")?.getAttribute("data-replay-case") ?? "";
+              const rect = block.getBoundingClientRect();
+              const columns = Array.from(block.children).filter((child) => child.classList.contains("test-column"));
+              const columnRects = columns
+                .map((column) => column.getBoundingClientRect())
+                .filter((columnRect) => columnRect.width > 4 && columnRect.height > 4);
+              const horizontalPositions = new Set(columnRects.map((columnRect) => Math.round(columnRect.left / 8) * 8));
+              return {
+                caseName,
+                columnCount: columns.length,
+                visibleColumnCount: columnRects.length,
+                horizontalColumnCount: horizontalPositions.size,
+                minColumnWidth: columnRects.length
+                  ? Math.round(Math.min(...columnRects.map((columnRect) => columnRect.width)) * 10) / 10
+                  : 0,
+                width: Math.round(rect.width * 10) / 10,
+                height: Math.round(rect.height * 10) / 10,
+              } satisfies BrowserColumnMetric;
+            }),
+        )
+      ).map((metric) => ({ ...metric, view }));
       const renderedWarnings = dedupeWarnings((renderedMetrics.warnings ?? []).map((warning) => ({ ...warning, view })));
       renderedMetrics.warnings = renderedWarnings;
       await fs.writeFile(path.join(viewOutputDir, "rendered-metrics.json"), JSON.stringify(renderedMetrics, null, 2));
       await fs.writeFile(path.join(viewOutputDir, "diagram-metrics.json"), JSON.stringify(diagramMetrics, null, 2));
-      viewResults.push({ view, renderedMetrics, diagramMetrics });
+      await fs.writeFile(path.join(viewOutputDir, "column-metrics.json"), JSON.stringify(columnMetrics, null, 2));
+      viewResults.push({ view, renderedMetrics, diagramMetrics, columnMetrics });
     }
 
     const allRenderedWarnings = dedupeWarnings(viewResults.flatMap((result) => result.renderedMetrics.warnings ?? []));
     const allDiagramMetrics = viewResults.flatMap((result) => result.diagramMetrics);
+    const allColumnMetrics = viewResults.flatMap((result) => result.columnMetrics);
     await fs.writeFile(
       path.join(outputDir, "rendered-metrics.json"),
       JSON.stringify(
@@ -1568,12 +1622,14 @@ async function runBrowserReplay(
       ),
     );
     await fs.writeFile(path.join(outputDir, "diagram-metrics.json"), JSON.stringify(allDiagramMetrics, null, 2));
+    await fs.writeFile(path.join(outputDir, "column-metrics.json"), JSON.stringify(allColumnMetrics, null, 2));
 
     const failures = [
       ...blockingMetricWarnings({ warnings: allRenderedWarnings }).map(
         (warning) => `${warning.view ?? "preview"} ${warning.caseName ?? ""} ${warning.code}: ${warning.message ?? ""}`,
       ),
       ...allDiagramMetrics.flatMap(failDiagramMetric),
+      ...allColumnMetrics.flatMap(failColumnMetric),
       ...consoleErrors.map((error) => `console error: ${error}`),
       ...pageErrors.map((error) => `page error: ${error}`),
     ];
@@ -1599,7 +1655,10 @@ async function runBrowserReplay(
     const warningCaseSummary = warningCases.length ? ` Warning cases: ${warningCases.join(", ")}.` : "";
     const nonBlockingKinds = nonBlockingWarnings.length ? ` Non-blocking warnings: ${[...new Set(nonBlockingWarnings)].join(", ")}.` : "";
     const viewSummary = viewResults
-      .map((result) => `${result.view}:${cases.length} case(s), ${result.diagramMetrics.length} diagram(s)`)
+      .map(
+        (result) =>
+          `${result.view}:${cases.length} case(s), ${result.diagramMetrics.length} diagram(s), ${result.columnMetrics.length} column block(s)`,
+      )
       .join("; ");
     console.log(
       `Assistant preview replay smoke passed for ${viewSummary}. Page mode: ${pageMode}. Screenshots: ${outputDir}. Rendered warning count: ${warningCount}.${nonBlockingKinds}${nonBlockingSummary}${warningCaseSummary}`,

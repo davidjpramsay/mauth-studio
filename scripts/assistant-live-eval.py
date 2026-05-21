@@ -9789,6 +9789,14 @@ def local_real_specialist_square_pyramid_bad_midpoints_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_square_pyramid_stacked_diagrams_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    call["mauthArguments"].pop("diagramLayout", None)
+    call["mauthArguments"].pop("diagramColumns", None)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_missing_angle_segment_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
     graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
@@ -11342,6 +11350,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "point F should be midpoint of A and B",
             "point M should be midpoint of E and F",
+        ],
+    },
+    "real-specialist-square-pyramid-stacked-diagrams": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_stacked_diagrams_call,
+        "expectedIssues": [
+            "square-pyramid source should preserve side-by-side diagrams with diagramLayout columns",
         ],
     },
     "real-specialist-square-pyramid-missing-angle-segment": {
