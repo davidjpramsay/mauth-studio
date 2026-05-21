@@ -2768,6 +2768,43 @@ def stats_chart_data_objects(args: dict[str, Any]) -> list[dict[str, Any]]:
     return data_objects
 
 
+STATS_CHART_DATA_FIELDS = {
+    "barType",
+    "bins",
+    "binSize",
+    "chartType",
+    "dataMode",
+    "frequencies",
+    "mean",
+    "points",
+    "probabilities",
+    "range",
+    "stdDev",
+    "values",
+    "xLabel",
+    "xValues",
+    "yLabel",
+    "yLabelOrientation",
+    "yAxisMode",
+    "yRange",
+    "yValues",
+}
+
+
+def stats_chart_top_level_field_issues(graph_configs: list[dict[str, Any]], *, label: str) -> list[str]:
+    issues: list[str] = []
+    for config in graph_configs:
+        if config.get("type") != "statsChart":
+            continue
+        misplaced_fields = sorted(STATS_CHART_DATA_FIELDS.intersection(config.keys()))
+        if misplaced_fields:
+            issues.append(
+                f"{label} statsChart chart DSL fields must be under graphConfig.data, not top-level graphConfig: "
+                f"{', '.join(misplaced_fields)}"
+            )
+    return issues
+
+
 def numeric_counter(values: Any) -> dict[float, int]:
     counts: dict[float, int] = {}
     if not isinstance(values, list):
@@ -4845,6 +4882,10 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
                     if issue:
                         issues.append(issue)
         elif diagram_type == "statsChart":
+            top_level_field_issues = stats_chart_top_level_field_issues(graph_configs, label=label)
+            issues.extend(top_level_field_issues)
+            if top_level_field_issues:
+                continue
             data_objects = stats_chart_data_objects(args)
             chart_types = {str(data.get("chartType")) for data in data_objects if data.get("chartType")}
             for chart_type in spec.get("chartTypes") or ():
@@ -5979,6 +6020,14 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     "expected": "source exact bin centres/categories and visible counts",
                 }
             )
+        elif "chart DSL fields must be under graphConfig.data" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.diagram.graphConfig.data",
+                    "message": issue,
+                    "expected": "move statsChart chart fields from graphConfig into graphConfig.data",
+                }
+            )
         elif "statsChart" in issue:
             validation_issues.append(
                 {
@@ -6920,6 +6969,15 @@ def local_real_methods_ev_histogram_counts_in_values_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
     data["values"] = data.pop("frequencies")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_ev_histogram_top_level_stats_fields_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    data = graph_config.pop("data")
+    graph_config.update(data)
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -9231,6 +9289,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "call": local_real_methods_ev_histogram_counts_in_values_call,
         "expectedIssues": [
             "exact count charts should use frequencies, not values",
+        ],
+    },
+    "real-methods-ev-histogram-top-level-stats-fields": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_top_level_stats_fields_call,
+        "expectedIssues": [
+            "statsChart chart DSL fields must be under graphConfig.data",
         ],
     },
     "real-methods-ev-histogram-bad-source-fields": {
