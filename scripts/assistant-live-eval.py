@@ -62,6 +62,7 @@ DEFAULT_PROVIDER_INPUT_CHAR_CAP = 160_000
 DEFAULT_PROVIDER_IMAGE_PIXEL_CAP = 1_600_000
 DEFAULT_PROVIDER_INSTRUCTION_CHAR_CAP = 0
 DEFAULT_PROVIDER_TOOL_SCHEMA_CHAR_CAP = 0
+MAX_LEDGER_FIRST_ISSUES = 12
 PAID_CANARY_FAMILY_PRIORITY = {
     "graph2d+graph3d": 0,
     "graph3d": 1,
@@ -1475,6 +1476,178 @@ def cost_ledger_label(record: dict[str, Any] | None) -> str:
     return f"ledger: latest {status} {timestamp}, {cost_label}, {tokens_label} tokens{repair_label}"
 
 
+def first_issues_for_record(record: dict[str, Any] | None) -> list[str]:
+    if not isinstance(record, dict):
+        return []
+    first_issues = record.get("firstIssues")
+    if not isinstance(first_issues, list):
+        return []
+    return [str(issue) for issue in first_issues if isinstance(issue, str) and issue.strip()]
+
+
+def local_regression_counts(case_name: str) -> tuple[int, int]:
+    clean = 0
+    expected_failures = 0
+    prefix = f"{case_name}-"
+    for local_name, fixture in LOCAL_EVAL_CASES.items():
+        if local_name != case_name and not local_name.startswith(prefix):
+            continue
+        if fixture.get("expectedIssues") is None:
+            clean += 1
+        else:
+            expected_failures += 1
+    return clean, expected_failures
+
+
+def latest_pass_or_latest_record(
+    latest_passes: dict[str, dict[str, Any]],
+    latest_records: dict[str, dict[str, Any]],
+    case_name: str,
+) -> dict[str, Any] | None:
+    return latest_passes.get(case_name) or latest_records.get(case_name)
+
+
+def numeric_record_value(record: dict[str, Any] | None, key: str) -> float:
+    if not isinstance(record, dict):
+        return 0.0
+    value = record.get(key)
+    return float(value) if isinstance(value, int | float) else 0.0
+
+
+def int_record_value(record: dict[str, Any] | None, key: str) -> int:
+    if not isinstance(record, dict):
+        return 0
+    value = record.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def cost_report_action(
+    *,
+    case_name: str,
+    latest_record: dict[str, Any] | None,
+    display_record: dict[str, Any] | None,
+    clean_fixtures: int,
+    bad_fixtures: int,
+) -> str:
+    status = latest_record.get("status") if isinstance(latest_record, dict) else None
+    repair_count = int_record_value(display_record, "repairCount")
+    first_issues = first_issues_for_record(display_record)
+    if status in {"FAIL", "BLOCKED"}:
+        return "fix latest paid failure before spending on adjacent cases"
+    if repair_count > 0 and first_issues:
+        return "convert firstIssues into/verify a local regression, then reduce first-call miss"
+    if repair_count > 0:
+        if bad_fixtures:
+            return "review repaired pass against existing bad fixtures; rerun paid only for exact firstIssues"
+        return "add a local regression for the repaired first-call miss before another paid run"
+    if bad_fixtures == 0 and case_name in EVAL_GROUPS.get("real-exams", []):
+        return "add at least one known-bad local regression when the next real failure appears"
+    if clean_fixtures == 0:
+        return "add a clean local fixture before relying on paid canaries"
+    return "healthy; rerun only when stale, changed, or renderer risk increases"
+
+
+def print_cost_report(case_name: str, *, cost_ledger_path: Path | None, max_cases: int | None = None) -> int:
+    selected_cases = selected_live_cases(case_name)
+    if max_cases is not None:
+        selected_cases = selected_cases[:max_cases]
+    records = read_cost_ledger(cost_ledger_path)
+    latest_records = latest_records_by_case(records)
+    latest_passes = latest_pass_records_by_case(records)
+    benchmark_index = benchmark_manifest_index()
+    records_by_case: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        record_case = record.get("case")
+        if isinstance(record_case, str):
+            records_by_case.setdefault(record_case, []).append(record)
+
+    rows: list[dict[str, Any]] = []
+    for selected_case in selected_cases:
+        case_records = records_by_case.get(selected_case, [])
+        latest_record = latest_records.get(selected_case)
+        display_record = latest_pass_or_latest_record(latest_passes, latest_records, selected_case)
+        clean_fixtures, bad_fixtures = local_regression_counts(selected_case)
+        total_cost = sum(numeric_record_value(record, "costUsd") for record in case_records)
+        total_tokens = sum(int_record_value(record, "tokens") for record in case_records)
+        total_repairs = sum(int_record_value(record, "repairCount") for record in case_records)
+        failed_runs = sum(1 for record in case_records if record.get("status") == "FAIL")
+        blocked_runs = sum(1 for record in case_records if record.get("status") == "BLOCKED")
+        passed_runs = sum(1 for record in case_records if record.get("status") == "PASS")
+        rows.append(
+            {
+                "case": selected_case,
+                "rendererFamily": paid_canary_family(selected_case, benchmark_index),
+                "latestStatus": latest_record.get("status") if isinstance(latest_record, dict) else "NONE",
+                "latestTimestamp": latest_record.get("timestamp") if isinstance(latest_record, dict) else "",
+                "latestPassRepairCount": int_record_value(display_record, "repairCount"),
+                "latestPassCost": numeric_record_value(display_record, "costUsd"),
+                "latestPassTokens": int_record_value(display_record, "tokens"),
+                "firstIssues": first_issues_for_record(display_record),
+                "runs": len(case_records),
+                "passes": passed_runs,
+                "fails": failed_runs,
+                "blocked": blocked_runs,
+                "totalCost": total_cost,
+                "totalTokens": total_tokens,
+                "totalRepairs": total_repairs,
+                "cleanLocalFixtures": clean_fixtures,
+                "badLocalFixtures": bad_fixtures,
+                "action": cost_report_action(
+                    case_name=selected_case,
+                    latest_record=latest_record,
+                    display_record=display_record,
+                    clean_fixtures=clean_fixtures,
+                    bad_fixtures=bad_fixtures,
+                ),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            0 if row["latestStatus"] in {"FAIL", "BLOCKED"} else 1,
+            -int(row["latestPassRepairCount"]),
+            -float(row["latestPassCost"]),
+            -int(row["latestPassTokens"]),
+            -int(row["totalRepairs"]),
+            str(row["case"]),
+        )
+    )
+
+    print("ASSISTANT PAID EVAL COST REPORT")
+    print(f"- requested case/group: {case_name}")
+    print(f"- selected cases: {len(selected_cases)}")
+    print(f"- cost ledger: {cost_ledger_path if cost_ledger_path is not None else 'disabled'}")
+    if not records:
+        print("- ledger records: 0")
+    else:
+        total_cost = sum(numeric_record_value(record, "costUsd") for record in records)
+        total_tokens = sum(int_record_value(record, "tokens") for record in records)
+        total_repairs = sum(int_record_value(record, "repairCount") for record in records)
+        print(
+            f"- ledger records: {len(records)}, total ${total_cost:.4f}, "
+            f"{total_tokens:,} tokens, repairs={total_repairs}"
+        )
+    print("- priority rows:")
+    for row in rows:
+        latest_label = (
+            f"{row['latestStatus']} {row['latestTimestamp']}".strip()
+            if row["latestTimestamp"]
+            else str(row["latestStatus"])
+        )
+        first_issue_label = row["firstIssues"][0] if row["firstIssues"] else "not recorded"
+        print(
+            f"  - {row['case']} ({row['rendererFamily']}): latest={latest_label}; "
+            f"latestPass=${row['latestPassCost']:.4f}, {row['latestPassTokens']:,} tokens, "
+            f"repairs={row['latestPassRepairCount']}; runs={row['runs']} "
+            f"(pass={row['passes']}, fail={row['fails']}, blocked={row['blocked']}), "
+            f"total=${row['totalCost']:.4f}, totalRepairs={row['totalRepairs']}; "
+            f"local={row['cleanLocalFixtures']} clean/{row['badLocalFixtures']} bad; action={row['action']}"
+        )
+        if row["latestPassRepairCount"] > 0:
+            print(f"    first issue: {first_issue_label}")
+    return 0
+
+
 def benchmark_renderers(case_name: str, benchmark_index: dict[str, dict[str, Any]] | None = None) -> list[str]:
     benchmarks = benchmark_index if benchmark_index is not None else benchmark_manifest_index()
     benchmark = benchmarks.get(case_name)
@@ -1598,6 +1771,7 @@ def cost_ledger_record(
     shape: dict[str, Any] | None,
     benchmark_index: dict[str, dict[str, Any]],
     reason: str | None = None,
+    first_issues: list[str] | None = None,
 ) -> dict[str, Any]:
     attachment_stats = shape.get("attachmentStats") if isinstance(shape, dict) and isinstance(shape.get("attachmentStats"), dict) else {}
     record: dict[str, Any] = {
@@ -1617,6 +1791,8 @@ def cost_ledger_record(
     }
     if reason:
         record["reason"] = reason
+    if first_issues:
+        record["firstIssues"] = [str(issue) for issue in first_issues[:MAX_LEDGER_FIRST_ISSUES]]
     if isinstance(shape, dict):
         record["requestShape"] = {
             "brainSelection": shape.get("brainSelection"),
@@ -7057,6 +7233,11 @@ EVAL_GATE_CLASSIFICATION: list[dict[str, str]] = [
         "purpose": "Free browser replay through high-level tools and real JSXGraph/Plotly/Penrose preview surfaces.",
     },
     {
+        "gate": "cost-ledger-triage",
+        "command": "pnpm eval:assistant:costs",
+        "purpose": "Free paid-ledger report that ranks repair-heavy, token-heavy, or missing-regression cases before spending.",
+    },
+    {
         "gate": "paid-live",
         "command": "pnpm eval:assistant:live:*",
         "purpose": "Bounded real-provider checks only after the free gates pass or when testing a new high-risk prompt class.",
@@ -10934,7 +11115,7 @@ async def safe_create_assistant_response(request: AssistantChatRequest) -> tuple
 
 async def run_single_eval(
     case_name: str, model: str | None = None, final_message: bool = False, verbose: bool = False
-) -> tuple[int, float, int, int]:
+) -> tuple[int, float, int, int, list[str]]:
     case = EVAL_CASES[case_name]
     prompt = str(case["prompt"])
     summary = case["summary"]()
@@ -10953,7 +11134,7 @@ async def run_single_eval(
     )
     if provider_error or first is None:
         print(provider_error or "BLOCKED: assistant provider returned no response.", file=sys.stderr)
-        return 2, 0.0, 0, 0
+        return 2, 0.0, 0, 0, []
     first_calls = [as_dict(call) for call in first.get("toolCalls", [])]
     total_cost = usage_cost(first.get("usage"))
     total_tokens = usage_tokens(first.get("usage"))
@@ -10961,8 +11142,9 @@ async def run_single_eval(
     print_provider_response("First response", first, first_calls, verbose=verbose)
 
     if len(first_calls) != 1:
-        print(f"FAIL: expected exactly one tool call, got {len(first_calls)}", file=sys.stderr)
-        return 1, total_cost, total_tokens, 0
+        issue = f"expected exactly one tool call, got {len(first_calls)}"
+        print(f"FAIL: {issue}", file=sys.stderr)
+        return 1, total_cost, total_tokens, 0, [issue]
 
     repair_failure = case.get("repairFailure")
     if callable(repair_failure):
@@ -10972,7 +11154,7 @@ async def run_single_eval(
                 print("FAIL:")
                 for issue in first_issues:
                     print(f"- {issue}")
-                return 1, total_cost, total_tokens, 0
+                return 1, total_cost, total_tokens, 0, first_issues
         tool_output = repair_failure(first_calls[0])
         second, provider_error = await safe_create_assistant_response(
             AssistantChatRequest(
@@ -10990,15 +11172,16 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
-            return 2, total_cost, total_tokens, 1
+            return 2, total_cost, total_tokens, 1, []
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
         print_provider_response("Repair response", second, second_calls, verbose=verbose)
 
         if len(second_calls) != 1:
-            print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
-            return 1, total_cost, total_tokens, 1
+            issue = f"expected exactly one repair tool call, got {len(second_calls)}"
+            print(f"FAIL: {issue}", file=sys.stderr)
+            return 1, total_cost, total_tokens, 1, [issue]
 
         repair_assert = case.get("repairAssert", assert_call)
         repair_issues = repair_assert(second_calls[0])
@@ -11006,10 +11189,10 @@ async def run_single_eval(
             print("FAIL:")
             for issue in repair_issues:
                 print(f"- {issue}")
-            return 1, total_cost, total_tokens, 1
+            return 1, total_cost, total_tokens, 1, repair_issues
 
         print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-        return 0, total_cost, total_tokens, 1
+        return 0, total_cost, total_tokens, 1, []
 
     issues = assert_call(first_calls[0])
     repair_on_failure = case.get("repairOnFailure")
@@ -11031,31 +11214,32 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no repair response.", file=sys.stderr)
-            return 2, total_cost, total_tokens, 1
+            return 2, total_cost, total_tokens, 1, issues
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
         print_provider_response("Repair response", second, second_calls, verbose=verbose)
 
         if len(second_calls) != 1:
-            print(f"FAIL: expected exactly one repair tool call, got {len(second_calls)}", file=sys.stderr)
-            return 1, total_cost, total_tokens, 1
+            issue = f"expected exactly one repair tool call, got {len(second_calls)}"
+            print(f"FAIL: {issue}", file=sys.stderr)
+            return 1, total_cost, total_tokens, 1, [*issues, issue]
 
         repair_issues = assert_call(second_calls[0])
         if repair_issues:
             print("FAIL:")
             for issue in repair_issues:
                 print(f"- {issue}")
-            return 1, total_cost, total_tokens, 1
+            return 1, total_cost, total_tokens, 1, [*issues, *repair_issues]
 
         print(f"PASS: {case_name} repaired successfully. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-        return 0, total_cost, total_tokens, 1
+        return 0, total_cost, total_tokens, 1, issues
 
     if issues:
         print("FAIL:")
         for issue in issues:
             print(f"- {issue}")
-        return 1, total_cost, total_tokens, 0
+        return 1, total_cost, total_tokens, 0, issues
 
     if final_message:
         tool_output = {
@@ -11084,20 +11268,20 @@ async def run_single_eval(
         )
         if provider_error or second is None:
             print(provider_error or "BLOCKED: assistant provider returned no final response.", file=sys.stderr)
-            return 2, total_cost, total_tokens, 0
+            return 2, total_cost, total_tokens, 0, []
         second_calls = [as_dict(call) for call in second.get("toolCalls", [])]
         total_cost += usage_cost(second.get("usage"))
         total_tokens += usage_tokens(second.get("usage"))
         print_provider_response("Final response", second, second_calls, verbose=verbose)
         if second_calls:
             print("FAIL: final response should not need another tool call.", file=sys.stderr)
-            return 1, total_cost, total_tokens, 0
+            return 1, total_cost, total_tokens, 0, ["final response should not need another tool call"]
         if not str(second.get("message") or "").strip():
             print("FAIL: final response should contain a teacher-facing summary.", file=sys.stderr)
-            return 1, total_cost, total_tokens, 0
+            return 1, total_cost, total_tokens, 0, ["final response should contain a teacher-facing summary"]
 
     print(f"PASS: {case_name} succeeded. Estimated total: ${total_cost:.4f}, {total_tokens:,} tokens.")
-    return 0, total_cost, total_tokens, 0
+    return 0, total_cost, total_tokens, 0, []
 
 
 async def run_eval(
@@ -11141,7 +11325,7 @@ async def run_eval(
     total_tokens = 0
     failed = False
     blocked = False
-    results: list[tuple[str, int, float, int, int]] = []
+    results: list[tuple[str, int, float, int, int, list[str]]] = []
     for index, selected_case in enumerate(selected_cases):
         if max_cases is not None and index >= max_cases:
             print(f"\nSTOP: max case limit reached before {selected_case}. Limit: {max_cases}.")
@@ -11176,7 +11360,7 @@ async def run_eval(
                     reason="provider instruction char cap",
                 ),
             )
-            results.append((selected_case, 2, 0.0, 0, 0))
+            results.append((selected_case, 2, 0.0, 0, 0, []))
             blocked = True
             break
         tool_schema_chars = shape.get("toolSchemaChars")
@@ -11205,7 +11389,7 @@ async def run_eval(
                     reason="provider tool schema char cap",
                 ),
             )
-            results.append((selected_case, 2, 0.0, 0, 0))
+            results.append((selected_case, 2, 0.0, 0, 0, []))
             blocked = True
             break
         input_chars = shape.get("inputChars")
@@ -11230,7 +11414,7 @@ async def run_eval(
                     reason="provider input char cap",
                 ),
             )
-            results.append((selected_case, 2, 0.0, 0, 0))
+            results.append((selected_case, 2, 0.0, 0, 0, []))
             blocked = True
             break
         provider_image_pixels = provider_image_pixels_for_shape(shape)
@@ -11255,10 +11439,10 @@ async def run_eval(
                     reason="provider image pixel cap",
                 ),
             )
-            results.append((selected_case, 2, 0.0, 0, 0))
+            results.append((selected_case, 2, 0.0, 0, 0, []))
             blocked = True
             break
-        status, cost, tokens, repair_count = await run_single_eval(
+        status, cost, tokens, repair_count, first_issues = await run_single_eval(
             selected_case, model=model, final_message=final_message, verbose=verbose
         )
         total_cost += cost
@@ -11275,9 +11459,10 @@ async def run_eval(
                 model=model,
                 shape=shape,
                 benchmark_index=benchmark_index,
+                first_issues=first_issues,
             ),
         )
-        results.append((selected_case, status, cost, tokens, repair_count))
+        results.append((selected_case, status, cost, tokens, repair_count, first_issues))
         failed = failed or status == 1
         blocked = blocked or status == 2
         if status == 2:
@@ -11289,10 +11474,11 @@ async def run_eval(
             print(f"\nSTOP: {selected_case} cost ${cost:.4f}, above the per-case spike stop ${case_cost_cap:.2f}.")
             break
     print("\nSUMMARY:")
-    for selected_case, status, cost, tokens, repair_count in results:
+    for selected_case, status, cost, tokens, repair_count, first_issues in results:
         label = "PASS" if status == 0 else "BLOCKED" if status == 2 else "FAIL"
         repair_label = f", repairs={repair_count}" if repair_count else ""
-        print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens{repair_label}")
+        issue_label = f", firstIssues={len(first_issues)}" if first_issues else ""
+        print(f"- {label} {selected_case}: ${cost:.4f}, {tokens:,} tokens{repair_label}{issue_label}")
     print(f"\nTOTAL: ${total_cost:.4f}, {total_tokens:,} tokens.")
     if cost_ledger_path is not None and results:
         print(f"COST LEDGER: {cost_ledger_path}")
@@ -11444,6 +11630,11 @@ def main() -> int:
         help="Print the planned paid cases, caps, benchmark links, and no-cost gates without calling the provider.",
     )
     parser.add_argument(
+        "--cost-report",
+        action="store_true",
+        help="Rank selected cases by paid ledger cost, token use, repair count, and local regression coverage.",
+    )
+    parser.add_argument(
         "--allow-paid",
         action="store_true",
         help="Actually call the provider for live evals. Without this flag, live evals print a cost plan only.",
@@ -11498,6 +11689,8 @@ def main() -> int:
         return list_eval_taxonomy()
     if args.dump_local_calls:
         return dump_local_calls(case_name=args.case)
+    if args.cost_report:
+        return print_cost_report(args.case, cost_ledger_path=cost_ledger_path, max_cases=args.max_cases)
     if args.local:
         return run_local_eval(case_name=args.case, verbose=args.verbose)
     if args.cost_plan or not args.allow_paid:
