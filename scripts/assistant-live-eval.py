@@ -3925,7 +3925,14 @@ def assert_real_methods_dice_game_call(call: dict[str, Any]) -> list[str]:
         for term in ("not fixed", "not independent", "not a fixed number", "not independent")
     ):
         issues.append("dice-game solution should explain why the game is not binomial")
-    if "profitable" not in solution_joined or "charity" not in solution_joined:
+    charity_profit_wording = "charity" in solution_joined and (
+        "profitable" in solution_joined
+        or "make a profit" in solution_joined
+        or "makes a profit" in solution_joined
+        or "making a profit" in solution_joined
+        or "expected profit for the charity" in solution_joined
+    )
+    if not charity_profit_wording:
         issues.append("dice-game solution should state the game is profitable for the charity")
     solution_mark_total = hidden_mark_total("\n".join(solution_texts)) + solution_surface_mark_total(args)
     if solution_mark_total != 14:
@@ -6669,6 +6676,28 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                     "expected": "source-faithful statsChart fields and data",
                 }
             )
+        elif "solutionText should be unmarked when solutionTable is present" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionText",
+                    "message": issue,
+                    "expected": (
+                        "remove hidden [[marks:n]] ticks from solutionText on the same part/subpart as a solutionTable; "
+                        "the completed solution table receives the item marks automatically"
+                    ),
+                }
+            )
+        elif "solutionText should be unmarked when solutionDiagram is present" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionText",
+                    "message": issue,
+                    "expected": (
+                        "remove hidden [[marks:n]] ticks from solutionText on the same part/subpart as a solutionDiagram; "
+                        "the completed solution diagram receives the item marks automatically"
+                    ),
+                }
+            )
     if not validation_issues:
         validation_issues = [
             {
@@ -7945,6 +7974,25 @@ def local_real_methods_dice_game_live_escaped_currency_call() -> dict[str, Any]:
     parts[4]["solutionText"] = (
         "Yes. Since the expected profit for a player is $-\\$0.094$ per game, "
         "the expected profit for the charity is $\\$0.094$ per game, so the game is profitable for the charity. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_marked_solution_table_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_split_solution_table_call()))
+    part_c = next(part for part in call["mauthArguments"]["parts"] if part.get("answerSurface") == "table")
+    part_c["solutionText"] = "The completed profit distribution is shown. [[marks:3]]"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_make_profit_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    call["mauthArguments"]["parts"][4]["solutionText"] = (
+        "Yes. The expected profit for the player is $-0.094$ dollars per game, so the expected profit "
+        "for the charity is $0.094$ dollars per game. In the long run, the charity would be expected "
+        "to make a profit. [[marks:2]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -10438,6 +10486,15 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_methods_dice_game_call,
         "call": local_real_methods_dice_game_live_escaped_currency_call,
         "expectedIssues": ["contains malformed escaped dollar inside maths"],
+    },
+    "real-methods-dice-game-live-marked-solution-table": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_marked_solution_table_call,
+        "expectedIssues": ["solutionText should be unmarked when solutionTable is present"],
+    },
+    "real-methods-dice-game-live-make-profit-wording": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_make_profit_wording_call,
     },
     "real-specialist-lighthouse": {
         "assert": assert_real_lighthouse_question_call,

@@ -2808,12 +2808,14 @@ def source_conversion_part_schema(
         "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
         "solutionText": {
             "type": "string",
-            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+            "description": (
+                "Only when requested or visible in source. Use hidden [[marks:n]] ticks unless a solution surface is present."
+            ),
         },
         "includeSolution": {"type": "boolean"},
         "table": subpart_table,
         "tables": {"type": "array", "items": subpart_table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
         "solutionTables": {
             "type": "array",
             "items": source_conversion_table_schema("One completed solution-copy table."),
@@ -2859,12 +2861,14 @@ def source_conversion_part_schema(
         "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
         "solutionText": {
             "type": "string",
-            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks, not visible mark notes.",
+            "description": (
+                "Only when requested or visible in source. Use hidden [[marks:n]] ticks unless a solution surface is present."
+            ),
         },
         "includeSolution": {"type": "boolean"},
         "table": table,
         "tables": {"type": "array", "items": table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
         "solutionTables": {
             "type": "array",
             "items": source_conversion_table_schema("One completed solution-copy table."),
@@ -2949,12 +2953,14 @@ def mauth_convert_source_question_tool_definition(
         "answerSurface": {"type": "string", "enum": ["space", "diagram", "table", "none"]},
         "solutionText": {
             "type": "string",
-            "description": "Only when requested or visible in source. Use hidden [[marks:n]] ticks.",
+            "description": (
+                "Only when requested or visible in source. Use hidden [[marks:n]] ticks unless a solution surface is present."
+            ),
         },
         "includeSolution": {"type": "boolean"},
         "table": table,
         "tables": {"type": "array", "items": table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table."),
+        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
         "solutionTables": {
             "type": "array",
             "items": source_conversion_table_schema("One completed solution-copy table."),
@@ -3006,7 +3012,7 @@ def mauth_convert_source_question_tool_definition(
             "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
             "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
             "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
-            "For currency, use \\$400 in text, $400$ for plain numbers, or words for signed amounts; never put \\$ inside $...$. "
+            "For currency, keep dollar units outside maths. "
             "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
             "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
             "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."

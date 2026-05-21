@@ -107,6 +107,8 @@ Markdown **bold** and _italic_ are supported.
 
 Use `$...$` for inline maths and `$$...$$` for display maths. Maths renders through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default, so formulas stay in the sentence while fractions and operators use display-style sizing. This is a local wrapper rather than MathJax display mode, because display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`.
 
+Keep currency escapes outside maths. For monetary random variables, write mathematical values numerically, such as `$E(Y)=-0.094$`, then use prose such as `-\$0.094` per game if the unit is dollars. Do not write escaped currency inside maths, such as `$-\$0.094$`.
+
 When converting source papers, preserve the source inline/display choice. Tall inline formulae such as column vectors, matrices, or vector equations should stay inside `$...$` when they are part of a sentence; do not move them to `$$...$$` just to make them larger. Use display maths only for standalone source equations or deliberate working lines.
 
 For vertical systems or grouped display equations, use supported MathJax environments such as `\begin{aligned} ... \end{aligned}`. Do not use `aligned*`. If the rows are cramped, add a small row gap such as `\\[2pt]` or `\\[3pt]`.

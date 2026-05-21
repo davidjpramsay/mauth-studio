@@ -51,6 +51,7 @@
     "When writing vertical systems or grouped equations, use \\begin{aligned}...\\end{aligned}, not \\begin{aligned*}. Add small row gaps such as \\\\[2pt] only when the solution lines look cramped.",
     "For random variables, use notation such as $\\mu_X$ and $\\sigma_X$ for mean and standard deviation when appropriate; match the subscript to the random variable name, and avoid informal sd notation in worked equations.",
     "Use $...$ for inline maths and $$...$$ for display equations. Do not emit \\(...\\) or \\[...\\] delimiters.",
+    "For monetary random variables or profit/loss questions, keep expected-value and variance equations numeric, such as $E(Y)=-0.094$. Put dollar wording outside maths, such as -\\$0.094 in prose, or write signed amounts in words. Never write escaped currency inside maths such as $-\\$0.094$.",
     "Box or clearly state final answers.",
     "For calculus questions, show enough derivative/integral work to justify the answer.",
     "For probability and statistics questions, state the formula or relationship being used.",
