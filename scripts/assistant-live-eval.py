@@ -7866,6 +7866,33 @@ def local_real_specialist_stats_bad_density_points_call() -> dict[str, Any]:
     return call
 
 
+def local_real_specialist_stats_live_smoothed_density_points_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["xLabel"] = "$t$"
+    data["points"] = [
+        {"x": 0, "y": 0.195},
+        {"x": 0.5, "y": 0.202},
+        {"x": 1, "y": 0.205},
+        {"x": 1.5, "y": 0.202},
+        {"x": 2, "y": 0.19},
+        {"x": 2.5, "y": 0.173},
+        {"x": 3, "y": 0.15},
+        {"x": 3.5, "y": 0.125},
+        {"x": 4, "y": 0.102},
+        {"x": 4.5, "y": 0.081},
+        {"x": 5, "y": 0.062},
+        {"x": 5.5, "y": 0.047},
+        {"x": 6, "y": 0.035},
+        {"x": 6.5, "y": 0.026},
+        {"x": 7, "y": 0.019},
+        {"x": 7.5, "y": 0.014},
+        {"x": 8, "y": 0.01},
+    ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_stats_paired_density_values_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_stats_call()))
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
@@ -8166,6 +8193,25 @@ def local_real_specialist_slope_field_bad_artifact_marks_call() -> dict[str, Any
     part_c = call["mauthArguments"]["parts"][2]
     part_c["solutionText"] = "Draw the completed solution curve on the slope field. [[marks:2]]"
     part_c["includeSolution"] = True
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_slope_field_live_sqrt_solution_branch_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_slope_field_call()))
+    solution_graph = call["mauthArguments"]["parts"][2]["solutionDiagram"]["graphConfig"]
+    call["mauthArguments"]["diagram"]["graphConfig"]["functions"] = []
+    call["mauthArguments"]["parts"][2]["diagram"]["graphConfig"]["functions"] = []
+    solution_graph["functions"] = [
+        {
+            "kind": "expression",
+            "expression": "sqrt(x^2/2 - x + 1/4)",
+            "domainMin": -2,
+            "domainMax": 0.2928932188,
+            "color": "#000000",
+            "strokeWidth": 2.5,
+        }
+    ]
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -9967,6 +10013,17 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "statsChart should preserve source point (2.7, 0.18)",
         ],
     },
+    "real-specialist-stats-live-smoothed-density-points": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_live_smoothed_density_points_call,
+        "expectedIssues": [
+            "statsChart xLabel should preserve response/time",
+            "statsChart should preserve source point (1, 0.03)",
+            "statsChart should preserve source point (2.1, 0.2)",
+            "statsChart should preserve source point (2.7, 0.18)",
+            "statsChart should preserve source point (5, 0.02)",
+        ],
+    },
     "real-specialist-stats-paired-density-values": {
         "assert": assert_real_specialist_stats_call,
         "call": local_real_specialist_stats_paired_density_values_call,
@@ -10031,6 +10088,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "expectedIssues": [
             "solutionText should be unmarked when solutionDiagram is present",
             "ticks plus completed solution diagrams should total 8",
+        ],
+    },
+    "real-specialist-slope-field-live-sqrt-solution-branch": {
+        "assert": assert_real_specialist_slope_field_call,
+        "call": local_real_specialist_slope_field_live_sqrt_solution_branch_call,
+        "expectedIssues": [
+            "slope-field graph2d.functions should include the solution-curve relation or completed solution diagram",
         ],
     },
     "real-specialist-argand": {

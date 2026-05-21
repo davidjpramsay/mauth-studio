@@ -3032,8 +3032,8 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
             "graph3d for 3D diagrams with explicit points, segments, polygon faces, curved solids including sphereCap, and metadata.view3d az/el/bank in radians; image for uploaded images. "
             "For slope fields, use graph2d.data.slopeField rather than prose or loose line segments, and keep graph2d "
             "functions/features/ranges/display fields directly on graphConfig. Include requested slope-calculation points "
-            "in data.slopeField.highlightedPoints, not only as graphConfig.features points. Use relation functions for implicit "
-            "solution curves when the source gives an implicit equation."
+            "in data.slopeField.highlightedPoints, not only as graphConfig.features points. Use kind:'relation' for implicit "
+            "solution curves; never split them into sqrt branches."
         ),
         "parameters": {
             "type": "object",
