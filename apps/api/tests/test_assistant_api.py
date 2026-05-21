@@ -1472,7 +1472,10 @@ def test_multi_renderer_source_question_schema_uses_diagrams_only():
 
 
 def test_source_question_table_only_schema_omits_diagram_payloads():
-    tool = openai_assistant.mauth_convert_source_question_tool_definition(include_diagram_fields=False)
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(
+        include_diagram_fields=False,
+        include_table_surface_fields=False,
+    )
     serialized = json.dumps(tool, ensure_ascii=False)
     properties = tool["parameters"]["properties"]
     part_properties = properties["parts"]["items"]["properties"]
@@ -1489,9 +1492,28 @@ def test_source_question_table_only_schema_omits_diagram_payloads():
     assert "table" not in subpart_properties
     assert "solutionTable" not in properties
     assert "tables" in properties
-    assert "tables" in part_properties
-    assert "tables" in subpart_properties
+    assert "tables" not in part_properties
+    assert "tables" not in subpart_properties
+    assert "solutionTables" not in properties
+    assert "solutionTables" not in part_properties
+    assert "solutionTables" not in subpart_properties
+
+
+def test_source_question_table_surface_schema_exposes_completion_tables():
+    tool = openai_assistant.mauth_convert_source_question_tool_definition(
+        include_diagram_fields=False,
+        include_table_surface_fields=True,
+    )
+    properties = tool["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    subpart_properties = part_properties["subparts"]["items"]["properties"]
+
+    assert "tables" in properties
     assert "solutionTables" in properties
+    assert "tables" in part_properties
+    assert "solutionTables" in part_properties
+    assert "tables" in subpart_properties
+    assert "solutionTables" in subpart_properties
 
 
 def test_source_diagram_type_detection_covers_related_rates_geometry():
@@ -1501,6 +1523,15 @@ def test_source_diagram_type_detection_covers_related_rates_geometry():
     )
 
     assert openai_assistant.source_conversion_diagram_types_for_text(text) == ["geometricConstruction"]
+
+
+def test_source_table_surface_detection_distinguishes_given_tables():
+    assert not openai_assistant.source_conversion_table_surface_fields_enabled(
+        "Preserve the confidence-interval table, structured parts, and worked solutions."
+    )
+    assert openai_assistant.source_conversion_table_surface_fields_enabled(
+        "Create this question and include the completed table from the marking key."
+    )
 
 
 def test_direct_add_diagram_tool_accepts_diagram_id_for_repairs():
@@ -1932,8 +1963,15 @@ def test_table_only_source_conversion_skips_diagram_brain_and_schema():
 
     assert ids == ["question", "solutions"]
     assert [tool["name"] for tool in tools] == ["mauth_convert_source_question"]
-    assert "diagram" not in tools[0]["parameters"]["properties"]
+    properties = tools[0]["parameters"]["properties"]
+    part_properties = properties["parts"]["items"]["properties"]
+    assert "diagram" not in properties
+    assert "tables" in properties
+    assert "solutionTables" not in properties
+    assert "tables" not in part_properties
+    assert "solutionTables" not in part_properties
     assert "table/text-only source conversion" in instructions
+    assert "question-level tables array only" in instructions
     assert "Native diagram rules:" not in instructions
 
 

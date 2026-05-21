@@ -3275,6 +3275,7 @@ def assert_real_specialist_confidence_intervals_call(call: dict[str, Any]) -> li
             "95%islowerthan99%",
             "95<99",
             "95%confidencelevelusesasmallercriticalvalue",
+            "95%confidencelevelislessthanthe99%confidencelevel",
         ),
         ("0.707", "1/sqrt2"),
         ("0.8",),
@@ -8672,6 +8673,17 @@ def local_real_specialist_confidence_intervals_live_lower_confidence_wording_cal
     return call
 
 
+def local_real_specialist_confidence_intervals_live_confidence_level_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    subpart_i = call["mauthArguments"]["parts"][5]["subparts"][0]
+    subpart_i["solutionText"] = (
+        "Confidence interval A has the smaller width, since the 95% confidence level is less than "
+        "the 99% confidence level for B. [[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_confidence_intervals_live_unbalanced_currency_math_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
     args = call["mauthArguments"]
@@ -10799,6 +10811,10 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-specialist-confidence-intervals-live-lower-wording": {
         "assert": assert_real_specialist_confidence_intervals_call,
         "call": local_real_specialist_confidence_intervals_live_lower_confidence_wording_call,
+    },
+    "real-specialist-confidence-intervals-live-confidence-level-wording": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_confidence_level_wording_call,
     },
     "real-specialist-confidence-intervals-live-unbalanced-currency-math": {
         "assert": assert_real_specialist_confidence_intervals_call,

@@ -365,6 +365,23 @@ def source_conversion_diagram_fields_enabled(text: str) -> bool:
     return not source_conversion_table_only_for_text(text)
 
 
+def source_conversion_table_surface_fields_enabled(text: str) -> bool:
+    text = text.lower()
+    table_surface_terms = (
+        "answer surface",
+        "blank table",
+        "complete a table",
+        "complete the table",
+        "completed table",
+        "completion table",
+        "fill in a table",
+        "fill in the table",
+        "fill the table",
+        "table of values",
+    )
+    return any(term in text for term in table_surface_terms)
+
+
 def assistant_model() -> str:
     return os.environ.get("OPENAI_MODEL", DEFAULT_ASSISTANT_MODEL)
 
@@ -2833,6 +2850,7 @@ def source_conversion_part_schema(
     *,
     include_diagram_fields: bool = True,
     diagram_collection_only: bool = False,
+    include_table_surface_fields: bool = True,
 ) -> dict[str, Any]:
     table = source_conversion_table_schema("Optional table for this part. Use blank strings for student cells.")
     subpart_table = source_conversion_table_schema(
@@ -2854,20 +2872,21 @@ def source_conversion_part_schema(
             ),
         },
         "includeSolution": {"type": "boolean"},
-        "tables": {
+        "pageBreakBefore": {"type": "boolean"},
+    }
+    if include_table_surface_fields:
+        subpart_properties["tables"] = {
             "type": "array",
             "minItems": 1,
             "description": "Optional subpart tables. Omit this field instead of sending an empty array.",
             "items": subpart_table,
-        },
-        "solutionTables": {
+        }
+        subpart_properties["solutionTables"] = {
             "type": "array",
             "minItems": 1,
             "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
             "items": source_conversion_table_schema("One completed solution-copy table."),
-        },
-        "pageBreakBefore": {"type": "boolean"},
-    }
+        }
     if include_diagram_fields:
         subpart_diagram = source_conversion_compact_diagram_block_schema(
             "Optional native diagram for this subpart.", diagram_types
@@ -2912,18 +2931,6 @@ def source_conversion_part_schema(
             ),
         },
         "includeSolution": {"type": "boolean"},
-        "tables": {
-            "type": "array",
-            "minItems": 1,
-            "description": "Optional part tables. Omit this field instead of sending an empty array.",
-            "items": table,
-        },
-        "solutionTables": {
-            "type": "array",
-            "minItems": 1,
-            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
-            "items": source_conversion_table_schema("One completed solution-copy table."),
-        },
         "subparts": {
             "type": "array",
             "description": (
@@ -2933,6 +2940,19 @@ def source_conversion_part_schema(
         },
         "pageBreakBefore": {"type": "boolean"},
     }
+    if include_table_surface_fields:
+        part_properties["tables"] = {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional part tables. Omit this field instead of sending an empty array.",
+            "items": table,
+        }
+        part_properties["solutionTables"] = {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
+            "items": source_conversion_table_schema("One completed solution-copy table."),
+        }
     if include_diagram_fields:
         diagram = source_conversion_compact_diagram_block_schema(
             "Optional native diagram for this part.", diagram_types
@@ -2968,6 +2988,7 @@ def mauth_convert_source_question_tool_definition(
     require_diagram: bool = False,
     diagram_types: list[str] | None = None,
     include_diagram_fields: bool = True,
+    include_table_surface_fields: bool = True,
 ) -> dict[str, Any]:
     include_diagram_fields = include_diagram_fields or require_diagram
     required_fields = ["questionNumber", "marks", "questionText"]
@@ -3012,14 +3033,10 @@ def mauth_convert_source_question_tool_definition(
         "tables": {
             "type": "array",
             "minItems": 1,
-            "description": "Optional source tables. Omit this field instead of sending an empty array.",
+            "description": (
+                "Optional question-level source or given-data tables. Omit this field instead of sending an empty array."
+            ),
             "items": table,
-        },
-        "solutionTables": {
-            "type": "array",
-            "minItems": 1,
-            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
-            "items": source_conversion_table_schema("One completed solution-copy table."),
         },
         "preserveExistingDiagrams": {"type": "boolean"},
         "parts": {
@@ -3032,9 +3049,17 @@ def mauth_convert_source_question_tool_definition(
                 diagram_types,
                 include_diagram_fields=include_diagram_fields,
                 diagram_collection_only=diagram_collection_only,
+                include_table_surface_fields=include_table_surface_fields,
             ),
         },
     }
+    if include_table_surface_fields:
+        properties["solutionTables"] = {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
+            "items": source_conversion_table_schema("One completed solution-copy table."),
+        }
     if include_diagram_fields:
         diagram = source_conversion_diagram_block_schema(diagram_description, diagram_types)
         properties["diagrams"] = {
@@ -3493,6 +3518,9 @@ def assistant_tool_definitions(
     source_request_text = request_text(current_messages, tool_outputs, attachments)
     source_diagram_types = source_conversion_diagram_types_for_text(source_request_text)
     source_diagram_fields = source_conversion_diagram_fields_enabled(source_request_text)
+    source_table_surface_fields = source_diagram_fields or source_conversion_table_surface_fields_enabled(
+        source_request_text
+    )
     compact_summary = compact_document_summary(document_summary, current_messages)
     intent = classify_request_intent(compact_summary, current_messages, attachments)
     repair_targets = tool_output_target_names(tool_outputs)
@@ -3516,13 +3544,25 @@ def assistant_tool_definitions(
     # that produced the failed tool output. This avoids reopening the broad
     # wrapper tool just to fix a precise validationIssue path.
     if tool_outputs_mention(tool_outputs, SOURCE_QUESTION_REPAIR_TERMS):
-        return [mauth_convert_source_question_tool_definition(require_diagram=True, diagram_types=source_diagram_types)]
+        return [
+            mauth_convert_source_question_tool_definition(
+                require_diagram=True,
+                diagram_types=source_diagram_types,
+                include_table_surface_fields=source_table_surface_fields,
+            )
+        ]
     if tool_outputs_mention(tool_outputs, QUESTION_PAYLOAD_REPAIR_TERMS) and repair_targets & {
         "mauth_tool",
         "mauth.actions.apply",
         "mauth.actions.preview",
     }:
-        return [mauth_convert_source_question_tool_definition(require_diagram=True, diagram_types=source_diagram_types)]
+        return [
+            mauth_convert_source_question_tool_definition(
+                require_diagram=True,
+                diagram_types=source_diagram_types,
+                include_table_surface_fields=source_table_surface_fields,
+            )
+        ]
 
     if tool_outputs_mention(tool_outputs, ("semanticreview", "semantic review")):
         return [
@@ -3568,6 +3608,7 @@ def assistant_tool_definitions(
                     require_diagram=require_repaired_diagram,
                     diagram_types=source_diagram_types,
                     include_diagram_fields=source_diagram_fields,
+                    include_table_surface_fields=source_table_surface_fields,
                 )
             ]
         return [mauth_question_upsert_tool_definition(require_diagram=require_repaired_diagram)]
@@ -3619,6 +3660,7 @@ def assistant_tool_definitions(
                 require_diagram=require_source_diagram,
                 diagram_types=source_diagram_types,
                 include_diagram_fields=source_diagram_fields,
+                include_table_surface_fields=source_table_surface_fields,
             )
         ]
     if has_specific_question and asks_to_write_question:
@@ -3648,6 +3690,7 @@ def assistant_tool_definitions(
             require_diagram=require_source_diagram,
             diagram_types=source_diagram_types,
             include_diagram_fields=source_diagram_fields,
+            include_table_surface_fields=source_table_surface_fields,
         )
         if asks_to_convert_source_question
         else mauth_question_upsert_tool_definition(require_diagram=require_source_diagram),
@@ -3688,7 +3731,12 @@ def instruction_profile_brain_text(profile: str, brain_text: str) -> str:
     return f"{brain_text[:limit]}{suffix}"
 
 
-def source_conversion_diagram_contract(diagram_fields_enabled: bool, diagram_types: list[str] | None = None) -> str:
+def source_conversion_diagram_contract(
+    diagram_fields_enabled: bool,
+    diagram_types: list[str] | None = None,
+    *,
+    table_surface_fields_enabled: bool = True,
+) -> str:
     if diagram_fields_enabled:
         if source_conversion_diagram_collection_only(diagram_types):
             return (
@@ -3705,10 +3753,16 @@ def source_conversion_diagram_contract(diagram_fields_enabled: bool, diagram_typ
             "Do not submit a text-only replacement. Do not replace a visible mathematical diagram with prose such as "
             '"The diagram shows...".'
         )
+    if table_surface_fields_enabled:
+        return (
+            "- This request is routed as table/text-only source conversion. Use tables for real source tables and "
+            "solutionTables only for real completed answer-table surfaces; omit empty or placeholder table objects "
+            "and empty table arrays; do not invent a diagram payload."
+        )
     return (
-        "- This request is routed as table/text-only source conversion. Use tables and solutionTables arrays "
-        "for real source tables only; omit empty or placeholder table objects and empty table arrays; "
-        "do not invent a diagram payload."
+        "- This request is routed as table/text-only source conversion with a given-data/source table, not a "
+        "student-completion table. Put the real source table in the question-level tables array only. Do not add "
+        "part-level tables, solutionTables, empty table objects, placeholder table rows, or a diagram payload."
     )
 
 
@@ -3772,8 +3826,13 @@ def source_conversion_assistant_instructions(
     brain_text: str,
     diagram_fields_enabled: bool = True,
     diagram_types: list[str] | None = None,
+    table_surface_fields_enabled: bool = True,
 ) -> str:
-    diagram_contract = source_conversion_diagram_contract(diagram_fields_enabled, diagram_types)
+    diagram_contract = source_conversion_diagram_contract(
+        diagram_fields_enabled,
+        diagram_types,
+        table_surface_fields_enabled=table_surface_fields_enabled,
+    )
     native_diagram_rules = source_conversion_native_diagram_rules(diagram_fields_enabled, diagram_types)
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
@@ -3838,6 +3897,11 @@ def assistant_instructions(
     source_diagram_fields = (
         source_conversion_diagram_fields_enabled(source_request_text) if profile == "sourceConversion" else True
     )
+    source_table_surface_fields = (
+        source_diagram_fields or source_conversion_table_surface_fields_enabled(source_request_text)
+        if profile == "sourceConversion"
+        else True
+    )
     brain_text = assistant_brain_context(
         current_messages,
         tool_outputs,
@@ -3860,6 +3924,7 @@ def assistant_instructions(
             brain_text=brain_text,
             diagram_fields_enabled=source_diagram_fields,
             diagram_types=source_diagram_types,
+            table_surface_fields_enabled=source_table_surface_fields,
         )
     return f"""You are the in-app Mauth Studio assistant for a high-school mathematics test editor.
 
@@ -3886,7 +3951,7 @@ Tool-call contract:
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested.
 - For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
 - Omit table, tables, solutionTable, and solutionTables unless they contain real rows. Do not send empty table objects, "unused" table placeholders, or empty arrays.
-- In mauth_convert_source_question, the schema uses tables and solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
+- In mauth_convert_source_question, the schema uses tables and, when table answer-surface fields are exposed, solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
 - Keep currency symbols outside dollar-delimited maths. Write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
