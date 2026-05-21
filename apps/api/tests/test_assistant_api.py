@@ -1484,8 +1484,14 @@ def test_source_question_table_only_schema_omits_diagram_payloads():
     assert "solutionDiagram" not in properties
     assert "diagram" not in part_properties
     assert "diagram" not in subpart_properties
-    assert "table" in properties
-    assert "solutionTable" in properties
+    assert "table" not in properties
+    assert "table" not in part_properties
+    assert "table" not in subpart_properties
+    assert "solutionTable" not in properties
+    assert "tables" in properties
+    assert "tables" in part_properties
+    assert "tables" in subpart_properties
+    assert "solutionTables" in properties
 
 
 def test_source_diagram_type_detection_covers_related_rates_geometry():

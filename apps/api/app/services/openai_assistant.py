@@ -2358,7 +2358,11 @@ def source_conversion_compact_diagram_block_schema(
 def assistant_table_block_schema(description: str) -> dict[str, Any]:
     return {
         "type": "object",
-        "description": description,
+        "description": (
+            f"{description} Omit this field entirely when there is no real table row. "
+            "Do not satisfy the schema with a one-cell blank placeholder; blank cells are only for real "
+            "student-completion rows."
+        ),
         "properties": {
             "id": {"type": "string", "description": "Optional stable Mauth module id. Usually omit."},
             "headers": {
@@ -2369,7 +2373,11 @@ def assistant_table_block_schema(description: str) -> dict[str, Any]:
             "rows": {
                 "type": "array",
                 "items": {"type": "array", "items": {"type": "string"}},
-                "description": "Table body cells as strings. Use blank strings for student-completion cells.",
+                "minItems": 1,
+                "description": (
+                    "Table body cells as strings. Use blank strings for real student-completion cells; "
+                    "never send [] or a one-cell blank placeholder."
+                ),
             },
             "showHeader": {"type": "boolean"},
             "tableAlign": {"type": "string", "enum": ["left", "center", "right"]},
@@ -2450,11 +2458,17 @@ def assistant_author_subpart_schema() -> dict[str, Any]:
             ),
             "tables": {
                 "type": "array",
+                "minItems": 1,
+                "description": "Optional subpart tables. Omit this field instead of sending an empty array.",
                 "items": assistant_table_block_schema("One student completion table for this subpart."),
             },
             "solutionTable": assistant_table_block_schema("Optional completed solution-copy table for this subpart."),
             "solutionTables": {
                 "type": "array",
+                "minItems": 1,
+                "description": (
+                    "Optional completed solution-copy tables. Omit this field instead of sending an empty array."
+                ),
                 "items": assistant_table_block_schema("One completed solution-copy table for this subpart."),
             },
             "pageBreakBefore": {"type": "boolean"},
@@ -2619,7 +2633,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                 ),
                 "tables": {
                     "type": "array",
-                    "description": "Optional student tables. Use blank strings for cells the student should complete.",
+                    "minItems": 1,
+                    "description": (
+                        "Optional student tables. Use blank strings for cells the student should complete. "
+                        "Omit this field instead of sending an empty array."
+                    ),
                     "items": assistant_table_block_schema("One student table."),
                 },
                 "solutionTable": assistant_table_block_schema(
@@ -2627,7 +2645,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                 ),
                 "solutionTables": {
                     "type": "array",
-                    "description": "Optional completed solution-copy tables for answerSurface: table.",
+                    "minItems": 1,
+                    "description": (
+                        "Optional completed solution-copy tables for answerSurface: table. "
+                        "Omit this field instead of sending an empty array."
+                    ),
                     "items": assistant_table_block_schema("One completed solution-copy table."),
                 },
                 "preserveExistingDiagrams": {
@@ -2722,6 +2744,8 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                             ),
                             "tables": {
                                 "type": "array",
+                                "minItems": 1,
+                                "description": "Optional student tables. Omit this field instead of sending an empty array.",
                                 "items": assistant_table_block_schema("One student completion table for this part."),
                             },
                             "solutionTable": assistant_table_block_schema(
@@ -2729,6 +2753,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                             ),
                             "solutionTables": {
                                 "type": "array",
+                                "minItems": 1,
+                                "description": (
+                                    "Optional completed solution-copy tables. "
+                                    "Omit this field instead of sending an empty array."
+                                ),
                                 "items": assistant_table_block_schema(
                                     "One completed solution-copy table for this part."
                                 ),
@@ -2769,11 +2798,23 @@ def mauth_question_upsert_tool_definition(*, require_diagram: bool = False) -> d
 def source_conversion_table_schema(description: str) -> dict[str, Any]:
     return {
         "type": "object",
-        "description": description,
+        "description": (
+            f"{description} Omit this field entirely when there is no real table row. "
+            "Do not satisfy the schema with a one-cell blank placeholder; blank cells are only for real "
+            "student-completion rows."
+        ),
         "properties": {
             "id": {"type": "string"},
             "headers": {"type": "array", "items": {"type": "string"}},
-            "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+            "rows": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "string"}},
+                "minItems": 1,
+                "description": (
+                    "Table body cells as strings. Use blank strings for real student-completion cells; "
+                    "never send [] or a one-cell blank placeholder."
+                ),
+            },
             "showHeader": {"type": "boolean"},
             "tableAlign": {"type": "string", "enum": ["left", "center", "right"]},
             "cellAlignment": {"type": "string", "enum": ["left", "center", "right"]},
@@ -2813,11 +2854,16 @@ def source_conversion_part_schema(
             ),
         },
         "includeSolution": {"type": "boolean"},
-        "table": subpart_table,
-        "tables": {"type": "array", "items": subpart_table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
+        "tables": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional subpart tables. Omit this field instead of sending an empty array.",
+            "items": subpart_table,
+        },
         "solutionTables": {
             "type": "array",
+            "minItems": 1,
+            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
             "items": source_conversion_table_schema("One completed solution-copy table."),
         },
         "pageBreakBefore": {"type": "boolean"},
@@ -2866,11 +2912,16 @@ def source_conversion_part_schema(
             ),
         },
         "includeSolution": {"type": "boolean"},
-        "table": table,
-        "tables": {"type": "array", "items": table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
+        "tables": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional part tables. Omit this field instead of sending an empty array.",
+            "items": table,
+        },
         "solutionTables": {
             "type": "array",
+            "minItems": 1,
+            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
             "items": source_conversion_table_schema("One completed solution-copy table."),
         },
         "subparts": {
@@ -2958,11 +3009,16 @@ def mauth_convert_source_question_tool_definition(
             ),
         },
         "includeSolution": {"type": "boolean"},
-        "table": table,
-        "tables": {"type": "array", "items": table},
-        "solutionTable": source_conversion_table_schema("Completed solution-copy table; surface ticks are automatic."),
+        "tables": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Optional source tables. Omit this field instead of sending an empty array.",
+            "items": table,
+        },
         "solutionTables": {
             "type": "array",
+            "minItems": 1,
+            "description": "Optional completed solution-copy tables. Omit this field instead of sending an empty array.",
             "items": source_conversion_table_schema("One completed solution-copy table."),
         },
         "preserveExistingDiagrams": {"type": "boolean"},
@@ -3650,8 +3706,9 @@ def source_conversion_diagram_contract(diagram_fields_enabled: bool, diagram_typ
             '"The diagram shows...".'
         )
     return (
-        "- This request is routed as table/text-only source conversion. Use table/tables and "
-        "solutionTable/solutionTables for source tables; do not invent a diagram payload."
+        "- This request is routed as table/text-only source conversion. Use tables and solutionTables arrays "
+        "for real source tables only; omit empty or placeholder table objects and empty table arrays; "
+        "do not invent a diagram payload."
     )
 
 
@@ -3828,7 +3885,10 @@ Tool-call contract:
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels. For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested.
 - For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
+- Omit table, tables, solutionTable, and solutionTables unless they contain real rows. Do not send empty table objects, "unused" table placeholders, or empty arrays.
+- In mauth_convert_source_question, the schema uses tables and solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", or "1 mark for..." notes.
+- Keep currency symbols outside dollar-delimited maths. Write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.

@@ -1225,10 +1225,40 @@ def contains_malformed_escaped_dollar_math(text: str) -> bool:
     return False
 
 
+INLINE_MATH_PROSE_PATTERN = re.compile(
+    r"\b(?:a|an|and|because|by|confidence|correct|deviation|from|interval|margin|mean|of|reasoning|sample|show|standard|the|to|width)\b",
+    re.IGNORECASE,
+)
+
+
+def inline_math_body_contains_prose(body: str) -> bool:
+    if "\\text" in body:
+        return False
+    stripped = body.strip()
+    if not re.match(r"^\d+(?:\.\d+)?(?:,|\s)", stripped):
+        return False
+    return bool(INLINE_MATH_PROSE_PATTERN.search(stripped))
+
+
 def latex_artifact_issues(text: str, field_name: str) -> list[str]:
     issues: list[str] = []
-    if contains_malformed_escaped_dollar_math(text):
-        issues.append(f"{field_name} contains malformed escaped dollar inside maths")
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] != "$" or is_escaped_dollar_delimiter(text, cursor):
+            cursor += 1
+            continue
+        delimiter_length = 2 if cursor + 1 < len(text) and text[cursor + 1] == "$" else 1
+        body_start = cursor + delimiter_length
+        closing_index = find_closing_math_delimiter(text, body_start, delimiter_length)
+        if closing_index == -1:
+            issues.append(f"{field_name} contains unclosed dollar math")
+            break
+        body = text[body_start:closing_index]
+        if "\\$" in body:
+            issues.append(f"{field_name} contains malformed escaped dollar inside maths")
+        if delimiter_length == 1 and inline_math_body_contains_prose(body):
+            issues.append(f"{field_name} contains prose inside inline dollar math")
+        cursor = closing_index + delimiter_length
     return issues
 
 
@@ -2076,30 +2106,74 @@ def graph_config_types(args: dict[str, Any]) -> set[str]:
     return {str(config.get("type")) for config in collect_diagram_graph_configs(args) if config.get("type")}
 
 
-def empty_table_payload_issues(value: Any, path: str = "arguments") -> list[str]:
+def table_visible_cell_texts(table: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    headers = table.get("headers")
+    if isinstance(headers, list):
+        texts.extend(str(cell) for cell in headers)
+    rows = table.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, list):
+                texts.extend(str(cell) for cell in row)
+    return texts
+
+
+def is_blank_table_placeholder(table: dict[str, Any]) -> bool:
+    texts = table_visible_cell_texts(table)
+    return bool(texts) and all(compact_math_text(text) == "" for text in texts)
+
+
+def is_placeholder_table_id(table: dict[str, Any]) -> bool:
+    table_id = str(table.get("id") or "").lower()
+    return any(term in table_id for term in ("unused", "placeholder", "empty-table", "empty_solution"))
+
+
+def empty_table_payload_issues(value: Any, path: str = "arguments", *, allow_blank_table: bool = False) -> list[str]:
     issues: list[str] = []
     if isinstance(value, dict):
+        local_allow_blank_table = allow_blank_table or str(value.get("answerSurface") or "") == "table"
+        if "table" in value and "tables" in value:
+            issues.append(f"{path} should use either table or tables, not both")
+        if "solutionTable" in value and "solutionTables" in value:
+            issues.append(f"{path} should use either solutionTable or solutionTables, not both")
         for key, inner_value in value.items():
             child_path = f"{path}.{key}"
             if key in {"table", "solutionTable"}:
                 if not isinstance(inner_value, dict):
                     issues.append(f"{child_path} should be omitted unless it is a table object with at least one row")
+                elif key == "solutionTable" and not local_allow_blank_table:
+                    issues.append(f"{child_path} should be omitted unless answerSurface is table")
                 elif not isinstance(inner_value.get("rows"), list) or not inner_value["rows"]:
                     issues.append(f"{child_path} is an empty table placeholder and should be omitted")
+                elif is_placeholder_table_id(inner_value):
+                    issues.append(f"{child_path} is an unused table placeholder and should be omitted")
+                elif key == "solutionTable" and is_blank_table_placeholder(inner_value):
+                    issues.append(f"{child_path} is a blank solution table placeholder and should be omitted")
+                elif not local_allow_blank_table and is_blank_table_placeholder(inner_value):
+                    issues.append(f"{child_path} is a blank table placeholder and should be omitted")
                 continue
             if key in {"tables", "solutionTables"}:
                 if isinstance(inner_value, list) and not inner_value:
                     issues.append(f"{child_path} is an empty table list and should be omitted")
                     continue
                 if isinstance(inner_value, list):
+                    if key == "solutionTables" and not local_allow_blank_table:
+                        issues.append(f"{child_path} should be omitted unless answerSurface is table")
                     for index, table in enumerate(inner_value):
                         if not isinstance(table, dict) or not isinstance(table.get("rows"), list) or not table["rows"]:
                             issues.append(f"{child_path}[{index}] is an empty table placeholder and should be omitted")
+                        elif is_placeholder_table_id(table):
+                            issues.append(f"{child_path}[{index}] is an unused table placeholder and should be omitted")
+                        elif key == "solutionTables" and is_blank_table_placeholder(table):
+                            issues.append(f"{child_path}[{index}] is a blank solution table placeholder and should be omitted")
+                        elif not local_allow_blank_table and is_blank_table_placeholder(table):
+                            issues.append(f"{child_path}[{index}] is a blank table placeholder and should be omitted")
                     continue
-            issues.extend(empty_table_payload_issues(inner_value, child_path))
+            issues.extend(empty_table_payload_issues(inner_value, child_path, allow_blank_table=local_allow_blank_table))
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            issues.extend(empty_table_payload_issues(item, f"{path}[{index}]"))
+            issues.extend(empty_table_payload_issues(item, f"{path}[{index}]", allow_blank_table=allow_blank_table))
     return issues
 
 
@@ -3197,6 +3271,8 @@ def assert_real_specialist_confidence_intervals_call(call: dict[str, Any]) -> li
         (
             "95%islessthan99%",
             "95%,islessthanthatofb,99%",
+            "95%,islowerthanb",
+            "95%islowerthan99%",
             "95<99",
             "95%confidencelevelusesasmallercriticalvalue",
         ),
@@ -6717,14 +6793,22 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
 def real_confidence_intervals_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues: list[dict[str, Any]] = []
     for issue in first_issues:
-        if "empty table placeholder" in issue or "empty table list" in issue:
+        if (
+            "empty table placeholder" in issue
+            or "empty table list" in issue
+            or "blank table placeholder" in issue
+            or "unused table placeholder" in issue
+            or "either table or tables" in issue
+            or "either solutionTable or solutionTables" in issue
+            or "answerSurface is table" in issue
+        ):
             validation_issues.append(
                 {
                     "path": "arguments.table/tables/solutionTable/solutionTables",
                     "message": issue,
                     "expected": (
-                        "omit empty table, tables, solutionTable, and solutionTables fields. Include only the real "
-                        "confidence-interval source table with rows A-D."
+                        "omit empty or placeholder table fields. Use one canonical real source table payload with rows "
+                        "A-D; do not duplicate table/tables or solutionTable/solutionTables."
                     ),
                 }
             )
@@ -6744,12 +6828,19 @@ def real_confidence_intervals_repair_failure_output(call: dict[str, Any], first_
                     "expected": "official-key solution terms including 300-500, 51.02, 16n, 0.166, cannot determine, A smaller than B, and C smaller than D",
                 }
             )
-        elif "contains malformed escaped dollar" in issue:
+        elif (
+            "contains malformed escaped dollar" in issue
+            or "contains unclosed dollar math" in issue
+            or "contains prose inside inline dollar math" in issue
+        ):
             validation_issues.append(
                 {
                     "path": "arguments.questionText/parts[].text",
                     "message": issue,
-                    "expected": "currency outside maths such as \\$400, or plain numeric maths such as $400$; never put \\$ inside $...$",
+                    "expected": (
+                        "balanced, valid dollar-delimited maths. Keep currency outside maths as \\$400 or "
+                        "$400$ dollars; never leave spans like $400, ... $s$ or $0.01."
+                    ),
                 }
             )
     if not validation_issues:
@@ -8420,7 +8511,7 @@ def local_real_specialist_confidence_intervals_call() -> dict[str, Any]:
                 },
                 {
                     "label": "b",
-                    "text": "Calculate the standard deviation of the sample mean, correct to $0.01.",
+                    "text": "Calculate the standard deviation of the sample mean, correct to $0.01$.",
                     "marks": 2,
                     "studentSpaceLines": 4,
                     "includeSolution": True,
@@ -8570,6 +8661,34 @@ def local_real_specialist_confidence_intervals_live_relative_confidence_wording_
     return call
 
 
+def local_real_specialist_confidence_intervals_live_lower_confidence_wording_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    subpart_i = call["mauthArguments"]["parts"][5]["subparts"][0]
+    subpart_i["solutionText"] = (
+        "Interval A has the smaller width because its confidence level, 95%, is lower than B's "
+        "confidence level of 99%. [[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_confidence_intervals_live_unbalanced_currency_math_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    args = call["mauthArguments"]
+    args["questionText"] = args["questionText"].replace("$400$", "$400").replace("$200$", "$200")
+    args["parts"][1]["text"] = "Calculate the standard deviation of the sample mean, correct to $0.01."
+    args["parts"][2]["text"] = (
+        "In terms of $n$, what sample size would yield a 95% confidence interval of width $50? Show your reasoning."
+    )
+    args["parts"][1]["solutionText"] = (
+        "The margin of error is $100$.\n\n"
+        "$$100=1.96\\sigma_{\\bar X}$$\n\n"
+        "Therefore the standard deviation of the sample mean is $51.02. [[marks:2]]"
+    )
+    call["arguments"] = args
+    return call
+
+
 def add_empty_table_placeholders(value: Any) -> None:
     if isinstance(value, dict):
         value.setdefault(
@@ -8591,12 +8710,76 @@ def add_empty_table_placeholders(value: Any) -> None:
             add_empty_table_placeholders(item)
 
 
+def add_blank_unused_table_placeholders(value: Any) -> None:
+    if isinstance(value, dict):
+        value.setdefault(
+            "table",
+            {"id": "unused-table", "headers": [""], "rows": [[""]], "showHeader": False, "tableAlign": "left"},
+        )
+        value.setdefault(
+            "tables",
+            [{"id": "unused-table-list", "headers": [""], "rows": [[""]], "showHeader": False, "tableAlign": "left"}],
+        )
+        value.setdefault(
+            "solutionTable",
+            {"id": "unused-solution-table", "headers": [""], "rows": [[""]], "showHeader": False, "tableAlign": "left"},
+        )
+        value.setdefault(
+            "solutionTables",
+            [
+                {
+                    "id": "unused-solution-table-list",
+                    "headers": [""],
+                    "rows": [[""]],
+                    "showHeader": False,
+                    "tableAlign": "left",
+                }
+            ],
+        )
+        for key, inner_value in list(value.items()):
+            if key in {"table", "tables", "solutionTable", "solutionTables"}:
+                continue
+            add_blank_unused_table_placeholders(inner_value)
+    elif isinstance(value, list):
+        for item in value:
+            add_blank_unused_table_placeholders(item)
+
+
 def local_real_specialist_confidence_intervals_live_empty_table_placeholders_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
     add_empty_table_placeholders(call["mauthArguments"])
     # Preserve the one real source table after adding the empty placeholders.
     call["mauthArguments"]["tables"] = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()["mauthArguments"]["tables"]))
     call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_confidence_intervals_live_repair_churn_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_confidence_intervals_call()))
+    args = call["mauthArguments"]
+    table = args["tables"][0]
+    args["table"] = json.loads(json.dumps(table))
+    args["solutionTable"] = json.loads(json.dumps(table))
+    args["solutionTables"] = [json.loads(json.dumps(table))]
+    part_e = args["parts"][4]
+    part_e["text"] = (
+        "Four different confidence intervals (A, B, C and D) are obtained for the mean amount spent via "
+        "online shopping by Perth residents in December 2020.\n\n"
+        f"{part_e['text']}"
+    )
+    part_e["table"] = json.loads(json.dumps(table))
+    part_e["tables"] = [json.loads(json.dumps(table))]
+    part_e["solutionTable"] = json.loads(json.dumps(table))
+    part_e["solutionTables"] = [json.loads(json.dumps(table))]
+    args["parts"][1]["solutionText"] = (
+        "**Solution.**\n\n"
+        "Margin of error $=100$.\n\n"
+        "$$100=1.96\\sigma_{\\bar X}$$\n\n"
+        "$$\\sigma_{\\bar X}=\\frac{100}{1.96}=51.02$$\n\n"
+        "The standard deviation of the sample mean is $\\$51.02$. [[marks:2]]"
+    )
+    add_blank_unused_table_placeholders(args)
+    call["arguments"] = args
     return call
 
 
@@ -10613,12 +10796,35 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_specialist_confidence_intervals_call,
         "call": local_real_specialist_confidence_intervals_live_relative_confidence_wording_call,
     },
+    "real-specialist-confidence-intervals-live-lower-wording": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_lower_confidence_wording_call,
+    },
+    "real-specialist-confidence-intervals-live-unbalanced-currency-math": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_unbalanced_currency_math_call,
+        "expectedIssues": [
+            "contains unclosed dollar math",
+            "contains prose inside inline dollar math",
+        ],
+    },
     "real-specialist-confidence-intervals-live-empty-table-placeholders": {
         "assert": assert_real_specialist_confidence_intervals_call,
         "call": local_real_specialist_confidence_intervals_live_empty_table_placeholders_call,
         "expectedIssues": [
             "empty table placeholder and should be omitted",
             "empty table list and should be omitted",
+        ],
+    },
+    "real-specialist-confidence-intervals-live-repair-churn": {
+        "assert": assert_real_specialist_confidence_intervals_call,
+        "call": local_real_specialist_confidence_intervals_live_repair_churn_call,
+        "expectedIssues": [
+            "mauthArguments.parts[1].solutionText contains malformed escaped dollar inside maths",
+            "should use either table or tables, not both",
+            "should use either solutionTable or solutionTables, not both",
+            "should be omitted unless answerSurface is table",
+            "unused table placeholder and should be omitted",
         ],
     },
     "real-specialist-slope-field": {
