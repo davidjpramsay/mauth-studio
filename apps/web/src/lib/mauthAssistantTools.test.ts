@@ -2136,6 +2136,39 @@ test("high-level question authoring allows currency outside maths between inline
   assert.equal(result.ok, true);
 });
 
+test("high-level question authoring rejects raw currency spans that capture prose as maths", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.question.upsert",
+    arguments: {
+      questionNumber: 1,
+      marks: 1,
+      questionText: "A fundraiser charges $1 for each game and lets $Y$ be the player profit.",
+      parts: [
+        {
+          text: "Interpret an expected profit of $0.094 per game and decide whether the charity benefits.",
+          marks: 1,
+          studentSpaceLines: 3,
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; expected?: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert(
+    data.validationIssues?.some(
+      (issue) => issue.path === "arguments.questionText" && issue.message.includes("prose inside inline dollar math"),
+    ),
+  );
+  assert(
+    data.validationIssues?.some(
+      (issue) =>
+        issue.path === "arguments.parts[0].text" &&
+        (issue.message.includes("prose inside inline dollar math") || issue.message.includes("unclosed dollar math")),
+    ),
+  );
+});
+
 test("preserves existing diagrams when replacing question text without diagram arguments", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.question.upsert",

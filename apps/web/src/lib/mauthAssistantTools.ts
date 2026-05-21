@@ -2267,6 +2267,8 @@ const DISPLAY_VISIBLE_MARK_NOTE_PATTERN =
   /\s*(?:\\qquad\s*)?(?:\\text\s*\{\s*)?(?:\*\*)?(?:\[(\d+)\s*marks?(?:[^\]]*)\]|\((\d+)\s*marks?(?:[^)]*)\))(?:\*\*)?(?:\s*\})?/gi;
 const SOLUTION_HEADING_PATTERN = /^\s*(?:\*\*)?Solution(?:\s*\(\s*\d+\s*marks?\s*\))?\.?(?:\*\*)?\s*/i;
 const AUTHOR_TEXT_FIELD_KEYS = new Set(["questionText", "text", "prompt", "partText", "solutionText", "solution", "label"]);
+const INLINE_MATH_PROSE_PATTERN =
+  /\b(?:a|an|and|because|by|charity|confidence|correct|deviation|dollars?|each|for|from|game|interval|margin|mean|of|per|player|profit|reasoning|sample|show|standard|the|to|width)\b/i;
 
 function isEscapedDollarDelimiter(value: string, index: number) {
   let slashCount = 0;
@@ -2308,14 +2310,72 @@ function containsMalformedEscapedDollarMath(value: string) {
   return false;
 }
 
+function inlineMathBodyContainsProse(body: string) {
+  if (body.includes("\\text")) return false;
+  const stripped = body.trim();
+  if (!/^\d+(?:\.\d+)?(?:,|\s)/.test(stripped)) return false;
+  return INLINE_MATH_PROSE_PATTERN.test(stripped);
+}
+
+function containsProseInsideInlineDollarMath(value: string) {
+  for (let cursor = 0; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== "$" || isEscapedDollarDelimiter(value, cursor)) {
+      continue;
+    }
+    const delimiterLength: 1 | 2 = value[cursor + 1] === "$" ? 2 : 1;
+    const bodyStart = cursor + delimiterLength;
+    const closingIndex = findClosingMathDelimiter(value, bodyStart, delimiterLength);
+    if (closingIndex === -1) {
+      return false;
+    }
+    if (delimiterLength === 1 && inlineMathBodyContainsProse(value.slice(bodyStart, closingIndex))) {
+      return true;
+    }
+    cursor = closingIndex + delimiterLength - 1;
+  }
+  return false;
+}
+
+function containsUnclosedDollarMath(value: string) {
+  for (let cursor = 0; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== "$" || isEscapedDollarDelimiter(value, cursor)) {
+      continue;
+    }
+    const delimiterLength: 1 | 2 = value[cursor + 1] === "$" ? 2 : 1;
+    const bodyStart = cursor + delimiterLength;
+    const closingIndex = findClosingMathDelimiter(value, bodyStart, delimiterLength);
+    if (closingIndex === -1) {
+      return true;
+    }
+    cursor = closingIndex + delimiterLength - 1;
+  }
+  return false;
+}
+
 function addAuthorTextQualityIssues(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
   if (typeof value === "string") {
+    if (containsUnclosedDollarMath(value)) {
+      issues.push({
+        path,
+        message: "contains unclosed dollar math",
+        expected:
+          "write balanced inline maths as $x$ and literal currency as \\$1 or $1$ dollar; never start raw currency spans that leave prose inside maths",
+      });
+    }
     if (containsMalformedEscapedDollarMath(value)) {
       issues.push({
         path,
         message: "contains malformed escaped dollar inside maths",
         expected:
           "write inline maths as $\\overrightarrow{BT}$ and currency as \\$400, $400$, or words such as 'negative 9.4 cents'; never put \\$ inside $...$ maths",
+      });
+    }
+    if (containsProseInsideInlineDollarMath(value)) {
+      issues.push({
+        path,
+        message: "contains prose inside inline dollar math",
+        expected:
+          "write literal currency as \\$1 or $1$ dollar; never write raw currency such as $1 game or $0.094 per game where prose is captured inside inline maths",
       });
     }
     return;

@@ -2721,10 +2721,11 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                         "Concise worked solution in Mauthdown/MathJax. Start with a real solution, not placeholders; "
                         "the app will add the Solution heading if omitted. Put hidden [[marks:n]] annotations at the "
                         "end of mark-worthy lines so the solution copy renders red check marks; the total hidden "
-                        "marks should match the item marks. For answerSurface diagram/table tasks, the completed "
-                        "solutionDiagram/solutionTable receives the red ticks from the item marks automatically, so "
-                        "use solutionText only for a short unmarked note if needed. Never include [[marks:n]] in "
-                        "solutionText when a solutionDiagram or solutionTable is present for the same item. "
+                        "marks should match the item marks. For answerSurface diagram/table tasks, provide the "
+                        "completed solutionDiagram/solutionTable and let it receive the red ticks from the item "
+                        "marks automatically; use solutionText only for a short unmarked note if needed. Never "
+                        "replace a completed table with only a LaTeX array in solutionText, and never include [[marks:n]] "
+                        "in solutionText when a solutionDiagram or solutionTable is present for the same item. "
                         "Do not write visible [1 mark], (1 mark), '1 mark for ...' notes, or marking-key rubric "
                         "prose such as 'Indicates...', 'States...', or 'Determines...' after hidden ticks. "
                         "Preserve LaTeX backslashes exactly; in JSON strings this means "
@@ -2851,9 +2852,10 @@ def mauth_author_replace_question_tool_definition(*, require_diagram: bool = Fal
                                     "Only include when the teacher requested solutions or the source visibly contains one. "
                                     "Worked solution for this part. End mark-worthy lines with hidden [[marks:n]] tick "
                                     "annotations and make the hidden mark total match this part's marks. For answerSurface "
-                                    "diagram/table parts, the completed solution surface receives the ticks automatically, "
-                                    "so use this only for a short unmarked note if needed. Never include [[marks:n]] here "
-                                    "when solutionDiagram or solutionTable is present for the same part."
+                                    "diagram/table parts, provide the completed solution surface and let it receive the ticks "
+                                    "automatically, so use this only for a short unmarked note if needed. Never replace a "
+                                    "completed table with only a LaTeX array in solutionText, and never include [[marks:n]] "
+                                    "here when solutionDiagram or solutionTable is present for the same part."
                                 ),
                             },
                             "includeSolution": {"type": "boolean"},
@@ -3233,7 +3235,7 @@ def mauth_convert_source_question_tool_definition(
             "Convert one attached/pasted source question into native editable Mauth content. Preserve visible wording, "
             "maths, marks, parts, source diagram/table placement, and official solutions only when requested or supplied. "
             "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
-            "For currency, keep dollar units outside maths. "
+            "For currency, use \\$1, $1$ dollar, or 1 dollar; never write raw spans such as $1 game. "
             "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
             "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
             "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
@@ -4022,6 +4024,7 @@ Source-conversion tool contract:
 {artifact_surface_guidance}
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
 - For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
+- Completion-table surfaces need a blank table plus completed solutionTable in the same part/subpart; no LaTeX-only table or [[marks:n]] in solutionText.
 
 {native_diagram_rules}
 
@@ -4033,7 +4036,7 @@ Attachment contract:
 
 Mauth conventions:
 - Write complete teacher-ready mathematics, not placeholders or planning notes.
-- Use $...$ for inline maths and $$...$$ for display maths. Preserve LaTeX backslashes exactly in JSON strings. Do not use \\[...\\], \\(...\\), or escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$ or $-\\$0.094$. For currency, keep \\$ outside maths.
+- Use $...$ for inline maths and $$...$$ for display maths. Preserve LaTeX backslashes exactly. Do not use \\[...\\], \\(...\\), escaped-dollar artifacts, or raw currency spans such as $1 game or $0.094 per game.
 - Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless explicitly asked.
 
 Current compact document summary:
@@ -4126,10 +4129,11 @@ Tool-call contract:
 - For source prompts with visible part lines, preserve each part's actual mathematical task inside parts[i].text. Do not leave marked part text blank, type only labels, or move part expressions into the stem or diagram prose. Preserve nested items such as (f)(i) and (f)(ii) with parts[].subparts, not flattened top-level labels. For marked written-response parts/subparts, use at least 3 studentSpaceLines unless the answer surface is a table/diagram/graph. For multipart sources with part marks, set top-level marks/questionMarks to 0 and put marks on parts/subparts.
 - For artifact-answer tasks such as complete a table, sketch/label a graph, draw a function, or shade a region, set answerSurface to table or diagram and provide the matching blank/partial student surface plus completed solutionTable/solutionDiagram when solutions are requested.
 - For artifact-answer tasks with solutionTable/solutionDiagram, do not put [[marks:n]] ticks in solutionText for the same item. The completed surface receives the item's red ticks automatically; use solutionText only for an unmarked note.
+- Completion-table surfaces need a blank table plus completed solutionTable in the same part/subpart; no LaTeX-only table or [[marks:n]] in solutionText.
 - Omit table, tables, solutionTable, and solutionTables unless they contain real rows. Do not send empty table objects, "unused" table placeholders, or empty arrays.
 - In mauth_convert_source_question, the schema uses tables and, when table answer-surface fields are exposed, solutionTables arrays as the canonical table shape. Do not duplicate the same table at multiple levels.
 - Only include worked solutions when requested or present in the source. In solutionText, use hidden [[marks:n]] ticks whose total matches marks. Do not show visible [1 mark], (1 mark), "Solution (5 marks)", "1 mark for...", or marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after hidden ticks.
-- Keep currency symbols outside dollar-delimited maths. Write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$.
+- Keep currency outside maths: write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$, $1 game, or $0.094 per game.
 - For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
@@ -4140,7 +4144,7 @@ Tool-call contract:
 - For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces with points arrays for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\overleftrightarrow{{BT}} as \overrightarrow{{BT}}, and do not paste PDF-extraction control characters for line symbols or Greek parameters; write \overleftrightarrow{{BT}}, \lambda, and \mu explicitly. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder; include a segment or data.dimensions label '$h$' when the source labels cap depth h. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
-- Preserve LaTeX backslashes exactly in JSON strings and use $...$ / $$...$$, not \[...\] or \(...\). For currency, use \\$400 in text, $400$ for plain numbers, or words for signed amounts; never put \\$ inside $...$.
+- Preserve LaTeX backslashes exactly and use $...$ / $$...$$, not \[...\] or \(...\). For currency, use \\$400, $400$ for plain numbers, or words; never put currency/prose units inside $...$.
 - Do not show raw tool JSON, internal ids, provider payloads, or validation plumbing to the teacher unless they explicitly ask for implementation details.
 
 Attachment contract:
@@ -4157,7 +4161,7 @@ Authoring quality bar:
 - Include enough information for students to solve the problem. Include a concise worked solution only when requested or present in the source material.
 - Mathematical validity is mandatory. Before calling a write/edit tool, internally check that every conclusion follows from the stated givens and that the solution does not assume information visible only in an imagined diagram.
 - Never emit a proof question whose worked solution says the requested conclusion does not follow, cannot be proven, or proves a different conclusion. If your first draft is invalid, change the question statement before calling the tool.
-- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\], \\(...\\), or escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$ or $-\\$0.094$.
+- Preserve Mauth conventions: no typed automatic question labels, inline maths with $...$, display maths with $$...$$ only for standalone working, generous student space, and solution-only solution content. The app may raise studentSpaceLines to preserve solution fit. Do not use \\[...\\], \\(...\\), escaped-dollar artifacts such as $\\$\\overrightarrow{{BT}}$ or $-\\$0.094$, or raw currency spans such as $1 game.
 - A student answer surface must keep the same layout in both copies. For sketch/label/table tasks, the solution copy should replace the blank student diagram/table with a completed solution diagram/table in the same document position, not add a separate solution below it.
 - For multipart questions, use the structured parts array on mauth_question_upsert or mauth.question.upsert, and use parts[].subparts for nested "(i)", "(ii)" items. Do not type visible "(a)", "(b)", or "(i)" labels into question text.
 - For proof questions, make the given facts and required proof explicit. Do not state the desired result as a given. For geometry proofs, avoid proving lines parallel unless the equal/corresponding/alternate angle pair clearly uses the same transversal. Prefer robust theorem paths over clever but fragile constructions.

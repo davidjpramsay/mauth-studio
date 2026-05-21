@@ -1227,7 +1227,7 @@ def contains_malformed_escaped_dollar_math(text: str) -> bool:
 
 
 INLINE_MATH_PROSE_PATTERN = re.compile(
-    r"\b(?:a|an|and|because|by|confidence|correct|deviation|from|interval|margin|mean|of|reasoning|sample|show|standard|the|to|width)\b",
+    r"\b(?:a|an|and|because|by|charity|confidence|correct|deviation|dollars?|each|for|from|game|interval|margin|mean|of|per|player|profit|reasoning|sample|show|standard|the|to|width)\b",
     re.IGNORECASE,
 )
 
@@ -6762,14 +6762,20 @@ def real_lighthouse_repair_failure_output(call: dict[str, Any], first_issues: li
 def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_issues: list[str]) -> dict[str, Any]:
     validation_issues: list[dict[str, Any]] = []
     for issue in first_issues:
-        if "contains control character" in issue or "contains malformed escaped dollar" in issue:
+        if (
+            "contains control character" in issue
+            or "contains malformed escaped dollar" in issue
+            or "contains unclosed dollar math" in issue
+            or "contains prose inside inline dollar math" in issue
+        ):
             validation_issues.append(
                 {
                     "path": "arguments.parts[].text/solutionText",
                     "message": issue,
                     "expected": (
                         "valid LaTeX text only; for currency, write \\$400 as text, $400$ as a plain numeric "
-                        "amount, or words such as 'negative 9.4 cents'; never put \\$ inside $...$ maths"
+                        "amount, or words such as 'negative 9.4 cents'. Never write raw currency spans such "
+                        "as $1 game or escaped currency such as \\$ inside $...$ maths"
                     ),
                 }
             )
@@ -6825,6 +6831,19 @@ def real_source_stats_chart_repair_failure_output(call: dict[str, Any], first_is
                         "an explicit final conclusion that names the party in the prompt, e.g. the player has "
                         "negative expected profit and the charity has positive expected profit / the game is "
                         "profitable for the charity"
+                    ),
+                }
+            )
+        elif "map profit probabilities" in issue:
+            validation_issues.append(
+                {
+                    "path": "arguments.parts[].solutionTable",
+                    "message": issue,
+                    "expected": (
+                        "a completed solutionTable/solutionTables for the table answer surface with y values "
+                        "-1, 0, 1 and probabilities 0.443, 0.208, 0.349; do not replace the completed table "
+                        "with only a LaTeX array in solutionText. If solutionText remains for explanation, it must "
+                        "be unmarked with no [[marks:n]] ticks because the completed solutionTable receives the marks"
                     ),
                 }
             )
@@ -8130,6 +8149,26 @@ def local_real_methods_dice_game_bad_profit_table_call() -> dict[str, Any]:
     return call
 
 
+def local_real_methods_dice_game_latex_array_profit_table_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    part_c = call["mauthArguments"]["parts"][2]
+    part_c["answerSurface"] = "table"
+    part_c["table"] = {
+        "headers": ["$y$", "", "", ""],
+        "rows": [["$P(Y=y)$", "", "", ""]],
+    }
+    part_c["solutionText"] = (
+        "$$\\begin{array}{c|ccc}\n"
+        "Y & -1 & 0 & 1\\\\\n"
+        "\\hline\n"
+        "P(Y=y) & 1-0.349-0.208=0.443 & 0.208 & 0.134+0.215=0.349\n"
+        "\\end{array}$$\n"
+        "[[marks:1]][[marks:1]][[marks:1]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_methods_dice_game_bad_chart_fields_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_dice_game_call()))
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
@@ -8168,6 +8207,24 @@ def local_real_methods_dice_game_live_escaped_currency_call() -> dict[str, Any]:
     parts[4]["solutionText"] = (
         "Yes. Since the expected profit for a player is $-\\$0.094$ per game, "
         "the expected profit for the charity is $\\$0.094$ per game, so the game is profitable for the charity. [[marks:2]]"
+    )
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_live_raw_currency_text_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    parts = call["mauthArguments"]["parts"]
+    parts[2]["text"] = (
+        "To fundraise for a local charity, Mr Ulam charges $1 for each game, and pays out winnings as follows:\n\n"
+        "- if the game is won in one or two rolls the player wins $2\n"
+        "- if the game is won in three rolls the player wins $1 (i.e. their money back)\n"
+        "- if the game is won in four or more rolls the player wins nothing.\n\n"
+        "Let $Y$ be a random variable denoting the profit for a player who plays a $1 game."
+    )
+    parts[4]["solutionText"] = (
+        "Since $E(Y)=-0.094$, the player's expected profit is negative. Therefore the charity's expected "
+        "profit is $0.094 per game, so the game is profitable for the charity. [[marks:2]]"
     )
     call["arguments"] = call["mauthArguments"]
     return call
@@ -10795,6 +10852,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "dice-game solution should map profit probabilities",
         ],
     },
+    "real-methods-dice-game-latex-array-profit-table": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_latex_array_profit_table_call,
+        "expectedIssues": [
+            "dice-game solution should map profit probabilities",
+        ],
+    },
     "real-methods-dice-game-bad-chart-fields": {
         "assert": assert_real_methods_dice_game_call,
         "call": local_real_methods_dice_game_bad_chart_fields_call,
@@ -10821,6 +10885,11 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
         "assert": assert_real_methods_dice_game_call,
         "call": local_real_methods_dice_game_live_escaped_currency_call,
         "expectedIssues": ["contains malformed escaped dollar inside maths"],
+    },
+    "real-methods-dice-game-live-raw-currency-text": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_live_raw_currency_text_call,
+        "expectedIssues": ["contains prose inside inline dollar math"],
     },
     "real-methods-dice-game-live-marked-solution-table": {
         "assert": assert_real_methods_dice_game_call,

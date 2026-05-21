@@ -119,13 +119,15 @@ Line breaks inside a text block are preserved in the preview and printed PDF out
 
 For solution copies, add `[[marks:n]]` at the end of a mark-worthy text or equation line. The preview hides the raw annotation and renders `n` large red check marks at the right edge of that line. Do not write visible `[1 mark]`, `(1 mark)`, or `Solution (5 marks)` notes in displayed solution prose. Completed solution tables and diagrams can carry `markTicks` so the red check marks render next to the completed surface instead of a following text line.
 
-Keep currency symbols outside dollar-delimited maths in question and solution text. Write `$51.02$ dollars`, `\$51.02`, or plain `51.02 dollars`; do not write `$\$51.02$`.
+Keep currency symbols outside dollar-delimited maths in question and solution text. Write `$51.02$ dollars`, `\$51.02`, or plain `51.02 dollars`; do not write `$\$51.02$`, `$1 game`, or `$0.094 per game`.
 
 For expected-value, fairness, long-run-profit, or advantage questions, the worked solution should end with a direct conclusion that answers the named party or claim in the prompt. Do not stop at the numeric expected value when the question asks whether a game is profitable, fair, worth doing, or beneficial.
 
 Ordinary question modules are shared automatically between the student copy and the solution copy: text, choices, given-data tables, and given diagrams remain visible in both. Worked-solution text and diagrams are solution modules. Student answer `:::space` blocks are replaced by adjacent solution modules when the solution-visibility toggle is on. The preview/print layout treats each adjacent answer-space/solution pair as one replacement slot and reserves the larger of the two heights, keeping student and solution pagination matched. If the solution is taller than the student space, the screen preview shows a non-printing warning so the author can shorten the solution or increase the student space deliberately.
 
 Blank answer/completion tables are different from given-data tables. A table with empty cells for students to complete is a response surface, so it may be marked student-only and paired with an adjacent solution module. A table that gives values or information for the question should stay shared.
+
+For completion-table answer surfaces, keep the completed answer as a `solutionTable`/`solutionTables` surface in the same part or subpart as the blank student table. Do not replace the completed table with only a LaTeX array in worked-solution prose, and do not put `[[marks:n]]` ticks in `solutionText` when a `solutionTable` is present.
 
 Graph grids, charts, and diagrams can also be response surfaces. If the task is to sketch a graph, label a diagram, shade a region, draw a function, or complete values directly on a visual surface, the student copy should show the blank or partial surface and the solution copy should show the completed surface in the same position and size. In high-level assistant authoring this is `answerSurface: "diagram"` or `answerSurface: "table"` with a matching `solutionDiagram` or `solutionTable`; no separate large `:::space` block is created unless the question also asks for written working. The high-level authoring layer assigns the completed surface's red ticks from the item marks.
 
