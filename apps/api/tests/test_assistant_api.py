@@ -698,6 +698,13 @@ def test_source_conversion_brain_context_is_renderer_focused():
         ),
         "stats-column-graph.png",
     )
+    argand = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist Argand/locus screenshot. Preserve the locus diagram "
+            "with Arg(z) boundary rays and the shifted circle."
+        ),
+        "argand-locus.png",
+    )
 
     assert "For scalar-product source diagrams" in scalar
     assert "For graph3d source solids" not in scalar
@@ -712,6 +719,13 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For statsChart source diagrams" in stats
     assert "For graph3d source solids" not in stats
     assert "For scalar-product source diagrams" not in stats
+
+    assert "For graph2d source diagrams" in argand
+    assert "Arg(z)" in argand
+    assert "domainMin/domainMax" in argand
+    assert "full infinite line functions" in argand
+    assert "For graph3d source solids" not in argand
+    assert "For statsChart source diagrams" not in argand
 
 
 def test_source_conversion_renderer_instruction_budgets_are_focused():
@@ -736,10 +750,18 @@ def test_source_conversion_renderer_instruction_budgets_are_focused():
         ),
         "stats-column-graph.png",
     )
+    argand = source_conversion_instructions_for_prompt(
+        (
+            "Create Question 1 from the attached Specialist Argand/locus screenshot. Preserve the locus diagram "
+            "with Arg(z) boundary rays and the shifted circle."
+        ),
+        "argand-locus.png",
+    )
 
     assert len(scalar) < 23500
     assert len(graph3d) < 28500
     assert len(stats) < 26000
+    assert len(argand) < 26500
 
 
 def test_brain_menu_selection_maps_to_instruction_files():

@@ -1943,19 +1943,28 @@ def argand_function_marks_argument_boundary(function_text: str, target_angle: in
     return False
 
 
+def argand_function_marks_argument_boundary_ray(function: dict[str, Any], target_angle: int) -> bool:
+    function_text = compact_math_text(json.dumps(function, ensure_ascii=False))
+    if not argand_function_marks_argument_boundary(function_text, target_angle):
+        return False
+    domain_min = finite_number(function.get("domainMin"))
+    domain_max = finite_number(function.get("domainMax"))
+    if target_angle == 30:
+        return domain_min is not None and domain_min >= -0.15 and (domain_max is None or domain_max > 0.5)
+    if target_angle == 150:
+        return domain_max is not None and domain_max <= 0.15 and (domain_min is None or domain_min < -0.5)
+    return False
+
+
 def argand_graph_has_argument_boundary_rays(configs: list[dict[str, Any]]) -> bool:
     angles: list[float] = []
-    function_text_parts: list[str] = []
+    functions: list[dict[str, Any]] = []
     for config in configs:
         if config.get("type") != "graph2d":
             continue
-        functions = config.get("functions")
-        if isinstance(functions, list):
-            function_text_parts.extend(
-                compact_math_text(json.dumps(function, ensure_ascii=False))
-                for function in functions
-                if isinstance(function, dict)
-            )
+        graph_functions = config.get("functions")
+        if isinstance(graph_functions, list):
+            functions.extend(function for function in graph_functions if isinstance(function, dict))
         features = config.get("features")
         if not isinstance(features, list):
             continue
@@ -1965,13 +1974,12 @@ def argand_graph_has_argument_boundary_rays(configs: list[dict[str, Any]]) -> bo
             angle = graph2d_line_segment_angle_from_origin(feature)
             if angle is not None:
                 angles.append(angle)
-    function_text = "\n".join(function_text_parts)
     has_lower_boundary = any(
         angle_distance_degrees(angle, 30) <= 8 for angle in angles
-    ) or argand_function_marks_argument_boundary(function_text, 30)
+    ) or any(argand_function_marks_argument_boundary_ray(function, 30) for function in functions)
     has_upper_boundary = any(
         angle_distance_degrees(angle, 150) <= 8 for angle in angles
-    ) or argand_function_marks_argument_boundary(function_text, 150)
+    ) or any(argand_function_marks_argument_boundary_ray(function, 150) for function in functions)
     return has_lower_boundary and has_upper_boundary
 
 
@@ -2810,6 +2818,20 @@ def manual_frequency_map(data: dict[str, Any]) -> dict[float, int]:
     return result
 
 
+def stats_chart_count_field_issues(data_objects: list[dict[str, Any]], *, label: str) -> list[str]:
+    issues: list[str] = []
+    for data in data_objects:
+        if data.get("dataMode") != "manualFrequencies":
+            continue
+        if not isinstance(data.get("xValues"), list):
+            continue
+        if isinstance(data.get("frequencies"), list):
+            continue
+        if isinstance(data.get("values"), list):
+            issues.append(f"{label} statsChart exact count charts should use frequencies, not values")
+    return issues
+
+
 def stats_histogram_count_issues(
     data_objects: list[dict[str, Any]],
     expected_counts: dict[float, int],
@@ -2902,13 +2924,25 @@ def stats_chart_point_issues(
     observed_points: list[tuple[float, float]] = []
     for data in data_objects:
         points = data.get("points")
-        if not isinstance(points, list):
+        if isinstance(points, list):
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                x_value = point.get("x")
+                y_value = point.get("y")
+                if (
+                    isinstance(x_value, bool)
+                    or isinstance(y_value, bool)
+                    or not isinstance(x_value, (int, float))
+                    or not isinstance(y_value, (int, float))
+                ):
+                    continue
+                observed_points.append((float(x_value), float(y_value)))
+        x_values = data.get("xValues")
+        y_values = data.get("yValues")
+        if not isinstance(x_values, list) or not isinstance(y_values, list):
             continue
-        for point in points:
-            if not isinstance(point, dict):
-                continue
-            x_value = point.get("x")
-            y_value = point.get("y")
+        for x_value, y_value in zip(x_values, y_values, strict=False):
             if (
                 isinstance(x_value, bool)
                 or isinstance(y_value, bool)
@@ -4840,6 +4874,7 @@ def source_fidelity_issues(args: dict[str, Any], specs: list[dict[str, Any]]) ->
                 )
             counts = spec.get("histogramCounts")
             if isinstance(counts, dict):
+                issues.extend(stats_chart_count_field_issues(data_objects, label=str(spec.get("countLabel") or label)))
                 issues.extend(
                     stats_histogram_count_issues(
                         data_objects,
@@ -6881,6 +6916,14 @@ def local_real_methods_ev_histogram_bad_counts_call() -> dict[str, Any]:
     return call
 
 
+def local_real_methods_ev_histogram_counts_in_values_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["values"] = data.pop("frequencies")
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_methods_ev_histogram_bad_source_fields_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_methods_ev_histogram_call()))
     data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
@@ -7024,6 +7067,14 @@ def local_real_methods_dice_game_bad_chart_fields_call() -> dict[str, Any]:
     data["yAxisMode"] = "relativeFrequency"
     data["xLabel"] = "$t$"
     data["yLabel"] = "Probability"
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_methods_dice_game_counts_in_values_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_methods_dice_game_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    data["values"] = data.pop("frequencies")
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -7281,6 +7332,16 @@ def local_real_specialist_stats_bad_density_points_call() -> dict[str, Any]:
         {"x": 2.1, "y": 0.02},
         {"x": 5.0, "y": 0.02},
     ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_stats_paired_density_values_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_stats_call()))
+    data = call["mauthArguments"]["diagram"]["graphConfig"]["data"]
+    points = data.pop("points")
+    data["xValues"] = [point["x"] for point in points]
+    data["yValues"] = [point["y"] for point in points]
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -7705,6 +7766,32 @@ def local_real_specialist_argand_missing_argument_rays_call() -> dict[str, Any]:
     call["mauthArguments"]["diagram"]["graphConfig"]["features"] = [
         feature for feature in features if feature.get("kind") != "line_segment"
     ]
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
+def local_real_specialist_argand_full_line_argument_boundaries_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_argand_call()))
+    graph_config = call["mauthArguments"]["diagram"]["graphConfig"]
+    graph_config["features"] = [
+        feature for feature in graph_config["features"] if feature.get("kind") != "line_segment"
+    ]
+    graph_config["functions"].extend(
+        [
+            {
+                "kind": "expression",
+                "expression": "y = x / sqrt(3)",
+                "strokeStyle": "dashed",
+                "label": "$\\arg(z)=\\frac{\\pi}{6}$",
+            },
+            {
+                "kind": "expression",
+                "expression": "y = -x / sqrt(3)",
+                "strokeStyle": "dashed",
+                "label": "$\\arg(z)=\\frac{5\\pi}{6}$",
+            },
+        ]
+    )
     call["arguments"] = call["mauthArguments"]
     return call
 
@@ -9139,6 +9226,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "histogram/count chart should preserve value 430 with count 20",
         ],
     },
+    "real-methods-ev-histogram-counts-in-values": {
+        "assert": assert_real_methods_ev_histogram_call,
+        "call": local_real_methods_ev_histogram_counts_in_values_call,
+        "expectedIssues": [
+            "exact count charts should use frequencies, not values",
+        ],
+    },
     "real-methods-ev-histogram-bad-source-fields": {
         "assert": assert_real_methods_ev_histogram_call,
         "call": local_real_methods_ev_histogram_bad_source_fields_call,
@@ -9183,6 +9277,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "statsChart yLabel should preserve f",
         ],
     },
+    "real-methods-dice-game-counts-in-values": {
+        "assert": assert_real_methods_dice_game_call,
+        "call": local_real_methods_dice_game_counts_in_values_call,
+        "expectedIssues": [
+            "exact count charts should use frequencies, not values",
+        ],
+    },
     "real-specialist-lighthouse": {
         "assert": assert_real_lighthouse_question_call,
         "call": local_real_specialist_lighthouse_call,
@@ -9225,6 +9326,10 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "statsChart should preserve source point (2.1, 0.2)",
             "statsChart should preserve source point (2.7, 0.18)",
         ],
+    },
+    "real-specialist-stats-paired-density-values": {
+        "assert": assert_real_specialist_stats_call,
+        "call": local_real_specialist_stats_paired_density_values_call,
     },
     "real-specialist-confidence-intervals": {
         "assert": assert_real_specialist_confidence_intervals_call,
@@ -9305,6 +9410,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-specialist-argand-missing-argument-rays": {
         "assert": assert_real_specialist_argand_call,
         "call": local_real_specialist_argand_missing_argument_rays_call,
+        "expectedIssues": [
+            "Arg(z) boundary rays",
+        ],
+    },
+    "real-specialist-argand-full-line-argument-boundaries": {
+        "assert": assert_real_specialist_argand_call,
+        "call": local_real_specialist_argand_full_line_argument_boundaries_call,
         "expectedIssues": [
             "Arg(z) boundary rays",
         ],
