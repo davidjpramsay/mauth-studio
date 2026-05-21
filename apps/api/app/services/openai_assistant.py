@@ -1637,6 +1637,8 @@ def focused_tool_hint(
                 "and put labelled height/radius guide lines such as h and r in data.dimensions. "
                 "If a 2D top-view companion is present, use graph2d line_segment vector rays from the projected "
                 "origin to the named endpoints and put vector labels on those ray features, not as loose labels. "
+                "For named 3D angles, include the actual angle-ray segments from the vertex; for example "
+                "\\angle DMF needs D-M and M-F, and midpoint construction segments such as A-F/F-B do not replace M-F. "
                 "Preserve source line/ray/vector notation; do not rewrite a source line or main diagonal BT/\\overleftrightarrow{BT} "
                 "as \\overrightarrow{BT}, and do not paste PDF-extraction control characters for line symbols or "
                 "Greek parameters; write \\overleftrightarrow{BT}, \\lambda, and \\mu explicitly. "
@@ -2001,7 +2003,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "characters for line symbols or Greek parameters; write \\overleftrightarrow{BT}, \\lambda, and \\mu explicitly. "
                     "When part text names an angle, the middle letter is the vertex and graph3d must include both "
                     "explicit bounding rays as segments. For \\angle DMF, include D-M and M-F as data.segments; "
-                    "if M is a midpoint on EF, the whole E-F edge does not replace the M-F ray. "
+                    "if M is a midpoint on EF, the whole E-F edge does not replace the M-F ray, and neither do "
+                    "midpoint-construction segments such as A-F/F-B. "
                     "Use sphereCap with center, radius, height/depth, and axis/normal for spherical caps rather "
                     "than drawing a full sphere; include a segment or dimension label '$h$' when the source labels cap depth h. "
                     "Use show:false to hide graph3d helper points/segments/solids; do not use visible:false. "
@@ -3674,7 +3677,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph3d" in allowed:
         lines.append(
-            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces with points arrays for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. For curved solids, set renderStyle:'surface', 'wireframe', or 'outline' to match the source, and use data.dimensions entries for labelled height/radius guide lines such as h and r. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\\overleftrightarrow{BT} as \\overrightarrow{BT}, and do not paste PDF-extraction control characters for line symbols or Greek parameters; write \\overleftrightarrow{BT}, \\lambda, and \\mu explicitly. For a pyramid, include the base face and each triangular side face. For any named angle, the middle letter is the vertex and both bounding rays must be explicit segments: \\angle DMF needs D-M and M-F. If M is a midpoint on EF, the full E-F edge does not replace the needed M-F segment. For spherical caps whose source labels depth h, include a segment or data.dimensions entry labelled $h$. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
+            "- For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals/named angle rays, data.faces with points arrays for all visible polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. For curved solids, set renderStyle:'surface', 'wireframe', or 'outline' to match the source, and use data.dimensions entries for labelled height/radius guide lines such as h and r. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\\overleftrightarrow{BT} as \\overrightarrow{BT}, and do not paste PDF-extraction control characters for line symbols or Greek parameters; write \\overleftrightarrow{BT}, \\lambda, and \\mu explicitly. For a pyramid, include the base face and each triangular side face. For any named angle, the middle letter is the vertex and both bounding rays must be explicit segments: \\angle DMF needs D-M and M-F. If M is a midpoint on EF, the full E-F edge and midpoint-construction segments such as A-F/F-B do not replace the needed M-F segment. For spherical caps whose source labels depth h, include a segment or data.dimensions entry labelled $h$. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style."
         )
     if "statsChart" in allowed:
         lines.append(

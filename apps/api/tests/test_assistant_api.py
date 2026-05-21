@@ -722,6 +722,7 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For statsChart source diagrams" not in graph3d
     assert "middle letter is the vertex" in graph3d
     assert "M-F" in graph3d
+    assert "A-F/F-B" in graph3d
     assert "PDF-extraction control characters" in graph3d
     assert "\\lambda" in graph3d
     assert "\\mu" in graph3d

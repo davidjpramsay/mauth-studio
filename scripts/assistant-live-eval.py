@@ -6411,7 +6411,7 @@ def real_square_pyramid_repair_failure_output(call: dict[str, Any], first_issues
                 {
                     "path": "arguments.diagrams[0].graphConfig.data.segments",
                     "message": issue,
-                    "expected": "include segment F-M as the actual angle ray for angle DMF; E-F alone does not replace F-M",
+                    "expected": "include segment M-F as the actual angle ray for angle DMF; E-F or construction segments A-F/F-B do not replace M-F",
                 }
             )
         elif "vector a ray from O toward A" in issue:
@@ -8751,6 +8751,30 @@ def local_real_specialist_square_pyramid_missing_midpoint_angle_ray_call() -> di
     return call
 
 
+def local_real_specialist_square_pyramid_live_midpoint_construction_missing_fm_call() -> dict[str, Any]:
+    call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
+    graph3d = call["mauthArguments"]["diagrams"][0]["graphConfig"]
+    graph3d["data"]["segments"] = [
+        segment
+        for segment in graph3d["data"]["segments"]
+        if {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} != {"f", "m"}
+    ]
+    required_segments = [
+        {"from": "E", "to": "F", "label": "$\\overrightarrow{FE}$"},
+        {"from": "A", "to": "F"},
+        {"from": "F", "to": "B"},
+    ]
+    for required in required_segments:
+        endpoints = {str(required["from"]).lower(), str(required["to"]).lower()}
+        if not any(
+            {str(segment.get("from", "")).lower(), str(segment.get("to", "")).lower()} == endpoints
+            for segment in graph3d["data"]["segments"]
+        ):
+            graph3d["data"]["segments"].append(required)
+    call["arguments"] = call["mauthArguments"]
+    return call
+
+
 def local_real_specialist_square_pyramid_bad_top_view_geometry_call() -> dict[str, Any]:
     call = json.loads(json.dumps(local_real_specialist_square_pyramid_call()))
     top_view = call["mauthArguments"]["diagrams"][1]["graphConfig"]
@@ -10123,6 +10147,13 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
     "real-specialist-square-pyramid-missing-midpoint-angle-ray": {
         "assert": assert_real_specialist_square_pyramid_call,
         "call": local_real_specialist_square_pyramid_missing_midpoint_angle_ray_call,
+        "expectedIssues": [
+            "segment FM",
+        ],
+    },
+    "real-specialist-square-pyramid-live-midpoint-construction-missing-fm": {
+        "assert": assert_real_specialist_square_pyramid_call,
+        "call": local_real_specialist_square_pyramid_live_midpoint_construction_missing_fm_call,
         "expectedIssues": [
             "segment FM",
         ],
