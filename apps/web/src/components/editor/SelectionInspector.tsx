@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
@@ -99,20 +98,11 @@ export interface SelectedEditorBlock {
 
 export interface SelectionInspectorProps {
   selectedBlock: SelectedEditorBlock | null;
-  frame: SelectionInspectorFrame | null;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<ContentBlock>) => void;
   createTextBlock: () => ContentBlock;
   diagramTypePatch: (type: string, current: GraphConfig) => Partial<GraphConfig>;
   updateGraphConfig: (graphConfig: GraphConfig, patch: Partial<GraphConfig>) => GraphConfig;
   withGraphDefaults: (graphConfig?: GraphConfig | null) => GraphConfig;
-}
-
-export interface SelectionInspectorFrame {
-  left: number;
-  top: number;
-  width: number;
-  maxHeight: number;
-  placement: "side" | "bottom";
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -121,14 +111,13 @@ function clamp(value: number, min: number, max: number) {
 
 export function SelectionInspector({
   selectedBlock,
-  frame,
   createTextBlock,
   diagramTypePatch,
   updateGraphConfig,
   withGraphDefaults,
   onBlockChange,
 }: SelectionInspectorProps) {
-  if (!selectedBlock || !frame) return null;
+  if (!selectedBlock) return null;
 
   const selectedColumnsBlock = selectedBlock.block.kind === "columns" ? normalizeColumnsBlock(selectedBlock.block) : null;
   const selectedChoiceBlock = selectedBlock.block.kind === "choices" ? selectedBlock.block : null;
@@ -166,26 +155,19 @@ export function SelectionInspector({
   };
   const controlClassName = "h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground";
   const checkboxLabelClassName = "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
-  const inspectorStyle: CSSProperties = {
-    left: frame.left,
-    top: frame.top,
-    width: frame.width,
-    maxHeight: frame.maxHeight,
-  };
 
   return (
     <aside
-      data-inspector-placement={frame.placement}
-      className={cn("pointer-events-auto fixed z-40 min-w-0", frame.placement === "bottom" && "shadow-2xl")}
-      style={inspectorStyle}
+      data-inspector-placement="inline"
+      className="selection-inspector-pane flex min-h-0 min-w-0 flex-col overflow-hidden border-b bg-card/95 lg:border-b-0 lg:border-r"
     >
-      <div className="overflow-y-auto rounded-lg border bg-card shadow-panel" style={{ maxHeight: frame.maxHeight }}>
-        <div className="border-b p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
-          <div className="mt-1 truncate text-sm font-semibold">{selectedBlock.label}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{selectedBlock.summary}</div>
-        </div>
+      <div className="shrink-0 border-b p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
+        <div className="mt-1 truncate text-sm font-semibold">{selectedBlock.label}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{selectedBlock.summary}</div>
+      </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {selectedColumnsBlock ? (
           <div className="space-y-3 p-3">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">

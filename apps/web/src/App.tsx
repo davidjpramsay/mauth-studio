@@ -39,6 +39,8 @@ import {
   ListTree,
   ListOrdered,
   Moon,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   PlusCircle,
   Columns3,
@@ -69,7 +71,6 @@ import {
   type ColumnBlockPath,
   type SelectedEditorBaseBlockScope,
   type SelectedEditorBlock,
-  type SelectionInspectorFrame,
 } from "@/components/editor/SelectionInspector";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
 import { StatsChartEditor } from "@/components/editor/StatsChartEditor";
@@ -7934,7 +7935,7 @@ export default function App() {
   const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
-  const [selectionInspectorFrame, setSelectionInspectorFrame] = useState<SelectionInspectorFrame | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
   const frontMatterRef = useRef(frontMatter);
@@ -8207,6 +8208,7 @@ export default function App() {
   const showEditor = paneMode === "split";
   const showAssistant = paneMode === "assistant";
   const showPreview = true;
+  const showInspectorPane = showEditor && inspectorOpen;
   const darkMode = theme === "dark";
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const previewFitScale = useMemo(() => {
@@ -8222,9 +8224,14 @@ export default function App() {
   const previewLayoutScale = previewFitScale * previewZoomRef.current;
   const workspaceStyle = useMemo(
     () => ({
-      gridTemplateColumns: paneMode === "preview" ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(0, 1fr)",
+      gridTemplateColumns:
+        paneMode === "preview"
+          ? "minmax(0, 1fr)"
+          : showInspectorPane
+            ? "minmax(17rem, 0.9fr) minmax(17rem, 19rem) minmax(0, 1.1fr)"
+            : "minmax(0, 1fr) minmax(0, 1fr)",
     }),
-    [paneMode],
+    [paneMode, showInspectorPane],
   );
   const appShellStyle = useMemo(
     () => ({
@@ -8324,7 +8331,7 @@ export default function App() {
   const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
   const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
   const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
-  const selectionInspectorVisible = showEditor && !editingFrontMatter && !editingPageBreak && Boolean(selectedEditorBlock);
+  const selectionInspectorVisible = showInspectorPane && !editingFrontMatter && !editingPageBreak && Boolean(selectedEditorBlock);
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
@@ -8335,73 +8342,6 @@ export default function App() {
     activeProjectFilePathRef.current = activeProjectFilePath;
     activeProjectFileRevisionRef.current = activeProjectFileRevision;
   }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, legacySavedTests, logos, questions]);
-
-  useLayoutEffect(() => {
-    if (!selectionInspectorVisible) {
-      setSelectionInspectorFrame(null);
-      return;
-    }
-
-    const editorPane = editorPaneRef.current;
-    if (!editorPane) {
-      setSelectionInspectorFrame(null);
-      return;
-    }
-
-    let animationFrame = 0;
-    const updateFrame = () => {
-      const rect = editorPane.getBoundingClientRect();
-      const gap = 16;
-      const sideWidth = 288;
-      const availableHeight = Math.max(160, Math.round(rect.height - gap * 2));
-      const selectedElement = activeTocItemId
-        ? editorPane.querySelector<HTMLElement>(`[data-scroll-anchor="${cssAttributeValue(activeTocItemId)}"]`)
-        : null;
-      const selectedRect = selectedElement?.getBoundingClientRect();
-      const preferredTop =
-        selectedRect && selectedRect.bottom > rect.top && selectedRect.top < rect.bottom ? selectedRect.top : rect.top + gap;
-
-      if (rect.width >= 960) {
-        const maxHeight = availableHeight;
-        const minTop = rect.top + gap;
-        const maxTop = Math.max(minTop, rect.bottom - gap - maxHeight);
-        setSelectionInspectorFrame({
-          left: Math.round(rect.right - sideWidth - gap),
-          top: Math.round(clamp(preferredTop, minTop, maxTop)),
-          width: sideWidth,
-          maxHeight,
-          placement: "side",
-        });
-        return;
-      }
-
-      const width = Math.max(1, Math.min(360, rect.width - gap * 2));
-      const maxHeight = Math.max(160, Math.min(380, availableHeight));
-      setSelectionInspectorFrame({
-        left: Math.round(rect.right - width - gap),
-        top: Math.round(rect.bottom - maxHeight - gap),
-        width: Math.round(width),
-        maxHeight: Math.round(maxHeight),
-        placement: "bottom",
-      });
-    };
-    const scheduleUpdate = () => {
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(updateFrame);
-    };
-
-    updateFrame();
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
-    resizeObserver?.observe(editorPane);
-    editorPane.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-    return () => {
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-      resizeObserver?.disconnect();
-      editorPane.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
-    };
-  }, [activeTocItemId, selectionInspectorVisible, paneMode, tocOpen]);
 
   useEffect(() => {
     if (!questions.length) {
@@ -10000,12 +9940,18 @@ export default function App() {
   }
 
   function openEditorFromPreviewAnchor(anchor: string) {
-    if (!anchor || !showEditor) return;
+    if (!anchor) return;
     const tocItem = tocItemForPreviewAnchor(anchor);
     const editorAnchor = tocItem?.editorAnchor ?? anchor;
     const activeAnchor = tocItem?.id ?? editorAnchor;
+    const questionId = questionIdFromScrollAnchor(editorAnchor);
+    if (questionId) selectQuestionInEditor(questionId);
     setActiveTocItemId(activeAnchor);
     setActiveRailItemId(activeAnchor);
+    if (!showEditor) {
+      assistantController.setPanelOpen(false);
+      setPaneMode("split");
+    }
     revealEditorAnchor(editorAnchor);
     queueEditorJump(editorAnchor);
   }
@@ -10121,6 +10067,18 @@ export default function App() {
     assistantController.setPanelOpen(false);
     resetPreviewZoom();
     setPaneMode(nextPaneMode);
+  }
+
+  function toggleInspectorPane() {
+    assistantController.setPanelOpen(false);
+    if (!showEditor) {
+      resetPreviewZoom();
+      setInspectorOpen(true);
+      setPaneMode("split");
+      return;
+    }
+
+    setInspectorOpen((current) => !current);
   }
 
   function showAssistantPane() {
@@ -12138,6 +12096,18 @@ export default function App() {
                 >
                   <ManualModeIcon className="size-5" />
                 </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={showInspectorPane ? "Hide inspector" : "Show inspector"}
+                  aria-label={showInspectorPane ? "Hide inspector" : "Show inspector"}
+                  aria-pressed={showInspectorPane}
+                  onClick={toggleInspectorPane}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, showInspectorPane && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  {showInspectorPane ? <PanelRightClose /> : <PanelRightOpen />}
+                </Button>
               </div>
             </div>
             <div className="flex items-center gap-2 md:hidden">
@@ -12538,19 +12508,31 @@ export default function App() {
                       </div>
                     ) : null}
                   </div>
-                  {!editingFrontMatter && !editingPageBreak ? (
-                    <SelectionInspector
-                      selectedBlock={selectedEditorBlock}
-                      frame={selectionInspectorFrame}
-                      onBlockChange={updateSelectedBlock}
-                      createTextBlock={textBlock}
-                      diagramTypePatch={diagramTypePatch}
-                      updateGraphConfig={updateGraphConfig}
-                      withGraphDefaults={withGraphDefaults}
-                    />
-                  ) : null}
                 </div>
               </section>
+            ) : null}
+
+            {showInspectorPane ? (
+              selectionInspectorVisible ? (
+                <SelectionInspector
+                  selectedBlock={selectedEditorBlock}
+                  onBlockChange={updateSelectedBlock}
+                  createTextBlock={textBlock}
+                  diagramTypePatch={diagramTypePatch}
+                  updateGraphConfig={updateGraphConfig}
+                  withGraphDefaults={withGraphDefaults}
+                />
+              ) : (
+                <aside
+                  data-inspector-placement="inline"
+                  className="selection-inspector-pane flex min-h-0 min-w-0 flex-col overflow-hidden border-b bg-card/95 lg:border-b-0 lg:border-r"
+                >
+                  <div className="shrink-0 border-b p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
+                    <div className="mt-1 truncate text-sm font-semibold">No module selected</div>
+                  </div>
+                </aside>
+              )
             ) : null}
 
             {showPreview ? (
