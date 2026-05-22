@@ -13,6 +13,7 @@ import {
   type MauthQuestionLike,
   type MauthSubpartLike,
 } from "./mauthActions.ts";
+import { DEFAULT_NETWORK_DATA } from "./diagramNetwork.ts";
 
 function textBlock(id: string, text: string): ContentBlock {
   return { id, kind: "text", text };
@@ -24,6 +25,34 @@ function spaceBlock(id: string, lines: number): ContentBlock {
 
 function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
   return { id, kind: "diagram", graphConfig };
+}
+
+function tableBlock(id: string): ContentBlock {
+  return {
+    id,
+    kind: "table",
+    headers: ["A", "B"],
+    rows: [
+      ["1", "2"],
+      ["3", "4"],
+    ],
+    showHeader: true,
+    tableAlign: "center",
+    cellAlignment: "center",
+  };
+}
+
+function findContentBlock(blocks: readonly ContentBlock[], blockId: string): ContentBlock | undefined {
+  for (const block of blocks) {
+    if (block.id === blockId) return block;
+    if (block.kind === "columns") {
+      for (const column of block.columns) {
+        const nested = findContentBlock(column, blockId);
+        if (nested) return nested;
+      }
+    }
+  }
+  return undefined;
 }
 
 function question(id: string, blocks: ContentBlock[] = []): MauthQuestionLike {
@@ -237,6 +266,93 @@ test("updates and deletes modules nested inside columns", () => {
     [],
     ["c2"],
   ]);
+});
+
+test("applies named module settings updates deterministically", () => {
+  const columnsBlock: ContentBlock = {
+    id: "cols",
+    kind: "columns",
+    columnCount: 2,
+    columns: [[textBlock("left", "Left")], [textBlock("right", "Right")]],
+  };
+  let questions = [
+    question("q1", [
+      spaceBlock("space", 3),
+      tableBlock("table"),
+      columnsBlock,
+      { id: "choices", kind: "choices", choices: ["A", "B"], numberingStyle: "upper-alpha", layout: "vertical" },
+      diagramBlock("diagram", { type: "graph2d", widthPx: 420, heightPx: 260 }),
+    ]),
+  ];
+
+  let result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "space",
+    settings: { kind: "space", lines: 7.4 },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  assert.equal((findContentBlock(questions[0].contentBlocks, "space") as Extract<ContentBlock, { kind: "space" }>).lines, 7);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "table",
+    settings: { kind: "table", rows: 3, columns: 3, tableAlign: "right", cellAlignment: "left", showHeader: false },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const updatedTable = findContentBlock(questions[0].contentBlocks, "table");
+  assert.equal(updatedTable?.kind, "table");
+  assert.equal(updatedTable?.kind === "table" ? updatedTable.rows.length : undefined, 3);
+  assert.deepEqual(updatedTable?.kind === "table" ? updatedTable.rows.map((row) => row.length) : [], [3, 3, 3]);
+  assert.equal(updatedTable?.kind === "table" ? updatedTable.tableAlign : undefined, "right");
+  assert.equal(updatedTable?.kind === "table" ? updatedTable.cellAlignment : undefined, "left");
+  assert.equal(updatedTable?.kind === "table" ? updatedTable.showHeader : undefined, false);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "cols",
+    settings: { kind: "columns", columnCount: 4 },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const updatedColumns = findContentBlock(questions[0].contentBlocks, "cols");
+  assert.equal(updatedColumns?.kind, "columns");
+  assert.equal(updatedColumns?.kind === "columns" ? updatedColumns.columnCount : undefined, 4);
+  assert.deepEqual(updatedColumns?.kind === "columns" ? updatedColumns.columns.map((column) => column[0]?.id) : [], [
+    "left",
+    "right",
+    "cols-column-3-text",
+    "cols-column-4-text",
+  ]);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "choices",
+    settings: { kind: "choices", numberingStyle: "roman", layout: "inline" },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const updatedChoices = findContentBlock(questions[0].contentBlocks, "choices");
+  assert.equal(updatedChoices?.kind, "choices");
+  assert.equal(updatedChoices?.kind === "choices" ? updatedChoices.numberingStyle : undefined, "roman");
+  assert.equal(updatedChoices?.kind === "choices" ? updatedChoices.layout : undefined, "inline");
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "diagram",
+    settings: { kind: "diagram", diagramAlign: "left", diagramTextSide: "right" },
+  });
+  assert.equal(result.ok, true, result.error);
+  const updatedDiagram = findContentBlock(result.questions[0].contentBlocks, "diagram");
+  assert.equal(updatedDiagram?.kind, "diagram");
+  assert.equal(updatedDiagram?.kind === "diagram" ? updatedDiagram.diagramAlign : undefined, "left");
+  assert.equal(updatedDiagram?.kind === "diagram" ? updatedDiagram.diagramTextSide : undefined, "right");
 });
 
 test("adds, deletes, and reorders parts while preserving itemOrder", () => {
@@ -643,6 +759,267 @@ test("updates diagram config only on diagram modules", () => {
   });
   assert.equal(wrongKind.ok, false);
   assert.equal(wrongKind.error, "Target module is not a diagram.");
+});
+
+test("applies named diagram settings updates across supported renderers", () => {
+  const initial = [
+    question("q1", [
+      diagramBlock("graph", {
+        type: "graph2d",
+        widthPx: 400,
+        heightPx: 200,
+        lockAspectRatio: true,
+        equalScale: false,
+        showAxes: true,
+      }),
+      diagramBlock("vector", {
+        type: "vector2d",
+        metadata: {
+          vector2d: {
+            labelStyle: "boldLower",
+            vectors: [{ id: "v1", name: "a", start: [0, 0], components: [2, 3] }],
+          },
+        },
+      }),
+      diagramBlock("three", { type: "graph3d", widthPx: 320, heightPx: 240, metadata: { keep: true } }),
+      diagramBlock("chart", {
+        type: "statsChart",
+        data: { chartType: "histogram", values: [1, 2, 2, 3] },
+        options: { widthPx: 300, heightPx: 220, showGrid: true, showFill: true },
+      }),
+      diagramBlock("geometry", {
+        type: "geometricConstruction",
+        options: { scalePercent: 80, substanceSource: "custom" },
+        widthPx: 500,
+        heightPx: 320,
+      }),
+      diagramBlock("network", {
+        type: "network",
+        data: { ...DEFAULT_NETWORK_DATA, hidePoints: false, hidePointLabels: false },
+        options: { scalePercent: 100, substanceSource: "custom" },
+      }),
+      diagramBlock("set", {
+        type: "setDiagram",
+        data: {
+          universe: { name: "U", label: "U" },
+          sets: [
+            { type: "set", name: "A", label: "A" },
+            { type: "set", name: "B", label: "B" },
+          ],
+          regions: [{ name: "onlyA" }, { name: "both" }, { name: "onlyB" }, { name: "outside" }],
+        },
+      }),
+      diagramBlock("image", {
+        type: "image",
+        data: { src: "data:image/png;base64,abc", name: "Original", alt: "Original alt", naturalWidth: 640, naturalHeight: 480 },
+        widthPx: 420,
+        heightPx: 260,
+        functions: [{ expression: "x" }],
+        features: [{ kind: "point", x: 1, y: 2 }],
+      }),
+    ]),
+  ];
+
+  const actions = [
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "graph",
+      settings: { renderer: "graph2d" as const, widthPx: 800, xMin: -4, showAxes: false, equalScale: true },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "vector",
+      settings: { renderer: "vector2d" as const, labelStyle: "arrow" as const, showGrid: false, equalScale: true },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "three",
+      settings: { renderer: "graph3d" as const, widthPx: 520, view: { az: 1.2 } },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "chart",
+      settings: { renderer: "statsChart" as const, widthPx: 360, showGrid: false, fillOpacity: 0.35 },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "geometry",
+      settings: { renderer: "geometricConstruction" as const, scalePercent: 125, resample: true, variation: "fixed-layout" },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "network",
+      settings: { renderer: "network" as const, preset: true, showNodeDots: false, showNodeLabels: false },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "set",
+      settings: { renderer: "setDiagram" as const, labels: "countsWithTotals" as const, shading: "outside" as const },
+    },
+    {
+      type: "diagram.settings.update" as const,
+      scope: { kind: "question" as const, questionId: "q1" },
+      blockId: "image",
+      settings: { renderer: "image" as const, name: "Updated", alt: "Updated alt", widthPx: 360, heightPx: 220 },
+    },
+  ];
+
+  const result = applyMauthActions(initial, actions);
+  assert.equal(result.ok, true, result.error);
+  const blocks = result.questions[0].contentBlocks;
+
+  const graph = findContentBlock(blocks, "graph");
+  assert.equal(graph?.kind, "diagram");
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.widthPx : undefined, 800);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.heightPx : undefined, 400);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.xMin : undefined, -4);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.showAxes : undefined, false);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.equalScale : undefined, true);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.lockAspectRatio : undefined, false);
+
+  const vector = findContentBlock(blocks, "vector");
+  assert.equal(vector?.kind, "diagram");
+  const vectorMetadata =
+    vector?.kind === "diagram" ? (vector.graphConfig.metadata?.vector2d as { labelStyle: string; vectors: Array<{ name: string }> }) : null;
+  assert.equal(vectorMetadata?.labelStyle, "arrow");
+  assert.equal(vectorMetadata?.vectors[0]?.name, "AB");
+  assert.equal(vector?.kind === "diagram" ? vector.graphConfig.showGrid : undefined, false);
+  assert.equal(vector?.kind === "diagram" ? vector.graphConfig.showMajorGrid : undefined, false);
+
+  const three = findContentBlock(blocks, "three");
+  assert.equal(three?.kind, "diagram");
+  const threeView = three?.kind === "diagram" ? (three.graphConfig.metadata?.view3d as { az?: number } | undefined) : undefined;
+  assert.equal(three?.kind === "diagram" ? three.graphConfig.widthPx : undefined, 520);
+  assert.equal(threeView?.az, 1.2);
+  assert.equal(three?.kind === "diagram" ? three.graphConfig.metadata?.keep : undefined, true);
+
+  const chart = findContentBlock(blocks, "chart");
+  assert.equal(chart?.kind, "diagram");
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.widthPx : undefined, 360);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.showGrid : undefined, false);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.fillOpacity : undefined, 0.35);
+
+  const geometry = findContentBlock(blocks, "geometry");
+  assert.equal(geometry?.kind, "diagram");
+  assert.equal(geometry?.kind === "diagram" ? geometry.graphConfig.scalePercent : undefined, 125);
+  assert.equal(geometry?.kind === "diagram" ? geometry.graphConfig.options?.variation : undefined, "fixed-layout");
+  assert.equal(geometry?.kind === "diagram" ? geometry.graphConfig.widthPx : "not-cleared", undefined);
+
+  const network = findContentBlock(blocks, "network");
+  assert.equal(network?.kind, "diagram");
+  assert.equal(
+    network?.kind === "diagram" && typeof network.graphConfig.data === "object"
+      ? (network.graphConfig.data as { hidePoints?: boolean }).hidePoints
+      : undefined,
+    true,
+  );
+  assert.equal(
+    network?.kind === "diagram" && typeof network.graphConfig.data === "object"
+      ? (network.graphConfig.data as { hidePointLabels?: boolean }).hidePointLabels
+      : undefined,
+    true,
+  );
+  assert.equal(network?.kind === "diagram" ? network.graphConfig.options?.substanceSource : undefined, undefined);
+
+  const set = findContentBlock(blocks, "set");
+  const setData =
+    set?.kind === "diagram"
+      ? (set.graphConfig.data as { universe: { countLabel: string }; regions: Array<{ label: string; shaded: boolean }> })
+      : null;
+  assert.equal(setData?.universe.countLabel, "30");
+  assert.deepEqual(
+    setData?.regions.map((region) => region.label),
+    ["8", "10", "6", "6"],
+  );
+  assert.deepEqual(
+    setData?.regions.map((region) => region.shaded),
+    [false, false, false, true],
+  );
+
+  const image = findContentBlock(blocks, "image");
+  assert.equal(image?.kind, "diagram");
+  assert.equal(image?.kind === "diagram" ? image.graphConfig.widthPx : undefined, 360);
+  assert.equal(image?.kind === "diagram" ? image.graphConfig.heightPx : undefined, 220);
+  assert.equal(
+    image?.kind === "diagram" && typeof image.graphConfig.data === "object"
+      ? (image.graphConfig.data as { name?: string }).name
+      : undefined,
+    "Updated",
+  );
+  assert.deepEqual(image?.kind === "diagram" ? image.graphConfig.functions : undefined, []);
+
+  const partialNetwork = applyMauthAction(result.questions, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "network",
+    settings: { renderer: "network", showNodeDots: true },
+  });
+  assert.equal(partialNetwork.ok, true, partialNetwork.error);
+  const networkAfterPartial = findContentBlock(partialNetwork.questions[0].contentBlocks, "network");
+  assert.equal(
+    networkAfterPartial?.kind === "diagram" && typeof networkAfterPartial.graphConfig.data === "object"
+      ? (networkAfterPartial.graphConfig.data as { hidePoints?: boolean }).hidePoints
+      : undefined,
+    false,
+  );
+  assert.equal(
+    networkAfterPartial?.kind === "diagram" && typeof networkAfterPartial.graphConfig.data === "object"
+      ? (networkAfterPartial.graphConfig.data as { hidePointLabels?: boolean }).hidePointLabels
+      : undefined,
+    true,
+  );
+
+  const partialImage = applyMauthAction(partialNetwork.questions, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "image",
+    settings: { renderer: "image", name: "Renamed only" },
+  });
+  assert.equal(partialImage.ok, true, partialImage.error);
+  const imageAfterPartial = findContentBlock(partialImage.questions[0].contentBlocks, "image");
+  assert.equal(
+    imageAfterPartial?.kind === "diagram" && typeof imageAfterPartial.graphConfig.data === "object"
+      ? (imageAfterPartial.graphConfig.data as { name?: string }).name
+      : undefined,
+    "Renamed only",
+  );
+  assert.equal(
+    imageAfterPartial?.kind === "diagram" && typeof imageAfterPartial.graphConfig.data === "object"
+      ? (imageAfterPartial.graphConfig.data as { alt?: string }).alt
+      : undefined,
+    "Updated alt",
+  );
+});
+
+test("settings actions fail cleanly on wrong module kind or renderer", () => {
+  const initial = [question("q1", [textBlock("t1", "Text"), diagramBlock("d1", { type: "graph2d" })])];
+
+  const wrongModuleKind = applyMauthAction(initial, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "t1",
+    settings: { kind: "space", lines: 4 },
+  });
+  assert.equal(wrongModuleKind.ok, false);
+  assert.equal(wrongModuleKind.error, "module.settings.update expected a space module, but target module is text.");
+  assert.deepEqual(wrongModuleKind.questions, initial);
+
+  const wrongRenderer = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "network", showNodeDots: false },
+  });
+  assert.equal(wrongRenderer.ok, false);
+  assert.equal(wrongRenderer.error, "diagram.settings.update expected a network diagram, but target diagram renderer is graph2d.");
+  assert.deepEqual(wrongRenderer.questions, initial);
 });
 
 test("fails cleanly when ids are wrong", () => {

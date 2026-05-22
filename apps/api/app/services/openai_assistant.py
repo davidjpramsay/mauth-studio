@@ -113,6 +113,50 @@ FORMATTING_REQUEST_TERMS = (
     "tidy",
     "blank space",
 )
+SETTINGS_REQUEST_TERMS = (
+    "setting",
+    "settings",
+    "selected module",
+    "current module",
+    "this module",
+    "selected diagram",
+    "current diagram",
+    "this diagram",
+    "selected graph",
+    "current graph",
+    "this graph",
+    "selected chart",
+    "current chart",
+    "this chart",
+    "selected image",
+    "current image",
+    "this image",
+    "turn off grid",
+    "turn on grid",
+    "hide grid",
+    "show grid",
+    "hide axes",
+    "show axes",
+    "hide labels",
+    "show labels",
+    "node labels",
+    "node dots",
+    "scale",
+    "resample",
+    "preset",
+    "shading",
+    "shade selected",
+    "width",
+    "height",
+    "wider",
+    "narrower",
+    "taller",
+    "shorter",
+    "smaller",
+    "larger",
+    "alt text",
+    "rename image",
+)
 MARKING_EDIT_REQUEST_TERMS = (
     "mark",
     "marks",
@@ -166,6 +210,8 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_author_adjust_response_spaces": "mauth.author.adjustResponseSpaces",
     "mauth_format_apply": "mauth.format.apply",
     "mauth_fix_question_formatting": "mauth.format.apply",
+    "mauth_settings_apply": "mauth.settings.apply",
+    "mauth_update_selected_settings": "mauth.settings.apply",
     "mauth_check_document_layout": "mauth.layout.check",
 }
 QUESTION_AUTHORING_TOOL_NAMES = {"mauth.question.upsert", "mauth.author.replaceQuestion"}
@@ -206,6 +252,7 @@ MAUTH_TOOL_NAMES = [
     "mauth.solutions.writeAll",
     "mauth.author.adjustResponseSpaces",
     "mauth.format.apply",
+    "mauth.settings.apply",
     "mauth.layout.check",
     "mauth.files.describe",
     "mauth.files.list",
@@ -1253,6 +1300,8 @@ def deterministic_brain_ids_for_request(
         return ["question", "solutions", "formatting"]
     if intent.kind == "response_space":
         return ["question", "formatting"]
+    if intent.kind == "settings":
+        return ["question", "formatting", "diagram"]
     if intent.kind in {"formatting", "layout_check"}:
         return ["question", "formatting"]
 
@@ -1392,6 +1441,7 @@ class AssistantRequestIntent:
     asks_for_marking_edit: bool
     asks_for_response_space: bool
     asks_for_formatting: bool
+    asks_for_settings: bool
     asks_for_layout_check: bool
     clarification_question: str | None = None
 
@@ -1417,8 +1467,31 @@ def classify_request_intent(
     asks_for_layout_check = asks_for_layout_check_text(text)
     asks_for_response_space = any(term in text for term in RESPONSE_SPACE_REQUEST_TERMS)
     asks_for_formatting = any(term in text for term in FORMATTING_REQUEST_TERMS)
+    asks_for_settings = any(term in text for term in SETTINGS_REQUEST_TERMS)
     asks_for_marking_edit = any(term in text for term in MARKING_EDIT_REQUEST_TERMS)
-    has_specific_question = bool(question_numbers) or "current question" in text or "selected question" in text
+    has_specific_selection = any(
+        term in text
+        for term in (
+            "current question",
+            "selected question",
+            "current module",
+            "selected module",
+            "this module",
+            "current diagram",
+            "selected diagram",
+            "this diagram",
+            "current graph",
+            "selected graph",
+            "this graph",
+            "current chart",
+            "selected chart",
+            "this chart",
+            "current image",
+            "selected image",
+            "this image",
+        )
+    )
+    has_specific_question = bool(question_numbers) or has_specific_selection
     target_question_number = (
         sorted(question_numbers)[0]
         if question_numbers
@@ -1457,6 +1530,8 @@ def classify_request_intent(
         clarification_question = "What would you like me to do with the attached file?"
     elif asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
         kind = "response_space"
+    elif asks_for_settings:
+        kind = "settings"
     elif asks_for_formatting:
         kind = "formatting"
     elif asks_for_solution or asks_for_marking_edit:
@@ -1479,6 +1554,7 @@ def classify_request_intent(
         asks_for_marking_edit=asks_for_marking_edit,
         asks_for_response_space=asks_for_response_space,
         asks_for_formatting=asks_for_formatting,
+        asks_for_settings=asks_for_settings,
         asks_for_layout_check=asks_for_layout_check,
         clarification_question=clarification_question,
     )
@@ -1650,6 +1726,7 @@ def focused_tool_hint(
     asks_to_write_question = intent.asks_to_write_question
     asks_for_response_space = intent.asks_for_response_space
     asks_for_formatting = intent.asks_for_formatting
+    asks_for_settings = intent.asks_for_settings
     asks_for_solution = intent.asks_for_solution
     asks_for_whole_solution_key = intent.asks_for_whole_solution_key
     asks_for_layout_check = intent.asks_for_layout_check
@@ -1816,6 +1893,15 @@ def focused_tool_hint(
             "Focused tool routing hint: this is a response-space/layout request. Your first tool call should be "
             f'mauth_author_adjust_response_spaces with {{"targets":[{{"questionNumber":{question_number},"lines":10,"mode":"set"}}]}}. '
             "Use this for answer-space changes that should preserve existing question text, solutions, and diagrams."
+        )
+    if asks_for_settings:
+        return (
+            "Focused tool routing hint: this is a selected/existing module settings request. Your first tool call should be "
+            "mauth_update_selected_settings. If the teacher says selected/current/this module, omit target so the app uses "
+            "the active selected module; otherwise include target.questionNumber plus blockId/moduleId/diagramId when known. "
+            "Use module for space/table/columns/choices controls and diagram module alignment/text side; use diagram for "
+            "renderer controls such as graph size/display flags, Penrose scale/resample, network node dots/labels, set-diagram "
+            "labels/shading, and image name/alt/size."
         )
     if asks_for_formatting:
         return (
@@ -3600,6 +3686,157 @@ def assistant_format_target_schema() -> dict[str, Any]:
     }
 
 
+def assistant_settings_target_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            "Existing module target. Omit this entirely for the active selected module, or provide questionNumber "
+            "plus blockId/moduleId/diagramId when known."
+        ),
+        "properties": {
+            "scope": {"type": "string", "enum": ["selection"], "description": "Use the active selected module."},
+            "anchor": {"type": "string", "description": "Focused preview anchor from mauth.preview.inspect."},
+            "questionNumber": {"type": "integer", "minimum": 1},
+            "questionId": {"type": "string"},
+            "partId": {"type": "string"},
+            "partLabel": {"type": "string"},
+            "partNumber": {"type": "integer", "minimum": 1},
+            "subpartId": {"type": "string"},
+            "subpartLabel": {"type": "string"},
+            "subpartNumber": {"type": "integer", "minimum": 1},
+            "blockId": {"type": "string"},
+            "moduleId": {"type": "string"},
+            "diagramId": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+
+
+def assistant_module_settings_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            "Module-level controls. kind is optional when targeting an existing selected module because the app can infer it."
+        ),
+        "properties": {
+            "kind": {"type": "string", "enum": ["space", "table", "columns", "choices", "diagram"]},
+            "lines": {"type": "integer", "minimum": 1, "maximum": 60},
+            "rows": {"type": "integer", "minimum": 1, "maximum": 40},
+            "columns": {"type": "integer", "minimum": 1, "maximum": 10},
+            "columnCount": {"type": "integer", "enum": [2, 3, 4]},
+            "tableAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "cellAlignment": {"type": "string", "enum": ["left", "center", "right"]},
+            "showHeader": {"type": "boolean"},
+            "numberingStyle": {"type": "string", "enum": ["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"]},
+            "layout": {"type": "string", "enum": ["vertical", "two-column", "inline"]},
+            "diagramAlign": {"type": "string", "enum": ["left", "center", "right"]},
+            "diagramTextSide": {"type": "string", "enum": ["none", "left", "right"]},
+        },
+        "additionalProperties": False,
+    }
+
+
+def assistant_diagram_settings_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            "Renderer-level controls for an existing diagram. renderer is optional for a selected diagram because the app "
+            "infers it from the target graphConfig."
+        ),
+        "properties": {
+            "renderer": {
+                "type": "string",
+                "enum": [
+                    "graph2d",
+                    "vector2d",
+                    "graph3d",
+                    "statsChart",
+                    "geometricConstruction",
+                    "network",
+                    "setDiagram",
+                    "image",
+                ],
+            },
+            "widthPx": {"type": "number", "minimum": 40, "maximum": 1200},
+            "heightPx": {"type": "number", "minimum": 40, "maximum": 900},
+            "xMin": {"type": "number"},
+            "xMax": {"type": "number"},
+            "yMin": {"type": "number"},
+            "yMax": {"type": "number"},
+            "showAxes": {"type": "boolean"},
+            "showGrid": {"type": "boolean"},
+            "showMajorGrid": {"type": "boolean"},
+            "showAxisLabels": {"type": "boolean"},
+            "showAxisNumbers": {"type": "boolean"},
+            "showArrows": {"type": "boolean"},
+            "showFunctionArrows": {"type": "boolean"},
+            "lockAspectRatio": {"type": "boolean"},
+            "equalScale": {"type": "boolean"},
+            "gridMajorStep": {"type": "number"},
+            "gridMinorStep": {"type": "number"},
+            "gridMajorStepX": {"type": "number"},
+            "gridMajorStepY": {"type": "number"},
+            "gridMinorStepX": {"type": "number"},
+            "gridMinorStepY": {"type": "number"},
+            "labelStyle": {"type": "string", "enum": ["boldLower", "arrow", "custom"]},
+            "view": {
+                "type": "object",
+                "properties": {
+                    "az": {"type": "number"},
+                    "el": {"type": "number"},
+                    "bank": {"type": "number"},
+                },
+                "additionalProperties": False,
+            },
+            "resetView": {"type": "boolean"},
+            "chartType": {"type": "string", "enum": ["histogram", "binomial", "normal", "box", "density", "blankAxes"]},
+            "showFill": {"type": "boolean"},
+            "fillColor": {"type": "string"},
+            "fillOpacity": {"type": "number", "minimum": 0, "maximum": 1},
+            "scalePercent": {"type": "number", "minimum": 10, "maximum": 300},
+            "original": {"type": "boolean"},
+            "resample": {"type": "boolean"},
+            "variation": {"type": "string"},
+            "preset": {"type": "boolean"},
+            "showNodeDots": {"type": "boolean"},
+            "showNodeLabels": {"type": "boolean"},
+            "labels": {"type": "string", "enum": ["notation", "counts", "countsWithTotals"]},
+            "shading": {
+                "anyOf": [
+                    {"type": "string", "enum": ["none", "onlyA", "intersection", "onlyB", "outside"]},
+                    {"type": "integer", "minimum": 0, "maximum": 3},
+                    {"type": "null"},
+                ]
+            },
+            "name": {"type": "string"},
+            "alt": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+
+
+def mauth_update_selected_settings_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": "mauth_update_selected_settings",
+        "description": (
+            "Apply focused settings changes to the selected or explicitly targeted existing module without rewriting "
+            "question content. Use this for selected graph/chart/diagram/image size and display flags, Penrose scale, "
+            "network node labels/dots, set-diagram labels/shading, image name/alt/size, and module controls such as "
+            "space lines, table sizing/alignment, columns, choices, or diagram module alignment."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": assistant_settings_target_schema(),
+                "module": assistant_module_settings_schema(),
+                "diagram": assistant_diagram_settings_schema(),
+            },
+            "additionalProperties": False,
+        },
+    }
+
+
 def mauth_format_apply_tool_definition() -> dict[str, Any]:
     return {
         "type": "function",
@@ -3694,6 +3931,7 @@ def assistant_tool_definitions(
     asks_for_layout_check = intent.asks_for_layout_check
     asks_for_response_space = intent.asks_for_response_space
     asks_for_formatting = intent.asks_for_formatting
+    asks_for_settings = intent.asks_for_settings
     asks_for_marking_edit = intent.asks_for_marking_edit
     asks_to_write_question = intent.asks_to_write_question
     require_source_diagram = intent.require_source_diagram
@@ -3813,6 +4051,8 @@ def assistant_tool_definitions(
         return [mauth_author_adjust_response_spaces_tool_definition()]
     if repair_targets & {"mauth_format_apply", "mauth_fix_question_formatting", "mauth.format.apply"}:
         return [mauth_fix_question_formatting_tool_definition()]
+    if repair_targets & {"mauth_settings_apply", "mauth_update_selected_settings", "mauth.settings.apply"}:
+        return [mauth_update_selected_settings_tool_definition()]
 
     if intent.kind == "clarify":
         return []
@@ -3835,6 +4075,8 @@ def assistant_tool_definitions(
         return [mauth_make_diagram_for_question_tool_definition()]
     if has_specific_question and asks_for_response_space and not (asks_for_solution or asks_for_marking_edit):
         return [mauth_author_adjust_response_spaces_tool_definition()]
+    if has_specific_question and asks_for_settings and not asks_to_write_question:
+        return [mauth_update_selected_settings_tool_definition()]
     if has_specific_question and asks_for_formatting and not asks_to_write_question:
         return [mauth_fix_question_formatting_tool_definition()]
     if has_specific_question and (asks_for_solution or asks_for_marking_edit):
@@ -3865,6 +4107,7 @@ def assistant_tool_definitions(
         mauth_write_solutions_for_questions_tool_definition(),
         mauth_write_all_solutions_tool_definition(),
         mauth_author_adjust_response_spaces_tool_definition(),
+        mauth_update_selected_settings_tool_definition(),
         mauth_fix_question_formatting_tool_definition(),
         mauth_check_document_layout_tool_definition(),
         mauth_tool_definition(),
@@ -3885,7 +4128,7 @@ def assistant_instruction_profile(
         return "diagramFollowup"
     if intent.kind in {"solution_or_marking", "write_all_solutions"}:
         return "solutionEdit"
-    if intent.kind in {"layout_check", "response_space", "formatting"}:
+    if intent.kind in {"layout_check", "response_space", "formatting", "settings"}:
         return "layout"
     return "general"
 
@@ -4158,7 +4401,7 @@ Tool-call contract:
 - Keep currency outside maths: write $51.02$ dollars, \\$51.02, or plain 51.02 dollars; never write $\\$51.02$, $1 game, or $0.094 per game.
 - For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
-- For answer-space edits, use mauth_author_adjust_response_spaces. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
+- For answer-space edits, use mauth_author_adjust_response_spaces. For selected/existing module settings such as graph size/display flags, Penrose scale/resample, network labels/dots, set-diagram shading/labels, image name/alt/size, table/columns/choices controls, or diagram module alignment, use mauth_update_selected_settings. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
 - For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs and source-faithful 2D geometry linework via data.geometry2d, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
 - For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question. Label declared points directly, e.g. Label L $L$, not Label LLabel $L$. Use RightAngle(A, B, C) for visible right-angle markers; PerpendicularToSegment needs a declared Line first, not a NamedSegment. Do not emit options.styleSource/domainSource; Mauth supplies the Penrose preset style.

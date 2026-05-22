@@ -256,6 +256,9 @@ function postEditInspectionPlan(call: MauthAssistantAdapterToolCall): PostEditIn
   if (call.name === "mauth.format.apply") {
     return { args: postEditQuestionInspectionArgs(call), modes: ["formatLayout", "solutionLayout"] };
   }
+  if (call.name === "mauth.settings.apply") {
+    return { args: { ...postEditQuestionInspectionArgs(call), scope: "selection" }, modes: ["diagram", "formatLayout", "solutionLayout"] };
+  }
   return null;
 }
 
@@ -630,6 +633,7 @@ export async function runMauthAssistantAdapterTool<
           "mauth.solutions.writeAll",
           "mauth.author.adjustResponseSpaces",
           "mauth.format.apply",
+          "mauth.settings.apply",
         ] as string[]
       ).includes(call.name) &&
       result.document

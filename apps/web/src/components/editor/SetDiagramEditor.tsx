@@ -31,13 +31,15 @@ function setPenroseSubstanceSource(config: GraphConfig) {
 
 type SetDiagramEditorProps = {
   config: GraphConfig;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function SetDiagramEditor({ config, onChange }: SetDiagramEditorProps) {
+export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: SetDiagramEditorProps) {
   const scalePercent = penroseScalePercent(config);
   const data = normalizedSetDiagramData(config);
   const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
+  const showInlineSettings = settingsMode === "inline";
   const patchSetData = (nextData: typeof data) => {
     onChange({
       data: nextData,
@@ -117,32 +119,34 @@ export function SetDiagramEditor({ config, onChange }: SetDiagramEditorProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex w-36 flex-col gap-2 text-xs font-medium">
-          Diagram scale
-          <input
-            type="number"
-            min={25}
-            max={250}
-            step={5}
-            value={numberInputValue(scalePercent)}
-            onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
-          Original
-        </Button>
-        <Button type="button" variant="outline" className="self-end" onClick={applyNotationLabels}>
-          Set notation
-        </Button>
-        <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(false)}>
-          Counts
-        </Button>
-        <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(true)}>
-          Counts + totals
-        </Button>
-      </div>
+      {showInlineSettings ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex w-36 flex-col gap-2 text-xs font-medium">
+            Diagram scale
+            <input
+              type="number"
+              min={25}
+              max={250}
+              step={5}
+              value={numberInputValue(scalePercent)}
+              onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
+            Original
+          </Button>
+          <Button type="button" variant="outline" className="self-end" onClick={applyNotationLabels}>
+            Set notation
+          </Button>
+          <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(false)}>
+            Counts
+          </Button>
+          <Button type="button" variant="outline" className="self-end" onClick={() => applyCountLabels(true)}>
+            Counts + totals
+          </Button>
+        </div>
+      ) : null}
 
       {hasSubstanceOverride ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -214,19 +218,21 @@ export function SetDiagramEditor({ config, onChange }: SetDiagramEditorProps) {
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Regions</div>
-          <div className="flex flex-wrap gap-2">
-            {SET_SHADING_OPTIONS.map((option) => (
-              <Button
-                key={`${option.label}-${option.regionIndex ?? "none"}`}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => (option.regionIndex === null ? clearShading() : setSingleShadedRegion(option.regionIndex))}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
+          {showInlineSettings ? (
+            <div className="flex flex-wrap gap-2">
+              {SET_SHADING_OPTIONS.map((option) => (
+                <Button
+                  key={`${option.label}-${option.regionIndex ?? "none"}`}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => (option.regionIndex === null ? clearShading() : setSingleShadedRegion(option.regionIndex))}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {data.regions.map((region, regionIndex) => (

@@ -34,6 +34,22 @@ function textBlock(id: string, text: string): ContentBlock {
   return { id, kind: "text", text };
 }
 
+function spaceBlock(id: string, lines: number): ContentBlock {
+  return { id, kind: "space", lines, visibility: "student" };
+}
+
+function diagramBlock(id: string): ContentBlock {
+  return {
+    id,
+    kind: "diagram",
+    graphConfig: {
+      type: "statsChart",
+      data: { chartType: "histogram" },
+      options: { widthPx: 260, heightPx: 220 },
+    },
+  } as ContentBlock;
+}
+
 function question(id: string, blocks: ContentBlock[] = []): MauthQuestionLike {
   return {
     id,
@@ -257,6 +273,33 @@ test("commits high-level authoring results through the same editor history path"
     "Write a circle geometry proof using a tangent.",
   );
   assert.equal(result.toolName, "mauth.question.upsert");
+});
+
+test("commits selected settings results through the same editor history path", async () => {
+  const initialDocument = documentFixture();
+  initialDocument.questions[0].contentBlocks = [textBlock("t1", "Use the chart."), diagramBlock("d1"), spaceBlock("s1", 4)];
+  initialDocument.questions[0].itemOrder = initialDocument.questions[0].contentBlocks.map((block) => ({
+    kind: "block" as const,
+    id: block.id,
+  }));
+  const harness = adapterHost({ getActiveAnchor: () => "q:q1/b:d1" }, initialDocument);
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.settings.apply",
+    arguments: {
+      module: { diagramAlign: "right" },
+      diagram: { widthPx: 380, showGrid: false },
+    },
+  });
+  const diagram = harness.document.questions[0].contentBlocks.find((block) => block.id === "d1");
+
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.committedDocument, true);
+  assert.equal(harness.commits.length, 1);
+  assert.equal(diagram?.kind, "diagram");
+  assert.equal(diagram?.kind === "diagram" ? diagram.diagramAlign : undefined, "right");
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.widthPx : undefined, 380);
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.options?.showGrid : undefined, false);
 });
 
 test("question upserts report semantic graph and question mismatches after commit", async () => {

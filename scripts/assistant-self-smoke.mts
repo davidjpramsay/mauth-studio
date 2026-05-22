@@ -30,6 +30,7 @@ interface SmokeScenario {
   assistantPlan: string;
   start: () => TestDocument;
   calls: MauthAssistantToolCall[];
+  activeAnchor?: string;
   useAdapterPreflight?: boolean;
   expectToolFailure?: boolean;
   evaluate: (context: ScenarioContext) => string[];
@@ -812,6 +813,38 @@ const scenarios: SmokeScenario[] = [
     ],
   },
   {
+    id: "selected-settings-edit-uses-settings-tool",
+    prompt: "Make the selected diagram smaller, align it left, and preserve the circle theorem content.",
+    assistantPlan:
+      "Use mauth.settings.apply against the active selected module. Let the tool infer the diagram renderer and map the request to module.settings.update plus diagram.settings.update.",
+    start: () => documentFixture([question("q1", 5, circleQuestionBlocks())]),
+    activeAnchor: "q:q1/b:q1-diagram",
+    calls: [
+      {
+        name: "mauth.settings.apply",
+        arguments: {
+          module: { diagramAlign: "left" },
+          diagram: { scalePercent: 85 },
+        },
+      },
+    ],
+    evaluate: ({ document, results }) => {
+      const diagram = diagrams(document)[0];
+      const graphConfig = diagram?.kind === "diagram" ? diagram.graphConfig : undefined;
+      const options = (graphConfig?.options ?? {}) as Record<string, unknown>;
+      return [
+        ...failIf(results[0]?.toolName !== "mauth.settings.apply", "selected settings request should use mauth.settings.apply"),
+        ...failIf(diagrams(document).length !== 1, "existing selected diagram should be preserved"),
+        ...failIf(diagram?.kind === "diagram" && diagram.diagramAlign !== "left", "diagram module alignment should be updated"),
+        ...failIf(Number(options.scalePercent ?? graphConfig?.scalePercent ?? 0) !== 85, "Penrose scale should be updated"),
+        ...failIf(
+          (graphConfig?.options as Record<string, unknown> | undefined)?.substanceSource === undefined,
+          "diagram content should be preserved",
+        ),
+      ];
+    },
+  },
+  {
     id: "diagram-follow-up-uses-native-penrose",
     prompt: "Please add the diagram to Question 1 that goes with the tangent/circle question.",
     assistantPlan:
@@ -1409,6 +1442,7 @@ async function runScenario(scenario: SmokeScenario) {
             solutionOnlyModules,
           };
         },
+        assistantContext: scenario.activeAnchor ? { activeAnchor: scenario.activeAnchor } : undefined,
       });
       results.push(result);
       if (result.ok && result.document) document = result.document as TestDocument;

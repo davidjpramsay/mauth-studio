@@ -1,6 +1,6 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
-import { DEFAULT_PENROSE_SCALE_PERCENT, SETS_PENROSE_PRESET } from "@/lib/diagramPenrose";
+import { DEFAULT_PENROSE_SCALE_PERCENT, SETS_PENROSE_PRESET } from "./diagramPenrose.ts";
 
 export const DEFAULT_SET_DATA = {
   universe: { name: "U", label: "U" },

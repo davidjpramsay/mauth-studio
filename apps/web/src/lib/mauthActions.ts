@@ -1,5 +1,12 @@
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
+import {
+  applyDiagramSettingsUpdate,
+  applyModuleSettingsUpdate,
+  type MauthDiagramSettingsUpdate,
+  type MauthModuleSettingsUpdate,
+} from "./mauthSettingsActions.ts";
+
 export type MauthOrderItemKind = "block" | "part" | "subpart";
 
 export interface MauthOrderItem {
@@ -103,6 +110,7 @@ export type MauthAction =
     }
   | { type: "module.add"; scope: MauthContentScope; blocks: ContentBlock[]; placement?: MauthBlockPlacement }
   | { type: "module.update"; scope: MauthContentScope; blockId: string; patch: Record<string, unknown> }
+  | { type: "module.settings.update"; scope: MauthContentScope; blockId: string; settings: MauthModuleSettingsUpdate }
   | { type: "module.delete"; scope: MauthContentScope; blockId: string }
   | { type: "module.reorder"; scope: MauthContentScope; blockId: string; targetBlockId: string; placement: "before" | "after" }
   | {
@@ -115,6 +123,7 @@ export type MauthAction =
   | { type: "solutionSlot.add"; scope: MauthContentScope; blocks: ContentBlock[]; placement?: MauthBlockPlacement }
   | { type: "marks.update"; target: MauthMarkTarget; marks: number }
   | { type: "diagram.update"; scope: MauthContentScope; blockId: string; graphConfig: GraphConfig }
+  | { type: "diagram.settings.update"; scope: MauthContentScope; blockId: string; settings: MauthDiagramSettingsUpdate }
   | { type: "pageBreak.set"; target: MauthPageBreakTarget; enabled: boolean }
   | { type: "validation.solution.run" };
 
@@ -144,12 +153,14 @@ export const MAUTH_CONTENT_ACTION_TYPES = [
   "subpart.move",
   "module.add",
   "module.update",
+  "module.settings.update",
   "module.delete",
   "module.reorder",
   "module.move",
   "solutionSlot.add",
   "marks.update",
   "diagram.update",
+  "diagram.settings.update",
   "pageBreak.set",
   "validation.solution.run",
 ] as const satisfies readonly MauthAction["type"][];
@@ -1349,6 +1360,22 @@ export function applyMauthAction<Q extends MauthQuestionLike>(
     return ok(action, result.questions, [action.blockId]);
   }
 
+  if (action.type === "module.settings.update") {
+    let settingsError: string | undefined;
+    const result = updateBlockInScope(questions, action.scope, action.blockId, options, (block) => {
+      const settingsResult = applyModuleSettingsUpdate(block, action.settings);
+      if (!settingsResult.ok) {
+        settingsError = settingsResult.error;
+        return block;
+      }
+      return settingsResult.block;
+    });
+    if (!result.found) return fail(action, questions, "Module scope was not found.", action.blockId);
+    if (!result.blockFound) return fail(action, questions, "Module was not found.", action.blockId);
+    if (settingsError) return fail(action, questions, settingsError, action.blockId);
+    return ok(action, result.questions, [action.blockId]);
+  }
+
   if (action.type === "module.delete") {
     let blockFound = false;
     const result = patchScopedContainer(questions, action.scope, options, (container) => {
@@ -1436,6 +1463,22 @@ export function applyMauthAction<Q extends MauthQuestionLike>(
     if (!result.found) return fail(action, questions, "Diagram scope was not found.", action.blockId);
     if (!result.blockFound) return fail(action, questions, "Diagram module was not found.", action.blockId);
     if (wrongKind) return fail(action, questions, "Target module is not a diagram.", action.blockId);
+    return ok(action, result.questions, [action.blockId]);
+  }
+
+  if (action.type === "diagram.settings.update") {
+    let settingsError: string | undefined;
+    const result = updateBlockInScope(questions, action.scope, action.blockId, options, (block) => {
+      const settingsResult = applyDiagramSettingsUpdate(block, action.settings);
+      if (!settingsResult.ok) {
+        settingsError = settingsResult.error;
+        return block;
+      }
+      return settingsResult.block;
+    });
+    if (!result.found) return fail(action, questions, "Diagram scope was not found.", action.blockId);
+    if (!result.blockFound) return fail(action, questions, "Diagram module was not found.", action.blockId);
+    if (settingsError) return fail(action, questions, settingsError, action.blockId);
     return ok(action, result.questions, [action.blockId]);
   }
 

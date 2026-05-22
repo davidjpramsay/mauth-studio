@@ -20,11 +20,18 @@ function penroseVariationId() {
 type GeometricConstructionEditorProps = {
   config: GraphConfig;
   substanceSource: string;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function GeometricConstructionEditor({ config, substanceSource, onChange }: GeometricConstructionEditorProps) {
+export function GeometricConstructionEditor({
+  config,
+  substanceSource,
+  settingsMode = "inline",
+  onChange,
+}: GeometricConstructionEditorProps) {
   const scalePercent = penroseScalePercent(config);
+  const showInlineSettings = settingsMode === "inline";
   const updateScale = (value: number) =>
     onChange({
       scalePercent: value,
@@ -47,31 +54,35 @@ export function GeometricConstructionEditor({ config, substanceSource, onChange 
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex w-36 flex-col gap-2 text-xs font-medium">
-          Diagram scale
-          <input
-            type="number"
-            min={25}
-            max={250}
-            step={5}
-            value={numberInputValue(scalePercent)}
-            onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
-          Original
-        </Button>
-        <Button type="button" variant="outline" className="self-end" onClick={resampleLayout}>
-          <Shuffle className="mr-2 size-4" />
-          Resample
-        </Button>
-      </div>
-      <p className="max-w-3xl text-xs text-muted-foreground">
-        Original construction canvas is {PENROSE_ORIGINAL_WIDTH}px wide. Scale changes display size only. Resample asks Penrose for another
-        valid automatic layout.
-      </p>
+      {showInlineSettings ? (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex w-36 flex-col gap-2 text-xs font-medium">
+              Diagram scale
+              <input
+                type="number"
+                min={25}
+                max={250}
+                step={5}
+                value={numberInputValue(scalePercent)}
+                onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+            <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
+              Original
+            </Button>
+            <Button type="button" variant="outline" className="self-end" onClick={resampleLayout}>
+              <Shuffle className="mr-2 size-4" />
+              Resample
+            </Button>
+          </div>
+          <p className="max-w-3xl text-xs text-muted-foreground">
+            Original construction canvas is {PENROSE_ORIGINAL_WIDTH}px wide. Scale changes display size only. Resample asks Penrose for
+            another valid automatic layout.
+          </p>
+        </>
+      ) : null}
       <label className="flex flex-col gap-2 text-xs font-medium">
         Substance
         <Textarea

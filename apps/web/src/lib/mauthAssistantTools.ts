@@ -25,6 +25,7 @@ import {
 import { inspectMauthDiagram } from "./mauthDiagramInspection.ts";
 import { diagramIntentFromText } from "./mauthDiagramIntent.ts";
 import { buildVector2DSourceDiagramConfig, type Vector2DSourceDiagramInput } from "./diagramVector2d.ts";
+import { isSupportedDiagramSettingsRenderer, isSupportedModuleSettingsKind } from "./mauthSettingsActions.ts";
 
 export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.tools.describe",
@@ -40,6 +41,7 @@ export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.solutions.writeAll",
   "mauth.author.adjustResponseSpaces",
   "mauth.format.apply",
+  "mauth.settings.apply",
   "mauth.layout.check",
 ] as const;
 
@@ -91,6 +93,11 @@ export interface MauthAuthorResponseSpaceValidationFailure {
 }
 
 export interface MauthFormatApplyValidationFailure {
+  error: string;
+  issues: MauthActionValidationIssue[];
+}
+
+export interface MauthSettingsApplyValidationFailure {
   error: string;
   issues: MauthActionValidationIssue[];
 }
@@ -1892,6 +1899,11 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
           "Apply safe high-level formatting operations such as page breaks before parts/subparts, diagram alignment, response-space sizing, module moves, solution-fit spacing, and tidy spacing without rewriting question content.",
       },
       {
+        name: "mauth.settings.apply",
+        description:
+          "Apply focused settings changes to the selected or explicitly targeted module. It resolves the module target, infers module kind or diagram renderer when omitted, and maps to module.settings.update and diagram.settings.update.",
+      },
+      {
         name: "mauth.layout.check",
         description:
           "Run a document-wide structural and rendered-layout check for page overflow, missing answer surfaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram warnings, and print-risk items.",
@@ -1979,6 +1991,9 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
       "For focused formatting requests such as page breaks before a part/subpart, diagram alignment, moving one module, fitting a solution to its student space, or tidying excess spacing, prefer mauth.format.apply.",
+      "For selected-module control changes such as graph size/display flags, Penrose scale/resample, network node labels, set-diagram labels/shading, image name/alt/size, space/table/columns/choices controls, or diagram module side/alignment, prefer mauth.settings.apply.",
+      "For targeted module control changes inside a broader action batch, prefer module.settings.update over raw module.update patches for space lines, table sizing/alignment, columns, choices, and diagram module alignment.",
+      "For targeted renderer control changes inside a broader action batch, prefer diagram.settings.update over raw graphConfig patches for graph/vector/3D/chart sizing and display flags, Penrose scale/resample, network visibility, set-diagram labels/shading, and image name/alt/size.",
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
@@ -4933,6 +4948,399 @@ function parseFormatApplyActions<Q extends MauthQuestionLike, F extends object, 
   return actions;
 }
 
+type MauthModuleSettingsAction = Extract<MauthDocumentAction, { type: "module.settings.update" }>;
+type MauthDiagramSettingsAction = Extract<MauthDocumentAction, { type: "diagram.settings.update" }>;
+
+const SETTINGS_TARGET_KEYS = [
+  "target",
+  "scope",
+  "anchor",
+  "questionNumber",
+  "question",
+  "questionId",
+  "partId",
+  "partLabel",
+  "partNumber",
+  "partIndex",
+  "subpartId",
+  "subpartLabel",
+  "subpartNumber",
+  "subpartIndex",
+  "blockId",
+  "moduleId",
+  "diagramId",
+] as const;
+
+const MODULE_SETTINGS_KEYS = [
+  "kind",
+  "lines",
+  "rows",
+  "columns",
+  "columnCount",
+  "tableAlign",
+  "cellAlignment",
+  "showHeader",
+  "numberingStyle",
+  "layout",
+  "diagramAlign",
+  "diagramTextSide",
+] as const;
+
+const DIAGRAM_SETTINGS_KEYS = [
+  "renderer",
+  "widthPx",
+  "heightPx",
+  "xMin",
+  "xMax",
+  "yMin",
+  "yMax",
+  "showAxes",
+  "showGrid",
+  "showMajorGrid",
+  "showAxisLabels",
+  "showAxisNumbers",
+  "showArrows",
+  "showFunctionArrows",
+  "lockAspectRatio",
+  "equalScale",
+  "gridMajorStep",
+  "gridMinorStep",
+  "gridMajorStepX",
+  "gridMajorStepY",
+  "gridMinorStepX",
+  "gridMinorStepY",
+  "labelStyle",
+  "view",
+  "resetView",
+  "chartType",
+  "showFill",
+  "fillColor",
+  "fillOpacity",
+  "scalePercent",
+  "original",
+  "resample",
+  "variation",
+  "preset",
+  "showNodeDots",
+  "showNodeLabels",
+  "labels",
+  "shading",
+  "name",
+  "alt",
+] as const;
+
+interface ResolvedSettingsTarget {
+  scope: MauthContentScope;
+  blockId: string;
+  block: ContentBlock;
+}
+
+function settingsApplyEntries(args: Record<string, unknown>) {
+  if (Array.isArray(args.operations)) return args.operations;
+  if (Array.isArray(args.edits)) return args.edits;
+  return [args];
+}
+
+function settingSubrecord(entry: Record<string, unknown>, keys: readonly string[]) {
+  const record: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (hasOwn(entry, key)) record[key] = entry[key];
+  }
+  return Object.keys(record).length ? record : undefined;
+}
+
+function settingsTargetRecord(entry: Record<string, unknown>) {
+  return isRecord(entry.target) ? entry.target : entry;
+}
+
+function hasExplicitSettingsTarget(entry: Record<string, unknown>) {
+  const target = settingsTargetRecord(entry);
+  return SETTINGS_TARGET_KEYS.some((key) => hasOwn(entry, key) || hasOwn(target, key));
+}
+
+function settingsTargetWantsSelection(entry: Record<string, unknown>) {
+  const target = settingsTargetRecord(entry);
+  return entry.scope === "selection" || target.scope === "selection" || entry.selected === true || target.selected === true;
+}
+
+function settingsScopeFromRecord(value: unknown, path: string, issues: MauthActionValidationIssue[]): MauthContentScope | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.kind === "question") {
+    if (typeof value.questionId === "string" && value.questionId.trim()) {
+      return { kind: "question", questionId: value.questionId.trim() };
+    }
+    issues.push({ path: `${path}.questionId`, message: "must identify the question scope", expected: "question id" });
+    return undefined;
+  }
+  if (value.kind === "part") {
+    if (typeof value.questionId === "string" && value.questionId.trim() && typeof value.partId === "string" && value.partId.trim()) {
+      return { kind: "part", questionId: value.questionId.trim(), partId: value.partId.trim() };
+    }
+    issues.push({
+      path,
+      message: "must identify the part scope with questionId and partId",
+      expected: "{ kind: 'part', questionId, partId }",
+    });
+    return undefined;
+  }
+  if (value.kind === "subpart") {
+    if (
+      typeof value.questionId === "string" &&
+      value.questionId.trim() &&
+      typeof value.partId === "string" &&
+      value.partId.trim() &&
+      typeof value.subpartId === "string" &&
+      value.subpartId.trim()
+    ) {
+      return { kind: "subpart", questionId: value.questionId.trim(), partId: value.partId.trim(), subpartId: value.subpartId.trim() };
+    }
+    issues.push({
+      path,
+      message: "must identify the subpart scope with questionId, partId, and subpartId",
+      expected: "{ kind: 'subpart', questionId, partId, subpartId }",
+    });
+    return undefined;
+  }
+  if (hasOwn(value, "kind")) {
+    issues.push({ path: `${path}.kind`, message: "must be question, part, or subpart", expected: "MauthContentScope.kind" });
+  }
+  return undefined;
+}
+
+function settingsTargetFromScope<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  scope: MauthContentScope,
+  blockId: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): ResolvedSettingsTarget | undefined {
+  const block = findBlockById(contentBlocksForScope(document, scope), blockId);
+  if (!block) {
+    issues.push({ path: `${path}.blockId`, message: "must reference a module inside the requested scope", expected: "existing module id" });
+    return undefined;
+  }
+  return { scope, blockId, block };
+}
+
+function settingsTargetFromBlockId<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  blockId: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): ResolvedSettingsTarget | undefined {
+  const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, blockId);
+  if (!entry) {
+    issues.push({ path: `${path}.blockId`, message: "must reference an existing module", expected: "existing module id" });
+    return undefined;
+  }
+  return { scope: entry.scope, blockId, block: entry.block };
+}
+
+function settingsTargetFromAnchor<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  anchor: string | null | undefined,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): ResolvedSettingsTarget | undefined {
+  const parsed = parseAssistantAnchor(anchor);
+  if (!parsed.questionId || !parsed.blockId) {
+    issues.push({
+      path,
+      message: "must point to a selected module anchor",
+      expected: "selected question, part, or subpart module anchor",
+    });
+    return undefined;
+  }
+  return settingsTargetFromBlockId(document, parsed.blockId, path, issues);
+}
+
+function resolvedSettingsTarget<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  entry: Record<string, unknown>,
+  path: string,
+  activeAnchor: string | null | undefined,
+  issues: MauthActionValidationIssue[],
+): ResolvedSettingsTarget | undefined {
+  const target = settingsTargetRecord(entry);
+  const blockId = blockIdFromFormatEntry(entry);
+  const explicitScope = settingsScopeFromRecord(isRecord(entry.scope) ? entry.scope : target.scope, `${path}.scope`, issues);
+  if (explicitScope && blockId) return settingsTargetFromScope(document, explicitScope, blockId, path, issues);
+
+  const explicitAnchor =
+    typeof target.anchor === "string" && target.anchor.trim()
+      ? target.anchor.trim()
+      : typeof entry.anchor === "string" && entry.anchor.trim()
+        ? entry.anchor.trim()
+        : "";
+  if (explicitAnchor) return settingsTargetFromAnchor(document, explicitAnchor, `${path}.anchor`, issues);
+
+  if (settingsTargetWantsSelection(entry) || (!hasExplicitSettingsTarget(entry) && !blockId && activeAnchor)) {
+    return settingsTargetFromAnchor(document, activeAnchor, `${path}.target`, issues);
+  }
+
+  if (blockId) {
+    const targetWithScope =
+      target.questionNumber !== undefined ||
+      target.question !== undefined ||
+      target.questionId !== undefined ||
+      target.partId !== undefined ||
+      target.partLabel !== undefined ||
+      target.partNumber !== undefined ||
+      target.partIndex !== undefined ||
+      target.subpartId !== undefined ||
+      target.subpartLabel !== undefined ||
+      target.subpartNumber !== undefined ||
+      target.subpartIndex !== undefined;
+    if (targetWithScope) {
+      const resolved = resolvedFormatTargetAtPath(document.questions, entry, path, issues);
+      if (!resolved) return undefined;
+      return settingsTargetFromScope(document, resolved.scope, blockId, path, issues);
+    }
+    return settingsTargetFromBlockId(document, blockId, path, issues);
+  }
+
+  issues.push({
+    path: `${path}.target`,
+    message: "must identify the selected module or provide blockId/moduleId/diagramId",
+    expected: "active selected module, target.anchor, or target.blockId",
+  });
+  return undefined;
+}
+
+function inferredModuleSettingsKind(block: ContentBlock) {
+  return isSupportedModuleSettingsKind(block.kind) ? block.kind : "";
+}
+
+function moduleSettingsFromRecord(target: ResolvedSettingsTarget, value: Record<string, unknown>): MauthModuleSettingsAction["settings"] {
+  return {
+    ...value,
+    kind: typeof value.kind === "string" && value.kind.trim() ? value.kind : inferredModuleSettingsKind(target.block),
+  } as MauthModuleSettingsAction["settings"];
+}
+
+function diagramSettingsFromRecord(
+  target: ResolvedSettingsTarget,
+  value: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+): MauthDiagramSettingsAction["settings"] | undefined {
+  if (typeof value.renderer === "string" && value.renderer.trim()) return value as unknown as MauthDiagramSettingsAction["settings"];
+  if (target.block.kind === "diagram" && isSupportedDiagramSettingsRenderer(target.block.graphConfig.type)) {
+    return { ...value, renderer: target.block.graphConfig.type } as MauthDiagramSettingsAction["settings"];
+  }
+  issues.push({
+    path: `${path}.renderer`,
+    message: "must provide renderer when the target diagram renderer cannot be inferred",
+    expected: "graph2d, vector2d, graph3d, statsChart, geometricConstruction, network, setDiagram, or image",
+  });
+  return undefined;
+}
+
+function settingsRecordsForEntry(entry: Record<string, unknown>, target: ResolvedSettingsTarget) {
+  let moduleSettings =
+    isRecord(entry.module) || isRecord(entry.moduleSettings)
+      ? ((isRecord(entry.module) ? entry.module : entry.moduleSettings) as Record<string, unknown>)
+      : undefined;
+  let diagramSettings =
+    isRecord(entry.diagram) || isRecord(entry.diagramSettings) || isRecord(entry.rendererSettings)
+      ? ((isRecord(entry.diagram)
+          ? entry.diagram
+          : isRecord(entry.diagramSettings)
+            ? entry.diagramSettings
+            : entry.rendererSettings) as Record<string, unknown>)
+      : undefined;
+
+  const genericSettings = isRecord(entry.settings) ? entry.settings : undefined;
+  if (!moduleSettings && !diagramSettings && genericSettings) {
+    const genericDiagramSettings = settingSubrecord(genericSettings, DIAGRAM_SETTINGS_KEYS);
+    const genericModuleSettings = settingSubrecord(genericSettings, MODULE_SETTINGS_KEYS);
+    if (target.block.kind === "diagram" && genericDiagramSettings) diagramSettings = genericDiagramSettings;
+    if (target.block.kind !== "diagram" || genericModuleSettings) moduleSettings = genericModuleSettings;
+  }
+
+  if (!moduleSettings && !diagramSettings) {
+    moduleSettings = settingSubrecord(entry, MODULE_SETTINGS_KEYS);
+    diagramSettings = settingSubrecord(entry, DIAGRAM_SETTINGS_KEYS);
+  }
+
+  return { moduleSettings, diagramSettings };
+}
+
+function parseSettingsApplyActions<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  args: unknown,
+  options: MauthAssistantToolOptions<Q, F, C>,
+): MauthDocumentAction[] | MauthSettingsApplyValidationFailure {
+  const issues: MauthActionValidationIssue[] = [];
+  if (!isRecord(args)) {
+    return {
+      error: "mauth.settings.apply arguments must be an object.",
+      issues: [{ path: "arguments", message: "must be an object", expected: "settings payload" }],
+    };
+  }
+
+  const actions: MauthDocumentAction[] = [];
+  settingsApplyEntries(args).forEach((rawEntry, index) => {
+    const path = Array.isArray(args.operations) ? `arguments.operations[${index}]` : "arguments";
+    if (!isRecord(rawEntry)) {
+      issues.push({ path, message: "must be a settings operation object", expected: "{ target?, module?, diagram? }" });
+      return;
+    }
+    const target = resolvedSettingsTarget(document, rawEntry, path, options.assistantContext?.activeAnchor, issues);
+    if (!target) return;
+
+    const { moduleSettings, diagramSettings } = settingsRecordsForEntry(rawEntry, target);
+    if (!moduleSettings && !diagramSettings) {
+      issues.push({
+        path,
+        message: "must provide module or diagram settings",
+        expected: "module settings, diagram settings, or direct setting fields",
+      });
+      return;
+    }
+    if (moduleSettings) {
+      actions.push({
+        type: "module.settings.update",
+        scope: target.scope,
+        blockId: target.blockId,
+        settings: moduleSettingsFromRecord(target, moduleSettings),
+      });
+    }
+    if (diagramSettings) {
+      const settings = diagramSettingsFromRecord(target, diagramSettings, diagramSettings === rawEntry ? path : `${path}.diagram`, issues);
+      if (settings) {
+        actions.push({
+          type: "diagram.settings.update",
+          scope: target.scope,
+          blockId: target.blockId,
+          settings,
+        });
+      }
+    }
+  });
+
+  if (issues.length) {
+    return {
+      error: formatMauthActionValidationIssues(issues),
+      issues,
+    };
+  }
+  if (!actions.length) {
+    return {
+      error: "mauth.settings.apply did not produce any settings changes.",
+      issues: [{ path: "arguments.operations", message: "must contain at least one settings operation", expected: "settings operations" }],
+    };
+  }
+  const validation = validateMauthDocumentActionPayloads(actions);
+  if (!validation.ok) {
+    return {
+      error: formatMauthActionValidationIssues(validation.issues),
+      issues: validation.issues,
+    };
+  }
+  return actions;
+}
+
 function resultTool<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   toolName: MauthAssistantToolName,
   result: MauthDocumentActionResult<Q, F, C>,
@@ -5136,6 +5544,14 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
 
   if (call.name === "mauth.format.apply") {
     const actions = parseFormatApplyActions(document, call.arguments);
+    if (!Array.isArray(actions)) {
+      return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
+    }
+    return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
+  }
+
+  if (call.name === "mauth.settings.apply") {
+    const actions = parseSettingsApplyActions(document, call.arguments, options);
     if (!Array.isArray(actions)) {
       return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
     }

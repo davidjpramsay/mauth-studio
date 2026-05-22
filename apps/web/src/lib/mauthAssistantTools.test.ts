@@ -135,10 +135,13 @@ test("describes the assistant tool surface and supported action types", () => {
   assert(description.tools.some((tool) => tool.name === "mauth.preview.inspect"));
   assert(description.tools.some((tool) => tool.name === "mauth.question.upsert"));
   assert(description.tools.some((tool) => tool.name === "mauth.solutions.writeAll"));
+  assert(description.tools.some((tool) => tool.name === "mauth.settings.apply"));
   assert(description.tools.some((tool) => tool.name === "mauth.layout.check"));
   assert(description.tools.some((tool) => tool.name === "mauth.author.addDiagram" && tool.description.includes("data.geometry2d")));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
+  assert(description.actionTypes.content.includes("module.settings.update"));
+  assert(description.actionTypes.content.includes("diagram.settings.update"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
   assert(description.workflow.some((step) => step.includes("Preview")));
   assert(description.workflow.some((step) => step.includes("source-faithful 2D geometry linework")));
@@ -151,6 +154,7 @@ test("runs the tool description through the assistant dispatcher", () => {
   assert.equal(result.ok, true);
   assert.equal(result.changedIds.length, 0);
   assert(description.actionTypes.content.includes("module.update"));
+  assert(description.actionTypes.content.includes("diagram.settings.update"));
 });
 
 test("previews the school exam front matter recipe", () => {
@@ -3173,6 +3177,137 @@ test("rejects malformed action payload fields before they reach the action engin
   assert.match(result.error ?? "", /Mauth action validation failed/);
   assert.match(result.error ?? "", /actions\[0\]\.blocks\[0\]\.lines/);
   assert.equal(data.validationIssues?.[0]?.path, "actions[0].blocks[0].lines");
+});
+
+test("previews named module and diagram settings actions through the assistant tool", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.settings.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "s1",
+          settings: { kind: "space", lines: 8 },
+        },
+        {
+          type: "diagram.settings.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "d1",
+          settings: { renderer: "statsChart", widthPx: 360, showGrid: false, fillOpacity: 0.5 },
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["s1", "d1"]);
+  const space = result.document?.questions[0].contentBlocks.find((block) => block.id === "s1");
+  const chart = result.document?.questions[0].contentBlocks.find((block) => block.id === "d1");
+  assert.equal(space?.kind, "space");
+  assert.equal(space?.kind === "space" ? space.lines : undefined, 8);
+  assert.equal(chart?.kind, "diagram");
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.widthPx : undefined, 360);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.showGrid : undefined, false);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.fillOpacity : undefined, 0.5);
+});
+
+test("rejects malformed settings action payloads before they reach the action engine", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.settings.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "s1",
+          settings: { kind: "table", rows: "3" },
+        },
+        {
+          type: "diagram.settings.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "d1",
+          settings: { renderer: "vennDiagram", widthPx: 320 },
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /Mauth action validation failed/);
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[0].settings.rows"));
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[1].settings.renderer"));
+});
+
+test("applies selected module settings through the focused assistant tool", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    {
+      name: "mauth.settings.apply",
+      arguments: {
+        settings: { lines: 10 },
+      },
+    },
+    { assistantContext: { activeAnchor: "q:q1/b:s1" } },
+  );
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["s1"]);
+  const space = result.document?.questions[0].contentBlocks.find((block) => block.id === "s1");
+  assert.equal(space?.kind, "space");
+  assert.equal(space?.kind === "space" ? space.lines : undefined, 10);
+});
+
+test("applies selected diagram module and renderer settings through the focused assistant tool", () => {
+  const result = runMauthAssistantTool(
+    documentFixture(),
+    {
+      name: "mauth.settings.apply",
+      arguments: {
+        module: { diagramAlign: "right" },
+        diagram: { widthPx: 420, showGrid: false },
+      },
+    },
+    { assistantContext: { activeAnchor: "q:q1/b:d1" } },
+  );
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["d1"]);
+  const chart = result.document?.questions[0].contentBlocks.find((block) => block.id === "d1");
+  assert.equal(chart?.kind, "diagram");
+  assert.equal(chart?.kind === "diagram" ? chart.diagramAlign : undefined, "right");
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.widthPx : undefined, 420);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.showGrid : undefined, false);
+});
+
+test("applies explicit targeted settings without raw action JSON", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.settings.apply",
+    arguments: {
+      target: { questionNumber: 1, moduleId: "d1" },
+      diagram: { renderer: "statsChart", heightPx: 260, fillOpacity: 0.25 },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["d1"]);
+  const chart = result.document?.questions[0].contentBlocks.find((block) => block.id === "d1");
+  assert.equal(chart?.kind, "diagram");
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.heightPx : undefined, 260);
+  assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.fillOpacity : undefined, 0.25);
+});
+
+test("rejects selected settings when no active module target is available", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.settings.apply",
+    arguments: { diagram: { widthPx: 420 } },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /must identify the selected module/i);
+  assert.equal(data.validationIssues?.[0]?.path, "arguments.target");
 });
 
 test("rejects malformed document action payload fields before they reach the action engine", () => {

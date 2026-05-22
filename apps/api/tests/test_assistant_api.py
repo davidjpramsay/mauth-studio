@@ -176,6 +176,27 @@ def test_extracts_mauth_tool_calls_from_openai_response():
     ]
 
 
+def test_extracts_selected_settings_alias_from_openai_response():
+    response = {
+        "id": "resp_123",
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_update_selected_settings",
+                "arguments": '{"diagram":{"widthPx":420,"showGrid":false}}',
+            }
+        ],
+    }
+
+    [call] = openai_assistant.tool_calls(response)
+
+    assert call["name"] == "mauth_update_selected_settings"
+    assert call["mauthToolName"] == "mauth.settings.apply"
+    assert call["mauthArguments"] == {"diagram": {"widthPx": 420, "showGrid": False}}
+
+
 def test_extracts_unwrapped_action_arguments_from_openai_response():
     actions = [{"type": "frontMatter.update", "patch": {"assessmentTitle": "Circle geometry"}}]
     response = {
@@ -950,6 +971,25 @@ def test_focused_response_space_prompt_uses_response_space_tool():
     assert [tool["name"] for tool in tools] == ["mauth_author_adjust_response_spaces"]
     assert "mauth_author_adjust_response_spaces" in instructions
     assert "preserve existing question text, solutions, and diagrams" in instructions
+
+
+def test_focused_selected_settings_prompt_uses_settings_tool():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Make the selected graph wider and turn off the grid.",
+    )
+
+    tools = openai_assistant.assistant_tool_definitions([message])
+    instructions = openai_assistant.assistant_instructions(
+        {"questions": [{"id": "q1", "index": 0, "modules": [{"kind": "diagram", "diagramType": "graph2d"}]}]},
+        [message],
+    )
+
+    assert [tool["name"] for tool in tools] == ["mauth_update_selected_settings"]
+    assert "mauth_update_selected_settings" in instructions
+    assert "active selected module" in instructions
+    assert "diagram" in tools[0]["parameters"]["properties"]
+    assert "widthPx" in tools[0]["parameters"]["properties"]["diagram"]["properties"]
 
 
 def test_solution_overflow_repair_exposes_solution_and_space_tools():

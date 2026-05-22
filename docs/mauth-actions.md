@@ -80,10 +80,11 @@ The visible editor surface for these document settings lives under `T` in the `T
 - `mauth.author.ensureSolutions`: create or resize matched student answer spaces and add solution-only worked-solution text for one or more existing questions/parts. It can also update question or part marks when repairing a marking key. `solutionText` should use hidden `[[marks:n]]` annotations at the end of mark-worthy lines; the renderer converts these to red check marks. Do not paste marking-key rubric prose such as "Indicates...", "States...", or "Determines..." after those hidden ticks. The action layer normalises common visible mark notes, adds fallback hidden ticks when a high-level solution omits them, and raises student-space lines to the mark-based/solution-fit minimum.
 - `mauth.author.adjustResponseSpaces`: resize or add student-only answer/working spaces for existing questions, parts, or subparts without rewriting question text, diagrams, or solution modules. Use this for focused layout-space requests such as "give Question 1 more working space".
 - `mauth.format.apply`: apply safe high-level formatting changes without rewriting question content. Supported operations are `setPageBreakBefore`, `removePageBreakBefore`, `setDiagramAlignment`, `adjustAnswerSpace`, `moveModule`, `fitSolutionToSpace`, and `tidyQuestionSpacing`. Use it for requests such as "put part (c) on a new page", "move the diagram right", "make the solution fit", "move this module below the table", or "remove unnecessary blank space".
+- `mauth.settings.apply`: apply focused settings changes to the selected or explicitly targeted module without raw action JSON. It infers the module kind or diagram renderer when possible, then maps to `module.settings.update` and/or `diagram.settings.update`. Use it for prompts such as "make the selected graph wider", "turn off the grid", "show node labels", "scale this Venn diagram", "rename this image", or "make this table three columns".
 - `mauth.solutions.writeAll`: write or replace a whole-test solution key from a compact payload that covers every marked question, part, and subpart. It preserves existing shared diagrams, creates/resizes matched student answer spaces for free-response items, applies hidden `[[marks:n]]` ticks, blocks incomplete solution coverage, and returns a document-wide layout check result.
 - `mauth.layout.check`: inspect the whole document in `student`, `solutions`, or `both` mode for missing answer spaces, missing solutions, solution-space mismatch, rendered overflow/page risks, oversized diagrams, and print-risk items. It reports repairable issues but does not mutate the document.
 
-The OpenAI provider boundary may expose clearer task-specific function names for common teacher prompts. These are routing aliases, not new document mutation paths: `mauth_convert_source_question` maps to `mauth.question.upsert`, `mauth_make_diagram_for_question` maps to `mauth.author.addDiagram`, `mauth_write_solutions_for_questions` maps to `mauth.author.ensureSolutions`, `mauth_write_all_solutions` maps to `mauth.solutions.writeAll`, `mauth_check_document_layout` maps to `mauth.layout.check`, and `mauth_fix_question_formatting` maps to `mauth.format.apply`. Use the alias when it makes the model's next action more obvious, but keep all validation/repair behaviour in the real Mauth tools.
+The OpenAI provider boundary may expose clearer task-specific function names for common teacher prompts. These are routing aliases, not new document mutation paths: `mauth_convert_source_question` maps to `mauth.question.upsert`, `mauth_make_diagram_for_question` maps to `mauth.author.addDiagram`, `mauth_write_solutions_for_questions` maps to `mauth.author.ensureSolutions`, `mauth_write_all_solutions` maps to `mauth.solutions.writeAll`, `mauth_check_document_layout` maps to `mauth.layout.check`, `mauth_fix_question_formatting` maps to `mauth.format.apply`, and `mauth_update_selected_settings` maps to `mauth.settings.apply`. Use the alias when it makes the model's next action more obvious, but keep all validation/repair behaviour in the real Mauth tools.
 
 The assistant routing taxonomy should stay small and stable:
 
@@ -94,6 +95,7 @@ The assistant routing taxonomy should stay small and stable:
 | Focused solution, marks, or marking-key repair      | `mauth.author.ensureSolutions` or `mauth_write_solutions_for_questions`            | Solutions and Formatting                             | `pnpm smoke:assistant:self` and `pnpm test:web-actions`                                              |
 | Whole-test solution key                             | `mauth.solutions.writeAll` or `mauth_write_all_solutions`                          | Solutions and Formatting                             | `pnpm smoke:assistant:self`; use paid confidence eval only after this is green                       |
 | Layout, spacing, page-break, or response-space work | `mauth.layout.check`, `mauth.author.adjustResponseSpaces`, or `mauth.format.apply` | Formatting                                           | `pnpm smoke:assistant:self` and `pnpm test:web-actions`                                              |
+| Selected module/diagram settings                    | `mauth.settings.apply` or `mauth_update_selected_settings`                         | Formatting and Diagram                               | `pnpm smoke:assistant:self` and `pnpm test:web-actions`                                              |
 | File/folder/version operations                      | `mauth.files.*`                                                                    | None unless document content is edited               | `pnpm smoke:file-manager` and `pnpm test:web-actions`                                                |
 
 Use `pnpm eval:assistant:list` to print the current machine-readable tool/eval taxonomy, live groups, local groups, and case classifications. Use `pnpm eval:assistant:benchmarks` to validate the real-exam/source-conversion benchmark manifest against the current eval cases and `mauth-workbench` crops. Live provider evals are plan-only unless the command includes `-- --allow-paid`; keep paid runs to one deliberate case unless there is a specific reason to override `--max-cases` and `--max-cost`. Paid runs append case/cost/token/repair/request-shape records to `mauth-workbench/assistant-evals/live-cost-ledger.jsonl`, and `pnpm eval:assistant:canaries` uses that ledger to select at most one stale or failing paid case per renderer family before `pnpm eval:assistant:live:canaries -- --allow-paid` spends credits. If a new failure does not fit one of these request classes, add the smallest new class or high-level tool deliberately; do not hide it as a source-specific prompt rule.
@@ -104,7 +106,7 @@ Source-conversion aliases keep provider payloads narrow before they reach the ap
 
 The intended AI workflow is:
 
-1. Use focused high-level tools where they fit: `mauth.question.upsert`, `mauth.author.addDiagram`, `mauth.author.ensureSolutions`, `mauth.solutions.writeAll`, `mauth.layout.check`, `mauth.author.adjustResponseSpaces`, or `mauth.format.apply`. At the provider boundary, prefer the task-specific aliases for source conversion, diagram creation, solution writing, whole-test solution keys, layout checking, and formatting when exposed.
+1. Use focused high-level tools where they fit: `mauth.question.upsert`, `mauth.author.addDiagram`, `mauth.author.ensureSolutions`, `mauth.solutions.writeAll`, `mauth.layout.check`, `mauth.author.adjustResponseSpaces`, `mauth.format.apply`, or `mauth.settings.apply`. At the provider boundary, prefer the task-specific aliases for source conversion, diagram creation, solution writing, whole-test solution keys, selected settings, layout checking, and formatting when exposed.
 2. Use `mauth.preview.inspect` for one-question or selected-module checks, especially before/after diagram, answer-space, or solution-tick edits. Inspect `question.diagrams[].warnings` before claiming a diagram is correct; those warnings cover renderer mismatches, missing image sources, scalar-product vector labels, angle markers, TeX-safe label strings, label placement, statsChart probability/relative-frequency mistakes, missing vector2d named vectors, missing requested setDiagram shading/counts, graph2d tangent/region/asymptote requests, rendered diagram failures, likely label collisions, and Penrose semantic issues. For Penrose circle-theorem diagrams, inspect `semanticWarnings` as well as render status: warnings such as missing `Tangent`, missing `ParallelToSegment`, missing chord segments, visible auxiliary labels, or points not on the intended circle mean the diagram should be repaired before claiming it is correct. When rendered metrics are available, use the reported page occupancy, selected-anchor boxes, diagram render status, solution-slot fit, and L-shaped response-space metrics as evidence before claiming a layout is fixed. Use `mauth.document.inspect` only for broader whole-document context or when the compact context is insufficient.
 3. For broader edits, generate structured Mauth actions.
 4. Preview the action batch.
@@ -242,12 +244,14 @@ This is not a new renderer and not a canned diagram recipe. It is a safer high-l
 - `subpart.move`
 - `module.add`
 - `module.update`
+- `module.settings.update`
 - `module.delete`
 - `module.reorder`
 - `module.move`
 - `solutionSlot.add`
 - `marks.update`
 - `diagram.update`
+- `diagram.settings.update`
 - `pageBreak.set`
 - `document.validation.run`
 - `validation.solution.run`
@@ -258,7 +262,11 @@ Action behaviour is covered by `pnpm test:web-actions`.
 
 AI-authored edits should prefer Mauth actions over ad hoc JSON mutation whenever the edit is supported by the action layer.
 
-Use actions for routine structural work: adding questions, adding/reordering/moving/deleting parts and subparts, changing marks, adding answer-and-solution slots, updating diagrams, deleting modules, moving or reordering modules, and setting page breaks or start-new-page flags.
+Use actions for routine structural work: adding questions, adding/reordering/moving/deleting parts and subparts, changing marks, adding answer-and-solution slots, updating diagrams, deleting modules, moving or reordering modules, changing module/diagram settings, and setting page breaks or start-new-page flags.
+
+Use `module.settings.update` for targeted module controls instead of raw `module.update` patches when possible. It covers space line counts, table rows/columns/alignment, column counts, choice labels/layout, and diagram module alignment/text-side settings.
+
+Use `diagram.settings.update` for targeted renderer controls instead of replacing a full `graphConfig` when the diagram content should be preserved. It covers graph2d/vector2d bounds, size, display flags, and label style; graph3d size and view; statsChart size/grid/fill; Penrose scale/original/resample; network preset and node dot/label visibility; setDiagram labels/count presets and region shading; and image name/alt/size. The action fails if the target module is not a diagram or if the requested renderer does not match the existing diagram.
 
 Use `*.move` actions when relocating existing content between containers. These preserve the original ids and content payloads while updating the relevant mixed `itemOrder` arrays:
 

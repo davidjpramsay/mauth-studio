@@ -87,6 +87,7 @@ function seededDraft() {
             diagramAlign: "center",
             graphConfig: { type: "graph2d", functions: [], features: [], metadata: {} },
           },
+          { id: "q-space", kind: "space", lines: 4 },
         ],
         parts: [
           {
@@ -128,6 +129,7 @@ function seededDraft() {
           { kind: "block", id: "q-choices" },
           { kind: "block", id: "q-table" },
           { kind: "block", id: "q-diagram" },
+          { kind: "block", id: "q-space" },
           { kind: "part", id: "p-columns-ui" },
         ],
         pageBreakAfter: false,
@@ -202,6 +204,115 @@ function assertInspectorWithinEditor(metrics, label) {
   assert(metrics.scroller.height <= metrics.inspector.height + 1, `${label}: scroll panel should stay inside inspector frame`);
 }
 
+async function assertVisibleInspectorControlsFit(inspector, label) {
+  const clipped = await inspector.evaluate((element) => {
+    const scroller = element.firstElementChild;
+    if (!scroller) return ["missing inspector scroller"];
+    const scrollerRect = scroller.getBoundingClientRect();
+    const controls = [...element.querySelectorAll("input, select, textarea, button")];
+    return controls
+      .map((control) => {
+        const rect = control.getBoundingClientRect();
+        const verticallyVisible = rect.bottom > scrollerRect.top + 1 && rect.top < scrollerRect.bottom - 1;
+        if (!verticallyVisible || rect.width === 0 || rect.height === 0) return null;
+        if (rect.left < scrollerRect.left - 1 || rect.right > scrollerRect.right + 1) {
+          return `${control.getAttribute("aria-label") || control.textContent?.trim() || control.tagName} ${Math.round(rect.left)}-${Math.round(
+            rect.right,
+          )} outside ${Math.round(scrollerRect.left)}-${Math.round(scrollerRect.right)}`;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  });
+  assert.equal(clipped.length, 0, `${label}: visible inspector controls should not be horizontally clipped:\n${clipped.join("\n")}`);
+}
+
+async function assertPanelLacks(panelHandle, patterns, label) {
+  const text = await panelHandle.asElement().textContent();
+  for (const pattern of patterns) {
+    assert(!pattern.test(text ?? ""), `${label}: panel should not render inline setting ${pattern}`);
+  }
+}
+
+async function selectDiagramType(inspector, label, type, expectedHeading) {
+  const typeSelect = inspector.locator(`select[aria-label='${label} type']`);
+  await typeSelect.selectOption(type);
+  await inspector.getByText(expectedHeading).waitFor();
+}
+
+async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, label, mode) {
+  await selectDiagramType(inspector, label, "graph2d", "Graph settings");
+  await inspector.getByLabel("Domain max").fill(mode === "wide" ? "8" : "9");
+  assert.equal(
+    await inspector.getByLabel("Domain max").inputValue(),
+    mode === "wide" ? "8" : "9",
+    `${mode}: graph domain settings should edit in inspector`,
+  );
+  await assertPanelLacks(diagramPanelElement, [/\bAxes and grid\b/i, /\bFunction Arrows\b/i], `${mode} graph2d`);
+  assert.equal(await page.locator("select[aria-label='Diagram 4 type']").count(), 1, `${mode}: diagram type should only appear once`);
+  assert.equal(
+    await page.locator("select[aria-label='Diagram 4 position']").count(),
+    1,
+    `${mode}: diagram position should only appear once`,
+  );
+  await assertVisibleInspectorControlsFit(inspector, `${mode} graph2d`);
+
+  await selectDiagramType(inspector, label, "vector2d", "Vector settings");
+  await inspector.locator(`select[aria-label='${label} vector label style']`).selectOption("custom");
+  assert.equal(await inspector.locator(`select[aria-label='${label} vector label style']`).inputValue(), "custom");
+  await inspector.getByLabel("Grid").uncheck();
+  await assertPanelLacks(diagramPanelElement, [/\bx min\b/i, /\bLabel style\b/i], `${mode} vector2d`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} vector2d`);
+
+  await selectDiagramType(inspector, label, "graph3d", "3D settings");
+  await inspector.locator(`input[aria-label='${label} 3D azimuth']`).fill(mode === "wide" ? "1.25" : "1.35");
+  assert.equal(await inspector.locator(`input[aria-label='${label} 3D azimuth']`).inputValue(), mode === "wide" ? "1.25" : "1.35");
+  await inspector.locator(`input[aria-label='${label} 3D width']`).fill(mode === "wide" ? "460" : "480");
+  await assertPanelLacks(diagramPanelElement, [/\bDiagram width\b/i, /\bAzimuth\b/i], `${mode} graph3d`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} graph3d`);
+
+  await selectDiagramType(inspector, label, "statsChart", "Chart settings");
+  await inspector.locator(`select[aria-label='${label} chart type']`).selectOption("normal");
+  await inspector.getByText("Normal: mean", { exact: false }).waitFor();
+  await inspector.locator(`input[aria-label='${label} chart width']`).fill(mode === "wide" ? "500" : "520");
+  assert.equal(await inspector.locator(`input[aria-label='${label} chart width']`).inputValue(), mode === "wide" ? "500" : "520");
+  await inspector.getByLabel("Gridlines").uncheck();
+  await assertPanelLacks(diagramPanelElement, [/\bChart type\b/i, /\bGridlines\b/i, /\bFill colour\b/i], `${mode} statsChart`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} statsChart`);
+
+  await selectDiagramType(inspector, label, "geometricConstruction", "Penrose settings");
+  await inspector.locator(`input[aria-label='${label} Penrose scale']`).fill(mode === "wide" ? "110" : "115");
+  assert.equal(await inspector.locator(`input[aria-label='${label} Penrose scale']`).inputValue(), mode === "wide" ? "110" : "115");
+  await inspector.getByRole("button", { name: "Resample" }).click();
+  await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bOriginal\b/i, /\bResample\b/i], `${mode} geometric`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} geometric`);
+
+  await selectDiagramType(inspector, label, "network", "Network settings");
+  await inspector.locator(`input[aria-label='${label} Penrose scale']`).fill(mode === "wide" ? "105" : "95");
+  await inspector.getByRole("button", { name: "Network preset" }).click();
+  await inspector.locator(`input[aria-label='${label} show node dots']`).uncheck();
+  await inspector.locator(`input[aria-label='${label} show node labels']`).uncheck();
+  await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bNetwork preset\b/i, /\bShow node dots\b/i], `${mode} network`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} network`);
+
+  await selectDiagramType(inspector, label, "setDiagram", "Set diagram settings");
+  await inspector.locator(`input[aria-label='${label} Penrose scale']`).fill(mode === "wide" ? "120" : "90");
+  await inspector.getByRole("button", { name: "Set notation" }).click();
+  await inspector.getByRole("button", { name: "Counts + totals" }).click();
+  await inspector.getByRole("button", { name: "Outside" }).click();
+  await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bSet notation\b/i, /\bCounts \+ totals\b/i], `${mode} set diagram`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} setDiagram`);
+
+  await selectDiagramType(inspector, label, "image", "Image settings");
+  await inspector.locator(`input[aria-label='${label} image name']`).fill(`${mode} image`);
+  await inspector.locator(`input[aria-label='${label} image alt text']`).fill(`${mode} image alt`);
+  await inspector.locator(`input[aria-label='${label} image width']`).fill(mode === "wide" ? "360" : "340");
+  await inspector.locator(`input[aria-label='${label} image height']`).fill(mode === "wide" ? "220" : "210");
+  assert.equal(await inspector.locator(`input[aria-label='${label} image width']`).inputValue(), mode === "wide" ? "360" : "340");
+  await assertPanelLacks(diagramPanelElement, [/\bImage settings\b/i, /\bAlt text\b/i, /\bImage width\b/i], `${mode} image`);
+  await assertVisibleInspectorControlsFit(inspector, `${mode} image`);
+}
+
 async function mockStorageApi(page) {
   const corsHeaders = {
     "access-control-allow-origin": "*",
@@ -231,6 +342,16 @@ async function mockStorageApi(page) {
       return;
     }
     await route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({}) });
+  });
+
+  await page.route("http://127.0.0.1:8000/api/diagram/penrose", async (route) => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300" viewBox="0 0 420 300"><rect width="420" height="300" fill="white"/><circle cx="120" cy="160" r="54" fill="none" stroke="#111827" stroke-width="3"/><circle cx="230" cy="160" r="54" fill="none" stroke="#111827" stroke-width="3"/><text x="210" y="60" text-anchor="middle" font-size="18" fill="#111827">Penrose smoke</text></svg>';
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ svg, metadata: { displayWidth: 420, displayHeight: 300 } }),
+    });
   });
 }
 
@@ -348,87 +469,76 @@ async function main() {
     await inspector.locator("input[aria-label='Table 3 rows']").fill("3");
     await inspector.getByText("3 rows, 2 columns").waitFor();
 
+    await page.getByText("Text block 1", { exact: false }).click();
+    await inspector.getByText("Text 1").waitFor();
+    await inspector.getByText("No settings").waitFor();
+    assert.equal(await page.locator("select[aria-label='Diagram 4 type']").count(), 0, "text selection should not show diagram controls");
+    await assertVisibleInspectorControlsFit(inspector, "wide text");
+
+    await page.getByText("Answer space 5", { exact: false }).click();
+    await inspector.getByText("Space 5").waitFor();
+    const spacePanelElement = await page
+      .getByText("Answer space 5", { exact: false })
+      .evaluateHandle((element) => element.closest("section"));
+    await assertPanelLacks(spacePanelElement, [/\bLines\b/], "wide space");
+    await inspector.locator("input[aria-label='Space 5 lines']").fill("6");
+    await inspector.getByText("6 lines").waitFor();
+    assert.equal(await page.locator("select[aria-label='Choices 2 labels']").count(), 0, "space selection should not show choice controls");
+    await assertVisibleInspectorControlsFit(inspector, "wide space");
+
     await page.getByText("Diagram block 4", { exact: false }).click();
     await inspector.getByText("Diagram 4").waitFor();
     const diagramPanelElement = await page
       .getByText("Diagram block 4", { exact: false })
       .evaluateHandle((element) => element.closest("section"));
-    const diagramPanelText = await diagramPanelElement.asElement().textContent();
-    assert(!/\bAxes and grid\b/.test(diagramPanelText ?? ""), "graph2d axes settings should not render inline");
-    assert(!/\bFunction Arrows\b/.test(diagramPanelText ?? ""), "graph2d function arrow setting should not render inline");
-    assert.equal(await page.locator("select[aria-label='Diagram 4 type']").count(), 1, "diagram type should only appear in inspector");
-    assert.equal(
-      await page.locator("select[aria-label='Diagram 4 position']").count(),
-      1,
-      "diagram position should only appear in inspector",
-    );
-    await inspector.getByText("Graph settings").waitFor();
-    await inspector.getByLabel("Domain max").fill("8");
-    assert.equal(await inspector.getByLabel("Domain max").inputValue(), "8", "graph domain settings should edit in inspector");
-    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("vector2d");
-    await inspector.getByText("2 coordinate vectors").waitFor();
-    await inspector.getByText("Vector settings").waitFor();
-    assert.equal(
-      await page.locator("select[aria-label='Diagram 4 vector label style']").count(),
-      1,
-      "vector label style should only appear in inspector",
-    );
-    await inspector.locator("select[aria-label='Diagram 4 vector label style']").selectOption("custom");
-    assert.equal(
-      await inspector.locator("select[aria-label='Diagram 4 vector label style']").inputValue(),
-      "custom",
-      "vector label style should edit in inspector",
-    );
-    await inspector.getByLabel("Grid").uncheck();
-    const vectorDiagramPanelText = await diagramPanelElement.asElement().textContent();
-    assert(!/\bx min\b/i.test(vectorDiagramPanelText ?? ""), "vector2d bounds should not render inline");
-    assert(!/\bLabel style\b/i.test(vectorDiagramPanelText ?? ""), "vector2d label style should not render inline");
-    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("graph3d");
-    await inspector.getByText("3D settings").waitFor();
-    assert.equal(await page.locator("input[aria-label='Diagram 4 3D azimuth']").count(), 1, "3D azimuth should only appear in inspector");
-    await inspector.locator("input[aria-label='Diagram 4 3D azimuth']").fill("1.25");
-    assert.equal(
-      await inspector.locator("input[aria-label='Diagram 4 3D azimuth']").inputValue(),
-      "1.25",
-      "3D view should edit in inspector",
-    );
-    await inspector.locator("input[aria-label='Diagram 4 3D width']").fill("460");
-    const graph3DPanelText = await diagramPanelElement.asElement().textContent();
-    assert(!/\bDiagram width\b/i.test(graph3DPanelText ?? ""), "graph3d size should not render inline");
-    assert(!/\bAzimuth\b/i.test(graph3DPanelText ?? ""), "graph3d view settings should not render inline");
-    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("statsChart");
-    await inspector.getByText("Chart settings").waitFor();
-    assert.equal(
-      await page.locator("select[aria-label='Diagram 4 chart type']").count(),
-      1,
-      "stats chart subtype should only appear in inspector",
-    );
-    await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
-    await inspector.getByText("Normal: mean", { exact: false }).waitFor();
-    await inspector.locator("input[aria-label='Diagram 4 chart width']").fill("500");
-    assert.equal(
-      await inspector.locator("input[aria-label='Diagram 4 chart width']").inputValue(),
-      "500",
-      "stats chart size should edit in inspector",
-    );
-    await inspector.getByLabel("Gridlines").uncheck();
-    const statsChartPanelText = await diagramPanelElement.asElement().textContent();
-    assert(!/\bChart type\b/i.test(statsChartPanelText ?? ""), "stats chart subtype should not render inline");
-    assert(!/\bGridlines\b/i.test(statsChartPanelText ?? ""), "stats chart display settings should not render inline");
-    assert(!/\bFill colour\b/i.test(statsChartPanelText ?? ""), "stats chart styling should not render inline");
+    await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "wide");
     const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
     await inspector.screenshot({ path: inspectorScreenshotPath });
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });
 
     await page.setViewportSize({ width: 1180, height: 640 });
+    await page.getByText("Text block 1", { exact: false }).click();
+    await inspector.getByText("Text 1").waitFor();
+    await inspector.getByText("No settings").waitFor();
+    await assertVisibleInspectorControlsFit(inspector, "compact text");
+
+    await page.getByText("Answer space 5", { exact: false }).click();
+    await inspector.getByText("Space 5").waitFor();
+    await inspector.locator("input[aria-label='Space 5 lines']").fill("7");
+    await inspector.getByText("7 lines").waitFor();
+    await assertVisibleInspectorControlsFit(inspector, "compact space");
+
+    await page.getByText("Choice list 2", { exact: false }).click();
+    await inspector.getByText("Choices 2").waitFor();
+    await inspector.locator("select[aria-label='Choices 2 labels']").selectOption("lower-alpha");
+    await inspector.getByText("3 a, b, c choices", { exact: false }).waitFor();
+    await assertVisibleInspectorControlsFit(inspector, "compact choices");
+
+    await page.getByText("Table block 3", { exact: false }).click();
+    await inspector.getByText("Table 3").waitFor();
+    await inspector.locator("input[aria-label='Table 3 rows']").fill("4");
+    await inspector.getByText("4 rows, 2 columns").waitFor();
+    await assertVisibleInspectorControlsFit(inspector, "compact table");
+
+    await partColumnsNode.dispatchEvent("pointerdown");
+    await inspector.getByText("Part columns 1").waitFor();
+    await inspector.locator("select[aria-label='Part columns 1 layout']").selectOption("2");
+    await inspector.getByText("2 columns, 3 modules").waitFor();
+    await assertVisibleInspectorControlsFit(inspector, "compact columns");
+
     await page.getByText("Diagram block 4", { exact: false }).click();
     await inspector.getByText("Diagram 4").waitFor();
     const compactInspectorMetrics = await inspectorMetrics(inspector);
     assert.equal(compactInspectorMetrics.placement, "bottom", "compact editor should use bottom inspector placement");
     assertInspectorWithinEditor(compactInspectorMetrics, "compact bottom inspector");
+    await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "compact");
+    await selectDiagramType(inspector, "Diagram 4", "statsChart", "Chart settings");
+    await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
+    await inspector.getByText("Normal: mean", { exact: false }).waitFor();
+    const compactStatsInspectorMetrics = await inspectorMetrics(inspector);
     assert(
-      compactInspectorMetrics.scroller.scrollHeight > compactInspectorMetrics.scroller.clientHeight + 8,
+      compactStatsInspectorMetrics.scroller.scrollHeight > compactStatsInspectorMetrics.scroller.clientHeight + 8,
       "compact bottom inspector should become internally scrollable for tall settings",
     );
     await inspector.evaluate((element) => {
@@ -459,7 +569,7 @@ async function main() {
     );
 
     console.log(
-      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3 and deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}. Compact inspector screenshot: ${compactInspectorScreenshotPath}`,
+      `Editor inspector smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector covered text, space, columns, choices, tables, and every diagram type in wide and compact layouts, then deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}. Compact inspector screenshot: ${compactInspectorScreenshotPath}`,
     );
   } catch (error) {
     const bodyText = (

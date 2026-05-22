@@ -2,6 +2,12 @@ import type { ContentBlock } from "@mauth-studio/shared";
 
 import { MAUTH_DOCUMENT_ACTION_TYPES, type MauthDocumentAction } from "./mauthActions.ts";
 import { validateMauthDiagramConfig } from "./mauthDiagramValidation.ts";
+import {
+  MAUTH_DIAGRAM_SETTINGS_RENDERERS,
+  MAUTH_MODULE_SETTINGS_KINDS,
+  MAUTH_SET_DIAGRAM_LABEL_PRESETS,
+  MAUTH_SET_DIAGRAM_SHADING_KEYS,
+} from "./mauthSettingsActions.ts";
 
 export interface MauthActionValidationIssue {
   path: string;
@@ -24,6 +30,10 @@ const ORDER_ITEM_KINDS = new Set(["block", "part", "subpart"]);
 const CHOICE_NUMBERING_STYLES = new Set(["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"]);
 const CHOICE_LAYOUTS = new Set(["vertical", "two-column", "inline"]);
 const TABLE_CELL_ALIGNMENTS = new Set(["left", "center", "right"]);
+const MODULE_SETTINGS_KINDS = new Set<string>(MAUTH_MODULE_SETTINGS_KINDS);
+const DIAGRAM_SETTINGS_RENDERERS = new Set<string>(MAUTH_DIAGRAM_SETTINGS_RENDERERS);
+const SET_DIAGRAM_LABEL_PRESETS = new Set<string>(MAUTH_SET_DIAGRAM_LABEL_PRESETS);
+const SET_DIAGRAM_SHADING_KEYS = new Set<string>(MAUTH_SET_DIAGRAM_SHADING_KEYS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -41,6 +51,18 @@ function stringField(record: Record<string, unknown>, key: string, path: string,
   const value = record[key];
   if (value === undefined && optional) return;
   if (typeof value !== "string" || !value.trim()) addIssue(issues, `${path}.${key}`, "must be a non-empty string", "string");
+}
+
+function stringValueField(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  optional = false,
+) {
+  const value = record[key];
+  if (value === undefined && optional) return;
+  if (typeof value !== "string") addIssue(issues, `${path}.${key}`, "must be a string", "string");
 }
 
 function booleanField(record: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[], optional = false) {
@@ -102,6 +124,14 @@ function stringArrayField(
   values.forEach((value, index) => {
     if (typeof value !== "string") addIssue(issues, `${path}.${key}[${index}]`, "must be a string", "string");
   });
+}
+
+function numberFields(record: Record<string, unknown>, keys: readonly string[], path: string, issues: MauthActionValidationIssue[]) {
+  keys.forEach((key) => numberField(record, key, path, issues, true));
+}
+
+function booleanFields(record: Record<string, unknown>, keys: readonly string[], path: string, issues: MauthActionValidationIssue[]) {
+  keys.forEach((key) => booleanField(record, key, path, issues, true));
 }
 
 function validateVisibilityFields(record: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -285,6 +315,167 @@ function validateScope(value: unknown, path: string, issues: MauthActionValidati
   if (value.kind === "subpart") stringField(value, "subpartId", path, issues);
 }
 
+function validateModuleSettingsUpdate(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a module settings object", "{ kind, ...settings }");
+    return;
+  }
+  enumField(value, "kind", path, MODULE_SETTINGS_KINDS, issues);
+  if (typeof value.kind !== "string") return;
+
+  if (value.kind === "space") {
+    numberField(value, "lines", path, issues);
+    return;
+  }
+
+  if (value.kind === "table") {
+    numberFields(value, ["rows", "columns"], path, issues);
+    enumField(value, "tableAlign", path, ALIGNMENTS, issues, true);
+    enumField(value, "cellAlignment", path, TABLE_CELL_ALIGNMENTS, issues, true);
+    booleanField(value, "showHeader", path, issues, true);
+    return;
+  }
+
+  if (value.kind === "columns") {
+    if (value.columnCount !== 2 && value.columnCount !== 3 && value.columnCount !== 4) {
+      addIssue(issues, `${path}.columnCount`, "must be 2, 3, or 4", "2 | 3 | 4");
+    }
+    return;
+  }
+
+  if (value.kind === "choices") {
+    enumField(value, "numberingStyle", path, CHOICE_NUMBERING_STYLES, issues, true);
+    enumField(value, "layout", path, CHOICE_LAYOUTS, issues, true);
+    return;
+  }
+
+  if (value.kind === "diagram") {
+    enumField(value, "diagramAlign", path, ALIGNMENTS, issues, true);
+    enumField(value, "diagramTextSide", path, DIAGRAM_TEXT_SIDES, issues, true);
+  }
+}
+
+function validatePenroseSettings(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  numberField(value, "scalePercent", path, issues, true);
+  booleanField(value, "original", path, issues, true);
+  booleanField(value, "resample", path, issues, true);
+  stringValueField(value, "variation", path, issues, true);
+}
+
+function validateSetDiagramShading(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  if (!hasOwn(value, "shading")) return;
+  const shading = value.shading;
+  if (shading === null) return;
+  if (typeof shading === "number" && Number.isFinite(shading)) return;
+  if (typeof shading === "string" && SET_DIAGRAM_SHADING_KEYS.has(shading)) return;
+  addIssue(
+    issues,
+    `${path}.shading`,
+    "must be a supported set-region shading key, region index, or null",
+    "none | onlyA | intersection | onlyB | outside | number | null",
+  );
+}
+
+function validateDiagramSettingsUpdate(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a diagram settings object", "{ renderer, ...settings }");
+    return;
+  }
+  enumField(value, "renderer", path, DIAGRAM_SETTINGS_RENDERERS, issues);
+  if (typeof value.renderer !== "string") return;
+
+  if (value.renderer === "graph2d") {
+    numberFields(
+      value,
+      [
+        "widthPx",
+        "heightPx",
+        "xMin",
+        "xMax",
+        "yMin",
+        "yMax",
+        "gridMajorStep",
+        "gridMinorStep",
+        "gridMajorStepX",
+        "gridMajorStepY",
+        "gridMinorStepX",
+        "gridMinorStepY",
+      ],
+      path,
+      issues,
+    );
+    booleanFields(
+      value,
+      [
+        "showAxes",
+        "showGrid",
+        "showMajorGrid",
+        "showAxisLabels",
+        "showAxisNumbers",
+        "showArrows",
+        "showFunctionArrows",
+        "lockAspectRatio",
+        "equalScale",
+      ],
+      path,
+      issues,
+    );
+    return;
+  }
+
+  if (value.renderer === "vector2d") {
+    numberFields(value, ["widthPx", "heightPx", "xMin", "xMax", "yMin", "yMax"], path, issues);
+    booleanFields(
+      value,
+      ["showAxes", "showGrid", "showMajorGrid", "showAxisLabels", "showAxisNumbers", "showArrows", "equalScale"],
+      path,
+      issues,
+    );
+    enumField(value, "labelStyle", path, new Set(["boldLower", "arrow", "custom"]), issues, true);
+    return;
+  }
+
+  if (value.renderer === "graph3d") {
+    numberFields(value, ["widthPx", "heightPx"], path, issues);
+    booleanField(value, "resetView", path, issues, true);
+    const view = recordField(value, "view", path, issues, true);
+    if (view) numberFields(view, ["az", "el", "bank"], `${path}.view`, issues);
+    return;
+  }
+
+  if (value.renderer === "statsChart") {
+    numberFields(value, ["widthPx", "heightPx", "fillOpacity"], path, issues);
+    stringValueField(value, "chartType", path, issues, true);
+    stringValueField(value, "fillColor", path, issues, true);
+    booleanFields(value, ["showGrid", "showFill"], path, issues);
+    return;
+  }
+
+  if (value.renderer === "geometricConstruction") {
+    validatePenroseSettings(value, path, issues);
+    return;
+  }
+
+  if (value.renderer === "network") {
+    validatePenroseSettings(value, path, issues);
+    booleanFields(value, ["preset", "showNodeDots", "showNodeLabels"], path, issues);
+    return;
+  }
+
+  if (value.renderer === "setDiagram") {
+    validatePenroseSettings(value, path, issues);
+    enumField(value, "labels", path, SET_DIAGRAM_LABEL_PRESETS, issues, true);
+    validateSetDiagramShading(value, path, issues);
+    return;
+  }
+
+  if (value.renderer === "image") {
+    numberFields(value, ["widthPx", "heightPx"], path, issues);
+    stringValueField(value, "name", path, issues, true);
+    stringValueField(value, "alt", path, issues, true);
+  }
+}
+
 function validateTarget(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
   validateScope(value, path, issues);
 }
@@ -456,6 +647,11 @@ function validateAction(action: Record<string, unknown>, path: string, issues: M
         if (patch && hasOwn(patch, "graphConfig")) validateMauthDiagramConfig(patch.graphConfig, `${path}.patch.graphConfig`, issues);
       }
       break;
+    case "module.settings.update":
+      validateScope(action.scope, `${path}.scope`, issues);
+      stringField(action, "blockId", path, issues);
+      validateModuleSettingsUpdate(action.settings, `${path}.settings`, issues);
+      break;
     case "module.delete":
       validateScope(action.scope, `${path}.scope`, issues);
       stringField(action, "blockId", path, issues);
@@ -484,6 +680,11 @@ function validateAction(action: Record<string, unknown>, path: string, issues: M
       validateMauthDiagramConfig(action.graphConfig, `${path}.graphConfig`, issues);
       break;
     }
+    case "diagram.settings.update":
+      validateScope(action.scope, `${path}.scope`, issues);
+      stringField(action, "blockId", path, issues);
+      validateDiagramSettingsUpdate(action.settings, `${path}.settings`, issues);
+      break;
     case "pageBreak.set":
       validateTarget(action.target, `${path}.target`, issues);
       booleanField(action, "enabled", path, issues);

@@ -2899,11 +2899,12 @@ def assert_graph2d_geometry2d_decorations_call(call: dict[str, Any]) -> list[str
             f"got {sorted(decoration_kinds)!r}"
         )
     if graph_config.get("features"):
-        issues.append("semantic geometry fixture should not encode same-length/angle/right-angle markers as graph2d features")
+        issues.append(
+            "semantic geometry fixture should not encode same-length/angle/right-angle markers as graph2d features"
+        )
     for validation_issue in graph2d_validation_issues_from_call(call):
         issues.append(
-            "graph2d geometry2d validation issue at "
-            f"{validation_issue.get('path')}: {validation_issue.get('message')}"
+            f"graph2d geometry2d validation issue at {validation_issue.get('path')}: {validation_issue.get('message')}"
         )
     return issues
 
@@ -6167,6 +6168,7 @@ def assert_layout_repair_call(call: dict[str, Any]) -> list[str]:
         "mauth.author.ensureSolutions",
         "mauth.solutions.writeAll",
         "mauth.author.addDiagram",
+        "mauth.settings.apply",
     }
     if call.get("mauthToolName") not in valid_tools:
         issues.append(
@@ -7499,6 +7501,12 @@ TOOL_CLASSIFICATION: list[dict[str, str]] = [
         "class": "layout-or-formatting",
         "primaryTool": "mauth.layout.check, mauth.author.adjustResponseSpaces, mauth.format.apply",
         "ownerBrains": "formatting",
+        "zeroCostGate": "pnpm smoke:assistant:self and pnpm test:web-actions",
+    },
+    {
+        "class": "selected-settings",
+        "primaryTool": "mauth.settings.apply / mauth_update_selected_settings",
+        "ownerBrains": "formatting, diagram",
         "zeroCostGate": "pnpm smoke:assistant:self and pnpm test:web-actions",
     },
     {

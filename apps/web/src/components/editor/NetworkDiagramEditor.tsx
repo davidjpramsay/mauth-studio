@@ -18,13 +18,15 @@ function numberInputValue(value?: number) {
 type NetworkDiagramEditorProps = {
   config: GraphConfig;
   substanceSource: string;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function NetworkDiagramEditor({ config, substanceSource, onChange }: NetworkDiagramEditorProps) {
+export function NetworkDiagramEditor({ config, substanceSource, settingsMode = "inline", onChange }: NetworkDiagramEditorProps) {
   const scalePercent = penroseScalePercent(config);
   const data = normalizedNetworkDiagramData(config);
   const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
+  const showInlineSettings = settingsMode === "inline";
   const patchNetworkData = (nextData: ReturnType<typeof normalizedNetworkDiagramData>) => {
     onChange({
       data: networkDataForSave(nextData),
@@ -126,26 +128,28 @@ export function NetworkDiagramEditor({ config, substanceSource, onChange }: Netw
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex w-36 flex-col gap-2 text-xs font-medium">
-          Diagram scale
-          <input
-            type="number"
-            min={25}
-            max={250}
-            step={5}
-            value={numberInputValue(scalePercent)}
-            onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
-          Original
-        </Button>
-        <Button type="button" variant="outline" className="self-end" onClick={useNetworkPreset}>
-          Network preset
-        </Button>
-      </div>
+      {showInlineSettings ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex w-36 flex-col gap-2 text-xs font-medium">
+            Diagram scale
+            <input
+              type="number"
+              min={25}
+              max={250}
+              step={5}
+              value={numberInputValue(scalePercent)}
+              onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
+            Original
+          </Button>
+          <Button type="button" variant="outline" className="self-end" onClick={useNetworkPreset}>
+            Network preset
+          </Button>
+        </div>
+      ) : null}
 
       {hasSubstanceOverride ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -154,20 +158,26 @@ export function NetworkDiagramEditor({ config, substanceSource, onChange }: Netw
         </div>
       ) : null}
 
-      <section className="flex flex-wrap gap-4 border-t pt-3 text-sm">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={!data.hidePoints} onChange={(event) => updateVisibility({ hidePoints: !event.target.checked })} />
-          Show node dots
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={!data.hidePointLabels}
-            onChange={(event) => updateVisibility({ hidePointLabels: !event.target.checked })}
-          />
-          Show node labels
-        </label>
-      </section>
+      {showInlineSettings ? (
+        <section className="flex flex-wrap gap-4 border-t pt-3 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={!data.hidePoints}
+              onChange={(event) => updateVisibility({ hidePoints: !event.target.checked })}
+            />
+            Show node dots
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={!data.hidePointLabels}
+              onChange={(event) => updateVisibility({ hidePointLabels: !event.target.checked })}
+            />
+            Show node labels
+          </label>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
