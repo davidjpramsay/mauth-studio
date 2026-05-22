@@ -2713,6 +2713,10 @@ function subpartBlockScrollAnchor(questionId: string, partId: string, subpartId:
   return `${subpartScrollAnchor(questionId, partId, subpartId)}/b:${blockId}`;
 }
 
+function columnChildScrollAnchor(containerAnchor: string, columnIndex: number, blockId: string) {
+  return `${containerAnchor}/c:${columnIndex}/b:${blockId}`;
+}
+
 function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | null) {
   return Boolean(targetAnchor && (targetAnchor === containerAnchor || targetAnchor.startsWith(`${containerAnchor}/`)));
 }
@@ -2761,11 +2765,19 @@ type ParsedScrollAnchorKind =
   | "pageBreak"
   | "question"
   | "questionBlock"
+  | "columnBlock"
   | "part"
   | "partBlock"
   | "subpart"
   | "subpartBlock"
   | "unknown";
+
+interface ColumnBlockPathEntry {
+  columnIndex: number;
+  blockId: string;
+}
+
+type ColumnBlockPath = ColumnBlockPathEntry[];
 
 interface ParsedScrollAnchor {
   kind: ParsedScrollAnchorKind;
@@ -2773,6 +2785,8 @@ interface ParsedScrollAnchor {
   partId?: string;
   subpartId?: string;
   blockId?: string;
+  rootBlockId?: string;
+  columnPath?: ColumnBlockPath;
 }
 
 function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
@@ -2786,13 +2800,28 @@ function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
     kind: "question",
     questionId: questionSegment.slice(2),
   };
+  const columnPath: ColumnBlockPath = [];
+  let pendingColumnIndex: number | null = null;
 
   for (const segment of segments) {
     if (segment.startsWith("p:")) parsed.partId = segment.slice(2);
     if (segment.startsWith("s:")) parsed.subpartId = segment.slice(2);
-    if (segment.startsWith("b:")) parsed.blockId = segment.slice(2);
+    if (segment.startsWith("c:")) {
+      const columnIndex = Number(segment.slice(2));
+      pendingColumnIndex = Number.isInteger(columnIndex) && columnIndex >= 0 ? columnIndex : null;
+    }
+    if (segment.startsWith("b:")) {
+      const blockId = segment.slice(2);
+      if (!parsed.rootBlockId) parsed.rootBlockId = blockId;
+      if (pendingColumnIndex !== null) {
+        columnPath.push({ columnIndex: pendingColumnIndex, blockId });
+        pendingColumnIndex = null;
+      }
+      parsed.blockId = blockId;
+    }
   }
 
+  if (columnPath.length) return { ...parsed, kind: "columnBlock", columnPath };
   if (parsed.partId && parsed.subpartId && parsed.blockId) return { ...parsed, kind: "subpartBlock" };
   if (parsed.partId && parsed.subpartId) return { ...parsed, kind: "subpart" };
   if (parsed.partId && parsed.blockId) return { ...parsed, kind: "partBlock" };
@@ -5387,15 +5416,37 @@ function graphInspectorWidthPatch(config: GraphConfig, value: string): Partial<G
   return config.lockAspectRatio && !config.equalScale ? { widthPx, heightPx: lockedAspectHeight(config, widthPx) } : { widthPx };
 }
 
+function patchColumnBlockAtPath(block: EditorColumnsBlock, path: ColumnBlockPath, patch: Partial<EditorContentBlock>): EditorColumnsBlock {
+  const [entry, ...remainingPath] = path;
+  if (!entry) return block;
+
+  const normalized = normalizeColumnsBlock(block);
+  const columns = normalized.columns.map((column, columnIndex) => {
+    if (columnIndex !== entry.columnIndex) return column;
+    return column.map((child) => {
+      if (child.id !== entry.blockId) return child;
+      if (!remainingPath.length) return { ...child, ...patch } as EditorContentBlock;
+      if (child.kind !== "columns") return child;
+      return patchColumnBlockAtPath(child, remainingPath, patch);
+    });
+  });
+
+  return { ...normalized, columns };
+}
+
 interface ColumnsBlockEditorProps {
   label: string;
   title?: ReactNode;
   block: EditorColumnsBlock;
+  anchor?: string;
+  activeAnchor?: string;
   showSolutions?: boolean;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
+  openSignalForAnchor?: (anchor: string) => number | undefined;
+  onActivateAnchor?: (anchor: string) => void;
   onChange: (patch: Partial<EditorColumnsBlock>) => void;
   onRemove: () => void;
 }
@@ -5404,11 +5455,15 @@ function ColumnsBlockEditor({
   label,
   title,
   block,
+  anchor,
+  activeAnchor,
   showSolutions = true,
   dragHandle,
   muted = false,
   active = false,
   openSignal,
+  openSignalForAnchor: openNestedSignalForAnchor,
+  onActivateAnchor,
   onChange,
   onRemove,
 }: ColumnsBlockEditorProps) {
@@ -5436,96 +5491,127 @@ function ColumnsBlockEditor({
   const renderColumnChildBlock = (columnIndex: number, child: EditorContentBlock, childIndex: number) => {
     const childNumber = childIndex + 1;
     const childLabelPrefix = `Column ${columnIndex + 1}`;
+    const childAnchor = anchor ? columnChildScrollAnchor(anchor, columnIndex, child.id) : "";
+    const childActive = Boolean(childAnchor && scrollAnchorContains(childAnchor, activeAnchor));
+    const childOpenSignal = childAnchor && openNestedSignalForAnchor ? openNestedSignalForAnchor(childAnchor) : undefined;
+    const wrapChild = (node: ReactNode) => {
+      if (!childAnchor) return <Fragment key={child.id}>{node}</Fragment>;
+      const activateChildAnchor = () => onActivateAnchor?.(childAnchor);
+      return (
+        <div
+          key={child.id}
+          data-scroll-anchor={childAnchor}
+          className="rounded-md transition-colors"
+          onPointerDownCapture={activateChildAnchor}
+          onFocusCapture={activateChildAnchor}
+        >
+          {node}
+        </div>
+      );
+    };
 
     if (child.kind === "space") {
-      return (
+      return wrapChild(
         <SpaceBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} answer space ${childNumber}`}
           title={<InlineSummaryTitle label={`Answer space ${childNumber}`} summary={spaceBlockSummary(child.lines)} />}
           lines={child.lines}
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
           onChange={(lines) => updateColumnBlock(columnIndex, child.id, { lines })}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
     if (child.kind === "diagram") {
-      return (
+      return wrapChild(
         <DiagramBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} diagram ${childNumber}`}
           graphConfig={child.graphConfig}
           alignment={child.diagramAlign}
           showSolutions={showSolutions}
+          settingsMode="inspector"
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
           onChange={(graphConfig) => updateColumnBlock(columnIndex, child.id, { graphConfig })}
           onAlignmentChange={(diagramAlign) => updateColumnBlock(columnIndex, child.id, { diagramAlign })}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
     if (child.kind === "choices") {
-      return (
+      return wrapChild(
         <ChoiceListBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} choice list ${childNumber}`}
           title={<InlineSummaryTitle label={`Choice list ${childNumber}`} summary={choiceListSummary(child)} />}
           block={child}
           numberingStyleOptions={CHOICE_NUMBERING_STYLES}
           layoutOptions={CHOICE_LIST_LAYOUTS}
+          settingsMode="inspector"
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
           onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
     if (child.kind === "table") {
-      return (
+      return wrapChild(
         <TableBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} table ${childNumber}`}
           title={<InlineSummaryTitle label={`Table ${childNumber}`} summary={tableBlockSummary(child)} />}
           block={child}
           diagramAlignments={DIAGRAM_ALIGNMENTS}
           cellAlignments={TABLE_CELL_ALIGNMENTS}
+          settingsMode="inspector"
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
           onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
     if (child.kind === "columns") {
-      return (
+      return wrapChild(
         <ColumnsBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} nested columns ${childNumber}`}
           title={<InlineSummaryTitle label={`Nested columns ${childNumber}`} summary={columnsBlockSummary(child)} />}
           block={child}
+          anchor={childAnchor}
+          activeAnchor={activeAnchor}
           showSolutions={showSolutions}
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
+          openSignalForAnchor={openNestedSignalForAnchor}
+          onActivateAnchor={onActivateAnchor}
           onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
     if (child.kind === "text") {
-      return (
+      return wrapChild(
         <TextBlockEditor
-          key={child.id}
           label={`${childLabelPrefix} text ${childNumber}`}
           title={<InlineSummaryTitle label={`Text ${childNumber}`} summary={textBlockSummary(child.text ?? "")} />}
           text={child.text ?? ""}
           muted
+          active={childActive}
+          openSignal={childOpenSignal}
           minHeightClassName="min-h-[74px]"
           onChange={(text) => updateColumnBlock(columnIndex, child.id, { text })}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
-        />
+        />,
       );
     }
 
@@ -7470,10 +7556,14 @@ function tocBlockSummary(block: EditorContentBlock) {
   return "";
 }
 
-type SelectedEditorBlockScope =
+type SelectedEditorBaseBlockScope =
   | { kind: "question"; questionId: string }
   | { kind: "part"; questionId: string; partId: string }
   | { kind: "subpart"; questionId: string; partId: string; subpartId: string };
+
+type SelectedEditorBlockScope =
+  | SelectedEditorBaseBlockScope
+  | { kind: "column"; rootScope: SelectedEditorBaseBlockScope; rootBlockId: string; path: ColumnBlockPath };
 
 interface SelectedEditorBlock {
   scope: SelectedEditorBlockScope;
@@ -7489,7 +7579,7 @@ function lowerFirst(value: string) {
 function selectedEditorBlockFromBlocks(
   contentBlocks: EditorContentBlock[],
   blockId: string,
-  scope: SelectedEditorBlockScope,
+  scope: SelectedEditorBaseBlockScope,
   labelPrefix = "",
 ): SelectedEditorBlock | null {
   const blocks = contentBlocks.filter((current) => current.kind !== "pageBreak");
@@ -7506,12 +7596,87 @@ function selectedEditorBlockFromBlocks(
   };
 }
 
+function selectedColumnBlockFromRoot(
+  rootBlock: EditorContentBlock,
+  rootScope: SelectedEditorBaseBlockScope,
+  rootBlockId: string,
+  path: ColumnBlockPath,
+  labelPrefix = "",
+): SelectedEditorBlock | null {
+  let currentBlock = rootBlock;
+  let currentPrefix = labelPrefix;
+
+  for (let pathIndex = 0; pathIndex < path.length; pathIndex += 1) {
+    const entry = path[pathIndex];
+    if (currentBlock.kind !== "columns") return null;
+    const columnsBlock = normalizeColumnsBlock(currentBlock);
+    const column = columnsBlock.columns[entry.columnIndex] ?? [];
+    const blockIndex = column.findIndex((candidate) => candidate.id === entry.blockId);
+    const childBlock = blockIndex >= 0 ? column[blockIndex] : null;
+    if (!childBlock) return null;
+
+    const columnPrefix = `${currentPrefix ? `${currentPrefix} ` : ""}Column ${entry.columnIndex + 1}`;
+    if (pathIndex === path.length - 1) {
+      const blockLabel = tocBlockLabel(childBlock, blockIndex);
+      return {
+        scope: { kind: "column", rootScope, rootBlockId, path },
+        block: childBlock,
+        label: `${columnPrefix} ${lowerFirst(blockLabel)}`,
+        summary: tocBlockSummary(childBlock),
+      };
+    }
+
+    currentBlock = childBlock;
+    currentPrefix = columnPrefix;
+  }
+
+  return null;
+}
+
 function selectedEditorBlockFromAnchor(questions: QuestionBlock[], anchor: string): SelectedEditorBlock | null {
   const parsed = parseScrollAnchor(anchor);
   if (!parsed.questionId || !parsed.blockId) return null;
 
   const question = questions.find((current) => current.id === parsed.questionId);
   if (!question) return null;
+
+  if (parsed.kind === "columnBlock" && parsed.rootBlockId && parsed.columnPath?.length) {
+    if (parsed.partId && parsed.subpartId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+      const rootBlock = subpart?.contentBlocks.find((current) => current.id === parsed.rootBlockId);
+      if (!rootBlock) return null;
+      return selectedColumnBlockFromRoot(
+        rootBlock,
+        { kind: "subpart", questionId: parsed.questionId, partId: parsed.partId, subpartId: parsed.subpartId },
+        parsed.rootBlockId,
+        parsed.columnPath,
+        "Subpart",
+      );
+    }
+
+    if (parsed.partId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const rootBlock = part?.contentBlocks.find((current) => current.id === parsed.rootBlockId);
+      if (!rootBlock) return null;
+      return selectedColumnBlockFromRoot(
+        rootBlock,
+        { kind: "part", questionId: parsed.questionId, partId: parsed.partId },
+        parsed.rootBlockId,
+        parsed.columnPath,
+        "Part",
+      );
+    }
+
+    const rootBlock = question.contentBlocks.find((current) => current.id === parsed.rootBlockId);
+    if (!rootBlock) return null;
+    return selectedColumnBlockFromRoot(
+      rootBlock,
+      { kind: "question", questionId: parsed.questionId },
+      parsed.rootBlockId,
+      parsed.columnPath,
+    );
+  }
 
   if (parsed.kind === "questionBlock") {
     return selectedEditorBlockFromBlocks(question.contentBlocks, parsed.blockId, { kind: "question", questionId: parsed.questionId });
@@ -7541,6 +7706,31 @@ function selectedEditorBlockFromAnchor(questions: QuestionBlock[], anchor: strin
   }
 
   return null;
+}
+
+function rootColumnsBlockForSelection(questions: QuestionBlock[], selection: SelectedEditorBlock): EditorColumnsBlock | null {
+  if (selection.scope.kind !== "column") return null;
+
+  const { rootScope, rootBlockId } = selection.scope;
+  const question = questions.find((current) => current.id === rootScope.questionId);
+  if (!question) return null;
+
+  if (rootScope.kind === "question") {
+    const rootBlock = question.contentBlocks.find((current) => current.id === rootBlockId);
+    return rootBlock?.kind === "columns" ? rootBlock : null;
+  }
+
+  const part = question.parts.find((current) => current.id === rootScope.partId);
+  if (!part) return null;
+
+  if (rootScope.kind === "part") {
+    const rootBlock = part.contentBlocks.find((current) => current.id === rootBlockId);
+    return rootBlock?.kind === "columns" ? rootBlock : null;
+  }
+
+  const subpart = part.subparts.find((current) => current.id === rootScope.subpartId);
+  const rootBlock = subpart?.contentBlocks.find((current) => current.id === rootBlockId);
+  return rootBlock?.kind === "columns" ? rootBlock : null;
 }
 
 function tocBlockKind(block: EditorContentBlock): TocItemKind {
@@ -10143,6 +10333,27 @@ export default function App() {
   }
 
   function updateSelectedBlock(selection: SelectedEditorBlock, patch: Partial<EditorContentBlock>) {
+    if (selection.scope.kind === "column") {
+      const rootBlock = rootColumnsBlockForSelection(questions, selection);
+      if (!rootBlock) return;
+      const patchedRoot = patchColumnBlockAtPath(rootBlock, selection.scope.path, patch);
+      const rootBlockPatch = {
+        columnCount: patchedRoot.columnCount,
+        columns: patchedRoot.columns,
+      } as Partial<EditorContentBlock>;
+      const rootScope = selection.scope.rootScope;
+      if (rootScope.kind === "question") {
+        updateContentBlock(rootScope.questionId, selection.scope.rootBlockId, rootBlockPatch);
+        return;
+      }
+      if (rootScope.kind === "part") {
+        updatePartContentBlock(rootScope.questionId, rootScope.partId, selection.scope.rootBlockId, rootBlockPatch);
+        return;
+      }
+      updateSubpartContentBlock(rootScope.questionId, rootScope.partId, rootScope.subpartId, selection.scope.rootBlockId, rootBlockPatch);
+      return;
+    }
+
     if (selection.scope.kind === "question") {
       updateContentBlock(selection.scope.questionId, selection.block.id, patch);
       return;
@@ -11698,7 +11909,7 @@ export default function App() {
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(blockTarget));
     const blockAnchor = questionBlockScrollAnchor(question.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = isActiveEditorAnchor(blockAnchor);
+    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -11756,10 +11967,14 @@ export default function App() {
             label={`Columns block ${blockIndex + 1}`}
             title={<InlineSummaryTitle label={`Columns block ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
             block={block}
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
             showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(blockTarget, `Drag columns block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
+            openSignalForAnchor={openSignalForAnchor}
+            onActivateAnchor={activateEditorAnchor}
             onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
@@ -11850,7 +12065,7 @@ export default function App() {
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(partBlockTarget));
     const blockAnchor = partBlockScrollAnchor(question.id, part.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = isActiveEditorAnchor(blockAnchor);
+    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -11910,11 +12125,15 @@ export default function App() {
             label={`Part columns ${blockIndex + 1}`}
             title={<InlineSummaryTitle label={`Part columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
             block={block}
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
             showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part columns ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
+            openSignalForAnchor={openSignalForAnchor}
+            onActivateAnchor={activateEditorAnchor}
             onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
@@ -12005,7 +12224,7 @@ export default function App() {
     const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(subpartBlockTarget));
     const blockAnchor = subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = isActiveEditorAnchor(blockAnchor);
+    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -12065,11 +12284,15 @@ export default function App() {
             label={`Subpart columns ${blockIndex + 1}`}
             title={<InlineSummaryTitle label={`Subpart columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
             block={block}
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
             showSolutions={showSolutions}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart columns ${blockIndex + 1}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
+            openSignalForAnchor={openSignalForAnchor}
+            onActivateAnchor={activateEditorAnchor}
             onChange={(patch) =>
               updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
             }

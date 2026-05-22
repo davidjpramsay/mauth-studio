@@ -216,26 +216,24 @@ async function main() {
     await page.getByText("COLUMN 1").waitFor();
     await page.getByText("COLUMN 2").waitFor();
 
+    const partColumnsAnchor = "q:q-columns-ui/p:p-columns-ui/b:cols-ui";
+    const nestedTableAnchor = `${partColumnsAnchor}/c:0/b:c1-table`;
+    const partColumnsNode = page.locator(`.editor-pane [data-scroll-anchor="${partColumnsAnchor}"]`).first();
+    const nestedTableNode = page.locator(`.editor-pane [data-scroll-anchor="${nestedTableAnchor}"]`).first();
     const columnOne = await page.getByText("COLUMN 1").evaluate(sectionRectForText);
     const columnTwo = await page.getByText("COLUMN 2").evaluate(sectionRectForText);
-    const tableControls = page.locator(".table-editor-controls").first();
-    await tableControls.waitFor();
-    const controlBoxes = await tableControls.locator("input, select").evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const rect = node.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
-      }),
-    );
-    const gridColumns = await tableControls.evaluate((node) => getComputedStyle(node).gridTemplateColumns);
+    const nestedTablePanel = await nestedTableNode.evaluateHandle((element) => element.querySelector("section"));
+    const nestedTableText = await nestedTablePanel.asElement().textContent();
+    const gridColumns = await page.getByText("COLUMN 1").evaluate((element) => {
+      const columnSection = element.closest("section");
+      const grid = columnSection?.parentElement;
+      return grid ? getComputedStyle(grid).gridTemplateColumns : "";
+    });
 
     assert.equal(await page.title(), "Mauth Studio");
-    assert.equal(controlBoxes.length, 4, "table controls should render four controls");
-    for (const [index, box] of controlBoxes.entries()) {
-      assert(box.left >= columnOne.x - 1, `control ${index + 1} should not overflow left of column one`);
-      assert(box.right <= columnOne.right + 1, `control ${index + 1} should not overflow past column one`);
-      assert(box.right <= columnTwo.x - 8, `control ${index + 1} should leave a gap before column two`);
-      assert(box.width >= 96, `control ${index + 1} should remain usable`);
-    }
+    assert(columnOne.right <= columnTwo.x - 8, "column one should leave a visible gap before column two");
+    assert(!/\bPosition\b/.test(nestedTableText ?? ""), "nested table position should not render inline");
+    assert(!/\bCell text\b/.test(nestedTableText ?? ""), "nested table cell-text setting should not render inline");
     assert.equal(consoleErrors.length, 0, `console errors:\n${consoleErrors.join("\n")}`);
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
@@ -244,8 +242,26 @@ async function main() {
     assert(!/\bLayout\b/.test(panelText ?? ""), "columns panel should not render the layout selector inline");
 
     await page.setViewportSize({ width: 1900, height: VIEWPORT.height });
-    await page.getByText("Part columns", { exact: false }).click();
+    await partColumnsNode.dispatchEvent("pointerdown");
     const inspector = page.locator("aside").filter({ hasText: "Inspector" }).first();
+    await inspector.getByText("Part columns 1").waitFor();
+
+    await nestedTableNode.dispatchEvent("pointerdown");
+    await inspector.getByText("Part Column 1 table 2").waitFor();
+    assert.equal(
+      await page.locator("select[aria-label='Part Column 1 table 2 position']").count(),
+      1,
+      "nested table position should only appear in inspector",
+    );
+    assert.equal(
+      await page.locator("select[aria-label='Part Column 1 table 2 cell text']").count(),
+      1,
+      "nested table cell text should only appear in inspector",
+    );
+    await inspector.locator("input[aria-label='Part Column 1 table 2 rows']").fill("3");
+    await inspector.getByText("3 rows, 3 columns").waitFor();
+
+    await partColumnsNode.dispatchEvent("pointerdown");
     await inspector.getByText("Part columns 1").waitFor();
     const layoutSelect = inspector.locator("select[aria-label='Part columns 1 layout']");
     await layoutSelect.waitFor();
