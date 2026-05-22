@@ -591,11 +591,11 @@ function inspectGraph2dSourceConsistency(config: GraphConfig, contextText: strin
   }
 
   if (shouldInspectSourceGraphAxes(contextText, sourceEquations, sourcePoints)) {
-    if (config.showAxes === false || config.showGrid === false) {
+    if (config.showAxes === false) {
       warnings.push({
         code: "graph2d-source-axes-hidden",
         severity: "warning",
-        message: "The question/source describes a coordinate graph, but graph2d axes or grid are hidden.",
+        message: "The question/source describes a coordinate graph, but graph2d coordinate axes are hidden.",
         path: "graphConfig.showAxes",
       });
     }

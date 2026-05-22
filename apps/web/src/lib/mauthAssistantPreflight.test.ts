@@ -218,6 +218,57 @@ test("assistant diagram preflight rejects scalar-product Penrose diagrams in fav
   assert(result.validationIssues?.some((issue) => issue.path.endsWith("graphConfig.options.substanceSource")));
 });
 
+test("assistant diagram preflight allows hiding a graph2d grid while preserving axes", () => {
+  const document = documentFixture(
+    question("q1", [
+      textBlock("t1", "The graph of $y=x^2-4$ is shown. State its intercepts."),
+      vector2dDiagramBlock("d1", {
+        type: "graph2d",
+        widthPx: 800,
+        heightPx: 300,
+        xMin: -5,
+        xMax: 5,
+        yMin: -5,
+        yMax: 5,
+        showAxes: true,
+        showGrid: false,
+        functions: [{ id: "f1", expression: "x^2 - 4", label: "y=x^2-4", show: true }],
+        features: [],
+      }),
+    ]),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.settings.apply", reason: "test" }, ["d1"]);
+
+  assert.equal(result.ok, true);
+});
+
+test("assistant diagram preflight still rejects hidden graph2d axes for coordinate graphs", () => {
+  const document = documentFixture(
+    question("q1", [
+      textBlock("t1", "The graph of $y=x^2-4$ is shown. State its intercepts."),
+      vector2dDiagramBlock("d1", {
+        type: "graph2d",
+        widthPx: 800,
+        heightPx: 300,
+        xMin: -5,
+        xMax: 5,
+        yMin: -5,
+        yMax: 5,
+        showAxes: false,
+        showGrid: true,
+        functions: [{ id: "f1", expression: "x^2 - 4", label: "y=x^2-4", show: true }],
+        features: [],
+      }),
+    ]),
+  );
+
+  const result = validateAssistantDiagramSemanticsBeforeCommit(document, { toolName: "mauth.settings.apply", reason: "test" }, ["d1"]);
+
+  assert.equal(result.ok, false);
+  assert(result.validationIssues?.some((issue) => issue.path === "questions[0].contentBlocks[1].graphConfig.showAxes"));
+});
+
 test("assistant diagram preflight accepts source-faithful scalar-product vector2d diagrams", () => {
   const document = documentFixture(
     question(
