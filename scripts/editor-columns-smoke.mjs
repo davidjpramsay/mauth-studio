@@ -335,6 +335,26 @@ async function main() {
     const graph3DPanelText = await diagramPanelElement.asElement().textContent();
     assert(!/\bDiagram width\b/i.test(graph3DPanelText ?? ""), "graph3d size should not render inline");
     assert(!/\bAzimuth\b/i.test(graph3DPanelText ?? ""), "graph3d view settings should not render inline");
+    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("statsChart");
+    await inspector.getByText("Chart settings").waitFor();
+    assert.equal(
+      await page.locator("select[aria-label='Diagram 4 chart type']").count(),
+      1,
+      "stats chart subtype should only appear in inspector",
+    );
+    await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
+    await inspector.getByText("Normal: mean", { exact: false }).waitFor();
+    await inspector.locator("input[aria-label='Diagram 4 chart width']").fill("500");
+    assert.equal(
+      await inspector.locator("input[aria-label='Diagram 4 chart width']").inputValue(),
+      "500",
+      "stats chart size should edit in inspector",
+    );
+    await inspector.getByLabel("Gridlines").uncheck();
+    const statsChartPanelText = await diagramPanelElement.asElement().textContent();
+    assert(!/\bChart type\b/i.test(statsChartPanelText ?? ""), "stats chart subtype should not render inline");
+    assert(!/\bGridlines\b/i.test(statsChartPanelText ?? ""), "stats chart display settings should not render inline");
+    assert(!/\bFill colour\b/i.test(statsChartPanelText ?? ""), "stats chart styling should not render inline");
 
     const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
     await inspector.screenshot({ path: inspectorScreenshotPath });

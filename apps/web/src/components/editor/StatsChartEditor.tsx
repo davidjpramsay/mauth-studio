@@ -42,7 +42,7 @@ function histogramManualProbabilityLabel() {
   return "P(X=x)";
 }
 
-function defaultStatsDataForType(chartType: StatsChartType, current: StatsChartData): Partial<StatsChartData> {
+export function defaultStatsDataForType(chartType: StatsChartType, current: StatsChartData): Partial<StatsChartData> {
   if (chartType === "normal") {
     const mean = typeof current.mean === "number" ? current.mean : 0;
     const stdDev = typeof current.stdDev === "number" && current.stdDev > 0 ? current.stdDev : 1;
@@ -93,13 +93,15 @@ function defaultStatsDataForType(chartType: StatsChartType, current: StatsChartD
 
 type StatsChartEditorProps = {
   config: GraphConfig;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function StatsChartEditor({ config, onChange }: StatsChartEditorProps) {
+export function StatsChartEditor({ config, settingsMode = "inline", onChange }: StatsChartEditorProps) {
   const spec = normalizeStatsChartSpec(config);
   const data = spec.data;
   const options = spec.options ?? {};
+  const showInlineSettings = settingsMode === "inline";
   const updateData = (patch: Partial<StatsChartData>) => {
     const nextData = { ...data, ...patch };
     onChange({
@@ -142,47 +144,49 @@ export function StatsChartEditor({ config, onChange }: StatsChartEditorProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(180px,220px)_120px_120px] md:items-end">
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Chart type
-          <select
-            value={data.chartType}
-            onChange={(event) => updateData(defaultStatsDataForType(event.target.value as StatsChartType, data))}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {STATS_CHART_TYPES.map((type) => (
-              <option key={type.value} value={type.value}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Width
-          <input
-            type="number"
-            min={240}
-            step={20}
-            value={numberInputValue(options.widthPx)}
-            onChange={(event) => updateOptions({ widthPx: optionalNumber(event.target.value) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Height
-          <input
-            type="number"
-            min={180}
-            step={20}
-            value={numberInputValue(options.heightPx)}
-            onChange={(event) => updateOptions({ heightPx: optionalNumber(event.target.value) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-      </section>
+      {showInlineSettings ? (
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(180px,220px)_120px_120px] md:items-end">
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Chart type
+            <select
+              value={data.chartType}
+              onChange={(event) => updateData(defaultStatsDataForType(event.target.value as StatsChartType, data))}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              {STATS_CHART_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Width
+            <input
+              type="number"
+              min={240}
+              step={20}
+              value={numberInputValue(options.widthPx)}
+              onChange={(event) => updateOptions({ widthPx: optionalNumber(event.target.value) })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            Height
+            <input
+              type="number"
+              min={180}
+              step={20}
+              value={numberInputValue(options.heightPx)}
+              onChange={(event) => updateOptions({ heightPx: optionalNumber(event.target.value) })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+        </section>
+      ) : null}
 
       {data.chartType === "histogram" ? (
-        <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
+        <section className={cn("grid grid-cols-1 gap-3 md:grid-cols-4", showInlineSettings && "border-t pt-3")}>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Data mode
             <select
@@ -259,53 +263,55 @@ export function StatsChartEditor({ config, onChange }: StatsChartEditorProps) {
         </label>
       </section>
 
-      <section className="flex flex-wrap items-center gap-4 border-t pt-3 text-sm">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={options.showGrid ?? true}
-            onChange={(event) => updateOptions({ showGrid: event.target.checked })}
-          />
-          Gridlines
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={options.showFill !== false}
-            onChange={(event) => updateOptions({ showFill: event.target.checked })}
-          />
-          Fill
-        </label>
-        <label className="flex items-center gap-2 text-xs font-medium">
-          Fill colour
-          <input
-            type="color"
-            value={typeof options.fillColor === "string" ? options.fillColor : "#f5f5f5"}
-            disabled={options.showFill === false}
-            onChange={(event) => updateOptions({ fillColor: event.target.value, showFill: true })}
-            className="h-8 w-14 rounded-md border border-input bg-background p-1 disabled:opacity-45"
-          />
-        </label>
-        <label className="flex items-center gap-2 text-xs font-medium">
-          Opacity
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.05}
-            value={numberInputValue(typeof options.fillOpacity === "number" ? options.fillOpacity : 1)}
-            disabled={options.showFill === false}
-            onChange={(event) => {
-              const nextOpacity = optionalNumber(event.target.value);
-              updateOptions({
-                fillOpacity: typeof nextOpacity === "number" && Number.isFinite(nextOpacity) ? clamp(nextOpacity, 0, 1) : undefined,
-                showFill: true,
-              });
-            }}
-            className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-45"
-          />
-        </label>
-      </section>
+      {showInlineSettings ? (
+        <section className="flex flex-wrap items-center gap-4 border-t pt-3 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={options.showGrid ?? true}
+              onChange={(event) => updateOptions({ showGrid: event.target.checked })}
+            />
+            Gridlines
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={options.showFill !== false}
+              onChange={(event) => updateOptions({ showFill: event.target.checked })}
+            />
+            Fill
+          </label>
+          <label className="flex items-center gap-2 text-xs font-medium">
+            Fill colour
+            <input
+              type="color"
+              value={typeof options.fillColor === "string" ? options.fillColor : "#f5f5f5"}
+              disabled={options.showFill === false}
+              onChange={(event) => updateOptions({ fillColor: event.target.value, showFill: true })}
+              className="h-8 w-14 rounded-md border border-input bg-background p-1 disabled:opacity-45"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-medium">
+            Opacity
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={numberInputValue(typeof options.fillOpacity === "number" ? options.fillOpacity : 1)}
+              disabled={options.showFill === false}
+              onChange={(event) => {
+                const nextOpacity = optionalNumber(event.target.value);
+                updateOptions({
+                  fillOpacity: typeof nextOpacity === "number" && Number.isFinite(nextOpacity) ? clamp(nextOpacity, 0, 1) : undefined,
+                  showFill: true,
+                });
+              }}
+              className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-45"
+            />
+          </label>
+        </section>
+      ) : null}
 
       {data.chartType === "normal" ? (
         <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">

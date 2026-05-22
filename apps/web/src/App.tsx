@@ -26,7 +26,15 @@ import type {
   QuestionSubpart,
   TableCellAlignment,
 } from "@mauth-studio/shared";
-import { DEFAULT_STATS_CHART_SPEC, normalizeStatsChartSpec, statsChartSummary } from "@mauth-studio/diagram-plotly";
+import {
+  DEFAULT_STATS_CHART_SPEC,
+  STATS_CHART_TYPES,
+  normalizeStatsChartSpec,
+  statsChartSummary,
+  type StatsChartData,
+  type StatsChartOptions,
+  type StatsChartType,
+} from "@mauth-studio/diagram-plotly";
 import {
   Bot,
   ChevronDown,
@@ -67,7 +75,7 @@ import { GeometricConstructionEditor } from "@/components/editor/GeometricConstr
 import { ImageDiagramEditor } from "@/components/editor/ImageDiagramEditor";
 import { SetDiagramEditor } from "@/components/editor/SetDiagramEditor";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
-import { StatsChartEditor } from "@/components/editor/StatsChartEditor";
+import { StatsChartEditor, defaultStatsDataForType } from "@/components/editor/StatsChartEditor";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { Vector2DGraphEditor } from "@/components/editor/Vector2DGraphEditor";
@@ -5729,6 +5737,30 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
   const selectedTableColumnCount = inspectorTableColumnCount(selectedTableRows);
   const selectedDiagramBlock = selectedBlock.block.kind === "diagram" ? selectedBlock.block : null;
   const selectedDiagramConfig = selectedDiagramBlock ? withGraphDefaults(selectedDiagramBlock.graphConfig) : null;
+  const selectedStatsChartSpec = selectedDiagramConfig?.type === "statsChart" ? normalizeStatsChartSpec(selectedDiagramConfig) : null;
+  const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
+    if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
+    const nextData = { ...selectedStatsChartSpec.data, ...patch };
+    onBlockChange(selectedBlock, {
+      graphConfig: updateGraphConfig(selectedDiagramConfig, {
+        data: nextData,
+        options: selectedStatsChartSpec.options,
+        widthPx: selectedStatsChartSpec.options?.widthPx,
+        heightPx: selectedStatsChartSpec.options?.heightPx,
+      }),
+    });
+  };
+  const updateSelectedStatsChartOptions = (patch: Partial<StatsChartOptions>) => {
+    if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
+    const nextOptions = { ...selectedStatsChartSpec.options, ...patch };
+    onBlockChange(selectedBlock, {
+      graphConfig: updateGraphConfig(selectedDiagramConfig, {
+        options: nextOptions,
+        widthPx: nextOptions.widthPx,
+        heightPx: nextOptions.heightPx,
+      }),
+    });
+  };
   const controlClassName = "h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground";
   const checkboxLabelClassName = "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
   const inspectorStyle: CSSProperties = {
@@ -5740,7 +5772,7 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
 
   return (
     <aside className={cn("pointer-events-auto fixed z-40 min-w-0", frame.placement === "bottom" && "shadow-2xl")} style={inspectorStyle}>
-      <div className="max-h-full overflow-y-auto rounded-lg border bg-card shadow-panel">
+      <div className="overflow-y-auto rounded-lg border bg-card shadow-panel" style={{ maxHeight: frame.maxHeight }}>
         <div className="border-b p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
           <div className="mt-1 truncate text-sm font-semibold">{selectedBlock.label}</div>
@@ -6437,6 +6469,117 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
                 >
                   Reset view
                 </Button>
+              </div>
+            ) : selectedDiagramConfig.type === "statsChart" && selectedStatsChartSpec ? (
+              <div className="space-y-3 border-t pt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Chart settings</div>
+                <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                  Chart type
+                  <select
+                    value={selectedStatsChartSpec.data.chartType}
+                    aria-label={`${selectedBlock.label} chart type`}
+                    onChange={(event) =>
+                      updateSelectedStatsChartData(
+                        defaultStatsDataForType(event.target.value as StatsChartType, selectedStatsChartSpec.data),
+                      )
+                    }
+                    className={controlClassName}
+                  >
+                    {STATS_CHART_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Width
+                    <input
+                      type="number"
+                      min={240}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedStatsChartSpec.options?.widthPx)}
+                      aria-label={`${selectedBlock.label} chart width`}
+                      onChange={(event) =>
+                        updateSelectedStatsChartOptions({
+                          widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_STATS_CHART_SPEC.options?.widthPx,
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Height
+                    <input
+                      type="number"
+                      min={180}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedStatsChartSpec.options?.heightPx)}
+                      aria-label={`${selectedBlock.label} chart height`}
+                      onChange={(event) =>
+                        updateSelectedStatsChartOptions({
+                          heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_STATS_CHART_SPEC.options?.heightPx,
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedStatsChartSpec.options?.showGrid ?? true}
+                    onChange={(event) => updateSelectedStatsChartOptions({ showGrid: event.target.checked })}
+                  />
+                  Gridlines
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedStatsChartSpec.options?.showFill !== false}
+                    onChange={(event) => updateSelectedStatsChartOptions({ showFill: event.target.checked })}
+                  />
+                  Fill
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Fill colour
+                    <input
+                      type="color"
+                      value={
+                        typeof selectedStatsChartSpec.options?.fillColor === "string" ? selectedStatsChartSpec.options.fillColor : "#f5f5f5"
+                      }
+                      aria-label={`${selectedBlock.label} fill colour`}
+                      disabled={selectedStatsChartSpec.options?.showFill === false}
+                      onChange={(event) => updateSelectedStatsChartOptions({ fillColor: event.target.value, showFill: true })}
+                      className="h-9 rounded-md border border-input bg-background p-1 disabled:opacity-45"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Opacity
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={inspectorNumberInputValue(
+                        typeof selectedStatsChartSpec.options?.fillOpacity === "number" ? selectedStatsChartSpec.options.fillOpacity : 1,
+                      )}
+                      aria-label={`${selectedBlock.label} fill opacity`}
+                      disabled={selectedStatsChartSpec.options?.showFill === false}
+                      onChange={(event) => {
+                        const nextOpacity = inspectorOptionalNumber(event.target.value);
+                        updateSelectedStatsChartOptions({
+                          fillOpacity:
+                            typeof nextOpacity === "number" && Number.isFinite(nextOpacity) ? clamp(nextOpacity, 0, 1) : undefined,
+                          showFill: true,
+                        });
+                      }}
+                      className={cn(controlClassName, "disabled:opacity-45")}
+                    />
+                  </label>
+                </div>
               </div>
             ) : null}
           </div>
@@ -8771,7 +8914,11 @@ function DiagramBlockEditor({
   }
 
   if (config.type === "statsChart") {
-    return renderDiagramPanel(statsChartSummary(config), "p-3", <StatsChartEditor config={config} onChange={patchConfig} />);
+    return renderDiagramPanel(
+      statsChartSummary(config),
+      "p-3",
+      <StatsChartEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
+    );
   }
 
   return renderDiagramPanel(
