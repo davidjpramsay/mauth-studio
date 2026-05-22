@@ -306,6 +306,22 @@ async function main() {
     assert.equal(await inspector.getByLabel("Domain max").inputValue(), "8", "graph domain settings should edit in inspector");
     await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("vector2d");
     await inspector.getByText("2 coordinate vectors").waitFor();
+    await inspector.getByText("Vector settings").waitFor();
+    assert.equal(
+      await page.locator("select[aria-label='Diagram 4 vector label style']").count(),
+      1,
+      "vector label style should only appear in inspector",
+    );
+    await inspector.locator("select[aria-label='Diagram 4 vector label style']").selectOption("custom");
+    assert.equal(
+      await inspector.locator("select[aria-label='Diagram 4 vector label style']").inputValue(),
+      "custom",
+      "vector label style should edit in inspector",
+    );
+    await inspector.getByLabel("Grid").uncheck();
+    const vectorDiagramPanelText = await diagramPanelElement.asElement().textContent();
+    assert(!/\bx min\b/i.test(vectorDiagramPanelText ?? ""), "vector2d bounds should not render inline");
+    assert(!/\bLabel style\b/i.test(vectorDiagramPanelText ?? ""), "vector2d label style should not render inline");
 
     const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
     await inspector.screenshot({ path: inspectorScreenshotPath });

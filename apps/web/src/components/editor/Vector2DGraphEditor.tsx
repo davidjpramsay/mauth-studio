@@ -34,13 +34,15 @@ function numberInputValue(value?: number) {
 
 type Vector2DGraphEditorProps = {
   config: GraphConfig;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorProps) {
+export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange }: Vector2DGraphEditorProps) {
   const vectors = normalizedVector2DEntries(config);
   const angleMarkers = normalizedVector2DAngleMarkers(config);
   const labelStyle = vector2dLabelStyle(vector2dMetadata(config).labelStyle);
+  const showInlineSettings = settingsMode === "inline";
   const vectorReferenceOptions = vectors.flatMap((vector) => {
     const options = [{ value: vector.id, label: vector.name && vector.name !== vector.id ? `${vector.name} (${vector.id})` : vector.id }];
     if (vector.name && vector.name !== vector.id) options.push({ value: vector.name, label: `${vector.name} (name)` });
@@ -165,80 +167,82 @@ export function Vector2DGraphEditor({ config, onChange }: Vector2DGraphEditorPro
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="flex flex-wrap items-end gap-3">
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          x min
-          <input
-            type="number"
-            value={numberInputValue(config.xMin)}
-            onChange={(event) => onChange({ xMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          x max
-          <input
-            type="number"
-            value={numberInputValue(config.xMax)}
-            onChange={(event) => onChange({ xMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          y min
-          <input
-            type="number"
-            value={numberInputValue(config.yMin)}
-            onChange={(event) => onChange({ yMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          y max
-          <input
-            type="number"
-            value={numberInputValue(config.yMax)}
-            onChange={(event) => onChange({ yMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          Width
-          <input
-            type="number"
-            min={160}
-            value={numberInputValue(config.widthPx)}
-            onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-          Height
-          <input
-            type="number"
-            min={120}
-            value={numberInputValue(config.heightPx)}
-            onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex w-44 flex-col gap-2 text-xs font-medium">
-          Label style
-          <select
-            value={labelStyle}
-            onChange={(event) => updateLabelStyle(event.target.value as Vector2DLabelStyle)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {VECTOR_2D_LABEL_STYLES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
+      {showInlineSettings ? (
+        <section className="flex flex-wrap items-end gap-3">
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            x min
+            <input
+              type="number"
+              value={numberInputValue(config.xMin)}
+              onChange={(event) => onChange({ xMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            x max
+            <input
+              type="number"
+              value={numberInputValue(config.xMax)}
+              onChange={(event) => onChange({ xMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            y min
+            <input
+              type="number"
+              value={numberInputValue(config.yMin)}
+              onChange={(event) => onChange({ yMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            y max
+            <input
+              type="number"
+              value={numberInputValue(config.yMax)}
+              onChange={(event) => onChange({ yMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            Width
+            <input
+              type="number"
+              min={160}
+              value={numberInputValue(config.widthPx)}
+              onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-28 flex-col gap-2 text-xs font-medium">
+            Height
+            <input
+              type="number"
+              min={120}
+              value={numberInputValue(config.heightPx)}
+              onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="flex w-44 flex-col gap-2 text-xs font-medium">
+            Label style
+            <select
+              value={labelStyle}
+              onChange={(event) => updateLabelStyle(event.target.value as Vector2DLabelStyle)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            >
+              {VECTOR_2D_LABEL_STYLES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      ) : null}
 
-      <section className="flex flex-col gap-2 border-t pt-3">
+      <section className={showInlineSettings ? "flex flex-col gap-2 border-t pt-3" : "flex flex-col gap-2"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Coordinate vectors</div>
           <Button type="button" variant="outline" size="sm" onClick={addVector}>

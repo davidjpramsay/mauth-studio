@@ -176,7 +176,15 @@ import {
   penroseScalePercent,
 } from "@/lib/diagramPenrose";
 import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance } from "@/lib/diagramSet";
-import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
+import {
+  DEFAULT_VECTOR_2D_GRAPH,
+  DEFAULT_VECTOR_2D_METADATA,
+  defaultVector2DName,
+  normalizedVector2DEntries,
+  vector2dLabelStyle,
+  vector2dMetadata,
+  type Vector2DLabelStyle,
+} from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { cn } from "@/lib/utils";
 
@@ -5366,6 +5374,12 @@ const COLUMN_COUNT_OPTIONS: Array<{ value: ColumnCount; label: string }> = [
   { value: 4, label: "4 columns" },
 ];
 
+const VECTOR_2D_LABEL_STYLES: Array<{ value: Vector2DLabelStyle; label: string }> = [
+  { value: "boldLower", label: "Bold lower-case" },
+  { value: "arrow", label: "Arrow over points" },
+  { value: "custom", label: "Custom LaTeX" },
+];
+
 function columnsColumnCountPatch(block: EditorColumnsBlock, value: unknown): Partial<EditorColumnsBlock> {
   const normalized = normalizeColumnsBlock(block);
   const columnCount = normalizeColumnCount(value);
@@ -5418,6 +5432,28 @@ function graphInspectorWidthPatch(config: GraphConfig, value: string): Partial<G
   const widthPx = inspectorOptionalNumber(value);
   if (typeof widthPx !== "number" || !Number.isFinite(widthPx)) return { widthPx };
   return config.lockAspectRatio && !config.equalScale ? { widthPx, heightPx: lockedAspectHeight(config, widthPx) } : { widthPx };
+}
+
+function vector2dLabelStylePatch(config: GraphConfig, nextLabelStyle: Vector2DLabelStyle): Partial<GraphConfig> {
+  const vectors = normalizedVector2DEntries(config);
+  return {
+    metadata: {
+      ...(config.metadata ?? {}),
+      vector2d: {
+        ...vector2dMetadata(config),
+        labelStyle: nextLabelStyle,
+        vectors: vectors.map((vector, index) => {
+          const autoNames = new Set([
+            defaultVector2DName(index, "boldLower"),
+            defaultVector2DName(index, "arrow"),
+            defaultVector2DName(index, "custom"),
+            `v_${index + 1}`,
+          ]);
+          return autoNames.has(vector.name) ? { ...vector, name: defaultVector2DName(index, nextLabelStyle) } : vector;
+        }),
+      },
+    },
+  };
 }
 
 function patchColumnBlockAtPath(block: EditorColumnsBlock, path: ColumnBlockPath, patch: Partial<EditorContentBlock>): EditorColumnsBlock {
@@ -6097,6 +6133,172 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
                         onBlockChange(selectedBlock, {
                           graphConfig: updateGraphConfig(selectedDiagramConfig, {
                             gridMajorStepY: inspectorOptionalNumber(event.target.value),
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : selectedDiagramConfig.type === "vector2d" ? (
+              <div className="space-y-3 border-t pt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vector settings</div>
+                <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                  Label style
+                  <select
+                    value={vector2dLabelStyle(vector2dMetadata(selectedDiagramConfig).labelStyle)}
+                    aria-label={`${selectedBlock.label} vector label style`}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(
+                          selectedDiagramConfig,
+                          vector2dLabelStylePatch(selectedDiagramConfig, event.target.value as Vector2DLabelStyle),
+                        ),
+                      })
+                    }
+                    className={controlClassName}
+                  >
+                    {VECTOR_2D_LABEL_STYLES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showAxes ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                          showAxes: event.target.checked,
+                          showArrows: event.target.checked ? selectedDiagramConfig.showArrows : false,
+                        }),
+                      })
+                    }
+                  />
+                  Axes
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showGrid ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                          showGrid: event.target.checked,
+                          showMajorGrid: event.target.checked,
+                        }),
+                      })
+                    }
+                  />
+                  Grid
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.equalScale ?? false}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { equalScale: event.target.checked }),
+                      })
+                    }
+                  />
+                  1:1 scale
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    x min
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.xMin)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            xMin: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    x max
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.xMax)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            xMax: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    y min
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.yMin)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            yMin: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    y max
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.yMax)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            yMax: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Width
+                    <input
+                      type="number"
+                      min={160}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Height
+                    <input
+                      type="number"
+                      min={120}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx,
                           }),
                         })
                       }
@@ -8425,7 +8627,7 @@ function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "graph-editor-controls p-3",
-      <Vector2DGraphEditor config={config} onChange={patchConfig} />,
+      <Vector2DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
     );
   }
 
