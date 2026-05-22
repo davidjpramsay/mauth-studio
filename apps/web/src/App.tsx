@@ -2717,6 +2717,10 @@ function columnChildScrollAnchor(containerAnchor: string, columnIndex: number, b
   return `${containerAnchor}/c:${columnIndex}/b:${blockId}`;
 }
 
+function columnBlockParentScrollAnchor(anchor: string) {
+  return anchor.replace(/\/c:\d+\/b:[^/]+$/, "");
+}
+
 function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | null) {
   return Boolean(targetAnchor && (targetAnchor === containerAnchor || targetAnchor.startsWith(`${containerAnchor}/`)));
 }
@@ -11848,6 +11852,23 @@ export default function App() {
     if (parsed.kind === "questionBlock" && parsed.blockId) {
       removeQuestionBlock(parsed.questionId, parsed.blockId);
       activateEditorAnchor(questionScrollAnchor(parsed.questionId));
+      return true;
+    }
+
+    if (parsed.kind === "columnBlock" && parsed.blockId) {
+      const scope = parsed.partId
+        ? parsed.subpartId
+          ? ({
+              kind: "subpart",
+              questionId: parsed.questionId,
+              partId: parsed.partId,
+              subpartId: parsed.subpartId,
+            } satisfies MauthContentScope)
+          : ({ kind: "part", questionId: parsed.questionId, partId: parsed.partId } satisfies MauthContentScope)
+        : ({ kind: "question", questionId: parsed.questionId } satisfies MauthContentScope);
+      const result = applyEditorAction({ type: "module.delete", scope, blockId: parsed.blockId });
+      if (!result.ok) return false;
+      activateEditorAnchor(columnBlockParentScrollAnchor(anchor));
       return true;
     }
 

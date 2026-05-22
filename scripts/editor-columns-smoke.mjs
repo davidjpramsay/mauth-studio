@@ -311,8 +311,20 @@ async function main() {
     await inspector.screenshot({ path: inspectorScreenshotPath });
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });
+
+    await nestedTableNode.dispatchEvent("pointerdown");
+    await inspector.getByText("Part Column 1 table 2").waitFor();
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })));
+    await nestedTableNode.waitFor({ state: "detached" });
+    await inspector.getByText("Part columns 1").waitFor();
+    assert.equal(
+      await page.locator(`.editor-pane [data-scroll-anchor="${nestedTableAnchor}"]`).count(),
+      0,
+      "Delete should remove nested table",
+    );
+
     console.log(
-      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}`,
+      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3 and deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
