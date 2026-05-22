@@ -16,6 +16,12 @@ import {
   type MauthAssistantAdapterResult,
   type MauthAssistantAdapterToolCall,
 } from "@/lib/mauthAssistantAdapter";
+import {
+  assistantContinuingToolStatusMessages,
+  assistantTerminalToolStatusMessage,
+  assistantToolOutputRecord,
+  type MauthAssistantToolStatusMessage,
+} from "@/lib/mauthAssistantToolResults";
 import type { MauthQuestionLike } from "@/lib/mauthActions";
 import type { MauthAssistantChatMessage } from "@/components/assistant/MauthAssistantPanel";
 
@@ -216,6 +222,10 @@ function addUsageToLastAssistantMessage(messages: MauthAssistantChatMessage[], u
   return [...messages, { id: assistantMessageId(), role: "assistant", content: "Done.", usage }];
 }
 
+function assistantToolStatusChatMessage(message: MauthAssistantToolStatusMessage): MauthAssistantChatMessage {
+  return { id: assistantMessageId(), role: "assistant", content: message.content, tone: message.tone };
+}
+
 function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): MauthAssistantAdapterToolCall | null {
   const mauthToolName =
     typeof toolCall.mauthToolName === "string" ? toolCall.mauthToolName : toolCall.name.startsWith("mauth.") ? toolCall.name : "";
@@ -290,16 +300,12 @@ function compactAssistantProviderOutput<Q extends MauthQuestionLike, F extends o
   return output;
 }
 
-function toolOutputRecord(toolOutput: AssistantToolOutput) {
-  return asRecord(toolOutput.output);
-}
-
 function failedToolOutputs(toolOutputs: readonly AssistantToolOutput[]) {
-  return toolOutputs.filter((toolOutput) => toolOutputRecord(toolOutput)?.ok === false);
+  return toolOutputs.filter((toolOutput) => assistantToolOutputRecord(toolOutput)?.ok === false);
 }
 
 function failedToolOutputMessage(toolOutput: AssistantToolOutput) {
-  const output = toolOutputRecord(toolOutput);
+  const output = assistantToolOutputRecord(toolOutput);
   const message = typeof output?.message === "string" ? output.message : "";
   const error = typeof output?.error === "string" ? output.error : "";
   return error || message || "That edit step failed.";
@@ -482,23 +488,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
   }
 
   function localTerminalAssistantToolMessage(toolOutput: AssistantToolOutput) {
-    const output = asRecord(toolOutput.output);
-    const toolName = typeof output?.toolName === "string" ? output.toolName : "";
-    if (output?.ok !== true) return "";
-    const semanticReview = asRecord(output.semanticReview);
-    if (semanticReview?.required === true) return "";
-    if (
-      toolName !== "mauth.question.upsert" &&
-      toolName !== "mauth.author.replaceQuestion" &&
-      toolName !== "mauth.author.addDiagram" &&
-      toolName !== "mauth.author.ensureSolutions" &&
-      toolName !== "mauth.author.adjustResponseSpaces" &&
-      toolName !== "mauth.format.apply" &&
-      toolName !== "mauth.settings.apply"
-    ) {
-      return "";
-    }
-    return typeof output?.message === "string" && output.message.trim() ? output.message.trim() : "Completed the edit.";
+    return assistantTerminalToolStatusMessage(toolOutput);
   }
 
   async function continueToolLoop(
@@ -519,12 +509,16 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         toolOutputs.push(await runAssistantProviderToolCall(host, toolCall));
       }
 
-      const localMessages = toolOutputs.map(localTerminalAssistantToolMessage).filter(Boolean);
+      const continuingStatusMessages = assistantContinuingToolStatusMessages(toolOutputs);
+      if (continuingStatusMessages.length) {
+        setChatMessages((current) => [...current, ...continuingStatusMessages.map(assistantToolStatusChatMessage)]);
+      }
+
+      const localMessages = toolOutputs
+        .map(localTerminalAssistantToolMessage)
+        .filter((message): message is MauthAssistantToolStatusMessage => Boolean(message));
       if (localMessages.length === toolOutputs.length) {
-        setChatMessages((current) => [
-          ...current,
-          ...localMessages.map((message) => ({ id: assistantMessageId(), role: "assistant" as const, content: message })),
-        ]);
+        setChatMessages((current) => [...current, ...localMessages.map(assistantToolStatusChatMessage)]);
         setPendingToolContinuation(null);
         setPreviousResponseId(null);
         return { responseId: null, usage: totalUsage, pending: null };

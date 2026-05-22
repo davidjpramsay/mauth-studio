@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, FileText, ImageIcon, MessageSquare, Paperclip, Send, X } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, FileText, ImageIcon, MessageSquare, Paperclip, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -13,7 +13,10 @@ export interface MauthAssistantChatMessage {
   content: string;
   attachments?: AssistantAttachment[];
   usage?: MauthAssistantUsageSummary | null;
+  tone?: MauthAssistantChatMessageTone;
 }
+
+export type MauthAssistantChatMessageTone = "tool-success" | "tool-warning" | "tool-error";
 
 export interface MauthAssistantUsageSummary {
   model: string;
@@ -216,6 +219,20 @@ function AttachmentPill({ attachment, onRemove }: { attachment: AssistantAttachm
   );
 }
 
+function assistantBubbleClass(tone?: MauthAssistantChatMessageTone) {
+  if (tone === "tool-success") return "mr-auto border border-emerald-200 bg-emerald-50 text-emerald-950";
+  if (tone === "tool-warning") return "mr-auto border border-amber-200 bg-amber-50 text-amber-950";
+  if (tone === "tool-error") return "mr-auto border border-red-200 bg-red-50 text-red-950";
+  return "mr-auto bg-muted/45";
+}
+
+function AssistantToolStatusIcon({ tone }: { tone?: MauthAssistantChatMessageTone }) {
+  if (tone === "tool-success") return <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden="true" />;
+  if (tone === "tool-warning") return <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden="true" />;
+  if (tone === "tool-error") return <CircleX className="mt-0.5 size-4 shrink-0 text-red-700" aria-hidden="true" />;
+  return null;
+}
+
 export function MauthAssistantPanel({
   placement = "floating",
   chatMessages,
@@ -344,10 +361,23 @@ export function MauthAssistantPanel({
                   key={chatMessage.id}
                   className={cn(
                     "max-w-[92%] rounded-2xl px-3 py-2 text-sm leading-relaxed",
-                    chatMessage.role === "user" ? "ml-auto bg-primary text-primary-foreground" : "mr-auto bg-muted/45",
+                    chatMessage.role === "user" ? "ml-auto bg-primary text-primary-foreground" : assistantBubbleClass(chatMessage.tone),
                   )}
                 >
-                  {chatMessage.role === "assistant" ? <AssistantMarkdown content={chatMessage.content} /> : chatMessage.content}
+                  {chatMessage.role === "assistant" ? (
+                    chatMessage.tone ? (
+                      <div className="flex min-w-0 gap-2">
+                        <AssistantToolStatusIcon tone={chatMessage.tone} />
+                        <div className="min-w-0 flex-1">
+                          <AssistantMarkdown content={chatMessage.content} />
+                        </div>
+                      </div>
+                    ) : (
+                      <AssistantMarkdown content={chatMessage.content} />
+                    )
+                  ) : (
+                    chatMessage.content
+                  )}
                   {chatMessage.attachments?.length ? (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {chatMessage.attachments.map((attachment) => (

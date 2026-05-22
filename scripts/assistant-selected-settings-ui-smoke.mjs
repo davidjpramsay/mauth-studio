@@ -16,6 +16,7 @@ const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
 const VIEWPORT = { width: 1484, height: 1264 };
 const GRAPH_ANCHOR = "q:q-assistant-ui/b:q1-graph";
 const PROMPT = "Make the selected graph wider and turn off the grid.";
+const FAILURE_PROMPT = "Hide the selected graph axes.";
 
 function timestampSlug() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -164,13 +165,14 @@ async function mockApi(page, chatRequests) {
     const body = JSON.parse(request.postData() ?? "{}");
     chatRequests.push(body);
     if (Array.isArray(body.toolOutputs) && body.toolOutputs.length) {
+      const failed = body.toolOutputs.some((toolOutput) => toolOutput?.output?.ok === false);
       await route.fulfill({
         status: 200,
         headers: corsHeaders,
         body: JSON.stringify({
           configured: true,
           model: "mock-selected-settings",
-          message: "The selected graph settings were updated.",
+          message: failed ? "The graph settings are done." : "The selected graph settings were updated.",
           responseId: "mock-final",
           toolCalls: [],
           usage: null,
@@ -180,10 +182,17 @@ async function mockApi(page, chatRequests) {
       return;
     }
 
-    const mauthArguments = {
-      target: { scope: "selection" },
-      diagram: { renderer: "graph2d", widthPx: 800, showGrid: false },
-    };
+    const prompt = body.messages?.at(-1)?.content ?? "";
+    const hiddenAxesRequest = prompt === FAILURE_PROMPT;
+    const mauthArguments = hiddenAxesRequest
+      ? {
+          target: { scope: "selection" },
+          diagram: { renderer: "graph2d", showAxes: false },
+        }
+      : {
+          target: { scope: "selection" },
+          diagram: { renderer: "graph2d", widthPx: 800, showGrid: false },
+        };
     await route.fulfill({
       status: 200,
       headers: corsHeaders,
@@ -191,11 +200,11 @@ async function mockApi(page, chatRequests) {
         configured: true,
         model: "mock-selected-settings",
         message: "",
-        responseId: "mock-response-1",
+        responseId: hiddenAxesRequest ? "mock-response-failure" : "mock-response-success",
         toolCalls: [
           {
-            id: "tool-selected-settings-1",
-            callId: "call-selected-settings-1",
+            id: hiddenAxesRequest ? "tool-selected-settings-failure" : "tool-selected-settings-success",
+            callId: hiddenAxesRequest ? "call-selected-settings-failure" : "call-selected-settings-success",
             name: "mauth_update_selected_settings",
             arguments: mauthArguments,
             mauthToolName: "mauth.settings.apply",
@@ -298,7 +307,8 @@ async function main() {
 
     await page.getByText("The selected graph settings were updated.").waitFor({ timeout: 10_000 });
     assert(chatRequests.length >= 1 && chatRequests.length <= 2, "selected-settings prompt should use at most one tool continuation");
-    const [chatRequest, continuationRequest] = chatRequests;
+    const chatRequest = chatRequests[0];
+    const continuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-success");
     assert.equal(chatRequest.messages?.at(-1)?.content, PROMPT, "provider request should contain the teacher prompt");
     const summaryModule = chatRequest.documentSummary?.questions?.[0]?.modules?.find((module) => module.id === "q1-graph");
     assert.equal(summaryModule?.kind, "diagram", "document summary should include the selected graph module");
@@ -307,6 +317,13 @@ async function main() {
     assert.equal(toolOutput?.ok, true, `settings tool output should be successful: ${toolOutput?.error ?? "unknown error"}`);
     assert.equal(toolOutput?.toolName, "mauth.settings.apply", "tool continuation should report the settings tool");
     assert(toolOutput?.changedIds?.includes("q1-graph"), "settings output should report the selected graph as changed");
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Tool result:") &&
+        document.body.innerText.includes("mauth.settings.apply committed changes and requested review"),
+      null,
+      { timeout: 10_000 },
+    );
 
     await page.waitForFunction(
       (storageKey) => {
@@ -337,6 +354,27 @@ async function main() {
     await inspector.getByText("Graph settings").waitFor();
     assert.equal(await inspector.getByLabel("Width").inputValue(), "800", "inspector should expose the updated graph width");
 
+    await page.getByRole("button", { name: "Assistant mode" }).click();
+    await promptBox.fill(FAILURE_PROMPT);
+    await page.getByRole("button", { name: "Ask" }).click();
+    await page.getByText("The graph settings are done.").waitFor({ timeout: 10_000 });
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Tool result:") &&
+        document.body.innerText.includes("mauth.settings.apply did not commit changes") &&
+        document.body.innerText.includes("Assistant diagram preflight failed"),
+      null,
+      { timeout: 10_000 },
+    );
+
+    const failedContinuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-failure");
+    const failedToolOutput = failedContinuationRequest?.toolOutputs?.[0]?.output;
+    assert.equal(failedToolOutput?.ok, false, "hidden-axes settings tool output should fail preflight");
+    assert.equal(failedToolOutput?.committedDocument, false, "failed hidden-axes tool output should not commit");
+
+    const afterFailedConfig = await draftGraphConfig(page);
+    assert.equal(afterFailedConfig?.showAxes, true, "failed hidden-axes settings update should leave graph axes enabled");
+
     const screenshotPath = path.join(outputDir, "selected-settings-assistant.png");
     await page.screenshot({ path: screenshotPath, fullPage: false });
 
@@ -344,7 +382,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
     console.log(
-      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, and disabled showGrid. Screenshot: ${screenshotPath}`,
+      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, and visibly reported the rejected hidden-axes tool result. Screenshot: ${screenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
