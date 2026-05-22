@@ -95,11 +95,14 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
       .then((module) => {
         if (cancelled) return;
         plotly = module.default;
-        void Promise.resolve(plotly.react(element, currentPlotlyConfig.data, currentPlotlyConfig.layout, currentPlotlyConfig.config)).then(
-          () => {
+        void Promise.resolve(plotly.react(element, currentPlotlyConfig.data, currentPlotlyConfig.layout, currentPlotlyConfig.config))
+          .then(() => {
             if (!cancelled) expandPlotClipRects(element, true);
-          },
-        );
+          })
+          .catch((renderError) => {
+            if (cancelled) return;
+            setError(renderError instanceof Error ? renderError.message : String(renderError));
+          });
       })
       .catch((renderError) => {
         if (cancelled) return;
@@ -118,9 +121,18 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
 
     const observer = new ResizeObserver(() => {
       if (!element.isConnected || element.offsetWidth <= 0 || element.offsetHeight <= 0) return;
-      void import("plotly.js-dist-min").then((module) => {
-        void Promise.resolve(module.default.Plots?.resize(element)).then(() => expandPlotClipRects(element, true));
-      });
+      void import("plotly.js-dist-min")
+        .then((module) => {
+          if (!element.isConnected || element.offsetWidth <= 0 || element.offsetHeight <= 0) return;
+          void Promise.resolve(module.default.Plots?.resize(element))
+            .then(() => {
+              if (element.isConnected) expandPlotClipRects(element, true);
+            })
+            .catch(() => {
+              // Plotly can reject if layout changes hide the plot between ResizeObserver and resize.
+            });
+        })
+        .catch(() => undefined);
     });
     observer.observe(element);
     return () => observer.disconnect();
