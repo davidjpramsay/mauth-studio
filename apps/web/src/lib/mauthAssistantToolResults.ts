@@ -56,6 +56,11 @@ function statusContent(toolName: string, status: string, detail: string) {
   return `**Tool result:** \`${toolName}\` ${status}.${suffix}`;
 }
 
+function finalStatusContent(toolName: string, message: string, detail: string) {
+  const suffix = detail ? ` ${detail}` : "";
+  return `**Final status:** ${message} \`${toolName}\`.${suffix}`;
+}
+
 export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutput): MauthAssistantToolStatusMessage | null {
   const output = assistantToolOutputRecord(toolOutput);
   const toolName = toolNameForOutput(toolOutput);
@@ -110,4 +115,50 @@ export function assistantContinuingToolStatusMessages(toolOutputs: readonly Assi
 
     return [];
   });
+}
+
+export function assistantFinalToolStateMessage(toolOutputs: readonly AssistantToolOutput[]): MauthAssistantToolStatusMessage | null {
+  for (const toolOutput of toolOutputs) {
+    const output = assistantToolOutputRecord(toolOutput);
+    const toolName = toolNameForOutput(toolOutput);
+    if (!output) {
+      return {
+        tone: "tool-error",
+        content: finalStatusContent(toolName, "I could not verify the local result from", "The local tool output was not an object."),
+      };
+    }
+
+    if (output.ok !== true) {
+      const detail = outputDetail(output) || "The local tool failed before the assistant could finish.";
+      if (output.committedDocument === true) {
+        return {
+          tone: "tool-warning",
+          content: finalStatusContent(
+            toolName,
+            "I applied changes with",
+            `They need repair before this can be treated as complete. ${detail}`,
+          ),
+        };
+      }
+
+      return {
+        tone: "tool-error",
+        content: finalStatusContent(toolName, "I did not apply that edit through", detail),
+      };
+    }
+
+    const semanticReview = asRecord(output.semanticReview);
+    if (semanticReview?.required === true) {
+      return {
+        tone: "tool-warning",
+        content: finalStatusContent(
+          toolName,
+          "I applied changes with",
+          `They need review before this can be treated as complete. ${semanticReviewDetail(output)}`,
+        ),
+      };
+    }
+  }
+
+  return null;
 }

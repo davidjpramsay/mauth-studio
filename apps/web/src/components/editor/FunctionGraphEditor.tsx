@@ -794,14 +794,6 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
                       ))}
                     </select>
                   </label>
-                  <label className="flex items-center gap-2 text-xs font-medium md:pb-2">
-                    <input
-                      type="checkbox"
-                      checked={feature.solutionOnly === true}
-                      onChange={(event) => updateFeature(featureIndex, { solutionOnly: event.target.checked })}
-                    />
-                    Solution only
-                  </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Colour
                     <input

@@ -18,6 +18,7 @@ import {
 } from "@/lib/mauthAssistantAdapter";
 import {
   assistantContinuingToolStatusMessages,
+  assistantFinalToolStateMessage,
   assistantTerminalToolStatusMessage,
   assistantToolOutputRecord,
   type MauthAssistantToolStatusMessage,
@@ -547,7 +548,10 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
       responseId = response.responseId ?? responseId;
       totalUsage = mergeAssistantUsageSummary(totalUsage, response.usage);
-      if (response.message.trim()) {
+      const finalToolStateMessage = response.toolCalls.length ? null : assistantFinalToolStateMessage(toolOutputs);
+      if (finalToolStateMessage) {
+        setChatMessages((current) => [...current, assistantToolStatusChatMessage(finalToolStateMessage)]);
+      } else if (response.message.trim()) {
         setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: response.message.trim() }]);
       }
       toolCalls = response.toolCalls;

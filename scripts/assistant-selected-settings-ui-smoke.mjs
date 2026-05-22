@@ -361,7 +361,20 @@ async function main() {
     await promptBox.fill(PROMPT);
     await page.getByRole("button", { name: "Ask" }).click();
 
-    await page.getByText("The selected graph settings were updated.").waitFor({ timeout: 10_000 });
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Tool result:") &&
+        document.body.innerText.includes("mauth.settings.apply committed changes and requested review") &&
+        document.body.innerText.includes("Final status:") &&
+        document.body.innerText.includes("I applied changes with mauth.settings.apply") &&
+        document.body.innerText.includes("They need review before this can be treated as complete"),
+      null,
+      { timeout: 10_000 },
+    );
+    assert(
+      !((await page.locator("body").textContent()) ?? "").includes("The selected graph settings were updated."),
+      "semantic-review provider final text should be replaced by state-aware local tool status",
+    );
     assert(chatRequests.length >= 1 && chatRequests.length <= 2, "selected-settings prompt should use at most one tool continuation");
     const chatRequest = chatRequests[0];
     const continuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-success");
@@ -373,13 +386,6 @@ async function main() {
     assert.equal(toolOutput?.ok, true, `settings tool output should be successful: ${toolOutput?.error ?? "unknown error"}`);
     assert.equal(toolOutput?.toolName, "mauth.settings.apply", "tool continuation should report the settings tool");
     assert(toolOutput?.changedIds?.includes("q1-graph"), "settings output should report the selected graph as changed");
-    await page.waitForFunction(
-      () =>
-        document.body.innerText.includes("Tool result:") &&
-        document.body.innerText.includes("mauth.settings.apply committed changes and requested review"),
-      null,
-      { timeout: 10_000 },
-    );
 
     await page.waitForFunction(
       (storageKey) => {
@@ -413,14 +419,19 @@ async function main() {
     await page.getByRole("button", { name: "Assistant mode" }).click();
     await promptBox.fill(FAILURE_PROMPT);
     await page.getByRole("button", { name: "Ask" }).click();
-    await page.getByText("The graph settings are done.").waitFor({ timeout: 10_000 });
     await page.waitForFunction(
       () =>
         document.body.innerText.includes("Tool result:") &&
         document.body.innerText.includes("mauth.settings.apply did not commit changes") &&
-        document.body.innerText.includes("Assistant diagram preflight failed"),
+        document.body.innerText.includes("Assistant diagram preflight failed") &&
+        document.body.innerText.includes("Final status:") &&
+        document.body.innerText.includes("I did not apply that edit through mauth.settings.apply"),
       null,
       { timeout: 10_000 },
+    );
+    assert(
+      !((await page.locator("body").textContent()) ?? "").includes("The graph settings are done."),
+      "failed-preflight provider final text should be replaced by state-aware local tool status",
     );
 
     const failedContinuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-failure");
@@ -433,14 +444,20 @@ async function main() {
 
     await promptBox.fill(REPAIR_PROMPT);
     await page.getByRole("button", { name: "Ask" }).click();
-    await page.getByText("The graph settings are done.").last().waitFor({ timeout: 10_000 });
     await page.waitForFunction(
       () =>
         document.body.innerText.includes("Tool result:") &&
         document.body.innerText.includes("mauth.author.addDiagram committed changes, but needs repair") &&
-        document.body.innerText.includes("Assistant post-edit inspection found repairable preview warnings"),
+        document.body.innerText.includes("Assistant post-edit inspection found repairable preview warnings") &&
+        document.body.innerText.includes("Final status:") &&
+        document.body.innerText.includes("I applied changes with mauth.author.addDiagram") &&
+        document.body.innerText.includes("They need repair before this can be treated as complete"),
       null,
       { timeout: 10_000 },
+    );
+    assert(
+      !((await page.locator("body").textContent()) ?? "").includes("The graph settings are done."),
+      "repair-required provider final text should be replaced by state-aware local tool status",
     );
 
     const repairContinuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-repair");
@@ -477,7 +494,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
     console.log(
-      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, visibly reported the rejected hidden-axes tool result, and visibly reported a committed repair-required mauth.author.addDiagram label collision. Screenshot: ${screenshotPath}`,
+      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, replaced misleading provider final text with state-aware local status, visibly reported the rejected hidden-axes tool result, and visibly reported a committed repair-required mauth.author.addDiagram label collision. Screenshot: ${screenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
