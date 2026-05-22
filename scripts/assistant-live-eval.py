@@ -235,6 +235,37 @@ def sample_probability_document_summary() -> dict[str, Any]:
     return summary
 
 
+def sample_selected_graph_document_summary() -> dict[str, Any]:
+    summary = sample_document_summary()
+    summary["counts"]["modules"] = 2
+    summary["questions"][0]["marks"] = 4
+    summary["questions"][0]["modules"] = [
+        {
+            "id": "q1-question-text",
+            "kind": "text",
+            "visibility": "always",
+            "textPreview": "The graph of $y=x^2-4$ is shown. State its intercepts.",
+        },
+        {
+            "id": "q1-graph",
+            "kind": "diagram",
+            "visibility": "always",
+            "graphType": "graph2d",
+            "diagramType": "graph2d",
+            "textPreview": "Selected graph2d module showing $y=x^2-4$ on coordinate axes.",
+            "graphConfig": {
+                "type": "graph2d",
+                "widthPx": 620,
+                "heightPx": 300,
+                "showGrid": True,
+                "showAxes": True,
+                "functions": [{"expression": "x^2 - 4", "label": "y=x^2-4"}],
+            },
+        },
+    ]
+    return summary
+
+
 def pdf_bytes_from_text(text: str) -> bytes:
     escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
     lines = escaped_text.splitlines()
@@ -6191,6 +6222,57 @@ def assert_layout_repair_call(call: dict[str, Any]) -> list[str]:
     return issues
 
 
+def assert_selected_settings_call(call: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if call.get("mauthToolName") != "mauth.settings.apply":
+        issues.append(f"expected mauth.settings.apply, got {call.get('mauthToolName')!r}")
+    if call.get("name") != "mauth_update_selected_settings":
+        issues.append(f"expected provider alias mauth_update_selected_settings, got {call.get('name')!r}")
+    args = call.get("mauthArguments")
+    if not isinstance(args, dict):
+        return [*issues, "mauthArguments was not an object"]
+
+    target = args.get("target")
+    if target is not None:
+        if not isinstance(target, dict):
+            issues.append("selected settings target should be an object when supplied")
+        elif target.get("scope") != "selection":
+            issues.append("selected/current graph requests should omit target or use target.scope='selection'")
+        if isinstance(target, dict):
+            explicit_target_keys = {
+                "anchor",
+                "questionNumber",
+                "questionId",
+                "partId",
+                "partLabel",
+                "partNumber",
+                "subpartId",
+                "subpartLabel",
+                "subpartNumber",
+                "blockId",
+                "moduleId",
+                "diagramId",
+            }
+            supplied_keys = sorted(key for key in explicit_target_keys if target.get(key) is not None)
+            if supplied_keys:
+                issues.append(f"selected/current graph route should not hard-code target ids, got {supplied_keys!r}")
+
+    diagram = args.get("diagram")
+    if not isinstance(diagram, dict):
+        return [*issues, "selected settings call should include diagram settings"]
+    width = diagram.get("widthPx")
+    if not isinstance(width, (int, float)) or width <= 620:
+        issues.append(f"selected graph wider request should increase diagram.widthPx above 620, got {width!r}")
+    if diagram.get("showGrid") is not False:
+        issues.append("selected graph grid request should set diagram.showGrid to false")
+
+    serialized = call_text(call).lower()
+    forbidden_terms = ("questiontext", "solutiontext", "graphconfig", "functions", "mauth.question.upsert")
+    if any(term in serialized for term in forbidden_terms):
+        issues.append("selected settings route should not rewrite question content or graphConfig")
+    return issues
+
+
 def layout_warning_output() -> dict[str, Any]:
     return {
         "ok": True,
@@ -7420,6 +7502,11 @@ EVAL_CASES: dict[str, dict[str, Any]] = {
         "repairFailure": lambda call: layout_warning_output(),
         "repairAssert": assert_layout_repair_call,
     },
+    "selected-settings-routing": {
+        "prompt": "Make the selected graph wider and turn off the grid.",
+        "summary": sample_selected_graph_document_summary,
+        "assert": assert_selected_settings_call,
+    },
 }
 
 EVAL_GROUPS: dict[str, list[str]] = {
@@ -7443,6 +7530,7 @@ EVAL_GROUPS: dict[str, list[str]] = {
         "layout-check-confidence",
         "layout-repair-confidence",
     ],
+    "settings": ["selected-settings-routing"],
     "all": list(EVAL_CASES),
     "attachments": ["pdf-attachment-question", "docx-attachment-question", "screenshot-scalar-products"],
     "real-exams-core": ["real-methods-earthquake", "real-specialist-lighthouse", "real-specialist-stats"],
@@ -7571,6 +7659,7 @@ LIVE_EVAL_CASE_CLASSES: dict[str, str] = {
     "write-all-solutions-confidence": "whole-test-solutions",
     "layout-check-confidence": "layout-or-formatting",
     "layout-repair-confidence": "repair-loop",
+    "selected-settings-routing": "selected-settings",
 }
 
 
@@ -7639,6 +7728,14 @@ def local_tool_call(name: str, mauth_tool_name: str, mauth_arguments: dict[str, 
 
 def local_source_question_call(mauth_arguments: dict[str, Any]) -> dict[str, Any]:
     return local_tool_call("mauth_convert_source_question", QUESTION_UPSERT_TOOL_NAME, mauth_arguments)
+
+
+def local_selected_settings_call() -> dict[str, Any]:
+    return local_tool_call(
+        "mauth_update_selected_settings",
+        "mauth.settings.apply",
+        {"diagram": {"widthPx": 760, "showGrid": False}},
+    )
 
 
 def local_screenshot_scalar_products_call() -> dict[str, Any]:
@@ -10844,6 +10941,10 @@ def local_real_specialist_ski_modelling_bad_solution_call() -> dict[str, Any]:
 
 
 LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
+    "selected-settings-routing": {
+        "assert": assert_selected_settings_call,
+        "call": local_selected_settings_call,
+    },
     "screenshot-scalar-products": {
         "assert": assert_screenshot_scalar_products_call,
         "call": local_screenshot_scalar_products_call,

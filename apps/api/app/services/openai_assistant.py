@@ -216,6 +216,77 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
 }
 QUESTION_AUTHORING_TOOL_NAMES = {"mauth.question.upsert", "mauth.author.replaceQuestion"}
 GRAPH3D_VIEW_KEYS = ("az", "el", "bank")
+SELECTED_SETTINGS_TARGET_TERMS = (
+    "current module",
+    "selected module",
+    "this module",
+    "current diagram",
+    "selected diagram",
+    "this diagram",
+    "current graph",
+    "selected graph",
+    "this graph",
+    "current chart",
+    "selected chart",
+    "this chart",
+    "current image",
+    "selected image",
+    "this image",
+)
+SETTINGS_MODULE_FIELD_TERMS = {
+    "lines": ("lines", "space", "working space", "answer space"),
+    "rows": ("row", "rows"),
+    "columns": ("column", "columns"),
+    "columnCount": ("column", "columns"),
+    "tableAlign": ("table align", "align table"),
+    "cellAlignment": ("cell align", "cell alignment"),
+    "showHeader": ("header", "headers"),
+    "numberingStyle": ("numbering", "roman", "alpha", "decimal", "bullet"),
+    "layout": ("layout", "vertical", "inline", "two-column"),
+    "diagramAlign": ("align", "left", "right", "center", "centre"),
+    "diagramTextSide": ("text side", "side text", "caption side"),
+}
+SETTINGS_DIAGRAM_FIELD_TERMS = {
+    "widthPx": ("width", "wide", "wider", "narrow", "narrower", "size", "larger", "bigger", "smaller"),
+    "heightPx": ("height", "tall", "taller", "shorter", "size", "larger", "bigger", "smaller"),
+    "xMin": ("x min", "xmin", "x-axis range", "x range", "bounds", "domain"),
+    "xMax": ("x max", "xmax", "x-axis range", "x range", "bounds", "domain"),
+    "yMin": ("y min", "ymin", "y-axis range", "y range", "bounds", "range"),
+    "yMax": ("y max", "ymax", "y-axis range", "y range", "bounds", "range"),
+    "showAxes": ("axis", "axes"),
+    "showGrid": ("grid", "gridline", "gridlines"),
+    "showMajorGrid": ("major grid", "major gridline", "major gridlines"),
+    "showAxisLabels": ("axis label", "axis labels"),
+    "showAxisNumbers": ("axis number", "axis numbers", "tick label", "tick labels"),
+    "showArrows": ("arrow", "arrows"),
+    "showFunctionArrows": ("function arrow", "function arrows"),
+    "lockAspectRatio": ("aspect ratio", "lock aspect", "locked aspect"),
+    "equalScale": ("equal scale", "same scale"),
+    "gridMajorStep": ("major step", "grid step"),
+    "gridMinorStep": ("minor step", "grid step"),
+    "gridMajorStepX": ("major x step", "x grid step"),
+    "gridMajorStepY": ("major y step", "y grid step"),
+    "gridMinorStepX": ("minor x step", "x minor grid"),
+    "gridMinorStepY": ("minor y step", "y minor grid"),
+    "labelStyle": ("label style", "arrow label", "bold label"),
+    "view": ("view", "camera", "angle"),
+    "resetView": ("reset view", "reset camera"),
+    "chartType": ("chart type", "histogram", "box plot", "density", "normal"),
+    "showFill": ("fill", "shading", "shade"),
+    "fillColor": ("fill", "colour", "color", "shading", "shade"),
+    "fillOpacity": ("opacity", "transparent", "transparency"),
+    "scalePercent": ("scale", "smaller", "larger", "bigger", "shrink", "enlarge"),
+    "original": ("original",),
+    "resample": ("resample",),
+    "variation": ("variation",),
+    "preset": ("preset",),
+    "showNodeDots": ("node dot", "node dots", "dots"),
+    "showNodeLabels": ("node label", "node labels"),
+    "labels": ("set labels", "venn labels", "notation labels", "counts", "totals"),
+    "shading": ("shade", "shading", "region"),
+    "name": ("name", "rename"),
+    "alt": ("alt", "alternative text", "accessibility"),
+}
 
 MODEL_PRICING_USD_PER_1M = {
     "gpt-5.5": {
@@ -1901,7 +1972,8 @@ def focused_tool_hint(
             "the active selected module; otherwise include target.questionNumber plus blockId/moduleId/diagramId when known. "
             "Use module for space/table/columns/choices controls and diagram module alignment/text side; use diagram for "
             "renderer controls such as graph size/display flags, Penrose scale/resample, network node dots/labels, set-diagram "
-            "labels/shading, and image name/alt/size."
+            "labels/shading, and image name/alt/size. Include only the requested settings fields; do not populate optional "
+            "schema fields with current defaults or placeholder values."
         )
     if asks_for_formatting:
         return (
@@ -3823,7 +3895,9 @@ def mauth_update_selected_settings_tool_definition() -> dict[str, Any]:
             "Apply focused settings changes to the selected or explicitly targeted existing module without rewriting "
             "question content. Use this for selected graph/chart/diagram/image size and display flags, Penrose scale, "
             "network node labels/dots, set-diagram labels/shading, image name/alt/size, and module controls such as "
-            "space lines, table sizing/alignment, columns, choices, or diagram module alignment."
+            "space lines, table sizing/alignment, columns, choices, or diagram module alignment. Include only fields "
+            "the teacher explicitly asked to change; omitted fields preserve existing settings. Never fill unrelated "
+            "optional fields with defaults, zeroes, empty strings, or placeholder values."
         ),
         "parameters": {
             "type": "object",
@@ -5009,7 +5083,82 @@ def _normalized_graph3d_face(face: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def normalized_mauth_arguments(arguments: dict[str, Any], mauth_tool_name: str | None) -> dict[str, Any]:
+def _requested_settings_keys(text: str, field_terms: dict[str, tuple[str, ...]]) -> set[str]:
+    return {field for field, terms in field_terms.items() if any(term in text for term in terms)}
+
+
+def _clean_settings_target(target: Any, text: str) -> Any:
+    if not isinstance(target, dict):
+        return target
+    cleaned = {key: value for key, value in target.items() if value not in ("", None)}
+    if cleaned.get("scope") == "selection" and any(term in text for term in SELECTED_SETTINGS_TARGET_TERMS):
+        return {"scope": "selection"}
+    return cleaned
+
+
+def _clean_requested_settings_record(record: Any, requested_keys: set[str], *, keep_renderer: bool = False) -> Any:
+    if not isinstance(record, dict):
+        return record
+    if not requested_keys:
+        return {}
+    cleaned = {key: value for key, value in record.items() if key in requested_keys}
+    if keep_renderer and cleaned and isinstance(record.get("renderer"), str) and record["renderer"].strip():
+        cleaned["renderer"] = record["renderer"]
+    return cleaned
+
+
+def _normalized_settings_apply_payload(
+    arguments: dict[str, Any], messages: list[AssistantChatMessage] | None
+) -> dict[str, Any]:
+    text = request_text(latest_user_messages(messages))
+    if not text:
+        return arguments
+
+    requested_module_keys = _requested_settings_keys(text, SETTINGS_MODULE_FIELD_TERMS)
+    requested_diagram_keys = _requested_settings_keys(text, SETTINGS_DIAGRAM_FIELD_TERMS)
+
+    def normalize_entry(entry: Any) -> Any:
+        if not isinstance(entry, dict):
+            return entry
+        normalized = dict(entry)
+        if "target" in normalized:
+            target = _clean_settings_target(normalized.get("target"), text)
+            if isinstance(target, dict) and target:
+                normalized["target"] = target
+            else:
+                normalized.pop("target", None)
+        if "module" in normalized:
+            module = _clean_requested_settings_record(normalized.get("module"), requested_module_keys)
+            if isinstance(module, dict) and module:
+                normalized["module"] = module
+            else:
+                normalized.pop("module", None)
+        if "diagram" in normalized:
+            diagram = _clean_requested_settings_record(
+                normalized.get("diagram"),
+                requested_diagram_keys,
+                keep_renderer=True,
+            )
+            if isinstance(diagram, dict) and any(key != "renderer" for key in diagram):
+                normalized["diagram"] = diagram
+            else:
+                normalized.pop("diagram", None)
+        return normalized
+
+    if isinstance(arguments.get("operations"), list):
+        return {**arguments, "operations": [normalize_entry(entry) for entry in arguments["operations"]]}
+    if isinstance(arguments.get("edits"), list):
+        return {**arguments, "edits": [normalize_entry(entry) for entry in arguments["edits"]]}
+    return normalize_entry(arguments)
+
+
+def normalized_mauth_arguments(
+    arguments: dict[str, Any],
+    mauth_tool_name: str | None,
+    messages: list[AssistantChatMessage] | None = None,
+) -> dict[str, Any]:
+    if mauth_tool_name == "mauth.settings.apply":
+        return _normalized_settings_apply_payload(arguments, messages)
     if mauth_tool_name not in QUESTION_AUTHORING_TOOL_NAMES:
         return arguments
     normalized = _normalized_graph3d_payload(arguments)
@@ -5024,7 +5173,7 @@ def normalized_mauth_arguments(arguments: dict[str, Any], mauth_tool_name: str |
     return normalized
 
 
-def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
+def tool_calls(response: dict[str, Any], messages: list[AssistantChatMessage] | None = None) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     for item in response.get("output", []):
         if not isinstance(item, dict) or item.get("type") != "function_call":
@@ -5038,7 +5187,7 @@ def tool_calls(response: dict[str, Any]) -> list[dict[str, Any]]:
         mauth_arguments = (
             arguments if direct_mauth_tool_name else mauth_arguments_from_tool_arguments(arguments, mauth_tool_name)
         )
-        mauth_arguments = normalized_mauth_arguments(mauth_arguments, mauth_tool_name)
+        mauth_arguments = normalized_mauth_arguments(mauth_arguments, mauth_tool_name, messages)
         call_id = item.get("call_id") if isinstance(item.get("call_id"), str) else None
         if call_id is None:
             call_id = item.get("id") if isinstance(item.get("id"), str) else ""
@@ -5211,7 +5360,7 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
         "model": model,
         "message": response_text(data),
         "responseId": data.get("id") if isinstance(data.get("id"), str) else None,
-        "toolCalls": tool_calls(data),
+        "toolCalls": tool_calls(data, request.messages),
         "usage": usage,
         "error": None,
     }

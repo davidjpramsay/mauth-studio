@@ -197,6 +197,60 @@ def test_extracts_selected_settings_alias_from_openai_response():
     assert call["mauthArguments"] == {"diagram": {"widthPx": 420, "showGrid": False}}
 
 
+def test_selected_settings_alias_prunes_provider_placeholder_fields():
+    response = {
+        "id": "resp_123",
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_123",
+                "call_id": "call_123",
+                "name": "mauth_update_selected_settings",
+                "arguments": json.dumps(
+                    {
+                        "target": {
+                            "scope": "selection",
+                            "questionNumber": 1,
+                            "blockId": "q1-graph",
+                            "moduleId": "q1-graph",
+                            "diagramId": "q1-graph",
+                        },
+                        "module": {
+                            "kind": "diagram",
+                            "lines": 1,
+                            "rows": 1,
+                            "diagramAlign": "center",
+                        },
+                        "diagram": {
+                            "renderer": "graph2d",
+                            "widthPx": 800,
+                            "heightPx": 300,
+                            "xMin": 0,
+                            "xMax": 0,
+                            "showGrid": False,
+                            "showAxes": True,
+                            "fillColor": "",
+                        },
+                    }
+                ),
+            }
+        ],
+    }
+    messages = [
+        openai_assistant.AssistantChatMessage(
+            role="user",
+            content="Make the selected graph wider and turn off the grid.",
+        )
+    ]
+
+    [call] = openai_assistant.tool_calls(response, messages)
+
+    assert call["mauthArguments"] == {
+        "target": {"scope": "selection"},
+        "diagram": {"widthPx": 800, "showGrid": False, "renderer": "graph2d"},
+    }
+
+
 def test_extracts_unwrapped_action_arguments_from_openai_response():
     actions = [{"type": "frontMatter.update", "patch": {"assessmentTitle": "Circle geometry"}}]
     response = {

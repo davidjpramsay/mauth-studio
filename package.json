@@ -21,6 +21,7 @@
     "eval:assistant:live:core": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case core --max-cases 1 --max-cost 0.35 --stop-on-failure",
     "eval:assistant:live:diagrams": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case diagram-routing --max-cases 1 --max-cost 0.30 --stop-on-failure",
     "eval:assistant:live:repair": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case repair --max-cases 1 --max-cost 0.35 --stop-on-failure",
+    "eval:assistant:live:settings": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case settings --max-cases 1 --max-cost 0.20 --case-cost-cap 0.20 --stop-on-failure",
     "eval:assistant:live:attachments": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case attachments --max-cases 1 --max-cost 0.30 --stop-on-failure",
     "eval:assistant:live:confidence": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case confidence --max-cases 1 --max-cost 0.35 --stop-on-failure",
     "eval:assistant:live:real-exams": "cd apps/api && uv run python ../../scripts/assistant-live-eval.py --case real-exams --max-cases 1 --max-cost 0.35 --stop-on-failure",
