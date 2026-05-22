@@ -156,7 +156,7 @@ import {
   plainTablePatch,
   plainTableRows,
 } from "@/lib/contentBlockNormalization";
-import { DEFAULT_3D_GRAPH } from "@/lib/diagram3d";
+import { DEFAULT_3D_GRAPH, DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "@/lib/diagram3d";
 import {
   DEFAULT_2D_GRAPH,
   graphFeaturesFromConfig,
@@ -5456,6 +5456,18 @@ function vector2dLabelStylePatch(config: GraphConfig, nextLabelStyle: Vector2DLa
   };
 }
 
+function graph3dViewPatch(config: GraphConfig, patch: Partial<Graph3DViewState>): Partial<GraphConfig> {
+  return {
+    metadata: {
+      ...(config.metadata ?? {}),
+      view3d: {
+        ...graph3dViewState(config),
+        ...patch,
+      },
+    },
+  };
+}
+
 function patchColumnBlockAtPath(block: EditorColumnsBlock, path: ColumnBlockPath, patch: Partial<EditorContentBlock>): EditorColumnsBlock {
   const [entry, ...remainingPath] = path;
   if (!entry) return block;
@@ -6306,6 +6318,125 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
                     />
                   </label>
                 </div>
+              </div>
+            ) : selectedDiagramConfig.type === "graph3d" ? (
+              <div className="space-y-3 border-t pt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">3D settings</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Width
+                    <input
+                      type="number"
+                      min={240}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
+                      aria-label={`${selectedBlock.label} 3D width`}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.widthPx,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Height
+                    <input
+                      type="number"
+                      min={180}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
+                      aria-label={`${selectedBlock.label} 3D height`}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.heightPx,
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Azimuth
+                    <input
+                      type="number"
+                      step={0.05}
+                      value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).az)}
+                      aria-label={`${selectedBlock.label} 3D azimuth`}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(
+                            selectedDiagramConfig,
+                            graph3dViewPatch(selectedDiagramConfig, {
+                              az: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.az,
+                            }),
+                          ),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Elevation
+                    <input
+                      type="number"
+                      step={0.05}
+                      value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).el)}
+                      aria-label={`${selectedBlock.label} 3D elevation`}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(
+                            selectedDiagramConfig,
+                            graph3dViewPatch(selectedDiagramConfig, {
+                              el: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.el,
+                            }),
+                          ),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Bank
+                    <input
+                      type="number"
+                      step={0.05}
+                      value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).bank)}
+                      aria-label={`${selectedBlock.label} 3D bank`}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(
+                            selectedDiagramConfig,
+                            graph3dViewPatch(selectedDiagramConfig, {
+                              bank: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.bank,
+                            }),
+                          ),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() =>
+                    onBlockChange(selectedBlock, {
+                      graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                        metadata: { ...(selectedDiagramConfig.metadata ?? {}), view3d: DEFAULT_3D_VIEW_STATE },
+                      }),
+                    })
+                  }
+                >
+                  Reset view
+                </Button>
               </div>
             ) : null}
           </div>
@@ -8635,7 +8766,7 @@ function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "graph-editor-controls p-3",
-      <Graph3DGraphEditor config={config} onChange={patchConfig} />,
+      <Graph3DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
     );
   }
 

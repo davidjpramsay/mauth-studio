@@ -322,6 +322,19 @@ async function main() {
     const vectorDiagramPanelText = await diagramPanelElement.asElement().textContent();
     assert(!/\bx min\b/i.test(vectorDiagramPanelText ?? ""), "vector2d bounds should not render inline");
     assert(!/\bLabel style\b/i.test(vectorDiagramPanelText ?? ""), "vector2d label style should not render inline");
+    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("graph3d");
+    await inspector.getByText("3D settings").waitFor();
+    assert.equal(await page.locator("input[aria-label='Diagram 4 3D azimuth']").count(), 1, "3D azimuth should only appear in inspector");
+    await inspector.locator("input[aria-label='Diagram 4 3D azimuth']").fill("1.25");
+    assert.equal(
+      await inspector.locator("input[aria-label='Diagram 4 3D azimuth']").inputValue(),
+      "1.25",
+      "3D view should edit in inspector",
+    );
+    await inspector.locator("input[aria-label='Diagram 4 3D width']").fill("460");
+    const graph3DPanelText = await diagramPanelElement.asElement().textContent();
+    assert(!/\bDiagram width\b/i.test(graph3DPanelText ?? ""), "graph3d size should not render inline");
+    assert(!/\bAzimuth\b/i.test(graph3DPanelText ?? ""), "graph3d view settings should not render inline");
 
     const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
     await inspector.screenshot({ path: inspectorScreenshotPath });
