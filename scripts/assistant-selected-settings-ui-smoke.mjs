@@ -17,6 +17,29 @@ const VIEWPORT = { width: 1484, height: 1264 };
 const GRAPH_ANCHOR = "q:q-assistant-ui/b:q1-graph";
 const PROMPT = "Make the selected graph wider and turn off the grid.";
 const FAILURE_PROMPT = "Hide the selected graph axes.";
+const REPAIR_PROMPT = "Add two overlapping labels to the selected graph.";
+const REPAIR_LABEL_FEATURES = [
+  {
+    id: "repair-label-a",
+    kind: "label",
+    label: "A",
+    labelMode: "name",
+    color: "#be123c",
+    show: true,
+    x: 0,
+    y: 0,
+  },
+  {
+    id: "repair-label-b",
+    kind: "label",
+    label: "B",
+    labelMode: "name",
+    color: "#0f766e",
+    show: true,
+    x: 0,
+    y: 0,
+  },
+];
 
 function timestampSlug() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -165,6 +188,7 @@ async function mockApi(page, chatRequests) {
     const body = JSON.parse(request.postData() ?? "{}");
     chatRequests.push(body);
     if (Array.isArray(body.toolOutputs) && body.toolOutputs.length) {
+      const responseId = body.previousResponseId ?? "mock-final";
       const failed = body.toolOutputs.some((toolOutput) => toolOutput?.output?.ok === false);
       await route.fulfill({
         status: 200,
@@ -173,7 +197,7 @@ async function mockApi(page, chatRequests) {
           configured: true,
           model: "mock-selected-settings",
           message: failed ? "The graph settings are done." : "The selected graph settings were updated.",
-          responseId: "mock-final",
+          responseId: `${responseId}-final`,
           toolCalls: [],
           usage: null,
           error: null,
@@ -184,15 +208,47 @@ async function mockApi(page, chatRequests) {
 
     const prompt = body.messages?.at(-1)?.content ?? "";
     const hiddenAxesRequest = prompt === FAILURE_PROMPT;
-    const mauthArguments = hiddenAxesRequest
+    const repairRequiredRequest = prompt === REPAIR_PROMPT;
+    const mauthToolName = repairRequiredRequest ? "mauth.author.addDiagram" : "mauth.settings.apply";
+    const mauthArguments = repairRequiredRequest
       ? {
-          target: { scope: "selection" },
-          diagram: { renderer: "graph2d", showAxes: false },
+          questionNumber: 1,
+          diagramId: "q1-graph",
+          diagramAlign: "center",
+          diagram: {
+            graphConfig: {
+              type: "graph2d",
+              widthPx: 800,
+              heightPx: 300,
+              xMin: -5,
+              xMax: 5,
+              yMin: -5,
+              yMax: 5,
+              showAxes: true,
+              showGrid: false,
+              showMajorGrid: true,
+              showMinorGrid: false,
+              functions: [{ id: "f1", expression: "x^2 - 4", label: "y=x^2-4", show: true }],
+              features: REPAIR_LABEL_FEATURES,
+              metadata: {},
+            },
+          },
         }
       : {
           target: { scope: "selection" },
-          diagram: { renderer: "graph2d", widthPx: 800, showGrid: false },
+          diagram: {
+            renderer: "graph2d",
+            ...(hiddenAxesRequest ? { showAxes: false } : {}),
+            ...(!hiddenAxesRequest ? { widthPx: 800, showGrid: false } : {}),
+          },
         };
+    const toolCallName = repairRequiredRequest ? "mauth_author_add_diagram" : "mauth_update_selected_settings";
+    const toolCallSlug = repairRequiredRequest ? "repair-diagram" : "selected-settings";
+    const responseId = hiddenAxesRequest
+      ? "mock-response-failure"
+      : repairRequiredRequest
+        ? "mock-response-repair"
+        : "mock-response-success";
     await route.fulfill({
       status: 200,
       headers: corsHeaders,
@@ -200,14 +256,14 @@ async function mockApi(page, chatRequests) {
         configured: true,
         model: "mock-selected-settings",
         message: "",
-        responseId: hiddenAxesRequest ? "mock-response-failure" : "mock-response-success",
+        responseId,
         toolCalls: [
           {
-            id: hiddenAxesRequest ? "tool-selected-settings-failure" : "tool-selected-settings-success",
-            callId: hiddenAxesRequest ? "call-selected-settings-failure" : "call-selected-settings-success",
-            name: "mauth_update_selected_settings",
+            id: `tool-${toolCallSlug}-${responseId}`,
+            callId: `call-${toolCallSlug}-${responseId}`,
+            name: toolCallName,
             arguments: mauthArguments,
-            mauthToolName: "mauth.settings.apply",
+            mauthToolName,
             mauthArguments,
           },
         ],
@@ -375,6 +431,45 @@ async function main() {
     const afterFailedConfig = await draftGraphConfig(page);
     assert.equal(afterFailedConfig?.showAxes, true, "failed hidden-axes settings update should leave graph axes enabled");
 
+    await promptBox.fill(REPAIR_PROMPT);
+    await page.getByRole("button", { name: "Ask" }).click();
+    await page.getByText("The graph settings are done.").last().waitFor({ timeout: 10_000 });
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Tool result:") &&
+        document.body.innerText.includes("mauth.author.addDiagram committed changes, but needs repair") &&
+        document.body.innerText.includes("Assistant post-edit inspection found repairable preview warnings"),
+      null,
+      { timeout: 10_000 },
+    );
+
+    const repairContinuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-repair");
+    const repairToolOutput = repairContinuationRequest?.toolOutputs?.[0]?.output;
+    assert.equal(repairToolOutput?.ok, false, "colliding-label diagram output should request repair after commit");
+    assert.equal(repairToolOutput?.committedDocument, true, "colliding-label diagram output should commit before repair is requested");
+    assert.equal(repairToolOutput?.toolName, "mauth.author.addDiagram", "repair output should report the authoring tool");
+    assert(repairToolOutput?.changedIds?.includes("q-assistant-ui"), "repair output should report the edited question as changed");
+    assert.match(repairToolOutput?.error ?? "", /post-edit inspection/i, "repair output should explain post-edit inspection failed");
+    assert(
+      repairToolOutput?.postEditInspection?.repairWarnings?.some(
+        (warning) => warning.code === "rendered-diagram-label-collision" && warning.targetId === "q1-graph",
+      ),
+      "repair output should identify the selected graph label collision",
+    );
+
+    const afterRepairConfig = await draftGraphConfig(page);
+    assert.deepEqual(
+      afterRepairConfig?.features?.map((feature) => ({
+        id: feature.id,
+        kind: feature.kind,
+        label: feature.label,
+        x: feature.x,
+        y: feature.y,
+      })),
+      REPAIR_LABEL_FEATURES.map((feature) => ({ id: feature.id, kind: feature.kind, label: feature.label, x: feature.x, y: feature.y })),
+      "repair-required diagram update should still commit the overlapping labels",
+    );
+
     const screenshotPath = path.join(outputDir, "selected-settings-assistant.png");
     await page.screenshot({ path: screenshotPath, fullPage: false });
 
@@ -382,7 +477,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
     console.log(
-      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, and visibly reported the rejected hidden-axes tool result. Screenshot: ${screenshotPath}`,
+      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, visibly reported the rejected hidden-axes tool result, and visibly reported a committed repair-required mauth.author.addDiagram label collision. Screenshot: ${screenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
