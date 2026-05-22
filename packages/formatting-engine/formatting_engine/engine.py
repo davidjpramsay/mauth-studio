@@ -83,7 +83,23 @@ class FormattingEngine:
             return cls._diagram_html(block.get("graphConfig"), block.get("diagramAlign"))
         if block.get("kind") == "choices":
             return cls._choices_html(block)
+        if block.get("kind") == "table":
+            return cls._table_block_html(block)
+        if block.get("kind") == "columns":
+            return cls._columns_html(block)
         return f'<div class="text-block">{cls._mixed_math_html(block.get("text", ""))}</div>'
+
+    @classmethod
+    def _columns_html(cls, block: dict) -> str:
+        columns = block.get("columns") if isinstance(block.get("columns"), list) else []
+        column_count = (
+            block.get("columnCount") if block.get("columnCount") in {2, 3, 4} else max(2, min(4, len(columns) or 2))
+        )
+        rendered_columns = []
+        for index in range(column_count):
+            column_blocks = columns[index] if index < len(columns) and isinstance(columns[index], list) else []
+            rendered_columns.append(f'<div class="content-column">{cls._content_blocks_html(column_blocks)}</div>')
+        return f'<div class="content-columns content-columns-{column_count}">{"".join(rendered_columns)}</div>'
 
     @classmethod
     def _choices_html(cls, block: dict) -> str:
@@ -99,6 +115,35 @@ class FormattingEngine:
                 f'<div class="choice-content">{cls._mixed_math_html(choice)}</div></div>'
             )
         return f'<div class="{css_class}">{"".join(items)}</div>'
+
+    @classmethod
+    def _table_block_html(cls, block: dict) -> str:
+        headers = block.get("headers") if isinstance(block.get("headers"), list) else []
+        rows = block.get("rows") if isinstance(block.get("rows"), list) else []
+        headers = [str(header) for header in headers]
+        rows = [[str(cell) for cell in row] for row in rows if isinstance(row, list)]
+        column_count = max([len(headers), *(len(row) for row in rows), 1])
+        align = block.get("tableAlign") if block.get("tableAlign") in {"left", "center", "right"} else "center"
+        cell_alignment = (
+            block.get("cellAlignment") if block.get("cellAlignment") in {"left", "center", "right"} else "center"
+        )
+        css_class = f"math-table-wrap math-table-{align}"
+        cell_class = f"math-table-cell math-table-cell-{cell_alignment}"
+
+        def padded(values: list[str]) -> list[str]:
+            return values + [""] * max(0, column_count - len(values))
+
+        header_html = ""
+        if block.get("showHeader", True):
+            cells = "".join(f'<th class="{cell_class}">{cls._mixed_math_html(cell)}</th>' for cell in padded(headers))
+            header_html = f"<thead><tr>{cells}</tr></thead>"
+
+        row_html = []
+        for row in rows:
+            cells = "".join(f'<td class="{cell_class}">{cls._mixed_math_html(cell)}</td>' for cell in padded(row))
+            row_html.append(f"<tr>{cells}</tr>")
+
+        return f'<div class="{css_class}"><table class="math-table">{header_html}<tbody>{"".join(row_html)}</tbody></table></div>'
 
     @classmethod
     def _choice_label(cls, style: str, index: int) -> str:
@@ -122,9 +167,9 @@ class FormattingEngine:
 
         def inline_replacer(match):
             latex = match.group(1).strip()
-            if not latex.startswith("\\displaystyle"):
+            if latex and not re.match(r"^\\(?:display|text|script|scriptscript)style\b", latex):
                 latex = f"\\displaystyle {latex}"
-            placeholders.append(f'<span class="inline-latex inline-displaystyle">{html.escape(latex)}</span>')
+            placeholders.append(f'<span class="inline-latex">{html.escape(latex)}</span>')
             return f"@@MATH{len(placeholders) - 1}@@"
 
         text = DISPLAY_MATH.sub(display_replacer, source or "")
@@ -217,9 +262,11 @@ class FormattingEngine:
         graph_type = graph_config.get("type", "diagram")
         if graph_type == "geometricConstruction":
             return FormattingEngine._geometric_diagram_html(graph_config, safe_align)
+        if graph_type == "image":
+            return FormattingEngine._image_diagram_html(graph_config, safe_align)
         graph_type_label = "2D graph" if graph_type in {"2d_graph", "function", "graph2d"} else str(graph_type)
-        functions = graph_config.get("functions") or []
-        if not functions and graph_config.get("expression"):
+        functions = graph_config.get("functions") if isinstance(graph_config.get("functions"), list) else []
+        if "functions" not in graph_config and graph_config.get("expression"):
             functions = [
                 {
                     "label": "f",
@@ -286,6 +333,27 @@ class FormattingEngine:
             f'<div class="question-diagram question-diagram-{safe_align}"{style}>'
             f"<div><span>Diagram:</span> {html.escape(graph_type_label)}</div>"
             f'{functions_html}{details}<div class="diagram-options">{option_html}</div>'
+            f"</div>"
+        )
+
+    @staticmethod
+    def _image_diagram_html(graph_config: dict, safe_align: str) -> str:
+        data = graph_config.get("data") if isinstance(graph_config.get("data"), dict) else {}
+        src = str(data.get("src") or "")
+        alt = html.escape(str(data.get("alt") or data.get("name") or "Uploaded diagram"), quote=True)
+        width = graph_config.get("widthPx")
+        height = graph_config.get("heightPx")
+        style_parts = ["max-width:100%", "object-fit:contain"]
+        if width is not None:
+            style_parts.append(f"width:{html.escape(str(width), quote=True)}px")
+        if height is not None:
+            style_parts.append(f"max-height:{html.escape(str(height), quote=True)}px")
+        style = f' style="{";".join(style_parts)}"'
+        if not src:
+            return f'<div class="question-diagram question-diagram-{safe_align}"><span>No image selected</span></div>'
+        return (
+            f'<div class="question-diagram question-diagram-{safe_align}">'
+            f'<img src="{html.escape(src, quote=True)}" alt="{alt}"{style}>'
             f"</div>"
         )
 

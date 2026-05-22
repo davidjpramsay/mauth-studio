@@ -1,12 +1,25 @@
 import { useEffect, useMemo } from "react";
-import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
+import type {
+  Graph2DGeometryAngle,
+  Graph2DGeometryData,
+  Graph2DGeometryPoint,
+  Graph2DGeometrySegment,
+  Graph2DPolarGridData,
+  GraphConfig,
+  GraphFeature,
+  GraphFunction,
+  GraphFunctionPiece,
+  GraphSlopeFieldPoint,
+} from "@mauth-studio/shared";
 import JXG from "jsxgraph";
-import katex from "katex";
 
+import { renderMathJaxSvg } from "@/lib/mathjax";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelAttributes } from "./graphTypography";
 
 interface FunctionGraphProps {
   graphConfig?: GraphConfig | null;
+  solutionColor?: string;
+  solutionFeatureColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }
 
@@ -78,8 +91,41 @@ function normalizeUnaryMinusBeforePowers(expression: string) {
   return normalized;
 }
 
+function normalizeImplicitXYMultiplication(expression: string) {
+  let normalized = "";
+
+  const nonWhitespaceAfter = (index: number) => {
+    let cursor = index + 1;
+    while (cursor < expression.length && /\s/.test(expression[cursor])) cursor += 1;
+    return cursor < expression.length ? cursor : -1;
+  };
+  const isIdentifierLetter = (value: string | undefined) => Boolean(value && /[A-Za-z_.]/.test(value));
+  const isXYVariable = (index: number) => {
+    const value = expression[index]?.toLowerCase();
+    if (value !== "x" && value !== "y") return false;
+    const previous = expression[index - 1];
+    const next = expression[index + 1];
+    if (isIdentifierLetter(previous) && previous.toLowerCase() !== "x" && previous.toLowerCase() !== "y") return false;
+    if (isIdentifierLetter(next) && next.toLowerCase() !== "x" && next.toLowerCase() !== "y") return false;
+    return true;
+  };
+
+  for (let index = 0; index < expression.length; index += 1) {
+    normalized += expression[index];
+    const nextIndex = nonWhitespaceAfter(index);
+    if (nextIndex === -1) continue;
+    const current = expression[index];
+    const next = expression[nextIndex];
+    const leftFactor = /\d/.test(current) || current === ")" || isXYVariable(index);
+    const rightFactor = next === "(" || isXYVariable(nextIndex) || (/\d/.test(next) && (current === ")" || isXYVariable(index)));
+    if (leftFactor && rightFactor) normalized += "*";
+  }
+
+  return normalized;
+}
+
 function toJavaScriptExpression(expression: string) {
-  const jsExpression = expression
+  const jsExpression = normalizeImplicitXYMultiplication(expression)
     .replace(/\*\*/g, "^")
     .replace(/\^/g, "**")
     .replace(/\bpi\b/gi, "Math.PI")
@@ -121,6 +167,7 @@ const GRAPH_LAYERS = {
   grid: 1,
   axis: 3,
   featureFill: 6,
+  slopeField: 7,
   function: 8,
   point: 9,
   functionArrow: 10,
@@ -128,8 +175,6 @@ const GRAPH_LAYERS = {
   featureLabel: 12,
 };
 const X_EPSILON = 1e-7;
-
-(globalThis as unknown as { katex?: unknown }).katex = katex;
 
 interface FunctionArrowGeometry {
   tip: [number, number];
@@ -163,12 +208,39 @@ type JXGElement = {
   moveTo?: (coords: [number, number], time?: number) => void;
   on?: (event: string, callback: () => void) => void;
   coords?: { usrCoords?: number[] };
+  isDraggable?: boolean;
+  rendNode?: HTMLElement;
 };
 type NativeRegionElement = unknown;
 
+interface SlopeFieldSpec {
+  expression: string;
+  xValues?: number[];
+  yValues?: number[];
+  xRange?: [number, number];
+  yRange?: [number, number];
+  xStep?: number;
+  yStep?: number;
+  segmentLength?: number;
+  color?: string;
+  strokeWidth?: number;
+  points?: GraphSlopeFieldPoint[];
+  highlightedPoints?: GraphSlopeFieldPoint[];
+}
+
+interface PolarGridSpec {
+  center: [number, number];
+  radii: number[];
+  angleLinesDeg: number[];
+  radius: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
+}
+
 function graphFunctions(graphConfig?: GraphConfig | null): GraphFunction[] {
   if (!graphConfig) return [];
-  if (graphConfig.functions?.length) return graphConfig.functions;
+  if (Array.isArray(graphConfig.functions)) return graphConfig.functions;
   if (!graphConfig.expression) return [];
   return [
     {
@@ -189,6 +261,12 @@ function shouldShowGraphItem(item: { show?: boolean }) {
 
 function graphFeatures(graphConfig?: GraphConfig | null): GraphFeature[] {
   return graphConfig?.features ?? [];
+}
+
+function graphDataRecord(graphConfig?: GraphConfig | null): Record<string, unknown> {
+  return graphConfig?.data && typeof graphConfig.data === "object" && !Array.isArray(graphConfig.data)
+    ? (graphConfig.data as Record<string, unknown>)
+    : {};
 }
 
 function isBaseRegionFeature(feature?: GraphFeature) {
@@ -275,6 +353,131 @@ function createImplicitEvaluator(expression: string) {
       return NaN;
     }
   };
+}
+
+function slopeFieldExpression(expression: string) {
+  const equalsIndex = singleEqualsIndex(expression);
+  if (equalsIndex !== -1) return expression.slice(equalsIndex + 1).trim();
+  return expression.trim();
+}
+
+function createSlopeFieldEvaluator(expression: string) {
+  const jsExpression = toJavaScriptExpression(slopeFieldExpression(expression));
+  const evaluator = new Function("x", "y", `"use strict"; return (${jsExpression});`) as (x: number, y: number) => number;
+  return (x: number, y: number) => {
+    try {
+      const value = evaluator(x, y);
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+function finiteNumberFromUnknown(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberTuple(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const left = finiteNumberFromUnknown(value[0]);
+  const right = finiteNumberFromUnknown(value[1]);
+  if (left === null || right === null || left === right) return undefined;
+  return left < right ? [left, right] : [right, left];
+}
+
+function pointTuple(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const x = finiteNumberFromUnknown(value[0]);
+  const y = finiteNumberFromUnknown(value[1]);
+  return x === null || y === null ? undefined : [x, y];
+}
+
+function numberList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number" && Number.isFinite(item)) : undefined;
+}
+
+function slopeFieldPoint(value: unknown): GraphSlopeFieldPoint | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const x = finiteNumberFromUnknown(record.x);
+  const y = finiteNumberFromUnknown(record.y);
+  if (x === null || y === null) return null;
+  return {
+    x,
+    y,
+    ...(finiteNumberFromUnknown(record.slope) !== null ? { slope: finiteNumberFromUnknown(record.slope) as number } : {}),
+    ...(typeof record.label === "string" ? { label: record.label } : {}),
+    ...(typeof record.color === "string" ? { color: record.color } : {}),
+    ...(typeof record.show === "boolean" ? { show: record.show } : {}),
+  };
+}
+
+function slopeFieldSpec(graphConfig: GraphConfig): SlopeFieldSpec | null {
+  const data = graphDataRecord(graphConfig);
+  const raw = data.slopeField;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  if (record.show === false) return null;
+  const expression =
+    typeof record.expression === "string" && record.expression.trim()
+      ? record.expression.trim()
+      : typeof record.differentialEquation === "string" && record.differentialEquation.trim()
+        ? record.differentialEquation.trim()
+        : "";
+  if (!expression) return null;
+  return {
+    expression,
+    xValues: numberList(record.xValues),
+    yValues: numberList(record.yValues),
+    xRange: numberTuple(record.xRange),
+    yRange: numberTuple(record.yRange),
+    xStep: finiteNumberFromUnknown(record.xStep) ?? undefined,
+    yStep: finiteNumberFromUnknown(record.yStep) ?? undefined,
+    segmentLength: finiteNumberFromUnknown(record.segmentLength) ?? undefined,
+    color: typeof record.color === "string" ? record.color : undefined,
+    strokeWidth: finiteNumberFromUnknown(record.strokeWidth) ?? undefined,
+    points: Array.isArray(record.points) ? record.points.flatMap((point) => slopeFieldPoint(point) ?? []) : undefined,
+    highlightedPoints: Array.isArray(record.highlightedPoints)
+      ? record.highlightedPoints.flatMap((point) => slopeFieldPoint(point) ?? [])
+      : undefined,
+  };
+}
+
+function polarGridSpec(graphConfig: GraphConfig): PolarGridSpec | null {
+  const data = graphDataRecord(graphConfig);
+  const raw = data.polarGrid;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Graph2DPolarGridData & Record<string, unknown>;
+  if (record.show === false) return null;
+  const centerTuple = pointTuple(record.center);
+  const radii = (numberList(record.radii) ?? []).filter((radius) => radius > 0);
+  const angleLinesDeg = numberList(record.angleLinesDeg) ?? numberList(record.anglesDeg) ?? [];
+  const angleLinesRad = numberList(record.angleLinesRad);
+  const convertedAngles = angleLinesRad?.map((angle) => (angle * 180) / Math.PI) ?? [];
+  const radius = finiteNumberFromUnknown(record.radius) ?? Math.max(0, ...radii);
+  if (!radii.length && !angleLinesDeg.length && !convertedAngles.length) return null;
+  return {
+    center: centerTuple ?? [0, 0],
+    radii,
+    angleLinesDeg: [...angleLinesDeg, ...convertedAngles],
+    radius: radius > 0 ? radius : Math.max(1, ...radii),
+    color: typeof record.color === "string" ? record.color : undefined,
+    strokeWidth: finiteNumberFromUnknown(record.strokeWidth) ?? undefined,
+    strokeStyle: record.strokeStyle === "dashed" || record.strokeStyle === "solid" ? record.strokeStyle : undefined,
+  };
+}
+
+function normalizedAngleLineDegrees(values: number[]) {
+  const seen = new Set<number>();
+  return values.flatMap((value) => {
+    if (!Number.isFinite(value)) return [];
+    const normalized = ((value % 180) + 180) % 180;
+    const key = Math.round(normalized * 1000);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return normalized;
+  });
 }
 
 function finiteValue(evaluator: (x: number) => number, x: number) {
@@ -468,6 +671,164 @@ function graphBoardSizing(graphConfig: GraphConfig) {
     boardPaddingX,
     boardPaddingY,
   };
+}
+
+function slopeFieldAxisValues(
+  explicitValues: number[] | undefined,
+  range: [number, number] | undefined,
+  step: number | undefined,
+  fallbackMin: number,
+  fallbackMax: number,
+  fallbackStep: number,
+) {
+  if (explicitValues?.length) return explicitValues;
+  const [min, max] = range ?? [fallbackMin, fallbackMax];
+  const spacing = Number.isFinite(step) && step && step > 0 ? step : fallbackStep;
+  return numericRange(min, max, spacing);
+}
+
+function slopeFieldSegmentEndpoints(x: number, y: number, slope: number, length: number): [[number, number], [number, number]] | null {
+  if (!Number.isFinite(slope)) return null;
+  if (Math.abs(slope) > 1e6) {
+    const halfLength = length / 2;
+    return [
+      [x, y - halfLength],
+      [x, y + halfLength],
+    ];
+  }
+  const scale = length / (2 * Math.sqrt(1 + slope * slope));
+  const dx = scale;
+  const dy = slope * scale;
+  return [
+    [x - dx, y - dy],
+    [x + dx, y + dy],
+  ];
+}
+
+function drawSlopeFieldSegment(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  slope: number | null,
+  length: number,
+  attributes: Record<string, unknown>,
+) {
+  if (slope === null) return;
+  const endpoints = slopeFieldSegmentEndpoints(x, y, slope, length);
+  if (!endpoints) return;
+  board.create("segment", endpoints, attributes);
+}
+
+function renderSlopeField(
+  board: JXG.Board,
+  graphConfig: GraphConfig,
+  xMajorStep: number,
+  yMajorStep: number,
+  xMin: number,
+  xMax: number,
+  yMin: number,
+  yMax: number,
+) {
+  const field = slopeFieldSpec(graphConfig);
+  if (!field) return;
+  let evaluator: (x: number, y: number) => number | null;
+  try {
+    evaluator = createSlopeFieldEvaluator(field.expression);
+  } catch {
+    return;
+  }
+
+  const xStep = Number.isFinite(field.xStep) && field.xStep && field.xStep > 0 ? field.xStep : xMajorStep;
+  const yStep = Number.isFinite(field.yStep) && field.yStep && field.yStep > 0 ? field.yStep : yMajorStep;
+  const xValues = slopeFieldAxisValues(field.xValues, field.xRange, field.xStep, xMin, xMax, xStep);
+  const yValues = slopeFieldAxisValues(field.yValues, field.yRange, field.yStep, yMin, yMax, yStep);
+  const segmentLength =
+    Number.isFinite(field.segmentLength) && field.segmentLength && field.segmentLength > 0
+      ? field.segmentLength
+      : Math.max(0.18, Math.min(xStep, yStep) * 0.55);
+  const baseAttributes = {
+    fixed: true,
+    highlight: false,
+    straightFirst: false,
+    straightLast: false,
+    strokeColor: field.color ?? "#475569",
+    strokeWidth: field.strokeWidth ?? 1.6,
+    layer: GRAPH_LAYERS.slopeField,
+  } as Record<string, unknown>;
+
+  let rendered = 0;
+  const maxSegments = 420;
+  for (const x of xValues) {
+    for (const y of yValues) {
+      if (rendered >= maxSegments) break;
+      drawSlopeFieldSegment(board, x, y, evaluator(x, y), segmentLength, baseAttributes);
+      rendered += 1;
+    }
+  }
+
+  const explicitPoints = [...(field.points ?? []), ...(field.highlightedPoints ?? [])].filter((point) => point.show !== false);
+  explicitPoints.forEach((point, index) => {
+    const color = point.color ?? (index >= (field.points?.length ?? 0) ? "#be123c" : (field.color ?? "#475569"));
+    drawSlopeFieldSegment(board, point.x, point.y, point.slope ?? evaluator(point.x, point.y), segmentLength * 1.15, {
+      ...baseAttributes,
+      strokeColor: color,
+      strokeWidth: Math.max(2.2, Number(field.strokeWidth ?? 1.6) + 0.8),
+      layer: GRAPH_LAYERS.point,
+    });
+    board.create("point", [point.x, point.y], {
+      fixed: true,
+      withLabel: false,
+      size: 2,
+      fillColor: color,
+      strokeColor: color,
+      highlight: false,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+    if (point.label?.trim()) {
+      createLabelText(board, point.x, point.y, point.label, color);
+    }
+  });
+}
+
+function renderPolarGrid(board: JXG.Board, graphConfig: GraphConfig) {
+  const grid = polarGridSpec(graphConfig);
+  if (!grid) return;
+
+  const [centerX, centerY] = grid.center;
+  const attributes = {
+    fixed: true,
+    highlight: false,
+    strokeColor: grid.color ?? "#d9d9d9",
+    strokeWidth: grid.strokeWidth ?? 1,
+    dash: lineDash(grid.strokeStyle),
+    layer: GRAPH_LAYERS.grid,
+  } as Record<string, unknown>;
+
+  grid.radii.forEach((radius) => {
+    board.create(
+      "curve",
+      [(t: number) => centerX + radius * Math.cos(t), (t: number) => centerY + radius * Math.sin(t), 0, 2 * Math.PI],
+      attributes,
+    );
+  });
+
+  normalizedAngleLineDegrees(grid.angleLinesDeg).forEach((angleDeg) => {
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const dx = grid.radius * Math.cos(angleRad);
+    const dy = grid.radius * Math.sin(angleRad);
+    board.create(
+      "segment",
+      [
+        [centerX - dx, centerY - dy],
+        [centerX + dx, centerY + dy],
+      ],
+      {
+        ...attributes,
+        straightFirst: false,
+        straightLast: false,
+      },
+    );
+  });
 }
 
 export function graphDisplayHeight(graphConfig?: GraphConfig | null) {
@@ -727,7 +1088,7 @@ function graphFunctionLabel(index: number) {
 }
 
 function functionLabelLatex(graphFunction: GraphFunction, index: number) {
-  const label = graphFunction.label || graphFunctionLabel(index);
+  const label = labelNameLatex(graphFunction.label || graphFunctionLabel(index)) || graphFunctionLabel(index);
   if (graphFunction.labelMode === "name") return label;
 
   const expressionLatex = graphFunction.latex?.trim() || expressionToLatex(graphFunction.expression);
@@ -837,17 +1198,26 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
+function graphLabelLatex(source: string) {
+  const trimmed = source.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$") && !trimmed.startsWith("$$") && !trimmed.endsWith("\\$")) {
+    return trimmed.slice(1, -1).trim();
+  }
+  if (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) return trimmed.slice(2, -2).trim();
+  if (trimmed.startsWith("\\[") && trimmed.endsWith("\\]")) return trimmed.slice(2, -2).trim();
+  return trimmed;
+}
+
 function renderLatexLabelHtml(latex: string, color: string) {
+  const normalizedLatex = graphLabelLatex(latex);
   const safeColor = safeCssColor(color);
+  const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
+  const sourceAttr = `data-mauth-label-text="${escapeHtml(normalizedLatex)}"`;
   try {
-    const html = katex.renderToString(latex, {
-      throwOnError: false,
-      strict: "ignore",
-      output: "html",
-    });
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};">${html}</span>`;
+    const html = renderMathJaxSvg(normalizedLatex, false);
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};">${escapeHtml(latex)}</span>`;
+    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
   }
 }
 
@@ -861,33 +1231,69 @@ function createLabelText(
 ) {
   const initialLatex = typeof latex === "function" ? latex() : latex;
   if (!initialLatex.trim()) return null;
+  const safeColor = safeCssColor(color);
+  const labelInteractionCss = ` user-select: none; -webkit-user-select: none; touch-action: none;${onMove ? " cursor: move;" : ""}`;
+  const labelCss = `${GRAPH_LABEL_FONT_CSS} color: ${safeColor};${labelInteractionCss}`;
   const labelContent = typeof latex === "function" ? () => renderLatexLabelHtml(latex(), color) : renderLatexLabelHtml(latex, color);
   const text = board.create("text", [x, y, labelContent], {
     fixed: !onMove,
     highlight: false,
-    strokeColor: color,
-    highlightStrokeColor: color,
+    strokeColor: safeColor,
+    highlightStrokeColor: safeColor,
     fontSize: AXIS_TEXT_FONT_SIZE,
     fontUnit: GRAPH_LABEL_FONT_UNIT,
-    cssStyle: `${GRAPH_LABEL_FONT_CSS} color: ${color};${onMove ? " cursor: move;" : ""}`,
-    highlightCssStyle: `${GRAPH_LABEL_FONT_CSS} color: ${color};${onMove ? " cursor: move;" : ""}`,
+    cssStyle: labelCss,
+    highlightCssStyle: labelCss,
     anchorX: "left",
     anchorY: "bottom",
     offset: [8, -8],
     display: "html",
-    useKatex: false,
     parse: false,
     layer: GRAPH_LAYERS.featureLabel,
   } as Record<string, unknown>);
 
   if (onMove) {
-    (text as unknown as { on?: (event: string, callback: () => void) => void }).on?.("up", () => {
+    const draggableText = text as unknown as JXGElement;
+    draggableText.isDraggable = true;
+    draggableText.rendNode?.style.setProperty("cursor", "move");
+    draggableText.rendNode?.style.setProperty("user-select", "none");
+    draggableText.rendNode?.style.setProperty("-webkit-user-select", "none");
+    draggableText.rendNode?.style.setProperty("touch-action", "none");
+    draggableText.on?.("up", () => {
       const coords = textCoordinates(text);
       if (coords) onMove(coords[0], coords[1]);
     });
   }
 
   return text;
+}
+
+function createAxisLabelText(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  latex: string,
+  offset: [number, number],
+  anchorX: "left" | "middle" | "right",
+  anchorY: "top" | "middle" | "bottom",
+) {
+  const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
+  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR)], {
+    fixed: true,
+    highlight: false,
+    strokeColor: AXIS_COLOR,
+    highlightStrokeColor: AXIS_COLOR,
+    fontSize: AXIS_TEXT_FONT_SIZE,
+    fontUnit: GRAPH_LABEL_FONT_UNIT,
+    cssStyle: axisLabelCss,
+    highlightCssStyle: axisLabelCss,
+    anchorX,
+    anchorY,
+    offset,
+    display: "html",
+    parse: false,
+    layer: GRAPH_LAYERS.axisLabel,
+  } as Record<string, unknown>);
 }
 
 function createFeaturePoint(
@@ -969,6 +1375,327 @@ function createFreeLabel(board: JXG.Board, feature: GraphFeature, color: string,
   const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
   const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
   createLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
+}
+
+function createLineSegmentFeature(board: JXG.Board, feature: GraphFeature, color: string, onLabelMove?: (x: number, y: number) => void) {
+  const x1 = Number.isFinite(feature.x1) ? (feature.x1 as number) : 0;
+  const y1 = Number.isFinite(feature.y1) ? (feature.y1 as number) : 0;
+  const x2 = Number.isFinite(feature.x2) ? (feature.x2 as number) : 0;
+  const y2 = Number.isFinite(feature.y2) ? (feature.y2 as number) : 0;
+  const start = board.create("point", [x1, y1], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+  const end = board.create("point", [x2, y2], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+  board.create("segment", [start, end], {
+    fixed: true,
+    highlight: false,
+    strokeColor: color,
+    highlightStrokeColor: color,
+    strokeWidth: lineWeight(feature.strokeWidth, 2),
+    dash: lineDash(feature.strokeStyle),
+    layer: GRAPH_LAYERS.point,
+  } as Record<string, unknown>);
+
+  const label = featureLabelLatex(feature);
+  if (label.trim()) {
+    createLabelText(
+      board,
+      Number.isFinite(feature.labelX) ? (feature.labelX as number) : (x1 + x2) / 2,
+      Number.isFinite(feature.labelY) ? (feature.labelY as number) : (y1 + y2) / 2,
+      label,
+      color,
+      onLabelMove,
+    );
+  }
+}
+
+function graph2DGeometryData(graphConfig: GraphConfig): Graph2DGeometryData | null {
+  const geometry = graphDataRecord(graphConfig).geometry2d;
+  return geometry && typeof geometry === "object" && !Array.isArray(geometry) ? (geometry as Graph2DGeometryData) : null;
+}
+
+function geometryPointMap(geometry: Graph2DGeometryData) {
+  const points = new Map<string, Graph2DGeometryPoint>();
+  (geometry.points ?? []).forEach((point) => {
+    if (!point.id || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    points.set(point.id, point);
+  });
+  return points;
+}
+
+function geometrySegmentMap(geometry: Graph2DGeometryData) {
+  const segments = new Map<string, Graph2DGeometrySegment>();
+  (geometry.segments ?? []).forEach((segment) => {
+    if (!segment.id) return;
+    segments.set(segment.id, segment);
+  });
+  return segments;
+}
+
+function geometryAngleMap(geometry: Graph2DGeometryData) {
+  const angles = new Map<string, Graph2DGeometryAngle>();
+  (geometry.angles ?? []).forEach((angle) => {
+    if (!angle.id || !Array.isArray(angle.points) || angle.points.length !== 3) return;
+    angles.set(angle.id, angle);
+  });
+  return angles;
+}
+
+function geometryPointTuple(point?: Graph2DGeometryPoint): [number, number] | null {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  return [point.x, point.y];
+}
+
+function geometrySegmentEndpoints(
+  segment: Graph2DGeometrySegment | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number]] | null {
+  if (!segment) return null;
+  const start = geometryPointTuple(points.get(segment.from));
+  const end = geometryPointTuple(points.get(segment.to));
+  return start && end ? [start, end] : null;
+}
+
+function geometryAnglePoints(
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number], [number, number]] | null {
+  if (!angle) return null;
+  const first = geometryPointTuple(points.get(angle.points[0]));
+  const vertex = geometryPointTuple(points.get(angle.points[1]));
+  const second = geometryPointTuple(points.get(angle.points[2]));
+  return first && vertex && second ? [first, vertex, second] : null;
+}
+
+function pixelDirection(board: JXG.Board, start: [number, number], end: [number, number]) {
+  const unitX = boardUnit(board, "x");
+  const unitY = boardUnit(board, "y");
+  const dxPx = (end[0] - start[0]) * unitX;
+  const dyPx = -(end[1] - start[1]) * unitY;
+  const length = Math.hypot(dxPx, dyPx);
+  if (!Number.isFinite(length) || length < 1e-6) return null;
+  return { x: dxPx / length, y: dyPx / length };
+}
+
+function createPixelSegment(
+  board: JXG.Board,
+  center: [number, number],
+  firstOffset: [number, number],
+  secondOffset: [number, number],
+  color: string,
+  strokeWidth = 1.6,
+) {
+  board.create(
+    "segment",
+    [
+      offsetUserByPixels(board, center[0], center[1], firstOffset[0], firstOffset[1]),
+      offsetUserByPixels(board, center[0], center[1], secondOffset[0], secondOffset[1]),
+    ],
+    {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>,
+  );
+}
+
+function drawGeometryEqualLengthTicks(
+  board: JXG.Board,
+  segment: Graph2DGeometrySegment | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  tickCount: number,
+  sizePx: number,
+) {
+  const endpoints = geometrySegmentEndpoints(segment, points);
+  if (!endpoints) return;
+  const [start, end] = endpoints;
+  const direction = pixelDirection(board, start, end);
+  if (!direction) return;
+  const normal = { x: -direction.y, y: direction.x };
+  const midpoint: [number, number] = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  const count = Math.max(1, Math.min(4, Math.round(tickCount)));
+  const spacingPx = sizePx * 0.65;
+  for (let index = 0; index < count; index += 1) {
+    const alongPx = (index - (count - 1) / 2) * spacingPx;
+    const center = offsetUserByPixels(board, midpoint[0], midpoint[1], direction.x * alongPx, direction.y * alongPx);
+    createPixelSegment(
+      board,
+      center,
+      [-normal.x * sizePx * 0.5, -normal.y * sizePx * 0.5],
+      [normal.x * sizePx * 0.5, normal.y * sizePx * 0.5],
+      color,
+    );
+  }
+}
+
+function shortestAngleDelta(start: number, end: number) {
+  let delta = end - start;
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  return delta;
+}
+
+function drawGeometryAngleArc(
+  board: JXG.Board,
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  radius: number,
+  arcCount: number,
+) {
+  const anglePoints = geometryAnglePoints(angle, points);
+  if (!anglePoints) return;
+  const [first, vertex, second] = anglePoints;
+  const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
+  const delta = shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0]));
+  const count = Math.max(1, Math.min(4, Math.round(arcCount)));
+  for (let arcIndex = 0; arcIndex < count; arcIndex += 1) {
+    const arcRadius = radius + arcIndex * radius * 0.16;
+    const steps = Math.max(8, Math.ceil(Math.abs(delta) / (Math.PI / 24)));
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let step = 0; step <= steps; step += 1) {
+      const theta = startAngle + (delta * step) / steps;
+      xs.push(vertex[0] + Math.cos(theta) * arcRadius);
+      ys.push(vertex[1] + Math.sin(theta) * arcRadius);
+    }
+    board.create("curve", [xs, ys], {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth: 1.6,
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+  }
+}
+
+function unitUserVector(from: [number, number], to: [number, number]): [number, number] | null {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length < 1e-9) return null;
+  return [dx / length, dy / length];
+}
+
+function drawGeometryRightAngleMarker(
+  board: JXG.Board,
+  angle: Graph2DGeometryAngle | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  size: number,
+) {
+  const anglePoints = geometryAnglePoints(angle, points);
+  if (!anglePoints) return;
+  const [first, vertex, second] = anglePoints;
+  const firstUnit = unitUserVector(vertex, first);
+  const secondUnit = unitUserVector(vertex, second);
+  if (!firstUnit || !secondUnit) return;
+  const p1: [number, number] = [vertex[0] + firstUnit[0] * size, vertex[1] + firstUnit[1] * size];
+  const p3: [number, number] = [vertex[0] + secondUnit[0] * size, vertex[1] + secondUnit[1] * size];
+  const p2: [number, number] = [p1[0] + secondUnit[0] * size, p1[1] + secondUnit[1] * size];
+  const attrs = {
+    fixed: true,
+    highlight: false,
+    strokeColor: color,
+    highlightStrokeColor: color,
+    strokeWidth: 1.6,
+    layer: GRAPH_LAYERS.point,
+  } as Record<string, unknown>;
+  board.create("segment", [p1, p2], attrs);
+  board.create("segment", [p2, p3], attrs);
+}
+
+function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solutionColor?: string) {
+  const geometry = graph2DGeometryData(graphConfig);
+  if (!geometry) return;
+  const points = geometryPointMap(geometry);
+  const segments = geometrySegmentMap(geometry);
+  const angles = geometryAngleMap(geometry);
+
+  segments.forEach((segment) => {
+    if (segment.show === false) return;
+    const endpoints = geometrySegmentEndpoints(segment, points);
+    if (!endpoints) return;
+    const [start, end] = endpoints;
+    const color = solutionColor ?? segment.color ?? "#000000";
+    board.create("segment", [start, end], {
+      fixed: true,
+      highlight: false,
+      strokeColor: color,
+      highlightStrokeColor: color,
+      strokeWidth: lineWeight(segment.strokeWidth, 2),
+      dash: lineDash(segment.strokeStyle),
+      layer: GRAPH_LAYERS.point,
+    } as Record<string, unknown>);
+    if (segment.label?.trim()) {
+      createLabelText(
+        board,
+        Number.isFinite(segment.labelX) ? (segment.labelX as number) : (start[0] + end[0]) / 2,
+        Number.isFinite(segment.labelY) ? (segment.labelY as number) : (start[1] + end[1]) / 2,
+        segment.label,
+        color,
+      );
+    }
+  });
+
+  (geometry.decorations ?? []).forEach((decoration) => {
+    if (decoration.show === false) return;
+    const color = solutionColor ?? decoration.color ?? "#000000";
+    if (decoration.kind === "equalLength") {
+      const tickCount = decoration.tickCount ?? 1;
+      const sizePx = decoration.size ?? 16;
+      (decoration.segments ?? []).forEach((segmentId) =>
+        drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx),
+      );
+    }
+    if (decoration.kind === "equalAngle") {
+      const arcCount = decoration.arcCount ?? 1;
+      const radius = decoration.radius ?? 0.55;
+      (decoration.angles ?? []).forEach((angleId) => drawGeometryAngleArc(board, angles.get(angleId), points, color, radius, arcCount));
+    }
+    if (decoration.kind === "rightAngle") {
+      drawGeometryRightAngleMarker(board, angles.get(decoration.angle ?? ""), points, color, decoration.size ?? 0.35);
+    }
+  });
+
+  angles.forEach((angle) => {
+    if (angle.show === false || !angle.label?.trim()) return;
+    const anglePoints = geometryAnglePoints(angle, points);
+    if (!anglePoints) return;
+    const [first, vertex, second] = anglePoints;
+    const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
+    const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0])) / 2;
+    const labelRadius = (angle.radius ?? 0.55) * 1.45;
+    createLabelText(
+      board,
+      Number.isFinite(angle.labelX) ? (angle.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius,
+      Number.isFinite(angle.labelY) ? (angle.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
+      angle.label,
+      solutionColor ?? angle.color ?? "#000000",
+    );
+  });
+
+  points.forEach((point) => {
+    if (point.show === false) return;
+    const color = solutionColor ?? point.color ?? "#000000";
+    createFeaturePoint(
+      board,
+      point.x,
+      point.y,
+      {
+        kind: "point",
+        label: point.label ?? point.id,
+        labelMode: point.label || point.id ? "name" : "none",
+        labelX: point.labelX,
+        labelY: point.labelY,
+        size: 0.15,
+      },
+      color,
+    );
+  });
 }
 
 function boundedInterval(feature: GraphFeature, graphConfig: GraphConfig) {
@@ -2305,14 +3032,22 @@ function renderGraphFeature(
   graphConfig: GraphConfig,
   functions: GraphFunction[],
   featureIndex: number,
+  solutionColor?: string,
+  solutionFeatureColor?: string,
   onLabelMove?: (featureIndex: number, x: number, y: number) => void,
   onPointMove?: (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => void,
+  onFreeLabelMove?: (featureIndex: number, x: number, y: number) => void,
 ) {
-  const color = feature.color ?? FUNCTION_COLORS[featureIndex % FUNCTION_COLORS.length];
+  const color =
+    solutionColor ??
+    (feature.solutionOnly === true ? solutionFeatureColor : undefined) ??
+    feature.color ??
+    FUNCTION_COLORS[featureIndex % FUNCTION_COLORS.length];
   const handleLabelMove = onLabelMove ? (x: number, y: number) => onLabelMove(featureIndex, x, y) : undefined;
   const handlePointMove = onPointMove
     ? (x: number, y: number, previousX: number, previousY: number) => onPointMove(featureIndex, x, y, previousX, previousY)
     : undefined;
+  const handleFreeLabelMove = onFreeLabelMove ? (x: number, y: number) => onFreeLabelMove(featureIndex, x, y) : undefined;
   const evaluatorA = createGraphFunctionEvaluator(functions[feature.functionAIndex ?? feature.functionIndex ?? 0], graphConfig);
   const evaluatorB = createGraphFunctionEvaluator(functions[feature.functionBIndex ?? 1], graphConfig);
   const singleEvaluator = createGraphFunctionEvaluator(functions[feature.functionIndex ?? 0], graphConfig);
@@ -2324,9 +3059,12 @@ function renderGraphFeature(
   }
 
   if (feature.kind === "label") {
-    const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
-    const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
-    createFreeLabel(board, feature, color, handlePointMove ? (nextX, nextY) => handlePointMove(nextX, nextY, x, y) : handleLabelMove);
+    createFreeLabel(board, feature, color, handleFreeLabelMove ?? handleLabelMove);
+    return;
+  }
+
+  if (feature.kind === "line_segment") {
+    createLineSegmentFeature(board, feature, color, handleLabelMove);
     return;
   }
 
@@ -2399,7 +3137,7 @@ function renderGraphFeature(
   }
 }
 
-export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGraphProps) {
+export function FunctionGraph({ graphConfig, solutionColor, solutionFeatureColor, onGraphConfigChange }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
 
   useEffect(() => {
@@ -2407,7 +3145,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     const functions = graphFunctions(graphConfig).filter((graphFunction) =>
       graphFunction.kind === "piecewise" ? graphFunction.pieces?.some((piece) => piece.expression.trim()) : graphFunction.expression.trim(),
     );
-    if (!graphConfig || (!functions.length && !features.length)) return;
+    if (!graphConfig) return;
 
     const {
       xMin,
@@ -2551,13 +3289,6 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         strokeColor: AXIS_COLOR,
         layer: GRAPH_LAYERS.axis,
       };
-      const axisLabelAttributes = {
-        parse: false,
-        strokeColor: AXIS_COLOR,
-        ...graphLabelAttributes(` color:${AXIS_COLOR};`),
-        useKatex: true,
-        layer: GRAPH_LAYERS.axisLabel,
-      };
 
       board.create(
         "axis",
@@ -2567,9 +3298,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         ],
         {
           ...axisAttributes,
-          name: showAxisLabels ? "x" : "",
-          withLabel: showAxisLabels,
-          label: { ...axisLabelAttributes, position: "rt", offset: [-10, 8], anchorX: "middle", anchorY: "bottom" },
+          name: "",
+          withLabel: false,
           ticks: {
             ...ticksAttributes,
             ticksDistance: xLabelStep,
@@ -2593,9 +3323,8 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         ],
         {
           ...axisAttributes,
-          name: showAxisLabels ? "y" : "",
-          withLabel: showAxisLabels,
-          label: { ...axisLabelAttributes, position: "rt", offset: [8, -8], anchorX: "left", anchorY: "bottom" },
+          name: "",
+          withLabel: false,
           ticks: {
             ...ticksAttributes,
             ticksDistance: yLabelStep,
@@ -2611,7 +3340,15 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
           },
         } as Record<string, unknown>,
       );
+
+      if (showAxisLabels) {
+        createAxisLabelText(board, xMax + xAxisExtension, 0, graphConfig.xAxisLabel?.trim() || "x", [-10, 8], "middle", "bottom");
+        createAxisLabelText(board, 0, yMax + yAxisExtension, graphConfig.yAxisLabel?.trim() || "y", [8, -8], "left", "bottom");
+      }
     }
+
+    renderPolarGrid(board, graphConfig);
+    renderSlopeField(board, graphConfig, xMajorStep, yMajorStep, xMin, xMax, yMin, yMax);
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {
       if (!onGraphConfigChange) return;
@@ -2625,6 +3362,14 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, labelX: x, labelY: y } : feature,
+      );
+      onGraphConfigChange({ ...graphConfig, features: nextFeatures });
+    };
+
+    const commitFreeLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (!onGraphConfigChange) return;
+      const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
+        index === featureIndex ? { ...feature, x: Number(x.toFixed(6)), y: Number(y.toFixed(6)) } : feature,
       );
       onGraphConfigChange({ ...graphConfig, features: nextFeatures });
     };
@@ -2651,7 +3396,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction)) return;
-      const color = graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length];
+      const color = solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length];
       const strokeWidth = lineWeight(graphFunction.strokeWidth, DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH);
       const dash = lineDash(graphFunction.strokeStyle);
       if (graphFunction.kind === "relation") {
@@ -2750,8 +3495,21 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     features.forEach((feature, index) => {
       if (!shouldShowGraphItem(feature)) return;
       if (hiddenBaseRegions.has(index)) return;
-      renderGraphFeature(board, feature, graphConfig, functions, index, commitFeatureLabelPosition, commitFeaturePointPosition);
+      renderGraphFeature(
+        board,
+        feature,
+        graphConfig,
+        functions,
+        index,
+        solutionColor,
+        solutionFeatureColor,
+        commitFeatureLabelPosition,
+        commitFeaturePointPosition,
+        commitFreeLabelPosition,
+      );
     });
+
+    renderGraph2DGeometry(board, graphConfig, solutionColor);
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction) || !graphFunction.showLabel) return;
@@ -2762,7 +3520,7 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
         labelX,
         labelY,
         functionLabelLatex(graphFunction, index),
-        graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length],
+        solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length],
         onGraphConfigChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
       );
     });
@@ -2770,15 +3528,16 @@ export function FunctionGraph({ graphConfig, onGraphConfigChange }: FunctionGrap
     return () => {
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, graphConfig, onGraphConfigChange]);
+  }, [boardId, graphConfig, onGraphConfigChange, solutionColor, solutionFeatureColor]);
 
   return (
     <div
       id={boardId}
-      className="w-full overflow-hidden bg-white"
+      className="overflow-hidden bg-white"
       style={{
         height: graphDisplayHeight(graphConfig),
-        maxWidth: graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH,
+        maxWidth: "100%",
+        width: graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH,
       }}
     />
   );

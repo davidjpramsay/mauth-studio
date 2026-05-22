@@ -1,0 +1,629 @@
+{
+  "version": 1,
+  "description": "Real source-conversion and renderer-stress benchmarks for the Mauth assistant. Source crops and extracted key text live in ../mauth-workbench so the app repo only keeps durable metadata and eval links.",
+  "workbenchRoot": "../mauth-workbench",
+  "benchmarks": [
+    {
+      "id": "real-methods-earthquake",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Methods",
+      "source": {
+        "year": 2024,
+        "paper": "Calculator Assumed",
+        "question": "15",
+        "originFolder": "Past ATAR Methods Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q15_earthquake_graph_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q15_earthquake_graph_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2024-mam-ca-key.txt",
+          "lineStart": 676,
+          "lineEnd": 783
+        }
+      ],
+      "evals": {
+        "localCase": "real-methods-earthquake",
+        "liveCase": "real-methods-earthquake",
+        "previewReplay": false
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d"]
+      },
+      "semanticChecks": [
+        "question wording, parts, marks, and official worked solution are preserved",
+        "coordinate graph is native graph2d, not prose or image fallback",
+        "line gradient and intercept match the source graph semantics"
+      ],
+      "freeGates": ["pnpm eval:assistant:local"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:core"
+    },
+    {
+      "id": "real-methods-ev-histogram",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Methods",
+      "source": {
+        "year": 2024,
+        "paper": "Calculator Assumed",
+        "question": "13",
+        "originFolder": "Past ATAR Methods Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q13_ev_histogram_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q13_ev_histogram_p2.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q13_ev_histogram_p3.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2024-mam-ca-key.txt",
+          "lineStart": 465,
+          "lineEnd": 568
+        }
+      ],
+      "evals": {
+        "localCase": "real-methods-ev-histogram",
+        "liveCase": "real-methods-ev-histogram",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["statsChart"]
+      },
+      "semanticChecks": [
+        "histogram uses manual frequencies with visible source counts",
+        "normal-distribution wording and part marks are preserved",
+        "official worked solution and table/diagram marks are represented"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:methods-stats"
+    },
+    {
+      "id": "real-methods-dice-game",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Methods",
+      "source": {
+        "year": 2024,
+        "paper": "Calculator Assumed",
+        "question": "14",
+        "originFolder": "Past ATAR Methods Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q14_dice_game_chart_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q14_dice_game_chart_p2.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2024-mam-calculator-assumed/crops/q14_dice_game_chart_p3.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2024-mam-ca-key.txt",
+          "lineStart": 569,
+          "lineEnd": 675
+        }
+      ],
+      "evals": {
+        "localCase": "real-methods-dice-game",
+        "liveCase": "real-methods-dice-game",
+        "previewReplay": false
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["statsChart", "table"]
+      },
+      "semanticChecks": [
+        "frequency chart uses statsChart rather than generic graph2d",
+        "probability/profit table is preserved as structured table content",
+        "official solution maps profit outcomes to probabilities correctly"
+      ],
+      "freeGates": ["pnpm eval:assistant:local"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:methods-stats"
+    },
+    {
+      "id": "real-specialist-stats",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "15",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q15_stats_curve_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q15_stats_curve_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 480,
+          "lineEnd": 589
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-stats",
+        "liveCase": "real-specialist-stats",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["statsChart", "table"]
+      },
+      "semanticChecks": [
+        "density/probability displays use statsChart",
+        "table and structured parts are preserved",
+        "official worked solutions and marks are included without duplicate mark ticks"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:core"
+    },
+    {
+      "id": "real-specialist-confidence-intervals",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "17",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q17_confidence_intervals_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q17_confidence_intervals_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 715,
+          "lineEnd": 858
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-confidence-intervals",
+        "liveCase": "real-specialist-confidence-intervals",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["table"]
+      },
+      "semanticChecks": [
+        "confidence interval comparison is preserved as a structured table, not a diagram",
+        "nested part (f)(i)/(ii) is preserved with parts[].subparts",
+        "official worked solutions and hidden mark ticks total 12"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live -- --case real-specialist-confidence-intervals --max-cost 0.25 --case-cost-cap 0.20 --stop-on-failure --allow-paid"
+    },
+    {
+      "id": "real-specialist-slope-field",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "10",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q10_slope_field_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q10_slope_field_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 73,
+          "lineEnd": 156
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-slope-field",
+        "liveCase": "real-specialist-slope-field",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d"]
+      },
+      "semanticChecks": [
+        "slope field is native graph2d slopeField data",
+        "solution curve and highlighted slope task are represented",
+        "completed solution diagram marks do not duplicate text marks"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:extended"
+    },
+    {
+      "id": "real-specialist-argand",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "11",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q11_argand_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q11_argand_locus_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 157,
+          "lineEnd": 228
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-argand",
+        "liveCase": "real-specialist-argand",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d"]
+      },
+      "semanticChecks": [
+        "Argand/locus diagrams use graph2d with source-faithful regions",
+        "locus shading uses supported region features instead of invented fields",
+        "Arg reference remains source-faithful and is not shifted incorrectly"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:extended"
+    },
+    {
+      "id": "real-specialist-spherical-cap",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "13",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q13_spherical_cap.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 297,
+          "lineEnd": 342
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-spherical-cap",
+        "liveCase": "real-specialist-spherical-cap",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d", "graph3d"]
+      },
+      "semanticChecks": [
+        "cross-section diagram is graph2d",
+        "3D cap is graph3d sphereCap data, not a full-sphere placeholder",
+        "diagram count and official solution marks match the source"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:graph3d"
+    },
+    {
+      "id": "real-specialist-prism",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "16",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q16_3d_prism_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q16_3d_prism_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 590,
+          "lineEnd": 685
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-prism",
+        "liveCase": "real-specialist-prism",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph3d"]
+      },
+      "semanticChecks": [
+        "3D coordinate prism uses graph3d points, segments, and faces",
+        "hidden edges and diagonals are represented with dashed styling",
+        "named vertices and official vector/geometry solution semantics match the source"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:graph3d"
+    },
+    {
+      "id": "real-specialist-square-pyramid",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2025,
+        "paper": "Calculator Assumed",
+        "question": "18",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2025-mas-ca-q18-square-pyramid/crops/2025-mas-ca-q18-square-pyramid_p20.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2025-mas-ca-q18-square-pyramid/crops/2025-mas-ca-q18-square-pyramid_p21.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2025-mas-ca-key.txt",
+          "lineStart": 917,
+          "lineEnd": 1029
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-square-pyramid",
+        "liveCase": "real-specialist-square-pyramid",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph3d", "graph2d"]
+      },
+      "semanticChecks": [
+        "square-pyramid 3D diagram uses graph3d with named vertices, hidden edges, and faces",
+        "top view is preserved as graph2d with labels and vector directions",
+        "O, F, and M satisfy the source midpoint relationships",
+        "structured subparts, marks, and official vector-solution semantics match the source"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:graph3d"
+    },
+    {
+      "id": "real-specialist-implicit",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "18",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q18_implicit_curve_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q18_implicit_curve_p2.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 860,
+          "lineEnd": 927
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-implicit",
+        "liveCase": "real-specialist-implicit",
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d"]
+      },
+      "semanticChecks": [
+        "implicit relation is represented as a relation curve rather than unrelated branches",
+        "key labelled points and curve shape are preserved",
+        "calculus parts, marks, and official solution are included"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:extended"
+    },
+    {
+      "id": "real-specialist-lighthouse",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "9",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q09_lighthouse_related_rates.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 15,
+          "lineEnd": 72
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-lighthouse",
+        "liveCase": "real-specialist-lighthouse",
+        "previewReplay": false
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["geometricConstruction"]
+      },
+      "semanticChecks": [
+        "related-rates geometry diagram is a native schematic diagram",
+        "lengths/rates and named points match the source",
+        "official solution and five marks are preserved"
+      ],
+      "freeGates": ["pnpm eval:assistant:local"],
+      "paidGate": "pnpm eval:assistant:live:real-exams:core"
+    },
+    {
+      "id": "planned-specialist-ski-modelling",
+      "status": "active",
+      "requestClass": "source-conversion",
+      "course": "Mathematics Specialist",
+      "source": {
+        "year": 2021,
+        "paper": "Calculator Assumed",
+        "question": "19",
+        "originFolder": "Past ATAR Specialist Exams"
+      },
+      "sourceAssets": [
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q19_ski_modelling_p1.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q19_ski_modelling_p2.png"
+        },
+        {
+          "kind": "screenshot",
+          "path": "assistant-evals/2021-mas-calculator-assumed/crops/q19_ski_modelling_p3.png"
+        },
+        {
+          "kind": "official-key",
+          "path": "assistant-evals/source-text/2021-mas-ca-key.txt",
+          "lineStart": 927,
+          "lineEnd": 1087
+        }
+      ],
+      "evals": {
+        "localCase": "real-specialist-ski-modelling",
+        "liveCase": null,
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph2d"]
+      },
+      "semanticChecks": [
+        "large modelling graph is converted as native graph2d",
+        "ramp, sloped-ground, and flight-path curves preserve their source domains and labelled landmark points",
+        "graph2d bounds keep the full source modelling scale visible rather than zooming to a plausible crop",
+        "multi-page parts, defining equations, marks, and dense working are preserved",
+        "local semantic fixture exists before a paid provider call"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": null
+    },
+    {
+      "id": "graph3d-general-solids",
+      "status": "renderer-stress",
+      "requestClass": "renderer-semantic",
+      "course": "Renderer fixture",
+      "source": {
+        "year": null,
+        "paper": "Synthetic graph3d solid coverage",
+        "question": null,
+        "originFolder": "math-app"
+      },
+      "sourceAssets": [],
+      "evals": {
+        "localCase": "graph3d-general-solids",
+        "liveCase": null,
+        "previewReplay": true
+      },
+      "expected": {
+        "tool": "mauth_convert_source_question",
+        "mauthTool": "mauth.question.upsert",
+        "renderers": ["graph3d"]
+      },
+      "semanticChecks": [
+        "pyramid uses point/segment/face data",
+        "cone, cylinder, and sphere use graph3d solid primitives",
+        "preview replay contains enough visible 3D edges/faces/solids and labels"
+      ],
+      "freeGates": ["pnpm eval:assistant:local", "pnpm smoke:assistant:preview"],
+      "paidGate": null
+    }
+  ]
+}

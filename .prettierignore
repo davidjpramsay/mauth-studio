@@ -3,6 +3,7 @@ apps/**/node_modules/
 packages/**/node_modules/
 
 apps/web/dist/
+apps/web/.tmp/
 apps/api/.venv/
 .venv/
 dist/

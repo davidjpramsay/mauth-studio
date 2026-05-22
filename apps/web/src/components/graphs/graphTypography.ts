@@ -9,5 +9,7 @@ export function graphLabelAttributes(extraCss = "") {
     fontUnit: GRAPH_LABEL_FONT_UNIT,
     cssStyle: `${GRAPH_LABEL_FONT_CSS}${extraCss}`,
     highlightCssStyle: `${GRAPH_LABEL_FONT_CSS}${extraCss}`,
+    parse: false,
+    useMathJax: false,
   };
 }

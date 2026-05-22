@@ -276,6 +276,91 @@ def test_test_build_preserves_ordered_question_and_part_content_blocks():
     assert "function arrows on" in html
 
 
+def test_test_build_accepts_table_content_blocks():
+    response = client.post(
+        "/api/tests/build",
+        json={
+            "title": "Table Blocks Test",
+            "testRule": "high_school_mathematics",
+            "sections": [
+                {
+                    "title": "Probability",
+                    "questions": [
+                        {
+                            "questionText": "Use the table.",
+                            "marksBreakdown": {"answer": 1},
+                            "contentBlocks": [
+                                {"kind": "text", "text": "The table shows a Bernoulli distribution."},
+                                {
+                                    "kind": "table",
+                                    "headers": ["$x$", "0", "1"],
+                                    "rows": [["$P(X=x)$", "$1-p$", "$\\textstyle p$"]],
+                                    "showHeader": True,
+                                    "tableAlign": "center",
+                                    "cellAlignment": "center",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    html = data["renderedHtml"]
+    assert data["questions"][0]["contentBlocks"][1]["kind"] == "table"
+    assert "math-table" in html
+    assert "math-table-center" in html
+    assert "inline-latex" in html
+    assert '<span class="inline-latex">\\displaystyle 1-p</span>' in html
+    assert '<span class="inline-latex">\\textstyle p</span>' in html
+
+
+def test_test_build_accepts_empty_graph_functions_for_blank_student_grids():
+    response = client.post(
+        "/api/tests/build",
+        json={
+            "title": "Blank Graph Test",
+            "testRule": "high_school_mathematics",
+            "sections": [
+                {
+                    "title": "Graphing",
+                    "questions": [
+                        {
+                            "questionText": "Draw the function on the axes.",
+                            "marksBreakdown": {"answer": 2},
+                            "contentBlocks": [
+                                {
+                                    "kind": "diagram",
+                                    "diagramAlign": "center",
+                                    "graphConfig": {
+                                        "type": "graph2d",
+                                        "functions": [],
+                                        "xMin": -5,
+                                        "xMax": 5,
+                                        "yMin": -5,
+                                        "yMax": 5,
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    html = data["renderedHtml"]
+    graph_config = data["questions"][0]["contentBlocks"][0]["graphConfig"]
+    assert graph_config["functions"] == []
+    assert "Diagram:" in html
+    assert "diagram-functions" not in html
+
+
 def test_test_build_accepts_stats_chart_content_block():
     response = client.post(
         "/api/tests/build",

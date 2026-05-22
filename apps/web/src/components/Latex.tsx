@@ -1,22 +1,20 @@
-import katex from "katex";
+import { memo, useMemo } from "react";
+
+import { renderMathJaxSvg } from "@/lib/mathjax";
 
 interface LatexProps {
   latex?: string | null;
   block?: boolean;
-  displayStyle?: boolean;
 }
 
-export function Latex({ latex, block = false, displayStyle = false }: LatexProps) {
+export const Latex = memo(function Latex({ latex, block = false }: LatexProps) {
+  const html = useMemo(() => (latex ? renderMathJaxSvg(latex, block) : ""), [block, latex]);
+
   if (!latex) {
     return <span className="text-muted-foreground">No expression yet.</span>;
   }
 
-  const source = !block && displayStyle && !latex.trim().startsWith("\\displaystyle") ? `\\displaystyle ${latex}` : latex;
-  const html = katex.renderToString(source, {
-    displayMode: block,
-    throwOnError: false,
-    strict: "ignore",
-  });
-
-  return <span className={block ? "latex-block" : "latex-inline"} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+  return (
+    <span className={block ? "latex-block mathjax-block" : "latex-inline mathjax-inline"} dangerouslySetInnerHTML={{ __html: html }} />
+  );
+});
