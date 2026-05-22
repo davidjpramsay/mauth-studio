@@ -5771,7 +5771,11 @@ function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionIn
   };
 
   return (
-    <aside className={cn("pointer-events-auto fixed z-40 min-w-0", frame.placement === "bottom" && "shadow-2xl")} style={inspectorStyle}>
+    <aside
+      data-inspector-placement={frame.placement}
+      className={cn("pointer-events-auto fixed z-40 min-w-0", frame.placement === "bottom" && "shadow-2xl")}
+      style={inspectorStyle}
+    >
       <div className="overflow-y-auto rounded-lg border bg-card shadow-panel" style={{ maxHeight: frame.maxHeight }}>
         <div className="border-b p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
@@ -9430,20 +9434,30 @@ export default function App() {
       const rect = editorPane.getBoundingClientRect();
       const gap = 16;
       const sideWidth = 288;
+      const availableHeight = Math.max(160, Math.round(rect.height - gap * 2));
+      const selectedElement = activeTocItemId
+        ? editorPane.querySelector<HTMLElement>(`[data-scroll-anchor="${cssAttributeValue(activeTocItemId)}"]`)
+        : null;
+      const selectedRect = selectedElement?.getBoundingClientRect();
+      const preferredTop =
+        selectedRect && selectedRect.bottom > rect.top && selectedRect.top < rect.bottom ? selectedRect.top : rect.top + gap;
 
       if (rect.width >= 960) {
+        const maxHeight = availableHeight;
+        const minTop = rect.top + gap;
+        const maxTop = Math.max(minTop, rect.bottom - gap - maxHeight);
         setSelectionInspectorFrame({
           left: Math.round(rect.right - sideWidth - gap),
-          top: Math.round(rect.top + gap),
+          top: Math.round(clamp(preferredTop, minTop, maxTop)),
           width: sideWidth,
-          maxHeight: Math.max(240, Math.round(rect.height - gap * 2)),
+          maxHeight,
           placement: "side",
         });
         return;
       }
 
-      const width = Math.max(260, Math.min(360, rect.width - gap * 2));
-      const maxHeight = Math.max(220, Math.min(380, rect.height - gap * 2));
+      const width = Math.max(1, Math.min(360, rect.width - gap * 2));
+      const maxHeight = Math.max(160, Math.min(380, availableHeight));
       setSelectionInspectorFrame({
         left: Math.round(rect.right - width - gap),
         top: Math.round(rect.bottom - maxHeight - gap),
@@ -9460,13 +9474,15 @@ export default function App() {
     updateFrame();
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
     resizeObserver?.observe(editorPane);
+    editorPane.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
     return () => {
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
+      editorPane.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };
-  }, [selectionInspectorVisible, paneMode, tocOpen]);
+  }, [activeTocItemId, selectionInspectorVisible, paneMode, tocOpen]);
 
   useEffect(() => {
     if (!questions.length) {

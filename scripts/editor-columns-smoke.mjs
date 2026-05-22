@@ -144,6 +144,64 @@ function sectionRectForText(element) {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right };
 }
 
+async function inspectorMetrics(inspector) {
+  return inspector.evaluate((element) => {
+    const inspectorRect = element.getBoundingClientRect();
+    const scroller = element.firstElementChild;
+    const scrollerRect = scroller?.getBoundingClientRect();
+    const editorPane = document.querySelector(".editor-pane");
+    const editorRect = editorPane?.getBoundingClientRect();
+    return {
+      placement: element.getAttribute("data-inspector-placement"),
+      inspector: {
+        left: inspectorRect.left,
+        top: inspectorRect.top,
+        right: inspectorRect.right,
+        bottom: inspectorRect.bottom,
+        width: inspectorRect.width,
+        height: inspectorRect.height,
+      },
+      scroller: scroller
+        ? {
+            left: scrollerRect?.left ?? 0,
+            top: scrollerRect?.top ?? 0,
+            right: scrollerRect?.right ?? 0,
+            bottom: scrollerRect?.bottom ?? 0,
+            width: scrollerRect?.width ?? 0,
+            height: scrollerRect?.height ?? 0,
+            clientHeight: scroller.clientHeight,
+            scrollHeight: scroller.scrollHeight,
+            scrollTop: scroller.scrollTop,
+          }
+        : null,
+      editor: editorRect
+        ? {
+            left: editorRect.left,
+            top: editorRect.top,
+            right: editorRect.right,
+            bottom: editorRect.bottom,
+            width: editorRect.width,
+            height: editorRect.height,
+          }
+        : null,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  });
+}
+
+function assertInspectorWithinEditor(metrics, label) {
+  assert(metrics.editor, `${label}: expected an editor pane`);
+  assert(metrics.scroller, `${label}: expected an inspector scroll panel`);
+  assert(metrics.inspector.width > 0, `${label}: inspector should have positive width`);
+  assert(metrics.inspector.height > 0, `${label}: inspector should have positive height`);
+  assert(metrics.inspector.left >= metrics.editor.left - 1, `${label}: inspector should not overflow left of editor`);
+  assert(metrics.inspector.right <= metrics.editor.right + 1, `${label}: inspector should not overflow right of editor`);
+  assert(metrics.inspector.top >= metrics.editor.top - 1, `${label}: inspector should not overflow above editor`);
+  assert(metrics.inspector.bottom <= metrics.editor.bottom + 1, `${label}: inspector should not overflow below editor`);
+  assert(metrics.scroller.clientHeight <= metrics.scroller.scrollHeight, `${label}: scroll metrics should be coherent`);
+  assert(metrics.scroller.height <= metrics.inspector.height + 1, `${label}: scroll panel should stay inside inspector frame`);
+}
+
 async function mockStorageApi(page) {
   const corsHeaders = {
     "access-control-allow-origin": "*",
@@ -241,10 +299,13 @@ async function main() {
     const panelText = await panelElement.asElement().textContent();
     assert(!/\bLayout\b/.test(panelText ?? ""), "columns panel should not render the layout selector inline");
 
-    await page.setViewportSize({ width: 1900, height: VIEWPORT.height });
+    await page.setViewportSize({ width: 2400, height: VIEWPORT.height });
     await partColumnsNode.dispatchEvent("pointerdown");
     const inspector = page.locator("aside").filter({ hasText: "Inspector" }).first();
     await inspector.getByText("Part columns 1").waitFor();
+    const desktopInspectorMetrics = await inspectorMetrics(inspector);
+    assert.equal(desktopInspectorMetrics.placement, "side", "wide editor should use side inspector placement");
+    assertInspectorWithinEditor(desktopInspectorMetrics, "wide side inspector");
 
     await nestedTableNode.dispatchEvent("pointerdown");
     await inspector.getByText("Part Column 1 table 2").waitFor();
@@ -355,11 +416,36 @@ async function main() {
     assert(!/\bChart type\b/i.test(statsChartPanelText ?? ""), "stats chart subtype should not render inline");
     assert(!/\bGridlines\b/i.test(statsChartPanelText ?? ""), "stats chart display settings should not render inline");
     assert(!/\bFill colour\b/i.test(statsChartPanelText ?? ""), "stats chart styling should not render inline");
-
     const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
     await inspector.screenshot({ path: inspectorScreenshotPath });
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });
+
+    await page.setViewportSize({ width: 1180, height: 640 });
+    await page.getByText("Diagram block 4", { exact: false }).click();
+    await inspector.getByText("Diagram 4").waitFor();
+    const compactInspectorMetrics = await inspectorMetrics(inspector);
+    assert.equal(compactInspectorMetrics.placement, "bottom", "compact editor should use bottom inspector placement");
+    assertInspectorWithinEditor(compactInspectorMetrics, "compact bottom inspector");
+    assert(
+      compactInspectorMetrics.scroller.scrollHeight > compactInspectorMetrics.scroller.clientHeight + 8,
+      "compact bottom inspector should become internally scrollable for tall settings",
+    );
+    await inspector.evaluate((element) => {
+      const scroller = element.firstElementChild;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    const compactScrolledMetrics = await inspectorMetrics(inspector);
+    assert(compactScrolledMetrics.scroller.scrollTop > 0, "compact bottom inspector should allow scrolling to lower controls");
+    await inspector.locator("input[aria-label='Diagram 4 fill opacity']").fill("0.6");
+    assert.equal(
+      await inspector.locator("input[aria-label='Diagram 4 fill opacity']").inputValue(),
+      "0.6",
+      "bottom inspector lower controls should remain editable after scrolling",
+    );
+
+    const compactInspectorScreenshotPath = path.join(outputDir, "compact-inspector.png");
+    await inspector.screenshot({ path: compactInspectorScreenshotPath });
 
     await nestedTableNode.dispatchEvent("pointerdown");
     await inspector.getByText("Part Column 1 table 2").waitFor();
@@ -373,7 +459,7 @@ async function main() {
     );
 
     console.log(
-      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3 and deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}`,
+      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3 and deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}. Compact inspector screenshot: ${compactInspectorScreenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
