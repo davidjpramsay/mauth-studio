@@ -164,6 +164,7 @@ import {
   graphHeight,
   graphWidth,
   isSolutionOnlyGraphFeature,
+  lockedAspectHeight,
 } from "@/lib/diagramGraph2d";
 import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName, imageDiagramAlt } from "@/lib/diagramImage";
 import {
@@ -5372,6 +5373,20 @@ function tableColumnCountPatch(block: EditorTableBlock, value: number): Partial<
   return plainTablePatch(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
 }
 
+function inspectorOptionalNumber(value: string) {
+  return value === "" ? undefined : Number(value);
+}
+
+function inspectorNumberInputValue(value?: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+
+function graphInspectorWidthPatch(config: GraphConfig, value: string): Partial<GraphConfig> {
+  const widthPx = inspectorOptionalNumber(value);
+  if (typeof widthPx !== "number" || !Number.isFinite(widthPx)) return { widthPx };
+  return config.lockAspectRatio && !config.equalScale ? { widthPx, heightPx: lockedAspectHeight(config, widthPx) } : { widthPx };
+}
+
 interface ColumnsBlockEditorProps {
   label: string;
   title?: ReactNode;
@@ -5554,11 +5569,20 @@ function ColumnsBlockEditor({
 
 interface SelectionInspectorProps {
   selectedBlock: SelectedEditorBlock | null;
+  frame: SelectionInspectorFrame | null;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<EditorContentBlock>) => void;
 }
 
-function SelectionInspector({ selectedBlock, onBlockChange }: SelectionInspectorProps) {
-  if (!selectedBlock) return null;
+interface SelectionInspectorFrame {
+  left: number;
+  top: number;
+  width: number;
+  maxHeight: number;
+  placement: "side" | "bottom";
+}
+
+function SelectionInspector({ selectedBlock, frame, onBlockChange }: SelectionInspectorProps) {
+  if (!selectedBlock || !frame) return null;
 
   const selectedColumnsBlock = selectedBlock.block.kind === "columns" ? normalizeColumnsBlock(selectedBlock.block) : null;
   const selectedChoiceBlock = selectedBlock.block.kind === "choices" ? selectedBlock.block : null;
@@ -5568,10 +5592,17 @@ function SelectionInspector({ selectedBlock, onBlockChange }: SelectionInspector
   const selectedDiagramBlock = selectedBlock.block.kind === "diagram" ? selectedBlock.block : null;
   const selectedDiagramConfig = selectedDiagramBlock ? withGraphDefaults(selectedDiagramBlock.graphConfig) : null;
   const controlClassName = "h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground";
+  const checkboxLabelClassName = "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
+  const inspectorStyle: CSSProperties = {
+    left: frame.left,
+    top: frame.top,
+    width: frame.width,
+    maxHeight: frame.maxHeight,
+  };
 
   return (
-    <aside className="w-full min-w-0 max-w-3xl justify-self-center 2xl:max-w-none 2xl:justify-self-stretch">
-      <div className="overflow-hidden rounded-lg border bg-card shadow-panel 2xl:sticky 2xl:top-0">
+    <aside className={cn("pointer-events-auto fixed z-40 min-w-0", frame.placement === "bottom" && "shadow-2xl")} style={inspectorStyle}>
+      <div className="max-h-full overflow-y-auto rounded-lg border bg-card shadow-panel">
         <div className="border-b p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
           <div className="mt-1 truncate text-sm font-semibold">{selectedBlock.label}</div>
@@ -5742,6 +5773,249 @@ function SelectionInspector({ selectedBlock, onBlockChange }: SelectionInspector
                 ))}
               </select>
             </label>
+            {selectedDiagramConfig.type === "graph2d" ? (
+              <div className="space-y-3 border-t pt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Graph settings</div>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showAxes ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxes: event.target.checked }),
+                      })
+                    }
+                  />
+                  Axes
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showArrows ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showArrows: event.target.checked }),
+                      })
+                    }
+                  />
+                  Axis arrows
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showAxisLabels ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxisLabels: event.target.checked }),
+                      })
+                    }
+                  />
+                  Axis labels
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showAxisNumbers ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxisNumbers: event.target.checked }),
+                      })
+                    }
+                  />
+                  Axis numbers
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showFunctionArrows ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showFunctionArrows: event.target.checked }),
+                      })
+                    }
+                  />
+                  Function arrows
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Domain min
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.xMin)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, { xMin: inspectorOptionalNumber(event.target.value) }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Domain max
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.xMax)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, { xMax: inspectorOptionalNumber(event.target.value) }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Range min
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.yMin)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, { yMin: inspectorOptionalNumber(event.target.value) }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Range max
+                    <input
+                      type="number"
+                      value={inspectorNumberInputValue(selectedDiagramConfig.yMax)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, { yMax: inspectorOptionalNumber(event.target.value) }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Width
+                    <input
+                      type="number"
+                      min={240}
+                      step={20}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(
+                            selectedDiagramConfig,
+                            graphInspectorWidthPatch(selectedDiagramConfig, event.target.value),
+                          ),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  {selectedDiagramConfig.equalScale || selectedDiagramConfig.lockAspectRatio ? (
+                    <div className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                      Height
+                      <div className="flex h-9 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
+                        {Math.round(graphHeight(selectedDiagramConfig))} px
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                      Height
+                      <input
+                        type="number"
+                        min={160}
+                        step={20}
+                        value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
+                        onChange={(event) =>
+                          onBlockChange(selectedBlock, {
+                            graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                              heightPx: inspectorOptionalNumber(event.target.value),
+                            }),
+                          })
+                        }
+                        className={controlClassName}
+                      />
+                    </label>
+                  )}
+                </div>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={(selectedDiagramConfig.lockAspectRatio ?? false) && !(selectedDiagramConfig.equalScale ?? false)}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                          lockAspectRatio: event.target.checked,
+                          equalScale: event.target.checked ? false : selectedDiagramConfig.equalScale,
+                        }),
+                      })
+                    }
+                  />
+                  Lock ratio
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.equalScale ?? false}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                          equalScale: event.target.checked,
+                          lockAspectRatio: event.target.checked ? false : selectedDiagramConfig.lockAspectRatio,
+                        }),
+                      })
+                    }
+                  />
+                  1:1 scale
+                </label>
+                <label className={checkboxLabelClassName}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDiagramConfig.showMajorGrid ?? true}
+                    onChange={(event) =>
+                      onBlockChange(selectedBlock, {
+                        graphConfig: updateGraphConfig(selectedDiagramConfig, { showMajorGrid: event.target.checked, showGrid: true }),
+                      })
+                    }
+                  />
+                  Major grid
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    X major
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.5}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.gridMajorStepX ?? selectedDiagramConfig.gridMajorStep)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            gridMajorStepX: inspectorOptionalNumber(event.target.value),
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                    Y major
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.5}
+                      value={inspectorNumberInputValue(selectedDiagramConfig.gridMajorStepY ?? selectedDiagramConfig.gridMajorStep)}
+                      onChange={(event) =>
+                        onBlockChange(selectedBlock, {
+                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                            gridMajorStepY: inspectorOptionalNumber(event.target.value),
+                          }),
+                        })
+                      }
+                      className={controlClassName}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="p-3 text-sm text-muted-foreground">No settings</div>
@@ -7976,7 +8250,7 @@ function DiagramBlockEditor({
   return renderDiagramPanel(
     diagramConfigSummary(config),
     "graph-editor-controls p-3",
-    <FunctionGraphEditor config={config} showSolutions={showSolutions} onChange={patchConfig} />,
+    <FunctionGraphEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
   );
 }
 
@@ -8063,6 +8337,7 @@ export default function App() {
   const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
+  const [selectionInspectorFrame, setSelectionInspectorFrame] = useState<SelectionInspectorFrame | null>(null);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
   const frontMatterRef = useRef(frontMatter);
@@ -8452,6 +8727,7 @@ export default function App() {
   const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
   const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
   const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
+  const selectionInspectorVisible = showEditor && !editingFrontMatter && !editingPageBreak && Boolean(selectedEditorBlock);
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
@@ -8462,6 +8738,61 @@ export default function App() {
     activeProjectFilePathRef.current = activeProjectFilePath;
     activeProjectFileRevisionRef.current = activeProjectFileRevision;
   }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, legacySavedTests, logos, questions]);
+
+  useLayoutEffect(() => {
+    if (!selectionInspectorVisible) {
+      setSelectionInspectorFrame(null);
+      return;
+    }
+
+    const editorPane = editorPaneRef.current;
+    if (!editorPane) {
+      setSelectionInspectorFrame(null);
+      return;
+    }
+
+    let animationFrame = 0;
+    const updateFrame = () => {
+      const rect = editorPane.getBoundingClientRect();
+      const gap = 16;
+      const sideWidth = 288;
+
+      if (rect.width >= 960) {
+        setSelectionInspectorFrame({
+          left: Math.round(rect.right - sideWidth - gap),
+          top: Math.round(rect.top + gap),
+          width: sideWidth,
+          maxHeight: Math.max(240, Math.round(rect.height - gap * 2)),
+          placement: "side",
+        });
+        return;
+      }
+
+      const width = Math.max(260, Math.min(360, rect.width - gap * 2));
+      const maxHeight = Math.max(220, Math.min(380, rect.height - gap * 2));
+      setSelectionInspectorFrame({
+        left: Math.round(rect.right - width - gap),
+        top: Math.round(rect.bottom - maxHeight - gap),
+        width: Math.round(width),
+        maxHeight: Math.round(maxHeight),
+        placement: "bottom",
+      });
+    };
+    const scheduleUpdate = () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(updateFrame);
+    };
+
+    updateFrame();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+    resizeObserver?.observe(editorPane);
+    window.addEventListener("resize", scheduleUpdate);
+    return () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [selectionInspectorVisible, paneMode, tocOpen]);
 
   useEffect(() => {
     if (!questions.length) {
@@ -12354,8 +12685,8 @@ export default function App() {
                   paneMode === "split" && "split-pane-scroll",
                 )}
               >
-                <div className="mx-auto grid w-full min-w-0 max-w-[calc(48rem+18rem+1rem)] gap-4 2xl:grid-cols-[minmax(0,48rem)_18rem] 2xl:items-start">
-                  <div className="flex w-full min-w-0 max-w-3xl flex-col gap-4 justify-self-center 2xl:justify-self-stretch">
+                <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
+                  <div className="flex w-full min-w-0 flex-col gap-4">
                     {editingFrontMatter ? (
                       <div
                         className={cn(
@@ -12571,7 +12902,11 @@ export default function App() {
                     ) : null}
                   </div>
                   {!editingFrontMatter && !editingPageBreak ? (
-                    <SelectionInspector selectedBlock={selectedEditorBlock} onBlockChange={updateSelectedBlock} />
+                    <SelectionInspector
+                      selectedBlock={selectedEditorBlock}
+                      frame={selectionInspectorFrame}
+                      onBlockChange={updateSelectedBlock}
+                    />
                   ) : null}
                 </div>
               </section>

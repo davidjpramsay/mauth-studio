@@ -54,11 +54,13 @@ function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: st
 type FunctionGraphEditorProps = {
   config: GraphConfig;
   showSolutions: boolean;
+  settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function FunctionGraphEditor({ config, showSolutions, onChange }: FunctionGraphEditorProps) {
+export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inline", onChange }: FunctionGraphEditorProps) {
   const patchConfig = onChange;
+  const showInlineSettings = settingsMode === "inline";
   const updateDiagramWidth = (value: string) => {
     const widthPx = optionalNumber(value);
     if (typeof widthPx !== "number" || !Number.isFinite(widthPx)) {
@@ -182,240 +184,244 @@ export function FunctionGraphEditor({ config, showSolutions, onChange }: Functio
 
   return (
     <>
-      <CollapsiblePanel
-        title={<InlineSummaryTitle label="Axes and grid" summary="Domain, range, graph size, grid intervals and arrows" />}
-        defaultOpen={false}
-        className="mt-3 bg-muted/20"
-      >
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={config.showAxes ?? true}
-                onChange={(event) => patchConfig({ showAxes: event.target.checked })}
-                aria-label="Show axes"
-              />
-              Axis options
-            </label>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.showArrows ?? true}
-                  onChange={(event) => patchConfig({ showArrows: event.target.checked })}
-                />
-                Axis arrows
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.showAxisLabels ?? true}
-                  onChange={(event) => patchConfig({ showAxisLabels: event.target.checked })}
-                />
-                Axis labels
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.showAxisNumbers ?? true}
-                  onChange={(event) => patchConfig({ showAxisNumbers: event.target.checked })}
-                />
-                Axis numbers
-              </label>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              Domain min
-              <input
-                type="number"
-                value={numberInputValue(config.xMin)}
-                onChange={(event) => patchConfig({ xMin: optionalNumber(event.target.value) })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              Domain max
-              <input
-                type="number"
-                value={numberInputValue(config.xMax)}
-                onChange={(event) => patchConfig({ xMax: optionalNumber(event.target.value) })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              Range min
-              <input
-                type="number"
-                value={numberInputValue(config.yMin)}
-                onChange={(event) => patchConfig({ yMin: optionalNumber(event.target.value) })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              Range max
-              <input
-                type="number"
-                value={numberInputValue(config.yMax)}
-                onChange={(event) => patchConfig({ yMax: optionalNumber(event.target.value) })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              />
-            </label>
-          </div>
-        </section>
-
-        <div className="mt-4 flex flex-col gap-4">
-          <section className="border-t pt-3">
+      {showInlineSettings ? (
+        <CollapsiblePanel
+          title={<InlineSummaryTitle label="Axes and grid" summary="Domain, range, graph size, grid intervals and arrows" />}
+          defaultOpen={false}
+          className="mt-3 bg-muted/20"
+        >
+          <section>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Image size</div>
-              <div className="flex flex-wrap items-center gap-4 text-sm">
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={config.showAxes ?? true}
+                  onChange={(event) => patchConfig({ showAxes: event.target.checked })}
+                  aria-label="Show axes"
+                />
+                Axis options
+              </label>
+              <div className="flex flex-wrap gap-4 text-sm">
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={(config.lockAspectRatio ?? false) && !(config.equalScale ?? false)}
-                    onChange={(event) =>
-                      patchConfig({ lockAspectRatio: event.target.checked, equalScale: event.target.checked ? false : config.equalScale })
-                    }
+                    checked={config.showArrows ?? true}
+                    onChange={(event) => patchConfig({ showArrows: event.target.checked })}
                   />
-                  Lock ratio
+                  Axis arrows
                 </label>
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={config.equalScale ?? false}
-                    onChange={(event) =>
-                      patchConfig({
-                        equalScale: event.target.checked,
-                        lockAspectRatio: event.target.checked ? false : config.lockAspectRatio,
-                      })
-                    }
+                    checked={config.showAxisLabels ?? true}
+                    onChange={(event) => patchConfig({ showAxisLabels: event.target.checked })}
                   />
-                  1:1 scale
+                  Axis labels
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={config.showAxisNumbers ?? true}
+                    onChange={(event) => patchConfig({ showAxisNumbers: event.target.checked })}
+                  />
+                  Axis numbers
                 </label>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
               <label className="flex flex-col gap-2 text-xs font-medium">
-                Diagram width
+                Domain min
                 <input
                   type="number"
-                  min={240}
-                  step={20}
-                  value={numberInputValue(config.widthPx)}
-                  onChange={(event) => updateDiagramWidth(event.target.value)}
+                  value={numberInputValue(config.xMin)}
+                  onChange={(event) => patchConfig({ xMin: optionalNumber(event.target.value) })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
-              {config.equalScale || config.lockAspectRatio ? (
-                <div className="flex flex-col gap-2 text-xs font-medium">
-                  Diagram height
-                  <div className="flex h-9 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
-                    {Math.round(graphHeight(config))} px
-                  </div>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Domain max
+                <input
+                  type="number"
+                  value={numberInputValue(config.xMax)}
+                  onChange={(event) => patchConfig({ xMax: optionalNumber(event.target.value) })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Range min
+                <input
+                  type="number"
+                  value={numberInputValue(config.yMin)}
+                  onChange={(event) => patchConfig({ yMin: optionalNumber(event.target.value) })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Range max
+                <input
+                  type="number"
+                  value={numberInputValue(config.yMax)}
+                  onChange={(event) => patchConfig({ yMax: optionalNumber(event.target.value) })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </div>
+          </section>
+
+          <div className="mt-4 flex flex-col gap-4">
+            <section className="border-t pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Image size</div>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(config.lockAspectRatio ?? false) && !(config.equalScale ?? false)}
+                      onChange={(event) =>
+                        patchConfig({ lockAspectRatio: event.target.checked, equalScale: event.target.checked ? false : config.equalScale })
+                      }
+                    />
+                    Lock ratio
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={config.equalScale ?? false}
+                      onChange={(event) =>
+                        patchConfig({
+                          equalScale: event.target.checked,
+                          lockAspectRatio: event.target.checked ? false : config.lockAspectRatio,
+                        })
+                      }
+                    />
+                    1:1 scale
+                  </label>
                 </div>
-              ) : (
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Diagram height
+                  Diagram width
                   <input
                     type="number"
-                    min={160}
+                    min={240}
                     step={20}
-                    value={numberInputValue(config.heightPx)}
-                    onChange={(event) => patchConfig({ heightPx: optionalNumber(event.target.value) })}
+                    value={numberInputValue(config.widthPx)}
+                    onChange={(event) => updateDiagramWidth(event.target.value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
-              )}
-            </div>
-          </section>
+                {config.equalScale || config.lockAspectRatio ? (
+                  <div className="flex flex-col gap-2 text-xs font-medium">
+                    Diagram height
+                    <div className="flex h-9 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
+                      {Math.round(graphHeight(config))} px
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Diagram height
+                    <input
+                      type="number"
+                      min={160}
+                      step={20}
+                      value={numberInputValue(config.heightPx)}
+                      onChange={(event) => patchConfig({ heightPx: optionalNumber(event.target.value) })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                )}
+              </div>
+            </section>
 
-          <section className="border-t pt-3">
-            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={config.showMajorGrid ?? true}
-                onChange={(event) => patchConfig({ showMajorGrid: event.target.checked, showGrid: true })}
-                aria-label="Show major grid"
-              />
-              Major grid intervals
-            </label>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                X major interval
+            <section className="border-t pt-3">
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <input
-                  type="number"
-                  min={0.1}
-                  step={0.5}
-                  value={numberInputValue(config.gridMajorStepX ?? config.gridMajorStep)}
-                  onChange={(event) => patchConfig({ gridMajorStepX: optionalNumber(event.target.value) })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  type="checkbox"
+                  checked={config.showMajorGrid ?? true}
+                  onChange={(event) => patchConfig({ showMajorGrid: event.target.checked, showGrid: true })}
+                  aria-label="Show major grid"
                 />
+                Major grid intervals
               </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Y major interval
-                <input
-                  type="number"
-                  min={0.1}
-                  step={0.5}
-                  value={numberInputValue(config.gridMajorStepY ?? config.gridMajorStep)}
-                  onChange={(event) => patchConfig({ gridMajorStepY: optionalNumber(event.target.value) })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-            </div>
-          </section>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  X major interval
+                  <input
+                    type="number"
+                    min={0.1}
+                    step={0.5}
+                    value={numberInputValue(config.gridMajorStepX ?? config.gridMajorStep)}
+                    onChange={(event) => patchConfig({ gridMajorStepX: optionalNumber(event.target.value) })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Y major interval
+                  <input
+                    type="number"
+                    min={0.1}
+                    step={0.5}
+                    value={numberInputValue(config.gridMajorStepY ?? config.gridMajorStep)}
+                    onChange={(event) => patchConfig({ gridMajorStepY: optionalNumber(event.target.value) })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+              </div>
+            </section>
 
-          <section className="border-t pt-3">
-            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={config.showMinorGrid ?? false}
-                onChange={(event) => patchConfig({ showMinorGrid: event.target.checked, showGrid: true })}
-                aria-label="Show minor grid"
-              />
-              Minor grid intervals
-            </label>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                X minor interval
+            <section className="border-t pt-3">
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={numberInputValue(config.gridMinorStepX ?? config.gridMinorStep)}
-                  onChange={(event) => patchConfig({ gridMinorStepX: optionalNumber(event.target.value) })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  type="checkbox"
+                  checked={config.showMinorGrid ?? false}
+                  onChange={(event) => patchConfig({ showMinorGrid: event.target.checked, showGrid: true })}
+                  aria-label="Show minor grid"
                 />
+                Minor grid intervals
               </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Y minor interval
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={numberInputValue(config.gridMinorStepY ?? config.gridMinorStep)}
-                  onChange={(event) => patchConfig({ gridMinorStepY: optionalNumber(event.target.value) })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-            </div>
-          </section>
-        </div>
-      </CollapsiblePanel>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  X minor interval
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={numberInputValue(config.gridMinorStepX ?? config.gridMinorStep)}
+                    onChange={(event) => patchConfig({ gridMinorStepX: optionalNumber(event.target.value) })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Y minor interval
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={numberInputValue(config.gridMinorStepY ?? config.gridMinorStep)}
+                    onChange={(event) => patchConfig({ gridMinorStepY: optionalNumber(event.target.value) })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+        </CollapsiblePanel>
+      ) : null}
 
       <div className="mt-3 flex items-end justify-between gap-3">
         <div className="text-sm font-medium">Functions</div>
         <div className="flex flex-wrap items-center justify-end gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={config.showFunctionArrows ?? true}
-              onChange={(event) => patchConfig({ showFunctionArrows: event.target.checked })}
-              aria-label="Show function arrows"
-            />
-            Function Arrows
-          </label>
+          {showInlineSettings ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={config.showFunctionArrows ?? true}
+                onChange={(event) => patchConfig({ showFunctionArrows: event.target.checked })}
+                aria-label="Show function arrows"
+              />
+              Function Arrows
+            </label>
+          ) : null}
           <Button variant="outline" size="sm" onClick={addFunction}>
             <PlusCircle data-icon="inline-start" />
             Add function

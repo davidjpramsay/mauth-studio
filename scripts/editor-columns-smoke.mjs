@@ -273,19 +273,30 @@ async function main() {
 
     await page.getByText("Diagram block 4", { exact: false }).click();
     await inspector.getByText("Diagram 4").waitFor();
+    const diagramPanelElement = await page
+      .getByText("Diagram block 4", { exact: false })
+      .evaluateHandle((element) => element.closest("section"));
+    const diagramPanelText = await diagramPanelElement.asElement().textContent();
+    assert(!/\bAxes and grid\b/.test(diagramPanelText ?? ""), "graph2d axes settings should not render inline");
+    assert(!/\bFunction Arrows\b/.test(diagramPanelText ?? ""), "graph2d function arrow setting should not render inline");
     assert.equal(await page.locator("select[aria-label='Diagram 4 type']").count(), 1, "diagram type should only appear in inspector");
     assert.equal(
       await page.locator("select[aria-label='Diagram 4 position']").count(),
       1,
       "diagram position should only appear in inspector",
     );
+    await inspector.getByText("Graph settings").waitFor();
+    await inspector.getByLabel("Domain max").fill("8");
+    assert.equal(await inspector.getByLabel("Domain max").inputValue(), "8", "graph domain settings should edit in inspector");
     await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("vector2d");
     await inspector.getByText("2 coordinate vectors").waitFor();
 
+    const inspectorScreenshotPath = path.join(outputDir, "floating-inspector.png");
+    await inspector.screenshot({ path: inspectorScreenshotPath });
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });
     console.log(
-      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3. Screenshot: ${screenshotPath}`,
+      `Editor columns smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector updated columns to 3. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
