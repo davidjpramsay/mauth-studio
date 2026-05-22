@@ -66,7 +66,28 @@ function seededDraft() {
         id: "q-columns-ui",
         section: "Layout",
         marks: 5,
-        contentBlocks: [{ id: "q-intro", kind: "text", text: "Column editor layout regression." }],
+        contentBlocks: [
+          { id: "q-intro", kind: "text", text: "Column editor layout regression." },
+          { id: "q-choices", kind: "choices", choices: ["Red", "Blue", "Green"], numberingStyle: "roman", layout: "vertical" },
+          {
+            id: "q-table",
+            kind: "table",
+            headers: ["", ""],
+            rows: [
+              ["$x$", "$1$"],
+              ["$y$", "$2$"],
+            ],
+            showHeader: false,
+            tableAlign: "center",
+            cellAlignment: "center",
+          },
+          {
+            id: "q-diagram",
+            kind: "diagram",
+            diagramAlign: "center",
+            graphConfig: { type: "graph2d", functions: [], features: [], metadata: {} },
+          },
+        ],
         parts: [
           {
             id: "p-columns-ui",
@@ -104,6 +125,9 @@ function seededDraft() {
         ],
         itemOrder: [
           { kind: "block", id: "q-intro" },
+          { kind: "block", id: "q-choices" },
+          { kind: "block", id: "q-table" },
+          { kind: "block", id: "q-diagram" },
           { kind: "part", id: "p-columns-ui" },
         ],
         pageBreakAfter: false,
@@ -228,6 +252,35 @@ async function main() {
     assert.equal(await page.locator("select[aria-label$='layout']").count(), 1, "layout selector should only appear in inspector");
     await layoutSelect.selectOption("3");
     await inspector.getByText("3 columns, 4 modules").waitFor();
+
+    await page.getByText("Choice list 2", { exact: false }).click();
+    await inspector.getByText("Choices 2").waitFor();
+    assert.equal(await page.locator("select[aria-label='Choices 2 labels']").count(), 1, "choice labels should only appear in inspector");
+    assert.equal(await page.locator("select[aria-label='Choices 2 layout']").count(), 1, "choice layout should only appear in inspector");
+    await inspector.locator("select[aria-label='Choices 2 labels']").selectOption("upper-alpha");
+    await inspector.getByText("3 a, b, c choices", { exact: false }).waitFor();
+
+    await page.getByText("Table block 3", { exact: false }).click();
+    await inspector.getByText("Table 3").waitFor();
+    assert.equal(await page.locator("select[aria-label='Table 3 position']").count(), 1, "table position should only appear in inspector");
+    assert.equal(
+      await page.locator("select[aria-label='Table 3 cell text']").count(),
+      1,
+      "table cell text should only appear in inspector",
+    );
+    await inspector.locator("input[aria-label='Table 3 rows']").fill("3");
+    await inspector.getByText("3 rows, 2 columns").waitFor();
+
+    await page.getByText("Diagram block 4", { exact: false }).click();
+    await inspector.getByText("Diagram 4").waitFor();
+    assert.equal(await page.locator("select[aria-label='Diagram 4 type']").count(), 1, "diagram type should only appear in inspector");
+    assert.equal(
+      await page.locator("select[aria-label='Diagram 4 position']").count(),
+      1,
+      "diagram position should only appear in inspector",
+    );
+    await inspector.locator("select[aria-label='Diagram 4 type']").selectOption("vector2d");
+    await inspector.getByText("2 coordinate vectors").waitFor();
 
     const screenshotPath = path.join(outputDir, "columns-editor.png");
     await panelElement.asElement().screenshot({ path: screenshotPath });

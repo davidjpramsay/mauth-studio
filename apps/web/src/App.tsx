@@ -153,6 +153,7 @@ import {
   normalizeTableRows,
   normalizedTableColumnCount,
   paddedTableRow,
+  plainTablePatch,
   plainTableRows,
 } from "@/lib/contentBlockNormalization";
 import { DEFAULT_3D_GRAPH } from "@/lib/diagram3d";
@@ -5311,6 +5312,7 @@ interface DiagramBlockEditorProps {
   graphConfig: GraphConfig;
   alignment?: DiagramAlignment;
   showSolutions?: boolean;
+  settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -5321,6 +5323,7 @@ interface DiagramBlockEditorProps {
 }
 
 type EditorColumnsBlock = Extract<EditorContentBlock, { kind: "columns" }>;
+type EditorTableBlock = Extract<EditorContentBlock, { kind: "table" }>;
 type ColumnsChildBlockKind = Exclude<ContentBlockKind, "columns">;
 
 const COLUMN_COUNT_OPTIONS: Array<{ value: ColumnCount; label: string }> = [
@@ -5334,6 +5337,39 @@ function columnsColumnCountPatch(block: EditorColumnsBlock, value: unknown): Par
   const columnCount = normalizeColumnCount(value);
   const columns = Array.from({ length: columnCount }, (_, index) => normalized.columns[index] ?? [textBlock()]);
   return { columnCount, columns };
+}
+
+const INSPECTOR_MIN_TABLE_ROWS = 1;
+const INSPECTOR_MAX_TABLE_ROWS = 24;
+const INSPECTOR_MIN_TABLE_COLUMNS = 1;
+const INSPECTOR_MAX_TABLE_COLUMNS = 12;
+
+function clampedInspectorTableDimension(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function inspectorTableColumnCount(rows: string[][]) {
+  return Math.max(1, ...rows.map((row) => row.length));
+}
+
+function tableRowsCountPatch(block: EditorTableBlock, value: number): Partial<EditorTableBlock> {
+  const table = normalizeTableBlock(block);
+  const tableRows = plainTableRows(table);
+  const columnCount = inspectorTableColumnCount(tableRows);
+  const nextRowCount = clampedInspectorTableDimension(value, INSPECTOR_MIN_TABLE_ROWS, INSPECTOR_MAX_TABLE_ROWS);
+  return plainTablePatch(
+    Array.from({ length: nextRowCount }, (_, rowIndex) =>
+      paddedTableRow(tableRows[rowIndex] ?? Array.from({ length: columnCount }, () => ""), columnCount),
+    ),
+  );
+}
+
+function tableColumnCountPatch(block: EditorTableBlock, value: number): Partial<EditorTableBlock> {
+  const table = normalizeTableBlock(block);
+  const tableRows = plainTableRows(table);
+  const nextColumnCount = clampedInspectorTableDimension(value, INSPECTOR_MIN_TABLE_COLUMNS, INSPECTOR_MAX_TABLE_COLUMNS);
+  return plainTablePatch(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
 }
 
 interface ColumnsBlockEditorProps {
@@ -5518,13 +5554,20 @@ function ColumnsBlockEditor({
 
 interface SelectionInspectorProps {
   selectedBlock: SelectedEditorBlock | null;
-  onColumnCountChange: (selection: SelectedEditorBlock, value: unknown) => void;
+  onBlockChange: (selection: SelectedEditorBlock, patch: Partial<EditorContentBlock>) => void;
 }
 
-function SelectionInspector({ selectedBlock, onColumnCountChange }: SelectionInspectorProps) {
+function SelectionInspector({ selectedBlock, onBlockChange }: SelectionInspectorProps) {
   if (!selectedBlock) return null;
 
   const selectedColumnsBlock = selectedBlock.block.kind === "columns" ? normalizeColumnsBlock(selectedBlock.block) : null;
+  const selectedChoiceBlock = selectedBlock.block.kind === "choices" ? selectedBlock.block : null;
+  const selectedTableBlock = selectedBlock.block.kind === "table" ? normalizeTableBlock(selectedBlock.block) : null;
+  const selectedTableRows = selectedTableBlock ? plainTableRows(selectedTableBlock) : [];
+  const selectedTableColumnCount = inspectorTableColumnCount(selectedTableRows);
+  const selectedDiagramBlock = selectedBlock.block.kind === "diagram" ? selectedBlock.block : null;
+  const selectedDiagramConfig = selectedDiagramBlock ? withGraphDefaults(selectedDiagramBlock.graphConfig) : null;
+  const controlClassName = "h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground";
 
   return (
     <aside className="w-full min-w-0 max-w-3xl justify-self-center 2xl:max-w-none 2xl:justify-self-stretch">
@@ -5542,10 +5585,157 @@ function SelectionInspector({ selectedBlock, onColumnCountChange }: SelectionIns
               <select
                 value={selectedColumnsBlock.columnCount}
                 aria-label={`${selectedBlock.label} layout`}
-                onChange={(event) => onColumnCountChange(selectedBlock, event.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground"
+                onChange={(event) =>
+                  onBlockChange(selectedBlock, columnsColumnCountPatch(selectedBlock.block as EditorColumnsBlock, event.target.value))
+                }
+                className={controlClassName}
               >
                 {COLUMN_COUNT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : selectedChoiceBlock ? (
+          <div className="space-y-3 p-3">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Labels
+              <select
+                value={normalizeChoiceNumberingStyle(selectedChoiceBlock.numberingStyle)}
+                aria-label={`${selectedBlock.label} labels`}
+                onChange={(event) => onBlockChange(selectedBlock, { numberingStyle: event.target.value as ChoiceNumberingStyle })}
+                className={controlClassName}
+              >
+                {CHOICE_NUMBERING_STYLES.map((style) => (
+                  <option key={style.value} value={style.value}>
+                    {style.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Layout
+              <select
+                value={normalizeChoiceListLayout(selectedChoiceBlock.layout)}
+                aria-label={`${selectedBlock.label} layout`}
+                onChange={(event) => onBlockChange(selectedBlock, { layout: event.target.value as ChoiceListLayout })}
+                className={controlClassName}
+              >
+                {CHOICE_LIST_LAYOUTS.map((layout) => (
+                  <option key={layout.value} value={layout.value}>
+                    {layout.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : selectedTableBlock ? (
+          <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 2xl:grid-cols-1">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Position
+              <select
+                value={selectedTableBlock.tableAlign}
+                aria-label={`${selectedBlock.label} position`}
+                onChange={(event) => onBlockChange(selectedBlock, { tableAlign: event.target.value as DiagramAlignment })}
+                className={controlClassName}
+              >
+                {DIAGRAM_ALIGNMENTS.map((alignment) => (
+                  <option key={alignment.value} value={alignment.value}>
+                    {alignment.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Cell text
+              <select
+                value={selectedTableBlock.cellAlignment}
+                aria-label={`${selectedBlock.label} cell text`}
+                onChange={(event) => onBlockChange(selectedBlock, { cellAlignment: event.target.value as TableCellAlignment })}
+                className={controlClassName}
+              >
+                {TABLE_CELL_ALIGNMENTS.map((alignment) => (
+                  <option key={alignment.value} value={alignment.value}>
+                    {alignment.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Rows
+              <input
+                type="number"
+                min={INSPECTOR_MIN_TABLE_ROWS}
+                max={INSPECTOR_MAX_TABLE_ROWS}
+                value={selectedTableRows.length}
+                aria-label={`${selectedBlock.label} rows`}
+                onChange={(event) =>
+                  onBlockChange(
+                    selectedBlock,
+                    tableRowsCountPatch(selectedBlock.block as EditorTableBlock, event.currentTarget.valueAsNumber),
+                  )
+                }
+                className={controlClassName}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Columns
+              <input
+                type="number"
+                min={INSPECTOR_MIN_TABLE_COLUMNS}
+                max={INSPECTOR_MAX_TABLE_COLUMNS}
+                value={selectedTableColumnCount}
+                aria-label={`${selectedBlock.label} columns`}
+                onChange={(event) =>
+                  onBlockChange(
+                    selectedBlock,
+                    tableColumnCountPatch(selectedBlock.block as EditorTableBlock, event.currentTarget.valueAsNumber),
+                  )
+                }
+                className={controlClassName}
+              />
+            </label>
+          </div>
+        ) : selectedDiagramBlock && selectedDiagramConfig ? (
+          <div className="space-y-3 p-3">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Type
+              <select
+                value={selectedDiagramConfig.type ?? "graph2d"}
+                aria-label={`${selectedBlock.label} type`}
+                onChange={(event) =>
+                  onBlockChange(selectedBlock, {
+                    graphConfig: updateGraphConfig(selectedDiagramConfig, diagramTypePatch(event.target.value, selectedDiagramConfig)),
+                  })
+                }
+                className={controlClassName}
+              >
+                {DIAGRAM_TYPE_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.values.map((value) => {
+                      const diagramType = DIAGRAM_TYPES.find((candidate) => candidate.value === value);
+                      if (!diagramType) return null;
+                      return (
+                        <option key={diagramType.value} value={diagramType.value}>
+                          {diagramType.label}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Position
+              <select
+                value={normalizeDiagramAlignment(selectedDiagramBlock.diagramAlign)}
+                aria-label={`${selectedBlock.label} position`}
+                onChange={(event) => onBlockChange(selectedBlock, { diagramAlign: event.target.value as DiagramAlignment })}
+                className={controlClassName}
+              >
+                {DIAGRAM_ALIGNMENTS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -7711,6 +7901,7 @@ function DiagramBlockEditor({
   graphConfig,
   alignment = "center",
   showSolutions = true,
+  settingsMode = "inline",
   dragHandle,
   muted = false,
   active = false,
@@ -7730,6 +7921,7 @@ function DiagramBlockEditor({
       diagramTypes={DIAGRAM_TYPES}
       diagramTypeGroups={DIAGRAM_TYPE_GROUPS}
       diagramAlignments={DIAGRAM_ALIGNMENTS}
+      settingsMode={settingsMode}
       dragHandle={dragHandle}
       muted={muted}
       active={active}
@@ -9619,10 +9811,7 @@ export default function App() {
     });
   }
 
-  function updateSelectedColumnsColumnCount(selection: SelectedEditorBlock, value: unknown) {
-    if (selection.block.kind !== "columns") return;
-
-    const patch = columnsColumnCountPatch(selection.block, value) as Partial<EditorContentBlock>;
+  function updateSelectedBlock(selection: SelectedEditorBlock, patch: Partial<EditorContentBlock>) {
     if (selection.scope.kind === "question") {
       updateContentBlock(selection.scope.questionId, selection.block.id, patch);
       return;
@@ -11217,6 +11406,7 @@ export default function App() {
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(blockTarget, `Drag diagram block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -11255,6 +11445,7 @@ export default function App() {
             block={block}
             numberingStyleOptions={CHOICE_NUMBERING_STYLES}
             layoutOptions={CHOICE_LIST_LAYOUTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(blockTarget, `Drag choice list ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -11274,6 +11465,7 @@ export default function App() {
             block={block}
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(blockTarget, `Drag table block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -11367,6 +11559,7 @@ export default function App() {
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11407,6 +11600,7 @@ export default function App() {
             block={block}
             numberingStyleOptions={CHOICE_NUMBERING_STYLES}
             layoutOptions={CHOICE_LIST_LAYOUTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part choice list ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11427,6 +11621,7 @@ export default function App() {
             block={block}
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part table ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11519,6 +11714,7 @@ export default function App() {
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11561,6 +11757,7 @@ export default function App() {
             block={block}
             numberingStyleOptions={CHOICE_NUMBERING_STYLES}
             layoutOptions={CHOICE_LIST_LAYOUTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart choice list ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11581,6 +11778,7 @@ export default function App() {
             block={block}
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
+            settingsMode="inspector"
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart table ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -12373,7 +12571,7 @@ export default function App() {
                     ) : null}
                   </div>
                   {!editingFrontMatter && !editingPageBreak ? (
-                    <SelectionInspector selectedBlock={selectedEditorBlock} onColumnCountChange={updateSelectedColumnsColumnCount} />
+                    <SelectionInspector selectedBlock={selectedEditorBlock} onBlockChange={updateSelectedBlock} />
                   ) : null}
                 </div>
               </section>

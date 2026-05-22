@@ -23,6 +23,7 @@ interface DiagramBlockPanelProps {
   diagramTypeGroups: DiagramTypeGroup[];
   diagramAlignments: Array<{ value: DiagramAlignment; label: string }>;
   children: ReactNode;
+  settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -42,6 +43,7 @@ export function DiagramBlockPanel({
   diagramTypeGroups,
   diagramAlignments,
   children,
+  settingsMode = "inline",
   dragHandle,
   muted = false,
   active = false,
@@ -51,40 +53,45 @@ export function DiagramBlockPanel({
   onAlignmentChange,
   onRemove,
 }: DiagramBlockPanelProps) {
+  const showInlineSettings = settingsMode === "inline";
   const actions = (
     <>
-      <select
-        aria-label={`${label} type`}
-        value={type}
-        onChange={(event) => onTypeChange(event.target.value)}
-        className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
-      >
-        {diagramTypeGroups.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.values.map((value) => {
-              const diagramType = diagramTypes.find((candidate) => candidate.value === value);
-              if (!diagramType) return null;
-              return (
-                <option key={diagramType.value} value={diagramType.value}>
-                  {diagramType.label}
-                </option>
-              );
-            })}
-          </optgroup>
-        ))}
-      </select>
-      <select
-        aria-label={`${label} position`}
-        value={alignment}
-        onChange={(event) => onAlignmentChange(event.target.value as DiagramAlignment)}
-        className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
-      >
-        {diagramAlignments.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {showInlineSettings ? (
+        <>
+          <select
+            aria-label={`${label} type`}
+            value={type}
+            onChange={(event) => onTypeChange(event.target.value)}
+            className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+          >
+            {diagramTypeGroups.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.values.map((value) => {
+                  const diagramType = diagramTypes.find((candidate) => candidate.value === value);
+                  if (!diagramType) return null;
+                  return (
+                    <option key={diagramType.value} value={diagramType.value}>
+                      {diagramType.label}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            ))}
+          </select>
+          <select
+            aria-label={`${label} position`}
+            value={alignment}
+            onChange={(event) => onAlignmentChange(event.target.value as DiagramAlignment)}
+            className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          >
+            {diagramAlignments.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
       <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
     </>
   );

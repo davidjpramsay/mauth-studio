@@ -14,6 +14,7 @@ interface ChoiceListBlockEditorProps {
   block: ChoiceListBlock;
   numberingStyleOptions: Array<{ value: ChoiceNumberingStyle; label: string }>;
   layoutOptions: Array<{ value: ChoiceListLayout; label: string }>;
+  settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -37,6 +38,7 @@ export function ChoiceListBlockEditor({
   block,
   numberingStyleOptions,
   layoutOptions,
+  settingsMode = "inline",
   dragHandle,
   muted = false,
   active = false,
@@ -44,6 +46,8 @@ export function ChoiceListBlockEditor({
   onChange,
   onRemove,
 }: ChoiceListBlockEditorProps) {
+  const showInlineSettings = settingsMode === "inline";
+
   return (
     <CollapsiblePanel
       title={title}
@@ -54,36 +58,40 @@ export function ChoiceListBlockEditor({
       active={active}
       openSignal={openSignal}
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Labels
-          <select
-            value={normalizeChoiceNumberingStyle(block.numberingStyle)}
-            onChange={(event) => onChange({ numberingStyle: event.target.value as ChoiceNumberingStyle })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {numberingStyleOptions.map((style) => (
-              <option key={style.value} value={style.value}>
-                {style.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Layout
-          <select
-            value={normalizeChoiceListLayout(block.layout)}
-            onChange={(event) => onChange({ layout: event.target.value as ChoiceListLayout })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {layoutOptions.map((layout) => (
-              <option key={layout.value} value={layout.value}>
-                {layout.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium md:row-span-2">
+      <div className={cn("grid grid-cols-1 gap-3", showInlineSettings && "md:grid-cols-[160px_minmax(0,1fr)]")}>
+        {showInlineSettings ? (
+          <>
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Labels
+              <select
+                value={normalizeChoiceNumberingStyle(block.numberingStyle)}
+                onChange={(event) => onChange({ numberingStyle: event.target.value as ChoiceNumberingStyle })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                {numberingStyleOptions.map((style) => (
+                  <option key={style.value} value={style.value}>
+                    {style.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Layout
+              <select
+                value={normalizeChoiceListLayout(block.layout)}
+                onChange={(event) => onChange({ layout: event.target.value as ChoiceListLayout })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                {layoutOptions.map((layout) => (
+                  <option key={layout.value} value={layout.value}>
+                    {layout.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
+        <label className={cn("flex flex-col gap-2 text-xs font-medium", showInlineSettings && "md:row-span-2")}>
           Choices
           <Textarea
             aria-label={`${label} choices`}

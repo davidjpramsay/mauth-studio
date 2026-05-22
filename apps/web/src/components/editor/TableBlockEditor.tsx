@@ -19,6 +19,7 @@ interface TableBlockEditorProps {
   block: TableBlock;
   diagramAlignments: Array<{ value: DiagramAlignment; label: string }>;
   cellAlignments: Array<{ value: TableCellAlignment; label: string }>;
+  settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -58,6 +59,7 @@ export function TableBlockEditor({
   block,
   diagramAlignments,
   cellAlignments,
+  settingsMode = "inline",
   dragHandle,
   muted = false,
   active = false,
@@ -77,6 +79,7 @@ export function TableBlockEditor({
         currentRowIndex === rowIndex ? row.map((cell, currentColumnIndex) => (currentColumnIndex === columnIndex ? value : cell)) : row,
       ),
     );
+  const showInlineSettings = settingsMode === "inline";
   const resizeColumns = (nextColumnCountValue: number) => {
     const nextColumnCount = clampedTableDimension(nextColumnCountValue, MIN_TABLE_COLUMNS, MAX_TABLE_COLUMNS);
     updateRows(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
@@ -101,58 +104,60 @@ export function TableBlockEditor({
       openSignal={openSignal}
     >
       <div className="flex flex-col gap-4">
-        <div className="table-editor-controls">
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Position
-            <select
-              value={table.tableAlign}
-              onChange={(event) => patchTable({ tableAlign: event.target.value as DiagramAlignment })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              {diagramAlignments.map((alignment) => (
-                <option key={alignment.value} value={alignment.value}>
-                  {alignment.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Cell text
-            <select
-              value={table.cellAlignment}
-              onChange={(event) => patchTable({ cellAlignment: event.target.value as TableCellAlignment })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              {cellAlignments.map((alignment) => (
-                <option key={alignment.value} value={alignment.value}>
-                  {alignment.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Rows
-            <input
-              type="number"
-              min={MIN_TABLE_ROWS}
-              max={MAX_TABLE_ROWS}
-              value={tableRows.length}
-              onChange={(event) => resizeRows(event.currentTarget.valueAsNumber)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Columns
-            <input
-              type="number"
-              min={MIN_TABLE_COLUMNS}
-              max={MAX_TABLE_COLUMNS}
-              value={columnCount}
-              onChange={(event) => resizeColumns(event.currentTarget.valueAsNumber)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
-        </div>
+        {showInlineSettings ? (
+          <div className="table-editor-controls">
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Position
+              <select
+                value={table.tableAlign}
+                onChange={(event) => patchTable({ tableAlign: event.target.value as DiagramAlignment })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                {diagramAlignments.map((alignment) => (
+                  <option key={alignment.value} value={alignment.value}>
+                    {alignment.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Cell text
+              <select
+                value={table.cellAlignment}
+                onChange={(event) => patchTable({ cellAlignment: event.target.value as TableCellAlignment })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                {cellAlignments.map((alignment) => (
+                  <option key={alignment.value} value={alignment.value}>
+                    {alignment.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Rows
+              <input
+                type="number"
+                min={MIN_TABLE_ROWS}
+                max={MAX_TABLE_ROWS}
+                value={tableRows.length}
+                onChange={(event) => resizeRows(event.currentTarget.valueAsNumber)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Columns
+              <input
+                type="number"
+                min={MIN_TABLE_COLUMNS}
+                max={MAX_TABLE_COLUMNS}
+                value={columnCount}
+                onChange={(event) => resizeColumns(event.currentTarget.valueAsNumber)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+          </div>
+        ) : null}
 
         <div className="rounded-md border bg-muted/20 p-2">
           <div tabIndex={0} aria-label="Table editor cells" className="table-editor-scroll">
