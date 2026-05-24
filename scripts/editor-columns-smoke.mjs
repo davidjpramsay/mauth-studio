@@ -360,6 +360,32 @@ async function assertPreviewAnchorSelectedAndVisible(page, anchor, label) {
   assert.deepEqual(state, { found: true, selected: true, visible: true }, `${label}: preview should select and show ${anchor}`);
 }
 
+async function assertGeometry2DRenderedPrimitives(page, label) {
+  await page.locator('.preview-pane [data-mauth-geometry2d-primitive="true"]').first().waitFor({ state: "attached" });
+  const metrics = await page.locator(".preview-pane").evaluate((pane) => {
+    const elements = Array.from(pane.querySelectorAll('[data-mauth-geometry2d-primitive="true"]'));
+    const renderedByKind = new Map();
+    const labelsByKind = new Map();
+    for (const element of elements) {
+      const kind = element.getAttribute("data-mauth-geometry2d-kind") ?? "unknown";
+      const isLabel = Boolean(element.getAttribute("data-mauth-label-role"));
+      const target = isLabel ? labelsByKind : renderedByKind;
+      target.set(kind, (target.get(kind) ?? 0) + 1);
+    }
+    return {
+      rendered: Object.fromEntries(renderedByKind),
+      labels: Object.fromEntries(labelsByKind),
+    };
+  });
+
+  assert((metrics.rendered.point ?? 0) >= 4, `${label}: geometry2d should render named points`);
+  assert((metrics.rendered.segment ?? 0) >= 4, `${label}: geometry2d should render straight segments`);
+  assert((metrics.rendered.arc ?? 0) >= 1, `${label}: geometry2d should render circular arcs`);
+  assert((metrics.rendered.angle ?? 0) >= 1, `${label}: geometry2d should render angle primitives as visible arcs`);
+  assert((metrics.rendered.decoration ?? 0) >= 2, `${label}: geometry2d should render semantic decorations`);
+  assert((metrics.labels.angle ?? 0) >= 1, `${label}: geometry2d should render angle labels separately from angle arcs`);
+}
+
 async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, label, mode) {
   await selectDiagramType(inspector, label, "graph2d", "Graph settings");
   if (mode === "wide") {
@@ -455,6 +481,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     [/\b2D diagram settings\b/i, /\bx min\b/i, /\bGuide grid\b/i, /\bVisible\b/i, /\bLine style\b/i],
     `${mode} geometry2d`,
   );
+  await assertGeometry2DRenderedPrimitives(page, `${mode}: default geometry2d preview`);
   if (mode === "wide") {
     await page.locator(".preview-pane").evaluate((pane) => {
       pane.scrollTop = pane.scrollHeight;
@@ -475,18 +502,59 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     await pointX.fill("-2.25");
     assert.equal(await pointX.inputValue(), "-2.25", `${mode}: geometry2d point location should edit in inspector`);
 
+    await page.locator(".editor-pane").getByText("Segment 1:", { exact: false }).click();
+    await inspector.getByText("Segment", { exact: true }).waitFor();
+    const segmentLabelX = inspector.locator(`input[aria-label='${label} segment 1 label x']`);
+    await segmentLabelX.fill("0.95");
+    assert.equal(await segmentLabelX.inputValue(), "0.95", `${mode}: geometry2d segment label location should edit in inspector`);
+    await inspector.locator(`input[aria-label='${label} segment 1 colour']`).fill("#111111");
+    assert.equal(
+      await inspector.locator(`input[aria-label='${label} segment 1 colour']`).inputValue(),
+      "#111111",
+      `${mode}: geometry2d segment colour should edit in inspector`,
+    );
+
     await page.locator(".editor-pane").getByRole("button", { name: "Add" }).nth(2).click();
     await page.locator(".editor-pane").getByText("Arc 1:", { exact: false }).click();
     await inspector.getByText("Arc", { exact: true }).waitFor();
     const arcLabel = inspector.locator(`input[aria-label='${label} arc 1 label']`);
     await arcLabel.fill("$\\widehat{BD}$");
     assert.equal(await arcLabel.inputValue(), "$\\widehat{BD}$", `${mode}: geometry2d arc settings should edit in inspector`);
+    await inspector.locator(`select[aria-label='${label} arc 1 line style']`).selectOption("dashed");
+    assert.equal(
+      await inspector.locator(`select[aria-label='${label} arc 1 line style']`).inputValue(),
+      "dashed",
+      `${mode}: geometry2d arc line style should edit in inspector`,
+    );
+
+    await page.locator(".editor-pane").getByText("Angle 1:", { exact: false }).click();
+    await inspector.getByText("Angle", { exact: true }).waitFor();
+    const angleCount = inspector.locator(`input[aria-label='${label} angle 1 count']`);
+    await angleCount.fill("2");
+    assert.equal(await angleCount.inputValue(), "2", `${mode}: geometry2d angle arc count should edit in inspector`);
+    await inspector.locator(`select[aria-label='${label} angle 1 line style']`).selectOption("dashed");
+    assert.equal(
+      await inspector.locator(`select[aria-label='${label} angle 1 line style']`).inputValue(),
+      "dashed",
+      `${mode}: geometry2d angle line style should edit in inspector`,
+    );
 
     await page.locator(".editor-pane").getByText("Marker 1:", { exact: false }).click();
     await inspector.getByText("Marker", { exact: true }).waitFor();
-    const markerSize = inspector.locator(`input[aria-label='${label} marker 1 size']`);
+    const markerCount = inspector.locator(`input[aria-label='${label} marker 1 count']`);
+    await markerCount.fill("2");
+    assert.equal(await markerCount.inputValue(), "2", `${mode}: geometry2d equal-length marker count should edit in inspector`);
+    await page.locator(".editor-pane").getByText("Marker 2:", { exact: false }).click();
+    await inspector.getByText("Marker", { exact: true }).waitFor();
+    const markerSize = inspector.locator(`input[aria-label='${label} marker 2 size']`);
     await markerSize.fill("0.4");
-    assert.equal(await markerSize.inputValue(), "0.4", `${mode}: geometry2d marker settings should edit in inspector`);
+    assert.equal(await markerSize.inputValue(), "0.4", `${mode}: geometry2d right-angle marker settings should edit in inspector`);
+    await inspector.locator(`input[aria-label='${label} marker 2 colour']`).fill("#222222");
+    assert.equal(
+      await inspector.locator(`input[aria-label='${label} marker 2 colour']`).inputValue(),
+      "#222222",
+      `${mode}: geometry2d marker colour should edit in inspector`,
+    );
     await diagramPanelElement.asElement().dispatchEvent("pointerdown");
     await inspector.getByText("2D diagram settings", { exact: true }).waitFor();
   }

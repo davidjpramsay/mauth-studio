@@ -304,6 +304,7 @@ function lineWeight(value: number | undefined, fallback: number) {
 
 const ROUNDED_GRAPH_STROKE = {
   lineCap: "round",
+  lineJoin: "round",
 } as const;
 
 function numericRange(min: number, max: number, step: number) {
@@ -1204,6 +1205,15 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
+function setRenderedDataAttributes(element: unknown, attributes: Record<string, string | undefined>) {
+  if (!element || typeof element !== "object") return;
+  const node = (element as JXGElement).rendNode;
+  if (!node) return;
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value) node.setAttribute(key, value);
+  }
+}
+
 function graphLabelLatex(source: string) {
   const trimmed = source.trim();
   if (trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$") && !trimmed.startsWith("$$") && !trimmed.endsWith("\\$")) {
@@ -1214,16 +1224,23 @@ function graphLabelLatex(source: string) {
   return trimmed;
 }
 
-function renderLatexLabelHtml(latex: string, color: string) {
+function labelDataAttributes(attributes: Record<string, string | undefined>) {
+  return Object.entries(attributes)
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}="${escapeHtml(value)}"`)
+    .join(" ");
+}
+
+function renderLatexLabelHtml(latex: string, color: string, attributes: Record<string, string | undefined> = {}) {
   const normalizedLatex = graphLabelLatex(latex);
   const safeColor = safeCssColor(color);
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
-  const sourceAttr = `data-mauth-label-text="${escapeHtml(normalizedLatex)}"`;
+  const labelAttrs = labelDataAttributes({ "data-mauth-label-text": normalizedLatex, ...attributes });
   try {
     const html = renderMathJaxSvg(normalizedLatex, false);
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" ${sourceAttr} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
   }
 }
 
@@ -1234,13 +1251,15 @@ function createLabelText(
   latex: string | (() => string),
   color: string,
   onMove?: (x: number, y: number) => void,
+  attributes: Record<string, string | undefined> = {},
 ) {
   const initialLatex = typeof latex === "function" ? latex() : latex;
   if (!initialLatex.trim()) return null;
   const safeColor = safeCssColor(color);
   const labelInteractionCss = ` user-select: none; -webkit-user-select: none; touch-action: none;${onMove ? " cursor: move;" : ""}`;
   const labelCss = `${GRAPH_LABEL_FONT_CSS} color: ${safeColor};${labelInteractionCss}`;
-  const labelContent = typeof latex === "function" ? () => renderLatexLabelHtml(latex(), color) : renderLatexLabelHtml(latex, color);
+  const labelContent =
+    typeof latex === "function" ? () => renderLatexLabelHtml(latex(), color, attributes) : renderLatexLabelHtml(latex, color, attributes);
   const text = board.create("text", [x, y, labelContent], {
     fixed: !onMove,
     highlight: false,
@@ -1486,6 +1505,15 @@ function geometryAnglePoints(
   return first && vertex && second ? [first, vertex, second] : null;
 }
 
+function geometry2DRenderedAttributes(kind: string, id: string | undefined, role?: string) {
+  return {
+    "data-mauth-geometry2d-primitive": "true",
+    "data-mauth-geometry2d-kind": kind,
+    "data-mauth-geometry2d-id": id,
+    "data-mauth-geometry2d-role": role,
+  };
+}
+
 function pixelDirection(board: JXG.Board, start: [number, number], end: [number, number]) {
   const unitX = boardUnit(board, "x");
   const unitY = boardUnit(board, "y");
@@ -1503,8 +1531,9 @@ function createPixelSegment(
   secondOffset: [number, number],
   color: string,
   strokeWidth = 1.6,
+  attributes: Record<string, string | undefined> = {},
 ) {
-  board.create(
+  const segment = board.create(
     "segment",
     [
       offsetUserByPixels(board, center[0], center[1], firstOffset[0], firstOffset[1]),
@@ -1517,8 +1546,10 @@ function createPixelSegment(
       highlightStrokeColor: color,
       strokeWidth,
       layer: GRAPH_LAYERS.point,
+      ...ROUNDED_GRAPH_STROKE,
     } as Record<string, unknown>,
   );
+  setRenderedDataAttributes(segment, attributes);
 }
 
 function drawGeometryEqualLengthTicks(
@@ -1528,6 +1559,7 @@ function drawGeometryEqualLengthTicks(
   color: string,
   tickCount: number,
   sizePx: number,
+  attributes: Record<string, string | undefined>,
 ) {
   const endpoints = geometrySegmentEndpoints(segment, points);
   if (!endpoints) return;
@@ -1547,6 +1579,8 @@ function drawGeometryEqualLengthTicks(
       [-normal.x * sizePx * 0.5, -normal.y * sizePx * 0.5],
       [normal.x * sizePx * 0.5, normal.y * sizePx * 0.5],
       color,
+      undefined,
+      attributes,
     );
   }
 }
@@ -1565,11 +1599,14 @@ function drawGeometryAngleArc(
   color: string,
   radius: number,
   arcCount: number,
+  strokeWidth = 1.6,
+  strokeStyle?: GraphFeature["strokeStyle"],
+  attributes: Record<string, string | undefined> = {},
 ) {
   const anglePoints = geometryAnglePoints(angle, points);
   if (!anglePoints) return;
   const [first, vertex, second] = anglePoints;
-  drawAngleArcFromPoints(board, first, vertex, second, color, radius, arcCount);
+  drawAngleArcFromPoints(board, first, vertex, second, color, radius, arcCount, strokeWidth, strokeStyle, attributes);
 }
 
 function drawAngleArcFromPoints(
@@ -1582,6 +1619,7 @@ function drawAngleArcFromPoints(
   arcCount = 1,
   strokeWidth = 1.6,
   strokeStyle?: GraphFeature["strokeStyle"],
+  attributes: Record<string, string | undefined> = {},
 ) {
   if (!Number.isFinite(radius) || radius <= 0) return;
   const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
@@ -1598,7 +1636,7 @@ function drawAngleArcFromPoints(
       xs.push(vertex[0] + Math.cos(theta) * arcRadius);
       ys.push(vertex[1] + Math.sin(theta) * arcRadius);
     }
-    board.create("curve", [xs, ys], {
+    const arc = board.create("curve", [xs, ys], {
       fixed: true,
       highlight: false,
       strokeColor: color,
@@ -1608,6 +1646,7 @@ function drawAngleArcFromPoints(
       layer: GRAPH_LAYERS.point,
       ...ROUNDED_GRAPH_STROKE,
     } as Record<string, unknown>);
+    setRenderedDataAttributes(arc, attributes);
   }
 }
 
@@ -1616,6 +1655,7 @@ function drawGeometryArc(
   arc: Graph2DGeometryArc | undefined,
   points: Map<string, Graph2DGeometryPoint>,
   solutionColor?: string,
+  attributes: Record<string, string | undefined> = {},
 ) {
   if (!arc || arc.show === false) return;
   const center = geometryPointTuple(points.get(arc.center));
@@ -1638,7 +1678,7 @@ function drawGeometryArc(
   }
 
   const color = solutionColor ?? arc.color ?? "#000000";
-  board.create("curve", [xs, ys], {
+  const renderedArc = board.create("curve", [xs, ys], {
     fixed: true,
     highlight: false,
     strokeColor: color,
@@ -1648,6 +1688,7 @@ function drawGeometryArc(
     layer: GRAPH_LAYERS.point,
     ...ROUNDED_GRAPH_STROKE,
   } as Record<string, unknown>);
+  setRenderedDataAttributes(renderedArc, attributes);
 
   if (arc.label?.trim()) {
     const middleTheta = startAngle + delta / 2;
@@ -1657,6 +1698,8 @@ function drawGeometryArc(
       Number.isFinite(arc.labelY) ? (arc.labelY as number) : center[1] + Math.sin(middleTheta) * radius,
       arc.label,
       color,
+      undefined,
+      { ...attributes, "data-mauth-label-role": "geometry2d-arc-label" },
     );
   }
 }
@@ -1675,11 +1718,12 @@ function drawGeometryRightAngleMarker(
   points: Map<string, Graph2DGeometryPoint>,
   color: string,
   size: number,
+  attributes: Record<string, string | undefined> = {},
 ) {
   const anglePoints = geometryAnglePoints(angle, points);
   if (!anglePoints) return;
   const [first, vertex, second] = anglePoints;
-  drawRightAngleMarkerFromPoints(board, first, vertex, second, color, size);
+  drawRightAngleMarkerFromPoints(board, first, vertex, second, color, size, undefined, undefined, attributes);
 }
 
 function drawRightAngleMarkerFromPoints(
@@ -1691,6 +1735,7 @@ function drawRightAngleMarkerFromPoints(
   size: number,
   strokeWidth = 1.6,
   strokeStyle?: GraphFeature["strokeStyle"],
+  attributes: Record<string, string | undefined> = {},
 ) {
   if (!Number.isFinite(size) || size <= 0) return;
   const firstUnit = unitUserVector(vertex, first);
@@ -1709,8 +1754,10 @@ function drawRightAngleMarkerFromPoints(
     layer: GRAPH_LAYERS.point,
     ...ROUNDED_GRAPH_STROKE,
   } as Record<string, unknown>;
-  board.create("segment", [p1, p2], attrs);
-  board.create("segment", [p2, p3], attrs);
+  const firstSegment = board.create("segment", [p1, p2], attrs);
+  const secondSegment = board.create("segment", [p2, p3], attrs);
+  setRenderedDataAttributes(firstSegment, attributes);
+  setRenderedDataAttributes(secondSegment, attributes);
 }
 
 function angleMarkerFeaturePoints(feature: GraphFeature): [GraphPoint, GraphPoint, GraphPoint] {
@@ -1769,7 +1816,8 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
     if (!endpoints) return;
     const [start, end] = endpoints;
     const color = solutionColor ?? segment.color ?? "#000000";
-    board.create("segment", [start, end], {
+    const attributes = geometry2DRenderedAttributes("segment", segment.id);
+    const renderedSegment = board.create("segment", [start, end], {
       fixed: true,
       highlight: false,
       strokeColor: color,
@@ -1779,6 +1827,7 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
       layer: GRAPH_LAYERS.point,
       ...ROUNDED_GRAPH_STROKE,
     } as Record<string, unknown>);
+    setRenderedDataAttributes(renderedSegment, attributes);
     if (segment.label?.trim()) {
       createLabelText(
         board,
@@ -1786,37 +1835,65 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
         Number.isFinite(segment.labelY) ? (segment.labelY as number) : (start[1] + end[1]) / 2,
         segment.label,
         color,
+        undefined,
+        { ...attributes, "data-mauth-label-role": "geometry2d-segment-label" },
       );
     }
   });
 
-  arcs.forEach((arc) => drawGeometryArc(board, arc, points, solutionColor));
+  arcs.forEach((arc) => drawGeometryArc(board, arc, points, solutionColor, geometry2DRenderedAttributes("arc", arc.id)));
 
   (geometry.decorations ?? []).forEach((decoration) => {
     if (decoration.show === false) return;
     const color = solutionColor ?? decoration.color ?? "#000000";
+    const attributes = geometry2DRenderedAttributes("decoration", decoration.id, decoration.kind);
     if (decoration.kind === "equalLength") {
       const tickCount = decoration.tickCount ?? 1;
       const sizePx = decoration.size ?? 16;
       (decoration.segments ?? []).forEach((segmentId) =>
-        drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx),
+        drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx, {
+          ...attributes,
+          "data-mauth-geometry2d-decoration-target": segmentId,
+        }),
       );
     }
     if (decoration.kind === "equalAngle") {
       const arcCount = decoration.arcCount ?? 1;
       const radius = decoration.radius ?? 0.55;
-      (decoration.angles ?? []).forEach((angleId) => drawGeometryAngleArc(board, angles.get(angleId), points, color, radius, arcCount));
+      (decoration.angles ?? []).forEach((angleId) =>
+        drawGeometryAngleArc(board, angles.get(angleId), points, color, radius, arcCount, undefined, undefined, {
+          ...attributes,
+          "data-mauth-geometry2d-decoration-target": angleId,
+        }),
+      );
     }
     if (decoration.kind === "rightAngle") {
-      drawGeometryRightAngleMarker(board, angles.get(decoration.angle ?? ""), points, color, decoration.size ?? 0.35);
+      drawGeometryRightAngleMarker(board, angles.get(decoration.angle ?? ""), points, color, decoration.size ?? 0.35, {
+        ...attributes,
+        "data-mauth-geometry2d-decoration-target": decoration.angle,
+      });
     }
   });
 
   angles.forEach((angle) => {
-    if (angle.show === false || !angle.label?.trim()) return;
+    if (angle.show === false) return;
     const anglePoints = geometryAnglePoints(angle, points);
     if (!anglePoints) return;
     const [first, vertex, second] = anglePoints;
+    const color = solutionColor ?? angle.color ?? "#000000";
+    const attributes = geometry2DRenderedAttributes("angle", angle.id);
+    drawGeometryAngleArc(
+      board,
+      angle,
+      points,
+      color,
+      angle.radius ?? 0.55,
+      angle.arcCount ?? 1,
+      lineWeight(angle.strokeWidth, 1.6),
+      angle.strokeStyle,
+      attributes,
+    );
+    if (!angle.label?.trim()) return;
     const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
     const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0])) / 2;
     const labelRadius = (angle.radius ?? 0.55) * 1.45;
@@ -1825,14 +1902,16 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
       Number.isFinite(angle.labelX) ? (angle.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius,
       Number.isFinite(angle.labelY) ? (angle.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
       angle.label,
-      solutionColor ?? angle.color ?? "#000000",
+      color,
+      undefined,
+      { ...attributes, "data-mauth-label-role": "geometry2d-angle-label" },
     );
   });
 
   points.forEach((point) => {
     if (point.show === false) return;
     const color = solutionColor ?? point.color ?? "#000000";
-    createFeaturePoint(
+    const renderedPoint = createFeaturePoint(
       board,
       point.x,
       point.y,
@@ -1846,6 +1925,7 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
       },
       color,
     );
+    setRenderedDataAttributes(renderedPoint, geometry2DRenderedAttributes("point", point.id));
   });
 }
 

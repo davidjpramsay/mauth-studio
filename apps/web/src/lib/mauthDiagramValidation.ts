@@ -778,7 +778,10 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
     optionalNumber(entry, "radius", entryPath, issues, { positive: true });
+    optionalNumber(entry, "arcCount", entryPath, issues, { integer: true, min: 1, max: 4 });
     optionalString(entry, "color", entryPath, issues);
+    optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+    optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
     optionalBoolean(entry, "show", entryPath, issues);
   });
 

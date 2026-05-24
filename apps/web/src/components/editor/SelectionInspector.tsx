@@ -546,6 +546,36 @@ function Geometry2DInspector({
               className={controlClassName}
             />
           </label>
+          {[
+            ["Label x", "labelX"],
+            ["Label y", "labelY"],
+          ].map(([label, field]) => (
+            <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              {label}
+              <input
+                type="number"
+                step={0.25}
+                value={inspectorNumberInputValue(segment[field as keyof Graph2DGeometrySegment] as number | undefined)}
+                aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onChange={(event) =>
+                  patchSegment(selectedGeometryChild.index, {
+                    [field]: inspectorOptionalNumber(event.target.value),
+                  } as Partial<Graph2DGeometrySegment>)
+                }
+                className={controlClassName}
+              />
+            </label>
+          ))}
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Colour
+            <input
+              type="color"
+              value={segment.color ?? "#000000"}
+              aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} colour`}
+              onChange={(event) => patchSegment(selectedGeometryChild.index, { color: event.target.value })}
+              className="h-9 w-full rounded-md border border-input bg-background p-1"
+            />
+          </label>
         </div>
       </div>
     );
@@ -606,6 +636,63 @@ function Geometry2DInspector({
               </select>
             </label>
           ))}
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Line style
+            <select
+              value={arc.strokeStyle ?? "solid"}
+              aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} line style`}
+              onChange={(event) => patchArc(selectedGeometryChild.index, { strokeStyle: event.target.value as "solid" | "dashed" })}
+              className={controlClassName}
+            >
+              {GRAPH_LINE_STYLES.map((style) => (
+                <option key={style.value} value={style.value}>
+                  {style.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Weight
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={inspectorNumberInputValue(arc.strokeWidth)}
+              aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} weight`}
+              onChange={(event) => patchArc(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
+              className={controlClassName}
+            />
+          </label>
+          {[
+            ["Label x", "labelX"],
+            ["Label y", "labelY"],
+          ].map(([label, field]) => (
+            <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              {label}
+              <input
+                type="number"
+                step={0.25}
+                value={inspectorNumberInputValue(arc[field as keyof Graph2DGeometryArc] as number | undefined)}
+                aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onChange={(event) =>
+                  patchArc(selectedGeometryChild.index, {
+                    [field]: inspectorOptionalNumber(event.target.value),
+                  } as Partial<Graph2DGeometryArc>)
+                }
+                className={controlClassName}
+              />
+            </label>
+          ))}
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Colour
+            <input
+              type="color"
+              value={arc.color ?? "#000000"}
+              aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} colour`}
+              onChange={(event) => patchArc(selectedGeometryChild.index, { color: event.target.value })}
+              className="h-9 w-full rounded-md border border-input bg-background p-1"
+            />
+          </label>
         </div>
       </div>
     );
@@ -680,6 +767,76 @@ function Geometry2DInspector({
               aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} radius`}
               onChange={(event) => patchAngle(selectedGeometryChild.index, { radius: inspectorOptionalNumber(event.target.value) })}
               className={controlClassName}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Count
+            <input
+              type="number"
+              min={1}
+              max={4}
+              step={1}
+              value={inspectorNumberInputValue(angle.arcCount)}
+              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} count`}
+              onChange={(event) => patchAngle(selectedGeometryChild.index, { arcCount: inspectorOptionalNumber(event.target.value) })}
+              className={controlClassName}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Line style
+            <select
+              value={angle.strokeStyle ?? "solid"}
+              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} line style`}
+              onChange={(event) => patchAngle(selectedGeometryChild.index, { strokeStyle: event.target.value as "solid" | "dashed" })}
+              className={controlClassName}
+            >
+              {GRAPH_LINE_STYLES.map((style) => (
+                <option key={style.value} value={style.value}>
+                  {style.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Weight
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={inspectorNumberInputValue(angle.strokeWidth)}
+              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} weight`}
+              onChange={(event) => patchAngle(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
+              className={controlClassName}
+            />
+          </label>
+          {[
+            ["Label x", "labelX"],
+            ["Label y", "labelY"],
+          ].map(([label, field]) => (
+            <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              {label}
+              <input
+                type="number"
+                step={0.25}
+                value={inspectorNumberInputValue(angle[field as keyof Graph2DGeometryAngle] as number | undefined)}
+                aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onChange={(event) =>
+                  patchAngle(selectedGeometryChild.index, {
+                    [field]: inspectorOptionalNumber(event.target.value),
+                  } as Partial<Graph2DGeometryAngle>)
+                }
+                className={controlClassName}
+              />
+            </label>
+          ))}
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Colour
+            <input
+              type="color"
+              value={angle.color ?? "#000000"}
+              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} colour`}
+              onChange={(event) => patchAngle(selectedGeometryChild.index, { color: event.target.value })}
+              className="h-9 w-full rounded-md border border-input bg-background p-1"
             />
           </label>
         </div>
@@ -766,26 +923,28 @@ function Geometry2DInspector({
             <option key={option.value} value={option.value} />
           ))}
         </datalist>
-        <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-          Count
-          <input
-            type="number"
-            min={1}
-            max={4}
-            step={1}
-            value={inspectorNumberInputValue(decoration.tickCount ?? decoration.arcCount)}
-            aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} count`}
-            onChange={(event) =>
-              patchDecoration(
-                selectedGeometryChild.index,
-                decoration.kind === "equalAngle"
-                  ? { arcCount: inspectorOptionalNumber(event.target.value) }
-                  : { tickCount: inspectorOptionalNumber(event.target.value) },
-              )
-            }
-            className={controlClassName}
-          />
-        </label>
+        {decoration.kind !== "rightAngle" ? (
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Count
+            <input
+              type="number"
+              min={1}
+              max={4}
+              step={1}
+              value={inspectorNumberInputValue(decoration.kind === "equalAngle" ? decoration.arcCount : decoration.tickCount)}
+              aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} count`}
+              onChange={(event) =>
+                patchDecoration(
+                  selectedGeometryChild.index,
+                  decoration.kind === "equalAngle"
+                    ? { arcCount: inspectorOptionalNumber(event.target.value) }
+                    : { tickCount: inspectorOptionalNumber(event.target.value) },
+                )
+              }
+              className={controlClassName}
+            />
+          </label>
+        ) : null}
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Size
           <input
@@ -803,6 +962,16 @@ function Geometry2DInspector({
               )
             }
             className={controlClassName}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+          Colour
+          <input
+            type="color"
+            value={decoration.color ?? "#000000"}
+            aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} colour`}
+            onChange={(event) => patchDecoration(selectedGeometryChild.index, { color: event.target.value })}
+            className="h-9 w-full rounded-md border border-input bg-background p-1"
           />
         </label>
       </div>
