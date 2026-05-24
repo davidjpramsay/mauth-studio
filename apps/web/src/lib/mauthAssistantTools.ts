@@ -586,6 +586,10 @@ function compactGeometry2DData(data: unknown) {
       id: stringField(entry.id, 40),
       points: Array.isArray(entry.points) ? entry.points.slice(0, 3).map((point) => stringField(point, 40)) : undefined,
       label: stringField(entry.label, 80),
+      radius: numberField(entry.radius),
+      arcCount: numberField(entry.arcCount),
+      strokeStyle: stringField(entry.strokeStyle, 40),
+      show: entry.show === undefined ? undefined : booleanField(entry.show),
     }));
   const decorations = recordArray(geometry2d.decorations)
     .slice(0, 12)

@@ -281,7 +281,10 @@ export interface Graph2DGeometryAngle {
   labelX?: number;
   labelY?: number;
   radius?: number;
+  arcCount?: number;
   color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
   show?: boolean;
 }
 

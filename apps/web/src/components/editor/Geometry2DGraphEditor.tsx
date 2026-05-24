@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Graph2DGeometryData, GraphConfig } from "@mauth-studio/shared";
+import type { Graph2DGeometryData, Graph2DGeometryDecoration, GraphConfig } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,12 @@ const GEOMETRY_CHILD_SEGMENTS = {
   angles: "gang",
   decorations: "gdec",
 } as const satisfies Record<GeometryListKey, string>;
+
+const GEOMETRY_MARKER_ACTIONS: Array<{ kind: Graph2DGeometryDecoration["kind"]; label: string }> = [
+  { kind: "equalLength", label: "Equal length" },
+  { kind: "equalAngle", label: "Equal angle" },
+  { kind: "rightAngle", label: "Right angle" },
+];
 
 function childAnchor(anchor: string | undefined, key: GeometryListKey, index: number) {
   return `${anchor ?? "geometry2d"}/${GEOMETRY_CHILD_SEGMENTS[key]}:${index}`;
@@ -83,15 +89,27 @@ function GeometryItemButton({
   );
 }
 
-function GeometrySection({ title, onAdd, children }: { title: string; onAdd: () => void; children: ReactNode }) {
+function GeometrySection({
+  title,
+  onAdd,
+  actions,
+  children,
+}: {
+  title: string;
+  onAdd?: () => void;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="space-y-2 border-t pt-3 first:border-t-0 first:pt-0">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
-        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-          <PlusCircle className="mr-2 size-4" aria-hidden="true" />
-          Add
-        </Button>
+        {actions ?? (
+          <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+            <PlusCircle className="mr-2 size-4" aria-hidden="true" />
+            Add
+          </Button>
+        )}
       </div>
       <div className="space-y-2">{children}</div>
     </section>
@@ -180,7 +198,27 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
 
       <GeometrySection
         title="Markers"
-        onAdd={() => setData({ ...data, decorations: [...decorations, createGeometry2DDecoration("equalLength", data)] })}
+        actions={
+          <div className="flex flex-wrap justify-end gap-2">
+            {GEOMETRY_MARKER_ACTIONS.map(({ kind, label }) => (
+              <Button
+                key={kind}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setData({
+                    ...data,
+                    decorations: [...decorations, createGeometry2DDecoration(kind, data)],
+                  })
+                }
+              >
+                <PlusCircle className="mr-2 size-4" aria-hidden="true" />
+                {label}
+              </Button>
+            ))}
+          </div>
+        }
       >
         {decorations.map((decoration, index) => {
           const itemAnchor = childAnchor(anchor, "decorations", index);

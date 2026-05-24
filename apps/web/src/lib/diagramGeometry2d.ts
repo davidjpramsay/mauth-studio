@@ -14,18 +14,26 @@ function id(prefix: string) {
 
 export const DEFAULT_GEOMETRY_2D_DATA: Graph2DGeometryData = {
   points: [
-    { id: "A", x: -2, y: -1.5, label: "A", labelX: -2.2, labelY: -1.9 },
-    { id: "B", x: 2, y: -1.5, label: "B", labelX: 2.1, labelY: -1.85 },
-    { id: "C", x: 0.5, y: 1.3, label: "C", labelX: 0.62, labelY: 1.35 },
+    { id: "O", x: 0, y: 0, label: "$O$", labelX: -0.42, labelY: 0.28 },
+    { id: "A", x: 2, y: -3.464, label: "$A$", labelX: 2.04, labelY: -3.78 },
+    { id: "B", x: 4, y: 0, label: "$B$", labelX: 4.16, labelY: -0.26 },
+    { id: "C", x: 4, y: 2.5, label: "$C$", labelX: 4.16, labelY: 2.58 },
   ],
   segments: [
-    { id: "AB", from: "A", to: "B" },
-    { id: "BC", from: "B", to: "C" },
-    { id: "CA", from: "C", to: "A" },
+    { id: "OA", from: "O", to: "A", label: "$4\\text{ cm}$", labelX: 0.85, labelY: -1.85, strokeWidth: 2 },
+    { id: "OB", from: "O", to: "B", strokeStyle: "dashed", strokeWidth: 2 },
+    { id: "BC", from: "B", to: "C", label: "$2.5\\text{ cm}$", labelX: 4.35, labelY: 1.1, strokeWidth: 2 },
+    { id: "CO", from: "C", to: "O", strokeWidth: 2 },
   ],
-  arcs: [],
-  angles: [{ id: "ABC", points: ["A", "B", "C"], label: "60^\\circ", radius: 0.45 }],
-  decorations: [{ kind: "rightAngle", id: "right-angle-B", angle: "ABC", size: 0.35 }],
+  arcs: [{ id: "arc-BA", center: "O", from: "B", to: "A", strokeWidth: 2 }],
+  angles: [
+    { id: "BOA", points: ["B", "O", "A"], label: "$60^\\circ$", labelX: 0.95, labelY: -0.62, radius: 0.7, strokeWidth: 1.6 },
+    { id: "OBC", points: ["O", "B", "C"], radius: 0.45, show: false },
+  ],
+  decorations: [
+    { kind: "equalLength", id: "equal-radii", segments: ["OA", "OB"], tickCount: 1, size: 16, show: true },
+    { kind: "rightAngle", id: "right-angle-B", angle: "OBC", size: 0.35, show: true },
+  ],
 };
 
 export const DEFAULT_GEOMETRY_2D_GRAPH: GraphConfig = {
@@ -33,10 +41,10 @@ export const DEFAULT_GEOMETRY_2D_GRAPH: GraphConfig = {
   data: DEFAULT_GEOMETRY_2D_DATA,
   functions: [],
   features: [],
-  xMin: -3,
-  xMax: 3,
-  yMin: -2.5,
-  yMax: 2.5,
+  xMin: -0.8,
+  xMax: 4.8,
+  yMin: -4,
+  yMax: 3.2,
   widthPx: 420,
   heightPx: 340,
   lockAspectRatio: false,
@@ -137,6 +145,9 @@ export function createGeometry2DAngle(points: readonly Graph2DGeometryPoint[]): 
     id: id("angle"),
     points: [points[0]?.id ?? "A", points[1]?.id ?? points[0]?.id ?? "B", points[2]?.id ?? points[0]?.id ?? "C"],
     radius: 0.45,
+    arcCount: 1,
+    strokeWidth: 1.6,
+    strokeStyle: "solid",
     show: true,
   };
 }
