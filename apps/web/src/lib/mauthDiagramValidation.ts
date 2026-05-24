@@ -2,6 +2,7 @@ import type { MauthActionValidationIssue } from "./mauthActionValidation.ts";
 
 const SUPPORTED_DIAGRAM_TYPES = new Set([
   "graph2d",
+  "geometry2d",
   "vector2d",
   "graph3d",
   "image",
@@ -26,6 +27,7 @@ const GRAPH_FEATURE_KINDS = new Set([
   "intersection",
   "tangent",
   "line_segment",
+  "angle_marker",
   "label",
   "region_clipped_by_curve",
 ]);
@@ -607,6 +609,7 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
     optionalString(entry, "color", entryPath, issues);
     optionalBoolean(entry, "show", entryPath, issues);
     optionalBoolean(entry, "solutionOnly", entryPath, issues);
+    optionalBoolean(entry, "rightAngle", entryPath, issues);
     optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
     optionalNumber(entry, "strokeWidth", entryPath, issues, { min: 0 });
     optionalEnum(entry, "strokeStyle", entryPath, GRAPH_FEATURE_STROKE_STYLES, issues);
@@ -629,11 +632,15 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
       requiredNumber(entry, "x", entryPath, issues);
       requiredNumber(entry, "y", entryPath, issues);
     }
-    if (entry.kind === "point_between_points" || entry.kind === "line_segment") {
+    if (entry.kind === "point_between_points" || entry.kind === "line_segment" || entry.kind === "angle_marker") {
       requiredNumber(entry, "x1", entryPath, issues);
       requiredNumber(entry, "y1", entryPath, issues);
       requiredNumber(entry, "x2", entryPath, issues);
       requiredNumber(entry, "y2", entryPath, issues);
+    }
+    if (entry.kind === "angle_marker") {
+      requiredNumber(entry, "x", entryPath, issues);
+      requiredNumber(entry, "y", entryPath, issues);
     }
     if (entry.kind === "point_between_points") optionalNumber(entry, "ratio", entryPath, issues);
     if (entry.kind === "region_between_curves") {
@@ -661,7 +668,7 @@ function validateGraph2DReference(
     return;
   }
   if (knownIds.size && !knownIds.has(value)) {
-    addIssue(issues, path, `must reference a declared graph2d ${referenceLabel}`, `declared ${referenceLabel} id`);
+    addIssue(issues, path, `must reference a declared geometry2d ${referenceLabel}`, `declared ${referenceLabel} id`);
   }
 }
 
@@ -670,7 +677,7 @@ function addUniqueGraph2DId(value: unknown, path: string, knownIds: Set<string>,
     addIssue(issues, path, `must be a non-empty ${label} id`, `${label} id`);
     return;
   }
-  if (knownIds.has(value)) addIssue(issues, path, `duplicates a graph2d ${label} id`, `unique ${label} id`);
+  if (knownIds.has(value)) addIssue(issues, path, `duplicates a geometry2d ${label} id`, `unique ${label} id`);
   knownIds.add(value);
 }
 
@@ -691,18 +698,13 @@ function validateGraph2DReferenceArray(
   values.forEach((value, index) => validateGraph2DReference(value, `${path}.${key}[${index}]`, knownIds, referenceLabel, issues));
 }
 
-function validateGraph2DGeometry(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
-  const data = optionalRecord(config, "data", path, issues);
-  if (!data || !hasOwn(data, "geometry2d")) return;
-  const geometry = optionalRecord(data, "geometry2d", `${path}.data`, issues);
-  if (!geometry) return;
-
+function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   const pointIds = new Set<string>();
-  const points = optionalArray(geometry, "points", `${path}.data.geometry2d`, issues);
+  const points = optionalArray(geometry, "points", path, issues);
   points?.forEach((entry, index) => {
-    const entryPath = `${path}.data.geometry2d.points[${index}]`;
+    const entryPath = `${path}.points[${index}]`;
     if (!isRecord(entry)) {
-      addIssue(issues, entryPath, "must be a graph2d geometry point object", "{ id, x, y }");
+      addIssue(issues, entryPath, "must be a geometry2d point object", "{ id, x, y }");
       return;
     }
     addUniqueGraph2DId(entry.id, `${entryPath}.id`, pointIds, "point", issues);
@@ -716,11 +718,11 @@ function validateGraph2DGeometry(config: Record<string, unknown>, path: string, 
   });
 
   const segmentIds = new Set<string>();
-  const segments = optionalArray(geometry, "segments", `${path}.data.geometry2d`, issues);
+  const segments = optionalArray(geometry, "segments", path, issues);
   segments?.forEach((entry, index) => {
-    const entryPath = `${path}.data.geometry2d.segments[${index}]`;
+    const entryPath = `${path}.segments[${index}]`;
     if (!isRecord(entry)) {
-      addIssue(issues, entryPath, "must be a graph2d geometry segment object", "{ id, from, to }");
+      addIssue(issues, entryPath, "must be a geometry2d segment object", "{ id, from, to }");
       return;
     }
     addUniqueGraph2DId(entry.id, `${entryPath}.id`, segmentIds, "segment", issues);
@@ -735,12 +737,33 @@ function validateGraph2DGeometry(config: Record<string, unknown>, path: string, 
     optionalBoolean(entry, "show", entryPath, issues);
   });
 
-  const angleIds = new Set<string>();
-  const angles = optionalArray(geometry, "angles", `${path}.data.geometry2d`, issues);
-  angles?.forEach((entry, index) => {
-    const entryPath = `${path}.data.geometry2d.angles[${index}]`;
+  const arcIds = new Set<string>();
+  const arcs = optionalArray(geometry, "arcs", path, issues);
+  arcs?.forEach((entry, index) => {
+    const entryPath = `${path}.arcs[${index}]`;
     if (!isRecord(entry)) {
-      addIssue(issues, entryPath, "must be a graph2d geometry angle object", "{ id, points: [A, B, C] }");
+      addIssue(issues, entryPath, "must be a geometry2d arc object", "{ id, center, from, to }");
+      return;
+    }
+    addUniqueGraph2DId(entry.id, `${entryPath}.id`, arcIds, "arc", issues);
+    validateGraph2DReference(entry.center, `${entryPath}.center`, pointIds, "point", issues);
+    validateGraph2DReference(entry.from, `${entryPath}.from`, pointIds, "point", issues);
+    validateGraph2DReference(entry.to, `${entryPath}.to`, pointIds, "point", issues);
+    optionalString(entry, "label", entryPath, issues);
+    optionalNumber(entry, "labelX", entryPath, issues);
+    optionalNumber(entry, "labelY", entryPath, issues);
+    optionalString(entry, "color", entryPath, issues);
+    optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
+    optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
+    optionalBoolean(entry, "show", entryPath, issues);
+  });
+
+  const angleIds = new Set<string>();
+  const angles = optionalArray(geometry, "angles", path, issues);
+  angles?.forEach((entry, index) => {
+    const entryPath = `${path}.angles[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be a geometry2d angle object", "{ id, points: [A, B, C] }");
       return;
     }
     addUniqueGraph2DId(entry.id, `${entryPath}.id`, angleIds, "angle", issues);
@@ -759,11 +782,11 @@ function validateGraph2DGeometry(config: Record<string, unknown>, path: string, 
     optionalBoolean(entry, "show", entryPath, issues);
   });
 
-  const decorations = optionalArray(geometry, "decorations", `${path}.data.geometry2d`, issues);
+  const decorations = optionalArray(geometry, "decorations", path, issues);
   decorations?.forEach((entry, index) => {
-    const entryPath = `${path}.data.geometry2d.decorations[${index}]`;
+    const entryPath = `${path}.decorations[${index}]`;
     if (!isRecord(entry)) {
-      addIssue(issues, entryPath, "must be a graph2d geometry decoration object", "{ kind, ... }");
+      addIssue(issues, entryPath, "must be a geometry2d decoration object", "{ kind, ... }");
       return;
     }
     requiredEnum(entry, "kind", entryPath, GRAPH2D_GEOMETRY_DECORATION_KINDS, issues);
@@ -785,6 +808,28 @@ function validateGraph2DGeometry(config: Record<string, unknown>, path: string, 
       validateGraph2DReference(entry.angle, `${entryPath}.angle`, angleIds, "angle", issues);
     }
   });
+}
+
+function validateGraph2DGeometry(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const data = optionalRecord(config, "data", path, issues);
+  if (!data || !hasOwn(data, "geometry2d")) return;
+  const geometry = optionalRecord(data, "geometry2d", `${path}.data`, issues);
+  if (geometry) validateGraph2DGeometryData(geometry, `${path}.data.geometry2d`, issues);
+}
+
+function validateGeometry2D(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  validateCommonGraphConfig(config, path, issues);
+  const data = requiredRecord(config, "data", path, issues);
+  if (data) validateGraph2DGeometryData(data, `${path}.data`, issues);
+
+  const functions = optionalArray(config, "functions", path, issues);
+  if (functions?.length) {
+    addIssue(issues, `${path}.functions`, "geometry2d uses data primitives instead of graph functions", "omit or use []");
+  }
+  const features = optionalArray(config, "features", path, issues);
+  if (features?.length) {
+    addIssue(issues, `${path}.features`, "geometry2d uses data primitives instead of graph features", "omit or use []");
+  }
 }
 
 function validateSlopeFieldPoint(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
@@ -1620,6 +1665,7 @@ export function validateMauthDiagramConfig(value: unknown, path: string, issues:
   if (typeof value.type !== "string" || !SUPPORTED_DIAGRAM_TYPES.has(value.type)) return;
 
   if (value.type === "graph2d") validateCoordinateGraph(value, path, issues);
+  if (value.type === "geometry2d") validateGeometry2D(value, path, issues);
   if (value.type === "vector2d") validateVector2D(value, path, issues);
   if (value.type === "graph3d") validateGraph3D(value, path, issues);
   if (value.type === "image") validateImageDiagram(value, path, issues);

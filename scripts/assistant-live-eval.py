@@ -95,6 +95,7 @@ GRAPH2D_FEATURE_KINDS = {
     "intersection",
     "tangent",
     "line_segment",
+    "angle_marker",
     "label",
     "region_clipped_by_curve",
 }
@@ -2896,8 +2897,8 @@ def assert_graph2d_function_call(call: dict[str, Any]) -> list[str]:
 def assert_graph2d_geometry2d_decorations_call(call: dict[str, Any]) -> list[str]:
     issues = assert_diagram_type_call(
         call,
-        expected_type="graph2d",
-        required_terms=("geometry2d", "equalLength", "equalAngle", "rightAngle"),
+        expected_type="geometry2d",
+        required_terms=("equalLength", "equalAngle", "rightAngle"),
         forbidden_types=("geometricConstruction", "statsChart", "vector2d"),
     )
     if call.get("name") != "mauth_make_diagram_for_question":
@@ -2907,9 +2908,9 @@ def assert_graph2d_geometry2d_decorations_call(call: dict[str, Any]) -> list[str
         return issues
     graph_config = diagram_graph_config(args)
     data = graph_config.get("data")
-    geometry2d = data.get("geometry2d") if isinstance(data, dict) else None
+    geometry2d = data if isinstance(data, dict) else None
     if not isinstance(geometry2d, dict):
-        issues.append("source-faithful graph2d geometry should use graphConfig.data.geometry2d")
+        issues.append("source-faithful geometry should use geometry2d primitives in graphConfig.data")
         return issues
 
     point_ids = {str(point.get("id")) for point in geometry2d.get("points", []) if isinstance(point, dict)}
@@ -2931,11 +2932,11 @@ def assert_graph2d_geometry2d_decorations_call(call: dict[str, Any]) -> list[str
         )
     if graph_config.get("features"):
         issues.append(
-            "semantic geometry fixture should not encode same-length/angle/right-angle markers as graph2d features"
+            "semantic geometry fixture should not encode same-length/angle/right-angle markers as graph features"
         )
     for validation_issue in graph2d_validation_issues_from_call(call):
         issues.append(
-            f"graph2d geometry2d validation issue at {validation_issue.get('path')}: {validation_issue.get('message')}"
+            f"geometry2d validation issue at {validation_issue.get('path')}: {validation_issue.get('message')}"
         )
     return issues
 
@@ -7914,7 +7915,7 @@ def local_graph2d_geometry2d_decorations_call() -> dict[str, Any]:
             "diagram": {
                 "diagramAlign": "center",
                 "graphConfig": {
-                    "type": "graph2d",
+                    "type": "geometry2d",
                     "xMin": -0.75,
                     "xMax": 4.75,
                     "yMin": -0.75,
@@ -7926,29 +7927,27 @@ def local_graph2d_geometry2d_decorations_call() -> dict[str, Any]:
                     "showGrid": False,
                     "showAxisNumbers": False,
                     "data": {
-                        "geometry2d": {
-                            "points": [
-                                {"id": "A", "x": 0, "y": 0, "label": "$A$"},
-                                {"id": "B", "x": 4, "y": 0, "label": "$B$"},
-                                {"id": "C", "x": 4, "y": 3, "label": "$C$"},
-                                {"id": "D", "x": 0, "y": 3, "label": "$D$"},
-                            ],
-                            "segments": [
-                                {"id": "AB", "from": "A", "to": "B", "label": "$4\\ \\text{cm}$"},
-                                {"id": "BC", "from": "B", "to": "C", "label": "$3\\ \\text{cm}$"},
-                                {"id": "CD", "from": "C", "to": "D", "strokeStyle": "dashed"},
-                                {"id": "DA", "from": "D", "to": "A"},
-                            ],
-                            "angles": [
-                                {"id": "ABC", "points": ["A", "B", "C"]},
-                                {"id": "BCD", "points": ["B", "C", "D"]},
-                            ],
-                            "decorations": [
-                                {"kind": "equalLength", "segments": ["AB", "CD"], "tickCount": 1},
-                                {"kind": "equalAngle", "angles": ["ABC", "BCD"], "arcCount": 1},
-                                {"kind": "rightAngle", "angle": "ABC"},
-                            ],
-                        }
+                        "points": [
+                            {"id": "A", "x": 0, "y": 0, "label": "$A$"},
+                            {"id": "B", "x": 4, "y": 0, "label": "$B$"},
+                            {"id": "C", "x": 4, "y": 3, "label": "$C$"},
+                            {"id": "D", "x": 0, "y": 3, "label": "$D$"},
+                        ],
+                        "segments": [
+                            {"id": "AB", "from": "A", "to": "B", "label": "$4\\ \\text{cm}$"},
+                            {"id": "BC", "from": "B", "to": "C", "label": "$3\\ \\text{cm}$"},
+                            {"id": "CD", "from": "C", "to": "D", "strokeStyle": "dashed"},
+                            {"id": "DA", "from": "D", "to": "A"},
+                        ],
+                        "angles": [
+                            {"id": "ABC", "points": ["A", "B", "C"]},
+                            {"id": "BCD", "points": ["B", "C", "D"]},
+                        ],
+                        "decorations": [
+                            {"kind": "equalLength", "segments": ["AB", "CD"], "tickCount": 1},
+                            {"kind": "equalAngle", "angles": ["ABC", "BCD"], "arcCount": 1},
+                            {"kind": "rightAngle", "angle": "ABC"},
+                        ],
                     },
                 },
             },
@@ -10994,7 +10993,7 @@ LOCAL_EVAL_CASES: dict[str, dict[str, Any]] = {
             "vectorRayDiagram right-angle marker should span the perpendicular rays b and d",
         ],
     },
-    "graph2d-geometry2d-decorations": {
+    "geometry2d-decorations": {
         "assert": assert_graph2d_geometry2d_decorations_call,
         "call": local_graph2d_geometry2d_decorations_call,
     },

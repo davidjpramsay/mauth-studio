@@ -137,14 +137,14 @@ test("describes the assistant tool surface and supported action types", () => {
   assert(description.tools.some((tool) => tool.name === "mauth.solutions.writeAll"));
   assert(description.tools.some((tool) => tool.name === "mauth.settings.apply"));
   assert(description.tools.some((tool) => tool.name === "mauth.layout.check"));
-  assert(description.tools.some((tool) => tool.name === "mauth.author.addDiagram" && tool.description.includes("data.geometry2d")));
+  assert(description.tools.some((tool) => tool.name === "mauth.author.addDiagram" && tool.description.includes("geometry2d")));
   assert(description.actionTypes.all.includes("question.add"));
   assert(description.actionTypes.all.includes("document.validation.run"));
   assert(description.actionTypes.content.includes("module.settings.update"));
   assert(description.actionTypes.content.includes("diagram.settings.update"));
   assert(description.documentRecipes.some((recipe) => recipe.id === "school-exam-front-matter"));
   assert(description.workflow.some((step) => step.includes("Preview")));
-  assert(description.workflow.some((step) => step.includes("source-faithful 2D geometry linework")));
+  assert(description.workflow.some((step) => step.includes("geometry2d")));
 });
 
 test("runs the tool description through the assistant dispatcher", () => {
@@ -3540,7 +3540,7 @@ test("accepts native graph2d polar guide grids", () => {
   assert.deepEqual(diagram?.kind === "diagram" ? diagram.graphConfig.data?.polarGrid?.radii : undefined, [1, 2, 3, 4]);
 });
 
-test("accepts native graph2d semantic geometry decorations", () => {
+test("accepts native geometry2d semantic geometry decorations", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",
     arguments: {
@@ -3553,7 +3553,7 @@ test("accepts native graph2d semantic geometry decorations", () => {
               id: "geometry2d-decorations",
               kind: "diagram",
               graphConfig: {
-                type: "graph2d",
+                type: "geometry2d",
                 xMin: -1,
                 xMax: 6,
                 yMin: -1,
@@ -3561,29 +3561,28 @@ test("accepts native graph2d semantic geometry decorations", () => {
                 showAxes: false,
                 showGrid: false,
                 data: {
-                  geometry2d: {
-                    points: [
-                      { id: "A", x: 0, y: 0, label: "$A$" },
-                      { id: "B", x: 4, y: 0, label: "$B$" },
-                      { id: "C", x: 4, y: 3, label: "$C$" },
-                      { id: "D", x: 0, y: 3, label: "$D$" },
-                    ],
-                    segments: [
-                      { id: "AB", from: "A", to: "B", label: "$4\\text{ cm}$" },
-                      { id: "BC", from: "B", to: "C", label: "$3\\text{ cm}$" },
-                      { id: "CD", from: "C", to: "D" },
-                      { id: "DA", from: "D", to: "A" },
-                    ],
-                    angles: [
-                      { id: "ABC", points: ["A", "B", "C"] },
-                      { id: "BCD", points: ["B", "C", "D"] },
-                    ],
-                    decorations: [
-                      { kind: "equalLength", segments: ["AB", "CD"], tickCount: 1 },
-                      { kind: "equalAngle", angles: ["ABC", "BCD"], arcCount: 2 },
-                      { kind: "rightAngle", angle: "ABC" },
-                    ],
-                  },
+                  points: [
+                    { id: "A", x: 0, y: 0, label: "$A$" },
+                    { id: "B", x: 4, y: 0, label: "$B$" },
+                    { id: "C", x: 4, y: 3, label: "$C$" },
+                    { id: "D", x: 0, y: 3, label: "$D$" },
+                  ],
+                  segments: [
+                    { id: "AB", from: "A", to: "B", label: "$4\\text{ cm}$" },
+                    { id: "BC", from: "B", to: "C", label: "$3\\text{ cm}$" },
+                    { id: "CD", from: "C", to: "D" },
+                    { id: "DA", from: "D", to: "A" },
+                  ],
+                  arcs: [{ id: "arc-A", center: "A", from: "B", to: "D", strokeStyle: "dashed" }],
+                  angles: [
+                    { id: "ABC", points: ["A", "B", "C"] },
+                    { id: "BCD", points: ["B", "C", "D"] },
+                  ],
+                  decorations: [
+                    { kind: "equalLength", segments: ["AB", "CD"], tickCount: 1 },
+                    { kind: "equalAngle", angles: ["ABC", "BCD"], arcCount: 2 },
+                    { kind: "rightAngle", angle: "ABC" },
+                  ],
                 },
               },
             },
@@ -3596,10 +3595,7 @@ test("accepts native graph2d semantic geometry decorations", () => {
   assert.equal(result.ok, true);
   const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "geometry2d-decorations");
   assert.equal(diagram?.kind, "diagram");
-  const geometry2d =
-    diagram?.kind === "diagram" && diagram.graphConfig.data && "geometry2d" in diagram.graphConfig.data
-      ? diagram.graphConfig.data.geometry2d
-      : undefined;
+  const geometry2d = diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined;
   assert.equal(Array.isArray(geometry2d?.decorations), true);
   assert.equal(geometry2d?.decorations?.length, 3);
 
@@ -3608,16 +3604,77 @@ test("accepts native graph2d semantic geometry decorations", () => {
     arguments: { questionNumber: 1 },
   });
   const preview = previewResult.data as MauthPreviewInspection;
-  const graph2dDiagram = preview.question?.diagrams.find((previewDiagram) => previewDiagram.graphType === "graph2d");
-  const geometrySummary = graph2dDiagram?.summary.data?.geometry2d as Record<string, unknown> | undefined;
+  const graph2dDiagram = preview.question?.diagrams.find((previewDiagram) => previewDiagram.graphType === "geometry2d");
+  const geometrySummary = graph2dDiagram?.summary.data as Record<string, unknown> | undefined;
   const decorationSummary = geometrySummary?.decorations as Array<Record<string, unknown>> | undefined;
 
   assert.equal(previewResult.ok, true);
   assert.equal(geometrySummary?.pointCount, 4);
   assert.equal(geometrySummary?.segmentCount, 4);
+  assert.equal(geometrySummary?.arcCount, 1);
   assert.equal(geometrySummary?.angleCount, 2);
   assert.equal(geometrySummary?.decorationCount, 3);
   assert(decorationSummary?.some((decoration) => decoration.kind === "rightAngle"));
+});
+
+test("accepts native graph2d angle marker features", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "angle-marker-feature",
+              kind: "diagram",
+              graphConfig: {
+                type: "graph2d",
+                showAxes: false,
+                showGrid: false,
+                features: [
+                  { kind: "line_segment", x1: 0, y1: 0, x2: 2, y2: 0, label: "$AB$" },
+                  { kind: "line_segment", x1: 0, y1: 0, x2: 1.4, y2: 1.4, label: "$AC$" },
+                  {
+                    kind: "angle_marker",
+                    label: "45^\\circ",
+                    x: 0,
+                    y: 0,
+                    x1: 2,
+                    y1: 0,
+                    x2: 1.4,
+                    y2: 1.4,
+                    size: 0.45,
+                    rightAngle: false,
+                  },
+                  {
+                    kind: "angle_marker",
+                    labelMode: "none",
+                    x: 2,
+                    y: 0,
+                    x1: 2,
+                    y1: 1,
+                    x2: 3,
+                    y2: 0,
+                    size: 0.35,
+                    rightAngle: true,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "angle-marker-feature");
+  assert.equal(diagram?.kind, "diagram");
+  const features = diagram?.kind === "diagram" ? diagram.graphConfig.features : [];
+  assert.equal(features?.filter((feature) => feature.kind === "angle_marker").length, 2);
+  assert(features?.some((feature) => feature.kind === "angle_marker" && feature.rightAngle === true));
 });
 
 test("rejects malformed graph2d slope fields", () => {
@@ -3698,6 +3755,46 @@ test("rejects malformed graph2d semantic geometry decorations", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[0].tickCount"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[1].angles[1]"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[2].angle"));
+});
+
+test("rejects malformed native geometry2d primitive references", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.actions.preview",
+    arguments: {
+      actions: [
+        {
+          type: "module.add",
+          scope: { kind: "question", questionId: "q1" },
+          blocks: [
+            {
+              id: "bad-native-geometry2d",
+              kind: "diagram",
+              graphConfig: {
+                type: "geometry2d",
+                data: {
+                  points: [{ id: "A", x: 0, y: 0 }],
+                  segments: [{ id: "AB", from: "A", to: "B" }],
+                  arcs: [{ id: "arc-1", center: "O", from: "A", to: "B" }],
+                  angles: [{ id: "ABC", points: ["A", "B"] }],
+                  decorations: [{ kind: "rightAngle", angle: "ABC" }],
+                },
+                functions: [{ kind: "expression", expression: "x" }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const data = result.data as { validationIssues?: Array<{ path: string; message: string }> };
+  const issuePaths = new Set(data.validationIssues?.map((issue) => issue.path));
+
+  assert.equal(result.ok, false);
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.segments[0].to"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.arcs[0].center"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.arcs[0].to"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.angles[0].points"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions"));
 });
 
 test("rejects graph2d fields misplaced under data and options", () => {

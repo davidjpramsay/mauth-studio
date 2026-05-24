@@ -812,7 +812,7 @@ def test_source_conversion_brain_context_is_renderer_focused():
     assert "For graph2d source diagrams" in argand
     assert "Arg(z)" in argand
     assert "data.polarGrid" in argand
-    assert "data.geometry2d" in argand
+    assert "data.geometry2d" not in argand
     assert "domainMin/domainMax" in argand
     assert "full infinite line functions" in argand
     assert "For graph3d source solids" not in argand
@@ -1531,7 +1531,7 @@ def test_source_question_tool_schema_describes_required_vector2d_fields():
     assert "metadata.vector2d.angleMarkers[]" in graph_description
 
 
-def test_provider_tool_schema_describes_graph2d_geometry2d_fields():
+def test_provider_tool_schema_describes_geometry2d_fields():
     source_tool = openai_assistant.mauth_convert_source_question_tool_definition(require_diagram=True)
     source_description = source_tool["parameters"]["properties"]["diagram"]["properties"]["graphConfig"]["description"]
     add_diagram_tool = openai_assistant.mauth_author_add_diagram_tool_definition()
@@ -1539,11 +1539,12 @@ def test_provider_tool_schema_describes_graph2d_geometry2d_fields():
         "description"
     ]
 
-    assert "data.geometry2d" in source_description
-    assert "points, segments, angles, and decorations" in source_description
+    assert "geometry2d" in source_description
+    assert "points/segments/arcs/angles/markers" in source_description
     assert "equalLength" in source_description
-    assert "data.geometry2d" in add_diagram_tool["description"]
-    assert "data.geometry2d" in add_diagram_description
+    assert "geometry2d" in add_diagram_tool["description"]
+    assert "points, segments, arcs, angles, and markers" in add_diagram_tool["description"]
+    assert "geometry2d" in add_diagram_description
     assert "rightAngle" in add_diagram_description
 
 
@@ -1673,7 +1674,7 @@ def test_source_diagram_type_detection_covers_related_rates_geometry():
         "Preserve the lighthouse related-rates diagram and worked solution."
     )
 
-    assert openai_assistant.source_conversion_diagram_types_for_text(text) == ["geometricConstruction"]
+    assert openai_assistant.source_conversion_diagram_types_for_text(text) == ["geometry2d"]
 
 
 def test_source_table_surface_detection_distinguishes_given_tables():

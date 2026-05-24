@@ -87,6 +87,19 @@ export function diagramIntentFromText(rawText: string): MauthDiagramIntent | und
     };
   }
 
+  const hasTextbookGeometry2DLanguage =
+    /\b2d diagram\b|\b2-d diagram\b|\bgeometry diagram\b|\bgeometric diagram\b|\bangle marker\b|\bright[-\s]?angle marker\b|\bequal[-\s]?length\b|\bsame[-\s]?length\b|\bequal[-\s]?angle\b|\bsame[-\s]?angle\b|\bsector\b|\barc length\b|\btriangle diagram\b|\bcomposite area\b|\brelated rates?\b|\blighthouse\b/i.test(
+      rawText,
+    ) || /\b(?:triangle|sector|arc|angle)\b.{0,80}\b(?:cm|mm|m|degrees?|°)\b/i.test(rawText);
+  if (hasTextbookGeometry2DLanguage) {
+    return {
+      id: "geometry2d",
+      expectedType: "geometry2d",
+      label: "2D geometry diagram",
+      reason: "no-axis textbook geometry diagrams should use geometry2d primitives rather than graph functions or low-level feature rows.",
+    };
+  }
+
   const hasScalarProductLanguage =
     /\bscalar products?\b|\bdot products?\b|(?:\\mathbf\s*\{[a-z]\}|[a-z])\s*(?:\\cdot|·|•)\s*(?:\\mathbf\s*\{[a-z]\}|[a-z])/i.test(
       rawText,

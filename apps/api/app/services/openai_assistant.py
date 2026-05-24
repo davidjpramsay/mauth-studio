@@ -341,6 +341,7 @@ MAUTH_TOOL_NAMES = [
 
 SUPPORTED_DIAGRAM_TYPES = [
     "graph2d",
+    "geometry2d",
     "vector2d",
     "graph3d",
     "image",
@@ -417,14 +418,34 @@ def source_conversion_diagram_types_for_text(text: str) -> list[str] | None:
             "tangent",
             "chord",
             "schematic geometry",
-            "geometry diagram",
             "schematic diagram",
+        )
+    ):
+        include("geometricConstruction")
+    if any(
+        term in text
+        for term in (
+            "2d diagram",
+            "2-d diagram",
+            "geometry diagram",
+            "geometric diagram",
+            "angle marker",
+            "right angle",
+            "right-angle",
+            "same length",
+            "equal length",
+            "same angle",
+            "equal angle",
+            "sector",
+            "arc length",
+            "triangle diagram",
+            "composite area",
             "related rates",
             "related-rates",
             "lighthouse",
         )
     ):
-        include("geometricConstruction")
+        include("geometry2d")
     if "network" in text:
         include("network")
 
@@ -758,6 +779,8 @@ def source_conversion_diagram_brain_keywords(diagram_types: list[str] | None) ->
             "direction-field",
             "implicit",
             "region",
+            "angle-marker",
+            "angle marker",
             "regions",
             "line_segment",
         )
@@ -2286,17 +2309,18 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "if the source asks for a slope at a point, that point must be in highlightedPoints, not only a point feature. "
                     "For graph2d function domains, use domainMin/domainMax and style with color/strokeWidth/strokeStyle "
                     "directly on the function. Graph2d features use kind, not type, and style with direct color/size/strokeWidth fields; "
-                    "use label with x/y for free labels and line_segment with x1/y1/x2/y2 for segments. "
+                    "use label with x/y for free labels, line_segment with x1/y1/x2/y2 for segments, and angle_marker "
+                    "with x/y vertex plus x1/y1/x2/y2 arms for standalone angle markings; do not fake angle markers as functions. "
                     "For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, "
                     "and named vector rays at their source-relative incidence; put vector labels on the line_segment "
                     "ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident "
                     "or projected labels such as E and O. "
-                    "For source-faithful 2D geometry sketches, prefer graphConfig.data.geometry2d with "
-                    "points, segments, angles, and decorations. Segments reference point ids with from/to, "
-                    "angles use three point ids [from, vertex, to], and decorations use kind equalLength, "
-                    "equalAngle, or rightAngle. Use this for named points, straight segments, angle markers, "
+                    "For no-axis source-faithful 2D geometry sketches, use graphConfig.type:'geometry2d' with "
+                    "data.points, data.segments, data.arcs, data.angles, and data.decorations. Segments reference point ids with from/to, "
+                    "arcs reference center/from/to point ids, angles use three point ids [from, vertex, to], and decorations use kind equalLength, "
+                    "equalAngle, or rightAngle. Use this for named points, straight segments, circular arcs, angle markers, "
                     "same-length ticks, same-angle arcs, right-angle squares, and dashed/helper geometry linework instead of "
-                    "many tiny feature rows. Keep functions/features for curves, regions, loci, free labels, and non-geometry annotations. "
+                    "many tiny graph2d feature rows. Keep graph2d functions/features for coordinate curves, regions, loci, free labels, and non-geometry annotations. "
                     "For shaded graph2d locus/region diagrams, define boundary functions first, then use exact supported "
                     "region_between_curves, region_curve_axis, or region_clipped_by_curve features with "
                     "functionAIndex/functionBIndex or baseFeatureIndex/clipFunctionIndex/clipSide plus xMin/xMax; use fillOpacity, "
@@ -2348,7 +2372,8 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "data": {
                         "type": "object",
                         "description": (
-                            "Renderer data. For graph2d, only use this for data.slopeField, data.polarGrid, or data.geometry2d; do not put graph2d "
+                            "Renderer data. For geometry2d, put points/segments/arcs/angles/decorations here. "
+                            "For graph2d, only use this for data.slopeField or data.polarGrid; do not put graph2d "
                             "functions, features, bounds, size, or axes fields here. For graph3d, use "
                             "points:[{id,label,coords:[x,y,z]}], segments:[{from,to,label?,strokeStyle?,dashed?}], "
                             "faces:[{points:[...]}] not vertices, and "
@@ -2422,7 +2447,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                         "description": (
                             "Top-level graph2d features. Use kind, not type. Put color, size, strokeWidth, and "
                             "strokeStyle directly on the feature; do not use a style wrapper. Use label with x/y for "
-                            "free text labels and line_segment with x1/y1/x2/y2 for segments; for shaded regions use "
+                            "free text labels, line_segment with x1/y1/x2/y2 for segments, and angle_marker with "
+                            "x/y as the vertex plus x1/y1 and x2/y2 as the arms. Do not draw angle markers as fake "
+                            "function curves. For shaded regions use "
                             "region_between_curves or region_curve_axis with xMin/xMax and fillOpacity. Do not use polygon, "
                             "region_between, free_label, points, coords, from/to, functionIndex1/functionIndex2, "
                             "domainMin/domainMax, fillColor, opacity, or strokeColor."
@@ -2441,6 +2468,7 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                                         "intersection",
                                         "tangent",
                                         "line_segment",
+                                        "angle_marker",
                                         "label",
                                         "region_clipped_by_curve",
                                     ],
@@ -2454,6 +2482,7 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                                 "label": {"type": "string"},
                                 "color": {"type": "string"},
                                 "size": {"type": "number"},
+                                "rightAngle": {"type": "boolean"},
                                 "strokeWidth": {"type": "number"},
                                 "strokeStyle": {"type": "string", "enum": ["none", "solid", "dashed"]},
                                 "fillOpacity": {"type": "number"},
@@ -2503,7 +2532,7 @@ def compact_assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                 "type": "object",
                 "description": (
                     "Native Mauth renderer payload. Include graphConfig.type and follow the top-level diagram "
-                    "schema/instructions for renderer-specific graph2d, vector2d, graph3d, statsChart, "
+                    "schema/instructions for renderer-specific graph2d, geometry2d, vector2d, graph3d, statsChart, "
                     "setDiagram, network, image, or geometricConstruction fields."
                 ),
                 "properties": {"type": {"type": "string", "enum": SUPPORTED_DIAGRAM_TYPES}},
@@ -2528,18 +2557,22 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
     allowed = ordered_supported_diagram_types(diagram_types)
     if set(allowed) == set(SUPPORTED_DIAGRAM_TYPES):
         return (
-            "Use graph2d for coordinate/function, slope-field, Argand/locus, implicit, and source-faithful 2D geometry via data.geometry2d with points, segments, angles, and decorations such as equalLength; "
-            "statsChart for histograms, prob/freq charts, density/normal curves, and blank axes; "
-            "graph3d for 3D points/segments/faces/solids/sphereCap; vector2d/vectorRayDiagram for vectors; "
-            "geometricConstruction for theorem geometry; setDiagram for Venn diagrams. "
-            "For vector2d, metadata.vector2d.vectors[] entries need id, name, start:[x,y], and components:[dx,dy]; "
-            "use metadata.vector2d.segmentLabels[] and metadata.vector2d.angleMarkers[] for labels."
+            "geometry2d: no-axis geometry with points/segments/arcs/angles/markers incl. equalLength; "
+            "graph2d: coordinate/function, slope-field, Argand/locus, implicit; statsChart: histograms, prob/freq, density/normal, blank axes; "
+            "graph3d: 3D points/segments/faces/solids/sphereCap; vector2d/vectorRayDiagram: vectors; geometricConstruction: theorem geometry; setDiagram: Venn. "
+            "For vector2d, metadata.vector2d.vectors[] need id, name, start:[x,y], and components:[dx,dy]; "
+            "use metadata.vector2d.segmentLabels[]/metadata.vector2d.angleMarkers[] for labels."
         )
 
     guides = {
+        "geometry2d": (
+            "Use geometry2d for no-axis source-faithful geometry. Put points, straight segments, circular arcs, angles, and markers under graphConfig.data. "
+            "Segments use from/to ids, arcs use center/from/to ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. "
+            "Do not add graph2d functions/features for these primitives."
+        ),
         "graph2d": (
-            "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField, polarGrid, or geometry2d belongs under data. "
-            "For source-faithful 2D geometry sketches, use data.geometry2d with points, segments, angles, and decorations for equalLength/equalAngle/rightAngle markers instead of many tiny feature rows. "
+            "Use graph2d. Keep bounds, display flags, functions, and features top-level; only slopeField or polarGrid belongs under data. "
+            "For standalone graph feature angle markings, use kind:'angle_marker' with x/y vertex, x1/y1 and x2/y2 arms, size radius, optional label, and rightAngle:true for a square; do not fake these with function curves. "
             "Use data.polarGrid for repeated Argand polar-guide circles/radial guide lines, with angleLinesDeg listing undirected orientations once in [0,180). "
             "For locus/region shading, define boundary functions first and use supported indexed region features; "
             "use region_between_curves or region_curve_axis, xMin/xMax, and fillOpacity, not region_between, "
@@ -2586,9 +2619,7 @@ def source_conversion_diagram_block_schema(description: str, diagram_types: list
         "graphConfig": {
             "type": "object",
             "description": (
-                "Native Mauth renderer payload. Required field: type. "
-                f"{source_conversion_renderer_guide(allowed_diagram_types)} "
-                "Keep renderer fields inside graphConfig. The app validates full renderer-specific payloads."
+                f"Native graphConfig. Required: type. {source_conversion_renderer_guide(allowed_diagram_types)}"
             ),
             "properties": {"type": {"type": "string", "enum": allowed_diagram_types}},
             "required": ["type"],
@@ -2599,10 +2630,8 @@ def source_conversion_diagram_block_schema(description: str, diagram_types: list
         properties["vectorRayDiagram"] = {
             "type": "object",
             "description": (
-                "Compact no-axis scalar-product ray/vector diagram. Include vectors with id/name, length or "
-                "components, angleDeg, lengthLabel such as 2\\\\ \\\\text{units}, and optional angleMarkers "
-                "with labels such as 45^\\\\circ. Angle markers may be nested; use the source sector endpoints "
-                "rather than simply adjacent rays."
+                "Compact no-axis scalar-product ray/vector diagram. Include vectors with id/name, components or "
+                "length/angleDeg, optional segmentLabels, and angleMarkers using source sector endpoints."
             ),
             "properties": {
                 "widthPx": {"type": "number"},
@@ -2619,8 +2648,7 @@ def source_conversion_diagram_block_schema(description: str, diagram_types: list
         "description": (
             f"{description} "
             + ("Use exactly one of graphConfig or vectorRayDiagram. " if include_vector_ray else "Use graphConfig. ")
-            + "Keep renderer fields inside graphConfig, not on the diagram block. "
-            "The app validates full renderer-specific payloads before applying."
+            + "Keep renderer fields inside graphConfig, not on the diagram block."
         ),
         "properties": properties,
         "required": [],
@@ -3414,7 +3442,7 @@ def mauth_convert_source_question_tool_definition(
             "Write inline maths as $\\overrightarrow{BT}$, not $\\$\\overrightarrow{BT}$ or other escaped-dollar artifacts. "
             "For currency, use \\$1, $1$ dollar, or 1 dollar; never write raw spans such as $1 game. "
             "Use native diagrams/tables, not prose fallbacks. Renderer guide: statsChart for statistical charts/density/"
-            "normal/sketch axes; graph2d for coordinate, slope-field, Argand/locus, implicit curves, and source-faithful 2D geometry linework; graph3d for "
+            "normal/sketch axes; geometry2d for no-axis textbook geometry with points/segments/arcs/angles/markers; graph2d for coordinate, slope-field, Argand/locus, and implicit curves; graph3d for "
             "3D solids including sphereCap; vectorRayDiagram for no-axis scalar-product ray screenshots."
         ),
         "parameters": {
@@ -3433,10 +3461,10 @@ def mauth_author_add_diagram_tool_definition() -> dict[str, Any]:
         "description": (
             "Add a teacher-ready diagram to one existing question. Use for focused follow-ups like "
             "'include/add the diagram in question 1'. Choose the correct Mauth renderer and provide a real graphConfig. "
-            "Use geometricConstruction/Penrose for schematic geometry and theorem diagrams; graph2d for coordinate/function "
-            "graphs and source-faithful 2D geometry linework via data.geometry2d; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts, density curves, normal/sample-mean distributions, and histograms; setDiagram for Venn/set diagrams; "
+            "Use geometry2d for no-axis textbook geometry diagrams with points, segments, arcs, angles, and markers; geometricConstruction/Penrose for schematic geometry and theorem diagrams; graph2d for coordinate/function "
+            "graphs; vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams; statsChart for statistical charts, density curves, normal/sample-mean distributions, and histograms; setDiagram for Venn/set diagrams; "
             "graph3d for 3D diagrams with explicit points, segments, polygon faces, curved solids including sphereCap, and metadata.view3d az/el/bank in radians; image for uploaded images. "
-            "For graph2d source geometry sketches, use graph2d.data.geometry2d for named points, straight segments, angles, equal-length/equal-angle decorations, and right-angle markers instead of many tiny feature rows. "
+            "For geometry2d sketches, use data.points/data.segments/data.arcs/data.angles/data.decorations for named points, straight segments, circular arcs, angles, equal-length/equal-angle decorations, and right-angle markers instead of many tiny graph2d feature rows. "
             "For slope fields, use graph2d.data.slopeField rather than prose or loose line segments, and keep graph2d "
             "functions/features/ranges/display fields directly on graphConfig. Include requested slope-calculation points "
             "in data.slopeField.highlightedPoints, not only as graphConfig.features points. Use kind:'relation' for implicit "
@@ -3493,8 +3521,8 @@ def mauth_make_diagram_for_question_tool_definition() -> dict[str, Any]:
     definition["description"] = (
         "Create or repair a native editable diagram for one existing question. Use for focused diagram follow-ups and "
         "post-edit semantic repairs. Read the question text, choose the correct renderer, and make the graphConfig match "
-        "the stated mathematical relationships. Prefer geometricConstruction/Penrose for schematic theorem geometry, graph2d for "
-        "coordinate/function graphs and source-faithful 2D geometry linework via data.geometry2d, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics charts, density curves, normal/sample-mean distributions, and histograms, setDiagram for Venn/set "
+        "the stated mathematical relationships. Prefer geometry2d for no-axis textbook geometry with points/segments/arcs/angles/markers, geometricConstruction/Penrose for schematic theorem geometry, graph2d for "
+        "coordinate/function graphs, vector2d for coordinate vectors and source-faithful no-axis vector/ray diagrams, statsChart for statistics charts, density curves, normal/sample-mean distributions, and histograms, setDiagram for Venn/set "
         "diagrams, graph3d for 3D diagrams with explicit points, segments, faces, curved solids, and metadata.view3d az/el/bank in radians, and image only when an uploaded bitmap is explicitly required."
     )
     return definition
@@ -4256,7 +4284,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
     allowed = ordered_supported_diagram_types(diagram_types)
     if set(allowed) == set(SUPPORTED_DIAGRAM_TYPES):
         chooser = (
-            "graph2d for coordinate/function/slope-field/Argand/locus/implicit graphs and source-faithful 2D geometry linework; statsChart for histograms, "
+            "geometry2d for no-axis textbook geometry diagrams with points/segments/arcs/angles/markers; graph2d for coordinate/function/slope-field/Argand/locus/implicit graphs; statsChart for histograms, "
             "columns, probability tables/charts, density/normal curves, and blank sketch axes; graph3d for 3D points, "
             "edges, faces, prisms, pyramids, cones, cylinders, spheres, and spherical caps; vector2d or "
             "vectorRayDiagram for coordinate vectors and scalar-product ray diagrams; geometricConstruction/Penrose "
@@ -4281,7 +4309,11 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "graph2d" in allowed:
         lines.append(
-            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField, data.polarGrid, or data.geometry2d under data. For Argand polar-guide backgrounds, use data.polarGrid with radii, angleLinesDeg, radius, color, and strokeWidth instead of repeating every guide circle and radial guide line as separate functions/features; angleLinesDeg stores undirected guide-line orientations, so list each orientation once in [0,180), not both theta and theta+180. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. For source-faithful 2D geometry sketches, use data.geometry2d with named points, segments, angles, and decorations for equalLength/equalAngle/rightAngle markers instead of many tiny feature rows. For other source line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases. Preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions."
+            "- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField or data.polarGrid under data. For Argand polar-guide backgrounds, use data.polarGrid with radii, angleLinesDeg, radius, color, and strokeWidth instead of repeating every guide circle and radial guide line as separate functions/features; angleLinesDeg stores undirected guide-line orientations, so list each orientation once in [0,180), not both theta and theta+180. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. For coordinate-graph line work and top views, use feature kind line_segment with x1/y1/x2/y2, not segment/vector or from/to aliases; use feature kind angle_marker with x/y vertex and x1/y1/x2/y2 arms for standalone angle markings, not fake function curves. Use label with x/y for free labels, not free_label/coords/text, and preserve source vector labels exactly, such as \\vec a or \\underset{\\sim}{a}. For regions/loci, define boundary functions first and reference them by supported indexed region features such as region_curve_axis or region_between_curves with xMin/xMax and fillOpacity; do not use region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, polygon point lists, opacity, or fillColor/strokeColor aliases. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions."
+        )
+    if "geometry2d" in allowed:
+        lines.append(
+            "- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Do not add graph2d functions/features for these primitives."
         )
     if "graph3d" in allowed:
         lines.append(
@@ -4476,11 +4508,12 @@ Tool-call contract:
 - For expected-value, fairness, long-run-profit, or advantage questions, finish solutionText with a direct conclusion that answers the named party or claim in the prompt, not only the computed expected value.
 - For focused mark-allocation, tick, QED-mark, or solution-only edits: Do not use mauth_question_upsert. Use mauth_write_solutions_for_questions, preserve wording and diagrams, and Preserve existing diagrams unless removal is explicit.
 - For answer-space edits, use mauth_author_adjust_response_spaces. For selected/existing module settings such as graph size/display flags, Penrose scale/resample, network labels/dots, set-diagram shading/labels, image name/alt/size, table/columns/choices controls, or diagram module alignment, use mauth_update_selected_settings. For formatting/layout edits, use mauth_fix_question_formatting. For broad print checks, use mauth_check_document_layout and repair page overflow, missing answer surfaces, solution-space mismatch, oversized diagrams, blank-page risks, and print-risk items with the narrow owning tool.
-- For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose graph2d for coordinate/function/slope-field graphs and source-faithful 2D geometry linework via data.geometry2d, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
+- For focused diagram follow-ups, use mauth_make_diagram_for_question with {{graphConfig:{{type:...}}}}. Choose geometry2d for no-axis textbook geometry diagrams with points/segments/arcs/angles/markers, graph2d for coordinate/function/slope-field graphs, vector2d for coordinate vectors and source ray diagrams, statsChart for statistics charts/density/normal/sketch axes, setDiagram for Venn diagrams, graph3d for 3D solids, geometricConstruction for schematic theorem geometry, and image only for intended bitmaps. Do not use standardDiagram recipe names.
 - For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question. Label declared points directly, e.g. Label L $L$, not Label LLabel $L$. Use RightAngle(A, B, C) for visible right-angle markers; PerpendicularToSegment needs a declared Line first, not a NamedSegment. Do not emit options.styleSource/domainSource; Mauth supplies the Penrose preset style.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle, not merely adjacent rays; nested source markings may span outer rays with another labelled ray inside. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
-- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField, data.polarGrid, or data.geometry2d under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. For source-faithful 2D geometry sketches, use data.geometry2d with named points, segments, angles, and equalLength/equalAngle/rightAngle decorations instead of many tiny feature rows. Use label with x/y for free labels and line_segment with x1/y1/x2/y2 for other segments; do not use free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For source top-view or line-work diagrams, preserve labelled vertices, diagonals, midpoint points, and named vector rays at their source-relative incidence; put vector labels on the line_segment ray features themselves, because nearby free labels do not identify which ray is which; use labelX/labelY to separate coincident or projected labels such as E and O. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions.
+- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Do not add graph2d functions/features for these primitives.
+- For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField or data.polarGrid under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. Use label with x/y for free labels, line_segment with x1/y1/x2/y2 for coordinate-graph straight segments, and angle_marker with x/y vertex plus x1/y1/x2/y2 arms for standalone graph annotations; do not use fake function curves, free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces with points arrays for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\overleftrightarrow{{BT}} as \overrightarrow{{BT}}, and do not paste PDF-extraction control characters for line symbols or Greek parameters; write \overleftrightarrow{{BT}}, \lambda, and \mu explicitly. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder; include a segment or data.dimensions label '$h$' when the source labels cap depth h. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
 - Preserve LaTeX backslashes exactly and use $...$ / $$...$$, not \[...\] or \(...\). For currency, use \\$400, $400$ for plain numbers, or words; never put currency/prose units inside $...$.

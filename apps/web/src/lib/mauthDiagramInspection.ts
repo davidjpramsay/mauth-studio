@@ -763,6 +763,62 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
   return warnings;
 }
 
+function inspectGeometry2d(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
+  if (config.type !== "geometry2d") return [];
+  const warnings: MauthDiagramInspectionWarning[] = [];
+  if (!compositeSectorTriangleContext(contextText)) return warnings;
+
+  const data = graphData(config);
+  const visibleSegments = recordArray(data.segments).filter((segment) => segment.show !== false);
+  const hasDashedSharedBoundary = visibleSegments.some((segment) => segment.strokeStyle === "dashed" || segment.dashed === true);
+  if (!hasDashedSharedBoundary) {
+    warnings.push({
+      code: "geometry2d-composite-internal-boundary-not-dashed",
+      severity: "warning",
+      message:
+        "Composite sector/triangle area diagrams should draw the shared internal boundary as a dashed construction line, not as an outside solid edge.",
+      path: "graphConfig.data.segments",
+    });
+  }
+
+  const labelledItems = [
+    ...recordArray(data.points),
+    ...recordArray(data.segments),
+    ...recordArray(data.arcs),
+    ...recordArray(data.angles),
+  ];
+  const decorativeRegionLabels = labelledItems
+    .filter((entry) => entry.show !== false)
+    .map((entry) => normalizedLabelText(entry.label))
+    .filter((label) => label === "sector" || label === "triangle");
+  if (decorativeRegionLabels.length) {
+    warnings.push({
+      code: "geometry2d-composite-decorative-region-labels",
+      severity: "warning",
+      message:
+        "Composite area diagrams should label points, dimensions, and angles only; remove decorative region labels such as sector or triangle unless the source explicitly labels regions.",
+      path: "graphConfig.data",
+    });
+  }
+
+  const visibleStyledItems = [
+    ...labelledItems.filter((entry) => entry.show !== false),
+    ...recordArray(data.decorations).filter((entry) => entry.show !== false),
+  ];
+  const nonNeutralStyledItem = visibleStyledItems.find((entry) => !neutralDiagramColor(entry.color));
+  if (nonNeutralStyledItem) {
+    warnings.push({
+      code: "geometry2d-composite-nonneutral-styling",
+      severity: "warning",
+      message:
+        "Composite area diagrams for tests should use restrained black linework and labels unless the teacher explicitly asks for colour.",
+      path: "graphConfig.data",
+    });
+  }
+
+  return warnings;
+}
+
 function inspectScalarProductLabels(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
   const expectedLabels = expectedScalarVectorLabels(contextText);
   if (!expectedLabels.length) return [];
@@ -1278,6 +1334,7 @@ export function inspectMauthDiagram(config: GraphConfig, contextText: string): M
     ...intent.warnings,
     ...inspectImageSource(config),
     ...inspectGraph2d(config, contextText),
+    ...inspectGeometry2d(config, contextText),
     ...inspectGraph2dVectorLabels(config, contextText),
     ...inspectGraph3d(config, contextText),
     ...inspectStatsChart(config),
@@ -1315,6 +1372,9 @@ export function isAssistantDiagramInspectionWarningBlocking(warning: MauthDiagra
     warning.code === "graph2d-composite-internal-boundary-not-dashed" ||
     warning.code === "graph2d-composite-decorative-region-labels" ||
     warning.code === "graph2d-composite-nonneutral-styling" ||
+    warning.code === "geometry2d-composite-internal-boundary-not-dashed" ||
+    warning.code === "geometry2d-composite-decorative-region-labels" ||
+    warning.code === "geometry2d-composite-nonneutral-styling" ||
     warning.code === "scalar-product-vector-labels-missing" ||
     warning.code === "scalar-product-right-angle-missing" ||
     warning.code === "scalar-product-angle-marker-missing" ||

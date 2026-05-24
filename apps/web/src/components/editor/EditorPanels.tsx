@@ -30,6 +30,7 @@ interface CollapsiblePanelProps {
   children: ReactNode;
   defaultOpen?: boolean;
   openSignal?: number;
+  collapsible?: boolean;
   active?: boolean;
   className?: string;
   bodyClassName?: string;
@@ -43,16 +44,18 @@ export function CollapsiblePanel({
   children,
   defaultOpen = true,
   openSignal,
+  collapsible = true,
   active = false,
   className,
   bodyClassName,
 }: CollapsiblePanelProps) {
-  const [open, setOpen] = useState(defaultOpen || openSignal !== undefined);
+  const [panelOpen, setPanelOpen] = useState(defaultOpen || openSignal !== undefined);
+  const open = collapsible ? panelOpen : true;
 
   useEffect(() => {
-    if (openSignal === undefined) return;
-    setOpen(true);
-  }, [openSignal]);
+    if (!collapsible || openSignal === undefined) return;
+    setPanelOpen(true);
+  }, [collapsible, openSignal]);
 
   return (
     <section className={cn("min-w-0 rounded-md border bg-background transition-colors", className, active && EDITOR_ACTIVE_PANEL_CLASS)}>
@@ -60,26 +63,24 @@ export function CollapsiblePanel({
         data-panel-region="header"
         className={cn("flex min-w-0 flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
       >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          className="size-8 shrink-0"
-        >
-          {open ? <ChevronDown /> : <ChevronRight />}
-        </Button>
+        {collapsible ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setPanelOpen((current) => !current)}
+            aria-label={open ? "Collapse panel" : "Expand panel"}
+            aria-expanded={open}
+            className="size-8 shrink-0"
+          >
+            {open ? <ChevronDown /> : <ChevronRight />}
+          </Button>
+        ) : null}
         {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
-        <button
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left sm:min-w-36"
-          aria-expanded={open}
-        >
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left sm:min-w-36">
           <span className="block max-w-full truncate text-sm font-semibold">{title}</span>
           {subtitle ? <span className="block max-w-full truncate text-xs text-muted-foreground">{subtitle}</span> : null}
-        </button>
+        </div>
         {actions ? <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
       </div>
       {open ? (

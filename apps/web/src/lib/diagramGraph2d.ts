@@ -74,6 +74,7 @@ export const GRAPH_FEATURE_TYPES: Array<{ value: GraphFeature["kind"]; label: st
   { value: "intersection", label: "Point of intersection" },
   { value: "tangent", label: "Tangent at point" },
   { value: "line_segment", label: "Line segment" },
+  { value: "angle_marker", label: "Angle marker" },
   { value: "label", label: "Label" },
 ];
 
@@ -97,6 +98,11 @@ export const GRAPH_TANGENT_LABEL_MODES: Array<{ value: NonNullable<GraphFeature[
   { value: "name", label: "Name" },
   { value: "coordinates", label: "Coordinates" },
   { value: "name_and_coordinates", label: "Name + coordinates" },
+  { value: "none", label: "No label" },
+];
+
+export const GRAPH_ANGLE_MARKER_LABEL_MODES: Array<{ value: NonNullable<GraphFeature["labelMode"]>; label: string }> = [
+  { value: "name", label: "Name" },
   { value: "none", label: "No label" },
 ];
 
@@ -174,6 +180,10 @@ function normalFeatureLabelMode(feature: GraphFeature): NonNullable<GraphFeature
     if (labelMode === "area" || labelMode === "name_and_area" || labelMode === "value" || labelMode === "name_and_value") return "name";
     return labelMode ?? "none";
   }
+  if (normalFeatureKind(feature.kind) === "angle_marker") {
+    if (labelMode && labelMode !== "name" && labelMode !== "none") return "name";
+    return labelMode ?? "name";
+  }
   if (normalFeatureKind(feature.kind) === "tangent") {
     if (labelMode === "area" || labelMode === "name_and_area") return "name_and_value";
     return labelMode ?? "name_and_value";
@@ -202,9 +212,11 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
         ? "T"
         : kind === "line_segment"
           ? `Line ${index + 1}`
-          : kind === "label"
-            ? `Label ${index + 1}`
-            : `Feature ${index + 1}`;
+          : kind === "angle_marker"
+            ? "\\theta"
+            : kind === "label"
+              ? `Label ${index + 1}`
+              : `Feature ${index + 1}`;
   const defaultLabelMode = isRegionFeatureKind(kind)
     ? "area"
     : kind === "tangent"
@@ -213,7 +225,9 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
         ? "name"
         : kind === "line_segment"
           ? "none"
-          : "name_and_coordinates";
+          : kind === "angle_marker"
+            ? "name"
+            : "name_and_coordinates";
 
   return {
     id: id("feature"),
@@ -228,10 +242,11 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
     show: true,
     x: 0,
     y: 0,
-    x1: xMin,
-    y1: yMin,
-    x2: xMax,
-    y2: yMax,
+    x1: kind === "angle_marker" ? 1 : xMin,
+    y1: kind === "angle_marker" ? 0 : yMin,
+    x2: kind === "angle_marker" ? 0.7 : xMax,
+    y2: kind === "angle_marker" ? 0.7 : yMax,
+    rightAngle: false,
     ratio: 0.5,
     functionIndex: firstFunction,
     functionAIndex: firstFunction,
@@ -272,10 +287,11 @@ export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): Graph
       size: feature.size ?? 0.35,
       x: pointX,
       y: pointY,
-      x1: feature.x1 ?? graphConfig?.xMin ?? DEFAULT_2D_GRAPH.xMin,
-      y1: feature.y1 ?? graphConfig?.yMin ?? DEFAULT_2D_GRAPH.yMin,
-      x2: feature.x2 ?? graphConfig?.xMax ?? DEFAULT_2D_GRAPH.xMax,
-      y2: feature.y2 ?? graphConfig?.yMax ?? DEFAULT_2D_GRAPH.yMax,
+      x1: feature.x1 ?? (kind === "angle_marker" ? 1 : (graphConfig?.xMin ?? DEFAULT_2D_GRAPH.xMin)),
+      y1: feature.y1 ?? (kind === "angle_marker" ? 0 : (graphConfig?.yMin ?? DEFAULT_2D_GRAPH.yMin)),
+      x2: feature.x2 ?? (kind === "angle_marker" ? 0.7 : (graphConfig?.xMax ?? DEFAULT_2D_GRAPH.xMax)),
+      y2: feature.y2 ?? (kind === "angle_marker" ? 0.7 : (graphConfig?.yMax ?? DEFAULT_2D_GRAPH.yMax)),
+      rightAngle: feature.rightAngle === true,
       ratio,
       functionIndex: feature.functionIndex ?? 0,
       functionAIndex: feature.functionAIndex ?? 0,
@@ -304,10 +320,16 @@ export function expressionToLatex(expression?: string) {
     .replace(/\s+/g, " ");
 }
 
-export function functionSummaryLatex(graphFunction: GraphFunction, label: string) {
+function expressionLooksLikeEquation(expression?: string | null) {
+  return /[=<>]/.test(expression ?? "");
+}
+
+export function functionSummaryLatex(graphFunction: GraphFunction) {
   const expressionLatex = graphFunction.latex?.trim() || expressionToLatex(graphFunction.expression);
   if (graphFunction.kind === "relation") return expressionLatex || "\\text{relation}";
-  return `${label}(x)=${expressionLatex || "\\text{expression}"}`;
+  if (!expressionLatex) return "\\text{expression}";
+  if (expressionLooksLikeEquation(graphFunction.expression) || expressionLooksLikeEquation(graphFunction.latex)) return expressionLatex;
+  return `y=${expressionLatex}`;
 }
 
 export function graphPiecesFromFunction(graphFunction: GraphFunction, graphConfig?: GraphConfig | null): GraphFunctionPiece[] {

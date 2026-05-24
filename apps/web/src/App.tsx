@@ -62,6 +62,7 @@ import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { FunctionGraphEditor } from "@/components/editor/FunctionGraphEditor";
+import { Geometry2DGraphEditor } from "@/components/editor/Geometry2DGraphEditor";
 import { Graph3DGraphEditor } from "@/components/editor/Graph3DGraphEditor";
 import { GeometricConstructionEditor } from "@/components/editor/GeometricConstructionEditor";
 import { ImageDiagramEditor } from "@/components/editor/ImageDiagramEditor";
@@ -178,6 +179,7 @@ import {
   graphWidth,
   isSolutionOnlyGraphFeature,
 } from "@/lib/diagramGraph2d";
+import { DEFAULT_GEOMETRY_2D_GRAPH, geometry2dData, geometry2dSummary } from "@/lib/diagramGeometry2d";
 import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName, imageDiagramAlt } from "@/lib/diagramImage";
 import {
   DEFAULT_PENROSE_PRESET,
@@ -1231,6 +1233,7 @@ function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConf
   if (isImageDiagramType(normalizedType)) return DEFAULT_IMAGE_DIAGRAM;
   if (isPenroseDiagramType(normalizedType)) return defaultPenroseDiagramForType(normalizedType);
   if (normalizedType === "statsChart") return DEFAULT_STATS_CHART;
+  if (normalizedType === "geometry2d" && normalizeDiagramType(current.type) !== "geometry2d") return DEFAULT_GEOMETRY_2D_GRAPH;
   if (
     isImageDiagramType(current.type) ||
     isPenroseDiagramType(normalizeDiagramType(current.type)) ||
@@ -1241,6 +1244,7 @@ function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConf
   }
   if (normalizedType === "vector2d" && normalizeDiagramType(current.type) !== "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
   if (normalizedType === "graph3d" && normalizeDiagramType(current.type) !== "graph3d") return DEFAULT_3D_GRAPH;
+  if (normalizedType === "geometry2d") return DEFAULT_GEOMETRY_2D_GRAPH;
   return { type: normalizedType };
 }
 
@@ -1508,6 +1512,17 @@ function generatedPenroseSubstance(config: GraphConfig) {
 
 function withGraphDefaults(graphConfig?: GraphConfig | null): GraphConfig {
   const type = normalizeDiagramType(graphConfig?.type);
+  if (type === "geometry2d") {
+    return {
+      ...DEFAULT_GEOMETRY_2D_GRAPH,
+      ...(graphConfig ?? {}),
+      type,
+      data: geometry2dData(graphConfig),
+      functions: [],
+      features: [],
+      metadata: graphConfig?.metadata ?? {},
+    };
+  }
   const functions = graphFunctionsFromConfig(graphConfig);
   const features = graphFeaturesFromConfig(graphConfig);
   const firstFunction = functions[0];
@@ -2695,6 +2710,11 @@ function columnBlockParentScrollAnchor(anchor: string) {
   return anchor.replace(/\/c:\d+\/b:[^/]+$/, "");
 }
 
+function graphChildParentScrollAnchor(anchor: string) {
+  const parentAnchor = anchor.replace(/\/g(?:f|feat|pt|seg|arc|ang|dec):\d+$/, "");
+  return parentAnchor === anchor ? null : parentAnchor;
+}
+
 function scrollAnchorContains(containerAnchor: string, targetAnchor?: string | null) {
   return Boolean(targetAnchor && (targetAnchor === containerAnchor || targetAnchor.startsWith(`${containerAnchor}/`)));
 }
@@ -2720,6 +2740,12 @@ function scrollAnchorFallbacks(anchor: string) {
     parts.pop();
   }
   return fallbacks;
+}
+
+function previewAnchorForEditorAnchor(anchor: string, tocItems: readonly DocumentTocItem[]) {
+  const previewCandidate = graphChildParentScrollAnchor(anchor) ?? anchor;
+  const tocItem = tocItems.find((item) => item.id === previewCandidate || item.editorAnchor === previewCandidate);
+  return tocItem?.previewAnchor ?? previewCandidate;
 }
 
 function scrollAnchorValue(element: HTMLElement) {
@@ -3167,7 +3193,7 @@ function relabelParts(parts: EditorPart[]) {
 }
 
 function visibleContentBlocks(blocks: EditorContentBlock[], showSolutions: boolean) {
-  return blocks.filter((block) => isContentBlockVisible(block, showSolutions));
+  return blocks.filter((_, blockIndex) => isContentBlockVisibleInScope(blocks, blockIndex, showSolutions));
 }
 
 function firstTextSource(blocks: EditorContentBlock[], showSolutions = true): string {
@@ -3498,8 +3524,42 @@ function isContentBlockVisible(block: EditorContentBlock, showSolutions: boolean
   return true;
 }
 
-function isDiagramBesideContentBlock(block: EditorContentBlock | undefined, showSolutions: boolean) {
-  return Boolean(block && (block.kind === "text" || block.kind === "space") && isContentBlockVisible(block, showSolutions));
+function replacementSlotContainingBlock(blocks: EditorContentBlock[], blockIndex: number) {
+  const block = blocks[blockIndex];
+  if (!block) return null;
+
+  const directSlot = visibilityReplacementSlotAt(blocks, blockIndex);
+  if (directSlot) return directSlot;
+
+  for (let cursor = blockIndex - 1; cursor >= 0; cursor -= 1) {
+    const candidate = blocks[cursor];
+    if (!candidate || candidate.kind === "pageBreak" || !isSolutionReplacementBlock(candidate)) break;
+    const slot = visibilityReplacementSlotAt(blocks, cursor);
+    if (slot && blockIndex <= slot.endIndex) return slot;
+  }
+
+  return null;
+}
+
+function isUnpairedStudentAnswerSpace(blocks: EditorContentBlock[], blockIndex: number) {
+  const block = blocks[blockIndex];
+  return Boolean(
+    block?.kind === "space" && contentBlockVisibility(block) === "student" && !replacementSlotContainingBlock(blocks, blockIndex),
+  );
+}
+
+function isContentBlockVisibleInScope(blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) {
+  const block = blocks[blockIndex];
+  if (!block) return false;
+  if (showSolutions && isUnpairedStudentAnswerSpace(blocks, blockIndex)) return true;
+  return isContentBlockVisible(block, showSolutions);
+}
+
+function isDiagramBesideContentBlockInScope(blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) {
+  const block = blocks[blockIndex];
+  return Boolean(
+    block && (block.kind === "text" || block.kind === "space") && isContentBlockVisibleInScope(blocks, blockIndex, showSolutions),
+  );
 }
 
 function isSolutionTextBlock(block: EditorContentBlock) {
@@ -3589,6 +3649,53 @@ function visibilityReplacementSlotAtOrderedItems(
   };
 }
 
+function replacementSlotContainingOrderedBlock(items: Array<OrderedQuestionItem | OrderedPartItem>, itemIndex: number) {
+  const item = items[itemIndex];
+  if (item?.kind !== "block") return null;
+
+  const directSlot = visibilityReplacementSlotAtOrderedItems(items, itemIndex);
+  if (directSlot) return directSlot;
+
+  for (let cursor = itemIndex - 1; cursor >= 0; cursor -= 1) {
+    const candidate = items[cursor];
+    if (candidate?.kind !== "block" || candidate.block.kind === "pageBreak" || !isSolutionReplacementBlock(candidate.block)) break;
+    const slot = visibilityReplacementSlotAtOrderedItems(items, cursor);
+    if (slot && itemIndex <= slot.endItemIndex) return slot;
+  }
+
+  return null;
+}
+
+function isOrderedUnpairedStudentAnswerSpace(items: Array<OrderedQuestionItem | OrderedPartItem>, itemIndex: number) {
+  const item = items[itemIndex];
+  return Boolean(
+    item?.kind === "block" &&
+    item.block.kind === "space" &&
+    contentBlockVisibility(item.block) === "student" &&
+    !replacementSlotContainingOrderedBlock(items, itemIndex),
+  );
+}
+
+function isOrderedBlockVisible(items: Array<OrderedQuestionItem | OrderedPartItem>, itemIndex: number, showSolutions: boolean) {
+  const item = items[itemIndex];
+  if (item?.kind !== "block") return false;
+  if (showSolutions && isOrderedUnpairedStudentAnswerSpace(items, itemIndex)) return true;
+  return isContentBlockVisible(item.block, showSolutions);
+}
+
+function isOrderedDiagramBesideContentBlock(
+  items: Array<OrderedQuestionItem | OrderedPartItem>,
+  itemIndex: number,
+  showSolutions: boolean,
+) {
+  const item = items[itemIndex];
+  return Boolean(
+    item?.kind === "block" &&
+    (item.block.kind === "text" || item.block.kind === "space") &&
+    isOrderedBlockVisible(items, itemIndex, showSolutions),
+  );
+}
+
 function graphConfigForSolutionVisibility(graphConfig: GraphConfig, showSolutions: boolean) {
   if (showSolutions || !graphConfig.features?.some(isSolutionOnlyGraphFeature)) return graphConfig;
   return {
@@ -3666,6 +3773,8 @@ function DiagramPreview({
       return <GeometricConstructionDiagram graphConfig={config} />;
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
+    case "geometry2d":
+      return <FunctionGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "vector2d":
       return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "graph3d":
@@ -3992,8 +4101,8 @@ const previewContentRuntime: PreviewContentRuntime = {
   diagramAlignmentClass,
   effectiveDiagramTextSide,
   graphHeight,
-  isContentBlockVisible,
-  isDiagramBesideContentBlock,
+  isContentBlockVisibleInScope,
+  isDiagramBesideContentBlockInScope,
   isSolutionTextBlock,
   measuredLineHeightPx,
   normalizeChoiceItems,
@@ -4017,8 +4126,8 @@ function PreviewContentBlocks(props: AppPreviewContentBlocksProps) {
 }
 
 function contentBlocksHaveDiagram(blocks: EditorContentBlock[], showSolutions = true): boolean {
-  return blocks.some((block) => {
-    if (!isContentBlockVisible(block, showSolutions)) return false;
+  return blocks.some((block, blockIndex) => {
+    if (!isContentBlockVisibleInScope(blocks, blockIndex, showSolutions)) return false;
     if (block.kind === "diagram") return true;
     if (block.kind === "columns")
       return normalizeColumnsBlock(block).columns.some((column) => contentBlocksHaveDiagram(column, showSolutions));
@@ -4234,7 +4343,7 @@ function buildPreviewSegments(questions: QuestionBlock[], showSolutions: boolean
         const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(questionItems, itemIndex + 1);
         if (
           item.block.kind === "diagram" &&
-          isContentBlockVisible(item.block, showSolutions) &&
+          isOrderedBlockVisible(questionItems, itemIndex, showSolutions) &&
           replacementSlotFollows &&
           effectiveDiagramTextSide(item.block, true) !== "none"
         ) {
@@ -4264,11 +4373,11 @@ function buildPreviewSegments(questions: QuestionBlock[], showSolutions: boolean
           itemIndex = replacementSlot.endItemIndex;
           continue;
         }
-        if (!isContentBlockVisible(item.block, showSolutions)) continue;
+        if (!isOrderedBlockVisible(questionItems, itemIndex, showSolutions)) continue;
         const pairedBlocks =
           item.block.kind === "diagram" &&
           nextItem?.kind === "block" &&
-          isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+          isOrderedDiagramBesideContentBlock(questionItems, itemIndex + 1, showSolutions) &&
           effectiveDiagramTextSide(item.block, true) !== "none"
             ? [item.block, nextItem.block]
             : undefined;
@@ -4351,7 +4460,7 @@ function previewPartBlockRowIds(partItems: OrderedPartItem[], showSolutions: boo
     const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(partItems, index + 1);
     if (
       item.block.kind === "diagram" &&
-      isContentBlockVisible(item.block, showSolutions) &&
+      isOrderedBlockVisible(partItems, index, showSolutions) &&
       replacementSlotFollows &&
       effectiveDiagramTextSide(item.block, true) !== "none"
     ) {
@@ -4367,16 +4476,16 @@ function previewPartBlockRowIds(partItems: OrderedPartItem[], showSolutions: boo
     }
     if (
       item.block.kind === "diagram" &&
-      isContentBlockVisible(item.block, showSolutions) &&
+      isOrderedBlockVisible(partItems, index, showSolutions) &&
       nextItem?.kind === "block" &&
-      isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+      isOrderedDiagramBesideContentBlock(partItems, index + 1, showSolutions) &&
       effectiveDiagramTextSide(item.block, true) !== "none"
     ) {
       rowIds.push(item.id);
       index += 1;
       continue;
     }
-    if (isContentBlockVisible(item.block, showSolutions)) rowIds.push(item.id);
+    if (isOrderedBlockVisible(partItems, index, showSolutions)) rowIds.push(item.id);
   }
   return rowIds;
 }
@@ -5033,18 +5142,19 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                 const replacementSlotFollows = visibilityReplacementSlotAtOrderedItems(partItems, itemIndex + 1);
                 const diagramReplacementBlocks =
                   item.block.kind === "diagram" &&
-                  isContentBlockVisible(item.block, showSolutions) &&
+                  isOrderedBlockVisible(partItems, itemIndex, showSolutions) &&
                   replacementSlotFollows &&
                   effectiveDiagramTextSide(item.block, true) !== "none"
                     ? [item.block, ...replacementSlotFollows.blocks]
                     : undefined;
                 const replacementSlot = visibilityReplacementSlotAtOrderedItems(partItems, itemIndex);
                 const replacementBlocks = replacementSlot?.blocks;
-                if (!diagramReplacementBlocks && !replacementBlocks && !isContentBlockVisible(item.block, showSolutions)) continue;
+                if (!diagramReplacementBlocks && !replacementBlocks && !isOrderedBlockVisible(partItems, itemIndex, showSolutions))
+                  continue;
                 const pairedBlocks =
                   item.block.kind === "diagram" &&
                   nextItem?.kind === "block" &&
-                  isDiagramBesideContentBlock(nextItem.block, showSolutions) &&
+                  isOrderedDiagramBesideContentBlock(partItems, itemIndex + 1, showSolutions) &&
                   effectiveDiagramTextSide(item.block, true) !== "none"
                     ? [item.block, nextItem.block]
                     : undefined;
@@ -5314,10 +5424,13 @@ interface DiagramBlockEditorProps {
   alignment?: DiagramAlignment;
   showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
+  anchor?: string;
+  activeAnchor?: string;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
+  onActivateAnchor?: (anchor: string) => void;
   onChange: (graphConfig: GraphConfig) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
   onRemove: () => void;
@@ -5426,6 +5539,9 @@ function ColumnsBlockEditor({
           alignment={child.diagramAlign}
           showSolutions={showSolutions}
           settingsMode="inspector"
+          anchor={childAnchor}
+          activeAnchor={activeAnchor}
+          onActivateAnchor={onActivateAnchor}
           muted
           active={childActive}
           openSignal={childOpenSignal}
@@ -6939,6 +7055,7 @@ function diagramConfigSummary(graphConfig: GraphConfig) {
   const config = withGraphDefaults(graphConfig);
   if (config.type === "image") return imageDiagramData(config).src ? imageDiagramName(config) : "No image selected";
   if (config.type === "statsChart") return statsChartSummary(config);
+  if (config.type === "geometry2d") return geometry2dSummary(config);
   if (config.type === "graph2d") {
     const visibleFunctions = (config.functions ?? []).filter((graphFunction) => graphFunction.show !== false).length;
     const visibleFeatures = (config.features ?? []).filter((feature) => feature.show !== false).length;
@@ -7161,9 +7278,10 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
       previewAnchor: questionAnchor,
     });
 
-    orderedQuestionItems(question).forEach((item, itemIndex) => {
+    const questionItems = orderedQuestionItems(question);
+    questionItems.forEach((item, itemIndex) => {
       if (item.kind === "block") {
-        if (!isContentBlockVisible(item.block, showSolutions)) return;
+        if (!isOrderedBlockVisible(questionItems, itemIndex, showSolutions)) return;
         const blockAnchor = questionBlockScrollAnchor(question.id, item.block.id);
         items.push({
           id: blockAnchor,
@@ -7193,9 +7311,10 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
         previewAnchor: partAnchor,
       });
 
-      orderedPartItems(item.part).forEach((partItem, partItemIndex) => {
+      const partItems = orderedPartItems(item.part);
+      partItems.forEach((partItem, partItemIndex) => {
         if (partItem.kind === "block") {
-          if (!isContentBlockVisible(partItem.block, showSolutions)) return;
+          if (!isOrderedBlockVisible(partItems, partItemIndex, showSolutions)) return;
           const blockAnchor = partBlockScrollAnchor(question.id, item.part.id, partItem.block.id);
           items.push({
             id: blockAnchor,
@@ -7226,7 +7345,10 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
         });
 
         partItem.subpart.contentBlocks
-          .filter((block) => block.kind !== "pageBreak" && isContentBlockVisible(block, showSolutions))
+          .filter(
+            (block, blockIndex) =>
+              block.kind !== "pageBreak" && isContentBlockVisibleInScope(partItem.subpart.contentBlocks, blockIndex, showSolutions),
+          )
           .forEach((block, blockIndex) => {
             const blockAnchor = subpartBlockScrollAnchor(question.id, item.part.id, partItem.subpart.id, block.id);
             items.push({
@@ -7760,10 +7882,13 @@ function DiagramBlockEditor({
   alignment = "center",
   showSolutions = true,
   settingsMode = "inline",
+  anchor,
+  activeAnchor,
   dragHandle,
   muted = false,
   active = false,
   openSignal,
+  onActivateAnchor,
   onChange,
   onAlignmentChange,
   onRemove,
@@ -7821,6 +7946,21 @@ function DiagramBlockEditor({
     );
   }
 
+  if (config.type === "geometry2d") {
+    return renderDiagramPanel(
+      diagramConfigSummary(config),
+      "graph-editor-controls p-3",
+      <Geometry2DGraphEditor
+        config={config}
+        settingsMode={settingsMode}
+        anchor={anchor}
+        activeAnchor={activeAnchor}
+        onActivateAnchor={onActivateAnchor}
+        onChange={patchConfig}
+      />,
+    );
+  }
+
   if (config.type === "vector2d") {
     return renderDiagramPanel(
       diagramConfigSummary(config),
@@ -7848,7 +7988,15 @@ function DiagramBlockEditor({
   return renderDiagramPanel(
     diagramConfigSummary(config),
     "graph-editor-controls p-3",
-    <FunctionGraphEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
+    <FunctionGraphEditor
+      config={config}
+      showSolutions={showSolutions}
+      settingsMode={settingsMode}
+      anchor={anchor}
+      activeAnchor={activeAnchor}
+      onActivateAnchor={onActivateAnchor}
+      onChange={patchConfig}
+    />,
   );
 }
 
@@ -8247,8 +8395,7 @@ export default function App() {
     : "Print output is currently the student copy. Show solutions before printing the solutions copy.";
   const activePreviewAnchor = useMemo(() => {
     if (activeTocItemId.startsWith("pb:")) return undefined;
-    const activeItem = documentTocItems.find((item) => item.id === activeTocItemId || item.editorAnchor === activeTocItemId);
-    return activeItem?.previewAnchor ?? activeTocItemId;
+    return previewAnchorForEditorAnchor(activeTocItemId, documentTocItems);
   }, [activeTocItemId, documentTocItems]);
   const currentDocumentFingerprint = useMemo(
     () => editorDocumentFingerprint(frontMatter, questions, formattingConfig, selectedLogoForFrontMatter(logos, frontMatter)),
@@ -9727,6 +9874,8 @@ export default function App() {
     if (questionId) selectQuestionInEditor(questionId);
     setActiveTocItemId(anchor);
     setActiveRailItemId(anchor);
+    const graphChildParentAnchor = graphChildParentScrollAnchor(anchor);
+    if (graphChildParentAnchor && showPreview) queuePreviewJump(previewAnchorForEditorAnchor(anchor, documentTocItems));
   }
 
   function revealEditorAnchor(anchor: string) {
@@ -9921,6 +10070,18 @@ export default function App() {
   function queueEditorJump(editorAnchor: string) {
     pendingEditorJumpAnchorRef.current = editorAnchor;
     pendingPreviewJumpAnchorRef.current = null;
+
+    window.requestAnimationFrame(() => {
+      if (!jumpPendingDocumentAnchors()) {
+        window.requestAnimationFrame(() => {
+          jumpPendingDocumentAnchors();
+        });
+      }
+    });
+  }
+
+  function queuePreviewJump(previewAnchor: string) {
+    pendingPreviewJumpAnchorRef.current = previewAnchor;
 
     window.requestAnimationFrame(() => {
       if (!jumpPendingDocumentAnchors()) {
@@ -11267,8 +11428,14 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleGlobalDelete);
   }, [fileManagerOpen]);
 
-  function renderQuestionContentBlock(question: QuestionBlock, block: EditorContentBlock, _itemIndex: number, _itemCount: number) {
-    if (!isContentBlockVisible(block, showSolutions)) return null;
+  function renderQuestionContentBlock(
+    question: QuestionBlock,
+    block: EditorContentBlock,
+    itemIndex: number,
+    _itemCount: number,
+    questionItems: OrderedQuestionItem[],
+  ) {
+    if (!isOrderedBlockVisible(questionItems, itemIndex, showSolutions)) return null;
 
     const blockIndex = Math.max(
       0,
@@ -11319,6 +11486,9 @@ export default function App() {
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
             settingsMode="inspector"
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
+            onActivateAnchor={activateEditorAnchor}
             dragHandle={subsectionDragHandle(blockTarget, `Drag diagram block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -11417,10 +11587,11 @@ export default function App() {
     question: QuestionBlock,
     part: EditorPart,
     block: EditorContentBlock,
-    _itemIndex: number,
+    itemIndex: number,
     _itemCount: number,
+    partItems: OrderedPartItem[],
   ) {
-    if (!isContentBlockVisible(block, showSolutions)) return null;
+    if (!isOrderedBlockVisible(partItems, itemIndex, showSolutions)) return null;
 
     const blockIndex = Math.max(
       0,
@@ -11477,6 +11648,9 @@ export default function App() {
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
             settingsMode="inspector"
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
+            onActivateAnchor={activateEditorAnchor}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -11583,7 +11757,7 @@ export default function App() {
     block: EditorContentBlock,
     blockIndex: number,
   ) {
-    if (!isContentBlockVisible(block, showSolutions)) return null;
+    if (!isContentBlockVisibleInScope(subpart.contentBlocks, blockIndex, showSolutions)) return null;
 
     const subpartBlockTarget: SubsectionDragTarget = {
       kind: "subpart-block",
@@ -11637,6 +11811,9 @@ export default function App() {
             alignment={block.diagramAlign}
             showSolutions={showSolutions}
             settingsMode="inspector"
+            anchor={blockAnchor}
+            activeAnchor={activeTocItemId}
+            onActivateAnchor={activateEditorAnchor}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart diagram ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -12014,7 +12191,7 @@ export default function App() {
                   return (
                     <Fragment key={item.id}>
                       {beforeDropZone}
-                      {renderPartContentBlock(question, part, item.block, partItemIndex, partItems.length)}
+                      {renderPartContentBlock(question, part, item.block, partItemIndex, partItems.length, partItems)}
                     </Fragment>
                   );
                 }
@@ -12444,7 +12621,7 @@ export default function App() {
                                     return item.kind === "block" ? (
                                       <Fragment key={item.id}>
                                         {beforeDropZone}
-                                        {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length)}
+                                        {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length, questionItems)}
                                       </Fragment>
                                     ) : (
                                       <Fragment key={item.id}>
@@ -12516,6 +12693,7 @@ export default function App() {
               selectionInspectorVisible ? (
                 <SelectionInspector
                   selectedBlock={selectedEditorBlock}
+                  activeAnchor={activeTocItemId}
                   onBlockChange={updateSelectedBlock}
                   createTextBlock={textBlock}
                   diagramTypePatch={diagramTypePatch}
@@ -12542,8 +12720,8 @@ export default function App() {
                   "preview-pane min-h-0 overflow-auto bg-muted/70 p-4",
                   paneMode === "split" && "preview-pane-edit-sync split-pane-scroll",
                 )}
-                onPointerDown={handlePreviewPointerDown}
-                onClick={handlePreviewClick}
+                onPointerDownCapture={handlePreviewPointerDown}
+                onClickCapture={handlePreviewClick}
               >
                 <PaginatedTestPreview
                   frontMatter={frontMatter}

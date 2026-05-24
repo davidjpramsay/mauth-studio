@@ -59,6 +59,7 @@ class GraphFeature(BaseModel):
         "intersection",
         "tangent",
         "line_segment",
+        "angle_marker",
         "perpendicular_line",
         "perpendicular_symbol",
         "label",
@@ -87,6 +88,7 @@ class GraphFeature(BaseModel):
     y1: float | None = None
     x2: float | None = None
     y2: float | None = None
+    rightAngle: bool | None = False
     ratio: float | None = 0.5
     functionIndex: int | None = 0
     functionAIndex: int | None = 0

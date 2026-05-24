@@ -56,6 +56,7 @@ Current durable conventions:
 - New answer-space blocks created for response/solution slots should use `visibility: "student"`. Existing or imported plain `space` blocks with no visibility field are ordinary shared blocks until deliberately converted, so do not infer student-only behaviour from `kind: "space"` alone.
 - When generating raw JSON with code, preserve LaTeX backslashes with raw strings or double escaping, then validate that solution text has no unintended control characters from sequences like `\f`, `\b`, `\r`, or `\t`.
 - Treat newly added free-response `space` blocks as student answer/work space by default.
+- If the solution copy still shows a student answer `space`, treat it as an unpaired missing-solution slot. Add or repair the adjacent solution module rather than deleting the answer space.
 - When manually authoring in the editor, the Add -> Solution slot action creates the correct adjacent pair: a student answer-space block followed by a solution text block beginning with `**Solution.**`.
 - In marked free-response questions, parts, and subparts, the editor's Add -> Answer + solution action is the normal way to add response space. It creates the same paired student-space/solution structure without requiring the author to add a separate solution block later.
 - The renderer treats adjacent answer-space and solution modules as one matched replacement slot and reserves the larger height for both copies.
@@ -69,7 +70,7 @@ Current durable conventions:
 - Respect manual teacher edits to space lines and diagram alignment unless they create a clear layout problem.
 - Mark solution-only graph features as `solutionOnly` so graph annotations hide on the student copy.
 - Solution text aligns with the content column for its question, part, or subpart.
-- Solution-copy graph annotations use editable graph features such as red points, labels, and `line_segment` guide lines.
+- Solution-copy graph annotations use editable graph features such as red points, labels, `line_segment` guide lines, and `angle_marker` arcs when an angle marking is the point of the solution.
 - Side-by-side solution text beside given diagrams or solution-only diagrams uses automatic left/right diagram placement. The diagram floats left or right and the answer/solution content wraps beside it, then continues at full width underneath if it is taller than the diagram. Do not fake this with blank-line padding, duplicated diagrams, or manual columns.
 - Side-by-side source diagrams use the columns content module. In high-level source/question payloads, emit multiple `diagrams` with `diagramLayout: "columns"` and `diagramColumns` matching the paper, rather than relying on diagram alignment or blank filler.
 - In calculator-assumed sections, worked probability/statistics solutions should include useful evaluated intermediate values when they help marking. For example, in a conditional binomial probability, show the numerator and denominator calculator values before the final ratio rather than only a large unevaluated sum.
