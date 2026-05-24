@@ -133,7 +133,7 @@ function TablePreview({
 }
 
 function columnBlockAnchor(parentAnchor: string | undefined, columnIndex: number, block: EditorContentBlock) {
-  return parentAnchor ? `${parentAnchor}/c:${columnIndex + 1}/b:${block.id}` : undefined;
+  return parentAnchor ? `${parentAnchor}/c:${columnIndex}/b:${block.id}` : undefined;
 }
 
 function ColumnsPreview({

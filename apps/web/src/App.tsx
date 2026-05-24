@@ -27,8 +27,13 @@ import type {
 import { DEFAULT_STATS_CHART_SPEC, normalizeStatsChartSpec, statsChartSummary } from "@mauth-studio/diagram-plotly";
 import {
   Bot,
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
+  Copy,
+  CopyPlus,
+  Edit3,
   Eye,
   EyeOff,
   FileText,
@@ -100,6 +105,7 @@ import {
 } from "@/components/preview/PreviewContentBlocks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ContextMenu, type ContextMenuAction, type ContextMenuState } from "@/components/ui/context-menu";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ApiError,
@@ -580,6 +586,8 @@ interface DocumentTocItem {
   editorAnchor: string;
   previewAnchor: string;
 }
+
+type ContextMenuSurface = "miniToc" | "preview" | "editor";
 
 type PaneMode = "split" | "assistant" | "preview";
 type ThemeMode = "light" | "dark";
@@ -2706,6 +2714,10 @@ function columnChildScrollAnchor(containerAnchor: string, columnIndex: number, b
   return `${containerAnchor}/c:${columnIndex}/b:${blockId}`;
 }
 
+function columnPathScrollAnchor(containerAnchor: string, path: ColumnBlockPath) {
+  return path.reduce((anchor, entry) => columnChildScrollAnchor(anchor, entry.columnIndex, entry.blockId), containerAnchor);
+}
+
 function columnBlockParentScrollAnchor(anchor: string) {
   return anchor.replace(/\/c:\d+\/b:[^/]+$/, "");
 }
@@ -2825,6 +2837,124 @@ function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
   if (parsed.partId) return { ...parsed, kind: "part" };
   if (parsed.blockId) return { ...parsed, kind: "questionBlock" };
   return parsed;
+}
+
+function duplicatedContentBlock(block: EditorContentBlock): EditorContentBlock {
+  const nextBlock = cloneSerializable(block);
+  nextBlock.id = id(block.kind);
+  if (nextBlock.kind === "columns") {
+    nextBlock.columns = normalizeColumnsBlock(nextBlock).columns.map((column) => column.map(duplicatedContentBlock));
+  }
+  return nextBlock;
+}
+
+function columnBlockAtPath(rootBlock: EditorContentBlock, path: ColumnBlockPath): EditorContentBlock | null {
+  let currentBlock = rootBlock;
+  for (const entry of path) {
+    if (currentBlock.kind !== "columns") return null;
+    const column = normalizeColumnsBlock(currentBlock).columns[entry.columnIndex] ?? [];
+    const nextBlock = column.find((candidate) => candidate.id === entry.blockId);
+    if (!nextBlock) return null;
+    currentBlock = nextBlock;
+  }
+  return currentBlock;
+}
+
+function duplicateColumnBlockAtPath(
+  rootBlock: Extract<EditorContentBlock, { kind: "columns" }>,
+  path: ColumnBlockPath,
+): { rootBlock: Extract<EditorContentBlock, { kind: "columns" }>; duplicatedPath: ColumnBlockPath } | null {
+  if (!path.length) return null;
+  const duplicateInColumnsBlock = (
+    columnsBlock: Extract<EditorContentBlock, { kind: "columns" }>,
+    pathIndex: number,
+  ): { block: Extract<EditorContentBlock, { kind: "columns" }>; duplicatedPath: ColumnBlockPath } | null => {
+    const entry = path[pathIndex];
+    if (!entry) return null;
+    const normalized = normalizeColumnsBlock(columnsBlock);
+    const column = normalized.columns[entry.columnIndex];
+    if (!column) return null;
+    const childIndex = column.findIndex((child) => child.id === entry.blockId);
+    if (childIndex < 0) return null;
+
+    if (pathIndex === path.length - 1) {
+      const nextBlock = duplicatedContentBlock(column[childIndex]);
+      const columns = normalized.columns.map((currentColumn, index) =>
+        index === entry.columnIndex
+          ? [...currentColumn.slice(0, childIndex + 1), nextBlock, ...currentColumn.slice(childIndex + 1)]
+          : currentColumn,
+      );
+      return {
+        block: { ...columnsBlock, columnCount: normalized.columnCount, columns },
+        duplicatedPath: path.map((pathEntry, index) => (index === pathIndex ? { ...pathEntry, blockId: nextBlock.id } : { ...pathEntry })),
+      };
+    }
+
+    const childBlock = column[childIndex];
+    if (childBlock.kind !== "columns") return null;
+    const nested = duplicateInColumnsBlock(childBlock, pathIndex + 1);
+    if (!nested) return null;
+    const columns = normalized.columns.map((currentColumn, index) =>
+      index === entry.columnIndex ? currentColumn.map((child) => (child.id === entry.blockId ? nested.block : child)) : currentColumn,
+    );
+    return {
+      block: { ...columnsBlock, columnCount: normalized.columnCount, columns },
+      duplicatedPath: nested.duplicatedPath,
+    };
+  };
+
+  const result = duplicateInColumnsBlock(rootBlock, 0);
+  return result ? { rootBlock: result.block, duplicatedPath: result.duplicatedPath } : null;
+}
+
+function duplicatedContentBlocks(blocks: EditorContentBlock[]) {
+  return blocks.map(duplicatedContentBlock);
+}
+
+function duplicatedSubpart(subpart: EditorSubpart): EditorSubpart {
+  return {
+    ...cloneSerializable(subpart),
+    id: id("subpart"),
+    contentBlocks: duplicatedContentBlocks(subpart.contentBlocks),
+  };
+}
+
+function duplicatedPart(part: EditorPart): EditorPart {
+  const originalSubparts = part.subparts ?? [];
+  const nextSubparts = originalSubparts.map(duplicatedSubpart);
+  const subpartIdMap = new Map(originalSubparts.map((subpart, index) => [subpart.id, nextSubparts[index]?.id ?? subpart.id]));
+  const nextContentBlocks = duplicatedContentBlocks(part.contentBlocks);
+  const blockIdMap = new Map(part.contentBlocks.map((block, index) => [block.id, nextContentBlocks[index]?.id ?? block.id]));
+
+  return {
+    ...cloneSerializable(part),
+    id: id("part"),
+    contentBlocks: nextContentBlocks,
+    subparts: nextSubparts,
+    itemOrder: part.itemOrder?.map((item) => ({
+      ...item,
+      id: item.kind === "subpart" ? (subpartIdMap.get(item.id) ?? item.id) : (blockIdMap.get(item.id) ?? item.id),
+    })),
+  };
+}
+
+function duplicatedQuestion(question: QuestionBlock): QuestionBlock {
+  const originalParts = question.parts ?? [];
+  const nextParts = originalParts.map(duplicatedPart);
+  const partIdMap = new Map(originalParts.map((part, index) => [part.id, nextParts[index]?.id ?? part.id]));
+  const nextContentBlocks = duplicatedContentBlocks(question.contentBlocks);
+  const blockIdMap = new Map(question.contentBlocks.map((block, index) => [block.id, nextContentBlocks[index]?.id ?? block.id]));
+
+  return {
+    ...cloneSerializable(question),
+    id: id("question"),
+    contentBlocks: nextContentBlocks,
+    parts: nextParts,
+    itemOrder: question.itemOrder?.map((item) => ({
+      ...item,
+      id: item.kind === "part" ? (partIdMap.get(item.id) ?? item.id) : (blockIdMap.get(item.id) ?? item.id),
+    })),
+  };
 }
 
 function keyboardTargetConsumesGlobalDelete(target: EventTarget | null) {
@@ -5452,6 +5582,7 @@ interface ColumnsBlockEditorProps {
   openSignal?: number;
   openSignalForAnchor?: (anchor: string) => number | undefined;
   onActivateAnchor?: (anchor: string) => void;
+  onContextMenuAnchor?: (event: ReactMouseEvent<HTMLElement>, anchor: string) => void;
   onChange: (patch: Partial<EditorColumnsBlock>) => void;
   onRemove: () => void;
 }
@@ -5469,6 +5600,7 @@ function ColumnsBlockEditor({
   openSignal,
   openSignalForAnchor: openNestedSignalForAnchor,
   onActivateAnchor,
+  onContextMenuAnchor,
   onChange,
   onRemove,
 }: ColumnsBlockEditorProps) {
@@ -5509,6 +5641,7 @@ function ColumnsBlockEditor({
           className="rounded-md transition-colors"
           onPointerDownCapture={activateChildAnchor}
           onFocusCapture={activateChildAnchor}
+          onContextMenu={(event) => onContextMenuAnchor?.(event, childAnchor)}
         >
           {node}
         </div>
@@ -7478,10 +7611,12 @@ function DocumentNavigator({
   items,
   activeItemId,
   onJump,
+  onContextMenu,
 }: {
   items: DocumentTocItem[];
   activeItemId: string;
   onJump: (item: DocumentTocItem) => void;
+  onContextMenu: (event: ReactMouseEvent<HTMLElement>, item: DocumentTocItem) => void;
 }) {
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => tocBranchIdSet(items));
   const knownBranchItemIdsRef = useRef<Set<string>>(tocBranchIdSet(items));
@@ -7543,6 +7678,8 @@ function DocumentNavigator({
                         : "text-foreground hover:bg-accent hover:text-accent-foreground",
                   )}
                   style={{ paddingLeft: `${0.55 + item.depth * 0.85}rem` }}
+                  onContextMenu={(event) => onContextMenu(event, item)}
+                  data-context-anchor={item.editorAnchor}
                 >
                   {isBranch ? (
                     <button
@@ -7609,6 +7746,7 @@ function DocumentNavigatorRail({
   onToggle,
   onJump,
   onPreviewJump,
+  onContextMenu,
   onSelectPageBreak,
   onToggleEditorAtItem,
   onAddQuestion,
@@ -7639,6 +7777,7 @@ function DocumentNavigatorRail({
   onToggle: () => void;
   onJump: (item: DocumentTocItem) => void;
   onPreviewJump: (item: DocumentTocItem) => void;
+  onContextMenu: (event: ReactMouseEvent<HTMLElement>, item: DocumentTocItem) => void;
   onSelectPageBreak: (item: DocumentTocItem) => void;
   onToggleEditorAtItem: (item: DocumentTocItem) => void;
   onAddQuestion: () => void;
@@ -7702,11 +7841,13 @@ function DocumentNavigatorRail({
                 type="button"
                 draggable
                 data-drag-preview
+                data-context-anchor={item.editorAnchor}
                 title={`${item.label}. Click selects it in the mini TOC. Alt+Up/Alt+Down moves it. Delete removes it.`}
                 aria-label={`${item.label}. Click selects it in the mini TOC. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`}
                 aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Delete Backspace"
                 aria-current={active ? "location" : undefined}
                 onClick={() => onSelectPageBreak(item)}
+                onContextMenu={(event) => onContextMenu(event, item)}
                 onKeyDown={(event) => {
                   if (keyboardDeleteRequested(event)) {
                     event.preventDefault();
@@ -7750,6 +7891,7 @@ function DocumentNavigatorRail({
               type="button"
               draggable={draggable}
               data-drag-preview={draggable ? true : undefined}
+              data-context-anchor={item.editorAnchor}
               title={
                 draggable
                   ? `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor. Alt+Up/Alt+Down moves it. Delete removes it.`
@@ -7763,6 +7905,7 @@ function DocumentNavigatorRail({
               aria-current={active ? "location" : undefined}
               aria-keyshortcuts={draggable ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
               onClick={() => (item.kind === "title" || questionId ? onPreviewJump(item) : onJump(item))}
+              onContextMenu={(event) => onContextMenu(event, item)}
               onDoubleClick={togglesEditor ? () => onToggleEditorAtItem(item) : undefined}
               onKeyDown={
                 questionId
@@ -8023,6 +8166,7 @@ export default function App() {
   const [dragOverEditorPageBreak, setDragOverEditorPageBreak] = useState<EditorPageBreakDropPreview | null>(null);
   const [paneMode, setPaneMode] = useState<PaneMode>("preview");
   const [tocOpen, setTocOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
   const [activeRailItemId, setActiveRailItemId] = useState(() => firstQuestionAnchor(initialQuestions));
   const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
@@ -10257,6 +10401,458 @@ export default function App() {
     showAssistantPane();
   }
 
+  function tocItemForContextAnchor(anchor: string) {
+    for (const fallback of scrollAnchorFallbacks(anchor)) {
+      const item = documentTocItems.find(
+        (tocItem) => tocItem.id === fallback || tocItem.editorAnchor === fallback || tocItem.previewAnchor === fallback,
+      );
+      if (item) return item;
+    }
+    return null;
+  }
+
+  function exactTocItemForAnchor(anchor: string) {
+    return (
+      documentTocItems.find((tocItem) => tocItem.id === anchor || tocItem.editorAnchor === anchor || tocItem.previewAnchor === anchor) ??
+      null
+    );
+  }
+
+  function fallbackContextLabel(anchor: string) {
+    const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "frontMatter") return "Title Page";
+    if (parsed.kind === "pageBreak") return "Page break";
+    if (parsed.kind === "question") return "Question";
+    if (parsed.kind === "part") return "Part";
+    if (parsed.kind === "subpart") return "Subpart";
+    if (parsed.blockId) return "Module";
+    return "Document item";
+  }
+
+  function contextDescriptorForAnchor(anchor: string) {
+    const editorAnchor = graphChildParentScrollAnchor(anchor) ?? anchor;
+    const exactItem = exactTocItemForAnchor(editorAnchor);
+    if (exactItem) return exactItem;
+
+    const selectedBlock = selectedEditorBlockFromAnchor(questions, editorAnchor);
+    if (selectedBlock) {
+      return {
+        id: editorAnchor,
+        label: selectedBlock.label,
+        summary: selectedBlock.summary,
+        kind: tocBlockKind(selectedBlock.block),
+        depth: 0,
+        editorAnchor,
+        previewAnchor: previewAnchorForEditorAnchor(editorAnchor, documentTocItems),
+      } satisfies DocumentTocItem;
+    }
+
+    const fallbackItem = tocItemForContextAnchor(editorAnchor);
+    if (fallbackItem && !editorAnchor.includes("/c:")) return fallbackItem;
+
+    const parsed = parseScrollAnchor(editorAnchor);
+    return {
+      id: editorAnchor,
+      label: fallbackContextLabel(editorAnchor),
+      kind: parsed.kind === "pageBreak" ? "pageBreak" : "text",
+      depth: 0,
+      editorAnchor,
+      previewAnchor: previewAnchorForEditorAnchor(editorAnchor, documentTocItems),
+    } satisfies DocumentTocItem;
+  }
+
+  function contextReferenceText(anchor: string, surface: ContextMenuSurface) {
+    const item = contextDescriptorForAnchor(anchor);
+    const label = item.label;
+    const summary = item.summary ? tocSummaryText(item.summary) : "";
+    const kind = item.kind;
+    const editorAnchor = item.editorAnchor;
+    const previewAnchor = item.previewAnchor;
+    return [
+      `Target: ${label}`,
+      `Kind: ${kind}`,
+      `Editor anchor: ${editorAnchor}`,
+      `Preview anchor: ${previewAnchor}`,
+      `Source: ${surface}`,
+      summary ? `Summary: ${summary}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function selectContextAnchor(anchor: string, options: { openEditor?: boolean; openInspector?: boolean; previewOnly?: boolean } = {}) {
+    const item = contextDescriptorForAnchor(anchor);
+    const editorAnchor = item.editorAnchor;
+    const previewAnchor = item.previewAnchor;
+    const activeAnchor = item.id;
+    const questionId = questionIdFromScrollAnchor(editorAnchor);
+    if (questionId) selectQuestionInEditor(questionId);
+    setActiveTocItemId(activeAnchor);
+    setActiveRailItemId(activeAnchor);
+
+    if (options.openInspector) setInspectorOpen(true);
+    if (options.openEditor && !showEditor) {
+      assistantController.setPanelOpen(false);
+      setPaneMode("split");
+    }
+
+    revealEditorAnchor(editorAnchor);
+    if (options.previewOnly) {
+      queuePreviewJump(previewAnchor);
+    } else {
+      queueDocumentJump(editorAnchor, previewAnchor, { preservePaneMode: !options.openEditor });
+    }
+  }
+
+  function askAssistantAboutAnchor(anchor: string, surface: ContextMenuSurface) {
+    const item = contextDescriptorForAnchor(anchor);
+    const label = item.label;
+    selectContextAnchor(anchor, { previewOnly: true });
+    const reference = contextReferenceText(anchor, surface);
+    assistantController.setChatInput((current) => {
+      const prefix = `Use this Mauth target for my next request:\n${reference}\n\n`;
+      return current.trim() ? `${prefix}${current.trim()}` : `${prefix}What should I change about ${label}?`;
+    });
+    assistantController.setPanelOpen(true);
+    resetPreviewZoom();
+    setPaneMode("assistant");
+  }
+
+  function copyAnchorReference(anchor: string, surface: ContextMenuSurface) {
+    const reference = contextReferenceText(anchor, surface);
+    void navigator.clipboard?.writeText(reference);
+  }
+
+  function setQuestionSectionFromContext(anchor: string) {
+    const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind !== "question" || !parsed.questionId) return;
+    const question = questions.find((current) => current.id === parsed.questionId);
+    if (!question) return;
+    const nextSection = window.prompt("Section", question.section ?? "");
+    if (nextSection === null) return;
+    updateQuestion(question.id, { section: nextSection.trim() });
+  }
+
+  function rootBlockContextFromParsed(parsed: ParsedScrollAnchor) {
+    const blockId = parsed.kind === "columnBlock" ? parsed.rootBlockId : parsed.blockId;
+    if (!parsed.questionId || !blockId) return null;
+    const question = questions.find((current) => current.id === parsed.questionId);
+    if (!question) return null;
+
+    if (parsed.partId && parsed.subpartId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+      const block = subpart?.contentBlocks.find((current) => current.id === blockId);
+      return {
+        block,
+        scope: {
+          kind: "subpart",
+          questionId: parsed.questionId,
+          partId: parsed.partId,
+          subpartId: parsed.subpartId,
+        } satisfies MauthContentScope,
+        anchorForBlock: (nextBlockId: string) =>
+          subpartBlockScrollAnchor(parsed.questionId ?? "", parsed.partId ?? "", parsed.subpartId ?? "", nextBlockId),
+      };
+    }
+
+    if (parsed.partId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const block = part?.contentBlocks.find((current) => current.id === blockId);
+      return {
+        block,
+        scope: { kind: "part", questionId: parsed.questionId, partId: parsed.partId } satisfies MauthContentScope,
+        anchorForBlock: (nextBlockId: string) => partBlockScrollAnchor(parsed.questionId ?? "", parsed.partId ?? "", nextBlockId),
+      };
+    }
+
+    const block = question.contentBlocks.find((current) => current.id === blockId);
+    return {
+      block,
+      scope: { kind: "question", questionId: parsed.questionId } satisfies MauthContentScope,
+      anchorForBlock: (nextBlockId: string) => questionBlockScrollAnchor(parsed.questionId ?? "", nextBlockId),
+    };
+  }
+
+  function blockContextFromParsed(parsed: ParsedScrollAnchor) {
+    if (!parsed.questionId || !parsed.blockId) return null;
+    if (parsed.kind !== "questionBlock" && parsed.kind !== "partBlock" && parsed.kind !== "subpartBlock") return null;
+    return rootBlockContextFromParsed(parsed);
+  }
+
+  function columnBlockContextFromParsed(parsed: ParsedScrollAnchor) {
+    if (parsed.kind !== "columnBlock" || !parsed.columnPath?.length) return null;
+    const rootContext = rootBlockContextFromParsed(parsed);
+    if (!rootContext?.block || rootContext.block.kind !== "columns") return null;
+    const block = columnBlockAtPath(rootContext.block, parsed.columnPath);
+    if (!block) return null;
+    return {
+      ...rootContext,
+      block,
+      rootBlock: rootContext.block,
+      rootAnchor: rootContext.anchorForBlock(rootContext.block.id),
+    };
+  }
+
+  function duplicateColumnBlockTarget(parsed: ParsedScrollAnchor) {
+    const context = columnBlockContextFromParsed(parsed);
+    if (!context || context.rootBlock.kind !== "columns" || !parsed.columnPath?.length) return false;
+    const duplicated = duplicateColumnBlockAtPath(context.rootBlock, parsed.columnPath);
+    if (!duplicated) return false;
+    const result = applyEditorAction({
+      type: "module.update",
+      scope: context.scope,
+      blockId: context.rootBlock.id,
+      patch: { columnCount: duplicated.rootBlock.columnCount, columns: duplicated.rootBlock.columns },
+    });
+    if (!result.ok) return false;
+    selectContextAnchor(columnPathScrollAnchor(context.rootAnchor, duplicated.duplicatedPath), { openEditor: showEditor });
+    return true;
+  }
+
+  function duplicateAnchorTarget(anchor: string) {
+    const parsed = parseScrollAnchor(anchor);
+    if (!parsed.questionId) return false;
+    const question = questions.find((current) => current.id === parsed.questionId);
+    if (!question) return false;
+
+    if (parsed.kind === "question") {
+      const nextQuestion = duplicatedQuestion(question);
+      const result = applyEditorAction({ type: "question.add", question: nextQuestion, afterQuestionId: question.id });
+      if (!result.ok) return false;
+      const nextAnchor = questionScrollAnchor(nextQuestion.id);
+      selectContextAnchor(nextAnchor, { openEditor: showEditor });
+      return true;
+    }
+
+    if (parsed.kind === "part" && parsed.partId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      if (!part) return false;
+      const nextPart = duplicatedPart(part);
+      const result = applyEditorAction({
+        type: "part.add",
+        questionId: question.id,
+        part: nextPart,
+        placement: { partId: part.id, position: "after" },
+      });
+      if (!result.ok) return false;
+      selectContextAnchor(partScrollAnchor(question.id, nextPart.id), { openEditor: showEditor });
+      return true;
+    }
+
+    if (parsed.kind === "subpart" && parsed.partId && parsed.subpartId) {
+      const part = question.parts.find((current) => current.id === parsed.partId);
+      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
+      if (!part || !subpart) return false;
+      const nextSubpart = duplicatedSubpart(subpart);
+      const result = applyEditorAction({
+        type: "subpart.add",
+        questionId: question.id,
+        partId: part.id,
+        subpart: nextSubpart,
+        placement: { subpartId: subpart.id, position: "after" },
+      });
+      if (!result.ok) return false;
+      selectContextAnchor(subpartScrollAnchor(question.id, part.id, nextSubpart.id), { openEditor: showEditor });
+      return true;
+    }
+
+    if (parsed.kind === "columnBlock") return duplicateColumnBlockTarget(parsed);
+
+    const blockContext = blockContextFromParsed(parsed);
+    if (!blockContext?.block || !parsed.blockId) return false;
+    const nextBlock = duplicatedContentBlock(blockContext.block);
+    const result = applyEditorAction({
+      type: "module.add",
+      scope: blockContext.scope,
+      blocks: [nextBlock],
+      placement: { blockId: parsed.blockId, position: "after" },
+    });
+    if (!result.ok) return false;
+    selectContextAnchor(blockContext.anchorForBlock(nextBlock.id), { openEditor: showEditor });
+    return true;
+  }
+
+  function subsectionTargetFromParsed(parsed: ParsedScrollAnchor): SubsectionDragTarget | null {
+    if (!parsed.questionId) return null;
+    if (parsed.kind === "questionBlock" && parsed.blockId) {
+      return { kind: "question-block", questionId: parsed.questionId, id: parsed.blockId };
+    }
+    if (parsed.kind === "part" && parsed.partId) return { kind: "part", questionId: parsed.questionId, id: parsed.partId };
+    if (parsed.kind === "partBlock" && parsed.partId && parsed.blockId) {
+      return { kind: "part-block", questionId: parsed.questionId, partId: parsed.partId, id: parsed.blockId };
+    }
+    if (parsed.kind === "subpart" && parsed.partId && parsed.subpartId) {
+      return { kind: "subpart", questionId: parsed.questionId, partId: parsed.partId, id: parsed.subpartId };
+    }
+    if (parsed.kind === "subpartBlock" && parsed.partId && parsed.subpartId && parsed.blockId) {
+      return {
+        kind: "subpart-block",
+        questionId: parsed.questionId,
+        partId: parsed.partId,
+        subpartId: parsed.subpartId,
+        id: parsed.blockId,
+      };
+    }
+    return null;
+  }
+
+  function moveAnchorTarget(anchor: string, direction: MoveDirection) {
+    const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "question" && parsed.questionId) {
+      moveQuestionByKeyboard(parsed.questionId, direction);
+      return true;
+    }
+
+    const target = subsectionTargetFromParsed(parsed);
+    if (!target) return false;
+    const container = subsectionSourceContainer(target);
+    const activeItem = subsectionOrderItem(target);
+    if (!activeItem) return false;
+    const items = orderItemsForContainer(questions, container);
+    const index = items.findIndex((item) => orderItemKey(item) === orderItemKey(activeItem));
+    if (index < 0 || !items[index + direction]) return false;
+    const beforeItem = direction < 0 ? items[index + direction] : items[index + 2];
+    const intent: SubsectionDropIntent =
+      container.kind === "subpart"
+        ? { container, beforeBlockId: beforeItem?.kind === "block" ? beforeItem.id : undefined }
+        : { container, beforeItem };
+    const action = subsectionMoveAction(target, intent);
+    if (!action) return false;
+    const result = applyEditorAction(action);
+    if (!result.ok) return false;
+    selectContextAnchor(anchor, { openEditor: showEditor });
+    return true;
+  }
+
+  function canMoveAnchorTarget(anchor: string, direction: MoveDirection) {
+    const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "question" && parsed.questionId) {
+      const index = questions.findIndex((question) => question.id === parsed.questionId);
+      return index >= 0 && Boolean(questions[index + direction]);
+    }
+    const target = subsectionTargetFromParsed(parsed);
+    if (!target) return false;
+    const activeItem = subsectionOrderItem(target);
+    if (!activeItem) return false;
+    const items = orderItemsForContainer(questions, subsectionSourceContainer(target));
+    const index = items.findIndex((item) => orderItemKey(item) === orderItemKey(activeItem));
+    return index >= 0 && Boolean(items[index + direction]);
+  }
+
+  function canDeleteAnchorTarget(anchor: string) {
+    const parsed = parseScrollAnchor(anchor);
+    return parsed.kind !== "frontMatter" && parsed.kind !== "unknown";
+  }
+
+  function canDuplicateAnchorTarget(anchor: string) {
+    const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "columnBlock") return Boolean(columnBlockContextFromParsed(parsed)?.block);
+    return (
+      parsed.kind === "question" || parsed.kind === "part" || parsed.kind === "subpart" || Boolean(blockContextFromParsed(parsed)?.block)
+    );
+  }
+
+  function contextActionsForAnchor(anchor: string, surface: ContextMenuSurface): ContextMenuAction[] {
+    const item = contextDescriptorForAnchor(anchor);
+    const parsed = parseScrollAnchor(item.editorAnchor);
+    const label = item.label;
+    return [
+      {
+        id: "inspect",
+        label: surface === "preview" ? "Open in editor" : "Inspect",
+        description: "Select this item and show its inspector",
+        icon: <PanelRightOpen className="size-4" aria-hidden="true" />,
+        onSelect: () => selectContextAnchor(item.editorAnchor, { openEditor: true, openInspector: true }),
+      },
+      {
+        id: "preview",
+        label: "Show in preview",
+        description: "Scroll the display to this item",
+        icon: <Eye className="size-4" aria-hidden="true" />,
+        onSelect: () => selectContextAnchor(item.editorAnchor, { previewOnly: true }),
+      },
+      {
+        id: "ask-assistant",
+        label: "Ask assistant about this",
+        description: "Insert a target reference into the assistant",
+        icon: <Bot className="size-4" aria-hidden="true" />,
+        onSelect: () => askAssistantAboutAnchor(item.editorAnchor, surface),
+      },
+      {
+        id: "copy-reference",
+        label: "Copy reference",
+        description: item.editorAnchor,
+        icon: <Copy className="size-4" aria-hidden="true" />,
+        onSelect: () => copyAnchorReference(item.editorAnchor, surface),
+      },
+      {
+        id: "move-up",
+        label: "Move up",
+        icon: <ArrowUp className="size-4" aria-hidden="true" />,
+        disabled: !canMoveAnchorTarget(item.editorAnchor, -1),
+        onSelect: () => moveAnchorTarget(item.editorAnchor, -1),
+      },
+      {
+        id: "move-down",
+        label: "Move down",
+        icon: <ArrowDown className="size-4" aria-hidden="true" />,
+        disabled: !canMoveAnchorTarget(item.editorAnchor, 1),
+        onSelect: () => moveAnchorTarget(item.editorAnchor, 1),
+      },
+      {
+        id: "duplicate",
+        label: "Duplicate",
+        icon: <CopyPlus className="size-4" aria-hidden="true" />,
+        disabled: !canDuplicateAnchorTarget(item.editorAnchor),
+        onSelect: () => duplicateAnchorTarget(item.editorAnchor),
+      },
+      {
+        id: "set-section",
+        label: "Set section...",
+        description: "Update the question section label",
+        icon: <Edit3 className="size-4" aria-hidden="true" />,
+        disabled: parsed.kind !== "question",
+        onSelect: () => setQuestionSectionFromContext(item.editorAnchor),
+      },
+      {
+        id: "delete",
+        label: `Delete ${label}`,
+        icon: <Trash2 className="size-4" aria-hidden="true" />,
+        destructive: true,
+        disabled: !canDeleteAnchorTarget(item.editorAnchor),
+        onSelect: () => deleteEditorSelection(item.editorAnchor),
+      },
+    ];
+  }
+
+  function openContextMenu(event: ReactMouseEvent<HTMLElement>, anchor: string, surface: ContextMenuSurface) {
+    event.preventDefault();
+    event.stopPropagation();
+    const item = contextDescriptorForAnchor(anchor);
+    const editorAnchor = item.editorAnchor;
+    selectContextAnchor(editorAnchor, { previewOnly: surface === "preview" });
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      title: surface === "preview" ? "Display actions" : surface === "miniToc" ? "Navigator actions" : "Editor actions",
+      subtitle: item.summary ? `${item.label} - ${tocSummaryText(item.summary)}` : item.label,
+      actions: contextActionsForAnchor(editorAnchor, surface),
+    });
+  }
+
+  function handlePreviewContextMenu(event: ReactMouseEvent<HTMLElement>) {
+    const anchor = previewAnchorFromEventTarget(event.target, previewPaneRef.current);
+    if (!anchor) return;
+    openContextMenu(event, anchor, "preview");
+  }
+
+  function handleEditorHeaderContextMenu(event: ReactMouseEvent<HTMLElement>, anchor: string) {
+    const header = event.target instanceof Element ? event.target.closest("[data-panel-region='header']") : null;
+    if (!header || !event.currentTarget.contains(header)) return;
+    openContextMenu(event, anchor, "editor");
+  }
+
   function resetPreviewZoom() {
     previewZoomRef.current = 1;
     previewGestureStartZoomRef.current = 1;
@@ -11340,8 +11936,7 @@ export default function App() {
     applyEditorAction({ type: "module.delete", scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, blockId });
   }
 
-  deleteActiveEditorSelectionRef.current = () => {
-    const anchor = activeRailItemId.startsWith("pb:") ? activeRailItemId : activeTocItemId;
+  function deleteEditorSelection(anchor: string) {
     const parsed = parseScrollAnchor(anchor);
     if (!parsed.questionId) return false;
 
@@ -11413,7 +12008,10 @@ export default function App() {
     }
 
     return false;
-  };
+  }
+
+  deleteActiveEditorSelectionRef.current = () =>
+    deleteEditorSelection(activeRailItemId.startsWith("pb:") ? activeRailItemId : activeTocItemId);
 
   useEffect(() => {
     function handleGlobalDelete(event: globalThis.KeyboardEvent) {
@@ -11454,6 +12052,7 @@ export default function App() {
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
+      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, blockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, blockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, blockTarget),
@@ -11515,6 +12114,7 @@ export default function App() {
             openSignal={blockOpenSignal}
             openSignalForAnchor={openSignalForAnchor}
             onActivateAnchor={activateEditorAnchor}
+            onContextMenuAnchor={handleEditorHeaderContextMenu}
             onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
@@ -11615,6 +12215,7 @@ export default function App() {
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
+      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, partBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, partBlockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, partBlockTarget),
@@ -11679,6 +12280,7 @@ export default function App() {
             openSignal={blockOpenSignal}
             openSignalForAnchor={openSignalForAnchor}
             onActivateAnchor={activateEditorAnchor}
+            onContextMenuAnchor={handleEditorHeaderContextMenu}
             onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
@@ -11778,6 +12380,7 @@ export default function App() {
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
+      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
       onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, subpartBlockTarget),
       onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, subpartBlockTarget),
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, subpartBlockTarget),
@@ -11842,6 +12445,7 @@ export default function App() {
             openSignal={blockOpenSignal}
             openSignalForAnchor={openSignalForAnchor}
             onActivateAnchor={activateEditorAnchor}
+            onContextMenuAnchor={handleEditorHeaderContextMenu}
             onChange={(patch) =>
               updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
             }
@@ -12028,6 +12632,7 @@ export default function App() {
         <CollapsiblePanel
           title={<InlineSummaryTitle label={`Subpart (${subpartLabel})`} summary={partPanelSummary(subpart.contentBlocks)} />}
           leading={subsectionDragHandle(subpartTarget, `Drag subpart ${subpartLabel}`)}
+          onHeaderContextMenu={(event) => openContextMenu(event, subpartAnchor, "editor")}
           actions={
             <>
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
@@ -12151,6 +12756,7 @@ export default function App() {
           <CollapsiblePanel
             title={<InlineSummaryTitle label={`Part (${partLabel})`} summary={partPanelSummary(part.contentBlocks)} />}
             leading={subsectionDragHandle(partTarget, `Drag part ${partLabel}`)}
+            onHeaderContextMenu={(event) => openContextMenu(event, partAnchor, "editor")}
             actions={
               <>
                 {subparts.length ? (
@@ -12419,6 +13025,7 @@ export default function App() {
             onToggle={() => setTocOpen((current) => !current)}
             onJump={jumpToTocItem}
             onPreviewJump={jumpPreviewToTocItem}
+            onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
             onSelectPageBreak={selectPageBreakInRail}
             onToggleEditorAtItem={toggleEditorAtTocItem}
             onAddQuestion={addQuestion}
@@ -12438,7 +13045,14 @@ export default function App() {
             onPageBreakDrop={handlePageBreakDrop}
             onPageBreakDragEnd={handlePageBreakDragEnd}
           />
-          {tocOpen ? <DocumentNavigator items={documentTocItems} activeItemId={activeTocItemId} onJump={jumpToTocItem} /> : null}
+          {tocOpen ? (
+            <DocumentNavigator
+              items={documentTocItems}
+              activeItemId={activeTocItemId}
+              onJump={jumpToTocItem}
+              onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
+            />
+          ) : null}
           <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
             {showAssistant ? (
               <section className="assistant-pane min-h-0 overflow-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r">
@@ -12547,7 +13161,11 @@ export default function App() {
                                 )}
                                 data-scroll-anchor={questionAnchor}
                               >
-                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                <div
+                                  className="mb-4 flex flex-wrap items-center justify-between gap-3"
+                                  data-panel-region="header"
+                                  onContextMenu={(event) => openContextMenu(event, questionAnchor, "editor")}
+                                >
                                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <Button
                                       type="button"
@@ -12722,6 +13340,7 @@ export default function App() {
                 )}
                 onPointerDownCapture={handlePreviewPointerDown}
                 onClickCapture={handlePreviewClick}
+                onContextMenuCapture={handlePreviewContextMenu}
               >
                 <PaginatedTestPreview
                   frontMatter={frontMatter}
@@ -12783,6 +13402,7 @@ export default function App() {
           onClear={clearActionProposal}
         />
       ) : null}
+      <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
       {printPreviewMounted ? (
         <div className="print-preview-stage" aria-hidden="true">
           <PaginatedTestPreview

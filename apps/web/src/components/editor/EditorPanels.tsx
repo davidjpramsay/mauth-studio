@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -34,6 +34,7 @@ interface CollapsiblePanelProps {
   active?: boolean;
   className?: string;
   bodyClassName?: string;
+  onHeaderContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }
 
 export function CollapsiblePanel({
@@ -48,6 +49,7 @@ export function CollapsiblePanel({
   active = false,
   className,
   bodyClassName,
+  onHeaderContextMenu,
 }: CollapsiblePanelProps) {
   const [panelOpen, setPanelOpen] = useState(defaultOpen || openSignal !== undefined);
   const open = collapsible ? panelOpen : true;
@@ -62,6 +64,7 @@ export function CollapsiblePanel({
       <div
         data-panel-region="header"
         className={cn("flex min-w-0 flex-wrap items-center gap-2 p-2 transition-colors", active && EDITOR_ACTIVE_HEADER_CLASS)}
+        onContextMenu={onHeaderContextMenu}
       >
         {collapsible ? (
           <Button
