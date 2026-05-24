@@ -251,6 +251,7 @@ async function main() {
     const assistantInput = page.locator(".assistant-pane textarea");
     await assistantInput.waitFor();
     const assistantValue = await assistantInput.inputValue();
+    assert(assistantValue.includes(`Mauth reference: @mauth[${INTRO_ANCHOR}]`), "assistant context should include a stable target token");
     assert(assistantValue.includes(`Editor anchor: ${INTRO_ANCHOR}`), "assistant context should include the editor anchor");
     assert(assistantValue.includes(`Preview anchor: ${INTRO_ANCHOR}`), "assistant context should include the preview anchor");
     assert(assistantValue.includes("Source: preview"), "assistant context should record the display source");

@@ -10469,6 +10469,7 @@ export default function App() {
     const editorAnchor = item.editorAnchor;
     const previewAnchor = item.previewAnchor;
     return [
+      `Mauth reference: @mauth[${editorAnchor}]`,
       `Target: ${label}`,
       `Kind: ${kind}`,
       `Editor anchor: ${editorAnchor}`,
