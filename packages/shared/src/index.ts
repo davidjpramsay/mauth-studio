@@ -2,6 +2,7 @@ export type InputFormat = "plain" | "latex";
 
 export type DiagramType =
   | "graph2d"
+  | "geometry2d"
   | "graph3d"
   | "geometricConstruction"
   | "image"
@@ -169,6 +170,7 @@ export interface GraphConfig {
   type: DiagramType;
   data?:
     | GeometricDiagramData
+    | Graph2DGeometryData
     | StatsChartData
     | Graph3DData
     | ImageDiagramData
@@ -258,6 +260,20 @@ export interface Graph2DGeometrySegment {
   show?: boolean;
 }
 
+export interface Graph2DGeometryArc {
+  id: string;
+  center: string;
+  from: string;
+  to: string;
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: "solid" | "dashed";
+  show?: boolean;
+}
+
 export interface Graph2DGeometryAngle {
   id: string;
   points: [string, string, string];
@@ -286,6 +302,7 @@ export interface Graph2DGeometryDecoration {
 export interface Graph2DGeometryData {
   points?: Graph2DGeometryPoint[];
   segments?: Graph2DGeometrySegment[];
+  arcs?: Graph2DGeometryArc[];
   angles?: Graph2DGeometryAngle[];
   decorations?: Graph2DGeometryDecoration[];
 }
@@ -392,6 +409,7 @@ export interface GraphFeature {
     | "intersection"
     | "tangent"
     | "line_segment"
+    | "angle_marker"
     | "label"
     | "region_clipped_by_curve";
   label?: string;
@@ -408,6 +426,7 @@ export interface GraphFeature {
   y1?: number;
   x2?: number;
   y2?: number;
+  rightAngle?: boolean;
   ratio?: number;
   functionIndex?: number;
   functionAIndex?: number;

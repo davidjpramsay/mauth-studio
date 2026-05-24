@@ -384,7 +384,7 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
   enumField(value, "renderer", path, DIAGRAM_SETTINGS_RENDERERS, issues);
   if (typeof value.renderer !== "string") return;
 
-  if (value.renderer === "graph2d") {
+  if (value.renderer === "graph2d" || value.renderer === "geometry2d") {
     numberFields(
       value,
       [

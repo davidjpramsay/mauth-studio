@@ -43,6 +43,7 @@ export function SpaceBlockEditor({
       actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName={showInlineSettings ? "p-3" : "hidden"}
+      collapsible={false}
       active={active}
       openSignal={openSignal}
     >

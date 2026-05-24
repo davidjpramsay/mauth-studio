@@ -4,6 +4,7 @@ import type { Vector2DLabelStyle } from "../../lib/diagramVector2d";
 
 export const DIAGRAM_TYPES: Array<{ value: string; label: string }> = [
   { value: "graph2d", label: "2D graph" },
+  { value: "geometry2d", label: "2D diagram" },
   { value: "vector2d", label: "2D vector graph" },
   { value: "graph3d", label: "3D graph" },
   { value: "image", label: "Image" },
@@ -15,7 +16,7 @@ export const DIAGRAM_TYPES: Array<{ value: string; label: string }> = [
 
 export const DIAGRAM_TYPE_GROUPS: Array<{ label: string; values: string[] }> = [
   { label: "Coordinate", values: ["graph2d", "vector2d", "graph3d"] },
-  { label: "Construction", values: ["geometricConstruction", "network", "setDiagram"] },
+  { label: "Construction", values: ["geometry2d", "geometricConstruction", "network", "setDiagram"] },
   { label: "Statistics", values: ["statsChart"] },
   { label: "Media", values: ["image"] },
 ];

@@ -8,6 +8,7 @@ import { snapImplicitRelationPointAtX, snapImplicitRelationPointAtY } from "@/co
 import { Button } from "@/components/ui/button";
 import {
   GRAPH_COLORS,
+  GRAPH_ANGLE_MARKER_LABEL_MODES,
   GRAPH_FEATURE_LABEL_MODES,
   GRAPH_FEATURE_LINE_STYLES,
   GRAPH_FEATURE_TYPES,
@@ -51,14 +52,85 @@ function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: st
   );
 }
 
+type GraphFeatureEntry = {
+  feature: GraphFeature;
+  featureIndex: number;
+};
+
+type GraphFeatureGroupId = "points" | "segments" | "markers" | "shading" | "labels" | "other";
+
+const GRAPH_FEATURE_GROUPS: Array<{
+  id: GraphFeatureGroupId;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "points",
+    label: "Points",
+    description: "Manual points, intersections, and turning points",
+  },
+  {
+    id: "segments",
+    label: "Segments and tangents",
+    description: "Line segments and tangent lines",
+  },
+  {
+    id: "markers",
+    label: "Markers",
+    description: "Angle and construction markers",
+  },
+  {
+    id: "shading",
+    label: "Shading",
+    description: "Regions between curves or against an axis",
+  },
+  {
+    id: "labels",
+    label: "Labels",
+    description: "Free labels and graph annotations",
+  },
+  {
+    id: "other",
+    label: "Other",
+    description: "Legacy or specialised graph features",
+  },
+];
+
+function graphFeatureGroupId(feature: GraphFeature): GraphFeatureGroupId {
+  if (feature.kind === "label") return "labels";
+  if (feature.kind === "line_segment" || feature.kind === "tangent") return "segments";
+  if (feature.kind === "angle_marker") return "markers";
+  if (isRegionFeatureKind(feature.kind) || feature.kind === "region_clipped_by_curve") return "shading";
+  if (
+    feature.kind === "point" ||
+    feature.kind === "point_between_points" ||
+    feature.kind === "turning_point" ||
+    feature.kind === "intersection"
+  ) {
+    return "points";
+  }
+  return "other";
+}
+
 type FunctionGraphEditorProps = {
   config: GraphConfig;
   showSolutions: boolean;
   settingsMode?: "inline" | "inspector";
+  anchor?: string;
+  activeAnchor?: string;
+  onActivateAnchor?: (anchor: string) => void;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inline", onChange }: FunctionGraphEditorProps) {
+export function FunctionGraphEditor({
+  config,
+  showSolutions,
+  settingsMode = "inline",
+  anchor,
+  activeAnchor,
+  onActivateAnchor,
+  onChange,
+}: FunctionGraphEditorProps) {
   const patchConfig = onChange;
   const showInlineSettings = settingsMode === "inline";
   const updateDiagramWidth = (value: string) => {
@@ -71,9 +143,13 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
   };
   const functions = config.functions ?? [];
   const features = config.features ?? [];
-  const visibleFeatureEntries = features
+  const visibleFeatureEntries: GraphFeatureEntry[] = features
     .map((feature, featureIndex) => ({ feature, featureIndex }))
     .filter(({ feature }) => showSolutions || !isSolutionOnlyGraphFeature(feature));
+  const visibleFeatureGroups = GRAPH_FEATURE_GROUPS.map((group) => ({
+    ...group,
+    entries: visibleFeatureEntries.filter(({ feature }) => graphFeatureGroupId(feature) === group.id),
+  })).filter((group) => group.entries.length);
   const functionOptions = functions.map((graphFunction, index) => ({
     value: index,
     label: `${index + 1}: ${graphFunction.label || graphFunctionLabel(index)}`,
@@ -431,6 +507,7 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
 
       <div className="mt-3 flex flex-col gap-2">
         {functions.map((graphFunction, functionIndex) => {
+          const functionAnchor = anchor ? `${anchor}/gf:${functionIndex}` : undefined;
           const pieces = graphPiecesFromFunction(graphFunction, config);
           const functionLabel = graphFunction.label || graphFunctionLabel(functionIndex);
           const functionSubtitle =
@@ -446,27 +523,30 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
               <span className="shrink-0">
                 {functionTitleLabel} {functionIndex + 1}:
               </span>
-              <Latex latex={functionSummaryLatex(graphFunction, functionLabel)} />
+              <Latex latex={functionSummaryLatex(graphFunction)} />
               {graphFunction.kind === "piecewise" ? <span className="font-normal text-muted-foreground">{functionSubtitle}</span> : null}
             </span>
           );
 
-          return (
+          const functionPanel = (
             <CollapsiblePanel
               key={graphFunction.id ?? `${graphFunction.label}-${functionIndex}`}
               title={functionTitle}
               leading={
-                <input
-                  type="checkbox"
-                  checked={graphFunction.show ?? true}
-                  onChange={(event) => updateFunction(functionIndex, { show: event.target.checked })}
-                  title={`Show ${functionTitleLabel.toLowerCase()} ${functionIndex + 1}`}
-                  aria-label={`Show ${functionTitleLabel.toLowerCase()} ${functionIndex + 1}`}
-                  className="size-4"
-                />
+                showInlineSettings ? (
+                  <input
+                    type="checkbox"
+                    checked={graphFunction.show ?? true}
+                    onChange={(event) => updateFunction(functionIndex, { show: event.target.checked })}
+                    title={`Show ${functionTitleLabel.toLowerCase()} ${functionIndex + 1}`}
+                    aria-label={`Show ${functionTitleLabel.toLowerCase()} ${functionIndex + 1}`}
+                    className="size-4"
+                  />
+                ) : null
               }
               className="bg-muted/30"
               bodyClassName="p-2"
+              active={functionAnchor === activeAnchor}
               actions={
                 <Button
                   variant="outline"
@@ -481,23 +561,27 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
               }
             >
               <div className="graph-auto-grid graph-auto-grid-function">
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Colour
-                  <input
-                    type="color"
-                    value={graphFunction.color ?? GRAPH_COLORS[functionIndex % GRAPH_COLORS.length]}
-                    onChange={(event) => updateFunction(functionIndex, { color: event.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background p-1"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label
-                  <input
-                    value={functionLabel}
-                    onChange={(event) => updateFunction(functionIndex, { label: event.target.value })}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  />
-                </label>
+                {showInlineSettings ? (
+                  <>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Colour
+                      <input
+                        type="color"
+                        value={graphFunction.color ?? GRAPH_COLORS[functionIndex % GRAPH_COLORS.length]}
+                        onChange={(event) => updateFunction(functionIndex, { color: event.target.value })}
+                        className="h-9 w-full rounded-md border border-input bg-background p-1"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label
+                      <input
+                        value={functionLabel}
+                        onChange={(event) => updateFunction(functionIndex, { label: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                  </>
+                ) : null}
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Type
                   <select
@@ -510,34 +594,38 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
                     <option value="relation">Relation / Implicit</option>
                   </select>
                 </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Weight
-                  <input
-                    type="number"
-                    min={0.5}
-                    max={10}
-                    step={0.5}
-                    value={numberInputValue(graphFunction.strokeWidth)}
-                    onChange={(event) => updateFunction(functionIndex, { strokeWidth: optionalNumber(event.target.value) })}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Line style
-                  <select
-                    value={graphFunction.strokeStyle ?? "solid"}
-                    onChange={(event) =>
-                      updateFunction(functionIndex, { strokeStyle: event.target.value as NonNullable<GraphFunction["strokeStyle"]> })
-                    }
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  >
-                    {GRAPH_LINE_STYLES.map((style) => (
-                      <option key={style.value} value={style.value}>
-                        {style.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {showInlineSettings ? (
+                  <>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Weight
+                      <input
+                        type="number"
+                        min={0.5}
+                        max={10}
+                        step={0.5}
+                        value={numberInputValue(graphFunction.strokeWidth)}
+                        onChange={(event) => updateFunction(functionIndex, { strokeWidth: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Line style
+                      <select
+                        value={graphFunction.strokeStyle ?? "solid"}
+                        onChange={(event) =>
+                          updateFunction(functionIndex, { strokeStyle: event.target.value as NonNullable<GraphFunction["strokeStyle"]> })
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      >
+                        {GRAPH_LINE_STYLES.map((style) => (
+                          <option key={style.value} value={style.value}>
+                            {style.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : null}
                 {graphFunction.kind === "piecewise" ? (
                   <div className="hidden md:block" aria-hidden="true" />
                 ) : (
@@ -553,7 +641,7 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
                 )}
               </div>
 
-              {graphFunction.kind !== "piecewise" ? (
+              {showInlineSettings && graphFunction.kind !== "piecewise" ? (
                 <div className="graph-auto-grid mt-2 border-t pt-2">
                   <div className="flex flex-col gap-2 text-xs font-medium">
                     <span>Domain</span>
@@ -607,49 +695,51 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
                 </div>
               ) : null}
 
-              <div className="graph-auto-grid mt-2 border-t pt-2">
-                <label className="flex items-center gap-2 text-xs font-medium md:pb-2">
-                  <input
-                    type="checkbox"
-                    checked={graphFunction.showLabel ?? false}
-                    onChange={(event) => updateFunction(functionIndex, { showLabel: event.target.checked })}
-                  />
-                  Graph label
-                </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label style
-                  <select
-                    value={graphFunction.labelMode ?? "equation"}
-                    onChange={(event) =>
-                      updateFunction(functionIndex, { labelMode: event.target.value as NonNullable<GraphFunction["labelMode"]> })
-                    }
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  >
-                    <option value="equation">f(x)= expression</option>
-                    <option value="name">Name only</option>
-                  </select>
-                </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label x
-                  <input
-                    type="number"
-                    step={0.5}
-                    value={numberInputValue(graphFunction.labelX)}
-                    onChange={(event) => updateFunction(functionIndex, { labelX: optionalNumber(event.target.value) })}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label y
-                  <input
-                    type="number"
-                    step={0.5}
-                    value={numberInputValue(graphFunction.labelY)}
-                    onChange={(event) => updateFunction(functionIndex, { labelY: optionalNumber(event.target.value) })}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  />
-                </label>
-              </div>
+              {showInlineSettings ? (
+                <div className="graph-auto-grid mt-2 border-t pt-2">
+                  <label className="flex items-center gap-2 text-xs font-medium md:pb-2">
+                    <input
+                      type="checkbox"
+                      checked={graphFunction.showLabel ?? false}
+                      onChange={(event) => updateFunction(functionIndex, { showLabel: event.target.checked })}
+                    />
+                    Graph label
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Label style
+                    <select
+                      value={graphFunction.labelMode ?? "equation"}
+                      onChange={(event) =>
+                        updateFunction(functionIndex, { labelMode: event.target.value as NonNullable<GraphFunction["labelMode"]> })
+                      }
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    >
+                      <option value="equation">f(x)= expression</option>
+                      <option value="name">Name only</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Label x
+                    <input
+                      type="number"
+                      step={0.5}
+                      value={numberInputValue(graphFunction.labelX)}
+                      onChange={(event) => updateFunction(functionIndex, { labelX: optionalNumber(event.target.value) })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Label y
+                    <input
+                      type="number"
+                      step={0.5}
+                      value={numberInputValue(graphFunction.labelY)}
+                      onChange={(event) => updateFunction(functionIndex, { labelY: optionalNumber(event.target.value) })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                </div>
+              ) : null}
 
               {graphFunction.kind === "piecewise" ? (
                 <div className="mt-2 flex flex-col gap-2 border-t pt-2">
@@ -720,425 +810,522 @@ export function FunctionGraphEditor({ config, showSolutions, settingsMode = "inl
               ) : null}
             </CollapsiblePanel>
           );
+
+          if (!functionAnchor) return functionPanel;
+
+          return (
+            <div
+              key={graphFunction.id ?? `${graphFunction.label}-${functionIndex}`}
+              data-scroll-anchor={functionAnchor}
+              onPointerDownCapture={() => onActivateAnchor?.(functionAnchor)}
+              onFocusCapture={() => onActivateAnchor?.(functionAnchor)}
+            >
+              {functionPanel}
+            </div>
+          );
         })}
       </div>
 
       <div className="mt-4 flex items-end justify-between gap-3 border-t pt-3">
-        <div className="text-sm font-medium">Features</div>
+        <div>
+          <div className="text-sm font-medium">Graph objects</div>
+          <div className="text-xs text-muted-foreground">Grouped by how they affect the graph</div>
+        </div>
         <Button variant="outline" size="sm" onClick={addFeature}>
           <PlusCircle data-icon="inline-start" />
           Add Feature
         </Button>
       </div>
 
-      {visibleFeatureEntries.length ? (
-        <div className="mt-3 flex flex-col gap-2">
-          {visibleFeatureEntries.map(({ feature, featureIndex }) => {
-            const featureTypeLabel = GRAPH_FEATURE_TYPES.find((type) => type.value === feature.kind)?.label ?? "Feature";
-            const featureLabelModes =
-              feature.kind === "tangent"
-                ? GRAPH_TANGENT_LABEL_MODES
-                : isRegionFeatureKind(feature.kind)
-                  ? GRAPH_REGION_LABEL_MODES
-                  : GRAPH_FEATURE_LABEL_MODES;
-            const featureLineStyles = isRegionFeatureKind(feature.kind) ? GRAPH_FEATURE_LINE_STYLES : GRAPH_LINE_STYLES;
-            const featureStrokeStyle = feature.strokeStyle ?? (isRegionFeatureKind(feature.kind) ? "none" : "solid");
-            const selectedFeatureFunction = functions[feature.functionIndex ?? 0];
-            const selectedFeatureIsRelation = selectedFeatureFunction?.kind === "relation";
-            const isFreeLabel = feature.kind === "label";
-            const featureTitle = (
-              <InlineSummaryTitle label={`${featureTypeLabel} ${featureIndex + 1}`} summary={feature.label || featureTypeLabel} />
-            );
-
-            return (
-              <CollapsiblePanel
-                key={feature.id ?? `${feature.kind}-${featureIndex}`}
-                title={featureTitle}
-                leading={
-                  <input
-                    type="checkbox"
-                    checked={feature.show ?? true}
-                    onChange={(event) => updateFeature(featureIndex, { show: event.target.checked })}
-                    title={`Show feature ${featureIndex + 1}`}
-                    aria-label={`Show feature ${featureIndex + 1}`}
-                    className="size-4"
-                  />
-                }
-                className="bg-muted/30"
-                bodyClassName="p-2"
-                actions={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    title={`Remove feature ${featureIndex + 1}`}
-                    aria-label={`Remove feature ${featureIndex + 1}`}
-                    onClick={() => removeFeature(featureIndex)}
-                    className="size-8"
-                  >
-                    <Trash2 />
-                  </Button>
-                }
-              >
-                <div className={cn("graph-auto-grid", isFreeLabel && "graph-auto-grid-free-label")}>
-                  <label className="flex flex-col gap-2 text-xs font-medium">
-                    Type
-                    <select
-                      value={feature.kind}
-                      onChange={(event) => setFeatureKind(featureIndex, event.target.value as GraphFeatureKind)}
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    >
-                      {GRAPH_FEATURE_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-2 text-xs font-medium">
-                    Colour
-                    <input
-                      type="color"
-                      value={feature.color ?? GRAPH_COLORS[featureIndex % GRAPH_COLORS.length]}
-                      onChange={(event) => updateFeature(featureIndex, { color: event.target.value })}
-                      className="h-9 w-full rounded-md border border-input bg-background p-1"
-                    />
-                  </label>
-                  {isFreeLabel ? null : (
-                    <>
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Weight
-                        <input
-                          type="number"
-                          min={0.5}
-                          max={10}
-                          step={0.5}
-                          value={numberInputValue(feature.strokeWidth)}
-                          disabled={featureStrokeStyle === "none"}
-                          onChange={(event) => updateFeature(featureIndex, { strokeWidth: optionalNumber(event.target.value) })}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:cursor-not-allowed disabled:opacity-60"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Line style
-                        <select
-                          value={featureStrokeStyle}
-                          onChange={(event) =>
-                            updateFeature(featureIndex, { strokeStyle: event.target.value as NonNullable<GraphFeature["strokeStyle"]> })
-                          }
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                        >
-                          {featureLineStyles.map((style) => (
-                            <option key={style.value} value={style.value}>
-                              {style.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </>
-                  )}
-                  <label className="flex flex-col gap-2 text-xs font-medium">
-                    {isFreeLabel ? "LaTeX label" : "Label"}
-                    <input
-                      value={feature.label ?? ""}
-                      onChange={(event) => updateFeature(featureIndex, { label: event.target.value })}
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    />
-                  </label>
-                  {isFreeLabel ? null : (
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      Label display
-                      <select
-                        value={feature.labelMode ?? "name"}
-                        onChange={(event) =>
-                          updateFeature(featureIndex, { labelMode: event.target.value as NonNullable<GraphFeature["labelMode"]> })
-                        }
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      >
-                        {featureLabelModes.map((mode) => (
-                          <option key={mode.value} value={mode.value}>
-                            {mode.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
+      {visibleFeatureGroups.length ? (
+        <div className="mt-3 flex flex-col gap-4">
+          {visibleFeatureGroups.map((group) => (
+            <section key={group.id} data-graph-feature-group={group.id} className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                  <div className="text-xs text-muted-foreground">{group.description}</div>
                 </div>
+                <div
+                  className="rounded border bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                  aria-label={`${group.label} count`}
+                >
+                  {group.entries.length}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                {group.entries.map(({ feature, featureIndex }) => {
+                  const featureAnchor = anchor ? `${anchor}/gfeat:${featureIndex}` : undefined;
+                  const featureTypeLabel = GRAPH_FEATURE_TYPES.find((type) => type.value === feature.kind)?.label ?? "Feature";
+                  const featureLabelModes =
+                    feature.kind === "tangent"
+                      ? GRAPH_TANGENT_LABEL_MODES
+                      : feature.kind === "angle_marker"
+                        ? GRAPH_ANGLE_MARKER_LABEL_MODES
+                        : isRegionFeatureKind(feature.kind)
+                          ? GRAPH_REGION_LABEL_MODES
+                          : GRAPH_FEATURE_LABEL_MODES;
+                  const featureLineStyles = isRegionFeatureKind(feature.kind) ? GRAPH_FEATURE_LINE_STYLES : GRAPH_LINE_STYLES;
+                  const featureStrokeStyle = feature.strokeStyle ?? (isRegionFeatureKind(feature.kind) ? "none" : "solid");
+                  const selectedFeatureFunction = functions[feature.functionIndex ?? 0];
+                  const selectedFeatureIsRelation = selectedFeatureFunction?.kind === "relation";
+                  const isFreeLabel = feature.kind === "label";
+                  const featureTitle = (
+                    <InlineSummaryTitle label={`${featureTypeLabel} ${featureIndex + 1}`} summary={feature.label || featureTypeLabel} />
+                  );
 
-                {feature.kind === "point" || feature.kind === "label" ? (
-                  <div className="graph-auto-grid mt-2 border-t pt-2">
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      x
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.x)}
-                        onChange={(event) => updateFeature(featureIndex, { x: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      y
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.y)}
-                        onChange={(event) => updateFeature(featureIndex, { y: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                  </div>
-                ) : null}
-
-                {feature.kind === "line_segment" ? (
-                  <div className="graph-auto-grid mt-2 border-t pt-2">
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      Start x
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.x1)}
-                        onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      Start y
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.y1)}
-                        onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      End x
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.x2)}
-                        onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      End y
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.y2)}
-                        onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                  </div>
-                ) : null}
-
-                {feature.kind === "region_between_curves" || feature.kind === "intersection" ? (
-                  <div className="graph-auto-grid mt-2 border-t pt-2">
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      First function
-                      <select
-                        value={feature.functionAIndex ?? 0}
-                        onChange={(event) => updateFeature(featureIndex, { functionAIndex: Number(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      >
-                        {functionOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {feature.kind === "intersection" ? (
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Intersect with
-                        <select
-                          value={feature.intersectionTarget ?? "function"}
-                          onChange={(event) =>
-                            updateFeature(featureIndex, {
-                              intersectionTarget: event.target.value as NonNullable<GraphFeature["intersectionTarget"]>,
-                            })
-                          }
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                        >
-                          {GRAPH_INTERSECTION_TARGETS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                    {feature.kind === "region_between_curves" ||
-                    (feature.kind === "intersection" && (feature.intersectionTarget ?? "function") === "function") ? (
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Second function
-                        <select
-                          value={feature.functionBIndex ?? 1}
-                          onChange={(event) => updateFeature(featureIndex, { functionBIndex: Number(event.target.value) })}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                        >
-                          {functionOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      From x
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.xMin)}
-                        onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      To x
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={numberInputValue(feature.xMax)}
-                        onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
-                    </label>
-                    {feature.kind === "region_between_curves" ? (
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Opacity
-                        <input
-                          type="number"
-                          min={0.05}
-                          max={0.8}
-                          step={0.05}
-                          value={numberInputValue(feature.fillOpacity)}
-                          onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {feature.kind === "region_curve_axis" || feature.kind === "turning_point" || feature.kind === "tangent" ? (
-                  <div className="graph-auto-grid mt-2 border-t pt-2">
-                    <label className="flex flex-col gap-2 text-xs font-medium">
-                      Function
-                      <select
-                        value={feature.functionIndex ?? 0}
-                        onChange={(event) => updateFeature(featureIndex, { functionIndex: Number(event.target.value) })}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      >
-                        {functionOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {feature.kind === "region_curve_axis" ? (
-                      <label className="flex flex-col gap-2 text-xs font-medium">
-                        Axis
-                        <select
-                          value={feature.axis ?? "x"}
-                          onChange={(event) =>
-                            updateFeature(featureIndex, { axis: event.target.value as NonNullable<GraphFeature["axis"]> })
-                          }
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                        >
-                          <option value="x">x-axis</option>
-                          <option value="y">y-axis</option>
-                        </select>
-                      </label>
-                    ) : null}
-                    {feature.kind === "tangent" ? (
-                      <>
-                        <label className="flex flex-col gap-2 text-xs font-medium">
-                          x
+                  const featurePanel = (
+                    <CollapsiblePanel
+                      key={feature.id ?? `${feature.kind}-${featureIndex}`}
+                      title={featureTitle}
+                      leading={
+                        showInlineSettings ? (
                           <input
-                            type="number"
-                            step={0.5}
-                            value={numberInputValue(feature.x)}
-                            onChange={(event) =>
-                              updateRelationTangentCoordinate(
-                                featureIndex,
-                                feature,
-                                selectedFeatureFunction,
-                                "x",
-                                optionalNumber(event.target.value),
-                              )
-                            }
-                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            type="checkbox"
+                            checked={feature.show ?? true}
+                            onChange={(event) => updateFeature(featureIndex, { show: event.target.checked })}
+                            title={`Show feature ${featureIndex + 1}`}
+                            aria-label={`Show feature ${featureIndex + 1}`}
+                            className="size-4"
                           />
+                        ) : null
+                      }
+                      className="bg-muted/30"
+                      bodyClassName="p-2"
+                      active={featureAnchor === activeAnchor}
+                      actions={
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          title={`Remove feature ${featureIndex + 1}`}
+                          aria-label={`Remove feature ${featureIndex + 1}`}
+                          onClick={() => removeFeature(featureIndex)}
+                          className="size-8"
+                        >
+                          <Trash2 />
+                        </Button>
+                      }
+                    >
+                      <div className={cn("graph-auto-grid", isFreeLabel && "graph-auto-grid-free-label")}>
+                        <label className="flex flex-col gap-2 text-xs font-medium">
+                          Type
+                          <select
+                            value={feature.kind}
+                            onChange={(event) => setFeatureKind(featureIndex, event.target.value as GraphFeatureKind)}
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          >
+                            {GRAPH_FEATURE_TYPES.map((type) => (
+                              <option key={type.value} value={type.value}>
+                                {type.label}
+                              </option>
+                            ))}
+                          </select>
                         </label>
-                        {selectedFeatureIsRelation ? (
+                        {showInlineSettings ? (
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            Colour
+                            <input
+                              type="color"
+                              value={feature.color ?? GRAPH_COLORS[featureIndex % GRAPH_COLORS.length]}
+                              onChange={(event) => updateFeature(featureIndex, { color: event.target.value })}
+                              className="h-9 w-full rounded-md border border-input bg-background p-1"
+                            />
+                          </label>
+                        ) : null}
+                        {showInlineSettings && !isFreeLabel ? (
+                          <>
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Weight
+                              <input
+                                type="number"
+                                min={0.5}
+                                max={10}
+                                step={0.5}
+                                value={numberInputValue(feature.strokeWidth)}
+                                disabled={featureStrokeStyle === "none"}
+                                onChange={(event) => updateFeature(featureIndex, { strokeWidth: optionalNumber(event.target.value) })}
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:cursor-not-allowed disabled:opacity-60"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Line style
+                              <select
+                                value={featureStrokeStyle}
+                                onChange={(event) =>
+                                  updateFeature(featureIndex, {
+                                    strokeStyle: event.target.value as NonNullable<GraphFeature["strokeStyle"]>,
+                                  })
+                                }
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              >
+                                {featureLineStyles.map((style) => (
+                                  <option key={style.value} value={style.value}>
+                                    {style.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </>
+                        ) : null}
+                        {showInlineSettings || isFreeLabel ? (
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            {isFreeLabel ? "LaTeX label" : "Label"}
+                            <input
+                              value={feature.label ?? ""}
+                              onChange={(event) => updateFeature(featureIndex, { label: event.target.value })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                        ) : null}
+                        {showInlineSettings && !isFreeLabel ? (
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            Label display
+                            <select
+                              value={feature.labelMode ?? "name"}
+                              onChange={(event) =>
+                                updateFeature(featureIndex, { labelMode: event.target.value as NonNullable<GraphFeature["labelMode"]> })
+                              }
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            >
+                              {featureLabelModes.map((mode) => (
+                                <option key={mode.value} value={mode.value}>
+                                  {mode.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+
+                      {showInlineSettings && (feature.kind === "point" || feature.kind === "label") ? (
+                        <div className="graph-auto-grid mt-2 border-t pt-2">
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            x
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.x)}
+                              onChange={(event) => updateFeature(featureIndex, { x: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             y
                             <input
                               type="number"
                               step={0.5}
                               value={numberInputValue(feature.y)}
-                              onChange={(event) =>
-                                updateRelationTangentCoordinate(
-                                  featureIndex,
-                                  feature,
-                                  selectedFeatureFunction,
-                                  "y",
-                                  optionalNumber(event.target.value),
-                                )
-                              }
+                              onChange={(event) => updateFeature(featureIndex, { y: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
-                        ) : null}
-                      </>
-                    ) : (
-                      <>
-                        <label className="flex flex-col gap-2 text-xs font-medium">
-                          From x
-                          <input
-                            type="number"
-                            step={0.5}
-                            value={numberInputValue(feature.xMin)}
-                            onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
-                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-2 text-xs font-medium">
-                          To x
-                          <input
-                            type="number"
-                            step={0.5}
-                            value={numberInputValue(feature.xMax)}
-                            onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
-                            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                          />
-                        </label>
-                        {feature.kind === "region_curve_axis" ? (
+                        </div>
+                      ) : null}
+
+                      {showInlineSettings && feature.kind === "line_segment" ? (
+                        <div className="graph-auto-grid mt-2 border-t pt-2">
                           <label className="flex flex-col gap-2 text-xs font-medium">
-                            Opacity
+                            Start x
                             <input
                               type="number"
-                              min={0.05}
-                              max={0.8}
-                              step={0.05}
-                              value={numberInputValue(feature.fillOpacity)}
-                              onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
+                              step={0.5}
+                              value={numberInputValue(feature.x1)}
+                              onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </CollapsiblePanel>
-            );
-          })}
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            Start y
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.y1)}
+                              onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            End x
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.x2)}
+                              onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            End y
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.y2)}
+                              onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+
+                      {showInlineSettings && feature.kind === "angle_marker" ? (
+                        <div className="graph-auto-grid mt-2 border-t pt-2">
+                          <label className="col-span-full flex items-center gap-2 text-xs font-medium">
+                            <input
+                              type="checkbox"
+                              checked={feature.rightAngle === true}
+                              onChange={(event) => updateFeature(featureIndex, { rightAngle: event.target.checked })}
+                              className="size-4"
+                            />
+                            Right angle square
+                          </label>
+                          {[
+                            ["Vertex x", "x"],
+                            ["Vertex y", "y"],
+                            ["First arm x", "x1"],
+                            ["First arm y", "y1"],
+                            ["Second arm x", "x2"],
+                            ["Second arm y", "y2"],
+                            ["Radius", "size"],
+                          ].map(([label, field]) => (
+                            <label key={field} className="flex flex-col gap-2 text-xs font-medium">
+                              {label}
+                              <input
+                                type="number"
+                                min={field === "size" ? 0.05 : undefined}
+                                step={field === "size" ? 0.05 : 0.5}
+                                value={numberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
+                                onChange={(event) =>
+                                  updateFeature(featureIndex, { [field]: optionalNumber(event.target.value) } as Partial<GraphFeature>)
+                                }
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {showInlineSettings && (feature.kind === "region_between_curves" || feature.kind === "intersection") ? (
+                        <div className="graph-auto-grid mt-2 border-t pt-2">
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            First function
+                            <select
+                              value={feature.functionAIndex ?? 0}
+                              onChange={(event) => updateFeature(featureIndex, { functionAIndex: Number(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            >
+                              {functionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {feature.kind === "intersection" ? (
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Intersect with
+                              <select
+                                value={feature.intersectionTarget ?? "function"}
+                                onChange={(event) =>
+                                  updateFeature(featureIndex, {
+                                    intersectionTarget: event.target.value as NonNullable<GraphFeature["intersectionTarget"]>,
+                                  })
+                                }
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              >
+                                {GRAPH_INTERSECTION_TARGETS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {feature.kind === "region_between_curves" ||
+                          (feature.kind === "intersection" && (feature.intersectionTarget ?? "function") === "function") ? (
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Second function
+                              <select
+                                value={feature.functionBIndex ?? 1}
+                                onChange={(event) => updateFeature(featureIndex, { functionBIndex: Number(event.target.value) })}
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              >
+                                {functionOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            From x
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.xMin)}
+                              onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            To x
+                            <input
+                              type="number"
+                              step={0.5}
+                              value={numberInputValue(feature.xMax)}
+                              onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            />
+                          </label>
+                          {showInlineSettings && feature.kind === "region_between_curves" ? (
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Opacity
+                              <input
+                                type="number"
+                                min={0.05}
+                                max={0.8}
+                                step={0.05}
+                                value={numberInputValue(feature.fillOpacity)}
+                                onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {showInlineSettings &&
+                      (feature.kind === "region_curve_axis" || feature.kind === "turning_point" || feature.kind === "tangent") ? (
+                        <div className="graph-auto-grid mt-2 border-t pt-2">
+                          <label className="flex flex-col gap-2 text-xs font-medium">
+                            Function
+                            <select
+                              value={feature.functionIndex ?? 0}
+                              onChange={(event) => updateFeature(featureIndex, { functionIndex: Number(event.target.value) })}
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            >
+                              {functionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {feature.kind === "region_curve_axis" ? (
+                            <label className="flex flex-col gap-2 text-xs font-medium">
+                              Axis
+                              <select
+                                value={feature.axis ?? "x"}
+                                onChange={(event) =>
+                                  updateFeature(featureIndex, { axis: event.target.value as NonNullable<GraphFeature["axis"]> })
+                                }
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                              >
+                                <option value="x">x-axis</option>
+                                <option value="y">y-axis</option>
+                              </select>
+                            </label>
+                          ) : null}
+                          {feature.kind === "tangent" ? (
+                            <>
+                              <label className="flex flex-col gap-2 text-xs font-medium">
+                                x
+                                <input
+                                  type="number"
+                                  step={0.5}
+                                  value={numberInputValue(feature.x)}
+                                  onChange={(event) =>
+                                    updateRelationTangentCoordinate(
+                                      featureIndex,
+                                      feature,
+                                      selectedFeatureFunction,
+                                      "x",
+                                      optionalNumber(event.target.value),
+                                    )
+                                  }
+                                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                                />
+                              </label>
+                              {selectedFeatureIsRelation ? (
+                                <label className="flex flex-col gap-2 text-xs font-medium">
+                                  y
+                                  <input
+                                    type="number"
+                                    step={0.5}
+                                    value={numberInputValue(feature.y)}
+                                    onChange={(event) =>
+                                      updateRelationTangentCoordinate(
+                                        featureIndex,
+                                        feature,
+                                        selectedFeatureFunction,
+                                        "y",
+                                        optionalNumber(event.target.value),
+                                      )
+                                    }
+                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                                  />
+                                </label>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <label className="flex flex-col gap-2 text-xs font-medium">
+                                From x
+                                <input
+                                  type="number"
+                                  step={0.5}
+                                  value={numberInputValue(feature.xMin)}
+                                  onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
+                                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-xs font-medium">
+                                To x
+                                <input
+                                  type="number"
+                                  step={0.5}
+                                  value={numberInputValue(feature.xMax)}
+                                  onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
+                                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                                />
+                              </label>
+                              {showInlineSettings && feature.kind === "region_curve_axis" ? (
+                                <label className="flex flex-col gap-2 text-xs font-medium">
+                                  Opacity
+                                  <input
+                                    type="number"
+                                    min={0.05}
+                                    max={0.8}
+                                    step={0.05}
+                                    value={numberInputValue(feature.fillOpacity)}
+                                    onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
+                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                                  />
+                                </label>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+                    </CollapsiblePanel>
+                  );
+
+                  if (!featureAnchor) return featurePanel;
+
+                  return (
+                    <div
+                      key={feature.id ?? `${feature.kind}-${featureIndex}`}
+                      data-scroll-anchor={featureAnchor}
+                      onPointerDownCapture={() => onActivateAnchor?.(featureAnchor)}
+                      onFocusCapture={() => onActivateAnchor?.(featureAnchor)}
+                    >
+                      {featurePanel}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       ) : null}
     </>

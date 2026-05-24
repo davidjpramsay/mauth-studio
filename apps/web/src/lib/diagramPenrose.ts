@@ -68,14 +68,10 @@ const DEFAULT_SET_DATA = {
 export function penroseRenderRequest(graphConfig?: GraphConfig | null): DiagramSpec {
   const type = graphConfig?.type === "setDiagram" ? "setDiagram" : graphConfig?.type === "network" ? "network" : "geometricConstruction";
   const preset = penrosePreset(graphConfig);
+  const data = graphConfig?.data && Object.keys(graphConfig.data).length ? graphConfig.data : undefined;
   return {
     type,
-    data:
-      graphConfig?.data && Object.keys(graphConfig.data).length
-        ? graphConfig.data
-        : type === "setDiagram"
-          ? DEFAULT_SET_DATA
-          : DEFAULT_GEOMETRIC_DATA,
+    data: (data ?? (type === "setDiagram" ? DEFAULT_SET_DATA : DEFAULT_GEOMETRIC_DATA)) as DiagramSpec["data"],
     style: preset,
     options: penroseOptions(graphConfig),
   };

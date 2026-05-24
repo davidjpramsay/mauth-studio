@@ -34,8 +34,8 @@ export interface PreviewContentRuntime {
   diagramAlignmentClass: (alignment?: DiagramAlignment) => string;
   effectiveDiagramTextSide: (block: Extract<EditorContentBlock, { kind: "diagram" }>, hasBesideContent: boolean) => DiagramTextSide;
   graphHeight: (graphConfig?: GraphConfig | null) => number;
-  isContentBlockVisible: (block: EditorContentBlock, showSolutions: boolean) => boolean;
-  isDiagramBesideContentBlock: (block: EditorContentBlock | undefined, showSolutions: boolean) => boolean;
+  isContentBlockVisibleInScope: (blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) => boolean;
+  isDiagramBesideContentBlockInScope: (blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) => boolean;
   isSolutionTextBlock: (block: EditorContentBlock) => boolean;
   measuredLineHeightPx: (element: HTMLElement) => number;
   normalizeChoiceItems: (value: unknown) => string[];
@@ -524,7 +524,7 @@ function DiagramBesideContentBlocks({
   return (
     <>
       {blocks
-        .filter((block) => runtime.isContentBlockVisible(block, showSolutions))
+        .filter((_, blockIndex) => runtime.isContentBlockVisibleInScope(blocks, blockIndex, showSolutions))
         .map((block) => (
           <DiagramBesideContentBlock
             key={block.id}
@@ -740,7 +740,7 @@ export function PreviewContentBlocks({
       continue;
     }
     const nextBlock = blocks[index + 1];
-    if (!runtime.isContentBlockVisible(block, showSolutions)) continue;
+    if (!runtime.isContentBlockVisibleInScope(blocks, index, showSolutions)) continue;
     const blockAnchor = measureOnly ? undefined : blockAnchorFor?.(block);
     if (block.kind === "diagram") {
       const replacementSlotFollows = runtime.visibilityReplacementSlotAt(blocks, index + 1);
@@ -805,9 +805,9 @@ export function PreviewContentBlocks({
         index = replacementSlotFollows.endIndex;
         continue;
       }
-      const besideBlockFollows = runtime.isDiagramBesideContentBlock(nextBlock, showSolutions);
+      const besideBlockFollows = runtime.isDiagramBesideContentBlockInScope(blocks, index + 1, showSolutions);
       const textSide = runtime.effectiveDiagramTextSide(block, besideBlockFollows);
-      if (textSide !== "none" && nextBlock && runtime.isDiagramBesideContentBlock(nextBlock, showSolutions)) {
+      if (textSide !== "none" && nextBlock && runtime.isDiagramBesideContentBlockInScope(blocks, index + 1, showSolutions)) {
         if (nextBlock.kind === "space") {
           renderedBlocks.push(
             <DiagramWithResponseSlot

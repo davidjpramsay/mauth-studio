@@ -52,6 +52,7 @@ import {
 export const MAUTH_MODULE_SETTINGS_KINDS = ["space", "table", "columns", "choices", "diagram"] as const;
 export const MAUTH_DIAGRAM_SETTINGS_RENDERERS = [
   "graph2d",
+  "geometry2d",
   "vector2d",
   "graph3d",
   "statsChart",
@@ -84,6 +85,7 @@ export type MauthModuleSettingsUpdate =
 
 export type MauthDiagramSettingsUpdate =
   | (Graph2DSettingsUpdate & { renderer: "graph2d" })
+  | (Graph2DSettingsUpdate & { renderer: "geometry2d" })
   | (Vector2DSettingsUpdate & { renderer: "vector2d" })
   | (Graph3DSettingsUpdate & { renderer: "graph3d" })
   | (StatsChartSettingsUpdate & { renderer: "statsChart" })
@@ -412,7 +414,7 @@ function imageSettingsPatch(config: GraphConfig, settings: ImageSettingsUpdate):
 }
 
 function diagramSettingsPatch(config: GraphConfig, settings: MauthDiagramSettingsUpdate): GraphPatch {
-  if (settings.renderer === "graph2d") return graph2dSettingsPatch(config, settings);
+  if (settings.renderer === "graph2d" || settings.renderer === "geometry2d") return graph2dSettingsPatch(config, settings);
   if (settings.renderer === "vector2d") return vector2dSettingsPatch(config, settings);
   if (settings.renderer === "graph3d") return graph3dSettingsPatch(config, settings);
   if (settings.renderer === "statsChart") return statsChartSettingsPatch(config, settings);
