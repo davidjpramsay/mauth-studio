@@ -224,7 +224,7 @@ function addUsageToLastAssistantMessage(messages: MauthAssistantChatMessage[], u
 }
 
 function assistantToolStatusChatMessage(message: MauthAssistantToolStatusMessage): MauthAssistantChatMessage {
-  return { id: assistantMessageId(), role: "assistant", content: message.content, tone: message.tone };
+  return { id: assistantMessageId(), role: "assistant", content: message.content, tone: message.tone, toolStatus: message.summary };
 }
 
 function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): MauthAssistantAdapterToolCall | null {

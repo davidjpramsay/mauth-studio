@@ -27,6 +27,9 @@ test("assistant terminal tool status reports committed settings edits", () => {
   });
 
   assert.equal(message?.tone, "tool-success");
+  assert.equal(message?.summary.state, "committed");
+  assert.equal(message?.summary.committedDocument, true);
+  assert.equal(message?.summary.commitLabel, "Yes");
   assert.match(messageText(message), /`mauth\.settings\.apply` committed changes/);
   assert.match(messageText(message), /Updated the selected settings/);
 });
@@ -47,6 +50,9 @@ test("assistant continuing tool status reports failed preflight without a commit
   ]);
 
   assert.equal(message?.tone, "tool-error");
+  assert.equal(message?.summary.state, "preflight-failed");
+  assert.equal(message?.summary.committedDocument, false);
+  assert.equal(message?.summary.commitLabel, "No");
   assert.match(message.content, /did not commit changes/);
   assert.match(message.content, /Assistant diagram preflight failed/);
 });
@@ -67,6 +73,9 @@ test("assistant continuing tool status reports committed edits that need repair"
   ]);
 
   assert.equal(message?.tone, "tool-warning");
+  assert.equal(message?.summary.state, "needs-repair");
+  assert.equal(message?.summary.committedDocument, true);
+  assert.equal(message?.summary.commitLabel, "Yes");
   assert.match(message.content, /committed changes, but needs repair/);
   assert.match(message.content, /post-edit inspection failed/i);
 });
@@ -91,6 +100,9 @@ test("assistant continuing tool status reports semantic review requests", () => 
   ]);
 
   assert.equal(message?.tone, "tool-warning");
+  assert.equal(message?.summary.state, "needs-review");
+  assert.equal(message?.summary.committedDocument, true);
+  assert.equal(message?.summary.commitLabel, "Yes");
   assert.match(message.content, /committed changes and requested review/);
   assert.match(message.content, /graph2d functions/);
 });
@@ -111,6 +123,8 @@ test("assistant final tool state blocks provider completion after failed preflig
   ]);
 
   assert.equal(message?.tone, "tool-error");
+  assert.equal(message?.summary.state, "preflight-failed");
+  assert.equal(message?.summary.committedDocument, false);
   assert.match(messageText(message), /Final status/);
   assert.match(messageText(message), /did not apply that edit/);
   assert.match(messageText(message), /Assistant diagram preflight failed/);
@@ -132,6 +146,8 @@ test("assistant final tool state blocks provider completion after repair-require
   ]);
 
   assert.equal(message?.tone, "tool-warning");
+  assert.equal(message?.summary.state, "needs-repair");
+  assert.equal(message?.summary.committedDocument, true);
   assert.match(messageText(message), /Final status/);
   assert.match(messageText(message), /applied changes/);
   assert.match(messageText(message), /need repair/);
@@ -157,6 +173,8 @@ test("assistant final tool state blocks provider completion after semantic revie
   ]);
 
   assert.equal(message?.tone, "tool-warning");
+  assert.equal(message?.summary.state, "needs-review");
+  assert.equal(message?.summary.committedDocument, true);
   assert.match(messageText(message), /Final status/);
   assert.match(messageText(message), /need review/);
   assert.match(messageText(message), /source equation/);

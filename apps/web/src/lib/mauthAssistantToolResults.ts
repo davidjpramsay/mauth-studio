@@ -1,10 +1,23 @@
 import type { AssistantToolOutput } from "./api.ts";
 
 export type MauthAssistantToolStatusTone = "tool-success" | "tool-warning" | "tool-error";
+export type MauthAssistantToolStatusState = "committed" | "completed" | "preflight-failed" | "needs-repair" | "needs-review" | "unreadable";
+
+export interface MauthAssistantToolStatusSummary {
+  label: "Tool result" | "Final status";
+  toolName: string;
+  state: MauthAssistantToolStatusState;
+  stateLabel: string;
+  committedDocument: boolean | null;
+  commitLabel: string;
+  detail: string;
+  changedLabel?: string;
+}
 
 export interface MauthAssistantToolStatusMessage {
   content: string;
   tone: MauthAssistantToolStatusTone;
+  summary: MauthAssistantToolStatusSummary;
 }
 
 const LOCAL_TERMINAL_TOOL_NAMES = new Set([
@@ -61,6 +74,42 @@ function finalStatusContent(toolName: string, message: string, detail: string) {
   return `**Final status:** ${message} \`${toolName}\`.${suffix}`;
 }
 
+function changedLabel(output: Record<string, unknown> | null) {
+  const changedIds = Array.isArray(output?.changedIds) ? output.changedIds.length : 0;
+  const changedPaths = Array.isArray(output?.changedPaths) ? output.changedPaths.length : 0;
+  const parts: string[] = [];
+  if (changedIds) parts.push(`${changedIds} item${changedIds === 1 ? "" : "s"}`);
+  if (changedPaths) parts.push(`${changedPaths} path${changedPaths === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
+function commitLabel(committedDocument: boolean | null) {
+  if (committedDocument === true) return "Yes";
+  if (committedDocument === false) return "No";
+  return "Unknown";
+}
+
+function statusSummary(
+  label: MauthAssistantToolStatusSummary["label"],
+  toolName: string,
+  state: MauthAssistantToolStatusState,
+  stateLabel: string,
+  committedDocument: boolean | null,
+  detail: string,
+  output: Record<string, unknown> | null,
+): MauthAssistantToolStatusSummary {
+  return {
+    label,
+    toolName,
+    state,
+    stateLabel,
+    committedDocument,
+    commitLabel: commitLabel(committedDocument),
+    detail,
+    changedLabel: changedLabel(output) || undefined,
+  };
+}
+
 export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutput): MauthAssistantToolStatusMessage | null {
   const output = assistantToolOutputRecord(toolOutput);
   const toolName = toolNameForOutput(toolOutput);
@@ -69,7 +118,19 @@ export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutp
   if (semanticReview?.required === true) return null;
   const status = output.committedDocument === true ? "committed changes" : "completed";
   const detail = outputDetail(output) || "Completed the edit.";
-  return { tone: "tool-success", content: statusContent(toolName, status, detail) };
+  return {
+    tone: "tool-success",
+    content: statusContent(toolName, status, detail),
+    summary: statusSummary(
+      "Tool result",
+      toolName,
+      output.committedDocument === true ? "committed" : "completed",
+      output.committedDocument === true ? "Committed" : "Completed",
+      output.committedDocument === true,
+      detail,
+      output,
+    ),
+  };
 }
 
 export function assistantContinuingToolStatusMessages(toolOutputs: readonly AssistantToolOutput[]): MauthAssistantToolStatusMessage[] {
@@ -81,19 +142,34 @@ export function assistantContinuingToolStatusMessages(toolOutputs: readonly Assi
         {
           tone: "tool-error" as const,
           content: statusContent(toolName, "returned an unreadable result", "The local tool output was not an object."),
+          summary: statusSummary(
+            "Tool result",
+            toolName,
+            "unreadable",
+            "Unreadable",
+            null,
+            "The local tool output was not an object.",
+            null,
+          ),
         },
       ];
     }
 
     if (output.ok !== true) {
       const committed = output.committedDocument === true;
+      const detail = outputDetail(output) || "The local tool failed before the assistant could continue.";
       return [
         {
           tone: committed ? ("tool-warning" as const) : ("tool-error" as const),
-          content: statusContent(
+          content: statusContent(toolName, committed ? "committed changes, but needs repair" : "did not commit changes", detail),
+          summary: statusSummary(
+            "Tool result",
             toolName,
-            committed ? "committed changes, but needs repair" : "did not commit changes",
-            outputDetail(output) || "The local tool failed before the assistant could continue.",
+            committed ? "needs-repair" : "preflight-failed",
+            committed ? "Needs repair" : "Preflight failed",
+            committed,
+            detail,
+            output,
           ),
         },
       ];
@@ -101,13 +177,19 @@ export function assistantContinuingToolStatusMessages(toolOutputs: readonly Assi
 
     const semanticReview = asRecord(output.semanticReview);
     if (semanticReview?.required === true) {
+      const detail = semanticReviewDetail(output);
       return [
         {
           tone: "tool-warning" as const,
-          content: statusContent(
+          content: statusContent(toolName, "committed changes and requested review before declaring the edit complete", detail),
+          summary: statusSummary(
+            "Tool result",
             toolName,
-            "committed changes and requested review before declaring the edit complete",
-            semanticReviewDetail(output),
+            "needs-review",
+            "Needs review",
+            output.committedDocument === true,
+            detail,
+            output,
           ),
         },
       ];
@@ -125,6 +207,15 @@ export function assistantFinalToolStateMessage(toolOutputs: readonly AssistantTo
       return {
         tone: "tool-error",
         content: finalStatusContent(toolName, "I could not verify the local result from", "The local tool output was not an object."),
+        summary: statusSummary(
+          "Final status",
+          toolName,
+          "unreadable",
+          "Unreadable",
+          null,
+          "The local tool output was not an object.",
+          null,
+        ),
       };
     }
 
@@ -138,24 +229,28 @@ export function assistantFinalToolStateMessage(toolOutputs: readonly AssistantTo
             "I applied changes with",
             `They need repair before this can be treated as complete. ${detail}`,
           ),
+          summary: statusSummary("Final status", toolName, "needs-repair", "Needs repair", true, detail, output),
         };
       }
 
       return {
         tone: "tool-error",
         content: finalStatusContent(toolName, "I did not apply that edit through", detail),
+        summary: statusSummary("Final status", toolName, "preflight-failed", "Preflight failed", false, detail, output),
       };
     }
 
     const semanticReview = asRecord(output.semanticReview);
     if (semanticReview?.required === true) {
+      const detail = semanticReviewDetail(output);
       return {
         tone: "tool-warning",
         content: finalStatusContent(
           toolName,
           "I applied changes with",
-          `They need review before this can be treated as complete. ${semanticReviewDetail(output)}`,
+          `They need review before this can be treated as complete. ${detail}`,
         ),
+        summary: statusSummary("Final status", toolName, "needs-review", "Needs review", output.committedDocument === true, detail, output),
       };
     }
   }

@@ -371,6 +371,11 @@ async function main() {
       null,
       { timeout: 10_000 },
     );
+    const reviewStatus = page
+      .locator('[data-assistant-tool-status="needs-review"][data-assistant-tool="mauth.settings.apply"][data-committed-document="true"]')
+      .first();
+    await reviewStatus.waitFor({ state: "visible" });
+    assert.match((await reviewStatus.textContent()) ?? "", /Document commit:\s*Yes/, "semantic-review status should show it committed");
     assert(
       !((await page.locator("body").textContent()) ?? "").includes("The selected graph settings were updated."),
       "semantic-review provider final text should be replaced by state-aware local tool status",
@@ -429,6 +434,13 @@ async function main() {
       null,
       { timeout: 10_000 },
     );
+    const failedStatus = page
+      .locator(
+        '[data-assistant-tool-status="preflight-failed"][data-assistant-tool="mauth.settings.apply"][data-committed-document="false"]',
+      )
+      .first();
+    await failedStatus.waitFor({ state: "visible" });
+    assert.match((await failedStatus.textContent()) ?? "", /Document commit:\s*No/, "failed-preflight status should show no commit");
     assert(
       !((await page.locator("body").textContent()) ?? "").includes("The graph settings are done."),
       "failed-preflight provider final text should be replaced by state-aware local tool status",
@@ -455,6 +467,11 @@ async function main() {
       null,
       { timeout: 10_000 },
     );
+    const repairStatus = page
+      .locator('[data-assistant-tool-status="needs-repair"][data-assistant-tool="mauth.author.addDiagram"][data-committed-document="true"]')
+      .first();
+    await repairStatus.waitFor({ state: "visible" });
+    assert.match((await repairStatus.textContent()) ?? "", /Document commit:\s*Yes/, "repair-required status should show it committed");
     assert(
       !((await page.locator("body").textContent()) ?? "").includes("The graph settings are done."),
       "repair-required provider final text should be replaced by state-aware local tool status",

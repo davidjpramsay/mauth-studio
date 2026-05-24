@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { AssistantAttachment } from "@/lib/api";
+import type { MauthAssistantToolStatusSummary } from "@/lib/mauthAssistantToolResults";
 import { cn } from "@/lib/utils";
 
 export interface MauthAssistantChatMessage {
@@ -14,6 +15,7 @@ export interface MauthAssistantChatMessage {
   attachments?: AssistantAttachment[];
   usage?: MauthAssistantUsageSummary | null;
   tone?: MauthAssistantChatMessageTone;
+  toolStatus?: MauthAssistantToolStatusSummary;
 }
 
 export type MauthAssistantChatMessageTone = "tool-success" | "tool-warning" | "tool-error";
@@ -233,6 +235,36 @@ function AssistantToolStatusIcon({ tone }: { tone?: MauthAssistantChatMessageTon
   return null;
 }
 
+function AssistantToolStatusSummary({ status, content }: { status: MauthAssistantToolStatusSummary; content: string }) {
+  return (
+    <div
+      className="min-w-0 space-y-2"
+      data-assistant-tool-status={status.state}
+      data-assistant-tool={status.toolName}
+      data-committed-document={status.committedDocument === null ? "unknown" : String(status.committedDocument)}
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="text-current/70 text-[11px] font-semibold uppercase">{status.label}:</span>
+        <span className="border-current/20 rounded-sm border px-2 py-0.5 text-[11px] font-semibold">{status.stateLabel}</span>
+      </div>
+      <div className="min-w-0 font-mono text-xs font-semibold">{status.toolName}</div>
+      <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+        <div className="flex min-w-0 justify-between gap-3 sm:block">
+          <dt className="text-current/70">Document commit:</dt>
+          <dd className="font-semibold">{status.commitLabel}</dd>
+        </div>
+        {status.changedLabel ? (
+          <div className="flex min-w-0 justify-between gap-3 sm:block">
+            <dt className="text-current/70">Changed:</dt>
+            <dd className="font-semibold">{status.changedLabel}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <AssistantMarkdown content={content} />
+    </div>
+  );
+}
+
 export function MauthAssistantPanel({
   placement = "floating",
   chatMessages,
@@ -369,7 +401,11 @@ export function MauthAssistantPanel({
                       <div className="flex min-w-0 gap-2">
                         <AssistantToolStatusIcon tone={chatMessage.tone} />
                         <div className="min-w-0 flex-1">
-                          <AssistantMarkdown content={chatMessage.content} />
+                          {chatMessage.toolStatus ? (
+                            <AssistantToolStatusSummary status={chatMessage.toolStatus} content={chatMessage.content} />
+                          ) : (
+                            <AssistantMarkdown content={chatMessage.content} />
+                          )}
                         </div>
                       </div>
                     ) : (
