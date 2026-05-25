@@ -33,7 +33,6 @@ import {
   ChevronRight,
   Copy,
   CopyPlus,
-  Edit3,
   Eye,
   EyeOff,
   FileText,
@@ -10524,16 +10523,6 @@ export default function App() {
     void navigator.clipboard?.writeText(reference);
   }
 
-  function setQuestionSectionFromContext(anchor: string) {
-    const parsed = parseScrollAnchor(anchor);
-    if (parsed.kind !== "question" || !parsed.questionId) return;
-    const question = questions.find((current) => current.id === parsed.questionId);
-    if (!question) return;
-    const nextSection = window.prompt("Section", question.section ?? "");
-    if (nextSection === null) return;
-    updateQuestion(question.id, { section: nextSection.trim() });
-  }
-
   function rootBlockContextFromParsed(parsed: ParsedScrollAnchor) {
     const blockId = parsed.kind === "columnBlock" ? parsed.rootBlockId : parsed.blockId;
     if (!parsed.questionId || !blockId) return null;
@@ -10756,75 +10745,55 @@ export default function App() {
 
   function contextActionsForAnchor(anchor: string, surface: ContextMenuSurface): ContextMenuAction[] {
     const item = contextDescriptorForAnchor(anchor);
-    const parsed = parseScrollAnchor(item.editorAnchor);
     const label = item.label;
-    return [
+    const actions: ContextMenuAction[] = [
       {
-        id: "inspect",
-        label: surface === "preview" ? "Open in editor" : "Inspect",
-        description: "Select this item and show its inspector",
-        icon: <PanelRightOpen className="size-4" aria-hidden="true" />,
-        onSelect: () => selectContextAnchor(item.editorAnchor, { openEditor: true, openInspector: true }),
-      },
-      {
-        id: "preview",
-        label: "Show in preview",
-        description: "Scroll the display to this item",
-        icon: <Eye className="size-4" aria-hidden="true" />,
-        onSelect: () => selectContextAnchor(item.editorAnchor, { previewOnly: true }),
-      },
-      {
-        id: "ask-assistant",
-        label: "Ask assistant about this",
-        description: "Insert a target reference into the assistant",
+        id: "send-to-assistant",
+        label: "Send to assistant",
         icon: <Bot className="size-4" aria-hidden="true" />,
         onSelect: () => askAssistantAboutAnchor(item.editorAnchor, surface),
       },
       {
         id: "copy-reference",
-        label: "Copy reference",
-        description: item.editorAnchor,
+        label: "Copy assistant reference",
         icon: <Copy className="size-4" aria-hidden="true" />,
         onSelect: () => copyAnchorReference(item.editorAnchor, surface),
       },
-      {
+    ];
+    if (canMoveAnchorTarget(item.editorAnchor, -1)) {
+      actions.push({
         id: "move-up",
         label: "Move up",
         icon: <ArrowUp className="size-4" aria-hidden="true" />,
-        disabled: !canMoveAnchorTarget(item.editorAnchor, -1),
         onSelect: () => moveAnchorTarget(item.editorAnchor, -1),
-      },
-      {
+      });
+    }
+    if (canMoveAnchorTarget(item.editorAnchor, 1)) {
+      actions.push({
         id: "move-down",
         label: "Move down",
         icon: <ArrowDown className="size-4" aria-hidden="true" />,
-        disabled: !canMoveAnchorTarget(item.editorAnchor, 1),
         onSelect: () => moveAnchorTarget(item.editorAnchor, 1),
-      },
-      {
+      });
+    }
+    if (canDuplicateAnchorTarget(item.editorAnchor)) {
+      actions.push({
         id: "duplicate",
         label: "Duplicate",
         icon: <CopyPlus className="size-4" aria-hidden="true" />,
-        disabled: !canDuplicateAnchorTarget(item.editorAnchor),
         onSelect: () => duplicateAnchorTarget(item.editorAnchor),
-      },
-      {
-        id: "set-section",
-        label: "Set section...",
-        description: "Update the question section label",
-        icon: <Edit3 className="size-4" aria-hidden="true" />,
-        disabled: parsed.kind !== "question",
-        onSelect: () => setQuestionSectionFromContext(item.editorAnchor),
-      },
-      {
+      });
+    }
+    if (canDeleteAnchorTarget(item.editorAnchor)) {
+      actions.push({
         id: "delete",
         label: `Delete ${label}`,
         icon: <Trash2 className="size-4" aria-hidden="true" />,
         destructive: true,
-        disabled: !canDeleteAnchorTarget(item.editorAnchor),
         onSelect: () => deleteEditorSelection(item.editorAnchor),
-      },
-    ];
+      });
+    }
+    return actions;
   }
 
   function openContextMenu(event: ReactMouseEvent<HTMLElement>, anchor: string, surface: ContextMenuSurface) {
