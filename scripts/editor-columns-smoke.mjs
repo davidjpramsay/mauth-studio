@@ -464,11 +464,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
 
   await selectDiagramType(inspector, label, "geometry2d", "2D diagram settings");
   if (mode === "wide") {
-    await assertTextOrder(
-      page.locator(".editor-pane"),
-      ["Points", "Segments", "Arcs", "Angles", "Markers"],
-      `${mode}: geometry2d editor groups`,
-    );
+    await assertTextOrder(inspector, ["Points", "Segments", "Arcs", "Angles", "Markers"], `${mode}: geometry2d inspector primitive groups`);
   }
   await inspector.locator(`input[aria-label='${label} 2D diagram width']`).fill(mode === "wide" ? "440" : "420");
   assert.equal(
@@ -486,7 +482,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     await page.locator(".preview-pane").evaluate((pane) => {
       pane.scrollTop = pane.scrollHeight;
     });
-    await page.locator(".editor-pane").getByText("Point 1:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "Select point 1" }).click();
     await inspector.getByText("Point", { exact: true }).waitFor();
     await assertPreviewAnchorSelectedAndVisible(
       page,
@@ -502,7 +498,8 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     await pointX.fill("-2.25");
     assert.equal(await pointX.inputValue(), "-2.25", `${mode}: geometry2d point location should edit in inspector`);
 
-    await page.locator(".editor-pane").getByText("Segment 1:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "2D diagram" }).click();
+    await inspector.getByRole("button", { name: "Select segment 1" }).click();
     await inspector.getByText("Segment", { exact: true }).waitFor();
     const segmentLabelX = inspector.locator(`input[aria-label='${label} segment 1 label x']`);
     await segmentLabelX.fill("0.95");
@@ -514,8 +511,9 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
       `${mode}: geometry2d segment colour should edit in inspector`,
     );
 
-    await page.locator(".editor-pane").getByRole("button", { name: "Add" }).nth(2).click();
-    await page.locator(".editor-pane").getByText("Arc 1:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "2D diagram" }).click();
+    await inspector.getByRole("button", { name: "Add arc" }).click();
+    await inspector.getByRole("button", { name: "Select arc 1" }).click();
     await inspector.getByText("Arc", { exact: true }).waitFor();
     const arcLabel = inspector.locator(`input[aria-label='${label} arc 1 label']`);
     await arcLabel.fill("$\\widehat{BD}$");
@@ -527,7 +525,8 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
       `${mode}: geometry2d arc line style should edit in inspector`,
     );
 
-    await page.locator(".editor-pane").getByText("Angle 1:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "2D diagram" }).click();
+    await inspector.getByRole("button", { name: "Select angle 1" }).click();
     await inspector.getByText("Angle", { exact: true }).waitFor();
     const angleCount = inspector.locator(`input[aria-label='${label} angle 1 count']`);
     await angleCount.fill("2");
@@ -539,12 +538,14 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
       `${mode}: geometry2d angle line style should edit in inspector`,
     );
 
-    await page.locator(".editor-pane").getByText("Marker 1:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "2D diagram" }).click();
+    await inspector.getByRole("button", { name: "Select marker 1" }).click();
     await inspector.getByText("Marker", { exact: true }).waitFor();
     const markerCount = inspector.locator(`input[aria-label='${label} marker 1 count']`);
     await markerCount.fill("2");
     assert.equal(await markerCount.inputValue(), "2", `${mode}: geometry2d equal-length marker count should edit in inspector`);
-    await page.locator(".editor-pane").getByText("Marker 2:", { exact: false }).click();
+    await inspector.getByRole("button", { name: "2D diagram" }).click();
+    await inspector.getByRole("button", { name: "Select marker 2" }).click();
     await inspector.getByText("Marker", { exact: true }).waitFor();
     const markerSize = inspector.locator(`input[aria-label='${label} marker 2 size']`);
     await markerSize.fill("0.4");

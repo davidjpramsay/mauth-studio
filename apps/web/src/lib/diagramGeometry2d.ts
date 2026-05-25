@@ -8,6 +8,20 @@ import type {
   GraphConfig,
 } from "@mauth-studio/shared";
 
+export type Geometry2DListKey = "points" | "segments" | "arcs" | "angles" | "decorations";
+
+export const GEOMETRY_2D_CHILD_SEGMENTS = {
+  points: "gpt",
+  segments: "gseg",
+  arcs: "garc",
+  angles: "gang",
+  decorations: "gdec",
+} as const satisfies Record<Geometry2DListKey, string>;
+
+export function geometry2dChildAnchor(anchor: string | undefined, key: Geometry2DListKey, index: number) {
+  return `${anchor ?? "geometry2d"}/${GEOMETRY_2D_CHILD_SEGMENTS[key]}:${index}`;
+}
+
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

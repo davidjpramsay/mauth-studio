@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
@@ -21,7 +22,7 @@ import {
   type StatsChartOptions,
   type StatsChartType,
 } from "@mauth-studio/diagram-plotly";
-import { Shuffle } from "lucide-react";
+import { ArrowLeft, PlusCircle, Shuffle, Trash2 } from "lucide-react";
 
 import { defaultStatsDataForType } from "./StatsChartEditor";
 import {
@@ -74,9 +75,15 @@ import {
 } from "../../lib/contentBlockNormalization";
 import { DEFAULT_3D_GRAPH, DEFAULT_3D_VIEW_STATE, graph3dViewState } from "../../lib/diagram3d";
 import {
+  createGeometry2DArc,
+  createGeometry2DAngle,
+  createGeometry2DPoint,
+  createGeometry2DSegment,
   createGeometry2DDecoration,
+  geometry2dChildAnchor,
   geometry2dData,
   geometry2dPatch,
+  type Geometry2DListKey,
   updateGeometry2DAngle,
   updateGeometry2DArc,
   updateGeometry2DDecoration,
@@ -130,6 +137,7 @@ export interface SelectedEditorBlock {
 export interface SelectionInspectorProps {
   selectedBlock: SelectedEditorBlock | null;
   activeAnchor?: string;
+  onActivateAnchor?: (anchor: string) => void;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<ContentBlock>) => void;
   createTextBlock: () => ContentBlock;
   diagramTypePatch: (type: string, current: GraphConfig) => Partial<GraphConfig>;
@@ -225,6 +233,23 @@ function geometryDecorationLabel(decoration: Graph2DGeometryDecoration, index: n
   return `Right angle ${index + 1}`;
 }
 
+function geometry2dParentAnchor(anchor?: string) {
+  if (!anchor) return "";
+  return anchor.replace(/\/g(?:pt|seg|arc|ang|dec):\d+$/, "");
+}
+
+function removeIndexedItem<T>(items: readonly T[], index: number) {
+  return items.filter((_, itemIndex) => itemIndex !== index);
+}
+
+function geometryPrimitiveActionLabel(kind: Geometry2DListKey, index: number) {
+  if (kind === "points") return `point ${index + 1}`;
+  if (kind === "segments") return `segment ${index + 1}`;
+  if (kind === "arcs") return `arc ${index + 1}`;
+  if (kind === "angles") return `angle ${index + 1}`;
+  return `marker ${index + 1}`;
+}
+
 function csvList(value: readonly string[] | undefined) {
   return (value ?? []).join(", ");
 }
@@ -246,12 +271,74 @@ function geometryPrimitiveTitle(child: SelectedGeometryChild | null, data: Retur
   return geometryDecorationLabel(data.decorations?.[child.index] ?? { kind: "equalLength" }, child.index);
 }
 
+function GeometryPrimitiveSection({
+  title,
+  onAdd,
+  addLabel,
+  children,
+  actions,
+}: {
+  title: string;
+  onAdd?: () => void;
+  addLabel?: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <section className="space-y-2 border-t pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+        {actions ??
+          (onAdd ? (
+            <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+              <PlusCircle className="mr-2 size-4" aria-hidden="true" />
+              {addLabel ?? "Add"}
+            </Button>
+          ) : null)}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function GeometryPrimitiveRow({
+  label,
+  summary,
+  active,
+  selectLabel,
+  removeLabel,
+  onSelect,
+  onRemove,
+}: {
+  label: string;
+  summary?: string;
+  active: boolean;
+  selectLabel: string;
+  removeLabel: string;
+  onSelect?: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className={cn("flex items-center gap-2 rounded-md border bg-background/70 p-2 text-sm", active && "border-primary bg-primary/10")}>
+      <button type="button" aria-label={selectLabel} className="min-w-0 flex-1 text-left" onClick={onSelect}>
+        <span className="block truncate font-medium">{label}</span>
+        {summary ? <span className="block truncate text-xs text-muted-foreground">{summary}</span> : null}
+      </button>
+      <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label={removeLabel} onClick={onRemove}>
+        <Trash2 className="size-4" aria-hidden="true" />
+      </Button>
+    </div>
+  );
+}
+
 interface Geometry2DInspectorProps {
   selectedBlock: SelectedEditorBlock;
   selectedDiagramConfig: GraphConfig;
   controlClassName: string;
   checkboxLabelClassName: string;
   selectedGeometryChild: SelectedGeometryChild | null;
+  activeAnchor?: string;
+  onActivateAnchor?: (anchor: string) => void;
   onBlockChange: SelectionInspectorProps["onBlockChange"];
   updateGraphConfig: SelectionInspectorProps["updateGraphConfig"];
 }
@@ -262,6 +349,8 @@ function Geometry2DInspector({
   controlClassName,
   checkboxLabelClassName,
   selectedGeometryChild,
+  activeAnchor,
+  onActivateAnchor,
   onBlockChange,
   updateGraphConfig,
 }: Geometry2DInspectorProps) {
@@ -274,6 +363,7 @@ function Geometry2DInspector({
   const pointOptions = points.map((point, index) => ({ value: point.id, label: geometryPointLabel(point, index) }));
   const segmentOptions = segments.map((segment, index) => ({ value: segment.id, label: segment.id || `Segment ${index + 1}` }));
   const angleOptions = angles.map((angle, index) => ({ value: angle.id, label: angle.id || `Angle ${index + 1}` }));
+  const parentAnchor = geometry2dParentAnchor(activeAnchor);
   const writeData = (nextData: ReturnType<typeof geometry2dData>) => {
     onBlockChange(selectedBlock, {
       graphConfig: updateGraphConfig(selectedDiagramConfig, geometry2dPatch(selectedDiagramConfig, nextData)),
@@ -288,6 +378,27 @@ function Geometry2DInspector({
   const updateCanvas = (patch: Partial<GraphConfig>) => {
     onBlockChange(selectedBlock, { graphConfig: updateGraphConfig(selectedDiagramConfig, patch) });
   };
+  const primitiveAnchor = (key: Geometry2DListKey, index: number) => (parentAnchor ? geometry2dChildAnchor(parentAnchor, key, index) : "");
+  const activatePrimitive = (key: Geometry2DListKey, index: number) => {
+    const anchor = primitiveAnchor(key, index);
+    if (anchor) onActivateAnchor?.(anchor);
+  };
+  const removePrimitive = (key: Geometry2DListKey, index: number, patch: Partial<ReturnType<typeof geometry2dData>>) => {
+    const anchor = primitiveAnchor(key, index);
+    writeData({ ...data, ...patch });
+    if (activeAnchor === anchor && parentAnchor) onActivateAnchor?.(parentAnchor);
+  };
+  const primitiveHeader = (title: string) => (
+    <div className="flex items-center justify-between gap-2">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      {parentAnchor ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => onActivateAnchor?.(parentAnchor)}>
+          <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
+          2D diagram
+        </Button>
+      ) : null}
+    </div>
+  );
 
   if (!selectedGeometryChild) {
     return (
@@ -388,6 +499,135 @@ function Geometry2DInspector({
           />
           Guide grid
         </label>
+        <GeometryPrimitiveSection
+          title="Points"
+          addLabel="Add point"
+          onAdd={() => writeData({ ...data, points: [...points, createGeometry2DPoint(points.length)] })}
+        >
+          {points.map((point, index) => {
+            const label = `Point ${index + 1}: ${geometryPointLabel(point, index)}`;
+            return (
+              <GeometryPrimitiveRow
+                key={point.id || index}
+                label={label}
+                summary={`(${point.x}, ${point.y})`}
+                active={activeAnchor === primitiveAnchor("points", index)}
+                selectLabel={`Select ${geometryPrimitiveActionLabel("points", index)}`}
+                removeLabel={`Remove ${geometryPrimitiveActionLabel("points", index)}`}
+                onSelect={() => activatePrimitive("points", index)}
+                onRemove={() => removePrimitive("points", index, { points: removeIndexedItem(points, index) })}
+              />
+            );
+          })}
+        </GeometryPrimitiveSection>
+        <GeometryPrimitiveSection
+          title="Segments"
+          addLabel="Add segment"
+          onAdd={() => writeData({ ...data, segments: [...segments, createGeometry2DSegment(points)] })}
+        >
+          {segments.map((segment, index) => {
+            const label = `Segment ${index + 1}: ${segment.id || "unnamed"}`;
+            return (
+              <GeometryPrimitiveRow
+                key={segment.id || index}
+                label={label}
+                summary={`${segment.from} to ${segment.to}${segment.strokeStyle === "dashed" ? ", dashed" : ""}`}
+                active={activeAnchor === primitiveAnchor("segments", index)}
+                selectLabel={`Select ${geometryPrimitiveActionLabel("segments", index)}`}
+                removeLabel={`Remove ${geometryPrimitiveActionLabel("segments", index)}`}
+                onSelect={() => activatePrimitive("segments", index)}
+                onRemove={() => removePrimitive("segments", index, { segments: removeIndexedItem(segments, index) })}
+              />
+            );
+          })}
+        </GeometryPrimitiveSection>
+        <GeometryPrimitiveSection
+          title="Arcs"
+          addLabel="Add arc"
+          onAdd={() => writeData({ ...data, arcs: [...arcs, createGeometry2DArc(points)] })}
+        >
+          {arcs.map((arc, index) => {
+            const label = `Arc ${index + 1}: ${arc.id || "unnamed"}`;
+            return (
+              <GeometryPrimitiveRow
+                key={arc.id || index}
+                label={label}
+                summary={`${arc.center}: ${arc.from} to ${arc.to}`}
+                active={activeAnchor === primitiveAnchor("arcs", index)}
+                selectLabel={`Select ${geometryPrimitiveActionLabel("arcs", index)}`}
+                removeLabel={`Remove ${geometryPrimitiveActionLabel("arcs", index)}`}
+                onSelect={() => activatePrimitive("arcs", index)}
+                onRemove={() => removePrimitive("arcs", index, { arcs: removeIndexedItem(arcs, index) })}
+              />
+            );
+          })}
+        </GeometryPrimitiveSection>
+        <GeometryPrimitiveSection
+          title="Angles"
+          addLabel="Add angle"
+          onAdd={() => writeData({ ...data, angles: [...angles, createGeometry2DAngle(points)] })}
+        >
+          {angles.map((angle, index) => {
+            const label = `Angle ${index + 1}: ${angle.id || "unnamed"}`;
+            return (
+              <GeometryPrimitiveRow
+                key={angle.id || index}
+                label={label}
+                summary={angle.points.join("-")}
+                active={activeAnchor === primitiveAnchor("angles", index)}
+                selectLabel={`Select ${geometryPrimitiveActionLabel("angles", index)}`}
+                removeLabel={`Remove ${geometryPrimitiveActionLabel("angles", index)}`}
+                onSelect={() => activatePrimitive("angles", index)}
+                onRemove={() => removePrimitive("angles", index, { angles: removeIndexedItem(angles, index) })}
+              />
+            );
+          })}
+        </GeometryPrimitiveSection>
+        <GeometryPrimitiveSection
+          title="Markers"
+          actions={
+            <div className="flex flex-wrap justify-end gap-2">
+              {[
+                { kind: "equalLength" as const, label: "Add equal length" },
+                { kind: "equalAngle" as const, label: "Add equal angle" },
+                { kind: "rightAngle" as const, label: "Add right angle" },
+              ].map((action) => (
+                <Button
+                  key={action.kind}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => writeData({ ...data, decorations: [...decorations, createGeometry2DDecoration(action.kind, data)] })}
+                >
+                  <PlusCircle className="mr-2 size-4" aria-hidden="true" />
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          }
+        >
+          {decorations.map((decoration, index) => {
+            const label = `Marker ${index + 1}: ${geometryDecorationLabel(decoration, index)}`;
+            const summary =
+              decoration.kind === "equalLength"
+                ? decoration.segments?.join(", ")
+                : decoration.kind === "equalAngle"
+                  ? decoration.angles?.join(", ")
+                  : decoration.angle;
+            return (
+              <GeometryPrimitiveRow
+                key={decoration.id || index}
+                label={label}
+                summary={summary}
+                active={activeAnchor === primitiveAnchor("decorations", index)}
+                selectLabel={`Select ${geometryPrimitiveActionLabel("decorations", index)}`}
+                removeLabel={`Remove ${geometryPrimitiveActionLabel("decorations", index)}`}
+                onSelect={() => activatePrimitive("decorations", index)}
+                onRemove={() => removePrimitive("decorations", index, { decorations: removeIndexedItem(decorations, index) })}
+              />
+            );
+          })}
+        </GeometryPrimitiveSection>
       </div>
     );
   }
@@ -397,7 +637,7 @@ function Geometry2DInspector({
     if (!point) return null;
     return (
       <div className="space-y-3 border-t pt-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Point</div>
+        {primitiveHeader("Point")}
         <label className={checkboxLabelClassName}>
           <input
             type="checkbox"
@@ -468,7 +708,7 @@ function Geometry2DInspector({
     if (!segment) return null;
     return (
       <div className="space-y-3 border-t pt-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Segment</div>
+        {primitiveHeader("Segment")}
         <label className={checkboxLabelClassName}>
           <input
             type="checkbox"
@@ -586,7 +826,7 @@ function Geometry2DInspector({
     if (!arc) return null;
     return (
       <div className="space-y-3 border-t pt-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Arc</div>
+        {primitiveHeader("Arc")}
         <label className={checkboxLabelClassName}>
           <input
             type="checkbox"
@@ -703,7 +943,7 @@ function Geometry2DInspector({
     if (!angle) return null;
     return (
       <div className="space-y-3 border-t pt-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Angle</div>
+        {primitiveHeader("Angle")}
         <label className={checkboxLabelClassName}>
           <input
             type="checkbox"
@@ -848,7 +1088,7 @@ function Geometry2DInspector({
   if (!decoration) return null;
   return (
     <div className="space-y-3 border-t pt-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Marker</div>
+      {primitiveHeader("Marker")}
       <label className={checkboxLabelClassName}>
         <input
           type="checkbox"
@@ -982,6 +1222,7 @@ function Geometry2DInspector({
 export function SelectionInspector({
   selectedBlock,
   activeAnchor,
+  onActivateAnchor,
   createTextBlock,
   diagramTypePatch,
   updateGraphConfig,
@@ -1260,6 +1501,8 @@ export function SelectionInspector({
                 controlClassName={controlClassName}
                 checkboxLabelClassName={checkboxLabelClassName}
                 selectedGeometryChild={selectedGeometryChild}
+                activeAnchor={activeAnchor}
+                onActivateAnchor={onActivateAnchor}
                 onBlockChange={onBlockChange}
                 updateGraphConfig={updateGraphConfig}
               />
