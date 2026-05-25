@@ -5,6 +5,11 @@ import type {
   ContentBlock,
   DiagramAlignment,
   DiagramTextSide,
+  Graph2DGeometryAngle,
+  Graph2DGeometryArc,
+  Graph2DGeometryDecoration,
+  Graph2DGeometryPoint,
+  Graph2DGeometrySegment,
   GraphConfig,
   TableCellAlignment,
 } from "@mauth-studio/shared";
@@ -23,6 +28,19 @@ import {
   normalizeTableCellAlignment,
 } from "./contentBlockNormalization.ts";
 import { DEFAULT_3D_GRAPH, type Graph3DViewState } from "./diagram3d.ts";
+import {
+  geometry2dData,
+  geometry2dListKeyForPrimitiveKind,
+  geometry2dPrimitiveAt,
+  geometry2dPrimitiveDisplayName,
+  geometry2dPrimitiveIndexById,
+  geometry2dPrimitiveTarget,
+  normalizeGeometry2DPrimitiveKind,
+  updateGeometry2DPrimitive,
+  type Geometry2DPrimitive,
+  type Geometry2DPrimitiveKind,
+  type Geometry2DPrimitiveTarget,
+} from "./diagramGeometry2d.ts";
 import { DEFAULT_IMAGE_DIAGRAM } from "./diagramImage.ts";
 import { DEFAULT_PENROSE_SCALE_PERCENT } from "./diagramPenrose.ts";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, type Vector2DLabelStyle } from "./diagramVector2d.ts";
@@ -85,7 +103,7 @@ export type MauthModuleSettingsUpdate =
 
 export type MauthDiagramSettingsUpdate =
   | (Graph2DSettingsUpdate & { renderer: "graph2d" })
-  | (Graph2DSettingsUpdate & { renderer: "geometry2d" })
+  | (Geometry2DSettingsUpdate & { renderer: "geometry2d" })
   | (Vector2DSettingsUpdate & { renderer: "vector2d" })
   | (Graph3DSettingsUpdate & { renderer: "graph3d" })
   | (StatsChartSettingsUpdate & { renderer: "statsChart" })
@@ -97,6 +115,7 @@ export type MauthDiagramSettingsUpdate =
 interface SettingsSuccess {
   ok: true;
   block: ContentBlock;
+  targetLabel?: string;
 }
 
 interface SettingsFailure {
@@ -107,6 +126,12 @@ interface SettingsFailure {
 export type MauthSettingsActionApplyResult = SettingsSuccess | SettingsFailure;
 
 type GraphPatch = Partial<GraphConfig>;
+
+interface DiagramSettingsPatchSuccess {
+  ok: true;
+  patch: GraphPatch;
+  targetLabel?: string;
+}
 
 interface SizedSettingsUpdate {
   widthPx?: number;
@@ -136,6 +161,18 @@ interface Graph2DSettingsUpdate extends Bounded2DSettingsUpdate {
   gridMajorStepY?: number;
   gridMinorStepX?: number;
   gridMinorStepY?: number;
+}
+
+interface Geometry2DPrimitiveSettingsUpdate extends Record<string, unknown> {
+  kind?: Geometry2DPrimitiveKind | string;
+  index?: number;
+  id?: string;
+  patch?: Record<string, unknown>;
+}
+
+interface Geometry2DSettingsUpdate extends Graph2DSettingsUpdate {
+  primitive?: Geometry2DPrimitiveSettingsUpdate;
+  geometryPrimitive?: Geometry2DPrimitiveSettingsUpdate;
 }
 
 interface Vector2DSettingsUpdate extends Bounded2DSettingsUpdate {
@@ -273,6 +310,178 @@ function graph2dSettingsPatch(config: GraphConfig, settings: Graph2DSettingsUpda
     if (settings.showMajorGrid) patch.showGrid = true;
   }
   return patch;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function geometry2dPrimitiveSettings(settings: Geometry2DSettingsUpdate) {
+  return isRecord(settings.primitive) ? settings.primitive : isRecord(settings.geometryPrimitive) ? settings.geometryPrimitive : null;
+}
+
+function nonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function stringPatchValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberPatchValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanPatchValue(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function stringArrayPatchValue(value: unknown) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? [...value] : undefined;
+}
+
+function setPatchValue<T extends object, K extends keyof T>(target: Partial<T>, key: K, value: T[K] | undefined) {
+  if (value !== undefined) target[key] = value;
+}
+
+function geometry2dPrimitivePatchRecord(source: Geometry2DPrimitiveSettingsUpdate, idUsedAsTarget: boolean): Record<string, unknown> {
+  if (isRecord(source.patch)) return source.patch;
+  const patch: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (key === "kind" || key === "index" || key === "patch") continue;
+    if (key === "id" && idUsedAsTarget) continue;
+    patch[key] = value;
+  }
+  return patch;
+}
+
+function geometry2dPointPatch(record: Record<string, unknown>): Partial<Graph2DGeometryPoint> {
+  const patch: Partial<Graph2DGeometryPoint> = {};
+  setPatchValue(patch, "id", stringPatchValue(record.id));
+  setPatchValue(patch, "x", numberPatchValue(record.x));
+  setPatchValue(patch, "y", numberPatchValue(record.y));
+  setPatchValue(patch, "label", stringPatchValue(record.label));
+  setPatchValue(patch, "labelX", numberPatchValue(record.labelX));
+  setPatchValue(patch, "labelY", numberPatchValue(record.labelY));
+  setPatchValue(patch, "color", stringPatchValue(record.color));
+  setPatchValue(patch, "show", booleanPatchValue(record.show));
+  return patch;
+}
+
+function geometry2dSegmentPatch(record: Record<string, unknown>): Partial<Graph2DGeometrySegment> {
+  const patch: Partial<Graph2DGeometrySegment> = {};
+  setPatchValue(patch, "id", stringPatchValue(record.id));
+  setPatchValue(patch, "from", stringPatchValue(record.from));
+  setPatchValue(patch, "to", stringPatchValue(record.to));
+  setPatchValue(patch, "label", stringPatchValue(record.label));
+  setPatchValue(patch, "labelX", numberPatchValue(record.labelX));
+  setPatchValue(patch, "labelY", numberPatchValue(record.labelY));
+  setPatchValue(patch, "color", stringPatchValue(record.color));
+  setPatchValue(patch, "strokeWidth", numberPatchValue(record.strokeWidth));
+  if (record.strokeStyle === "solid" || record.strokeStyle === "dashed") patch.strokeStyle = record.strokeStyle;
+  setPatchValue(patch, "show", booleanPatchValue(record.show));
+  return patch;
+}
+
+function geometry2dArcPatch(record: Record<string, unknown>): Partial<Graph2DGeometryArc> {
+  const patch: Partial<Graph2DGeometryArc> = {};
+  setPatchValue(patch, "id", stringPatchValue(record.id));
+  setPatchValue(patch, "center", stringPatchValue(record.center));
+  setPatchValue(patch, "from", stringPatchValue(record.from));
+  setPatchValue(patch, "to", stringPatchValue(record.to));
+  setPatchValue(patch, "label", stringPatchValue(record.label));
+  setPatchValue(patch, "labelX", numberPatchValue(record.labelX));
+  setPatchValue(patch, "labelY", numberPatchValue(record.labelY));
+  setPatchValue(patch, "color", stringPatchValue(record.color));
+  setPatchValue(patch, "strokeWidth", numberPatchValue(record.strokeWidth));
+  if (record.strokeStyle === "solid" || record.strokeStyle === "dashed") patch.strokeStyle = record.strokeStyle;
+  setPatchValue(patch, "show", booleanPatchValue(record.show));
+  return patch;
+}
+
+function geometry2dAnglePatch(record: Record<string, unknown>): Partial<Graph2DGeometryAngle> {
+  const patch: Partial<Graph2DGeometryAngle> = {};
+  const points = stringArrayPatchValue(record.points);
+  setPatchValue(patch, "id", stringPatchValue(record.id));
+  if (points?.length === 3) patch.points = [points[0] ?? "", points[1] ?? "", points[2] ?? ""];
+  setPatchValue(patch, "label", stringPatchValue(record.label));
+  setPatchValue(patch, "labelX", numberPatchValue(record.labelX));
+  setPatchValue(patch, "labelY", numberPatchValue(record.labelY));
+  setPatchValue(patch, "radius", numberPatchValue(record.radius));
+  setPatchValue(patch, "arcCount", numberPatchValue(record.arcCount));
+  setPatchValue(patch, "color", stringPatchValue(record.color));
+  setPatchValue(patch, "strokeWidth", numberPatchValue(record.strokeWidth));
+  if (record.strokeStyle === "solid" || record.strokeStyle === "dashed") patch.strokeStyle = record.strokeStyle;
+  setPatchValue(patch, "show", booleanPatchValue(record.show));
+  return patch;
+}
+
+function geometry2dDecorationPatch(record: Record<string, unknown>): Partial<Graph2DGeometryDecoration> {
+  const patch: Partial<Graph2DGeometryDecoration> = {};
+  if (record.kind === "equalLength" || record.kind === "equalAngle" || record.kind === "rightAngle") patch.kind = record.kind;
+  setPatchValue(patch, "id", stringPatchValue(record.id));
+  setPatchValue(patch, "segments", stringArrayPatchValue(record.segments));
+  setPatchValue(patch, "angles", stringArrayPatchValue(record.angles));
+  setPatchValue(patch, "angle", stringPatchValue(record.angle));
+  setPatchValue(patch, "tickCount", numberPatchValue(record.tickCount));
+  setPatchValue(patch, "arcCount", numberPatchValue(record.arcCount));
+  setPatchValue(patch, "radius", numberPatchValue(record.radius));
+  setPatchValue(patch, "size", numberPatchValue(record.size));
+  setPatchValue(patch, "color", stringPatchValue(record.color));
+  setPatchValue(patch, "show", booleanPatchValue(record.show));
+  return patch;
+}
+
+function geometry2dPrimitivePatch(kind: Geometry2DPrimitiveKind, record: Record<string, unknown>): Partial<Geometry2DPrimitive> {
+  if (kind === "point") return geometry2dPointPatch(record);
+  if (kind === "segment") return geometry2dSegmentPatch(record);
+  if (kind === "arc") return geometry2dArcPatch(record);
+  if (kind === "angle") return geometry2dAnglePatch(record);
+  return geometry2dDecorationPatch(record);
+}
+
+function geometry2dPrimitiveTargetFromSettings(
+  config: GraphConfig,
+  source: Geometry2DPrimitiveSettingsUpdate,
+): { ok: true; target: Geometry2DPrimitiveTarget; idUsedAsTarget: boolean } | SettingsFailure {
+  const kind = normalizeGeometry2DPrimitiveKind(source.kind);
+  if (!kind) return settingsFailure("geometry2d primitive settings must include kind: point, segment, arc, angle, or decoration.");
+
+  const data = geometry2dData(config);
+  const directIndex = nonNegativeInteger(source.index);
+  const idValue = typeof source.id === "string" && source.id.trim() ? source.id.trim() : "";
+  const index = directIndex ?? (idValue ? geometry2dPrimitiveIndexById(data, kind, idValue) : undefined);
+  const idUsedAsTarget = directIndex === undefined && Boolean(idValue);
+  if (index === undefined || index < 0) {
+    const listKey = geometry2dListKeyForPrimitiveKind(kind);
+    return settingsFailure(`geometry2d primitive settings could not find the requested ${kind} in ${listKey}.`);
+  }
+  const target = geometry2dPrimitiveTarget(kind, index);
+  if (!target || !geometry2dPrimitiveAt(data, target)) {
+    const listKey = geometry2dListKeyForPrimitiveKind(kind);
+    return settingsFailure(`geometry2d primitive settings index ${index} is outside ${listKey}.`);
+  }
+  return { ok: true, target, idUsedAsTarget };
+}
+
+function geometry2dSettingsPatch(config: GraphConfig, settings: Geometry2DSettingsUpdate): DiagramSettingsPatchSuccess | SettingsFailure {
+  const patch = graph2dSettingsPatch(config, settings);
+  const primitiveSettings = geometry2dPrimitiveSettings(settings);
+  if (!primitiveSettings) return { ok: true, patch };
+
+  const targetResult = geometry2dPrimitiveTargetFromSettings(config, primitiveSettings);
+  if (!targetResult.ok) return targetResult;
+
+  const patchRecord = geometry2dPrimitivePatchRecord(primitiveSettings, targetResult.idUsedAsTarget);
+  const primitivePatch = geometry2dPrimitivePatch(targetResult.target.kind, patchRecord);
+  if (Object.keys(primitivePatch).length) {
+    patch.data = updateGeometry2DPrimitive(geometry2dData(config), targetResult.target, primitivePatch);
+  }
+  return {
+    ok: true,
+    patch,
+    targetLabel: geometry2dPrimitiveDisplayName(geometry2dData(mergePatch(config, patch)), targetResult.target),
+  };
 }
 
 function vector2dSettingsPatch(config: GraphConfig, settings: Vector2DSettingsUpdate): GraphPatch {
@@ -414,7 +623,8 @@ function imageSettingsPatch(config: GraphConfig, settings: ImageSettingsUpdate):
 }
 
 function diagramSettingsPatch(config: GraphConfig, settings: MauthDiagramSettingsUpdate): GraphPatch {
-  if (settings.renderer === "graph2d" || settings.renderer === "geometry2d") return graph2dSettingsPatch(config, settings);
+  if (settings.renderer === "graph2d") return graph2dSettingsPatch(config, settings);
+  if (settings.renderer === "geometry2d") return graph2dSettingsPatch(config, settings);
   if (settings.renderer === "vector2d") return vector2dSettingsPatch(config, settings);
   if (settings.renderer === "graph3d") return graph3dSettingsPatch(config, settings);
   if (settings.renderer === "statsChart") return statsChartSettingsPatch(config, settings);
@@ -490,11 +700,17 @@ export function applyDiagramSettingsUpdate(block: ContentBlock, settings: MauthD
       `diagram.settings.update expected a ${settings.renderer} diagram, but target diagram renderer is ${block.graphConfig.type}.`,
     );
   }
+  const patchResult =
+    settings.renderer === "geometry2d"
+      ? geometry2dSettingsPatch(block.graphConfig, settings)
+      : ({ ok: true, patch: diagramSettingsPatch(block.graphConfig, settings) } satisfies DiagramSettingsPatchSuccess);
+  if (!patchResult.ok) return patchResult;
   return {
     ok: true,
+    ...(patchResult.targetLabel ? { targetLabel: patchResult.targetLabel } : {}),
     block: {
       ...block,
-      graphConfig: mergePatch(block.graphConfig, diagramSettingsPatch(block.graphConfig, settings)),
+      graphConfig: mergePatch(block.graphConfig, patchResult.patch),
     },
   };
 }

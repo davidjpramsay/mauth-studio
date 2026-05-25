@@ -283,6 +283,7 @@ function compactAssistantProviderOutput<Q extends MauthQuestionLike, F extends o
   const semanticReview = asRecord(data?.semanticReview);
   const postEditInspection = asRecord(data?.postEditInspection);
   const repairTarget = asRecord(data?.repairTarget);
+  if (typeof data?.targetLabel === "string" && data.targetLabel.trim()) output.targetLabel = data.targetLabel.trim();
   if (semanticReview) output.semanticReview = semanticReview;
   if (postEditInspection) output.postEditInspection = postEditInspection;
   if (repairTarget) output.repairTarget = repairTarget;

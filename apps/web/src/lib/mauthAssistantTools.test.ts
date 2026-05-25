@@ -128,6 +128,40 @@ function documentFixture(): MauthDocumentLike<MauthQuestionLike, TestFrontMatter
   };
 }
 
+function geometry2dDocumentFixture(): MauthDocumentLike<MauthQuestionLike, TestFrontMatter, TestFormattingConfig> {
+  return {
+    frontMatter: {
+      schoolName: "Mauth School",
+      assessmentTitle: "Geometry Test",
+    },
+    formattingConfig: {
+      showMarks: true,
+    },
+    questions: [
+      question("q1", [
+        diagramBlock("g1", {
+          type: "geometry2d",
+          widthPx: 320,
+          heightPx: 240,
+          data: {
+            points: [
+              { id: "O", x: 0, y: 0, label: "$O$" },
+              { id: "A", x: 2, y: 0, label: "$A$" },
+              { id: "B", x: 0, y: 2, label: "$B$" },
+            ],
+            segments: [
+              { id: "OA", from: "O", to: "A", strokeWidth: 2 },
+              { id: "OB", from: "O", to: "B", strokeWidth: 2 },
+            ],
+            angles: [{ id: "AOB", points: ["A", "O", "B"], label: "$90^\\circ$", radius: 0.4, strokeStyle: "solid" }],
+            decorations: [{ kind: "rightAngle", id: "right-angle", angle: "AOB", size: 0.35 }],
+          },
+        }),
+      ]),
+    ],
+  };
+}
+
 test("describes the assistant tool surface and supported action types", () => {
   const description = describeMauthAssistantTools();
 
@@ -3229,6 +3263,12 @@ test("rejects malformed settings action payloads before they reach the action en
           blockId: "d1",
           settings: { renderer: "vennDiagram", widthPx: 320 },
         },
+        {
+          type: "diagram.settings.update",
+          scope: { kind: "question", questionId: "q1" },
+          blockId: "d1",
+          settings: { renderer: "geometry2d", primitive: { kind: "angle", index: "first", label: "$45^\\circ$" } },
+        },
       ],
     },
   });
@@ -3238,6 +3278,7 @@ test("rejects malformed settings action payloads before they reach the action en
   assert.match(result.error ?? "", /Mauth action validation failed/);
   assert(data.validationIssues?.some((issue) => issue.path === "actions[0].settings.rows"));
   assert(data.validationIssues?.some((issue) => issue.path === "actions[1].settings.renderer"));
+  assert(data.validationIssues?.some((issue) => issue.path === "actions[2].settings.primitive.index"));
 });
 
 test("applies selected module settings through the focused assistant tool", () => {
@@ -3279,6 +3320,32 @@ test("applies selected diagram module and renderer settings through the focused 
   assert.equal(chart?.kind === "diagram" ? chart.diagramAlign : undefined, "right");
   assert.equal(chart?.kind === "diagram" ? chart.graphConfig.widthPx : undefined, 420);
   assert.equal(chart?.kind === "diagram" ? chart.graphConfig.options?.showGrid : undefined, false);
+});
+
+test("applies selected geometry2d primitive settings through the focused assistant tool", () => {
+  const result = runMauthAssistantTool(
+    geometry2dDocumentFixture(),
+    {
+      name: "mauth.settings.apply",
+      arguments: {
+        settings: { primitive: { label: "$45^\\circ$", strokeStyle: "dashed", radius: 0.65 } },
+      },
+    },
+    { assistantContext: { activeAnchor: "q:q1/b:g1/gang:0" } },
+  );
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["g1"]);
+  const data = result.data as { targetLabel?: string };
+  assert.equal(data.targetLabel, "Question 1 · 2D diagram · Angle 1: AOB");
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "g1");
+  assert.equal(diagram?.kind, "diagram");
+  const geometryData = diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined;
+  assert.equal(geometryData?.angles?.[0]?.label, "$45^\\circ$");
+  assert.equal(geometryData?.angles?.[0]?.strokeStyle, "dashed");
+  assert.equal(geometryData?.angles?.[0]?.radius, 0.65);
+  assert.equal(geometryData?.segments?.[0]?.strokeWidth, 2);
+  assert.equal(geometryData?.decorations?.[0]?.kind, "rightAngle");
 });
 
 test("applies explicit targeted settings without raw action JSON", () => {

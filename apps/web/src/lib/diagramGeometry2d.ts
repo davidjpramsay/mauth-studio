@@ -9,6 +9,20 @@ import type {
 } from "@mauth-studio/shared";
 
 export type Geometry2DListKey = "points" | "segments" | "arcs" | "angles" | "decorations";
+export type Geometry2DPrimitiveKind = "point" | "segment" | "arc" | "angle" | "decoration";
+
+export interface Geometry2DPrimitiveTarget {
+  kind: Geometry2DPrimitiveKind;
+  listKey: Geometry2DListKey;
+  index: number;
+}
+
+export type Geometry2DPrimitive =
+  | Graph2DGeometryPoint
+  | Graph2DGeometrySegment
+  | Graph2DGeometryArc
+  | Graph2DGeometryAngle
+  | Graph2DGeometryDecoration;
 
 export const GEOMETRY_2D_CHILD_SEGMENTS = {
   points: "gpt",
@@ -18,8 +32,102 @@ export const GEOMETRY_2D_CHILD_SEGMENTS = {
   decorations: "gdec",
 } as const satisfies Record<Geometry2DListKey, string>;
 
+export const GEOMETRY_2D_PRIMITIVE_KINDS = ["point", "segment", "arc", "angle", "decoration"] as const;
+
+const GEOMETRY_2D_KIND_TO_LIST_KEY = {
+  point: "points",
+  segment: "segments",
+  arc: "arcs",
+  angle: "angles",
+  decoration: "decorations",
+} as const satisfies Record<Geometry2DPrimitiveKind, Geometry2DListKey>;
+
+const GEOMETRY_2D_LIST_KEY_TO_KIND = {
+  points: "point",
+  segments: "segment",
+  arcs: "arc",
+  angles: "angle",
+  decorations: "decoration",
+} as const satisfies Record<Geometry2DListKey, Geometry2DPrimitiveKind>;
+
+const GEOMETRY_2D_CHILD_SEGMENT_TO_LIST_KEY = Object.fromEntries(
+  Object.entries(GEOMETRY_2D_CHILD_SEGMENTS).map(([listKey, segment]) => [segment, listKey]),
+) as Record<string, Geometry2DListKey | undefined>;
+
 export function geometry2dChildAnchor(anchor: string | undefined, key: Geometry2DListKey, index: number) {
   return `${anchor ?? "geometry2d"}/${GEOMETRY_2D_CHILD_SEGMENTS[key]}:${index}`;
+}
+
+export function geometry2dPrimitiveKindLabel(kind: Geometry2DPrimitiveKind) {
+  if (kind === "decoration") return "Marker";
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+}
+
+export function geometry2dListKeyForPrimitiveKind(kind: Geometry2DPrimitiveKind): Geometry2DListKey {
+  return GEOMETRY_2D_KIND_TO_LIST_KEY[kind];
+}
+
+export function geometry2dPrimitiveKindForListKey(listKey: Geometry2DListKey): Geometry2DPrimitiveKind {
+  return GEOMETRY_2D_LIST_KEY_TO_KIND[listKey];
+}
+
+export function normalizeGeometry2DPrimitiveKind(value: unknown): Geometry2DPrimitiveKind | null {
+  if (typeof value !== "string") return null;
+  const key = value.trim();
+  if (key === "marker" || key === "markers") return "decoration";
+  if (key === "points") return "point";
+  if (key === "segments") return "segment";
+  if (key === "arcs") return "arc";
+  if (key === "angles") return "angle";
+  if (key === "decorations") return "decoration";
+  return (GEOMETRY_2D_PRIMITIVE_KINDS as readonly string[]).includes(key) ? (key as Geometry2DPrimitiveKind) : null;
+}
+
+export function geometry2dPrimitiveTarget(kind: Geometry2DPrimitiveKind, index: number): Geometry2DPrimitiveTarget | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  return { kind, listKey: geometry2dListKeyForPrimitiveKind(kind), index };
+}
+
+export function geometry2dPrimitiveTargetFromAnchor(anchor: string | null | undefined): Geometry2DPrimitiveTarget | null {
+  const match = anchor?.match(/\/(gpt|gseg|garc|gang|gdec):(\d+)$/);
+  if (!match) return null;
+  const listKey = GEOMETRY_2D_CHILD_SEGMENT_TO_LIST_KEY[match[1] ?? ""];
+  const index = Number(match[2]);
+  if (!listKey || !Number.isInteger(index) || index < 0) return null;
+  return { kind: geometry2dPrimitiveKindForListKey(listKey), listKey, index };
+}
+
+export function geometry2dPrimitiveAt(data: Graph2DGeometryData, target: Geometry2DPrimitiveTarget): Geometry2DPrimitive | undefined {
+  return data[target.listKey]?.[target.index] as Geometry2DPrimitive | undefined;
+}
+
+export function geometry2dPrimitiveIndexById(data: Graph2DGeometryData, kind: Geometry2DPrimitiveKind, idValue: string) {
+  const listKey = geometry2dListKeyForPrimitiveKind(kind);
+  return (data[listKey] ?? []).findIndex((entry) => typeof entry.id === "string" && entry.id === idValue);
+}
+
+export function geometry2dPrimitiveDisplayName(data: Graph2DGeometryData, target: Geometry2DPrimitiveTarget) {
+  const primitive = geometry2dPrimitiveAt(data, target);
+  const kindLabel = geometry2dPrimitiveKindLabel(target.kind);
+  const idValue = primitive && "id" in primitive && typeof primitive.id === "string" && primitive.id.trim() ? primitive.id.trim() : "";
+  const decorationKind =
+    target.kind === "decoration" && primitive && "kind" in primitive && typeof primitive.kind === "string" && primitive.kind.trim()
+      ? primitive.kind.trim()
+      : "";
+  const suffix = idValue || decorationKind;
+  return suffix ? `${kindLabel} ${target.index + 1}: ${suffix}` : `${kindLabel} ${target.index + 1}`;
+}
+
+export function updateGeometry2DPrimitive(
+  data: Graph2DGeometryData,
+  target: Geometry2DPrimitiveTarget,
+  patch: Partial<Geometry2DPrimitive>,
+): Graph2DGeometryData {
+  if (target.kind === "point") return updateGeometry2DPoint(data, target.index, patch as Partial<Graph2DGeometryPoint>);
+  if (target.kind === "segment") return updateGeometry2DSegment(data, target.index, patch as Partial<Graph2DGeometrySegment>);
+  if (target.kind === "arc") return updateGeometry2DArc(data, target.index, patch as Partial<Graph2DGeometryArc>);
+  if (target.kind === "angle") return updateGeometry2DAngle(data, target.index, patch as Partial<Graph2DGeometryAngle>);
+  return updateGeometry2DDecoration(data, target.index, patch as Partial<Graph2DGeometryDecoration>);
 }
 
 function id(prefix: string) {

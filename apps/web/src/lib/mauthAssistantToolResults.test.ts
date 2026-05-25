@@ -42,6 +42,61 @@ test("assistant terminal tool status reports committed settings edits", () => {
   assert.match(messageText(message), /Updated the selected settings/);
 });
 
+test("assistant terminal tool status reports selected geometry primitive targets", () => {
+  const message = assistantTerminalToolStatusMessage({
+    callId: "call-1",
+    name: "mauth_update_selected_settings",
+    output: {
+      ok: true,
+      toolName: "mauth.settings.apply",
+      message: "Updated the selected settings.",
+      changedIds: ["g1"],
+      committedDocument: true,
+      postEditInspection: {
+        target: { anchor: "q:q1/b:g1/gang:0", questionNumber: 1, blockId: "g1" },
+        question: {
+          questionNumber: 1,
+          modules: [{ id: "g1", kind: "diagram", diagramType: "geometry2d" }],
+          diagrams: [
+            {
+              id: "g1",
+              anchor: "q:q1/b:g1",
+              graphType: "geometry2d",
+              summary: {
+                renderer: "geometry2d",
+                data: {
+                  angles: [{ id: "AOB", points: ["A", "O", "B"], label: "$45^\\circ$" }],
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  assert.equal(message?.tone, "tool-success");
+  assert.equal(message?.summary.targetLabel, "Question 1 · 2D diagram · Angle 1: AOB");
+  assert.equal(message?.summary.state, "committed");
+});
+
+test("assistant terminal tool status prefers explicit target labels from local tools", () => {
+  const message = assistantTerminalToolStatusMessage({
+    callId: "call-1",
+    name: "mauth_update_selected_settings",
+    output: {
+      ok: true,
+      toolName: "mauth.settings.apply",
+      message: "Updated the selected settings.",
+      changedIds: ["g1"],
+      committedDocument: true,
+      targetLabel: "Question 2 · 2D diagram · Segment 1: OA",
+    },
+  });
+
+  assert.equal(message?.summary.targetLabel, "Question 2 · 2D diagram · Segment 1: OA");
+});
+
 test("assistant continuing tool status reports failed preflight without a commit", () => {
   const [message] = assistantContinuingToolStatusMessages([
     {

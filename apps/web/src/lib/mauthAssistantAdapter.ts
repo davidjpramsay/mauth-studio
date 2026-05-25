@@ -506,6 +506,7 @@ function postEditInspectionSuccessData(resultData: unknown, inspection: MauthPre
             textPreview: inspection.question.modules.flatMap((module) => (module.textPreview ? [module.textPreview] : [])).join(" "),
             parts: inspection.question.parts,
             modules: inspection.question.allModules.map((module) => ({
+              id: module.id,
               anchor: module.anchor,
               kind: module.kind,
               visibility: module.visibility,

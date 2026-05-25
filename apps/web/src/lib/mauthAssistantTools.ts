@@ -24,6 +24,12 @@ import {
 } from "./mauthActionValidation.ts";
 import { inspectMauthDiagram } from "./mauthDiagramInspection.ts";
 import { diagramIntentFromText } from "./mauthDiagramIntent.ts";
+import {
+  geometry2dData,
+  geometry2dPrimitiveDisplayName,
+  geometry2dPrimitiveTargetFromAnchor,
+  type Geometry2DPrimitiveTarget,
+} from "./diagramGeometry2d.ts";
 import { buildVector2DSourceDiagramConfig, type Vector2DSourceDiagramInput } from "./diagramVector2d.ts";
 import { isSupportedDiagramSettingsRenderer, isSupportedModuleSettingsKind } from "./mauthSettingsActions.ts";
 
@@ -1934,7 +1940,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.settings.apply",
         description:
-          "Apply focused settings changes to the selected or explicitly targeted module. It resolves the module target, infers module kind or diagram renderer when omitted, and maps to module.settings.update and diagram.settings.update.",
+          "Apply focused settings changes to the selected or explicitly targeted module. It resolves the module target, infers module kind or diagram renderer when omitted, maps to module.settings.update and diagram.settings.update, and can patch the selected geometry2d primitive with diagram/settings primitive fields.",
       },
       {
         name: "mauth.layout.check",
@@ -2024,9 +2030,9 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For focused diagram follow-ups, prefer mauth.author.addDiagram with a renderer-specific graphConfig.",
       "For focused response-space/layout fixes that do not need a worked-solution rewrite, prefer mauth.author.adjustResponseSpaces.",
       "For focused formatting requests such as page breaks before a part/subpart, diagram alignment, moving one module, fitting a solution to its student space, or tidying excess spacing, prefer mauth.format.apply.",
-      "For selected-module control changes such as graph size/display flags, Penrose scale/resample, network node labels, set-diagram labels/shading, image name/alt/size, space/table/columns/choices controls, or diagram module side/alignment, prefer mauth.settings.apply.",
+      "For selected-module control changes such as graph size/display flags, selected geometry2d primitive label/style/location, Penrose scale/resample, network node labels, set-diagram labels/shading, image name/alt/size, space/table/columns/choices controls, or diagram module side/alignment, prefer mauth.settings.apply.",
       "For targeted module control changes inside a broader action batch, prefer module.settings.update over raw module.update patches for space lines, table sizing/alignment, columns, choices, and diagram module alignment.",
-      "For targeted renderer control changes inside a broader action batch, prefer diagram.settings.update over raw graphConfig patches for graph/vector/3D/chart sizing and display flags, Penrose scale/resample, network visibility, set-diagram labels/shading, and image name/alt/size.",
+      "For targeted renderer control changes inside a broader action batch, prefer diagram.settings.update over raw graphConfig patches for graph/vector/3D/chart sizing and display flags, selected geometry2d primitive fields via settings.primitive, Penrose scale/resample, network visibility, set-diagram labels/shading, and image name/alt/size.",
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
@@ -5060,12 +5066,15 @@ const DIAGRAM_SETTINGS_KEYS = [
   "shading",
   "name",
   "alt",
+  "primitive",
+  "geometryPrimitive",
 ] as const;
 
 interface ResolvedSettingsTarget {
   scope: MauthContentScope;
   blockId: string;
   block: ContentBlock;
+  geometryPrimitive?: Geometry2DPrimitiveTarget;
 }
 
 function settingsApplyEntries(args: Record<string, unknown>) {
@@ -5184,7 +5193,12 @@ function settingsTargetFromAnchor<Q extends MauthQuestionLike, F extends object,
     });
     return undefined;
   }
-  return settingsTargetFromBlockId(document, parsed.blockId, path, issues);
+  const resolved = settingsTargetFromBlockId(document, parsed.blockId, path, issues);
+  const geometryPrimitive = geometry2dPrimitiveTargetFromAnchor(anchor);
+  if (resolved && geometryPrimitive && resolved.block.kind === "diagram" && resolved.block.graphConfig.type === "geometry2d") {
+    return { ...resolved, geometryPrimitive };
+  }
+  return resolved;
 }
 
 function resolvedSettingsTarget<Q extends MauthQuestionLike, F extends object, C extends object>(
@@ -5251,15 +5265,32 @@ function moduleSettingsFromRecord(target: ResolvedSettingsTarget, value: Record<
   } as MauthModuleSettingsAction["settings"];
 }
 
+function diagramSettingsWithSelectedGeometryPrimitive(target: ResolvedSettingsTarget, value: Record<string, unknown>) {
+  if (!target.geometryPrimitive || target.block.kind !== "diagram" || target.block.graphConfig.type !== "geometry2d") return value;
+  const primitive = isRecord(value.primitive) ? value.primitive : isRecord(value.geometryPrimitive) ? value.geometryPrimitive : undefined;
+  if (!primitive) return value;
+  return {
+    ...value,
+    primitive: {
+      ...primitive,
+      kind: target.geometryPrimitive.kind,
+      index: target.geometryPrimitive.index,
+    },
+  };
+}
+
 function diagramSettingsFromRecord(
   target: ResolvedSettingsTarget,
   value: Record<string, unknown>,
   path: string,
   issues: MauthActionValidationIssue[],
 ): MauthDiagramSettingsAction["settings"] | undefined {
-  if (typeof value.renderer === "string" && value.renderer.trim()) return value as unknown as MauthDiagramSettingsAction["settings"];
+  const settingsValue = diagramSettingsWithSelectedGeometryPrimitive(target, value);
+  if (typeof settingsValue.renderer === "string" && settingsValue.renderer.trim()) {
+    return settingsValue as unknown as MauthDiagramSettingsAction["settings"];
+  }
   if (target.block.kind === "diagram" && isSupportedDiagramSettingsRenderer(target.block.graphConfig.type)) {
-    return { ...value, renderer: target.block.graphConfig.type } as MauthDiagramSettingsAction["settings"];
+    return { ...settingsValue, renderer: target.block.graphConfig.type } as MauthDiagramSettingsAction["settings"];
   }
   issues.push({
     path: `${path}.renderer`,
@@ -5386,6 +5417,47 @@ function resultTool<Q extends MauthQuestionLike, F extends object, C extends obj
     changedIds: result.changedIds,
     warnings: result.warnings,
     error: result.error,
+  };
+}
+
+function settingsTargetDiagramLabel(type: string) {
+  return type === "geometry2d" ? "2D diagram" : `Diagram · ${type}`;
+}
+
+function settingsApplyTargetLabel<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  activeAnchor: string | null | undefined,
+) {
+  const parsed = parseAssistantAnchor(activeAnchor);
+  if (!parsed.blockId) return "";
+  const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, parsed.blockId);
+  if (!entry) return "";
+  const questionIndex = document.questions.findIndex((question) => question.id === entry.question.id);
+  const parts = questionIndex >= 0 ? [`Question ${questionIndex + 1}`] : [];
+  if (entry.block.kind === "diagram") {
+    parts.push(settingsTargetDiagramLabel(entry.block.graphConfig.type));
+    const primitiveTarget = geometry2dPrimitiveTargetFromAnchor(activeAnchor);
+    if (entry.block.graphConfig.type === "geometry2d" && primitiveTarget) {
+      parts.push(geometry2dPrimitiveDisplayName(geometry2dData(entry.block.graphConfig), primitiveTarget));
+    }
+  } else {
+    parts.push(entry.block.kind);
+  }
+  return parts.join(" · ");
+}
+
+function settingsResultTool<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  result: MauthDocumentActionResult<Q, F, C>,
+  targetLabel: string,
+): MauthAssistantToolResult<Q, F, C> {
+  const toolResult = resultTool("mauth.settings.apply", result);
+  if (!targetLabel) return toolResult;
+  return {
+    ...toolResult,
+    data: {
+      ...(isRecord(toolResult.data) ? toolResult.data : { actionResult: toolResult.data }),
+      targetLabel,
+    },
   };
 }
 
@@ -5588,7 +5660,8 @@ export function runMauthAssistantTool<Q extends MauthQuestionLike, F extends obj
     if (!Array.isArray(actions)) {
       return failTool(call.name, actions.error, { validationIssues: actions.issues }) as MauthAssistantToolResult<Q, F, C>;
     }
-    return resultTool(call.name, applyMauthDocumentActions(document, actions, options));
+    const result = applyMauthDocumentActions(document, actions, options);
+    return settingsResultTool(result, settingsApplyTargetLabel(result.document ?? document, options.assistantContext?.activeAnchor));
   }
 
   if (call.name === "mauth.layout.check") {
