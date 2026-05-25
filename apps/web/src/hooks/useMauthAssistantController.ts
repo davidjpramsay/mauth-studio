@@ -16,6 +16,7 @@ import {
   type MauthAssistantAdapterResult,
   type MauthAssistantAdapterToolCall,
 } from "@/lib/mauthAssistantAdapter";
+import { documentSummaryWithMauthTargetReference, firstMauthTargetReference } from "@/lib/mauthAssistantTargetReferences";
 import {
   assistantContinuingToolStatusMessages,
   assistantFinalToolStateMessage,
@@ -38,6 +39,7 @@ const ASSISTANT_OLD_PAUSED_MESSAGE_PREFIX = "I stopped after several tool rounds
 interface AssistantPendingToolContinuation {
   responseId: string | null;
   toolCalls: AssistantProviderToolCall[];
+  targetAnchor?: string | null;
 }
 
 interface AssistantToolLoopResult {
@@ -321,6 +323,17 @@ function terminalFailedToolMessage(toolOutputs: readonly AssistantToolOutput[]) 
   return `I could not apply that edit after one repair attempt. ${firstMessage}${suffix}`;
 }
 
+function assistantHostWithTargetReference<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  host: MauthAssistantAdapterHost<Q, F, C>,
+  targetAnchor: string | null,
+): MauthAssistantAdapterHost<Q, F, C> {
+  if (!targetAnchor) return host;
+  return {
+    ...host,
+    getActiveAnchor: () => targetAnchor,
+  };
+}
+
 export function useMauthAssistantController<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>({
   previewModeActive,
   openPreviewMode,
@@ -452,10 +465,17 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
-  async function assistantDocumentSummary(host: MauthAssistantAdapterHost<Q, F, C>) {
+  async function assistantDocumentSummary(host: MauthAssistantAdapterHost<Q, F, C>, targetAnchor: string | null = null) {
     setActivityLabel("Inspecting document");
     const result = await runMauthAssistantAdapterTool(host, { name: "mauth.document.inspect", arguments: {} });
-    return result.ok ? (asRecord(result.data) ?? null) : null;
+    const documentSummary = result.ok ? (asRecord(result.data) ?? null) : null;
+    if (!targetAnchor || !documentSummary) return documentSummary;
+
+    const targetResult = await runMauthAssistantAdapterTool(host, {
+      name: "mauth.preview.inspect",
+      arguments: { scope: "selection" },
+    });
+    return documentSummaryWithMauthTargetReference(documentSummary, targetAnchor, targetResult.ok ? targetResult.data : null);
   }
 
   async function runAssistantProviderToolCall(
@@ -496,6 +516,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     host: MauthAssistantAdapterHost<Q, F, C>,
     initialResponseId: string | null,
     initialToolCalls: AssistantProviderToolCall[],
+    targetAnchor: string | null = null,
   ): Promise<AssistantToolLoopResult> {
     let responseId = initialResponseId;
     let toolCalls = initialToolCalls;
@@ -538,7 +559,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         repairAttemptUsed = true;
       }
 
-      const documentSummary = await assistantDocumentSummary(host);
+      const documentSummary = await assistantDocumentSummary(host, targetAnchor);
       setActivityLabel("Thinking");
       const response = await sendAssistantChat({
         previousResponseId: responseId,
@@ -558,7 +579,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     }
 
     if (toolCalls.length) {
-      const pending = { responseId, toolCalls };
+      const pending = { responseId, toolCalls, targetAnchor };
       setPendingToolContinuation(pending);
       setPreviousResponseId(null);
       setChatMessages((current) => [
@@ -585,6 +606,8 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
     const pendingContinuation = pendingToolContinuation;
     const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
+    const messageTargetAnchor = firstMauthTargetReference(displayedUserContent);
+    const turnTargetAnchor = resumePendingTools ? (pendingContinuation?.targetAnchor ?? messageTargetAnchor) : messageTargetAnchor;
     const freshAttachmentTurn = requestAttachments.length > 0;
     const previousId = pendingContinuation || freshAttachmentTurn ? null : previousResponseId;
     const priorMessages = chatMessages
@@ -618,10 +641,10 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     setProviderStatusMessage((current) => current || "Assistant working");
 
     try {
-      const host = createHost();
+      const host = assistantHostWithTargetReference(createHost(), turnTargetAnchor);
       if (resumePendingTools && pendingContinuation) {
         setPendingToolContinuation(null);
-        const loopResult = await continueToolLoop(host, pendingContinuation.responseId, pendingContinuation.toolCalls);
+        const loopResult = await continueToolLoop(host, pendingContinuation.responseId, pendingContinuation.toolCalls, turnTargetAnchor);
         const resumedUsage = loopResult.usage;
         if (resumedUsage) {
           setChatMessages((current) => addUsageToLastAssistantMessage(current, resumedUsage));
@@ -635,7 +658,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         setPreviousResponseId(null);
       }
 
-      const documentSummary = await assistantDocumentSummary(host);
+      const documentSummary = await assistantDocumentSummary(host, turnTargetAnchor);
       setActivityLabel("Thinking");
       const response = await sendAssistantChat({
         previousResponseId: previousId,
@@ -656,7 +679,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       }
 
       if (response.toolCalls.length) {
-        const loopResult = await continueToolLoop(host, nextResponseId, response.toolCalls);
+        const loopResult = await continueToolLoop(host, nextResponseId, response.toolCalls, turnTargetAnchor);
         requestUsage = mergeAssistantUsageSummary(requestUsage, loopResult.usage);
       } else {
         setPendingToolContinuation(null);
