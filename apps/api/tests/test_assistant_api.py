@@ -1046,6 +1046,33 @@ def test_focused_selected_settings_prompt_uses_settings_tool():
     assert "widthPx" in tools[0]["parameters"]["properties"]["diagram"]["properties"]
 
 
+def test_focused_selected_settings_prompt_resolves_mauth_reference_target():
+    message = openai_assistant.AssistantChatMessage(
+        role="user",
+        content="Make @mauth[q:q1/b:d1] wider and hide the grid.",
+    )
+    summary = {
+        "questions": [{"id": "q1", "index": 0, "modules": [{"kind": "diagram", "diagramType": "graph2d"}]}],
+        "assistantTargetReference": {
+            "source": "mauth-reference-token",
+            "activeAnchor": "q:q1/b:d1",
+            "moduleAnchor": "q:q1/b:d1",
+            "target": {"kind": "questionBlock", "questionId": "q1", "questionNumber": 1, "blockId": "d1"},
+            "question": {"id": "q1", "questionNumber": 1, "totalMarks": 2},
+            "selectedBlock": {"id": "d1", "kind": "diagram", "anchor": "q:q1/b:d1", "diagramType": "graph2d"},
+            "selectedDiagram": {"id": "d1", "anchor": "q:q1/b:d1", "graphType": "graph2d"},
+        },
+    }
+
+    tools = openai_assistant.assistant_tool_definitions([message], document_summary=summary)
+    instructions = openai_assistant.assistant_instructions(summary, [message])
+
+    assert [tool["name"] for tool in tools] == ["mauth_update_selected_settings"]
+    assert "Resolved @mauth target reference" in instructions
+    assert "activeAnchor: q:q1/b:d1" in instructions
+    assert "omit target" in instructions
+
+
 def test_solution_overflow_repair_exposes_solution_and_space_tools():
     tool_output = openai_assistant.AssistantToolOutput(
         callId="call_1",

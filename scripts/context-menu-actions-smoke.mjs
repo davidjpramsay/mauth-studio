@@ -119,7 +119,7 @@ function seededDraft() {
   };
 }
 
-async function mockApi(page) {
+async function mockApi(page, assistantRequests) {
   const corsHeaders = {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -161,6 +161,28 @@ async function mockApi(page) {
       body: JSON.stringify({ configured: true, model: "mock-context-menu", provider: "mock", missingSetting: null }),
     });
   });
+
+  await page.route("http://127.0.0.1:8000/api/assistant/chat", async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+      return;
+    }
+    assistantRequests.push(JSON.parse(request.postData() ?? "{}"));
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({
+        configured: true,
+        model: "mock-context-menu",
+        message: "Mock assistant response.",
+        responseId: "mock-context-menu-response",
+        toolCalls: [],
+        usage: null,
+        error: null,
+      }),
+    });
+  });
 }
 
 async function waitForDraft(page, predicate, message) {
@@ -190,6 +212,14 @@ async function openContextMenu(page, locator) {
   return menu;
 }
 
+async function waitForAssistantRequest(assistantRequests) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (assistantRequests.length) return assistantRequests[assistantRequests.length - 1];
+    await delay(100);
+  }
+  throw new Error("Timed out waiting for assistant chat request");
+}
+
 async function clickMenuItem(page, name) {
   await page.getByRole("menuitem", { name }).click();
   await page.locator("[data-context-menu]").waitFor({ state: "hidden" });
@@ -216,10 +246,11 @@ async function main() {
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: VIEWPORT });
     const consoleMessages = [];
+    const assistantRequests = [];
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type())) consoleMessages.push(`${message.type()}: ${message.text()}`);
     });
-    await mockApi(page);
+    await mockApi(page, assistantRequests);
     await page.addInitScript(
       ([storageKey, draft]) => {
         window.localStorage.clear();
@@ -255,6 +286,18 @@ async function main() {
     assert(assistantValue.includes(`Editor anchor: ${INTRO_ANCHOR}`), "assistant context should include the editor anchor");
     assert(assistantValue.includes(`Preview anchor: ${INTRO_ANCHOR}`), "assistant context should include the preview anchor");
     assert(assistantValue.includes("Source: preview"), "assistant context should record the display source");
+    await page.getByRole("button", { name: "Ask" }).click();
+    const assistantRequest = await waitForAssistantRequest(assistantRequests);
+    assert.equal(
+      assistantRequest.documentSummary?.assistantTargetReference?.activeAnchor,
+      INTRO_ANCHOR,
+      "assistant request should resolve the visible @mauth token into an active target reference",
+    );
+    assert.equal(
+      assistantRequest.documentSummary?.assistantTargetReference?.selectedBlock?.id,
+      "intro",
+      "assistant target reference should include the selected module context",
+    );
 
     await page.getByRole("button", { name: "Manual editor mode" }).click();
     const previewSpace = page

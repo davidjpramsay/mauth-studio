@@ -1513,6 +1513,26 @@ def next_question_number_from_summary(summary: dict[str, Any] | None) -> int:
     return max_number + 1
 
 
+def assistant_target_reference_from_summary(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    value = summary.get("assistantTargetReference") if isinstance(summary, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def assistant_target_reference_question_number(summary: dict[str, Any] | None) -> int | None:
+    reference = assistant_target_reference_from_summary(summary)
+    if not reference:
+        return None
+
+    for container_key in ("question", "target"):
+        container = reference.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        value = container.get("questionNumber")
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
 def asks_for_layout_check_text(text: str) -> bool:
     return any(term in text for term in LAYOUT_CHECK_TERMS)
 
@@ -1563,7 +1583,8 @@ def classify_request_intent(
     asks_for_formatting = any(term in text for term in FORMATTING_REQUEST_TERMS)
     asks_for_settings = any(term in text for term in SETTINGS_REQUEST_TERMS)
     asks_for_marking_edit = any(term in text for term in MARKING_EDIT_REQUEST_TERMS)
-    has_specific_selection = any(
+    has_mauth_target_reference = "@mauth[" in text or bool(assistant_target_reference_from_summary(compact_summary))
+    has_specific_selection = has_mauth_target_reference or any(
         term in text
         for term in (
             "current question",
@@ -1586,9 +1607,12 @@ def classify_request_intent(
         )
     )
     has_specific_question = bool(question_numbers) or has_specific_selection
+    target_reference_question_number = assistant_target_reference_question_number(compact_summary)
     target_question_number = (
         sorted(question_numbers)[0]
         if question_numbers
+        else target_reference_question_number
+        if target_reference_question_number
         else next_question_number_from_summary(compact_summary)
         if append_question
         else 1
@@ -1801,6 +1825,40 @@ def question_summary_text(question: dict[str, Any] | None) -> str:
     return "\n".join(parts).lower()
 
 
+def assistant_target_reference_instruction(summary: dict[str, Any] | None) -> str:
+    reference = assistant_target_reference_from_summary(summary)
+    if not reference:
+        return ""
+
+    active_anchor = reference.get("activeAnchor")
+    module_anchor = reference.get("moduleAnchor")
+    selected_block = reference.get("selectedBlock")
+    selected_diagram = reference.get("selectedDiagram")
+    question = reference.get("question")
+    block_label = ""
+    if isinstance(selected_block, dict):
+        block_id = selected_block.get("id")
+        block_kind = selected_block.get("kind")
+        diagram_type = selected_block.get("diagramType")
+        details = [str(value) for value in (block_kind, diagram_type, block_id) if isinstance(value, str) and value]
+        if details:
+            block_label = f" Selected block: {' / '.join(details)}."
+    question_label = ""
+    if isinstance(question, dict) and isinstance(question.get("questionNumber"), int):
+        question_label = f" Question {question['questionNumber']}."
+    diagram_label = ""
+    if isinstance(selected_diagram, dict) and isinstance(selected_diagram.get("graphType"), str):
+        diagram_label = f" Selected diagram renderer: {selected_diagram['graphType']}."
+
+    return (
+        "Resolved @mauth target reference:\n"
+        f"- activeAnchor: {active_anchor if isinstance(active_anchor, str) else 'unknown'}\n"
+        f"- moduleAnchor: {module_anchor if isinstance(module_anchor, str) else 'unknown'}\n"
+        f"- Treat this as the active selected/current module for this assistant turn.{question_label}{block_label}{diagram_label}\n"
+        "- For mauth_update_selected_settings, omit target unless the teacher explicitly asks for a different module."
+    )
+
+
 def focused_tool_hint(
     compact_summary: dict[str, Any] | None,
     messages: list[AssistantChatMessage] | None = None,
@@ -1989,6 +2047,11 @@ def focused_tool_hint(
             "Use this for answer-space changes that should preserve existing question text, solutions, and diagrams."
         )
     if asks_for_settings:
+        reference_instruction = (
+            " The compact summary includes a resolved @mauth target; treat it as the active selected module and omit target."
+            if assistant_target_reference_from_summary(compact_summary)
+            else ""
+        )
         return (
             "Focused tool routing hint: this is a selected/existing module settings request. Your first tool call should be "
             "mauth_update_selected_settings. If the teacher says selected/current/this module, omit target so the app uses "
@@ -1996,7 +2059,7 @@ def focused_tool_hint(
             "Use module for space/table/columns/choices controls and diagram module alignment/text side; use diagram for "
             "renderer controls such as graph size/display flags, Penrose scale/resample, network node dots/labels, set-diagram "
             "labels/shading, and image name/alt/size. Include only the requested settings fields; do not populate optional "
-            "schema fields with current defaults or placeholder values."
+            f"schema fields with current defaults or placeholder values.{reference_instruction}"
         )
     if asks_for_formatting:
         return (
@@ -4458,6 +4521,7 @@ def assistant_instructions(
         source_conversion_profile=profile == "sourceConversion",
     )
     tool_hint = focused_tool_hint(compact_summary, current_messages, attachments)
+    target_reference_text = assistant_target_reference_instruction(compact_summary)
     brain_text = instruction_profile_brain_text(profile, brain_text)
     attachment_lines = [
         f"- {attachment.name} ({attachment.mimeType or 'unknown type'}, {attachment.sizeBytes or 0} bytes)"
@@ -4488,6 +4552,8 @@ Document-edit workflow:
 6. Keep edits concise and explain what changed after tool outputs are returned.
 
 {tool_hint}
+
+{target_reference_text}
 
 Tool-call contract:
 - Use the focused direct tool named in the routing hint. Do not inspect first when the compact summary already gives the target question or next append position.
