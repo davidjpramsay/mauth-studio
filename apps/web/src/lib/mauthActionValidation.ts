@@ -2,6 +2,7 @@ import type { ContentBlock } from "@mauth-studio/shared";
 
 import { MAUTH_DOCUMENT_ACTION_TYPES, type MauthDocumentAction } from "./mauthActions.ts";
 import { validateMauthDiagramConfig } from "./mauthDiagramValidation.ts";
+import { GEOMETRY_2D_PRIMITIVE_KINDS } from "./diagramGeometry2d.ts";
 import {
   MAUTH_DIAGRAM_SETTINGS_RENDERERS,
   MAUTH_MODULE_SETTINGS_KINDS,
@@ -34,6 +35,18 @@ const MODULE_SETTINGS_KINDS = new Set<string>(MAUTH_MODULE_SETTINGS_KINDS);
 const DIAGRAM_SETTINGS_RENDERERS = new Set<string>(MAUTH_DIAGRAM_SETTINGS_RENDERERS);
 const SET_DIAGRAM_LABEL_PRESETS = new Set<string>(MAUTH_SET_DIAGRAM_LABEL_PRESETS);
 const SET_DIAGRAM_SHADING_KEYS = new Set<string>(MAUTH_SET_DIAGRAM_SHADING_KEYS);
+const GEOMETRY_2D_PRIMITIVE_KIND_KEYS = new Set<string>([
+  ...GEOMETRY_2D_PRIMITIVE_KINDS,
+  "marker",
+  "markers",
+  "points",
+  "segments",
+  "arcs",
+  "angles",
+  "decorations",
+]);
+const GEOMETRY_2D_STROKE_STYLES = new Set(["solid", "dashed"]);
+const GEOMETRY_2D_DECORATION_KINDS = new Set(["equalLength", "equalAngle", "rightAngle"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -132,6 +145,20 @@ function numberFields(record: Record<string, unknown>, keys: readonly string[], 
 
 function booleanFields(record: Record<string, unknown>, keys: readonly string[], path: string, issues: MauthActionValidationIssue[]) {
   keys.forEach((key) => booleanField(record, key, path, issues, true));
+}
+
+function nonNegativeIntegerField(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  optional = false,
+) {
+  const value = record[key];
+  if (value === undefined && optional) return;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    addIssue(issues, `${path}.${key}`, "must be a non-negative integer", "0-based integer");
+  }
 }
 
 function validateVisibilityFields(record: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -376,6 +403,74 @@ function validateSetDiagramShading(value: Record<string, unknown>, path: string,
   );
 }
 
+function validateOptionalGeometry2DStrokeStyle(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+) {
+  if (!hasOwn(value, key)) return;
+  enumField(value, key, path, GEOMETRY_2D_STROKE_STYLES, issues);
+}
+
+function validateOptionalGeometry2DDecorationKind(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+) {
+  if (!hasOwn(value, key)) return;
+  enumField(value, key, path, GEOMETRY_2D_DECORATION_KINDS, issues);
+}
+
+function validateGeometry2DPrimitivePatch(
+  value: Record<string, unknown>,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  options: { decorationKind?: boolean } = {},
+) {
+  stringValueField(value, "id", path, issues, true);
+  stringValueField(value, "label", path, issues, true);
+  stringValueField(value, "from", path, issues, true);
+  stringValueField(value, "to", path, issues, true);
+  stringValueField(value, "center", path, issues, true);
+  stringValueField(value, "angle", path, issues, true);
+  stringValueField(value, "color", path, issues, true);
+  numberFields(value, ["x", "y", "labelX", "labelY", "radius", "size", "strokeWidth"], path, issues);
+  nonNegativeIntegerField(value, "tickCount", path, issues, true);
+  nonNegativeIntegerField(value, "arcCount", path, issues, true);
+  booleanField(value, "show", path, issues, true);
+  validateOptionalGeometry2DStrokeStyle(value, "strokeStyle", path, issues);
+  if (options.decorationKind) validateOptionalGeometry2DDecorationKind(value, "kind", path, issues);
+
+  const points = arrayField(value, "points", path, issues, true);
+  if (points) {
+    if (points.length !== 3) addIssue(issues, `${path}.points`, "must contain exactly 3 point ids", "[from, vertex, to]");
+    points.forEach((point, index) => {
+      if (typeof point !== "string") addIssue(issues, `${path}.points[${index}]`, "must be a string", "point id");
+    });
+  }
+  stringArrayField(value, "segments", path, issues, true);
+  stringArrayField(value, "angles", path, issues, true);
+}
+
+function validateGeometry2DPrimitiveSettings(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a geometry2d primitive settings object", "{ kind, index?, id?, ...patch }");
+    return;
+  }
+  enumField(value, "kind", path, GEOMETRY_2D_PRIMITIVE_KIND_KEYS, issues);
+  nonNegativeIntegerField(value, "index", path, issues, true);
+  stringField(value, "id", path, issues, true);
+  if (!hasOwn(value, "index") && !hasOwn(value, "id")) {
+    addIssue(issues, path, "must identify the primitive by selected index or id", "{ kind, index } or { kind, id }");
+  }
+
+  const patch = recordField(value, "patch", path, issues, true);
+  if (patch) validateGeometry2DPrimitivePatch(patch, `${path}.patch`, issues, { decorationKind: true });
+  validateGeometry2DPrimitivePatch(value, path, issues);
+}
+
 function validateDiagramSettingsUpdate(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
   if (!isRecord(value)) {
     addIssue(issues, path, "must be a diagram settings object", "{ renderer, ...settings }");
@@ -420,6 +515,11 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
       path,
       issues,
     );
+    if (value.renderer === "geometry2d") {
+      if (hasOwn(value, "primitive")) validateGeometry2DPrimitiveSettings(value.primitive, `${path}.primitive`, issues);
+      if (hasOwn(value, "geometryPrimitive"))
+        validateGeometry2DPrimitiveSettings(value.geometryPrimitive, `${path}.geometryPrimitive`, issues);
+    }
     return;
   }
 

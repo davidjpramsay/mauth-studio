@@ -1022,6 +1022,59 @@ test("settings actions fail cleanly on wrong module kind or renderer", () => {
   assert.deepEqual(wrongRenderer.questions, initial);
 });
 
+test("updates selected geometry2d primitive settings without replacing the diagram", () => {
+  const geometryConfig: GraphConfig = {
+    type: "geometry2d",
+    widthPx: 320,
+    heightPx: 240,
+    data: {
+      points: [
+        { id: "O", x: 0, y: 0, label: "$O$" },
+        { id: "A", x: 2, y: 0, label: "$A$" },
+        { id: "B", x: 0, y: 2, label: "$B$" },
+      ],
+      segments: [
+        { id: "OA", from: "O", to: "A", strokeWidth: 2 },
+        { id: "OB", from: "O", to: "B", strokeWidth: 2 },
+      ],
+      angles: [{ id: "AOB", points: ["A", "O", "B"], label: "$90^\\circ$", radius: 0.4, strokeStyle: "solid" }],
+      decorations: [{ kind: "rightAngle", id: "right-angle", angle: "AOB", size: 0.35 }],
+    },
+  };
+  const initial = [question("q1", [diagramBlock("d1", geometryConfig)])];
+
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "geometry2d",
+      primitive: { kind: "angle", index: 0, label: "$45^\\circ$", strokeStyle: "dashed", radius: 0.65 },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual(result.changedIds, ["d1"]);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  const data = diagram.kind === "diagram" ? diagram.graphConfig.data : undefined;
+  assert.deepEqual(data?.points, geometryConfig.data?.points);
+  assert.deepEqual(data?.segments, geometryConfig.data?.segments);
+  assert.equal(data?.angles?.[0]?.label, "$45^\\circ$");
+  assert.equal(data?.angles?.[0]?.strokeStyle, "dashed");
+  assert.equal(data?.angles?.[0]?.radius, 0.65);
+  assert.equal(data?.decorations?.[0]?.kind, "rightAngle");
+
+  const missingPrimitive = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "geometry2d", primitive: { kind: "angle", index: 3, label: "$30^\\circ$" } },
+  });
+  assert.equal(missingPrimitive.ok, false);
+  assert.match(missingPrimitive.error ?? "", /outside angles/);
+});
+
 test("fails cleanly when ids are wrong", () => {
   const initial = [question("q1", [textBlock("b1", "First")])];
 

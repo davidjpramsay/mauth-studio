@@ -1,4 +1,5 @@
 import type { AssistantToolOutput } from "./api.ts";
+import { geometry2dPrimitiveKindLabel, geometry2dPrimitiveTargetFromAnchor } from "./diagramGeometry2d.ts";
 
 export type MauthAssistantToolStatusTone = "tool-success" | "tool-warning" | "tool-error";
 export type MauthAssistantToolStatusState = "committed" | "completed" | "preflight-failed" | "needs-repair" | "needs-review" | "unreadable";
@@ -97,7 +98,7 @@ function changedIds(output: Record<string, unknown> | null) {
 function moduleKindLabel(module: Record<string, unknown>) {
   const kind = stringValue(module.kind);
   const diagramType = stringValue(module.diagramType);
-  if (kind === "diagram") return diagramType ? `Diagram · ${diagramType}` : "Diagram";
+  if (kind === "diagram") return diagramType === "geometry2d" ? "2D diagram" : diagramType ? `Diagram · ${diagramType}` : "Diagram";
   if (kind === "space") return "Space";
   if (kind === "text") return "Text";
   if (kind === "table") return "Table";
@@ -106,7 +107,31 @@ function moduleKindLabel(module: Record<string, unknown>) {
   return kind ? `${kind.charAt(0).toUpperCase()}${kind.slice(1)}` : "Module";
 }
 
+function geometryPrimitiveLabel(anchor: string, question: Record<string, unknown> | null, targetId: string) {
+  const target = geometry2dPrimitiveTargetFromAnchor(anchor);
+  if (!target || !question) return "";
+  const diagrams = Array.isArray(question.diagrams) ? question.diagrams : [];
+  const diagram = diagrams
+    .map(asRecord)
+    .find(
+      (item) =>
+        item && (stringValue(item.id) === targetId || stringValue(item.anchor) === anchor.replace(/\/g(?:pt|seg|arc|ang|dec):\d+$/, "")),
+    );
+  const summary = asRecord(diagram?.summary);
+  if (stringValue(summary?.renderer || diagram?.graphType) !== "geometry2d") return "";
+  const data = asRecord(summary?.data);
+  const items = Array.isArray(data?.[target.listKey]) ? (data[target.listKey] as unknown[]) : [];
+  const primitive = asRecord(items[target.index]);
+  const kindLabel = geometry2dPrimitiveKindLabel(target.kind);
+  const idValue = stringValue(primitive?.id);
+  const decorationKind = target.kind === "decoration" ? stringValue(primitive?.kind) : "";
+  const suffix = idValue || decorationKind;
+  return suffix ? `${kindLabel} ${target.index + 1}: ${suffix}` : `${kindLabel} ${target.index + 1}`;
+}
+
 function outputTargetLabel(output: Record<string, unknown> | null) {
+  const explicitTargetLabel = stringValue(output?.targetLabel);
+  if (explicitTargetLabel) return explicitTargetLabel;
   const postEditInspection = asRecord(output?.postEditInspection);
   const repairTarget = asRecord(output?.repairTarget);
   const target = asRecord(postEditInspection?.target);
@@ -122,6 +147,8 @@ function outputTargetLabel(output: Record<string, unknown> | null) {
   } else if (targetId && postEditInspection) {
     parts.push(`Target ${targetId}`);
   }
+  const primitiveLabel = geometryPrimitiveLabel(stringValue(target?.anchor), question, targetId);
+  if (primitiveLabel) parts.push(primitiveLabel);
   return parts.join(" · ");
 }
 

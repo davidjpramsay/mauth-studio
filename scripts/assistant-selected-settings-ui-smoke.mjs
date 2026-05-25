@@ -15,7 +15,10 @@ const OUTPUT_ROOT =
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
 const VIEWPORT = { width: 1484, height: 1264 };
 const GRAPH_ANCHOR = "q:q-assistant-ui/b:q1-graph";
+const GEOMETRY_ANCHOR = "q:q-geometry-ui/b:q2-geometry";
 const PROMPT = "Make the selected graph wider and turn off the grid.";
+const GEOMETRY_PRIMITIVE_ANCHOR = `${GEOMETRY_ANCHOR}/gang:0`;
+const GEOMETRY_PROMPT = `Make this selected angle marker dashed and relabel it 45 degrees: @mauth[${GEOMETRY_PRIMITIVE_ANCHOR}]`;
 const FAILURE_PROMPT = "Hide the selected graph axes.";
 const REPAIR_PROMPT = "Add two overlapping labels to the selected graph.";
 const REPAIR_LABEL_FEATURES = [
@@ -130,6 +133,53 @@ function seededDraft() {
         ],
         pageBreakAfter: false,
       },
+      {
+        id: "q-geometry-ui",
+        section: "Assistant",
+        marks: 1,
+        contentBlocks: [
+          {
+            id: "q2-text",
+            kind: "text",
+            text: "In the no-axis geometry diagram, angle $AOB$ is marked.",
+          },
+          {
+            id: "q2-geometry",
+            kind: "diagram",
+            diagramAlign: "center",
+            graphConfig: {
+              type: "geometry2d",
+              widthPx: 340,
+              heightPx: 260,
+              xMin: -0.8,
+              xMax: 2.8,
+              yMin: -0.8,
+              yMax: 2.8,
+              showAxes: false,
+              showGrid: false,
+              data: {
+                points: [
+                  { id: "O", x: 0, y: 0, label: "$O$" },
+                  { id: "A", x: 2, y: 0, label: "$A$" },
+                  { id: "B", x: 0, y: 2, label: "$B$" },
+                ],
+                segments: [
+                  { id: "OA", from: "O", to: "A", strokeWidth: 2 },
+                  { id: "OB", from: "O", to: "B", strokeWidth: 2 },
+                ],
+                angles: [{ id: "AOB", points: ["A", "O", "B"], label: "$90^\\circ$", radius: 0.45, strokeStyle: "solid" }],
+                decorations: [{ kind: "rightAngle", id: "right-angle", angle: "AOB", size: 0.35 }],
+              },
+            },
+          },
+        ],
+        parts: [],
+        itemOrder: [
+          { kind: "block", id: "q2-text" },
+          { kind: "block", id: "q2-geometry" },
+        ],
+        pageBreakAfter: false,
+      },
     ],
     updatedAt: new Date().toISOString(),
   };
@@ -208,6 +258,7 @@ async function mockApi(page, chatRequests) {
 
     const prompt = body.messages?.at(-1)?.content ?? "";
     const hiddenAxesRequest = prompt === FAILURE_PROMPT;
+    const geometryPrimitiveRequest = prompt === GEOMETRY_PROMPT;
     const repairRequiredRequest = prompt === REPAIR_PROMPT;
     const mauthToolName = repairRequiredRequest ? "mauth.author.addDiagram" : "mauth.settings.apply";
     const mauthArguments = repairRequiredRequest
@@ -237,18 +288,21 @@ async function mockApi(page, chatRequests) {
       : {
           target: { scope: "selection" },
           diagram: {
-            renderer: "graph2d",
+            renderer: geometryPrimitiveRequest ? "geometry2d" : "graph2d",
+            ...(geometryPrimitiveRequest ? { primitive: { label: "$45^\\circ$", strokeStyle: "dashed", radius: 0.65 } } : {}),
             ...(hiddenAxesRequest ? { showAxes: false } : {}),
-            ...(!hiddenAxesRequest ? { widthPx: 800, showGrid: false } : {}),
+            ...(!hiddenAxesRequest && !geometryPrimitiveRequest ? { widthPx: 800, showGrid: false } : {}),
           },
         };
     const toolCallName = repairRequiredRequest ? "mauth_author_add_diagram" : "mauth_update_selected_settings";
-    const toolCallSlug = repairRequiredRequest ? "repair-diagram" : "selected-settings";
+    const toolCallSlug = repairRequiredRequest ? "repair-diagram" : geometryPrimitiveRequest ? "geometry-primitive" : "selected-settings";
     const responseId = hiddenAxesRequest
       ? "mock-response-failure"
-      : repairRequiredRequest
-        ? "mock-response-repair"
-        : "mock-response-success";
+      : geometryPrimitiveRequest
+        ? "mock-response-geometry"
+        : repairRequiredRequest
+          ? "mock-response-repair"
+          : "mock-response-success";
     await route.fulfill({
       status: 200,
       headers: corsHeaders,
@@ -288,6 +342,14 @@ async function draftGraphConfig(page) {
     const snapshot = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
     const question = snapshot?.questions?.find((current) => current.id === "q-assistant-ui");
     return question?.contentBlocks?.find((block) => block.id === "q1-graph")?.graphConfig ?? null;
+  }, CURRENT_DRAFT_STORAGE_KEY);
+}
+
+async function draftGeometryConfig(page) {
+  return page.evaluate((storageKey) => {
+    const snapshot = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
+    const question = snapshot?.questions?.find((current) => current.id === "q-geometry-ui");
+    return question?.contentBlocks?.find((block) => block.id === "q2-geometry")?.graphConfig ?? null;
   }, CURRENT_DRAFT_STORAGE_KEY);
 }
 
@@ -421,6 +483,67 @@ async function main() {
     await inspector.getByText("Graph settings").waitFor();
     assert.equal(await inspector.getByLabel("Width").inputValue(), "800", "inspector should expose the updated graph width");
 
+    const beforeGeometryConfig = await draftGeometryConfig(page);
+    assert.equal(beforeGeometryConfig?.data?.angles?.[0]?.label, "$90^\\circ$", "seeded geometry angle should start at 90 degrees");
+    assert.equal(beforeGeometryConfig?.data?.angles?.[0]?.strokeStyle, "solid", "seeded geometry angle should start solid");
+
+    await page.getByRole("button", { name: "Assistant mode" }).click();
+    await promptBox.fill(GEOMETRY_PROMPT);
+    await page.getByRole("button", { name: "Ask" }).click();
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Tool result:") &&
+        document.body.innerText.includes("mauth.settings.apply committed changes and requested review") &&
+        document.body.innerText.includes("Question 2 · 2D diagram · Angle 1: AOB"),
+      null,
+      { timeout: 10_000 },
+    );
+
+    const geometryContinuationRequest = chatRequests.find((request) => request.previousResponseId === "mock-response-geometry");
+    const geometryInitialRequest = chatRequests.find((request) => request.messages?.at(-1)?.content === GEOMETRY_PROMPT);
+    const geometryToolOutput = geometryContinuationRequest?.toolOutputs?.[0]?.output;
+    assert.equal(
+      geometryInitialRequest?.documentSummary?.assistantTargetReference?.activeAnchor,
+      GEOMETRY_PRIMITIVE_ANCHOR,
+      "geometry prompt should resolve the @mauth primitive reference as the active target",
+    );
+    assert.equal(
+      geometryInitialRequest?.documentSummary?.assistantTargetReference?.selectedGeometryPrimitive?.label,
+      "Angle 1: AOB",
+      "geometry prompt should expose selected primitive context to the provider",
+    );
+    assert.equal(geometryToolOutput?.ok, true, `geometry primitive settings output should succeed: ${geometryToolOutput?.error ?? ""}`);
+    assert.equal(
+      geometryToolOutput?.targetLabel,
+      "Question 2 · 2D diagram · Angle 1: AOB",
+      "geometry primitive settings output should identify the selected primitive",
+    );
+    assert(geometryToolOutput?.changedIds?.includes("q2-geometry"), "geometry primitive settings should report the edited diagram");
+
+    await page.waitForFunction(
+      (storageKey) => {
+        const snapshot = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
+        const question = snapshot?.questions?.find((current) => current.id === "q-geometry-ui");
+        const graphConfig = question?.contentBlocks?.find((block) => block.id === "q2-geometry")?.graphConfig;
+        const angle = graphConfig?.data?.angles?.[0];
+        return angle?.label === "$45^\\circ$" && angle?.strokeStyle === "dashed" && angle?.radius === 0.65;
+      },
+      CURRENT_DRAFT_STORAGE_KEY,
+      { timeout: 10_000 },
+    );
+    const afterGeometryConfig = await draftGeometryConfig(page);
+    assert.deepEqual(
+      afterGeometryConfig?.data?.segments,
+      beforeGeometryConfig?.data?.segments,
+      "geometry primitive settings should preserve sibling segments",
+    );
+    assert.equal(afterGeometryConfig?.data?.decorations?.[0]?.kind, "rightAngle", "geometry marker should remain intact");
+
+    await page.getByRole("button", { name: "Manual editor mode" }).click();
+    await editorGraph.waitFor({ state: "visible" });
+    await editorGraph.dispatchEvent("pointerdown");
+    await inspector.getByText("Graph settings").waitFor();
+
     await page.getByRole("button", { name: "Assistant mode" }).click();
     await promptBox.fill(FAILURE_PROMPT);
     await page.getByRole("button", { name: "Ask" }).click();
@@ -511,7 +634,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.join("\n")}`);
 
     console.log(
-      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, replaced misleading provider final text with state-aware local status, visibly reported the rejected hidden-axes tool result, and visibly reported a committed repair-required mauth.author.addDiagram label collision. Screenshot: ${screenshotPath}`,
+      `Assistant selected-settings UI smoke passed. Prompt "${PROMPT}" selected ${GRAPH_ANCHOR}, applied mauth.settings.apply, preserved functions, updated width to ${afterConfig.widthPx}, disabled showGrid, selected ${GEOMETRY_ANCHOR}/gang:0, patched only the geometry2d angle primitive, replaced misleading provider final text with state-aware local status, visibly reported the rejected hidden-axes tool result, and visibly reported a committed repair-required mauth.author.addDiagram label collision. Screenshot: ${screenshotPath}`,
     );
   } catch (error) {
     const bodyText = (

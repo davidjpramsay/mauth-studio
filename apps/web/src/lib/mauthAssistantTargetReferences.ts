@@ -2,6 +2,14 @@ const MAUTH_REFERENCE_TOKEN_PATTERN = /@mauth\[([^\]\s]{1,240})\]/g;
 const MAUTH_ANCHOR_PATTERN =
   /^(?:front-matter|pb:[A-Za-z0-9_.:-]+|q:[A-Za-z0-9_.:-]+(?:\/(?:p|s|b|c|gf|gfeat|gpt|gseg|garc|gang|gdec):[A-Za-z0-9_.:-]+)*)$/;
 const GRAPH_CHILD_ANCHOR_PATTERN = /\/(?:gf|gfeat|gpt|gseg|garc|gang|gdec):\d+$/;
+const GEOMETRY_CHILD_ANCHOR_PATTERN = /\/(gpt|gseg|garc|gang|gdec):(\d+)$/;
+const GEOMETRY_CHILD_SEGMENTS = {
+  gpt: { kind: "point", listKey: "points", label: "Point" },
+  gseg: { kind: "segment", listKey: "segments", label: "Segment" },
+  garc: { kind: "arc", listKey: "arcs", label: "Arc" },
+  gang: { kind: "angle", listKey: "angles", label: "Angle" },
+  gdec: { kind: "decoration", listKey: "decorations", label: "Marker" },
+} as const;
 
 export function isMauthTargetReferenceAnchor(anchor: string) {
   return MAUTH_ANCHOR_PATTERN.test(anchor);
@@ -91,6 +99,30 @@ function compactAssistantTargetDiagram(value: unknown) {
   };
 }
 
+function selectedGeometryPrimitive(targetAnchor: string, selectedDiagram: unknown) {
+  const match = targetAnchor.match(GEOMETRY_CHILD_ANCHOR_PATTERN);
+  const diagram = compactAssistantTargetDiagram(selectedDiagram);
+  if (!match || diagram?.graphType !== "geometry2d") return null;
+  const segment = GEOMETRY_CHILD_SEGMENTS[match[1] as keyof typeof GEOMETRY_CHILD_SEGMENTS];
+  const index = Number(match[2]);
+  if (!segment || !Number.isInteger(index) || index < 0) return null;
+  const summary = asRecord(diagram.summary);
+  const data = asRecord(summary?.data);
+  const items = Array.isArray(data?.[segment.listKey]) ? (data[segment.listKey] as unknown[]) : [];
+  const primitive = asRecord(items[index]);
+  const idValue = typeof primitive?.id === "string" && primitive.id.trim() ? primitive.id.trim() : "";
+  const decorationKind =
+    segment.kind === "decoration" && typeof primitive?.kind === "string" && primitive.kind.trim() ? primitive.kind.trim() : "";
+  const suffix = idValue || decorationKind;
+  return {
+    kind: segment.kind,
+    index,
+    label: suffix ? `${segment.label} ${index + 1}: ${suffix}` : `${segment.label} ${index + 1}`,
+    id: idValue || undefined,
+    data: primitive,
+  };
+}
+
 export function mauthTargetReferenceSummary(targetAnchor: string, previewData: unknown) {
   const preview = asRecord(previewData);
   const target = asRecord(preview?.target);
@@ -100,6 +132,8 @@ export function mauthTargetReferenceSummary(targetAnchor: string, previewData: u
   const selectedDiagram = selectedBlock
     ? diagrams.find((diagram) => diagram.id === selectedBlock.id || diagram.anchor === selectedBlock.anchor)
     : undefined;
+
+  const selectedGeometryPrimitiveSummary = selectedGeometryPrimitive(targetAnchor, selectedDiagram);
 
   return {
     source: "mauth-reference-token",
@@ -115,6 +149,7 @@ export function mauthTargetReferenceSummary(targetAnchor: string, previewData: u
       : null,
     selectedBlock,
     selectedDiagram: compactAssistantTargetDiagram(selectedDiagram),
+    selectedGeometryPrimitive: selectedGeometryPrimitiveSummary,
     warnings: compactWarnings(preview?.warnings),
   };
 }
