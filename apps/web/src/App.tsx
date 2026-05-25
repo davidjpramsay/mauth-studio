@@ -13282,6 +13282,7 @@ export default function App() {
                 <SelectionInspector
                   selectedBlock={selectedEditorBlock}
                   activeAnchor={activeTocItemId}
+                  onActivateAnchor={activateEditorAnchor}
                   onBlockChange={updateSelectedBlock}
                   createTextBlock={textBlock}
                   diagramTypePatch={diagramTypePatch}
