@@ -8,6 +8,7 @@ export interface MauthAssistantToolStatusSummary {
   toolName: string;
   state: MauthAssistantToolStatusState;
   stateLabel: string;
+  targetLabel?: string;
   committedDocument: boolean | null;
   commitLabel: string;
   detail: string;
@@ -83,6 +84,47 @@ function changedLabel(output: Record<string, unknown> | null) {
   return parts.join(", ");
 }
 
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function changedIds(output: Record<string, unknown> | null) {
+  return Array.isArray(output?.changedIds)
+    ? output.changedIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+    : [];
+}
+
+function moduleKindLabel(module: Record<string, unknown>) {
+  const kind = stringValue(module.kind);
+  const diagramType = stringValue(module.diagramType);
+  if (kind === "diagram") return diagramType ? `Diagram · ${diagramType}` : "Diagram";
+  if (kind === "space") return "Space";
+  if (kind === "text") return "Text";
+  if (kind === "table") return "Table";
+  if (kind === "columns") return "Columns";
+  if (kind === "choices") return "Choices";
+  return kind ? `${kind.charAt(0).toUpperCase()}${kind.slice(1)}` : "Module";
+}
+
+function outputTargetLabel(output: Record<string, unknown> | null) {
+  const postEditInspection = asRecord(output?.postEditInspection);
+  const repairTarget = asRecord(output?.repairTarget);
+  const target = asRecord(postEditInspection?.target);
+  const question = asRecord(postEditInspection?.question);
+  const questionNumber =
+    numberValue(question?.questionNumber) ?? numberValue(target?.questionNumber) ?? numberValue(repairTarget?.questionNumber);
+  const targetId = stringValue(target?.blockId) || stringValue(repairTarget?.targetId) || changedIds(output)[0] || "";
+  const modules = Array.isArray(question?.modules) ? question.modules : [];
+  const module = modules.map(asRecord).find((item) => item && stringValue(item.id) === targetId);
+  const parts = questionNumber ? [`Question ${questionNumber}`] : [];
+  if (module) {
+    parts.push(moduleKindLabel(module));
+  } else if (targetId && postEditInspection) {
+    parts.push(`Target ${targetId}`);
+  }
+  return parts.join(" · ");
+}
+
 function commitLabel(committedDocument: boolean | null) {
   if (committedDocument === true) return "Yes";
   if (committedDocument === false) return "No";
@@ -103,6 +145,7 @@ function statusSummary(
     toolName,
     state,
     stateLabel,
+    targetLabel: outputTargetLabel(output) || undefined,
     committedDocument,
     commitLabel: commitLabel(committedDocument),
     detail,

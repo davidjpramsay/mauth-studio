@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { AssistantAttachment } from "@/lib/api";
+import { firstMauthTargetReference } from "@/lib/mauthAssistantTargetReferences";
 import type { MauthAssistantToolStatusSummary } from "@/lib/mauthAssistantToolResults";
 import { cn } from "@/lib/utils";
 
@@ -143,6 +144,80 @@ function AssistantMarkdown({ content }: { content: string }) {
   return <div className="space-y-2">{assistantMarkdownBlocks(content)}</div>;
 }
 
+interface AssistantReferenceContext {
+  anchor: string;
+  target?: string;
+  kind?: string;
+  summary?: string;
+}
+
+function referenceLineValue(content: string, label: string) {
+  const line = content
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .find((current) => current.trimStart().startsWith(`${label}:`));
+  return line?.slice(line.indexOf(":") + 1).trim() || "";
+}
+
+function assistantReferenceContext(content: string): AssistantReferenceContext | null {
+  const anchor = firstMauthTargetReference(content);
+  if (!anchor) return null;
+  return {
+    anchor,
+    target: referenceLineValue(content, "Target") || undefined,
+    kind: referenceLineValue(content, "Kind") || undefined,
+    summary: referenceLineValue(content, "Summary") || undefined,
+  };
+}
+
+function stripAssistantReferenceContext(content: string) {
+  const prefixes = [
+    "Use this Mauth target for my next request:",
+    "Mauth reference:",
+    "Target:",
+    "Kind:",
+    "Editor anchor:",
+    "Preview anchor:",
+    "Source:",
+    "Summary:",
+  ];
+  return content
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !prefixes.some((prefix) => line.trimStart().startsWith(prefix)))
+    .join("\n")
+    .trim();
+}
+
+function targetKindLabel(kind?: string) {
+  if (!kind) return "";
+  return kind.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function AssistantReferenceCard({
+  reference,
+  variant = "default",
+}: {
+  reference: AssistantReferenceContext;
+  variant?: "default" | "user";
+}) {
+  const subtleText = variant === "user" ? "text-primary-foreground/75" : "text-muted-foreground";
+  const cardClass =
+    variant === "user"
+      ? "border-primary-foreground/25 bg-primary-foreground/10 text-primary-foreground"
+      : "border-border bg-muted/25 text-foreground";
+  return (
+    <div className={cn("min-w-0 rounded-lg border px-2.5 py-2 text-xs", cardClass)} data-assistant-target-reference={reference.anchor}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className={cn("font-semibold uppercase tracking-wide", subtleText)}>Target</span>
+        <span className="min-w-0 truncate font-semibold">{reference.target || reference.anchor}</span>
+        {reference.kind ? <span className={cn("shrink-0", subtleText)}>{targetKindLabel(reference.kind)}</span> : null}
+      </div>
+      {reference.summary ? <div className={cn("mt-1 truncate", subtleText)}>{reference.summary}</div> : null}
+    </div>
+  );
+}
+
 function formatAssistantCost(value: number) {
   if (value < 0.0001) return "<$0.0001";
   if (value < 0.01) return `$${value.toFixed(4)}`;
@@ -249,6 +324,12 @@ function AssistantToolStatusSummary({ status, content }: { status: MauthAssistan
       </div>
       <div className="min-w-0 font-mono text-xs font-semibold">{status.toolName}</div>
       <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+        {status.targetLabel ? (
+          <div className="flex min-w-0 justify-between gap-3 sm:block">
+            <dt className="text-current/70">Target:</dt>
+            <dd className="truncate font-semibold">{status.targetLabel}</dd>
+          </div>
+        ) : null}
         <div className="flex min-w-0 justify-between gap-3 sm:block">
           <dt className="text-current/70">Document commit:</dt>
           <dd className="font-semibold">{status.commitLabel}</dd>
@@ -310,6 +391,7 @@ export function MauthAssistantPanel({
   const elapsedLabel =
     elapsedSeconds >= 60 ? `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, "0")}s` : `${elapsedSeconds}s`;
   const workspacePlacement = placement === "workspace";
+  const draftReference = assistantReferenceContext(chatInput);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
@@ -388,42 +470,50 @@ export function MauthAssistantPanel({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           <div className="flex flex-col gap-3">
             {chatMessages.length ? (
-              chatMessages.map((chatMessage) => (
-                <div
-                  key={chatMessage.id}
-                  className={cn(
-                    "max-w-[92%] rounded-2xl px-3 py-2 text-sm leading-relaxed",
-                    chatMessage.role === "user" ? "ml-auto bg-primary text-primary-foreground" : assistantBubbleClass(chatMessage.tone),
-                  )}
-                >
-                  {chatMessage.role === "assistant" ? (
-                    chatMessage.tone ? (
-                      <div className="flex min-w-0 gap-2">
-                        <AssistantToolStatusIcon tone={chatMessage.tone} />
-                        <div className="min-w-0 flex-1">
-                          {chatMessage.toolStatus ? (
-                            <AssistantToolStatusSummary status={chatMessage.toolStatus} content={chatMessage.content} />
-                          ) : (
-                            <AssistantMarkdown content={chatMessage.content} />
-                          )}
+              chatMessages.map((chatMessage) => {
+                const messageReference = chatMessage.role === "user" ? assistantReferenceContext(chatMessage.content) : null;
+                const displayedContent =
+                  chatMessage.role === "user" && messageReference
+                    ? stripAssistantReferenceContext(chatMessage.content) || "Targeted request"
+                    : chatMessage.content;
+                return (
+                  <div
+                    key={chatMessage.id}
+                    className={cn(
+                      "max-w-[92%] rounded-2xl px-3 py-2 text-sm leading-relaxed",
+                      chatMessage.role === "user" ? "ml-auto bg-primary text-primary-foreground" : assistantBubbleClass(chatMessage.tone),
+                    )}
+                  >
+                    {messageReference ? <AssistantReferenceCard reference={messageReference} variant="user" /> : null}
+                    {chatMessage.role === "assistant" ? (
+                      chatMessage.tone ? (
+                        <div className="flex min-w-0 gap-2">
+                          <AssistantToolStatusIcon tone={chatMessage.tone} />
+                          <div className="min-w-0 flex-1">
+                            {chatMessage.toolStatus ? (
+                              <AssistantToolStatusSummary status={chatMessage.toolStatus} content={displayedContent} />
+                            ) : (
+                              <AssistantMarkdown content={displayedContent} />
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <AssistantMarkdown content={displayedContent} />
+                      )
                     ) : (
-                      <AssistantMarkdown content={chatMessage.content} />
-                    )
-                  ) : (
-                    chatMessage.content
-                  )}
-                  {chatMessage.attachments?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {chatMessage.attachments.map((attachment) => (
-                        <AttachmentPill key={attachment.id ?? attachment.name} attachment={attachment} />
-                      ))}
-                    </div>
-                  ) : null}
-                  {chatMessage.role === "assistant" && chatMessage.usage ? <AssistantUsageDetails usage={chatMessage.usage} /> : null}
-                </div>
-              ))
+                      <div className={cn(messageReference && "mt-2")}>{displayedContent}</div>
+                    )}
+                    {chatMessage.attachments?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {chatMessage.attachments.map((attachment) => (
+                          <AttachmentPill key={attachment.id ?? attachment.name} attachment={attachment} />
+                        ))}
+                      </div>
+                    ) : null}
+                    {chatMessage.role === "assistant" && chatMessage.usage ? <AssistantUsageDetails usage={chatMessage.usage} /> : null}
+                  </div>
+                );
+              })
             ) : (
               <p className="rounded-xl border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
                 Ask for a focused edit, for example “check every question has a solution and fix any missing spaces”.
@@ -458,6 +548,11 @@ export function MauthAssistantPanel({
               {chatAttachments.map((attachment) => (
                 <AttachmentPill key={attachment.id ?? attachment.name} attachment={attachment} onRemove={onRemoveAttachment} />
               ))}
+            </div>
+          ) : null}
+          {draftReference ? (
+            <div className="mb-2">
+              <AssistantReferenceCard reference={draftReference} />
             </div>
           ) : null}
           <Textarea

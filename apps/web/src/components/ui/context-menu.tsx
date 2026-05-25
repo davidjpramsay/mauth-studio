@@ -69,10 +69,6 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
       style={{ left: position.left, top: position.top }}
       data-context-menu
     >
-      <div className="border-b px-3 py-2">
-        <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{menu.title}</div>
-        {menu.subtitle ? <div className="mt-0.5 truncate text-sm font-medium">{menu.subtitle}</div> : null}
-      </div>
       <div className="py-1">
         {menu.actions.map((action) => (
           <button

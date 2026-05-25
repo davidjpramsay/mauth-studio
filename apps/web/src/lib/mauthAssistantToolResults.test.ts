@@ -23,6 +23,13 @@ test("assistant terminal tool status reports committed settings edits", () => {
       message: "Updated the selected settings.",
       changedIds: ["d1"],
       committedDocument: true,
+      postEditInspection: {
+        target: { questionNumber: 1, blockId: "d1" },
+        question: {
+          questionNumber: 1,
+          modules: [{ id: "d1", kind: "diagram", diagramType: "graph2d" }],
+        },
+      },
     },
   });
 
@@ -30,6 +37,7 @@ test("assistant terminal tool status reports committed settings edits", () => {
   assert.equal(message?.summary.state, "committed");
   assert.equal(message?.summary.committedDocument, true);
   assert.equal(message?.summary.commitLabel, "Yes");
+  assert.equal(message?.summary.targetLabel, "Question 1 · Diagram · graph2d");
   assert.match(messageText(message), /`mauth\.settings\.apply` committed changes/);
   assert.match(messageText(message), /Updated the selected settings/);
 });
