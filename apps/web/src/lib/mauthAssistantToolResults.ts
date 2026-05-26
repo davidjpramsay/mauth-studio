@@ -25,6 +25,10 @@ export interface MauthAssistantToolStatusMessage {
 }
 
 const LOCAL_TERMINAL_TOOL_NAMES = new Set([
+  "mauth.document.inspect",
+  "mauth.preview.inspect",
+  "mauth.validation.run",
+  "mauth.layout.check",
   "mauth.question.upsert",
   "mauth.author.replaceQuestion",
   "mauth.author.addDiagram",
@@ -223,7 +227,8 @@ export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutp
   if (output?.ok !== true || !LOCAL_TERMINAL_TOOL_NAMES.has(toolName)) return null;
   const semanticReview = asRecord(output.semanticReview);
   if (semanticReview?.required === true) return null;
-  const status = output.committedDocument === true ? "committed changes" : "completed";
+  const committedDocument = typeof output.committedDocument === "boolean" ? output.committedDocument : null;
+  const status = committedDocument === true ? "committed changes" : "completed";
   const detail = outputDetail(output) || "Completed the edit.";
   return {
     tone: "tool-success",
@@ -231,9 +236,9 @@ export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutp
     summary: statusSummary(
       "Tool result",
       toolName,
-      output.committedDocument === true ? "committed" : "completed",
-      output.committedDocument === true ? "Committed" : "Completed",
-      output.committedDocument === true,
+      committedDocument === true ? "committed" : "completed",
+      committedDocument === true ? "Committed" : "Completed",
+      committedDocument,
       detail,
       output,
     ),

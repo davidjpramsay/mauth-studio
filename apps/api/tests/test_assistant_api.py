@@ -110,6 +110,80 @@ def test_document_inspect_prompt_uses_native_fast_path_without_key(monkeypatch):
     ]
 
 
+def test_preview_inspect_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Inspect this diagram."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q1/b:d1",
+                    "target": {"kind": "questionBlock", "questionNumber": 1, "blockId": "d1"},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Inspecting the selected preview target."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-preview-inspect",
+            "callId": "local-preview-inspect",
+            "name": "mauth_preview_inspect",
+            "arguments": {"scope": "selection"},
+            "mauthToolName": "mauth.preview.inspect",
+            "mauthArguments": {"scope": "selection"},
+        }
+    ]
+
+
+def test_question_preview_inspect_prompt_uses_question_number_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Inspect question 2 preview warnings."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Inspecting Question 2."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-preview-inspect",
+            "callId": "local-preview-inspect",
+            "name": "mauth_preview_inspect",
+            "arguments": {"scope": "question", "questionNumber": 2},
+            "mauthToolName": "mauth.preview.inspect",
+            "mauthArguments": {"scope": "question", "questionNumber": 2},
+        }
+    ]
+
+
+def test_preview_repair_prompt_still_requires_provider(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Fix this diagram."}]})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is False
+    assert data["toolCalls"] == []
+    assert "OPENAI_API_KEY" in data["message"]
+
+
 def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 

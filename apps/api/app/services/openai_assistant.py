@@ -91,6 +91,60 @@ VALIDATION_CHECK_TERMS = (
     "check document validation",
     "check solution validation",
 )
+PREVIEW_INSPECT_REQUEST_TERMS = (
+    "preview inspect",
+    "inspect question",
+    "inspect q",
+    "inspect this question",
+    "inspect selected question",
+    "inspect current question",
+    "inspect this module",
+    "inspect selected module",
+    "inspect current module",
+    "inspect this diagram",
+    "inspect selected diagram",
+    "inspect current diagram",
+    "inspect this graph",
+    "inspect selected graph",
+    "inspect current graph",
+    "show preview warnings",
+    "show warnings",
+    "what warnings",
+    "what is wrong with this diagram",
+    "what's wrong with this diagram",
+    "does this fit",
+    "is this clipped",
+    "is it clipped",
+    "is this overflowing",
+    "is it overflowing",
+    "check this diagram",
+    "check selected diagram",
+    "check current diagram",
+    "check this graph",
+    "check selected graph",
+    "check current graph",
+)
+PREVIEW_INSPECT_VERBS = ("inspect", "look at", "check")
+PREVIEW_TARGET_CONTEXT_TERMS = (
+    "this question",
+    "selected question",
+    "current question",
+    "this module",
+    "selected module",
+    "current module",
+    "this diagram",
+    "selected diagram",
+    "current diagram",
+    "this graph",
+    "selected graph",
+    "current graph",
+    "this chart",
+    "selected chart",
+    "current chart",
+    "this image",
+    "selected image",
+    "current image",
+)
 READ_ONLY_DIRECT_BLOCKING_TERMS = (
     "add",
     "append",
@@ -269,6 +323,9 @@ DIRECT_MAUTH_TOOL_NAME_MAP = {
     "mauth_settings_apply": "mauth.settings.apply",
     "mauth_update_selected_settings": "mauth.settings.apply",
     "mauth_check_document_layout": "mauth.layout.check",
+    "mauth_document_inspect": "mauth.document.inspect",
+    "mauth_preview_inspect": "mauth.preview.inspect",
+    "mauth_validation_run": "mauth.validation.run",
 }
 QUESTION_AUTHORING_TOOL_NAMES = {"mauth.question.upsert", "mauth.author.replaceQuestion"}
 GRAPH3D_VIEW_KEYS = ("az", "el", "bank")
@@ -5419,6 +5476,41 @@ def direct_document_inspect_response(model: str) -> dict[str, Any]:
     }
 
 
+def direct_preview_inspect_arguments(request: AssistantChatRequest) -> dict[str, Any]:
+    question_numbers = sorted(question_numbers_from_request(latest_user_messages(request.messages)))
+    if question_numbers:
+        return {"scope": "question", "questionNumber": question_numbers[0]}
+    return {"scope": "selection"}
+
+
+def direct_preview_inspect_response(model: str, request: AssistantChatRequest) -> dict[str, Any]:
+    arguments = direct_preview_inspect_arguments(request)
+    question_number = arguments.get("questionNumber")
+    message = (
+        f"Inspecting Question {question_number}."
+        if isinstance(question_number, int)
+        else "Inspecting the selected preview target."
+    )
+    return {
+        "configured": True,
+        "model": model,
+        "message": message,
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-preview-inspect",
+                "callId": "local-preview-inspect",
+                "name": "mauth_preview_inspect",
+                "arguments": arguments,
+                "mauthToolName": "mauth.preview.inspect",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth preview inspection; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def direct_validation_mode(text: str) -> str:
     mentions_solution = "solution" in text or "solutions" in text
     mentions_document = "document" in text or "test" in text or "assessment" in text
@@ -5499,6 +5591,20 @@ def should_use_direct_document_inspect(request: AssistantChatRequest) -> bool:
     return any(term in text for term in DOCUMENT_INSPECT_TERMS)
 
 
+def should_use_direct_preview_inspect(request: AssistantChatRequest) -> bool:
+    if not direct_read_only_request_safe(request):
+        return False
+    text = current_request_text(request.messages)
+    if any(term in text for term in PREVIEW_INSPECT_REQUEST_TERMS):
+        return True
+    if not any(term in text for term in PREVIEW_INSPECT_VERBS):
+        return False
+    has_question_number = bool(question_numbers_from_request(latest_user_messages(request.messages)))
+    has_target_reference = "@mauth[" in text or bool(assistant_target_reference_from_summary(request.documentSummary))
+    has_target_context = any(term in text for term in PREVIEW_TARGET_CONTEXT_TERMS)
+    return has_question_number or has_target_reference or has_target_context
+
+
 def should_use_direct_validation_run(request: AssistantChatRequest) -> bool:
     if not direct_read_only_request_safe(request):
         return False
@@ -5531,6 +5637,9 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
 
     if should_use_direct_document_inspect(request):
         return direct_document_inspect_response(model)
+
+    if should_use_direct_preview_inspect(request):
+        return direct_preview_inspect_response(model, request)
 
     if should_use_direct_validation_run(request):
         return direct_validation_run_response(model, current_request_text(request.messages))

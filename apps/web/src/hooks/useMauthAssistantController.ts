@@ -157,10 +157,24 @@ function assistantResultMessage<Q extends MauthQuestionLike, F extends object, C
     const marksTotal = typeof counts?.marksTotal === "number" ? counts.marksTotal : 0;
     return `Inspected ${questionsCount} question${questionsCount === 1 ? "" : "s"} and ${marksTotal} mark${marksTotal === 1 ? "" : "s"}.`;
   }
+  if (result.toolName === "mauth.preview.inspect") {
+    const question = asRecord(data?.question);
+    const questionNumber = typeof question?.questionNumber === "number" ? question.questionNumber : null;
+    const warnings = Array.isArray(data?.warnings) ? data.warnings.length : 0;
+    const target = questionNumber ? `Question ${questionNumber}` : "the selected preview target";
+    return warnings ? `Inspected ${target} with ${warnings} warning${warnings === 1 ? "" : "s"}.` : `Inspected ${target} with no warnings.`;
+  }
   if (result.toolName === "mauth.validation.run") {
     return result.warnings.length
       ? `Validation completed with ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}.`
       : "Validation completed with no warnings.";
+  }
+  if (result.toolName === "mauth.layout.check") {
+    const summary = asRecord(data?.summary);
+    const issueCount = typeof summary?.issueCount === "number" ? summary.issueCount : result.warnings.length;
+    return issueCount
+      ? `Layout check completed with ${issueCount} issue${issueCount === 1 ? "" : "s"}.`
+      : "Layout check completed with no issues.";
   }
   if (result.toolName === "mauth.actions.preview") {
     const preview = asRecord(data?.preview);
@@ -276,6 +290,7 @@ function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): Mau
 
 function assistantActivityLabelForTool(name: MauthAssistantAdapterToolCall["name"]) {
   if (name === "mauth.document.inspect") return "Inspecting document";
+  if (name === "mauth.preview.inspect") return "Inspecting selection";
   if (name === "mauth.validation.run") return "Checking document";
   if (name === "mauth.actions.preview") return "Previewing changes";
   if (name === "mauth.actions.apply") return "Applying changes";
