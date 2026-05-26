@@ -60,7 +60,7 @@ import {
 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
-import { MauthAssistantPanel } from "@/components/assistant/MauthAssistantPanel";
+import { MauthAssistantPanel, type MauthAssistantTargetReferenceContext } from "@/components/assistant/MauthAssistantPanel";
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
@@ -10492,13 +10492,29 @@ export default function App() {
     } satisfies DocumentTocItem;
   }
 
-  function contextReferenceText(anchor: string) {
+  function contextTargetReference(anchor: string): MauthAssistantTargetReferenceContext {
     const item = contextDescriptorForAnchor(anchor);
-    const label = item.label;
+    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
+    const questionIndex = questionId ? questions.findIndex((question) => question.id === questionId) : -1;
+    const questionLabel = questionIndex >= 0 ? `Question ${questionIndex + 1}` : "";
+    const target = questionLabel && item.kind !== "question" ? `${questionLabel} · ${item.label}` : item.label;
     const summary = item.summary ? tocSummaryText(item.summary) : "";
-    const kind = item.kind;
-    const editorAnchor = item.editorAnchor;
-    return [`Mauth target: @mauth[${editorAnchor}]`, `Item: ${label}`, `Type: ${kind}`, summary ? `Summary: ${summary}` : ""]
+    return {
+      anchor: item.editorAnchor,
+      target,
+      kind: item.kind,
+      summary: summary || undefined,
+    };
+  }
+
+  function contextReferenceText(anchor: string) {
+    const reference = contextTargetReference(anchor);
+    return [
+      `Mauth target: @mauth[${reference.anchor}]`,
+      `Item: ${reference.target ?? reference.anchor}`,
+      reference.kind ? `Type: ${reference.kind}` : "",
+      reference.summary ? `Summary: ${reference.summary}` : "",
+    ]
       .filter(Boolean)
       .join("\n");
   }
@@ -10528,14 +10544,8 @@ export default function App() {
   }
 
   function askAssistantAboutAnchor(anchor: string) {
-    const item = contextDescriptorForAnchor(anchor);
-    const label = item.label;
     selectContextAnchor(anchor, { previewOnly: true });
-    const reference = contextReferenceText(anchor);
-    assistantController.setChatInput((current) => {
-      const prefix = `Use this target for my next request:\n${reference}\n\n`;
-      return current.trim() ? `${prefix}${current.trim()}` : `${prefix}What should I change about ${label}?`;
-    });
+    assistantController.setActiveTargetReference(contextTargetReference(anchor));
     assistantController.setPanelOpen(true);
     resetPreviewZoom();
     setPaneMode("assistant");
@@ -13073,7 +13083,9 @@ export default function App() {
                   providerStatusMessage={assistantController.providerStatusMessage}
                   activityLabel={assistantController.activityLabel}
                   activityStartedAt={assistantController.activityStartedAt}
+                  activeTargetReference={assistantController.activeTargetReference}
                   onChatInputChange={assistantController.setChatInput}
+                  onClearActiveTargetReference={() => assistantController.setActiveTargetReference(null)}
                   onAddAttachments={assistantController.addChatAttachments}
                   onRemoveAttachment={assistantController.removeChatAttachment}
                   onSendChat={() => void assistantController.sendChatMessage()}

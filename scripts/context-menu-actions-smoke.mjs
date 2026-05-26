@@ -213,7 +213,7 @@ async function openContextMenu(page, locator) {
 }
 
 async function waitForAssistantRequest(assistantRequests) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     if (assistantRequests.length) return assistantRequests[assistantRequests.length - 1];
     await delay(100);
   }
@@ -250,6 +250,7 @@ async function main() {
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type())) consoleMessages.push(`${message.type()}: ${message.text()}`);
     });
+    page.on("pageerror", (error) => consoleMessages.push(`pageerror: ${error.message}`));
     await mockApi(page, assistantRequests);
     await page.addInitScript(
       ([storageKey, draft]) => {
@@ -283,13 +284,17 @@ async function main() {
     await assistantInput.waitFor();
     await page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).waitFor();
     const assistantValue = await assistantInput.inputValue();
-    assert(assistantValue.includes(`Mauth target: @mauth[${INTRO_ANCHOR}]`), "assistant context should include a stable target token");
-    assert(assistantValue.includes("Item: Text 1"), "assistant context should include the selected item label");
-    assert(assistantValue.includes("Type: text"), "assistant context should include the selected item type");
+    assert.equal(assistantValue, "", "using a target in the assistant should keep the request input clean");
+    const assistantTargetCard = await page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).innerText();
+    assert(assistantTargetCard.includes("Question 1"), "assistant target card should include the question context");
+    assert(assistantTargetCard.includes("Text 1"), "assistant target card should include the selected item label");
+    assert(assistantTargetCard.includes("text"), "assistant target card should include the selected item type");
+    await assistantInput.fill("Check this text.");
+    await page.waitForTimeout(100);
     await page.getByRole("button", { name: "Ask" }).click();
     const assistantPanelAfterSend = await page.locator(".assistant-pane").innerText();
     assert(
-      !assistantPanelAfterSend.includes("Mauth reference: @mauth["),
+      !assistantPanelAfterSend.includes("@mauth[") && !assistantPanelAfterSend.includes("Mauth target:"),
       "sent assistant message should show the target card instead of raw reference plumbing",
     );
     const assistantRequest = await waitForAssistantRequest(assistantRequests);
