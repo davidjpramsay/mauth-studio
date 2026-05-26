@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleCheck, CircleX, FileText, ImageIcon, MessageSquare, Paperclip, Send, X } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, FileText, ImageIcon, LocateFixed, MessageSquare, Paperclip, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -202,10 +202,12 @@ function targetKindLabel(kind?: string) {
 function AssistantReferenceCard({
   reference,
   variant = "default",
+  onShow,
   onRemove,
 }: {
   reference: MauthAssistantTargetReferenceContext;
   variant?: "default" | "user";
+  onShow?: () => void;
   onRemove?: () => void;
 }) {
   const subtleText = variant === "user" ? "text-primary-foreground/75" : "text-muted-foreground";
@@ -219,18 +221,35 @@ function AssistantReferenceCard({
         <span className={cn("font-semibold uppercase tracking-wide", subtleText)}>Target</span>
         <span className="min-w-0 truncate font-semibold">{reference.target || reference.anchor}</span>
         {reference.kind ? <span className={cn("shrink-0", subtleText)}>{targetKindLabel(reference.kind)}</span> : null}
-        {onRemove ? (
-          <button
-            type="button"
-            aria-label="Clear assistant target"
-            className={cn(
-              "ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors",
-              variant === "user" ? "hover:bg-primary-foreground/15" : "hover:bg-muted",
-            )}
-            onClick={onRemove}
-          >
-            <X className="size-3.5" aria-hidden="true" />
-          </button>
+        {onShow || onRemove ? (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onShow ? (
+              <button
+                type="button"
+                aria-label="Show assistant target"
+                className={cn(
+                  "inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors",
+                  variant === "user" ? "hover:bg-primary-foreground/15" : "hover:bg-muted",
+                )}
+                onClick={onShow}
+              >
+                <LocateFixed className="size-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+            {onRemove ? (
+              <button
+                type="button"
+                aria-label="Clear assistant target"
+                className={cn(
+                  "inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors",
+                  variant === "user" ? "hover:bg-primary-foreground/15" : "hover:bg-muted",
+                )}
+                onClick={onRemove}
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {reference.summary ? <div className={cn("mt-1 truncate", subtleText)}>{reference.summary}</div> : null}
@@ -378,8 +397,11 @@ export function MauthAssistantPanel({
   activityLabel = "Working",
   activityStartedAt = null,
   activeTargetReference = null,
+  selectedTargetReference = null,
   onChatInputChange,
   onClearActiveTargetReference,
+  onUseSelectedTargetReference,
+  onShowTargetReference,
   onAddAttachments,
   onRemoveAttachment,
   onSendChat,
@@ -396,8 +418,11 @@ export function MauthAssistantPanel({
   activityLabel?: string;
   activityStartedAt?: number | null;
   activeTargetReference?: MauthAssistantTargetReferenceContext | null;
+  selectedTargetReference?: MauthAssistantTargetReferenceContext | null;
   onChatInputChange: (value: string) => void;
   onClearActiveTargetReference?: () => void;
+  onUseSelectedTargetReference?: () => void;
+  onShowTargetReference?: (anchor: string) => void;
   onAddAttachments: (files: File[]) => void | Promise<void>;
   onRemoveAttachment: (id: string) => void;
   onSendChat: () => void;
@@ -500,6 +525,7 @@ export function MauthAssistantPanel({
                 const displayedContent = parsedMessageReference
                   ? stripAssistantReferenceContext(chatMessage.content) || "Targeted request"
                   : chatMessage.content;
+                const messageReferenceVariant = chatMessage.role === "user" ? "user" : "default";
                 return (
                   <div
                     key={chatMessage.id}
@@ -508,7 +534,13 @@ export function MauthAssistantPanel({
                       chatMessage.role === "user" ? "ml-auto bg-primary text-primary-foreground" : assistantBubbleClass(chatMessage.tone),
                     )}
                   >
-                    {messageReference ? <AssistantReferenceCard reference={messageReference} variant="user" /> : null}
+                    {messageReference ? (
+                      <AssistantReferenceCard
+                        reference={messageReference}
+                        variant={messageReferenceVariant}
+                        onShow={onShowTargetReference ? () => onShowTargetReference(messageReference.anchor) : undefined}
+                      />
+                    ) : null}
                     {chatMessage.role === "assistant" ? (
                       chatMessage.tone ? (
                         <div className="flex min-w-0 gap-2">
@@ -576,11 +608,28 @@ export function MauthAssistantPanel({
           ) : null}
           {activeTargetReference ? (
             <div className="mb-2">
-              <AssistantReferenceCard reference={activeTargetReference} onRemove={onClearActiveTargetReference} />
+              <AssistantReferenceCard
+                reference={activeTargetReference}
+                onShow={onShowTargetReference ? () => onShowTargetReference(activeTargetReference.anchor) : undefined}
+                onRemove={onClearActiveTargetReference}
+              />
             </div>
           ) : draftReference ? (
             <div className="mb-2">
-              <AssistantReferenceCard reference={draftReference} />
+              <AssistantReferenceCard
+                reference={draftReference}
+                onShow={onShowTargetReference ? () => onShowTargetReference(draftReference.anchor) : undefined}
+              />
+            </div>
+          ) : selectedTargetReference && onUseSelectedTargetReference ? (
+            <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-2.5 py-2 text-xs">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold uppercase tracking-wide text-muted-foreground">Selected</div>
+                <div className="truncate font-semibold">{selectedTargetReference.target || selectedTargetReference.anchor}</div>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={onUseSelectedTargetReference}>
+                Use selected
+              </Button>
             </div>
           ) : null}
           <Textarea

@@ -129,7 +129,7 @@ Assistant-facing tool output must remain state-aware in the visible panel. A suc
 Display-only mode includes a small left-side Assistant toggle. It opens a panel with:
 
 - a normal chat input backed by `/api/assistant/chat`
-- a removable active-target card for context-menu targets, keeping the teacher request textarea free of `@mauth[...]` reference plumbing
+- a removable active-target card for context-menu or current-selection targets, keeping the teacher request textarea free of `@mauth[...]` reference plumbing while still letting the teacher jump back to the targeted module
 - a compact provider status indicator from `/api/assistant/status`
 - local tool-result summaries that show commit state, target, changed item count, and repair/review status
 - normal chat messages with per-request estimated token/cost summaries

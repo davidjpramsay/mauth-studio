@@ -8653,6 +8653,7 @@ export default function App() {
   const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
   const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
   const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
+  const selectedAssistantTargetReference = activeTocItemId ? contextTargetReference(activeTocItemId) : null;
   const selectionInspectorVisible = showInspectorPane && !editingFrontMatter && !editingPageBreak && Boolean(selectedEditorBlock);
 
   useLayoutEffect(() => {
@@ -10549,6 +10550,10 @@ export default function App() {
     assistantController.setPanelOpen(true);
     resetPreviewZoom();
     setPaneMode("assistant");
+  }
+
+  function showAssistantTargetReference(anchor: string) {
+    selectContextAnchor(anchor, { openEditor: true, openInspector: true });
   }
 
   function copyAnchorReference(anchor: string) {
@@ -13084,8 +13089,13 @@ export default function App() {
                   activityLabel={assistantController.activityLabel}
                   activityStartedAt={assistantController.activityStartedAt}
                   activeTargetReference={assistantController.activeTargetReference}
+                  selectedTargetReference={selectedAssistantTargetReference}
                   onChatInputChange={assistantController.setChatInput}
                   onClearActiveTargetReference={() => assistantController.setActiveTargetReference(null)}
+                  onUseSelectedTargetReference={() => {
+                    if (selectedAssistantTargetReference) assistantController.setActiveTargetReference(selectedAssistantTargetReference);
+                  }}
+                  onShowTargetReference={showAssistantTargetReference}
                   onAddAttachments={assistantController.addChatAttachments}
                   onRemoveAttachment={assistantController.removeChatAttachment}
                   onSendChat={() => void assistantController.sendChatMessage()}

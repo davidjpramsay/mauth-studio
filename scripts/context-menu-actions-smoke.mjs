@@ -309,7 +309,12 @@ async function main() {
       "assistant target reference should include the selected module context",
     );
 
-    await page.getByRole("button", { name: "Manual editor mode" }).click();
+    await page.getByRole("button", { name: "Use selected" }).click();
+    const activeAssistantTarget = page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).last();
+    await activeAssistantTarget.waitFor();
+    await activeAssistantTarget.getByRole("button", { name: "Show assistant target" }).click();
+    await page.locator(".editor-pane").waitFor();
+    await page.locator(`.editor-pane [data-scroll-anchor="${INTRO_ANCHOR}"]`).first().waitFor();
     const previewSpace = page
       .locator('.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="q:q-context-1/b:space"]')
       .first();
