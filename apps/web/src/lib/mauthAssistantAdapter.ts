@@ -622,8 +622,7 @@ export async function runMauthAssistantAdapterTool<
     const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentToolOptions(host));
     let committedDocument = false;
     let postInspectionData: unknown;
-    if (
-      result.ok &&
+    const shouldCommitDocumentTool =
       (
         [
           "mauth.actions.apply",
@@ -636,9 +635,9 @@ export async function runMauthAssistantAdapterTool<
           "mauth.format.apply",
           "mauth.settings.apply",
         ] as string[]
-      ).includes(call.name) &&
-      result.document
-    ) {
+      ).includes(call.name) ||
+      (call.name === "mauth.layout.check" && result.changedIds.length > 0);
+    if (result.ok && shouldCommitDocumentTool && result.document) {
       const context = { toolName: call.name, reason: "assistant-document-apply", data: result.data };
       if (host.validateDocumentBeforeCommit) {
         const preflight = await host.validateDocumentBeforeCommit(result.document, context, result.changedIds, previousDocument);

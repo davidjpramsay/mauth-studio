@@ -171,7 +171,20 @@ function assistantResultMessage<Q extends MauthQuestionLike, F extends object, C
   }
   if (result.toolName === "mauth.layout.check") {
     const summary = asRecord(data?.summary);
+    const repair = asRecord(data?.repair);
     const issueCount = typeof summary?.issueCount === "number" ? summary.issueCount : result.warnings.length;
+    if (repair) {
+      const repairedIssueCount = typeof repair.repairedIssueCount === "number" ? repair.repairedIssueCount : 0;
+      const afterIssueCount = typeof repair.afterIssueCount === "number" ? repair.afterIssueCount : issueCount;
+      if (repair.applied === true) {
+        return afterIssueCount
+          ? `Layout check auto-repaired ${repairedIssueCount} issue${repairedIssueCount === 1 ? "" : "s"}; ${afterIssueCount} issue${afterIssueCount === 1 ? "" : "s"} remain.`
+          : `Layout check auto-repaired ${repairedIssueCount} issue${repairedIssueCount === 1 ? "" : "s"}; no issues remain.`;
+      }
+      return issueCount
+        ? `Layout check found ${issueCount} issue${issueCount === 1 ? "" : "s"}; none were safe to repair automatically.`
+        : "Layout check completed with no issues.";
+    }
     return issueCount
       ? `Layout check completed with ${issueCount} issue${issueCount === 1 ? "" : "s"}.`
       : "Layout check completed with no issues.";

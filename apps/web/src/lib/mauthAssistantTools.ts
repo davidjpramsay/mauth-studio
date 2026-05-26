@@ -31,7 +31,11 @@ import {
   type Geometry2DPrimitiveTarget,
 } from "./diagramGeometry2d.ts";
 import { buildVector2DSourceDiagramConfig, type Vector2DSourceDiagramInput } from "./diagramVector2d.ts";
-import { isSupportedDiagramSettingsRenderer, isSupportedModuleSettingsKind } from "./mauthSettingsActions.ts";
+import {
+  isSupportedDiagramSettingsRenderer,
+  isSupportedModuleSettingsKind,
+  type MauthDiagramSettingsUpdate,
+} from "./mauthSettingsActions.ts";
 
 export const MAUTH_ASSISTANT_TOOL_NAMES = [
   "mauth.tools.describe",
@@ -442,6 +446,17 @@ export interface MauthLayoutCheck {
   issues: MauthLayoutCheckIssue[];
   preview: Pick<MauthPreviewInspection, "scope" | "target" | "warnings" | "renderedMetrics" | "questions">;
   document: MauthDocumentInspection;
+  repair?: {
+    attempted: boolean;
+    applied: boolean;
+    beforeIssueCount: number;
+    afterIssueCount: number;
+    repairedIssueCount: number;
+    skippedIssueCount: number;
+    changedIds: string[];
+    repairedCodes: string[];
+    remainingCodes: string[];
+  };
 }
 
 export interface MauthAssistantToolDescription {
@@ -1671,6 +1686,10 @@ function layoutPrintRiskCode(code: string) {
   );
 }
 
+function layoutRepairEnabled(args: unknown) {
+  return isRecord(args) && (args.autoRepair === true || args.repair === true);
+}
+
 function numericGraphSizeValue(config: GraphConfig, key: "widthPx" | "heightPx" | "width" | "height") {
   const directValue = (config as unknown as Record<string, unknown>)[key];
   if (typeof directValue === "number" && Number.isFinite(directValue)) return directValue;
@@ -1958,7 +1977,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       {
         name: "mauth.layout.check",
         description:
-          "Run a document-wide structural and rendered-layout check for page overflow, missing answer surfaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram warnings, and print-risk items.",
+          "Run a document-wide structural and rendered-layout check for page overflow, missing answer surfaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram warnings, and print-risk items. With autoRepair:true, repair safe mechanical issues once, then rerun the check.",
       },
     ],
     actionTypes: {
@@ -2047,7 +2066,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For targeted module control changes inside a broader action batch, prefer module.settings.update over raw module.update patches for space lines, table sizing/alignment, columns, choices, and diagram module alignment.",
       "For targeted renderer control changes inside a broader action batch, prefer diagram.settings.update over raw graphConfig patches for graph/vector/3D/chart sizing and display flags, selected geometry2d primitive fields via settings.primitive, Penrose scale/resample, network visibility, set-diagram labels/shading, and image name/alt/size.",
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
-      "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
+      "For broad layout/print checks, use mauth.layout.check with autoRepair:true. It repairs safe mechanical issues once; repair remaining warnings with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
       "Choose diagram renderers by classroom intent: geometry2d for no-axis textbook geometry diagrams with points, straight segments, arcs, angle markers, equal-length/equal-angle markers, and right-angle markers; geometricConstruction for ruler-style theorem geometry; graph2d for coordinate/function graphs; vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams; statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes; setDiagram for Venn diagrams; network for networks; and graph3d for 3D. Geometry2d markers can target existing segment/angle ids or direct point references with pointPairs, anglePoints, and points.",
       "For graph3d, use data.points for named vertices and data.faces entries with points arrays, not vertices arrays; for curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
@@ -5590,6 +5609,213 @@ function issueWarning(issue: MauthLayoutCheckIssue): MauthActionWarning {
   };
 }
 
+function layoutIssueStableKey(issue: Pick<MauthLayoutCheckIssue, "code" | "anchor" | "targetId" | "message">) {
+  return layoutIssueKey(issue);
+}
+
+function layoutScopeForIssue<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  issue: MauthLayoutCheckIssue,
+): { scope: MauthContentScope; question: Q; marks: number; blocks: readonly ContentBlock[] } | undefined {
+  const parsed = parseAssistantAnchor(issue.anchor);
+  const question = parsed.questionId ? document.questions.find((item) => item.id === parsed.questionId) : undefined;
+  if (!question) return undefined;
+
+  if (parsed.blockId) {
+    const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, parsed.blockId);
+    if (entry) {
+      const scope = entry.scope;
+      const blocks = contentBlocksForScope(document, scope);
+      const part = scope.kind === "part" || scope.kind === "subpart" ? question.parts?.find((item) => item.id === scope.partId) : undefined;
+      const subpart = scope.kind === "subpart" && part ? part.subparts?.find((item) => item.id === scope.subpartId) : undefined;
+      return {
+        scope,
+        question,
+        marks: subpart?.marks ?? part?.marks ?? question.marks,
+        blocks,
+      };
+    }
+  }
+
+  if (parsed.partId && parsed.subpartId) {
+    const part = question.parts?.find((item) => item.id === parsed.partId);
+    const subpart = part?.subparts?.find((item) => item.id === parsed.subpartId);
+    if (!part || !subpart) return undefined;
+    const scope: MauthContentScope = { kind: "subpart", questionId: question.id, partId: part.id, subpartId: subpart.id };
+    return { scope, question, marks: subpart.marks, blocks: subpart.contentBlocks };
+  }
+
+  if (parsed.partId) {
+    const part = question.parts?.find((item) => item.id === parsed.partId);
+    if (!part) return undefined;
+    const scope: MauthContentScope = { kind: "part", questionId: question.id, partId: part.id };
+    return { scope, question, marks: part.marks, blocks: part.contentBlocks };
+  }
+
+  const scope: MauthContentScope = { kind: "question", questionId: question.id };
+  return { scope, question, marks: question.marks, blocks: question.contentBlocks };
+}
+
+function responseSpaceRepairTarget<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  issue: MauthLayoutCheckIssue,
+) {
+  const target = layoutScopeForIssue(document, issue);
+  if (!target) return undefined;
+  const existingLines = studentSpaceLinesInBlocks(target.blocks);
+  const lines =
+    issue.code === "rendered-solution-space-overflow" && existingLines > 0
+      ? Math.min(MAX_AUTHOR_STUDENT_SPACE_LINES, Math.max(existingLines + 4, Math.ceil(existingLines * 1.5)))
+      : defaultAuthorStudentSpaceLines(target.marks, 8);
+  return {
+    questionId: target.scope.questionId,
+    ...(target.scope.kind === "part" || target.scope.kind === "subpart" ? { partId: target.scope.partId } : {}),
+    ...(target.scope.kind === "subpart" ? { subpartId: target.scope.subpartId } : {}),
+    lines,
+    mode: "atLeast",
+  };
+}
+
+function resizedDiagramSettings(config: GraphConfig) {
+  if (config.type === "geometricConstruction" || config.type === "network" || config.type === "setDiagram") return undefined;
+  const width = numericGraphSizeValue(config, "widthPx") ?? numericGraphSizeValue(config, "width");
+  const height = numericGraphSizeValue(config, "heightPx") ?? numericGraphSizeValue(config, "height");
+  if (!width && !height) return undefined;
+  const maxWidth = 720;
+  const maxHeight = 640;
+  const widthScale = width && width > maxWidth ? maxWidth / width : 1;
+  const heightScale = height && height > maxHeight ? maxHeight / height : 1;
+  const scale = Math.min(widthScale, heightScale, 0.9);
+  if (scale >= 1) return undefined;
+  return {
+    renderer: config.type,
+    ...(width ? { widthPx: Math.max(120, Math.round(width * scale)) } : {}),
+    ...(height ? { heightPx: Math.max(100, Math.round(height * scale)) } : {}),
+  };
+}
+
+function diagramSizeRepairAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  issue: MauthLayoutCheckIssue,
+): MauthDocumentAction | undefined {
+  const parsed = parseAssistantAnchor(issue.anchor);
+  const blockId = issue.targetId || parsed.blockId;
+  if (!blockId) return undefined;
+  const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, blockId);
+  if (!entry || entry.block.kind !== "diagram") return undefined;
+  const settings = resizedDiagramSettings(entry.block.graphConfig);
+  if (!settings) return undefined;
+  return {
+    type: "diagram.settings.update",
+    scope: entry.scope,
+    blockId: entry.block.id,
+    settings: settings as MauthDiagramSettingsUpdate,
+  };
+}
+
+function finalPageBreakRepairAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  issue: MauthLayoutCheckIssue,
+): MauthDocumentAction | undefined {
+  const parsed = parseAssistantAnchor(issue.anchor);
+  const questionId = parsed.questionId || issue.targetId;
+  const question = questionId ? document.questions.find((item) => item.id === questionId) : undefined;
+  if (!question?.pageBreakAfter) return undefined;
+  return { type: "pageBreak.set", target: { kind: "question", questionId: question.id }, enabled: false };
+}
+
+function layoutRepairPlan<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  layout: MauthLayoutCheck,
+) {
+  const responseSpaceTargets = new Map<string, ReturnType<typeof responseSpaceRepairTarget<Q, F, C>>>();
+  const actions: MauthDocumentAction[] = [];
+  const repairedIssues: MauthLayoutCheckIssue[] = [];
+  const skippedIssues: MauthLayoutCheckIssue[] = [];
+  const actionKeys = new Set<string>();
+
+  for (const issue of layout.issues) {
+    if (issue.code === "student-answer-surface-missing" || issue.code === "student-space-missing") {
+      const target = responseSpaceRepairTarget(document, issue);
+      if (target) {
+        responseSpaceTargets.set(JSON.stringify({ ...target, lines: undefined, mode: undefined }), target);
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    if (issue.code === "rendered-solution-space-overflow") {
+      const target = responseSpaceRepairTarget(document, issue);
+      if (target) {
+        responseSpaceTargets.set(JSON.stringify({ ...target, lines: undefined, mode: undefined }), target);
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    if (
+      issue.code === "diagram-oversized-print-risk" ||
+      issue.code === "rendered-diagram-too-large" ||
+      issue.code === "rendered-diagram-clipped" ||
+      issue.code === "rendered-diagram-clipped-by-page"
+    ) {
+      const action = diagramSizeRepairAction(document, issue);
+      const key = action ? JSON.stringify(action) : "";
+      if (action && !actionKeys.has(key)) {
+        actions.push(action);
+        actionKeys.add(key);
+        repairedIssues.push(issue);
+      } else if (action) {
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    if (issue.code === "final-page-break") {
+      const action = finalPageBreakRepairAction(document, issue);
+      const key = action ? JSON.stringify(action) : "";
+      if (action && !actionKeys.has(key)) {
+        actions.push(action);
+        actionKeys.add(key);
+        repairedIssues.push(issue);
+      } else if (action) {
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    skippedIssues.push(issue);
+  }
+
+  const responseTargets = [...responseSpaceTargets.values()].filter((target): target is NonNullable<typeof target> => Boolean(target));
+  if (responseTargets.length) {
+    const responseActions = parseAuthorAdjustResponseSpacesActions(document, { targets: responseTargets });
+    if (Array.isArray(responseActions)) {
+      for (const action of responseActions) {
+        const key = JSON.stringify(action);
+        if (!actionKeys.has(key)) {
+          actions.push(action);
+          actionKeys.add(key);
+        }
+      }
+    }
+  }
+
+  return { actions, repairedIssues, skippedIssues };
+}
+
+function layoutWithRepairSummary(layout: MauthLayoutCheck, repair: MauthLayoutCheck["repair"]): MauthLayoutCheck {
+  return { ...layout, repair };
+}
+
 function writeAllSolutionBlockingIssues(layout: MauthLayoutCheck) {
   const blockingCodes = new Set([
     "student-space-missing",
@@ -5639,13 +5865,74 @@ function layoutCheckToolResult<Q extends MauthQuestionLike, F extends object, C 
   options: MauthAssistantToolOptions<Q, F, C>,
 ): MauthAssistantToolResult<Q, F, C> {
   const layout = inspectMauthLayout(document, args, options);
+  if (!layoutRepairEnabled(args)) {
+    return {
+      ok: true,
+      toolName: "mauth.layout.check",
+      data: layout,
+      document,
+      changedIds: [],
+      warnings: layout.issues.map(issueWarning),
+    };
+  }
+
+  const plan = layoutRepairPlan(document, layout);
+  if (!plan.actions.length) {
+    const repair = {
+      attempted: true,
+      applied: false,
+      beforeIssueCount: layout.issues.length,
+      afterIssueCount: layout.issues.length,
+      repairedIssueCount: 0,
+      skippedIssueCount: layout.issues.length,
+      changedIds: [],
+      repairedCodes: [],
+      remainingCodes: [...new Set(layout.issues.map((issue) => issue.code))],
+    };
+    return {
+      ok: true,
+      toolName: "mauth.layout.check",
+      data: layoutWithRepairSummary(layout, repair),
+      document,
+      changedIds: [],
+      warnings: layout.issues.map(issueWarning),
+    };
+  }
+
+  const validation = validateMauthDocumentActionPayloads(plan.actions);
+  if (!validation.ok) {
+    return failTool("mauth.layout.check", formatMauthActionValidationIssues(validation.issues), {
+      layout,
+      validationIssues: validation.issues,
+    }) as MauthAssistantToolResult<Q, F, C>;
+  }
+
+  const result = applyMauthDocumentActions(document, plan.actions, options);
+  if (!result.ok || !result.document) {
+    return resultTool("mauth.layout.check", result);
+  }
+
+  const repairedLayout = inspectMauthLayout(result.document, args, options);
+  const afterKeys = new Set(repairedLayout.issues.map(layoutIssueStableKey));
+  const repairedIssueCount = plan.repairedIssues.filter((issue) => !afterKeys.has(layoutIssueStableKey(issue))).length;
+  const repair = {
+    attempted: true,
+    applied: true,
+    beforeIssueCount: layout.issues.length,
+    afterIssueCount: repairedLayout.issues.length,
+    repairedIssueCount,
+    skippedIssueCount: plan.skippedIssues.length,
+    changedIds: result.changedIds,
+    repairedCodes: [...new Set(plan.repairedIssues.map((issue) => issue.code))],
+    remainingCodes: [...new Set(repairedLayout.issues.map((issue) => issue.code))],
+  };
   return {
     ok: true,
     toolName: "mauth.layout.check",
-    data: layout,
-    document,
-    changedIds: [],
-    warnings: layout.issues.map(issueWarning),
+    data: layoutWithRepairSummary(repairedLayout, repair),
+    document: result.document,
+    changedIds: result.changedIds,
+    warnings: repairedLayout.issues.map(issueWarning),
   };
 }
 

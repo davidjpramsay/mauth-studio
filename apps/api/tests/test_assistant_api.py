@@ -195,7 +195,7 @@ def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["configured"] is True
-    assert data["message"] == "Checking the document layout."
+    assert data["message"] == "Checking the document layout and repairing safe issues."
     assert data["responseId"] is None
     assert data["usage"]["totalTokens"] == 0
     assert data["usage"]["estimatedCostUsd"] == 0
@@ -204,9 +204,9 @@ def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
             "id": "local-layout-check",
             "callId": "local-layout-check",
             "name": "mauth_check_document_layout",
-            "arguments": {"mode": "both"},
+            "arguments": {"mode": "both", "autoRepair": True},
             "mauthToolName": "mauth.layout.check",
-            "mauthArguments": {"mode": "both"},
+            "mauthArguments": {"mode": "both", "autoRepair": True},
         }
     ]
 
@@ -1103,6 +1103,7 @@ def test_layout_check_prompt_gets_layout_tool_first():
 
     assert [tool["name"] for tool in tools] == ["mauth_check_document_layout"]
     assert "mauth_check_document_layout" in instructions
+    assert '"autoRepair":true' in instructions
     assert "repair page overflow" in instructions
 
 
