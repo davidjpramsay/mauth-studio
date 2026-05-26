@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 export interface ContextMenuAction {
   id: string;
   label: string;
-  description?: string;
   icon?: ReactNode;
   disabled?: boolean;
   destructive?: boolean;
@@ -16,8 +15,6 @@ export interface ContextMenuAction {
 export interface ContextMenuState {
   x: number;
   y: number;
-  title: string;
-  subtitle?: string;
   actions: ContextMenuAction[];
 }
 
@@ -64,8 +61,8 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
     <div
       ref={menuRef}
       role="menu"
-      aria-label={menu.title}
-      className="fixed z-[100] w-72 overflow-hidden rounded-md border bg-card text-card-foreground shadow-xl"
+      aria-label="Context actions"
+      className="fixed z-[100] w-60 overflow-hidden rounded-md border bg-card text-card-foreground shadow-xl"
       style={{ left: position.left, top: position.top }}
       data-context-menu
     >
@@ -77,7 +74,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
             role="menuitem"
             disabled={action.disabled}
             className={cn(
-              "flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left text-sm transition-colors disabled:pointer-events-none disabled:opacity-45",
+              "flex h-9 w-full min-w-0 items-center gap-2 px-3 text-left text-sm transition-colors disabled:pointer-events-none disabled:opacity-45",
               action.destructive ? "text-destructive hover:bg-destructive/10" : "hover:bg-accent hover:text-accent-foreground",
             )}
             onClick={() => {
@@ -85,10 +82,9 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
               action.onSelect();
             }}
           >
-            {action.icon ? <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">{action.icon}</span> : null}
+            {action.icon ? <span className="flex size-4 shrink-0 items-center justify-center">{action.icon}</span> : null}
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{action.label}</span>
-              {action.description ? <span className="block truncate text-xs text-muted-foreground">{action.description}</span> : null}
             </span>
           </button>
         ))}

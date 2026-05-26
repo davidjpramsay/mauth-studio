@@ -267,8 +267,8 @@ async function main() {
 
     const navigatorQuestion = page.locator('button[data-context-anchor="q:q-context-2"]').first();
     const navigatorMenu = await openContextMenu(page, navigatorQuestion);
-    await assertVisibleMenu(navigatorMenu, "Navigator actions", ["Send to assistant", "Copy assistant reference", "Delete Question 2"]);
-    await clickMenuItem(page, "Delete Question 2");
+    await assertVisibleMenu(navigatorMenu, ["Use in assistant", "Copy for assistant", "Delete"]);
+    await clickMenuItem(page, "Delete");
     await waitForDraft(
       page,
       (snapshot) => snapshot?.questions?.length === 1 && !snapshot.questions.some((question) => question.id === "q-context-2"),
@@ -277,16 +277,15 @@ async function main() {
 
     const previewIntro = page.locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="${INTRO_ANCHOR}"]`).first();
     const previewMenu = await openContextMenu(page, previewIntro);
-    await assertVisibleMenu(previewMenu, "Display actions", ["Send to assistant", "Copy assistant reference", "Delete Text 1"]);
-    await clickMenuItem(page, "Send to assistant");
+    await assertVisibleMenu(previewMenu, ["Use in assistant", "Copy for assistant", "Delete"]);
+    await clickMenuItem(page, "Use in assistant");
     const assistantInput = page.locator(".assistant-pane textarea");
     await assistantInput.waitFor();
     await page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).waitFor();
     const assistantValue = await assistantInput.inputValue();
-    assert(assistantValue.includes(`Mauth reference: @mauth[${INTRO_ANCHOR}]`), "assistant context should include a stable target token");
-    assert(assistantValue.includes(`Editor anchor: ${INTRO_ANCHOR}`), "assistant context should include the editor anchor");
-    assert(assistantValue.includes(`Preview anchor: ${INTRO_ANCHOR}`), "assistant context should include the preview anchor");
-    assert(assistantValue.includes("Source: preview"), "assistant context should record the display source");
+    assert(assistantValue.includes(`Mauth target: @mauth[${INTRO_ANCHOR}]`), "assistant context should include a stable target token");
+    assert(assistantValue.includes("Item: Text 1"), "assistant context should include the selected item label");
+    assert(assistantValue.includes("Type: text"), "assistant context should include the selected item type");
     await page.getByRole("button", { name: "Ask" }).click();
     const assistantPanelAfterSend = await page.locator(".assistant-pane").innerText();
     assert(
@@ -310,8 +309,8 @@ async function main() {
       .locator('.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="q:q-context-1/b:space"]')
       .first();
     const previewDeleteMenu = await openContextMenu(page, previewSpace);
-    await assertVisibleMenu(previewDeleteMenu, "Display actions", ["Delete Space 2"]);
-    await clickMenuItem(page, "Delete Space 2");
+    await assertVisibleMenu(previewDeleteMenu, ["Delete"]);
+    await clickMenuItem(page, "Delete");
     await waitForDraft(
       page,
       (snapshot) => {
@@ -323,7 +322,7 @@ async function main() {
 
     const editorIntroHeader = page.locator(`.editor-pane [data-scroll-anchor="${INTRO_ANCHOR}"] [data-panel-region="header"]`).first();
     const editorMenu = await openContextMenu(page, editorIntroHeader);
-    await assertVisibleMenu(editorMenu, "Editor actions", ["Duplicate", "Delete Text 1"]);
+    await assertVisibleMenu(editorMenu, ["Duplicate", "Delete"]);
     await clickMenuItem(page, "Duplicate");
     await waitForDraft(
       page,
@@ -341,7 +340,7 @@ async function main() {
       .locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="${COLUMN_TEXT_ANCHOR}"]`)
       .first();
     const columnPreviewMenu = await openContextMenu(page, previewColumnText);
-    await assertVisibleMenu(columnPreviewMenu, "Display actions", ["Duplicate", "Delete Part Column 1 text 1"]);
+    await assertVisibleMenu(columnPreviewMenu, ["Duplicate", "Delete"]);
     await clickMenuItem(page, "Duplicate");
     await waitForDraft(
       page,
@@ -363,8 +362,8 @@ async function main() {
       .locator(`.editor-pane [data-scroll-anchor="${COLUMN_TEXT_ANCHOR}"] [data-panel-region="header"]`)
       .first();
     const columnEditorMenu = await openContextMenu(page, editorColumnHeader);
-    await assertVisibleMenu(columnEditorMenu, "Editor actions", ["Duplicate", "Delete Part Column 1 text 1"]);
-    await clickMenuItem(page, "Delete Part Column 1 text 1");
+    await assertVisibleMenu(columnEditorMenu, ["Duplicate", "Delete"]);
+    await clickMenuItem(page, "Delete");
     await waitForDraft(
       page,
       (snapshot) => {
@@ -411,10 +410,22 @@ async function main() {
   }
 }
 
-async function assertVisibleMenu(menu, title, actionNames) {
+async function assertVisibleMenu(menu, actionNames) {
   const label = await menu.getAttribute("aria-label");
   const menuText = await menu.innerText().catch(() => "");
-  assert.equal(label, title, `Expected ${title} menu, saw ${label ?? "no label"}:\n${menuText}`);
+  assert.equal(label, "Context actions", `Expected context actions menu, saw ${label ?? "no label"}:\n${menuText}`);
+  for (const staleLabel of [
+    "Navigator actions",
+    "Display actions",
+    "Editor actions",
+    "Inspect",
+    "Show in preview",
+    "Set section",
+    "Send to assistant",
+    "Copy assistant reference",
+  ]) {
+    assert(!menuText.includes(staleLabel), `Menu still contains stale label "${staleLabel}":\n${menuText}`);
+  }
   for (const actionName of actionNames) {
     await menu.getByRole("menuitem", { name: actionName }).waitFor();
   }

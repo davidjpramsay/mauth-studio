@@ -10492,22 +10492,13 @@ export default function App() {
     } satisfies DocumentTocItem;
   }
 
-  function contextReferenceText(anchor: string, surface: ContextMenuSurface) {
+  function contextReferenceText(anchor: string) {
     const item = contextDescriptorForAnchor(anchor);
     const label = item.label;
     const summary = item.summary ? tocSummaryText(item.summary) : "";
     const kind = item.kind;
     const editorAnchor = item.editorAnchor;
-    const previewAnchor = item.previewAnchor;
-    return [
-      `Mauth reference: @mauth[${editorAnchor}]`,
-      `Target: ${label}`,
-      `Kind: ${kind}`,
-      `Editor anchor: ${editorAnchor}`,
-      `Preview anchor: ${previewAnchor}`,
-      `Source: ${surface}`,
-      summary ? `Summary: ${summary}` : "",
-    ]
+    return [`Mauth target: @mauth[${editorAnchor}]`, `Item: ${label}`, `Type: ${kind}`, summary ? `Summary: ${summary}` : ""]
       .filter(Boolean)
       .join("\n");
   }
@@ -10536,13 +10527,13 @@ export default function App() {
     }
   }
 
-  function askAssistantAboutAnchor(anchor: string, surface: ContextMenuSurface) {
+  function askAssistantAboutAnchor(anchor: string) {
     const item = contextDescriptorForAnchor(anchor);
     const label = item.label;
     selectContextAnchor(anchor, { previewOnly: true });
-    const reference = contextReferenceText(anchor, surface);
+    const reference = contextReferenceText(anchor);
     assistantController.setChatInput((current) => {
-      const prefix = `Use this Mauth target for my next request:\n${reference}\n\n`;
+      const prefix = `Use this target for my next request:\n${reference}\n\n`;
       return current.trim() ? `${prefix}${current.trim()}` : `${prefix}What should I change about ${label}?`;
     });
     assistantController.setPanelOpen(true);
@@ -10550,8 +10541,8 @@ export default function App() {
     setPaneMode("assistant");
   }
 
-  function copyAnchorReference(anchor: string, surface: ContextMenuSurface) {
-    const reference = contextReferenceText(anchor, surface);
+  function copyAnchorReference(anchor: string) {
+    const reference = contextReferenceText(anchor);
     void navigator.clipboard?.writeText(reference);
   }
 
@@ -10775,21 +10766,20 @@ export default function App() {
     );
   }
 
-  function contextActionsForAnchor(anchor: string, surface: ContextMenuSurface): ContextMenuAction[] {
+  function contextActionsForAnchor(anchor: string): ContextMenuAction[] {
     const item = contextDescriptorForAnchor(anchor);
-    const label = item.label;
     const actions: ContextMenuAction[] = [
       {
         id: "send-to-assistant",
-        label: "Send to assistant",
+        label: "Use in assistant",
         icon: <Bot className="size-4" aria-hidden="true" />,
-        onSelect: () => askAssistantAboutAnchor(item.editorAnchor, surface),
+        onSelect: () => askAssistantAboutAnchor(item.editorAnchor),
       },
       {
         id: "copy-reference",
-        label: "Copy assistant reference",
+        label: "Copy for assistant",
         icon: <Copy className="size-4" aria-hidden="true" />,
-        onSelect: () => copyAnchorReference(item.editorAnchor, surface),
+        onSelect: () => copyAnchorReference(item.editorAnchor),
       },
     ];
     if (canMoveAnchorTarget(item.editorAnchor, -1)) {
@@ -10819,7 +10809,7 @@ export default function App() {
     if (canDeleteAnchorTarget(item.editorAnchor)) {
       actions.push({
         id: "delete",
-        label: `Delete ${label}`,
+        label: "Delete",
         icon: <Trash2 className="size-4" aria-hidden="true" />,
         destructive: true,
         onSelect: () => deleteEditorSelection(item.editorAnchor),
@@ -10837,9 +10827,7 @@ export default function App() {
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
-      title: surface === "preview" ? "Display actions" : surface === "miniToc" ? "Navigator actions" : "Editor actions",
-      subtitle: item.summary ? `${item.label} - ${tocSummaryText(item.summary)}` : item.label,
-      actions: contextActionsForAnchor(editorAnchor, surface),
+      actions: contextActionsForAnchor(editorAnchor),
     });
   }
 
