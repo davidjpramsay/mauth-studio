@@ -23,6 +23,7 @@ import {
   assistantTerminalToolStatusMessage,
   assistantToolOutputRecord,
   assistantVisibleProviderMessage,
+  type MauthAssistantToolStatusSummary,
   type MauthAssistantToolStatusMessage,
 } from "@/lib/mauthAssistantToolResults";
 import type { MauthQuestionLike } from "@/lib/mauthActions";
@@ -512,6 +513,14 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
+  function prepareToolRepair(status: MauthAssistantToolStatusSummary, targetReference: MauthAssistantTargetReferenceContext | null = null) {
+    const prompt =
+      status.actionPrompt ??
+      `Repair the local Mauth tool result above. Use the visible validation detail and try ${status.toolName} again with corrected arguments.`;
+    setChatInput(prompt);
+    if (targetReference) setActiveTargetReference(targetReference);
+  }
+
   async function assistantDocumentSummary(host: MauthAssistantAdapterHost<Q, F, C>, targetAnchor: string | null = null) {
     setActivityLabel("Inspecting document");
     const result = await runMauthAssistantAdapterTool(host, { name: "mauth.document.inspect", arguments: {} });
@@ -811,6 +820,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     activityStartedAt,
     setChatInput,
     setActiveTargetReference,
+    prepareToolRepair,
     addChatAttachments,
     removeChatAttachment,
     setPanelOpen,

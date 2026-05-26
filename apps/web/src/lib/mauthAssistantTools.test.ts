@@ -3649,6 +3649,23 @@ test("accepts native geometry2d semantic geometry decorations", () => {
                     { kind: "equalLength", segments: ["AB", "CD"], tickCount: 1 },
                     { kind: "equalAngle", angles: ["ABC", "BCD"], arcCount: 2 },
                     { kind: "rightAngle", angle: "ABC" },
+                    {
+                      kind: "equalLength",
+                      pointPairs: [
+                        ["A", "B"],
+                        ["C", "D"],
+                      ],
+                      tickCount: 2,
+                    },
+                    {
+                      kind: "equalAngle",
+                      anglePoints: [
+                        ["A", "B", "C"],
+                        ["C", "D", "A"],
+                      ],
+                      arcCount: 1,
+                    },
+                    { kind: "rightAngle", points: ["A", "B", "C"] },
                   ],
                 },
               },
@@ -3664,7 +3681,7 @@ test("accepts native geometry2d semantic geometry decorations", () => {
   assert.equal(diagram?.kind, "diagram");
   const geometry2d = diagram?.kind === "diagram" ? diagram.graphConfig.data : undefined;
   assert.equal(Array.isArray(geometry2d?.decorations), true);
-  assert.equal(geometry2d?.decorations?.length, 3);
+  assert.equal(geometry2d?.decorations?.length, 6);
 
   const previewResult = runMauthAssistantTool(result.document!, {
     name: "mauth.preview.inspect",
@@ -3680,8 +3697,11 @@ test("accepts native geometry2d semantic geometry decorations", () => {
   assert.equal(geometrySummary?.segmentCount, 4);
   assert.equal(geometrySummary?.arcCount, 1);
   assert.equal(geometrySummary?.angleCount, 2);
-  assert.equal(geometrySummary?.decorationCount, 3);
+  assert.equal(geometrySummary?.decorationCount, 6);
   assert(decorationSummary?.some((decoration) => decoration.kind === "rightAngle"));
+  assert(decorationSummary?.some((decoration) => Array.isArray(decoration.pointPairs)));
+  assert(decorationSummary?.some((decoration) => Array.isArray(decoration.anglePoints)));
+  assert(decorationSummary?.some((decoration) => Array.isArray(decoration.points)));
 });
 
 test("accepts native graph2d angle marker features", () => {
@@ -3802,6 +3822,21 @@ test("rejects malformed graph2d semantic geometry decorations", () => {
                       { kind: "equalLength", segments: ["AB"], tickCount: 0 },
                       { kind: "equalAngle", angles: ["ABC", "DEF"] },
                       { kind: "rightAngle", angle: "DEF" },
+                      {
+                        kind: "equalLength",
+                        pointPairs: [
+                          ["A", "B"],
+                          ["A", "Z"],
+                        ],
+                      },
+                      {
+                        kind: "equalAngle",
+                        anglePoints: [
+                          ["A", "B"],
+                          ["A", "B", "Z"],
+                        ],
+                      },
+                      { kind: "rightAngle", points: ["A", "B"] },
                     ],
                   },
                 },
@@ -3822,6 +3857,10 @@ test("rejects malformed graph2d semantic geometry decorations", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[0].tickCount"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[1].angles[1]"));
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[2].angle"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[3].pointPairs[1][1]"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[4].anglePoints[0]"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[4].anglePoints[1][2]"));
+  assert(issuePaths.has("actions[0].blocks[0].graphConfig.data.geometry2d.decorations[5].points"));
 });
 
 test("rejects malformed native geometry2d primitive references", () => {

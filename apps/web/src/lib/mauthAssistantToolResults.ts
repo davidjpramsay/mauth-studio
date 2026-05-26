@@ -9,6 +9,8 @@ export interface MauthAssistantToolStatusSummary {
   toolName: string;
   state: MauthAssistantToolStatusState;
   stateLabel: string;
+  actionLabel?: string;
+  actionPrompt?: string;
   targetLabel?: string;
   committedDocument: boolean | null;
   commitLabel: string;
@@ -164,6 +166,33 @@ function commitLabel(committedDocument: boolean | null) {
   return "Unknown";
 }
 
+function repairAction(
+  state: MauthAssistantToolStatusState,
+  toolName: string,
+  detail: string,
+): Pick<MauthAssistantToolStatusSummary, "actionLabel" | "actionPrompt"> {
+  const detailText = detail ? ` Use this validation detail: ${detail}` : "";
+  if (state === "preflight-failed") {
+    return {
+      actionLabel: "Try repair",
+      actionPrompt: `Repair the failed local Mauth tool result above. No document changes were committed. Keep the same target, use the validation detail, and call ${toolName} again with corrected arguments.${detailText}`,
+    };
+  }
+  if (state === "needs-repair") {
+    return {
+      actionLabel: "Try repair",
+      actionPrompt: `Repair the local Mauth edit above. The document already changed, but inspection says it still needs repair. Keep the same target, adjust or replace the existing item instead of appending a duplicate, and call the focused Mauth tool again.${detailText}`,
+    };
+  }
+  if (state === "needs-review") {
+    return {
+      actionLabel: "Review result",
+      actionPrompt: `Review the local Mauth edit above against my original request. If it is correct, report that plainly. If it is not correct, repair the same target before saying the edit is complete.${detailText}`,
+    };
+  }
+  return {};
+}
+
 function statusSummary(
   label: MauthAssistantToolStatusSummary["label"],
   toolName: string,
@@ -173,11 +202,13 @@ function statusSummary(
   detail: string,
   output: Record<string, unknown> | null,
 ): MauthAssistantToolStatusSummary {
+  const action = repairAction(state, toolName, detail);
   return {
     label,
     toolName,
     state,
     stateLabel,
+    ...action,
     targetLabel: outputTargetLabel(output) || undefined,
     committedDocument,
     commitLabel: commitLabel(committedDocument),

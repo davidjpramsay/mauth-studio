@@ -292,8 +292,11 @@ export interface Graph2DGeometryDecoration {
   kind: "equalLength" | "equalAngle" | "rightAngle";
   id?: string;
   segments?: string[];
+  pointPairs?: Array<[string, string]>;
   angles?: string[];
+  anglePoints?: Array<[string, string, string]>;
   angle?: string;
+  points?: [string, string, string];
   tickCount?: number;
   arcCount?: number;
   radius?: number;

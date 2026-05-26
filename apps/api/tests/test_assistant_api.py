@@ -75,13 +75,39 @@ def test_assistant_status_reports_missing_key(monkeypatch):
 def test_assistant_chat_returns_safe_message_without_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    response = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Inspect the test."}]})
+    response = client.post(
+        "/api/assistant/chat", json={"messages": [{"role": "user", "content": "Write a new question."}]}
+    )
 
     assert response.status_code == 200
     data = response.json()
     assert data["configured"] is False
     assert data["toolCalls"] == []
     assert "OPENAI_API_KEY" in data["message"]
+
+
+def test_document_inspect_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Inspect the test."}]})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Inspecting the document."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-document-inspect",
+            "callId": "local-document-inspect",
+            "name": "mauth_document_inspect",
+            "arguments": {},
+            "mauthToolName": "mauth.document.inspect",
+            "mauthArguments": {},
+        }
+    ]
 
 
 def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
@@ -107,6 +133,33 @@ def test_layout_check_prompt_uses_native_fast_path(monkeypatch):
             "arguments": {"mode": "both"},
             "mauthToolName": "mauth.layout.check",
             "mauthArguments": {"mode": "both"},
+        }
+    ]
+
+
+def test_validation_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Run solution validation."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Running validation."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-validation-run",
+            "callId": "local-validation-run",
+            "name": "mauth_validation_run",
+            "arguments": {"mode": "solutions"},
+            "mauthToolName": "mauth.validation.run",
+            "mauthArguments": {"mode": "solutions"},
         }
     ]
 

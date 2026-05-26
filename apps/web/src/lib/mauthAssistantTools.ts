@@ -602,8 +602,21 @@ function compactGeometry2DData(data: unknown) {
     .map((entry) => ({
       kind: stringField(entry.kind, 40),
       segments: Array.isArray(entry.segments) ? entry.segments.slice(0, 4).map((segment) => stringField(segment, 40)) : undefined,
+      pointPairs: Array.isArray(entry.pointPairs)
+        ? entry.pointPairs
+            .slice(0, 4)
+            .filter((pair) => Array.isArray(pair))
+            .map((pair) => pair.slice(0, 2).map((point) => stringField(point, 40)))
+        : undefined,
       angles: Array.isArray(entry.angles) ? entry.angles.slice(0, 4).map((angle) => stringField(angle, 40)) : undefined,
+      anglePoints: Array.isArray(entry.anglePoints)
+        ? entry.anglePoints
+            .slice(0, 4)
+            .filter((points) => Array.isArray(points))
+            .map((points) => points.slice(0, 3).map((point) => stringField(point, 40)))
+        : undefined,
       angle: stringField(entry.angle, 40),
+      points: Array.isArray(entry.points) ? entry.points.slice(0, 3).map((point) => stringField(point, 40)) : undefined,
       tickCount: numberField(entry.tickCount),
       arcCount: numberField(entry.arcCount),
       label: stringField(entry.label, 80),
@@ -2036,7 +2049,7 @@ export function describeMauthAssistantTools(): MauthAssistantToolDescription {
       "For whole-test solution-key passes, prefer mauth.solutions.writeAll. It must include solution payloads for every marked question, part, and subpart, preserve diagrams, use hidden [[marks:n]] ticks, and validate totals/layout before commit.",
       "For broad layout/print checks, use mauth.layout.check. Repair any warning it returns with the focused high-level tool that owns that issue.",
       "High-level diagram blocks must be shaped as { graphConfig: { type: ... }, diagramAlign?: ... }; source scalar-product ray diagrams may instead use { vectorRayDiagram: { vectors, segmentLabels?, angleMarkers? }, diagramAlign?: ... }. Do not use top-level type/data/options fields or a config alias.",
-      "Choose diagram renderers by classroom intent: geometry2d for no-axis textbook geometry diagrams with points, straight segments, arcs, angle markers, equal-length/equal-angle markers, and right-angle markers; geometricConstruction for ruler-style theorem geometry; graph2d for coordinate/function graphs; vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams; statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes; setDiagram for Venn diagrams; network for networks; and graph3d for 3D.",
+      "Choose diagram renderers by classroom intent: geometry2d for no-axis textbook geometry diagrams with points, straight segments, arcs, angle markers, equal-length/equal-angle markers, and right-angle markers; geometricConstruction for ruler-style theorem geometry; graph2d for coordinate/function graphs; vector2d for component vectors on axes and source-faithful no-axis scalar-product ray diagrams; statsChart for histograms/column/probability charts, density curves, normal distributions, and blank statistical sketch axes; setDiagram for Venn diagrams; network for networks; and graph3d for 3D. Geometry2d markers can target existing segment/angle ids or direct point references with pointPairs, anglePoints, and points.",
       "For graph3d, use data.points for named vertices and data.faces entries with points arrays, not vertices arrays; for curved solids, use data.solids with renderStyle surface, wireframe, or outline as needed; use data.dimensions for labelled height/radius guide lines such as h and r.",
       "The authoring boundary rejects obvious renderer mismatches before applying edits; repair by switching graphConfig.type and using that renderer's native schema.",
       "For focused solution-key passes, prefer mauth.author.ensureSolutions when the supplied question text is enough.",

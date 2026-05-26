@@ -349,7 +349,15 @@ function AssistantToolStatusIcon({ tone }: { tone?: MauthAssistantChatMessageTon
   return null;
 }
 
-function AssistantToolStatusSummary({ status, content }: { status: MauthAssistantToolStatusSummary; content: string }) {
+function AssistantToolStatusSummary({
+  status,
+  content,
+  onTryRepair,
+}: {
+  status: MauthAssistantToolStatusSummary;
+  content: string;
+  onTryRepair?: () => void;
+}) {
   return (
     <div
       className="min-w-0 space-y-2"
@@ -381,6 +389,18 @@ function AssistantToolStatusSummary({ status, content }: { status: MauthAssistan
         ) : null}
       </dl>
       <AssistantMarkdown content={content} />
+      {status.actionLabel && onTryRepair ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-current/30 h-8 bg-background/60 text-xs"
+          data-assistant-tool-action="repair"
+          onClick={onTryRepair}
+        >
+          {status.actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -402,6 +422,7 @@ export function MauthAssistantPanel({
   onClearActiveTargetReference,
   onUseSelectedTargetReference,
   onShowTargetReference,
+  onTryToolRepair,
   onAddAttachments,
   onRemoveAttachment,
   onSendChat,
@@ -423,6 +444,7 @@ export function MauthAssistantPanel({
   onClearActiveTargetReference?: () => void;
   onUseSelectedTargetReference?: () => void;
   onShowTargetReference?: (anchor: string) => void;
+  onTryToolRepair?: (status: MauthAssistantToolStatusSummary, targetReference: MauthAssistantTargetReferenceContext | null) => void;
   onAddAttachments: (files: File[]) => void | Promise<void>;
   onRemoveAttachment: (id: string) => void;
   onSendChat: () => void;
@@ -432,6 +454,7 @@ export function MauthAssistantPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const statusPopoverRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const connected = providerConfigured === true;
@@ -547,7 +570,18 @@ export function MauthAssistantPanel({
                           <AssistantToolStatusIcon tone={chatMessage.tone} />
                           <div className="min-w-0 flex-1">
                             {chatMessage.toolStatus ? (
-                              <AssistantToolStatusSummary status={chatMessage.toolStatus} content={displayedContent} />
+                              <AssistantToolStatusSummary
+                                status={chatMessage.toolStatus}
+                                content={displayedContent}
+                                onTryRepair={
+                                  chatMessage.toolStatus.actionPrompt && onTryToolRepair
+                                    ? () => {
+                                        onTryToolRepair(chatMessage.toolStatus as MauthAssistantToolStatusSummary, messageReference);
+                                        window.setTimeout(() => textareaRef.current?.focus(), 0);
+                                      }
+                                    : undefined
+                                }
+                              />
                             ) : (
                               <AssistantMarkdown content={displayedContent} />
                             )}
@@ -633,6 +667,7 @@ export function MauthAssistantPanel({
             </div>
           ) : null}
           <Textarea
+            ref={textareaRef}
             value={chatInput}
             onChange={(event) => onChatInputChange(event.target.value)}
             rows={3}

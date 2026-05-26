@@ -688,14 +688,54 @@ function validateGraph2DReferenceArray(
   knownIds: Set<string>,
   referenceLabel: string,
   issues: MauthActionValidationIssue[],
-  options: { minLength: number },
+  options: { minLength?: number } = {},
 ) {
   const values = requiredArray(entry, key, path, issues);
   if (!values) return;
-  if (values.length < options.minLength) {
+  if (options.minLength !== undefined && values.length < options.minLength) {
     addIssue(issues, `${path}.${key}`, `must contain at least ${options.minLength} ${referenceLabel} ids`, `${referenceLabel} id[]`);
   }
   values.forEach((value, index) => validateGraph2DReference(value, `${path}.${key}[${index}]`, knownIds, referenceLabel, issues));
+}
+
+function validateGraph2DPointPair(value: unknown, path: string, pointIds: Set<string>, issues: MauthActionValidationIssue[]) {
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, "must be a point-id pair", "[fromPoint, toPoint]");
+    return;
+  }
+  if (value.length !== 2) addIssue(issues, path, "must contain exactly 2 point ids", "[fromPoint, toPoint]");
+  value.forEach((pointId, index) => validateGraph2DReference(pointId, `${path}[${index}]`, pointIds, "point", issues));
+}
+
+function validateGraph2DAnglePointTriple(value: unknown, path: string, pointIds: Set<string>, issues: MauthActionValidationIssue[]) {
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, "must be an angle point triple", "[from, vertex, to]");
+    return;
+  }
+  if (value.length !== 3) addIssue(issues, path, "must contain exactly 3 point ids", "[from, vertex, to]");
+  value.forEach((pointId, index) => validateGraph2DReference(pointId, `${path}[${index}]`, pointIds, "point", issues));
+}
+
+function validateGraph2DPointPairArray(
+  entry: Record<string, unknown>,
+  key: string,
+  path: string,
+  pointIds: Set<string>,
+  issues: MauthActionValidationIssue[],
+) {
+  const values = requiredArray(entry, key, path, issues);
+  values?.forEach((value, index) => validateGraph2DPointPair(value, `${path}.${key}[${index}]`, pointIds, issues));
+}
+
+function validateGraph2DAnglePointTripleArray(
+  entry: Record<string, unknown>,
+  key: string,
+  path: string,
+  pointIds: Set<string>,
+  issues: MauthActionValidationIssue[],
+) {
+  const values = requiredArray(entry, key, path, issues);
+  values?.forEach((value, index) => validateGraph2DAnglePointTriple(value, `${path}.${key}[${index}]`, pointIds, issues));
 }
 
 function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -802,13 +842,39 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalBoolean(entry, "show", entryPath, issues);
 
     if (entry.kind === "equalLength") {
-      validateGraph2DReferenceArray(entry, "segments", entryPath, segmentIds, "segment", issues, { minLength: 2 });
+      if (hasOwn(entry, "segments")) validateGraph2DReferenceArray(entry, "segments", entryPath, segmentIds, "segment", issues);
+      if (hasOwn(entry, "pointPairs")) validateGraph2DPointPairArray(entry, "pointPairs", entryPath, pointIds, issues);
+      const targetCount =
+        (Array.isArray(entry.segments) ? entry.segments.length : 0) + (Array.isArray(entry.pointPairs) ? entry.pointPairs.length : 0);
+      if (targetCount < 2) {
+        addIssue(
+          issues,
+          hasOwn(entry, "segments") ? `${entryPath}.segments` : `${entryPath}.pointPairs`,
+          "must contain at least 2 segment ids or point pairs",
+          "segment id[] or pointPairs[]",
+        );
+      }
     }
     if (entry.kind === "equalAngle") {
-      validateGraph2DReferenceArray(entry, "angles", entryPath, angleIds, "angle", issues, { minLength: 2 });
+      if (hasOwn(entry, "angles")) validateGraph2DReferenceArray(entry, "angles", entryPath, angleIds, "angle", issues);
+      if (hasOwn(entry, "anglePoints")) validateGraph2DAnglePointTripleArray(entry, "anglePoints", entryPath, pointIds, issues);
+      const targetCount =
+        (Array.isArray(entry.angles) ? entry.angles.length : 0) + (Array.isArray(entry.anglePoints) ? entry.anglePoints.length : 0);
+      if (targetCount < 2) {
+        addIssue(
+          issues,
+          hasOwn(entry, "angles") ? `${entryPath}.angles` : `${entryPath}.anglePoints`,
+          "must contain at least 2 angle ids or angle point triples",
+          "angle id[] or anglePoints[]",
+        );
+      }
     }
     if (entry.kind === "rightAngle") {
-      validateGraph2DReference(entry.angle, `${entryPath}.angle`, angleIds, "angle", issues);
+      if (hasOwn(entry, "angle")) validateGraph2DReference(entry.angle, `${entryPath}.angle`, angleIds, "angle", issues);
+      if (hasOwn(entry, "points")) validateGraph2DAnglePointTriple(entry.points, `${entryPath}.points`, pointIds, issues);
+      if (!hasOwn(entry, "angle") && !hasOwn(entry, "points")) {
+        addIssue(issues, `${entryPath}.angle`, "must include an angle id or points triple", "angle id or points: [from, vertex, to]");
+      }
     }
   });
 }

@@ -57,6 +57,62 @@ LAYOUT_CHECK_TERMS = (
     "ready to print",
     "print-ready",
 )
+DOCUMENT_INSPECT_TERMS = (
+    "inspect the document",
+    "inspect this document",
+    "inspect the test",
+    "inspect this test",
+    "inspect the assessment",
+    "summarise the document",
+    "summarize the document",
+    "summarise this document",
+    "summarize this document",
+    "summarise the test",
+    "summarize the test",
+    "summarise this test",
+    "summarize this test",
+    "describe the document",
+    "describe this document",
+    "describe the test",
+    "describe this test",
+    "what is in this test",
+    "what's in this test",
+)
+VALIDATION_CHECK_TERMS = (
+    "run validation",
+    "run document validation",
+    "run solution validation",
+    "validate the document",
+    "validate this document",
+    "validate the test",
+    "validate this test",
+    "check validation",
+    "check the validation",
+    "check document validation",
+    "check solution validation",
+)
+READ_ONLY_DIRECT_BLOCKING_TERMS = (
+    "add",
+    "append",
+    "build",
+    "change",
+    "convert",
+    "create",
+    "delete",
+    "draw",
+    "edit",
+    "fix",
+    "generate",
+    "insert",
+    "make",
+    "move",
+    "remove",
+    "repair",
+    "replace",
+    "sketch",
+    "update",
+    "write",
+)
 DIAGRAM_REQUEST_TERMS = ("diagram", "graph", "draw", "sketch")
 ADD_REQUEST_TERMS = ("add", "include", "insert", "put", "place", "draw", "sketch")
 SOLUTION_REQUEST_TERMS = ("solution", "worked", "answer key", "marking key")
@@ -2381,7 +2437,9 @@ def assistant_diagram_block_schema(description: str) -> dict[str, Any]:
                     "For no-axis source-faithful 2D geometry sketches, use graphConfig.type:'geometry2d' with "
                     "data.points, data.segments, data.arcs, data.angles, and data.decorations. Segments reference point ids with from/to, "
                     "arcs reference center/from/to point ids, angles use three point ids [from, vertex, to], and decorations use kind equalLength, "
-                    "equalAngle, or rightAngle. Use this for named points, straight segments, circular arcs, angle markers, "
+                    "equalAngle, or rightAngle. Decorations can target declared segment/angle ids or direct point references: "
+                    "equalLength pointPairs:[[A,B],[C,D]], equalAngle anglePoints:[[A,B,C],[D,E,F]], and rightAngle points:[A,B,C]. "
+                    "Use this for named points, straight segments, circular arcs, angle markers, "
                     "same-length ticks, same-angle arcs, right-angle squares, and dashed/helper geometry linework instead of "
                     "many tiny graph2d feature rows. Keep graph2d functions/features for coordinate curves, regions, loci, free labels, and non-geometry annotations. "
                     "For shaded graph2d locus/region diagrams, define boundary functions first, then use exact supported "
@@ -2631,6 +2689,7 @@ def source_conversion_renderer_guide(diagram_types: list[str] | None) -> str:
         "geometry2d": (
             "Use geometry2d for no-axis source-faithful geometry. Put points, straight segments, circular arcs, angles, and markers under graphConfig.data. "
             "Segments use from/to ids, arcs use center/from/to ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. "
+            "Markers may target existing ids or direct point references: equalLength pointPairs:[[A,B],[C,D]], equalAngle anglePoints:[[A,B,C],[D,E,F]], and rightAngle points:[A,B,C]. "
             "Do not add graph2d functions/features for these primitives."
         ),
         "graph2d": (
@@ -4376,7 +4435,7 @@ def source_conversion_native_diagram_rules(diagram_fields_enabled: bool, diagram
         )
     if "geometry2d" in allowed:
         lines.append(
-            "- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Do not add graph2d functions/features for these primitives."
+            "- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Markers can target existing segment/angle ids or direct point references: equalLength pointPairs:[[A,B],[C,D]], equalAngle anglePoints:[[A,B,C],[D,E,F]], and rightAngle points:[A,B,C]. Do not add graph2d functions/features for these primitives."
         )
     if "graph3d" in allowed:
         lines.append(
@@ -4578,7 +4637,7 @@ Tool-call contract:
 - For statsChart source diagrams, put chartType, dataMode, xValues, frequencies/probabilities, values, points, range/yRange, binSize, barType, yAxisMode, xLabel, and yLabel inside graphConfig.data, not directly on graphConfig. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth/normal points. For manual-frequency histograms with centred xValues and binSize, set range to the bin-edge span from first xValue - binSize/2 to last xValue + binSize/2 unless the source shows another exact range; do not pad it for aesthetics. Preserve labels, range/yRange, binSize, barType, yAxisMode, dataMode, density points, and visible bar heights instead of only matching the rough chart shape.
 - For Penrose geometry, supported Substance is the normal AI geometry path in graphConfig.options.substanceSource. Use predicates such as CircleThrough, OnCircle, Tangent, Segment, ParallelToSegment, PerpendicularToSegment, LabelsSegment, LabelsAngle, and RightAngle. Hide auxiliary centres with Label centre $\,$ and HidePoint(centre). Keep visible labels matched to the question. Label declared points directly, e.g. Label L $L$, not Label LLabel $L$. Use RightAngle(A, B, C) for visible right-angle markers; PerpendicularToSegment needs a declared Line first, not a NamedSegment. Do not emit options.styleSource/domainSource; Mauth supplies the Penrose preset style.
 - For source scalar-product/vector-ray diagrams, prefer vectorRayDiagram. Angle markers must reference the actual two rays bounding the source angle, not merely adjacent rays; nested source markings may span outer rays with another labelled ray inside. If writing raw vector2d, hide axes/grid and use metadata.vector2d.vectors, segmentLabels, and angleMarkers.
-- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Do not add graph2d functions/features for these primitives.
+- For geometry2d source sketches, put named points, straight segments, circular arcs, angle labels, equal-length/equal-angle decorations, and right-angle markers under graphConfig.data. Segments use from/to point ids, arcs use center/from/to point ids, angles use points:[from,vertex,to], and decorations use kind equalLength/equalAngle/rightAngle. Markers can target existing segment/angle ids or direct point references: equalLength pointPairs:[[A,B],[C,D]], equalAngle anglePoints:[[A,B,C],[D,E,F]], and rightAngle points:[A,B,C]. Do not add graph2d functions/features for these primitives.
 - For graph2d source diagrams, keep bounds, size, display flags, functions, and features at top-level graphConfig. Put only renderer data such as data.slopeField or data.polarGrid under data. For slope fields, include source points where the student must calculate or draw a slope segment in data.slopeField.highlightedPoints; point features alone are not enough. Use label with x/y for free labels, line_segment with x1/y1/x2/y2 for coordinate-graph straight segments, and angle_marker with x/y vertex plus x1/y1/x2/y2 arms for standalone graph annotations; do not use fake function curves, free_label, polygon, coords, point-list polygons, fillColor, or strokeColor. For regions/loci, define boundary functions first and reference them by supported region feature indices; use region_curve_axis or region_between_curves with xMin/xMax and fillOpacity, not region_between, functionIndex1/functionIndex2, feature domainMin/domainMax, or opacity. For Argand loci, preserve Arg(z) argument references and draw boundary rays from the origin separately from shifted circle boundaries; use finite line_segment rays or boundary functions with ray-limited domainMin/domainMax, not full infinite line functions.
 - For graph3d source solids, use data.points for named vertices, data.segments for edges/diagonals, data.faces with points arrays for polygon faces on prisms/pyramids, and data.solids with kind cone/cylinder/sphere/circle/sphereCap for curved solids. Do not use vertices arrays for faces. Preserve source line/ray/vector notation in part text and segment labels; do not rewrite a source line or main diagonal BT/\overleftrightarrow{{BT}} as \overrightarrow{{BT}}, and do not paste PDF-extraction control characters for line symbols or Greek parameters; write \overleftrightarrow{{BT}}, \lambda, and \mu explicitly. For spherical caps, use kind:'sphereCap' with center, radius, height/depth, and axis/normal rather than a full sphere placeholder; include a segment or data.dimensions label '$h$' when the source labels cap depth h. Use show:false to hide helper points/segments/solids; do not use visible:false. Use segment strokeStyle:'dashed' or dashed:true for hidden edges, and metadata.view3d az/el/bank in radians. Do not use camera.eye, metadata axis labels/show flags, degree camera values, fake axis helper points, or segment style.
 - Always call mauth_tool with {{"name":"<mauth tool name>","arguments":{{...}}}}. Put actions/file paths/options inside arguments. Preview low-level action batches before apply. If validationIssues are returned, repair those exact paths once.
@@ -5338,6 +5397,60 @@ def direct_layout_check_response(model: str) -> dict[str, Any]:
     }
 
 
+def direct_document_inspect_response(model: str) -> dict[str, Any]:
+    arguments: dict[str, Any] = {}
+    return {
+        "configured": True,
+        "model": model,
+        "message": "Inspecting the document.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-document-inspect",
+                "callId": "local-document-inspect",
+                "name": "mauth_document_inspect",
+                "arguments": arguments,
+                "mauthToolName": "mauth.document.inspect",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth document inspection; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
+def direct_validation_mode(text: str) -> str:
+    mentions_solution = "solution" in text or "solutions" in text
+    mentions_document = "document" in text or "test" in text or "assessment" in text
+    if mentions_solution and not mentions_document:
+        return "solutions"
+    if mentions_document and not mentions_solution:
+        return "document"
+    return "both"
+
+
+def direct_validation_run_response(model: str, text: str) -> dict[str, Any]:
+    arguments = {"mode": direct_validation_mode(text)}
+    return {
+        "configured": True,
+        "model": model,
+        "message": "Running validation.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-validation-run",
+                "callId": "local-validation-run",
+                "name": "mauth_validation_run",
+                "arguments": arguments,
+                "mauthToolName": "mauth.validation.run",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth validation; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def direct_assistant_help_response(model: str) -> dict[str, Any]:
     return {
         "configured": True,
@@ -5366,10 +5479,31 @@ def direct_clarification_response(model: str, question: str) -> dict[str, Any]:
     }
 
 
+def direct_read_only_request_safe(request: AssistantChatRequest) -> bool:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return False
+    text = current_request_text(request.messages)
+    return not any(term in text for term in READ_ONLY_DIRECT_BLOCKING_TERMS)
+
+
 def should_use_direct_layout_check(request: AssistantChatRequest) -> bool:
     if request.previousResponseId or request.toolOutputs or request.attachments:
         return False
     return asks_for_layout_check_text(current_request_text(request.messages))
+
+
+def should_use_direct_document_inspect(request: AssistantChatRequest) -> bool:
+    if not direct_read_only_request_safe(request):
+        return False
+    text = current_request_text(request.messages)
+    return any(term in text for term in DOCUMENT_INSPECT_TERMS)
+
+
+def should_use_direct_validation_run(request: AssistantChatRequest) -> bool:
+    if not direct_read_only_request_safe(request):
+        return False
+    text = current_request_text(request.messages)
+    return any(term in text for term in VALIDATION_CHECK_TERMS)
 
 
 def should_use_direct_assistant_help(request: AssistantChatRequest) -> bool:
@@ -5392,6 +5526,22 @@ def direct_clarification_question(request: AssistantChatRequest) -> str | None:
 
 async def create_assistant_response(request: AssistantChatRequest) -> dict[str, Any]:
     model = request.model or assistant_model()
+    if should_use_direct_layout_check(request):
+        return direct_layout_check_response(model)
+
+    if should_use_direct_document_inspect(request):
+        return direct_document_inspect_response(model)
+
+    if should_use_direct_validation_run(request):
+        return direct_validation_run_response(model, current_request_text(request.messages))
+
+    if should_use_direct_assistant_help(request):
+        return direct_assistant_help_response(model)
+
+    clarification_question = direct_clarification_question(request)
+    if clarification_question:
+        return direct_clarification_response(model, clarification_question)
+
     if not assistant_configured():
         return {
             "configured": False,
@@ -5402,16 +5552,6 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
             "usage": None,
             "error": "OPENAI_API_KEY is missing.",
         }
-
-    if should_use_direct_layout_check(request):
-        return direct_layout_check_response(model)
-
-    if should_use_direct_assistant_help(request):
-        return direct_assistant_help_response(model)
-
-    clarification_question = direct_clarification_question(request)
-    if clarification_question:
-        return direct_clarification_response(model, clarification_question)
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=20.0)) as client:
         selected_brain_files, planner_usage = await select_brain_files_for_request(
