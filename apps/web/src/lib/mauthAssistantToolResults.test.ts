@@ -117,6 +117,9 @@ test("assistant continuing tool status reports failed preflight without a commit
   assert.equal(message?.summary.state, "preflight-failed");
   assert.equal(message?.summary.committedDocument, false);
   assert.equal(message?.summary.commitLabel, "No");
+  assert.equal(message?.summary.actionLabel, "Try repair");
+  assert.match(message?.summary.actionPrompt ?? "", /No document changes were committed/);
+  assert.match(message?.summary.actionPrompt ?? "", /mauth\.settings\.apply/);
   assert.match(message.content, /did not commit changes/);
   assert.match(message.content, /Assistant diagram preflight failed/);
 });
@@ -140,6 +143,9 @@ test("assistant continuing tool status reports committed edits that need repair"
   assert.equal(message?.summary.state, "needs-repair");
   assert.equal(message?.summary.committedDocument, true);
   assert.equal(message?.summary.commitLabel, "Yes");
+  assert.equal(message?.summary.actionLabel, "Try repair");
+  assert.match(message?.summary.actionPrompt ?? "", /document already changed/i);
+  assert.match(message?.summary.actionPrompt ?? "", /instead of appending a duplicate/);
   assert.match(message.content, /committed changes, but needs repair/);
   assert.match(message.content, /post-edit inspection failed/i);
 });
@@ -167,6 +173,8 @@ test("assistant continuing tool status reports semantic review requests", () => 
   assert.equal(message?.summary.state, "needs-review");
   assert.equal(message?.summary.committedDocument, true);
   assert.equal(message?.summary.commitLabel, "Yes");
+  assert.equal(message?.summary.actionLabel, "Review result");
+  assert.match(message?.summary.actionPrompt ?? "", /repair the same target/);
   assert.match(message.content, /committed changes and requested review/);
   assert.match(message.content, /graph2d functions/);
 });

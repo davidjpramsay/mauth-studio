@@ -13096,6 +13096,7 @@ export default function App() {
                     if (selectedAssistantTargetReference) assistantController.setActiveTargetReference(selectedAssistantTargetReference);
                   }}
                   onShowTargetReference={showAssistantTargetReference}
+                  onTryToolRepair={assistantController.prepareToolRepair}
                   onAddAttachments={assistantController.addChatAttachments}
                   onRemoveAttachment={assistantController.removeChatAttachment}
                   onSendChat={() => void assistantController.sendChatMessage()}

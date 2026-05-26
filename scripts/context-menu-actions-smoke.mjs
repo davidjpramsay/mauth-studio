@@ -168,7 +168,10 @@ async function mockApi(page, assistantRequests) {
       await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
       return;
     }
-    assistantRequests.push(JSON.parse(request.postData() ?? "{}"));
+    const body = JSON.parse(request.postData() ?? "{}");
+    assistantRequests.push(body);
+    const messageText = JSON.stringify(body.messages ?? []);
+    const triggerFailedTool = !Array.isArray(body.toolOutputs) && messageText.includes("Trigger failed tool.");
     await route.fulfill({
       status: 200,
       headers: corsHeaders,
@@ -177,7 +180,7 @@ async function mockApi(page, assistantRequests) {
         model: "mock-context-menu",
         message: "Mock assistant response.",
         responseId: "mock-context-menu-response",
-        toolCalls: [],
+        toolCalls: triggerFailedTool ? [{ callId: "mock-failed-tool-call", name: "mauth.unsupportedEdit", arguments: {} }] : [],
         usage: null,
         error: null,
       }),
@@ -310,6 +313,16 @@ async function main() {
     );
 
     await page.getByRole("button", { name: "Use selected" }).click();
+    await assistantInput.fill("Trigger failed tool.");
+    await page.getByRole("button", { name: "Ask" }).click();
+    const failedToolCard = page.locator('.assistant-pane [data-assistant-tool-status="preflight-failed"]').first();
+    await failedToolCard.waitFor();
+    await failedToolCard.getByRole("button", { name: "Try repair" }).click();
+    const repairPrompt = await assistantInput.inputValue();
+    assert.match(repairPrompt, /Repair the failed local Mauth tool result above/);
+    assert.match(repairPrompt, /No document changes were committed/);
+    await page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).last().waitFor();
+
     const activeAssistantTarget = page.locator(`.assistant-pane [data-assistant-target-reference="${INTRO_ANCHOR}"]`).last();
     await activeAssistantTarget.waitFor();
     await activeAssistantTarget.getByRole("button", { name: "Show assistant target" }).click();

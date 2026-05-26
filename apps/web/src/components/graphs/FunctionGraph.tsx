@@ -1494,6 +1494,16 @@ function geometrySegmentEndpoints(
   return start && end ? [start, end] : null;
 }
 
+function geometryPointPairEndpoints(
+  pair: readonly unknown[] | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number]] | null {
+  if (!pair || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string") return null;
+  const start = geometryPointTuple(points.get(pair[0]));
+  const end = geometryPointTuple(points.get(pair[1]));
+  return start && end ? [start, end] : null;
+}
+
 function geometryAnglePoints(
   angle: Graph2DGeometryAngle | undefined,
   points: Map<string, Graph2DGeometryPoint>,
@@ -1502,6 +1512,19 @@ function geometryAnglePoints(
   const first = geometryPointTuple(points.get(angle.points[0]));
   const vertex = geometryPointTuple(points.get(angle.points[1]));
   const second = geometryPointTuple(points.get(angle.points[2]));
+  return first && vertex && second ? [first, vertex, second] : null;
+}
+
+function geometryDirectAnglePoints(
+  value: readonly unknown[] | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+): [[number, number], [number, number], [number, number]] | null {
+  if (!value || value.length !== 3 || typeof value[0] !== "string" || typeof value[1] !== "string" || typeof value[2] !== "string") {
+    return null;
+  }
+  const first = geometryPointTuple(points.get(value[0]));
+  const vertex = geometryPointTuple(points.get(value[1]));
+  const second = geometryPointTuple(points.get(value[2]));
   return first && vertex && second ? [first, vertex, second] : null;
 }
 
@@ -1563,6 +1586,17 @@ function drawGeometryEqualLengthTicks(
 ) {
   const endpoints = geometrySegmentEndpoints(segment, points);
   if (!endpoints) return;
+  drawGeometryEqualLengthTicksAtEndpoints(board, endpoints, color, tickCount, sizePx, attributes);
+}
+
+function drawGeometryEqualLengthTicksAtEndpoints(
+  board: JXG.Board,
+  endpoints: [[number, number], [number, number]],
+  color: string,
+  tickCount: number,
+  sizePx: number,
+  attributes: Record<string, string | undefined>,
+) {
   const [start, end] = endpoints;
   const direction = pixelDirection(board, start, end);
   if (!direction) return;
@@ -1726,6 +1760,20 @@ function drawGeometryRightAngleMarker(
   drawRightAngleMarkerFromPoints(board, first, vertex, second, color, size, undefined, undefined, attributes);
 }
 
+function drawGeometryRightAngleMarkerFromDirectPoints(
+  board: JXG.Board,
+  value: readonly unknown[] | undefined,
+  points: Map<string, Graph2DGeometryPoint>,
+  color: string,
+  size: number,
+  attributes: Record<string, string | undefined> = {},
+) {
+  const anglePoints = geometryDirectAnglePoints(value, points);
+  if (!anglePoints) return;
+  const [first, vertex, second] = anglePoints;
+  drawRightAngleMarkerFromPoints(board, first, vertex, second, color, size, undefined, undefined, attributes);
+}
+
 function drawRightAngleMarkerFromPoints(
   board: JXG.Board,
   first: GraphPoint,
@@ -1856,6 +1904,14 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
           "data-mauth-geometry2d-decoration-target": segmentId,
         }),
       );
+      (decoration.pointPairs ?? []).forEach((pair, pairIndex) => {
+        const endpoints = geometryPointPairEndpoints(pair, points);
+        if (!endpoints) return;
+        drawGeometryEqualLengthTicksAtEndpoints(board, endpoints, color, tickCount, sizePx, {
+          ...attributes,
+          "data-mauth-geometry2d-decoration-target": `pointPairs[${pairIndex}]`,
+        });
+      });
     }
     if (decoration.kind === "equalAngle") {
       const arcCount = decoration.arcCount ?? 1;
@@ -1866,11 +1922,24 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
           "data-mauth-geometry2d-decoration-target": angleId,
         }),
       );
+      (decoration.anglePoints ?? []).forEach((value, angleIndex) => {
+        const directAnglePoints = geometryDirectAnglePoints(value, points);
+        if (!directAnglePoints) return;
+        const [first, vertex, second] = directAnglePoints;
+        drawAngleArcFromPoints(board, first, vertex, second, color, radius, arcCount, undefined, undefined, {
+          ...attributes,
+          "data-mauth-geometry2d-decoration-target": `anglePoints[${angleIndex}]`,
+        });
+      });
     }
     if (decoration.kind === "rightAngle") {
       drawGeometryRightAngleMarker(board, angles.get(decoration.angle ?? ""), points, color, decoration.size ?? 0.35, {
         ...attributes,
         "data-mauth-geometry2d-decoration-target": decoration.angle,
+      });
+      drawGeometryRightAngleMarkerFromDirectPoints(board, decoration.points, points, color, decoration.size ?? 0.35, {
+        ...attributes,
+        "data-mauth-geometry2d-decoration-target": "points",
       });
     }
   });
