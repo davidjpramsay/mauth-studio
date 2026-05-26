@@ -98,6 +98,26 @@ test("assistant terminal tool status prefers explicit target labels from local t
   assert.equal(message?.summary.targetLabel, "Question 2 · 2D diagram · Segment 1: OA");
 });
 
+test("assistant terminal tool status ends local read-only inspection turns", () => {
+  const message = assistantTerminalToolStatusMessage({
+    callId: "local-preview-inspect",
+    name: "mauth_preview_inspect",
+    output: {
+      ok: true,
+      toolName: "mauth.preview.inspect",
+      message: "Inspected Question 1 with no warnings.",
+      changedIds: [],
+    },
+  });
+
+  assert.equal(message?.tone, "tool-success");
+  assert.equal(message?.summary.state, "completed");
+  assert.equal(message?.summary.committedDocument, null);
+  assert.equal(message?.summary.commitLabel, "Unknown");
+  assert.match(messageText(message), /`mauth\.preview\.inspect` completed/);
+  assert.match(messageText(message), /Inspected Question 1/);
+});
+
 test("assistant continuing tool status reports failed preflight without a commit", () => {
   const [message] = assistantContinuingToolStatusMessages([
     {
