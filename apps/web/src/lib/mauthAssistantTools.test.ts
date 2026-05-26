@@ -11,6 +11,7 @@ import {
   type MauthAssistantToolDescription,
   type MauthLayoutCheck,
   type MauthPreviewInspection,
+  type MauthPreviewRenderedMetrics,
 } from "./mauthAssistantTools.ts";
 import { inspectMauthDiagram, isAssistantDiagramInspectionWarningBlocking } from "./mauthDiagramInspection.ts";
 
@@ -3029,6 +3030,162 @@ test("layout auto-repair reports remaining issues it cannot safely fix", () => {
     result.document?.questions[0].contentBlocks.some((block) => block.kind === "space"),
     true,
   );
+});
+
+test("layout auto-repair reduces a student space for an unambiguous rendered page overflow", () => {
+  const document = documentFixture();
+  document.questions = [question("q1", [textBlock("q1-text", "Show your working."), spaceBlock("q1-space", 20)])];
+  const renderedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:q1-space",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 1000,
+        totalHeightPx: 1000,
+        remainingHeightPx: 0,
+        usedPercent: 100,
+        anchorCount: 2,
+        overflow: true,
+        overflowByPx: 80,
+        overflowTargetAnchor: "q:q1/b:q1-space",
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1",
+        kind: "question",
+        role: "structure",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 0, top: 0, right: 600, bottom: 1120, width: 600, height: 1120, x: 0, y: 0 },
+        pageRelativeRect: { left: 0, top: 0, right: 600, bottom: 1120, width: 600, height: 1120, x: 0, y: 0 },
+        warnings: [],
+      },
+      {
+        anchor: "q:q1/b:q1-space",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 40, top: 620, right: 560, bottom: 1120, width: 520, height: 500, x: 40, y: 620 },
+        pageRelativeRect: { left: 40, top: 620, right: 560, bottom: 1120, width: 520, height: 500, x: 40, y: 620 },
+        warnings: [],
+      },
+    ],
+    warnings: [
+      {
+        code: "rendered-page-overflow",
+        severity: "warning",
+        anchor: "q:q1/b:q1-space",
+        targetId: "q1-space",
+        message: "Preview page 1 appears to overflow its A4 page box.",
+      },
+    ],
+  };
+
+  const result = runMauthAssistantTool(
+    document,
+    {
+      name: "mauth.layout.check",
+      arguments: { mode: "student", autoRepair: true },
+    },
+    { assistantContext: { renderedMetrics } },
+  );
+  const check = result.data as MauthLayoutCheck;
+  const repairedSpace = result.document?.questions[0].contentBlocks.find((block) => block.id === "q1-space");
+
+  assert.equal(result.ok, true);
+  assert.equal(check.repair?.applied, true);
+  assert(check.repair?.repairedCodes.includes("rendered-page-overflow"));
+  assert.equal(repairedSpace?.kind === "space" ? repairedSpace.lines : undefined, 14);
+  assert.deepEqual(result.changedIds, ["q1-space"]);
+});
+
+test("layout auto-repair leaves ambiguous rendered page overflows untouched", () => {
+  const document = documentFixture();
+  document.questions = [question("q1", [spaceBlock("q1-space-a", 16), spaceBlock("q1-space-b", 16)])];
+  const renderedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: null,
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 1000,
+        totalHeightPx: 1000,
+        remainingHeightPx: 0,
+        usedPercent: 100,
+        anchorCount: 3,
+        overflow: true,
+        overflowByPx: 120,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1",
+        kind: "question",
+        role: "structure",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 0, top: 0, right: 600, bottom: 1120, width: 600, height: 1120, x: 0, y: 0 },
+        pageRelativeRect: { left: 0, top: 0, right: 600, bottom: 1120, width: 600, height: 1120, x: 0, y: 0 },
+        warnings: [],
+      },
+      {
+        anchor: "q:q1/b:q1-space-a",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 40, top: 420, right: 560, bottom: 920, width: 520, height: 500, x: 40, y: 420 },
+        pageRelativeRect: { left: 40, top: 420, right: 560, bottom: 920, width: 520, height: 500, x: 40, y: 420 },
+        warnings: [],
+      },
+      {
+        anchor: "q:q1/b:q1-space-b",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 40, top: 900, right: 560, bottom: 1120, width: 520, height: 220, x: 40, y: 900 },
+        pageRelativeRect: { left: 40, top: 900, right: 560, bottom: 1120, width: 520, height: 220, x: 40, y: 900 },
+        warnings: [],
+      },
+    ],
+    warnings: [
+      {
+        code: "rendered-page-overflow",
+        severity: "warning",
+        message: "Preview page 1 appears to overflow its A4 page box.",
+      },
+    ],
+  };
+
+  const result = runMauthAssistantTool(
+    document,
+    {
+      name: "mauth.layout.check",
+      arguments: { mode: "student", autoRepair: true },
+    },
+    { assistantContext: { renderedMetrics } },
+  );
+  const check = result.data as MauthLayoutCheck;
+
+  assert.equal(result.ok, true);
+  assert.equal(check.repair?.applied, false);
+  assert.deepEqual(result.changedIds, []);
+  assert(check.repair?.remainingCodes.includes("rendered-page-overflow"));
 });
 
 test("normalises visible assistant mark notes into hidden solution tick annotations", () => {

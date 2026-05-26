@@ -225,12 +225,24 @@ function pageMetrics(page: HTMLElement, pageIndex: number, anchors: HTMLElement[
   const contentRect = content.getBoundingClientRect();
   const totalHeight = contentRect.height;
   const pageAnchors = anchors.filter((anchor) => page.contains(anchor));
-  const usedBottom = pageAnchors.reduce((bottom, anchor) => {
-    const rect = anchor.getBoundingClientRect();
-    return Math.max(bottom, rect.bottom - contentRect.top);
-  }, 0);
+  const pageAnchorBottoms = pageAnchors
+    .map((anchor) => {
+      const anchorName = anchor.getAttribute("data-scroll-anchor");
+      const rect = anchor.getBoundingClientRect();
+      return {
+        anchor: anchorName,
+        role: anchorRole(anchor),
+        bottom: rect.bottom - contentRect.top,
+      };
+    })
+    .filter((item): item is { anchor: string; role: MauthRenderedPreviewAnchorMetrics["role"]; bottom: number } => Boolean(item.anchor));
+  const usedBottom = pageAnchorBottoms.reduce((bottom, item) => Math.max(bottom, item.bottom), 0);
+  const overflowAnchorCandidates = pageAnchorBottoms.filter((item) => item.role === "module" && item.bottom > totalHeight + 1);
+  const scrollOverflowPx = Math.max(0, page.scrollHeight - page.clientHeight);
+  const anchorOverflowPx = Math.max(0, usedBottom - totalHeight);
+  const overflowByPx = Math.max(scrollOverflowPx, anchorOverflowPx);
   const usedHeight = Math.max(0, Math.min(usedBottom, totalHeight));
-  const overflow = page.scrollHeight > page.clientHeight + 1 || usedBottom > totalHeight + 1;
+  const overflow = overflowByPx > 1;
   return {
     pageIndex,
     pageNumber: pageIndex + 1,
@@ -240,6 +252,24 @@ function pageMetrics(page: HTMLElement, pageIndex: number, anchors: HTMLElement[
     usedPercent: totalHeight > 0 ? roundMetric((usedHeight / totalHeight) * 100) : 0,
     anchorCount: pageAnchors.length,
     overflow,
+    ...(overflow ? { overflowByPx: roundMetric(overflowByPx) } : {}),
+    ...(overflowAnchorCandidates.length === 1 ? { overflowTargetAnchor: overflowAnchorCandidates[0].anchor } : {}),
+  };
+}
+
+function blockIdFromRenderedAnchor(anchor?: string) {
+  const match = anchor?.match(/\/b:([^/]+)/);
+  return match?.[1];
+}
+
+function renderedPageOverflowWarning(page: MauthRenderedPreviewPageMetrics) {
+  const targetId = blockIdFromRenderedAnchor(page.overflowTargetAnchor);
+  return {
+    code: "rendered-page-overflow",
+    severity: "warning" as const,
+    message: `Preview page ${page.pageNumber} appears to overflow its A4 page box.`,
+    ...(page.overflowTargetAnchor ? { anchor: page.overflowTargetAnchor } : {}),
+    ...(targetId ? { targetId } : {}),
   };
 }
 
@@ -451,13 +481,7 @@ export function collectRenderedPreviewMetrics(container: HTMLElement | null, act
     .map((element) => anchorMetrics(element, pages, activeAnchor))
     .filter((metric): metric is MauthRenderedPreviewAnchorMetrics => Boolean(metric));
   const warnings = [
-    ...pageSummaries
-      .filter((page) => page.overflow)
-      .map((page) => ({
-        code: "rendered-page-overflow",
-        severity: "warning" as const,
-        message: `Preview page ${page.pageNumber} appears to overflow its A4 page box.`,
-      })),
+    ...pageSummaries.filter((page) => page.overflow).map(renderedPageOverflowWarning),
     ...anchors.flatMap((anchor) => anchor.warnings),
   ];
 

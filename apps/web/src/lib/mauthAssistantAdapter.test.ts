@@ -12,7 +12,7 @@ import type {
 import type { MauthDocumentLike, MauthQuestionLike } from "./mauthActions.ts";
 import { runMauthAssistantAdapterTool, type MauthAssistantAdapterHost } from "./mauthAssistantAdapter.ts";
 import type { MauthProjectFileDriver } from "./mauthAssistantFileTools.ts";
-import type { MauthPreviewRenderedMetrics } from "./mauthAssistantTools.ts";
+import type { MauthLayoutCheck, MauthPreviewRenderedMetrics } from "./mauthAssistantTools.ts";
 
 interface TestFrontMatter {
   assessmentTitle: string;
@@ -403,6 +403,123 @@ test("commits automatic layout-check repairs through editor history", async () =
     harness.document.questions[0].contentBlocks.some((block) => block.kind === "space"),
     true,
   );
+});
+
+test("refreshes rendered layout metrics after automatic layout-check repair commits", async () => {
+  let waitedForPaint = false;
+  const initialMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:space1",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 1000,
+        totalHeightPx: 1000,
+        remainingHeightPx: 0,
+        usedPercent: 100,
+        anchorCount: 2,
+        overflow: true,
+        overflowByPx: 80,
+        overflowTargetAnchor: "q:q1/b:space1",
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1",
+        kind: "question",
+        role: "structure",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 0, top: 0, right: 600, bottom: 1080, width: 600, height: 1080, x: 0, y: 0 },
+        pageRelativeRect: { left: 0, top: 0, right: 600, bottom: 1080, width: 600, height: 1080, x: 0, y: 0 },
+        warnings: [],
+      },
+      {
+        anchor: "q:q1/b:space1",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 40, top: 580, right: 560, bottom: 1080, width: 520, height: 500, x: 40, y: 580 },
+        pageRelativeRect: { left: 40, top: 580, right: 560, bottom: 1080, width: 520, height: 500, x: 40, y: 580 },
+        warnings: [],
+      },
+    ],
+    warnings: [
+      {
+        code: "rendered-page-overflow",
+        severity: "warning",
+        anchor: "q:q1/b:space1",
+        targetId: "space1",
+        message: "Preview page 1 appears to overflow its A4 page box.",
+      },
+    ],
+  };
+  const freshMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:space1",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 860,
+        totalHeightPx: 1000,
+        remainingHeightPx: 140,
+        usedPercent: 86,
+        anchorCount: 2,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1",
+        kind: "question",
+        role: "structure",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: false,
+        viewportRect: { left: 0, top: 0, right: 600, bottom: 860, width: 600, height: 860, x: 0, y: 0 },
+        pageRelativeRect: { left: 0, top: 0, right: 600, bottom: 860, width: 600, height: 860, x: 0, y: 0 },
+        warnings: [],
+      },
+    ],
+    warnings: [],
+  };
+  const harness = adapterHost(
+    {
+      getRenderedPreviewMetrics: () => initialMetrics,
+      waitForRenderedPreviewMetrics: async () => {
+        waitedForPaint = true;
+        return freshMetrics;
+      },
+    },
+    {
+      frontMatter: { assessmentTitle: "Original" },
+      formattingConfig: { showMarks: true },
+      questions: [question("q1", [textBlock("t1", "Original wording."), spaceBlock("space1", 20)])],
+    },
+  );
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.layout.check",
+    arguments: { mode: "student", autoRepair: true },
+  });
+  const data = result.data as MauthLayoutCheck;
+
+  assert.equal(waitedForPaint, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.committedDocument, true);
+  assert.equal(data.repair?.applied, true);
+  assert.equal(data.repair?.afterIssueCount, 0);
+  assert.equal(data.repair?.repairedIssueCount, 1);
+  assert.equal(result.warnings.length, 0);
 });
 
 test("successful diagram edits return compact semantic review context", async () => {

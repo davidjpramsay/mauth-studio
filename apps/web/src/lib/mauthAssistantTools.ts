@@ -210,6 +210,8 @@ export interface MauthRenderedPreviewPageMetrics {
   usedPercent: number;
   anchorCount: number;
   overflow: boolean;
+  overflowByPx?: number;
+  overflowTargetAnchor?: string;
 }
 
 export interface MauthRenderedPreviewAnchorMetrics {
@@ -1583,9 +1585,12 @@ function renderedMetricsForInspection(
   const candidates = new Set(renderedAnchorCandidates(target));
   if (activeAnchor) candidates.add(activeAnchor);
   const candidateList = Array.from(candidates);
+  const warningAnchors = new Set(metrics.warnings.map((warning) => warning.anchor).filter((anchor): anchor is string => Boolean(anchor)));
   const anchors =
     scope === "document"
-      ? metrics.anchors.filter((anchor) => anchor.kind === "question" || anchor.warnings.length > 0).slice(0, 80)
+      ? metrics.anchors
+          .filter((anchor) => anchor.kind === "question" || anchor.warnings.length > 0 || warningAnchors.has(anchor.anchor))
+          .slice(0, 80)
       : metrics.anchors.filter((anchor) => anchorRelatedToCandidates(anchor.anchor, candidateList)).slice(0, 30);
   const warnings = [...metrics.warnings, ...anchors.flatMap((anchor) => anchor.warnings)].filter(
     (warning, index, all) => all.findIndex((item) => item.code === warning.code && item.anchor === warning.anchor) === index,
@@ -5724,6 +5729,72 @@ function finalPageBreakRepairAction<Q extends MauthQuestionLike, F extends objec
   return { type: "pageBreak.set", target: { kind: "question", questionId: question.id }, enabled: false };
 }
 
+function renderedPageNumberFromIssue(issue: MauthLayoutCheckIssue) {
+  const match = issue.message.match(/Preview page\s+(\d+)/i);
+  if (!match) return undefined;
+  const pageNumber = Number(match[1]);
+  return Number.isInteger(pageNumber) && pageNumber > 0 ? pageNumber : undefined;
+}
+
+function renderedOverflowPage(layout: MauthLayoutCheck, issue: MauthLayoutCheckIssue) {
+  const renderedMetrics = layout.preview.renderedMetrics;
+  if (!renderedMetrics.available) return undefined;
+  const pageNumber = renderedPageNumberFromIssue(issue);
+  if (pageNumber) return renderedMetrics.pages.find((page) => page.pageNumber === pageNumber && page.overflow);
+  const overflowPages = renderedMetrics.pages.filter((page) => page.overflow);
+  return overflowPages.length === 1 ? overflowPages[0] : undefined;
+}
+
+function renderedPageOverflowTargetAnchor(layout: MauthLayoutCheck, issue: MauthLayoutCheckIssue) {
+  if (issue.anchor) return issue.anchor;
+  return renderedOverflowPage(layout, issue)?.overflowTargetAnchor;
+}
+
+function renderedPageOverflowPx(
+  page: MauthRenderedPreviewPageMetrics | undefined,
+  anchorMetrics: MauthRenderedPreviewAnchorMetrics | undefined,
+) {
+  const pageOverflow = typeof page?.overflowByPx === "number" && Number.isFinite(page.overflowByPx) ? page.overflowByPx : 0;
+  const anchorOverflow =
+    page && anchorMetrics?.pageRelativeRect ? Math.max(0, anchorMetrics.pageRelativeRect.bottom - page.totalHeightPx) : 0;
+  return Math.max(pageOverflow, anchorOverflow);
+}
+
+function renderedPageOverflowSpaceRepairAction<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  layout: MauthLayoutCheck,
+  issue: MauthLayoutCheckIssue,
+): MauthDocumentAction | undefined {
+  const renderedMetrics = layout.preview.renderedMetrics;
+  if (!renderedMetrics.available) return undefined;
+
+  const targetAnchor = renderedPageOverflowTargetAnchor(layout, issue);
+  const parsed = parseAssistantAnchor(targetAnchor);
+  if (!targetAnchor || !parsed.blockId) return undefined;
+
+  const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, parsed.blockId);
+  if (!entry || entry.block.kind !== "space" || blockVisibility(entry.block) !== "student") return undefined;
+
+  const page = renderedOverflowPage(layout, issue);
+  const anchorMetrics = renderedMetrics.anchors.find((anchor) => anchor.anchor === targetAnchor);
+  const overflowPx = renderedPageOverflowPx(page, anchorMetrics);
+  const currentLines = Math.max(1, Math.floor(entry.block.lines));
+  const anchorHeight = anchorMetrics?.viewportRect.height;
+  const lineHeightPx = typeof anchorHeight === "number" && anchorHeight > 0 ? anchorHeight / currentLines : 0;
+  if (!(overflowPx > 0) || !(lineHeightPx > 0)) return undefined;
+
+  const reduction = Math.max(1, Math.ceil((overflowPx + lineHeightPx) / lineHeightPx));
+  const nextLines = Math.max(MIN_AUTHOR_STUDENT_SPACE_LINES, currentLines - reduction);
+  if (nextLines >= currentLines) return undefined;
+
+  return {
+    type: "module.update",
+    scope: entry.scope,
+    blockId: entry.block.id,
+    patch: { lines: nextLines },
+  };
+}
+
 function layoutRepairPlan<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   layout: MauthLayoutCheck,
@@ -5764,6 +5835,21 @@ function layoutRepairPlan<Q extends MauthQuestionLike, F extends object, C exten
       issue.code === "rendered-diagram-clipped-by-page"
     ) {
       const action = diagramSizeRepairAction(document, issue);
+      const key = action ? JSON.stringify(action) : "";
+      if (action && !actionKeys.has(key)) {
+        actions.push(action);
+        actionKeys.add(key);
+        repairedIssues.push(issue);
+      } else if (action) {
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    if (issue.code === "rendered-page-overflow") {
+      const action = renderedPageOverflowSpaceRepairAction(document, layout, issue);
       const key = action ? JSON.stringify(action) : "";
       if (action && !actionKeys.has(key)) {
         actions.push(action);
