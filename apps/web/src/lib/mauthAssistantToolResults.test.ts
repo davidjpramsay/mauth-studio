@@ -5,6 +5,7 @@ import {
   assistantContinuingToolStatusMessages,
   assistantFinalToolStateMessage,
   assistantTerminalToolStatusMessage,
+  assistantVisibleProviderMessage,
   type MauthAssistantToolStatusMessage,
 } from "./mauthAssistantToolResults.ts";
 
@@ -259,4 +260,24 @@ test("assistant final tool state allows provider text when local outputs are com
   ]);
 
   assert.equal(message, null);
+});
+
+test("assistant visible provider message hides narration during tool turns", () => {
+  assert.equal(
+    assistantVisibleProviderMessage({
+      message: "I will update that now.",
+      toolCalls: [{ callId: "call-1", name: "mauth.author.addDiagram", arguments: "{}" }],
+    }),
+    "",
+  );
+});
+
+test("assistant visible provider message keeps standalone assistant text", () => {
+  assert.equal(
+    assistantVisibleProviderMessage({
+      message: "Here is the revised question.",
+      toolCalls: [],
+    }),
+    "Here is the revised question.",
+  );
 });

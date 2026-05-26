@@ -3018,9 +3018,19 @@ function sourceVectorDiagramInputFromEntry(entry: Record<string, unknown>, entry
 }
 
 function normalizedAssistantGraphConfig(graphConfig: Record<string, unknown>) {
-  if (graphConfig.type !== "graph3d") return graphConfig as unknown as GraphConfig;
   const normalized = { ...graphConfig };
   const data = isRecord(graphConfig.data) ? graphConfig.data : undefined;
+
+  if (graphConfig.type === "geometry2d" && data) {
+    normalized.data = normalizedGeometry2dData(data);
+  }
+
+  if (graphConfig.type === "graph2d" && data && isRecord(data.geometry2d)) {
+    normalized.data = { ...data, geometry2d: normalizedGeometry2dData(data.geometry2d) };
+  }
+
+  if (graphConfig.type !== "graph3d") return normalized as unknown as GraphConfig;
+
   if (data) {
     normalized.data = normalizedGraph3dData(data);
   }
@@ -3065,6 +3075,58 @@ function normalizedGraph3dData(data: Record<string, unknown>) {
       delete normalizedFace.vertices;
       return normalizedFace;
     });
+  }
+  return normalized;
+}
+
+function compactGeometryIdPart(value: unknown) {
+  return typeof value === "string" ? value.trim().replace(/[^A-Za-z0-9_-]+/g, "") : "";
+}
+
+function uniqueGeneratedGeometryId(base: string, usedIds: Set<string>) {
+  let candidate = base || "item";
+  for (let index = 2; usedIds.has(candidate); index += 1) {
+    candidate = `${base}-${index}`;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function normalizeGeometry2DPrimitiveIds(
+  values: unknown,
+  usedIds: Set<string>,
+  fallbackPrefix: string,
+  idParts: (entry: Record<string, unknown>) => unknown[],
+) {
+  if (!Array.isArray(values)) return values;
+  return values.map((entry, index) => {
+    if (!isRecord(entry)) return entry;
+    const currentId = typeof entry.id === "string" ? entry.id.trim() : "";
+    if (currentId) {
+      usedIds.add(currentId);
+      return entry;
+    }
+    const base = idParts(entry).map(compactGeometryIdPart).filter(Boolean).join("") || `${fallbackPrefix}${index + 1}`;
+    return { ...entry, id: uniqueGeneratedGeometryId(base, usedIds) };
+  });
+}
+
+function normalizedGeometry2dData(data: Record<string, unknown>) {
+  const normalized = { ...data };
+  const segmentIds = new Set<string>();
+  const arcIds = new Set<string>();
+  const angleIds = new Set<string>();
+
+  if (Array.isArray(data.segments)) {
+    normalized.segments = normalizeGeometry2DPrimitiveIds(data.segments, segmentIds, "segment", (entry) => [entry.from, entry.to]);
+  }
+  if (Array.isArray(data.arcs)) {
+    normalized.arcs = normalizeGeometry2DPrimitiveIds(data.arcs, arcIds, "arc", (entry) => [entry.center, entry.from, entry.to]);
+  }
+  if (Array.isArray(data.angles)) {
+    normalized.angles = normalizeGeometry2DPrimitiveIds(data.angles, angleIds, "angle", (entry) =>
+      Array.isArray(entry.points) ? entry.points : [],
+    );
   }
   return normalized;
 }
@@ -3836,6 +3898,19 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
       issues: [{ path: "arguments.diagram", message: "must resolve to a diagram block", expected: "diagram block" }],
     };
   }
+  const diagramBlockValidation = validateMauthDocumentActionPayloads([
+    {
+      type: "module.add",
+      scope: { kind: "question", questionId: question.id },
+      blocks: [diagramBlock],
+    },
+  ]);
+  if (!diagramBlockValidation.ok) {
+    return {
+      error: formatMauthActionValidationIssues(diagramBlockValidation.issues),
+      issues: diagramBlockValidation.issues,
+    };
+  }
 
   const sourceBlocks = [...question.contentBlocks];
   const replacementDiagramId = diagramReplacementIdFromArgs(args);
@@ -3875,20 +3950,7 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
     contentBlocks,
     itemOrder: questionOrder(contentBlocks, parts),
   };
-  const generatedQuestionValidation = validateMauthDocumentActionPayloads([
-    {
-      type: "question.add",
-      question: generatedQuestion,
-    },
-  ]);
-  if (!generatedQuestionValidation.ok) {
-    return {
-      error: formatMauthActionValidationIssues(generatedQuestionValidation.issues),
-      issues: generatedQuestionValidation.issues,
-    };
-  }
-
-  return [
+  const actions: MauthDocumentAction[] = [
     {
       type: "question.update",
       questionId: question.id,
@@ -3898,6 +3960,15 @@ function parseAuthorAddDiagramActions<Q extends MauthQuestionLike, F extends obj
       },
     },
   ];
+  const actionValidation = validateMauthDocumentActionPayloads(actions);
+  if (!actionValidation.ok) {
+    return {
+      error: formatMauthActionValidationIssues(actionValidation.issues),
+      issues: actionValidation.issues,
+    };
+  }
+
+  return actions;
 }
 
 function blocksWithEnsuredSolution(

@@ -3864,6 +3864,83 @@ test("rejects malformed native geometry2d primitive references", () => {
   assert(issuePaths.has("actions[0].blocks[0].graphConfig.functions"));
 });
 
+test("high-level diagram authoring fills obvious geometry2d primitive ids", () => {
+  const result = runMauthAssistantTool(documentFixture(), {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometry2d",
+          data: {
+            points: [
+              { id: "A", x: 0, y: 0 },
+              { id: "B", x: 2, y: 0 },
+              { id: "C", x: 2, y: 1 },
+            ],
+            segments: [
+              { from: "A", to: "B" },
+              { from: "B", to: "C" },
+              { from: "C", to: "A" },
+            ],
+            angles: [{ points: ["A", "B", "C"], radius: 0.4 }],
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = questionDiagrams(result.document?.questions[0]).find(
+    (block) => block.kind === "diagram" && block.graphConfig.type === "geometry2d",
+  );
+  assert(diagram?.kind === "diagram");
+  const data = diagram.graphConfig.data as { segments?: Array<{ id?: string }>; angles?: Array<{ id?: string }> };
+  assert.deepEqual(
+    data.segments?.map((segment) => segment.id),
+    ["AB", "BC", "CA"],
+  );
+  assert.deepEqual(
+    data.angles?.map((angle) => angle.id),
+    ["ABC"],
+  );
+});
+
+test("high-level diagram authoring does not fail on existing blank editor text blocks", () => {
+  const document = {
+    ...documentFixture(),
+    questions: [question("q1", [textBlock("blank-text", "")])],
+  };
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.author.addDiagram",
+    arguments: {
+      questionNumber: 1,
+      diagram: {
+        graphConfig: {
+          type: "geometry2d",
+          data: {
+            points: [
+              { id: "A", x: 0, y: 0 },
+              { id: "B", x: 2, y: 0 },
+            ],
+            segments: [{ from: "A", to: "B" }],
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  assert.equal(
+    result.document?.questions[0].contentBlocks.some((block) => block.kind === "text" && block.text === ""),
+    true,
+  );
+  assert.equal(
+    questionDiagrams(result.document?.questions[0]).some((block) => block.kind === "diagram"),
+    true,
+  );
+});
+
 test("rejects graph2d fields misplaced under data and options", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.actions.preview",
