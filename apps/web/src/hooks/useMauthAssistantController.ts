@@ -41,6 +41,7 @@ interface AssistantPendingToolContinuation {
   responseId: string | null;
   toolCalls: AssistantProviderToolCall[];
   targetAnchor?: string | null;
+  targetReference?: MauthAssistantTargetReferenceContext | null;
 }
 
 interface AssistantToolLoopResult {
@@ -248,8 +249,18 @@ function providerMessageContent(chatMessage: MauthAssistantChatMessage) {
   return assistantProviderContentWithTarget(chatMessage.content, chatMessage.role === "user" ? chatMessage.targetReference : null);
 }
 
-function assistantToolStatusChatMessage(message: MauthAssistantToolStatusMessage): MauthAssistantChatMessage {
-  return { id: assistantMessageId(), role: "assistant", content: message.content, tone: message.tone, toolStatus: message.summary };
+function assistantToolStatusChatMessage(
+  message: MauthAssistantToolStatusMessage,
+  targetReference: MauthAssistantTargetReferenceContext | null = null,
+): MauthAssistantChatMessage {
+  return {
+    id: assistantMessageId(),
+    role: "assistant",
+    content: message.content,
+    tone: message.tone,
+    toolStatus: message.summary,
+    targetReference,
+  };
 }
 
 function assistantToolCallFromProvider(toolCall: AssistantProviderToolCall): MauthAssistantAdapterToolCall | null {
@@ -553,6 +564,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     initialResponseId: string | null,
     initialToolCalls: AssistantProviderToolCall[],
     targetAnchor: string | null = null,
+    targetReference: MauthAssistantTargetReferenceContext | null = null,
   ): Promise<AssistantToolLoopResult> {
     let responseId = initialResponseId;
     let toolCalls = initialToolCalls;
@@ -569,14 +581,20 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
       const continuingStatusMessages = assistantContinuingToolStatusMessages(toolOutputs);
       if (continuingStatusMessages.length) {
-        setChatMessages((current) => [...current, ...continuingStatusMessages.map(assistantToolStatusChatMessage)]);
+        setChatMessages((current) => [
+          ...current,
+          ...continuingStatusMessages.map((message) => assistantToolStatusChatMessage(message, targetReference)),
+        ]);
       }
 
       const localMessages = toolOutputs
         .map(localTerminalAssistantToolMessage)
         .filter((message): message is MauthAssistantToolStatusMessage => Boolean(message));
       if (localMessages.length === toolOutputs.length) {
-        setChatMessages((current) => [...current, ...localMessages.map(assistantToolStatusChatMessage)]);
+        setChatMessages((current) => [
+          ...current,
+          ...localMessages.map((message) => assistantToolStatusChatMessage(message, targetReference)),
+        ]);
         setPendingToolContinuation(null);
         setPreviousResponseId(null);
         return { responseId: null, usage: totalUsage, pending: null };
@@ -588,7 +606,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
           setPreviousResponseId(null);
           setChatMessages((current) => [
             ...current,
-            { id: assistantMessageId(), role: "assistant", content: terminalFailedToolMessage(toolOutputs) },
+            { id: assistantMessageId(), role: "assistant", content: terminalFailedToolMessage(toolOutputs), targetReference },
           ]);
           return { responseId: null, usage: totalUsage, pending: null };
         }
@@ -607,15 +625,18 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       totalUsage = mergeAssistantUsageSummary(totalUsage, response.usage);
       const finalToolStateMessage = response.toolCalls.length ? null : assistantFinalToolStateMessage(toolOutputs);
       if (finalToolStateMessage) {
-        setChatMessages((current) => [...current, assistantToolStatusChatMessage(finalToolStateMessage)]);
+        setChatMessages((current) => [...current, assistantToolStatusChatMessage(finalToolStateMessage, targetReference)]);
       } else if (response.message.trim()) {
-        setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: response.message.trim() }]);
+        setChatMessages((current) => [
+          ...current,
+          { id: assistantMessageId(), role: "assistant", content: response.message.trim(), targetReference },
+        ]);
       }
       toolCalls = response.toolCalls;
     }
 
     if (toolCalls.length) {
-      const pending = { responseId, toolCalls, targetAnchor };
+      const pending = { responseId, toolCalls, targetAnchor, targetReference };
       setPendingToolContinuation(pending);
       setPreviousResponseId(null);
       setChatMessages((current) => [
@@ -624,6 +645,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
           id: assistantMessageId(),
           role: "assistant",
           content: ASSISTANT_PAUSED_MESSAGE,
+          targetReference,
         },
       ]);
       return { responseId, usage: totalUsage, pending };
@@ -643,9 +665,15 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     const pendingContinuation = pendingToolContinuation;
     const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
     const explicitTargetAnchor = firstMauthTargetReference(displayedUserContent);
-    const turnTargetReference = explicitTargetAnchor ? null : activeTargetReference;
-    const messageTargetAnchor = explicitTargetAnchor ?? turnTargetReference?.anchor ?? null;
+    const explicitTargetReference: MauthAssistantTargetReferenceContext | null = explicitTargetAnchor
+      ? { anchor: explicitTargetAnchor }
+      : null;
+    const turnTargetReference = explicitTargetReference ?? activeTargetReference;
+    const messageTargetAnchor = turnTargetReference?.anchor ?? null;
     const turnTargetAnchor = resumePendingTools ? (pendingContinuation?.targetAnchor ?? messageTargetAnchor) : messageTargetAnchor;
+    const visibleTurnTargetReference = resumePendingTools
+      ? (pendingContinuation?.targetReference ?? turnTargetReference)
+      : turnTargetReference;
     const freshAttachmentTurn = requestAttachments.length > 0;
     const previousId = pendingContinuation || freshAttachmentTurn ? null : previousResponseId;
     const priorMessages = chatMessages
@@ -661,7 +689,10 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
           content: content.length > 2000 ? `${content.slice(0, 2000)}...` : content,
         };
       });
-    const providerUserContent = assistantProviderContentWithTarget(displayedUserContent, turnTargetReference);
+    const providerUserContent = assistantProviderContentWithTarget(
+      displayedUserContent,
+      explicitTargetAnchor ? null : activeTargetReference,
+    );
     const outgoingMessages: AssistantChatMessage[] = previousId
       ? [{ role: "user", content: providerUserContent }]
       : freshAttachmentTurn
@@ -679,7 +710,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
         role: "user",
         content: displayedUserContent,
         attachments: requestAttachments,
-        targetReference: turnTargetReference,
+        targetReference: visibleTurnTargetReference,
       },
     ]);
     setChatRunning(true);
@@ -691,7 +722,13 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       const host = assistantHostWithTargetReference(createHost(), turnTargetAnchor);
       if (resumePendingTools && pendingContinuation) {
         setPendingToolContinuation(null);
-        const loopResult = await continueToolLoop(host, pendingContinuation.responseId, pendingContinuation.toolCalls, turnTargetAnchor);
+        const loopResult = await continueToolLoop(
+          host,
+          pendingContinuation.responseId,
+          pendingContinuation.toolCalls,
+          turnTargetAnchor,
+          visibleTurnTargetReference,
+        );
         const resumedUsage = loopResult.usage;
         if (resumedUsage) {
           setChatMessages((current) => addUsageToLastAssistantMessage(current, resumedUsage));
@@ -723,11 +760,14 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       const nextResponseId = response.responseId ?? previousId;
       const visibleProviderMessage = assistantVisibleProviderMessage(response);
       if (visibleProviderMessage) {
-        setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: visibleProviderMessage }]);
+        setChatMessages((current) => [
+          ...current,
+          { id: assistantMessageId(), role: "assistant", content: visibleProviderMessage, targetReference: visibleTurnTargetReference },
+        ]);
       }
 
       if (response.toolCalls.length) {
-        const loopResult = await continueToolLoop(host, nextResponseId, response.toolCalls, turnTargetAnchor);
+        const loopResult = await continueToolLoop(host, nextResponseId, response.toolCalls, turnTargetAnchor, visibleTurnTargetReference);
         requestUsage = mergeAssistantUsageSummary(requestUsage, loopResult.usage);
       } else {
         setPendingToolContinuation(null);
@@ -745,7 +785,10 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       setProviderStatusMessage(message);
       setPendingToolContinuation(null);
       setPreviousResponseId(null);
-      setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: message }]);
+      setChatMessages((current) => [
+        ...current,
+        { id: assistantMessageId(), role: "assistant", content: message, targetReference: visibleTurnTargetReference },
+      ]);
       onFileToolError?.();
     } finally {
       setChatRunning(false);
