@@ -122,12 +122,16 @@ For high-level diagram edits, the frontend adapter performs an automatic post-ed
 
 The same post-edit inspection path now applies to focused solution, answer-space, and formatting tools. After `mauth.author.ensureSolutions`, `mauth.author.adjustResponseSpaces`, `mauth.format.apply`, or a question replacement with solution/response-space payloads commits, the adapter waits for the browser preview paint when mounted and inspects the affected question or document. Repairable warnings such as `student-space-missing`, `solution-hidden-mark-total-mismatch`, `solution-visible-mark-note`, `rendered-solution-space-overflow`, `rendered-response-space-outline-missing`, `rendered-page-overflow`, clipped diagrams, and diagram-size warnings are returned as failed tool output with `validationIssues`. Repair these once with the most specific high-level tool, preserving existing shared wording and diagrams.
 
+Assistant-facing tool output must remain state-aware in the visible panel. A successful local Mauth tool result can show as committed/completed. A failed preflight result should show that no document commit happened. A post-edit inspection failure should show that the edit committed but needs repair. A semantic-review result should show that the edit committed but still needs review. Provider final text should not hide or override those local states.
+
 ## Visible Assistant Shell
 
 Display-only mode includes a small left-side Assistant toggle. It opens a panel with:
 
 - a normal chat input backed by `/api/assistant/chat`
+- a removable active-target card for context-menu targets, keeping the teacher request textarea free of `@mauth[...]` reference plumbing
 - a compact provider status indicator from `/api/assistant/status`
+- local tool-result summaries that show commit state, target, changed item count, and repair/review status
 - normal chat messages with per-request estimated token/cost summaries
 - hidden tool plumbing; teachers should not see raw tool JSON, internal ids, or provider payloads
 
