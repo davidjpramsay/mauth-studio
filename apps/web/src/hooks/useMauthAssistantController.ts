@@ -22,6 +22,7 @@ import {
   assistantFinalToolStateMessage,
   assistantTerminalToolStatusMessage,
   assistantToolOutputRecord,
+  assistantVisibleProviderMessage,
   type MauthAssistantToolStatusMessage,
 } from "@/lib/mauthAssistantToolResults";
 import type { MauthQuestionLike } from "@/lib/mauthActions";
@@ -675,8 +676,9 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       }
 
       const nextResponseId = response.responseId ?? previousId;
-      if (response.message.trim()) {
-        setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: response.message.trim() }]);
+      const visibleProviderMessage = assistantVisibleProviderMessage(response);
+      if (visibleProviderMessage) {
+        setChatMessages((current) => [...current, { id: assistantMessageId(), role: "assistant", content: visibleProviderMessage }]);
       }
 
       if (response.toolCalls.length) {

@@ -1,4 +1,4 @@
-import type { AssistantToolOutput } from "./api.ts";
+import type { AssistantChatResponse, AssistantToolOutput } from "./api.ts";
 import { geometry2dPrimitiveKindLabel, geometry2dPrimitiveTargetFromAnchor } from "./diagramGeometry2d.ts";
 
 export type MauthAssistantToolStatusTone = "tool-success" | "tool-warning" | "tool-error";
@@ -74,6 +74,12 @@ function statusContent(toolName: string, status: string, detail: string) {
 function finalStatusContent(toolName: string, message: string, detail: string) {
   const suffix = detail ? ` ${detail}` : "";
   return `**Final status:** ${message} \`${toolName}\`.${suffix}`;
+}
+
+export function assistantVisibleProviderMessage(response: Pick<AssistantChatResponse, "message" | "toolCalls">) {
+  const message = response.message.trim();
+  if (!message) return "";
+  return response.toolCalls.length ? "" : message;
 }
 
 function changedLabel(output: Record<string, unknown> | null) {

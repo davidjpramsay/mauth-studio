@@ -3153,6 +3153,30 @@ function dragPlacementFromEvent(event: DragEvent<HTMLElement>): Exclude<DropPlac
   return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
 }
 
+function adjacentSiblingDropPlacement(
+  active: SubsectionDragTarget,
+  target: SubsectionDragTarget,
+  placement: Exclude<DropPlacement, "inside">,
+  questions: QuestionBlock[],
+): Exclude<DropPlacement, "inside"> {
+  const activeContainer = subsectionSourceContainer(active);
+  const targetContainer = subsectionSourceContainer(target);
+  if (containerKey(activeContainer) !== containerKey(targetContainer)) return placement;
+
+  const activeItem = subsectionOrderItem(active);
+  const targetItem = subsectionOrderItem(target);
+  if (!activeItem || !targetItem) return placement;
+
+  const orderedKeys = orderItemsForContainer(questions, targetContainer).map(orderItemKey);
+  const activeIndex = orderedKeys.indexOf(orderItemKey(activeItem));
+  const targetIndex = orderedKeys.indexOf(orderItemKey(targetItem));
+  if (activeIndex < 0 || targetIndex < 0) return placement;
+
+  if (placement === "after" && activeIndex === targetIndex + 1) return "before";
+  if (placement === "before" && activeIndex === targetIndex - 1) return "after";
+  return placement;
+}
+
 function panelDragRegionFromEvent(event: DragEvent<HTMLElement>): PanelDragRegion | null {
   if (!(event.target instanceof Element)) return null;
   const region = event.target.closest("[data-panel-region]");
@@ -3182,9 +3206,15 @@ function subsectionDropPreviewForEvent(
 ): Pick<SubsectionDropPreview, "placement" | "intent"> | null {
   const insideIntent = panelInsideDropIntent(active, target, event, questions);
   if (insideIntent) return { placement: "inside", intent: insideIntent };
-  const placement = dragPlacementFromEvent(event);
+  const requestedPlacement = dragPlacementFromEvent(event);
+  const placement = adjacentSiblingDropPlacement(active, target, requestedPlacement, questions);
   const intent = subsectionDropIntent(active, target, placement, questions);
-  return intent ? { placement, intent } : null;
+  if (intent) return { placement, intent };
+  if (placement !== requestedPlacement) {
+    const requestedIntent = subsectionDropIntent(active, target, requestedPlacement, questions);
+    return requestedIntent ? { placement: requestedPlacement, intent: requestedIntent } : null;
+  }
+  return null;
 }
 
 function serializeSubsectionDrag(target: SubsectionDragTarget) {
@@ -5606,8 +5636,10 @@ function ColumnsBlockEditor({
   const normalized = normalizeColumnsBlock(block);
   const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
   const addColumnBlock = (columnIndex: number, kind: ColumnsChildBlockKind) => {
-    const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, contentBlockForKind(kind)] : column));
+    const block = contentBlockForKind(kind);
+    const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, block] : column));
     updateColumns(columns);
+    if (anchor) onActivateAnchor?.(columnChildScrollAnchor(anchor, columnIndex, block.id));
   };
   const updateColumnBlock = (columnIndex: number, blockId: string, patch: Record<string, unknown>) => {
     const columns = normalized.columns.map((column, index) =>
@@ -11754,7 +11786,12 @@ export default function App() {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
     const block = contentBlockForKind(kind);
-    applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
+    const result = applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
+    if (result.ok) {
+      const anchor = questionBlockScrollAnchor(question.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
   }
 
   function addQuestionSolutionSlot(questionId: string) {
@@ -11867,7 +11904,12 @@ export default function App() {
 
   function addPartBlock(questionId: string, part: EditorPart, kind: ContentBlockKind) {
     const block = contentBlockForKind(kind);
-    applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
+    const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
+    if (result.ok) {
+      const anchor = partBlockScrollAnchor(questionId, part.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
   }
 
   function addPartSolutionSlot(questionId: string, part: EditorPart) {
@@ -11884,11 +11926,17 @@ export default function App() {
   }
 
   function addSubpartBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, kind: ContentBlockKind) {
-    applyEditorAction({
+    const block = contentBlockForKind(kind);
+    const result = applyEditorAction({
       type: "module.add",
       scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
-      blocks: [contentBlockForKind(kind)],
+      blocks: [block],
     });
+    if (result.ok) {
+      const anchor = subpartBlockScrollAnchor(questionId, part.id, subpart.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
   }
 
   function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
