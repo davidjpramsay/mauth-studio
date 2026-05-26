@@ -2016,8 +2016,9 @@ def focused_tool_hint(
     if asks_for_layout_check:
         return (
             "Focused tool routing hint: this is a document-wide layout/print check. Your first tool call should be "
-            'mauth_check_document_layout with {"mode":"both"}. Repair warnings with mauth_fix_question_formatting, '
-            "mauth_author_adjust_response_spaces, or mauth_write_solutions_for_questions as appropriate."
+            'mauth_check_document_layout with {"mode":"both","autoRepair":true}. The local tool will repair safe '
+            "mechanical layout issues once, then re-check. Use mauth_fix_question_formatting, "
+            "mauth_author_adjust_response_spaces, or mauth_write_solutions_for_questions only for remaining issues."
         )
     if asks_for_whole_solution_key:
         if marked_summary_has_solution_context(compact_summary):
@@ -3861,9 +3862,10 @@ def mauth_check_document_layout_tool_definition() -> dict[str, Any]:
         "type": "function",
         "name": "mauth_check_document_layout",
         "description": (
-            "Run a document-wide Mauth layout/print check without changing the document. Use for broad checks of page "
-            "overflow, missing answer spaces, solution-space mismatch, blank-page risks, oversized diagrams, diagram "
-            "render/semantic warnings, and print-risk items before reporting that a document is ready."
+            "Run a document-wide Mauth layout/print check. Use autoRepair for broad teacher print-readiness checks so "
+            "safe mechanical issues such as missing answer spaces, oversized diagrams, or final blank-page breaks are "
+            "repaired once before the result is reported. Remaining solution-writing, semantic diagram, or content "
+            "issues should be repaired with the narrow owning tool."
         ),
         "parameters": {
             "type": "object",
@@ -3872,7 +3874,11 @@ def mauth_check_document_layout_tool_definition() -> dict[str, Any]:
                     "type": "string",
                     "enum": ["student", "solutions", "both"],
                     "description": "student checks student copy surfaces, solutions checks solution-key fit/ticks, both checks both.",
-                }
+                },
+                "autoRepair": {
+                    "type": "boolean",
+                    "description": "When true, repair safe deterministic layout issues once, then rerun the layout check.",
+                },
             },
             "additionalProperties": False,
         },
@@ -5433,11 +5439,11 @@ def zero_token_usage_summary(model: str, *, source: str) -> dict[str, Any]:
 
 
 def direct_layout_check_response(model: str) -> dict[str, Any]:
-    arguments = {"mode": "both"}
+    arguments = {"mode": "both", "autoRepair": True}
     return {
         "configured": True,
         "model": model,
-        "message": "Checking the document layout.",
+        "message": "Checking the document layout and repairing safe issues.",
         "responseId": None,
         "toolCalls": [
             {

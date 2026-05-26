@@ -376,6 +376,35 @@ test("commits high-level diagram and solution authoring results through editor h
   assert(harness.document.questions[0].contentBlocks.some((block) => block.kind === "text" && block.visibility === "solution"));
 });
 
+test("commits automatic layout-check repairs through editor history", async () => {
+  const harness = adapterHost(undefined, {
+    frontMatter: { assessmentTitle: "Original" },
+    formattingConfig: { showMarks: true },
+    questions: [
+      question("q1", [
+        textBlock("t1", "Find $x$."),
+        { id: "sol1", kind: "text", text: "**Solution.**\n$x=3$. [[marks:1]]", visibility: "solution" } as ContentBlock,
+      ]),
+    ],
+  });
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.layout.check",
+    arguments: { mode: "both", autoRepair: true },
+  });
+  const data = result.data as { repair?: { applied?: boolean; afterIssueCount?: number } };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.committedDocument, true);
+  assert.equal(data.repair?.applied, true);
+  assert.equal(data.repair?.afterIssueCount, 0);
+  assert.equal(harness.commits.length, 1);
+  assert.equal(
+    harness.document.questions[0].contentBlocks.some((block) => block.kind === "space"),
+    true,
+  );
+});
+
 test("successful diagram edits return compact semantic review context", async () => {
   const harness = adapterHost();
 

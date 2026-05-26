@@ -2967,6 +2967,70 @@ test("runs a document-wide layout check for missing solution and answer-space ri
   assert(warningCodes.includes("solution-missing"));
 });
 
+test("auto-repairs safe document-wide layout issues once", () => {
+  const document = documentFixture();
+  document.questions = [
+    question("q1", [textBlock("q1-text", "Find $x$."), textBlock("q1-solution", "**Solution.**\n$x=3$. [[marks:2]]", "solution")]),
+    {
+      ...question("q2", [
+        textBlock("q2-text", "Use the oversized diagram."),
+        diagramBlock("q2-diagram", {
+          type: "graph2d",
+          xMin: -10,
+          xMax: 10,
+          yMin: -10,
+          yMax: 10,
+          functions: [],
+          options: { widthPx: 900, heightPx: 720 },
+        } as unknown as GraphConfig),
+      ]),
+      marks: 0,
+      pageBreakAfter: true,
+    },
+  ];
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.layout.check",
+    arguments: { mode: "both", autoRepair: true },
+  });
+  const check = result.data as MauthLayoutCheck;
+  const q1Space = result.document?.questions[0].contentBlocks.find((block) => block.kind === "space");
+  const q2Diagram = result.document?.questions[1].contentBlocks.find((block) => block.kind === "diagram");
+
+  assert.equal(result.ok, true);
+  assert.equal(check.ok, true);
+  assert.equal(check.repair?.attempted, true);
+  assert.equal(check.repair?.applied, true);
+  assert.equal(check.repair?.afterIssueCount, 0);
+  assert.equal(q1Space?.kind === "space" ? q1Space.lines : 0, 8);
+  assert.equal(result.document?.questions[1].pageBreakAfter, false);
+  assert.equal(q2Diagram?.kind === "diagram" ? q2Diagram.graphConfig.widthPx : undefined, 720);
+  assert.equal(q2Diagram?.kind === "diagram" ? q2Diagram.graphConfig.heightPx : undefined, 576);
+  assert.deepEqual(new Set(result.changedIds), new Set(["q1", "q2", "q2-diagram"]));
+});
+
+test("layout auto-repair reports remaining issues it cannot safely fix", () => {
+  const document = documentFixture();
+  document.questions = [question("q1", [textBlock("q1-text", "Find $x$.")])];
+
+  const result = runMauthAssistantTool(document, {
+    name: "mauth.layout.check",
+    arguments: { mode: "both", autoRepair: true },
+  });
+  const check = result.data as MauthLayoutCheck;
+
+  assert.equal(result.ok, true);
+  assert.equal(check.ok, false);
+  assert.equal(check.repair?.attempted, true);
+  assert.equal(check.repair?.applied, true);
+  assert(check.repair?.repairedCodes.includes("student-answer-surface-missing"));
+  assert(check.repair?.remainingCodes.includes("solution-missing"));
+  assert.equal(
+    result.document?.questions[0].contentBlocks.some((block) => block.kind === "space"),
+    true,
+  );
+});
+
 test("normalises visible assistant mark notes into hidden solution tick annotations", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.ensureSolutions",
