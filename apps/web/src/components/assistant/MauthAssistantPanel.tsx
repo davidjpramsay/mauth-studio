@@ -17,9 +17,17 @@ export interface MauthAssistantChatMessage {
   usage?: MauthAssistantUsageSummary | null;
   tone?: MauthAssistantChatMessageTone;
   toolStatus?: MauthAssistantToolStatusSummary;
+  targetReference?: MauthAssistantTargetReferenceContext | null;
 }
 
 export type MauthAssistantChatMessageTone = "tool-success" | "tool-warning" | "tool-error";
+
+export interface MauthAssistantTargetReferenceContext {
+  anchor: string;
+  target?: string;
+  kind?: string;
+  summary?: string;
+}
 
 export interface MauthAssistantUsageSummary {
   model: string;
@@ -144,13 +152,6 @@ function AssistantMarkdown({ content }: { content: string }) {
   return <div className="space-y-2">{assistantMarkdownBlocks(content)}</div>;
 }
 
-interface AssistantReferenceContext {
-  anchor: string;
-  target?: string;
-  kind?: string;
-  summary?: string;
-}
-
 function referenceLineValue(content: string, label: string) {
   const line = content
     .replace(/\r\n/g, "\n")
@@ -159,21 +160,25 @@ function referenceLineValue(content: string, label: string) {
   return line?.slice(line.indexOf(":") + 1).trim() || "";
 }
 
-function assistantReferenceContext(content: string): AssistantReferenceContext | null {
+function assistantReferenceContext(content: string): MauthAssistantTargetReferenceContext | null {
   const anchor = firstMauthTargetReference(content);
   if (!anchor) return null;
   return {
     anchor,
-    target: referenceLineValue(content, "Target") || undefined,
-    kind: referenceLineValue(content, "Kind") || undefined,
+    target: referenceLineValue(content, "Item") || referenceLineValue(content, "Target") || undefined,
+    kind: referenceLineValue(content, "Type") || referenceLineValue(content, "Kind") || undefined,
     summary: referenceLineValue(content, "Summary") || undefined,
   };
 }
 
 function stripAssistantReferenceContext(content: string) {
   const prefixes = [
+    "Use this target for my next request:",
     "Use this Mauth target for my next request:",
+    "Mauth target:",
     "Mauth reference:",
+    "Item:",
+    "Type:",
     "Target:",
     "Kind:",
     "Editor anchor:",
@@ -197,9 +202,11 @@ function targetKindLabel(kind?: string) {
 function AssistantReferenceCard({
   reference,
   variant = "default",
+  onRemove,
 }: {
-  reference: AssistantReferenceContext;
+  reference: MauthAssistantTargetReferenceContext;
   variant?: "default" | "user";
+  onRemove?: () => void;
 }) {
   const subtleText = variant === "user" ? "text-primary-foreground/75" : "text-muted-foreground";
   const cardClass =
@@ -212,6 +219,19 @@ function AssistantReferenceCard({
         <span className={cn("font-semibold uppercase tracking-wide", subtleText)}>Target</span>
         <span className="min-w-0 truncate font-semibold">{reference.target || reference.anchor}</span>
         {reference.kind ? <span className={cn("shrink-0", subtleText)}>{targetKindLabel(reference.kind)}</span> : null}
+        {onRemove ? (
+          <button
+            type="button"
+            aria-label="Clear assistant target"
+            className={cn(
+              "ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors",
+              variant === "user" ? "hover:bg-primary-foreground/15" : "hover:bg-muted",
+            )}
+            onClick={onRemove}
+          >
+            <X className="size-3.5" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       {reference.summary ? <div className={cn("mt-1 truncate", subtleText)}>{reference.summary}</div> : null}
     </div>
@@ -357,7 +377,9 @@ export function MauthAssistantPanel({
   providerStatusMessage,
   activityLabel = "Working",
   activityStartedAt = null,
+  activeTargetReference = null,
   onChatInputChange,
+  onClearActiveTargetReference,
   onAddAttachments,
   onRemoveAttachment,
   onSendChat,
@@ -373,7 +395,9 @@ export function MauthAssistantPanel({
   providerStatusMessage: string;
   activityLabel?: string;
   activityStartedAt?: number | null;
+  activeTargetReference?: MauthAssistantTargetReferenceContext | null;
   onChatInputChange: (value: string) => void;
+  onClearActiveTargetReference?: () => void;
   onAddAttachments: (files: File[]) => void | Promise<void>;
   onRemoveAttachment: (id: string) => void;
   onSendChat: () => void;
@@ -471,11 +495,11 @@ export function MauthAssistantPanel({
           <div className="flex flex-col gap-3">
             {chatMessages.length ? (
               chatMessages.map((chatMessage) => {
-                const messageReference = chatMessage.role === "user" ? assistantReferenceContext(chatMessage.content) : null;
-                const displayedContent =
-                  chatMessage.role === "user" && messageReference
-                    ? stripAssistantReferenceContext(chatMessage.content) || "Targeted request"
-                    : chatMessage.content;
+                const parsedMessageReference = chatMessage.role === "user" ? assistantReferenceContext(chatMessage.content) : null;
+                const messageReference = chatMessage.targetReference ?? parsedMessageReference;
+                const displayedContent = parsedMessageReference
+                  ? stripAssistantReferenceContext(chatMessage.content) || "Targeted request"
+                  : chatMessage.content;
                 return (
                   <div
                     key={chatMessage.id}
@@ -550,7 +574,11 @@ export function MauthAssistantPanel({
               ))}
             </div>
           ) : null}
-          {draftReference ? (
+          {activeTargetReference ? (
+            <div className="mb-2">
+              <AssistantReferenceCard reference={activeTargetReference} onRemove={onClearActiveTargetReference} />
+            </div>
+          ) : draftReference ? (
             <div className="mb-2">
               <AssistantReferenceCard reference={draftReference} />
             </div>

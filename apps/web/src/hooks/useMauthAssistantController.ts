@@ -26,7 +26,7 @@ import {
   type MauthAssistantToolStatusMessage,
 } from "@/lib/mauthAssistantToolResults";
 import type { MauthQuestionLike } from "@/lib/mauthActions";
-import type { MauthAssistantChatMessage } from "@/components/assistant/MauthAssistantPanel";
+import type { MauthAssistantChatMessage, MauthAssistantTargetReferenceContext } from "@/components/assistant/MauthAssistantPanel";
 
 const ASSISTANT_MAX_TOOL_ROUNDS = 4;
 const ASSISTANT_MAX_ATTACHMENTS = 4;
@@ -64,6 +64,7 @@ interface MauthAssistantConversationSession {
   chatMessages: MauthAssistantChatMessage[];
   chatAttachments: AssistantAttachment[];
   attachmentNotice: string;
+  activeTargetReference: MauthAssistantTargetReferenceContext | null;
   previousResponseId: string | null;
   pendingToolContinuation: AssistantPendingToolContinuation | null;
 }
@@ -74,6 +75,7 @@ function emptyAssistantConversationSession(): MauthAssistantConversationSession 
     chatMessages: [],
     chatAttachments: [],
     attachmentNotice: "",
+    activeTargetReference: null,
     previousResponseId: null,
     pendingToolContinuation: null,
   };
@@ -226,6 +228,26 @@ function addUsageToLastAssistantMessage(messages: MauthAssistantChatMessage[], u
   return [...messages, { id: assistantMessageId(), role: "assistant", content: "Done.", usage }];
 }
 
+function assistantTargetReferenceLines(reference: MauthAssistantTargetReferenceContext) {
+  return [
+    `Mauth target: @mauth[${reference.anchor}]`,
+    reference.target ? `Item: ${reference.target}` : "",
+    reference.kind ? `Type: ${reference.kind}` : "",
+    reference.summary ? `Summary: ${reference.summary}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function assistantProviderContentWithTarget(content: string, reference: MauthAssistantTargetReferenceContext | null | undefined) {
+  if (!reference || firstMauthTargetReference(content)) return content;
+  return `Use this target for my request:\n${assistantTargetReferenceLines(reference)}\n\n${content}`;
+}
+
+function providerMessageContent(chatMessage: MauthAssistantChatMessage) {
+  return assistantProviderContentWithTarget(chatMessage.content, chatMessage.role === "user" ? chatMessage.targetReference : null);
+}
+
 function assistantToolStatusChatMessage(message: MauthAssistantToolStatusMessage): MauthAssistantChatMessage {
   return { id: assistantMessageId(), role: "assistant", content: message.content, tone: message.tone, toolStatus: message.summary };
 }
@@ -350,6 +372,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
   const [chatAttachments, setChatAttachments] = useState<AssistantAttachment[]>([]);
   const [attachmentNotice, setAttachmentNotice] = useState("");
   const [chatMessages, setChatMessages] = useState<MauthAssistantChatMessage[]>([]);
+  const [activeTargetReference, setActiveTargetReference] = useState<MauthAssistantTargetReferenceContext | null>(null);
   const [chatRunning, setChatRunning] = useState(false);
   const [activityLabel, setActivityLabel] = useState("Thinking");
   const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
@@ -368,6 +391,7 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
       chatMessages,
       chatAttachments,
       attachmentNotice,
+      activeTargetReference,
       previousResponseId,
       pendingToolContinuation,
     });
@@ -378,9 +402,19 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     setChatMessages(nextSession.chatMessages);
     setChatAttachments(nextSession.chatAttachments);
     setAttachmentNotice(nextSession.attachmentNotice);
+    setActiveTargetReference(nextSession.activeTargetReference);
     setPreviousResponseId(nextSession.previousResponseId);
     setPendingToolContinuation(nextSession.pendingToolContinuation);
-  }, [attachmentNotice, chatAttachments, chatInput, chatMessages, conversationKey, pendingToolContinuation, previousResponseId]);
+  }, [
+    activeTargetReference,
+    attachmentNotice,
+    chatAttachments,
+    chatInput,
+    chatMessages,
+    conversationKey,
+    pendingToolContinuation,
+    previousResponseId,
+  ]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -608,7 +642,9 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
 
     const pendingContinuation = pendingToolContinuation;
     const resumePendingTools = Boolean(pendingContinuation && displayedUserContent.toLowerCase().startsWith("continue"));
-    const messageTargetAnchor = firstMauthTargetReference(displayedUserContent);
+    const explicitTargetAnchor = firstMauthTargetReference(displayedUserContent);
+    const turnTargetReference = explicitTargetAnchor ? null : activeTargetReference;
+    const messageTargetAnchor = explicitTargetAnchor ?? turnTargetReference?.anchor ?? null;
     const turnTargetAnchor = resumePendingTools ? (pendingContinuation?.targetAnchor ?? messageTargetAnchor) : messageTargetAnchor;
     const freshAttachmentTurn = requestAttachments.length > 0;
     const previousId = pendingContinuation || freshAttachmentTurn ? null : previousResponseId;
@@ -618,24 +654,33 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
           !chatMessage.content.startsWith(ASSISTANT_PAUSED_MESSAGE) && !chatMessage.content.startsWith(ASSISTANT_OLD_PAUSED_MESSAGE_PREFIX),
       )
       .slice(-8)
-      .map(
-        (chatMessage): AssistantChatMessage => ({
+      .map((chatMessage): AssistantChatMessage => {
+        const content = providerMessageContent(chatMessage);
+        return {
           role: chatMessage.role,
-          content: chatMessage.content.length > 2000 ? `${chatMessage.content.slice(0, 2000)}...` : chatMessage.content,
-        }),
-      );
+          content: content.length > 2000 ? `${content.slice(0, 2000)}...` : content,
+        };
+      });
+    const providerUserContent = assistantProviderContentWithTarget(displayedUserContent, turnTargetReference);
     const outgoingMessages: AssistantChatMessage[] = previousId
-      ? [{ role: "user", content: displayedUserContent }]
+      ? [{ role: "user", content: providerUserContent }]
       : freshAttachmentTurn
-        ? [{ role: "user", content: displayedUserContent }]
-        : [...priorMessages, { role: "user", content: displayedUserContent }];
+        ? [{ role: "user", content: providerUserContent }]
+        : [...priorMessages, { role: "user", content: providerUserContent }];
 
     setChatInput("");
+    setActiveTargetReference(null);
     setChatAttachments([]);
     setAttachmentNotice("");
     setChatMessages((current) => [
       ...current,
-      { id: assistantMessageId(), role: "user", content: displayedUserContent, attachments: requestAttachments },
+      {
+        id: assistantMessageId(),
+        role: "user",
+        content: displayedUserContent,
+        attachments: requestAttachments,
+        targetReference: turnTargetReference,
+      },
     ]);
     setChatRunning(true);
     setActivityLabel(resumePendingTools ? "Continuing" : "Thinking");
@@ -715,12 +760,14 @@ export function useMauthAssistantController<Q extends MauthQuestionLike, F exten
     chatMessages,
     chatAttachments,
     attachmentNotice,
+    activeTargetReference,
     chatRunning,
     providerConfigured,
     providerStatusMessage,
     activityLabel,
     activityStartedAt,
     setChatInput,
+    setActiveTargetReference,
     addChatAttachments,
     removeChatAttachment,
     setPanelOpen,
