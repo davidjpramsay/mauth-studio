@@ -8,6 +8,7 @@ import {
   type MauthAssistantToolName,
   type MauthAssistantToolOptions,
   type MauthAssistantToolResult,
+  type MauthLayoutCheck,
   type MauthPreviewInspection,
   type MauthPreviewInspectionWarning,
   type MauthPreviewRenderedMetrics,
@@ -136,6 +137,59 @@ function documentToolResult<Q extends MauthQuestionLike, F extends object, C ext
     warnings: result.warnings,
     error: result.error,
     committedDocument,
+  };
+}
+
+function layoutIssueResultKey(issue: { code?: unknown; anchor?: unknown; targetId?: unknown; message?: unknown }) {
+  return `${typeof issue.code === "string" ? issue.code : ""}:${typeof issue.anchor === "string" ? issue.anchor : ""}:${
+    typeof issue.targetId === "string" ? issue.targetId : ""
+  }:${typeof issue.message === "string" ? issue.message : ""}`;
+}
+
+function isLayoutCheckData(value: unknown): value is MauthLayoutCheck {
+  return (
+    isRecord(value) &&
+    (value.mode === "student" || value.mode === "solutions" || value.mode === "both") &&
+    isRecord(value.summary) &&
+    Array.isArray(value.issues)
+  );
+}
+
+function layoutCheckRefreshArguments(args: unknown) {
+  if (!isRecord(args)) return { mode: "both" };
+  return {
+    ...args,
+    autoRepair: false,
+    repair: false,
+  };
+}
+
+function refreshedLayoutCheckResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  originalResult: MauthAssistantToolResult<Q, F, C>,
+  refreshedResult: MauthAssistantToolResult<Q, F, C>,
+): MauthAssistantToolResult<Q, F, C> {
+  const originalLayout = isLayoutCheckData(originalResult.data) ? originalResult.data : undefined;
+  const refreshedLayout = isLayoutCheckData(refreshedResult.data) ? refreshedResult.data : undefined;
+  if (!originalLayout?.repair || !refreshedLayout) return originalResult;
+
+  const remainingIssueKeys = new Set(refreshedLayout.issues.map(layoutIssueResultKey));
+  const repairedCodes = new Set(originalLayout.repair.repairedCodes);
+  const refreshedRepair = {
+    ...originalLayout.repair,
+    afterIssueCount: refreshedLayout.issues.length,
+    repairedIssueCount: Math.max(
+      originalLayout.repair.repairedIssueCount,
+      originalLayout.issues.filter((issue) => repairedCodes.has(issue.code) && !remainingIssueKeys.has(layoutIssueResultKey(issue))).length,
+    ),
+    remainingCodes: [...new Set(refreshedLayout.issues.map((issue) => issue.code))],
+  };
+  return {
+    ...originalResult,
+    data: {
+      ...refreshedLayout,
+      repair: refreshedRepair,
+    },
+    warnings: refreshedResult.warnings,
   };
 }
 
@@ -620,6 +674,7 @@ export async function runMauthAssistantAdapterTool<
   if (documentToolName(call.name)) {
     const previousDocument = host.getDocument();
     const result = runMauthAssistantTool(previousDocument, call as MauthAssistantToolCall, await documentToolOptions(host));
+    let finalResult = result;
     let committedDocument = false;
     let postInspectionData: unknown;
     const shouldCommitDocumentTool =
@@ -646,7 +701,15 @@ export async function runMauthAssistantAdapterTool<
       await host.commitDocument(result.document, context);
       committedDocument = true;
       const inspectionPlan = postEditInspectionPlan(call);
-      if (inspectionPlan) {
+      if (call.name === "mauth.layout.check" && result.changedIds.length > 0 && host.waitForRenderedPreviewMetrics) {
+        const renderedMetrics = await host.waitForRenderedPreviewMetrics(context);
+        const refreshedResult = runMauthAssistantTool(
+          result.document,
+          { name: "mauth.layout.check", arguments: layoutCheckRefreshArguments(call.arguments) },
+          await documentToolOptions(host, renderedMetrics),
+        );
+        finalResult = refreshedLayoutCheckResult(result, refreshedResult);
+      } else if (inspectionPlan) {
         const renderedMetrics = host.waitForRenderedPreviewMetrics ? await host.waitForRenderedPreviewMetrics(context) : undefined;
         const inspection = runMauthAssistantTool(
           result.document,
@@ -659,7 +722,7 @@ export async function runMauthAssistantAdapterTool<
         postInspectionData = postEditInspectionSuccessData(result.data, inspectionData, inspectionPlan.modes);
       }
     }
-    return documentToolResult(result, committedDocument, postInspectionData);
+    return documentToolResult(finalResult, committedDocument, postInspectionData);
   }
 
   if (!fileToolName(call.name)) {
