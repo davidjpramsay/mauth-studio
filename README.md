@@ -4,7 +4,7 @@ This repository is the local workspace wrapper for Mauth Studio. It is designed 
 
 ## Layout
 
-- `math-app/`: the Mauth Studio app repo and main source tree.
+- `math-app/`: the Mauth Studio app source tree.
 - `mauth-workbench/`: local scratch space for one-off conversions, evals, rendered artifacts, and temporary scripts.
 - `AGENTS.md`: workspace-level rules for agents that operate across the full tree.
 - `tmp/`: disposable workspace scratch.

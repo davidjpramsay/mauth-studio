@@ -1,6 +1,6 @@
 # Workspace Agent Guide
 
-This workspace contains the Mauth Studio repo in `math-app/`.
+This workspace contains the Mauth Studio app source tree in `math-app/`.
 
 The workspace is meant to be usable with Codex or any other external/local coding agent, as long as generated artifacts stay in `mauth-workbench/` and secrets stay in local `.env` files that are never committed.
 
