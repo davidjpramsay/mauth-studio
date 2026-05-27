@@ -3140,11 +3140,13 @@ function findSubpartInQuestions(questions: QuestionBlock[], questionId: string, 
 
 function orderItemsForContainer(questions: QuestionBlock[], container: SubsectionContainerRef): ContainerOrderItem[] {
   if (container.kind === "question") {
-    return questions.find((question) => question.id === container.questionId)?.itemOrder ?? [];
+    const question = questions.find((current) => current.id === container.questionId);
+    return question ? normalizeItemOrder(question.itemOrder, questionAllowedOrderItems(question.contentBlocks, question.parts ?? [])) : [];
   }
 
   if (container.kind === "part") {
-    return findPartInQuestions(questions, container.questionId, container.partId)?.itemOrder ?? [];
+    const part = findPartInQuestions(questions, container.questionId, container.partId);
+    return part ? normalizeItemOrder(part.itemOrder, partAllowedOrderItems(part.contentBlocks, part.subparts ?? [])) : [];
   }
 
   const subpart = findSubpartInQuestions(questions, container.questionId, container.partId, container.subpartId);
@@ -11753,7 +11755,10 @@ export default function App() {
   function handleSubsectionDragOver(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
     const active = readSubsectionDrag(event);
     const preview = active ? subsectionDropPreviewForEvent(active, target, event, questionsRef.current) : null;
-    if (!active || !preview) return;
+    if (!active || !preview) {
+      if (active) setDragOverSubsection(null);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
@@ -11806,7 +11811,10 @@ export default function App() {
     if (handleEditorPageBreakContainerDropZoneDragOver(event, container, placement)) return;
     const active = readSubsectionDrag(event);
     const intent = active ? dropIntentForContainer(active, container, questionsRef.current, placement) : null;
-    if (!active || !intent) return;
+    if (!active || !intent) {
+      if (active) setDragOverSubsection(null);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
@@ -11829,12 +11837,8 @@ export default function App() {
     if (handleEditorPageBreakContainerDropZoneDrop(event, container, placement)) return;
     const active = readSubsectionDrag(event);
     const targetKey = containerDropKey(container, placement);
-    const intent =
-      dragOverSubsection?.targetKey === targetKey
-        ? dragOverSubsection.intent
-        : active
-          ? dropIntentForContainer(active, container, questionsRef.current, placement)
-          : null;
+    const currentIntent = active ? dropIntentForContainer(active, container, questionsRef.current, placement) : null;
+    const intent = dragOverSubsection?.targetKey === targetKey && currentIntent ? dragOverSubsection.intent : currentIntent;
     if (!active || !intent) return;
     event.preventDefault();
     event.stopPropagation();
@@ -11852,7 +11856,10 @@ export default function App() {
     if (handleEditorPageBreakItemDropZoneDragOver(event, container, beforeItem)) return;
     const active = readSubsectionDrag(event);
     const intent = active ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current) : null;
-    if (!active || !intent) return;
+    if (!active || !intent) {
+      if (active) setDragOverSubsection(null);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
@@ -11875,12 +11882,8 @@ export default function App() {
     if (handleEditorPageBreakItemDropZoneDrop(event, container, beforeItem)) return;
     const active = readSubsectionDrag(event);
     const targetKey = itemDropKey(container, beforeItem);
-    const intent =
-      dragOverSubsection?.targetKey === targetKey
-        ? dragOverSubsection.intent
-        : active
-          ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current)
-          : null;
+    const currentIntent = active ? dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current) : null;
+    const intent = dragOverSubsection?.targetKey === targetKey && currentIntent ? dragOverSubsection.intent : currentIntent;
     if (!active || !intent) return;
     event.preventDefault();
     event.stopPropagation();
@@ -11936,18 +11939,11 @@ export default function App() {
         onDragLeave={(event) => handleContainerDropZoneDragLeave(event, container, placement)}
         onDrop={(event) => handleContainerDropZoneDrop(event, container, placement)}
         className={cn(
-          "relative my-2 h-8 rounded-md border border-dashed border-border/70 bg-muted/35 text-muted-foreground transition-all",
+          "relative my-1 h-2 rounded-md border border-dashed border-transparent bg-transparent text-muted-foreground transition-all",
           active && "my-3 h-11 border-primary bg-primary/10 text-primary shadow-inner",
         )}
       >
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center text-[11px] font-semibold",
-            active ? "opacity-100" : "opacity-55",
-          )}
-        >
-          {label}
-        </div>
+        {active ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold">{label}</div> : null}
       </div>
     );
   }
@@ -11980,18 +11976,11 @@ export default function App() {
         onDragLeave={(event) => handleItemDropZoneDragLeave(event, container, beforeItem)}
         onDrop={(event) => handleItemDropZoneDrop(event, container, beforeItem)}
         className={cn(
-          "relative my-1 h-9 rounded-md border border-dashed border-border/80 bg-background/60 text-muted-foreground transition-all",
+          "relative my-0.5 h-2 rounded-md border border-dashed border-transparent bg-transparent text-muted-foreground transition-all",
           active && "my-2 h-12 border-primary bg-primary/10 text-primary shadow-inner",
         )}
       >
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center text-[11px] font-semibold",
-            active ? "opacity-100" : "opacity-65",
-          )}
-        >
-          {label}
-        </div>
+        {active ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold">{label}</div> : null}
       </div>
     );
   }
