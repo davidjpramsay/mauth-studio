@@ -521,6 +521,81 @@ def test_assistant_help_prompt_uses_native_fast_path(monkeypatch):
     assert "create or convert questions" in data["message"]
 
 
+def test_file_list_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Show project files."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Listing project files."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-file-list",
+            "callId": "local-file-list",
+            "name": "mauth.files.list",
+            "arguments": {},
+            "mauthToolName": "mauth.files.list",
+            "mauthArguments": {},
+        }
+    ]
+
+
+def test_file_open_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": 'Open file "Saved Test".'}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Opening project file."
+    assert data["usage"]["totalTokens"] == 0
+    assert data["toolCalls"][0]["mauthToolName"] == "mauth.files.open"
+    assert data["toolCalls"][0]["mauthArguments"] == {"path": "Saved Test"}
+
+
+def test_file_save_as_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Save this test as Algebra Practice."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Saving a copy of the current test."
+    assert data["usage"]["totalTokens"] == 0
+    assert data["toolCalls"][0]["mauthToolName"] == "mauth.files.saveAs"
+    assert data["toolCalls"][0]["mauthArguments"] == {"path": "Algebra Practice"}
+
+
+def test_multi_step_file_prompt_still_requires_provider(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Open file Saved Test and add a question."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"] == []
+    assert "new question" in data["message"]
+
+
 def test_tool_output_without_provider_response_id_is_sent_as_user_context():
     request = openai_assistant.AssistantChatRequest(
         toolOutputs=[

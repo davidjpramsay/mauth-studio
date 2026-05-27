@@ -214,6 +214,36 @@ ASSISTANT_HELP_REQUEST_TERMS = (
     "help using the assistant",
     "what are your tools",
 )
+FILE_DESCRIBE_REQUEST_TERMS = (
+    "file tools",
+    "file commands",
+    "file operations",
+    "files assistant",
+)
+FILE_LIST_REQUEST_TERMS = (
+    "list files",
+    "list project files",
+    "show files",
+    "show project files",
+    "show saved tests",
+    "what files",
+    "what saved tests",
+    "file list",
+)
+FILE_MULTI_STEP_TERMS = (
+    " and ",
+    " then ",
+    "\n",
+)
+FILE_QUOTED_VALUE_PATTERN = re.compile(r"""(?P<quote>["'`])(?P<value>[^"'`]{1,160})(?P=quote)""")
+FILE_OPEN_PATTERN = re.compile(
+    r"\bopen\s+(?:the\s+)?(?:project\s+)?(?:file|test)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_SAVE_AS_PATTERN = re.compile(
+    r"\bsave(?:\s+(?:this|current))?(?:\s+(?:file|test|document))?\s+as\s+(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
 FORMATTING_REQUEST_TERMS = (
     "format",
     "formatting",
@@ -1209,6 +1239,10 @@ def request_text(
     for attachment in attachments or []:
         parts.append(f"attached file {attachment.name} {attachment.mimeType}")
     return "\n".join(parts).lower()
+
+
+def raw_message_text(messages: list[AssistantChatMessage] | None = None) -> str:
+    return "\n".join(message.content for message in messages or []).strip()
 
 
 def latest_user_messages(messages: list[AssistantChatMessage] | None = None) -> list[AssistantChatMessage]:
@@ -6074,6 +6108,112 @@ def direct_formatting_response(model: str, request: AssistantChatRequest) -> dic
     }
 
 
+def clean_file_path_value(value: str) -> str:
+    cleaned = value.strip()
+    cleaned = re.sub(r"\s+please[.!?]?$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = cleaned.rstrip(".!?").strip()
+    if not cleaned or len(cleaned) > 160:
+        return ""
+    lowered = cleaned.lower()
+    if any(term in lowered for term in (" and ", " then ", "\n")):
+        return ""
+    if any(ord(character) < 32 for character in cleaned):
+        return ""
+    return cleaned
+
+
+def single_quoted_file_value(text: str) -> str:
+    values = [clean_file_path_value(match.group("value")) for match in FILE_QUOTED_VALUE_PATTERN.finditer(text)]
+    values = [value for value in values if value]
+    return values[0] if len(values) == 1 else ""
+
+
+def direct_file_path_from_pattern(text: str, pattern: re.Pattern[str]) -> str:
+    quoted = single_quoted_file_value(text)
+    if quoted:
+        return quoted
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return clean_file_path_value(match.group("path"))
+
+
+def direct_file_call(request: AssistantChatRequest) -> dict[str, Any] | None:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return None
+
+    current_messages = latest_user_messages(request.messages)
+    text = request_text(current_messages)
+    raw_text = raw_message_text(current_messages)
+    if not raw_text or any(term in text for term in FILE_MULTI_STEP_TERMS):
+        return None
+
+    if any(term in text for term in FILE_DESCRIBE_REQUEST_TERMS):
+        return {
+            "toolName": "mauth.files.describe",
+            "arguments": {},
+            "message": "Describing file tools.",
+        }
+
+    if any(term in text for term in FILE_LIST_REQUEST_TERMS) and not any(
+        term in text for term in ("open", "save", "rename", "move", "delete", "duplicate", "restore")
+    ):
+        folder_path = single_quoted_file_value(raw_text) if "folder" in text or " in " in text else ""
+        arguments = {"folderPath": folder_path} if folder_path else {}
+        return {
+            "toolName": "mauth.files.list",
+            "arguments": arguments,
+            "message": "Listing project files.",
+        }
+
+    if "open" in text and ("file" in text or "test" in text):
+        path = direct_file_path_from_pattern(raw_text, FILE_OPEN_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.open",
+                "arguments": {"path": path},
+                "message": "Opening project file.",
+            }
+
+    if "save" in text and " as " in text:
+        path = direct_file_path_from_pattern(raw_text, FILE_SAVE_AS_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.saveAs",
+                "arguments": {"path": path},
+                "message": "Saving a copy of the current test.",
+            }
+
+    return None
+
+
+def direct_file_response(model: str, request: AssistantChatRequest) -> dict[str, Any] | None:
+    call = direct_file_call(request)
+    if not call:
+        return None
+    tool_name = string_value(call.get("toolName"))
+    arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+    call_id = f"local-file-{tool_name.removeprefix('mauth.files.').replace('.', '-')}"
+    return {
+        "configured": True,
+        "model": model,
+        "message": string_value(call.get("message")) or "Using project file tools.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": call_id,
+                "callId": call_id,
+                "name": tool_name,
+                "arguments": arguments,
+                "mauthToolName": tool_name,
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth file routing; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def direct_assistant_help_response(model: str) -> dict[str, Any]:
     return {
         "configured": True,
@@ -6177,6 +6317,10 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
 
     if should_use_direct_assistant_help(request):
         return direct_assistant_help_response(model)
+
+    file_response = direct_file_response(model, request)
+    if file_response:
+        return file_response
 
     response_space_response = direct_response_space_response(model, request)
     if response_space_response:
