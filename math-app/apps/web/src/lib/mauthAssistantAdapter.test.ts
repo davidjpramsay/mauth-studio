@@ -153,6 +153,7 @@ function adapterHost(
 ) {
   let document = initialDocument;
   let activeFilePath: string | null = "tests/Open.test.json";
+  let activeFileRevision: number | null = 1;
   const commits: TestDocument[] = [];
   const activePaths: Array<string | null> = [];
 
@@ -164,8 +165,11 @@ function adapterHost(
     },
     getProjectId: () => "project-1",
     getActiveFilePath: () => activeFilePath,
-    setActiveFilePath: (path) => {
+    getActiveFileRevision: () => activeFileRevision,
+    setActiveFilePath: (path, context) => {
       activeFilePath = path;
+      const data = context.data as { document?: ProjectFileDocument } | undefined;
+      activeFileRevision = path ? (data?.document?.revision ?? activeFileRevision) : null;
       activePaths.push(path);
     },
     serializeDocument: (document) => JSON.stringify(document),
@@ -180,6 +184,10 @@ function adapterHost(
     },
     commits,
     activePaths,
+    setActiveFile(path: string | null, revision: number | null) {
+      activeFilePath = path;
+      activeFileRevision = revision;
+    },
   };
 }
 
@@ -1070,6 +1078,41 @@ test("injects serialized current document when saving through file tools", async
   assert.deepEqual(harness.activePaths, ["tests/Saved Test.test.json"]);
   const saved = await driver.getFile("project-1", "tests/Saved Test.test.json");
   assert.equal(JSON.parse(saved.content ?? "{}").frontMatter.assessmentTitle, "Original");
+});
+
+test("saves the active file through file tools without an explicit path", async () => {
+  const driver = createMemoryDriver([
+    { summary: fileSummary("tests", "folder"), content: null, versions: [] },
+    { summary: fileSummary("tests/Open.test.json", "file"), content: JSON.stringify(documentFixture("Old")), versions: [] },
+  ]);
+  const harness = adapterHost({ fileDriver: driver }, documentFixture("Updated"));
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.save",
+    arguments: {},
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.changedPaths, ["tests/Open.test.json"]);
+  assert.deepEqual(harness.activePaths, ["tests/Open.test.json"]);
+  const saved = await driver.getFile("project-1", "tests/Open.test.json");
+  assert.equal(JSON.parse(saved.content ?? "{}").frontMatter.assessmentTitle, "Updated");
+  assert.equal(saved.revision, 2);
+});
+
+test("reports that unsaved current tests need save-as before current save", async () => {
+  const driver = createMemoryDriver([{ summary: fileSummary("tests", "folder"), content: null, versions: [] }]);
+  const harness = adapterHost({ fileDriver: driver });
+  harness.setActiveFile(null, null);
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.save",
+    arguments: {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /save as/i);
+  assert.deepEqual(result.changedPaths, []);
 });
 
 test("opens a file by parsing and committing the project-file content", async () => {

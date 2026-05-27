@@ -208,6 +208,35 @@ test("saves a new file with a unique path unless overwrite is requested", async 
   assert(result.files?.some((file) => file.path === "tests/Calculus Test copy.test.json"));
 });
 
+test("saves the active file without an explicit path", async () => {
+  const driver = seedDriver();
+  const context = { projectId: "project-1", activeFilePath: "tests/Calculus Test.test.json", activeFileRevision: 1 };
+
+  const result = await runMauthAssistantFileTool(driver, context, {
+    name: "mauth.files.save",
+    arguments: { content: '{"name":"Updated"}' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.changedPaths, ["tests/Calculus Test.test.json"]);
+  const saved = await driver.getFile("project-1", "tests/Calculus Test.test.json");
+  assert.equal(saved.content, '{"name":"Updated"}');
+  assert.equal(saved.revision, 2);
+});
+
+test("requires a file name when saving an unsaved active test", async () => {
+  const driver = seedDriver();
+  const context = { projectId: "project-1" };
+
+  const result = await runMauthAssistantFileTool(driver, context, {
+    name: "mauth.files.save",
+    arguments: { content: '{"name":"Unsaved"}' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /save as/i);
+});
+
 test("creates folders and duplicates folder trees", async () => {
   const driver = seedDriver();
   const context = { projectId: "project-1" };

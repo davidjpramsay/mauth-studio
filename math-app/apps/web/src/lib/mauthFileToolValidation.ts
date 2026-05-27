@@ -134,6 +134,15 @@ export function validateMauthFileToolPayload(toolName: string, args: unknown): M
       stringField(record, "path", "arguments", issues);
       break;
     case "mauth.files.save":
+      if (record.path !== undefined) stringField(record, "path", "arguments", issues);
+      if (record.name !== undefined) stringField(record, "name", "arguments", issues);
+      stringField(record, "content", "arguments", issues);
+      booleanField(record, "overwrite", "arguments", issues, true);
+      optionalBaseRevision(record, "arguments", issues);
+      stringField(record, "fileType", "arguments", issues, true);
+      recordField(record, "metadata", "arguments", issues, true);
+      numberField(record, "sortOrder", "arguments", issues, true);
+      break;
     case "mauth.files.saveAs":
       requirePathOrName(record, "arguments", issues);
       stringField(record, "content", "arguments", issues);

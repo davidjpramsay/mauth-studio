@@ -244,6 +244,23 @@ FILE_SAVE_AS_PATTERN = re.compile(
     r"\bsave(?:\s+(?:this|current))?(?:\s+(?:file|test|document))?\s+as\s+(?P<path>[^\n]{1,160})$",
     re.IGNORECASE,
 )
+FILE_SAVE_CURRENT_TERMS = (
+    "save",
+    "save file",
+    "save this file",
+    "save current file",
+    "save the current file",
+    "save the file",
+    "save test",
+    "save this test",
+    "save current test",
+    "save the current test",
+    "save the test",
+    "save document",
+    "save this document",
+    "save current document",
+    "save the current document",
+)
 FORMATTING_REQUEST_TERMS = (
     "format",
     "formatting",
@@ -6144,6 +6161,8 @@ def direct_file_call(request: AssistantChatRequest) -> dict[str, Any] | None:
 
     current_messages = latest_user_messages(request.messages)
     text = request_text(current_messages)
+    command_text = re.sub(r"^please\s+", "", text.strip().rstrip(".!?")).strip()
+    command_text = re.sub(r"\s+please$", "", command_text).strip()
     raw_text = raw_message_text(current_messages)
     if not raw_text or any(term in text for term in FILE_MULTI_STEP_TERMS):
         return None
@@ -6183,6 +6202,13 @@ def direct_file_call(request: AssistantChatRequest) -> dict[str, Any] | None:
                 "arguments": {"path": path},
                 "message": "Saving a copy of the current test.",
             }
+
+    if command_text in FILE_SAVE_CURRENT_TERMS:
+        return {
+            "toolName": "mauth.files.save",
+            "arguments": {},
+            "message": "Saving the current test.",
+        }
 
     return None
 
