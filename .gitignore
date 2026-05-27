@@ -1,0 +1,10 @@
+# Local secrets and disposable scratch
+.env
+.env.*
+*.log
+*.pid
+tmp/
+math-app/
+mauth-workbench/*
+!mauth-workbench/.gitignore
+!mauth-workbench/README.md
