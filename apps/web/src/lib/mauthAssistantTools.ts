@@ -5699,6 +5699,42 @@ function resizedDiagramSettings(config: GraphConfig) {
   };
 }
 
+const RENDERED_DIAGRAM_SIZE_REPAIR_CODES = new Set([
+  "rendered-diagram-too-large",
+  "rendered-diagram-clipped",
+  "rendered-diagram-clipped-by-page",
+]);
+
+function isRenderedDiagramSizeRepairIssue(issue: MauthLayoutCheckIssue) {
+  return RENDERED_DIAGRAM_SIZE_REPAIR_CODES.has(issue.code);
+}
+
+function numericGraphScalePercent(config: GraphConfig) {
+  const directValue = config.scalePercent;
+  if (typeof directValue === "number" && Number.isFinite(directValue)) return directValue;
+  const options = isRecord(config.options) ? config.options : undefined;
+  const optionValue = options?.scalePercent;
+  return typeof optionValue === "number" && Number.isFinite(optionValue) ? optionValue : undefined;
+}
+
+function resizedRenderedDiagramSettings(config: GraphConfig) {
+  if (config.type === "geometricConstruction" || config.type === "network" || config.type === "setDiagram") {
+    const scalePercent = numericGraphScalePercent(config) ?? 100;
+    const nextScale = Math.max(20, Math.round(scalePercent * 0.9));
+    return nextScale < scalePercent ? { renderer: config.type, scalePercent: nextScale } : undefined;
+  }
+
+  const width = numericGraphSizeValue(config, "widthPx") ?? numericGraphSizeValue(config, "width");
+  const height = numericGraphSizeValue(config, "heightPx") ?? numericGraphSizeValue(config, "height");
+  if (!width && !height) return undefined;
+
+  return {
+    renderer: config.type,
+    ...(width ? { widthPx: Math.max(120, Math.round(width * 0.9)) } : {}),
+    ...(height ? { heightPx: Math.max(100, Math.round(height * 0.9)) } : {}),
+  };
+}
+
 function diagramSizeRepairAction<Q extends MauthQuestionLike, F extends object, C extends object>(
   document: MauthDocumentLike<Q, F, C>,
   issue: MauthLayoutCheckIssue,
@@ -5715,6 +5751,71 @@ function diagramSizeRepairAction<Q extends MauthQuestionLike, F extends object, 
     scope: entry.scope,
     blockId: entry.block.id,
     settings: settings as MauthDiagramSettingsUpdate,
+  };
+}
+
+function renderedDiagramSizeRepairPlan<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  layout: MauthLayoutCheck,
+  issues: readonly MauthLayoutCheckIssue[],
+) {
+  const repairedIssueKeys = new Set<string>();
+  if (!issues.length || !layout.preview.renderedMetrics.available) return { repairedIssueKeys };
+
+  type DiagramBlockEntry = {
+    question: MauthQuestionLike;
+    scope: MauthContentScope;
+    block: Extract<ContentBlock, { kind: "diagram" }>;
+  };
+  const candidates = new Map<
+    string,
+    {
+      entry: DiagramBlockEntry;
+      issues: MauthLayoutCheckIssue[];
+    }
+  >();
+
+  for (const issue of issues) {
+    const parsed = parseAssistantAnchor(issue.anchor);
+    const blockId = issue.targetId || parsed.blockId;
+    if (!blockId || !issue.anchor) continue;
+
+    const metrics = layout.preview.renderedMetrics.anchors.find((anchor) => anchor.anchor === issue.anchor);
+    if (
+      !metrics?.diagram?.found ||
+      !metrics.diagram.rendered ||
+      !metrics.warnings.some((warning) => RENDERED_DIAGRAM_SIZE_REPAIR_CODES.has(warning.code))
+    ) {
+      continue;
+    }
+
+    const entry = findBlockEntryInDocument(document as unknown as MauthDocumentLike<MauthQuestionLike, object, object>, blockId);
+    if (!entry || entry.block.kind !== "diagram") continue;
+    const diagramEntry: DiagramBlockEntry = { question: entry.question, scope: entry.scope, block: entry.block };
+
+    const candidate = candidates.get(blockId);
+    if (candidate) {
+      candidate.issues.push(issue);
+    } else {
+      candidates.set(blockId, { entry: diagramEntry, issues: [issue] });
+    }
+  }
+
+  if (candidates.size !== 1) return { repairedIssueKeys };
+
+  const candidate = [...candidates.values()][0];
+  const settings = resizedRenderedDiagramSettings(candidate.entry.block.graphConfig);
+  if (!settings) return { repairedIssueKeys };
+
+  for (const issue of candidate.issues) repairedIssueKeys.add(layoutIssueStableKey(issue));
+  return {
+    repairedIssueKeys,
+    action: {
+      type: "diagram.settings.update",
+      scope: candidate.entry.scope,
+      blockId: candidate.entry.block.id,
+      settings: settings as MauthDiagramSettingsUpdate,
+    } satisfies MauthDocumentAction,
   };
 }
 
@@ -5800,6 +5901,8 @@ function layoutRepairPlan<Q extends MauthQuestionLike, F extends object, C exten
   layout: MauthLayoutCheck,
 ) {
   const responseSpaceTargets = new Map<string, ReturnType<typeof responseSpaceRepairTarget<Q, F, C>>>();
+  const renderedDiagramIssues = layout.issues.filter(isRenderedDiagramSizeRepairIssue);
+  const renderedDiagramRepair = renderedDiagramSizeRepairPlan(document, layout, renderedDiagramIssues);
   const actions: MauthDocumentAction[] = [];
   const repairedIssues: MauthLayoutCheckIssue[] = [];
   const skippedIssues: MauthLayoutCheckIssue[] = [];
@@ -5828,12 +5931,22 @@ function layoutRepairPlan<Q extends MauthQuestionLike, F extends object, C exten
       continue;
     }
 
-    if (
-      issue.code === "diagram-oversized-print-risk" ||
-      issue.code === "rendered-diagram-too-large" ||
-      issue.code === "rendered-diagram-clipped" ||
-      issue.code === "rendered-diagram-clipped-by-page"
-    ) {
+    if (isRenderedDiagramSizeRepairIssue(issue)) {
+      const action = renderedDiagramRepair.action;
+      const key = action ? JSON.stringify(action) : "";
+      if (action && renderedDiagramRepair.repairedIssueKeys.has(layoutIssueStableKey(issue)) && !actionKeys.has(key)) {
+        actions.push(action);
+        actionKeys.add(key);
+        repairedIssues.push(issue);
+      } else if (action && renderedDiagramRepair.repairedIssueKeys.has(layoutIssueStableKey(issue))) {
+        repairedIssues.push(issue);
+      } else {
+        skippedIssues.push(issue);
+      }
+      continue;
+    }
+
+    if (issue.code === "diagram-oversized-print-risk") {
       const action = diagramSizeRepairAction(document, issue);
       const key = action ? JSON.stringify(action) : "";
       if (action && !actionKeys.has(key)) {

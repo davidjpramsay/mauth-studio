@@ -522,6 +522,138 @@ test("refreshes rendered layout metrics after automatic layout-check repair comm
   assert.equal(result.warnings.length, 0);
 });
 
+test("refreshes rendered diagram metrics after automatic diagram-size repair commits", async () => {
+  let waitedForPaint = false;
+  const diagramAnchor = "q:q1/b:d1";
+  const initialMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: diagramAnchor,
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 940,
+        totalHeightPx: 1000,
+        remainingHeightPx: 60,
+        usedPercent: 94,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: diagramAnchor,
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 20, top: 40, right: 740, bottom: 920, width: 720, height: 880, x: 20, y: 40 },
+        pageRelativeRect: { left: 20, top: 40, right: 740, bottom: 920, width: 720, height: 880, x: 20, y: 40 },
+        diagram: {
+          found: true,
+          rendered: true,
+          tooLarge: true,
+          viewportRect: { left: 20, top: 40, right: 740, bottom: 920, width: 720, height: 880, x: 20, y: 40 },
+        },
+        warnings: [
+          {
+            code: "rendered-diagram-too-large",
+            severity: "info",
+            anchor: diagramAnchor,
+            message: "The selected diagram occupies almost the whole rendered page.",
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+  const freshMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: diagramAnchor,
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 720,
+        totalHeightPx: 1000,
+        remainingHeightPx: 280,
+        usedPercent: 72,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: diagramAnchor,
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 20, top: 40, right: 650, bottom: 720, width: 630, height: 680, x: 20, y: 40 },
+        pageRelativeRect: { left: 20, top: 40, right: 650, bottom: 720, width: 630, height: 680, x: 20, y: 40 },
+        diagram: {
+          found: true,
+          rendered: true,
+          viewportRect: { left: 20, top: 40, right: 650, bottom: 720, width: 630, height: 680, x: 20, y: 40 },
+        },
+        warnings: [],
+      },
+    ],
+    warnings: [],
+  };
+  const initialDocument = documentFixture();
+  initialDocument.questions = [
+    {
+      ...question("q1", [
+        {
+          id: "d1",
+          kind: "diagram",
+          graphConfig: {
+            type: "graph2d",
+            widthPx: 700,
+            heightPx: 300,
+            functions: [],
+          },
+        } as ContentBlock,
+      ]),
+      marks: 0,
+    },
+  ];
+  const harness = adapterHost(
+    {
+      getRenderedPreviewMetrics: () => initialMetrics,
+      waitForRenderedPreviewMetrics: async () => {
+        waitedForPaint = true;
+        return freshMetrics;
+      },
+    },
+    initialDocument,
+  );
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.layout.check",
+    arguments: { mode: "student", autoRepair: true },
+  });
+  const data = result.data as MauthLayoutCheck;
+  const diagram = harness.document.questions[0].contentBlocks.find((block) => block.id === "d1");
+
+  assert.equal(waitedForPaint, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.committedDocument, true);
+  assert.equal(data.repair?.applied, true);
+  assert.equal(data.repair?.afterIssueCount, 0);
+  assert.equal(data.repair?.repairedIssueCount, 1);
+  assert.equal(result.warnings.length, 0);
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.widthPx : undefined, 630);
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.heightPx : undefined, 270);
+});
+
 test("successful diagram edits return compact semantic review context", async () => {
   const harness = adapterHost();
 

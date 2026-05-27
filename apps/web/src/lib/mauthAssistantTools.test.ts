@@ -3188,6 +3188,157 @@ test("layout auto-repair leaves ambiguous rendered page overflows untouched", ()
   assert(check.repair?.remainingCodes.includes("rendered-page-overflow"));
 });
 
+test("layout auto-repair shrinks one rendered oversized diagram when metrics identify one target", () => {
+  const document = documentFixture();
+  document.questions = [
+    {
+      ...question("q1", [
+        diagramBlock("diagram1", {
+          type: "graph2d",
+          widthPx: 700,
+          heightPx: 300,
+          functions: [],
+        } as unknown as GraphConfig),
+      ]),
+      marks: 0,
+    },
+  ];
+  const renderedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: "q:q1/b:diagram1",
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 900,
+        totalHeightPx: 1000,
+        remainingHeightPx: 100,
+        usedPercent: 90,
+        anchorCount: 1,
+        overflow: false,
+      },
+    ],
+    anchors: [
+      {
+        anchor: "q:q1/b:diagram1",
+        kind: "questionBlock",
+        role: "module",
+        pageIndex: 0,
+        pageNumber: 1,
+        selected: true,
+        viewportRect: { left: 20, top: 40, right: 740, bottom: 900, width: 720, height: 860, x: 20, y: 40 },
+        pageRelativeRect: { left: 20, top: 40, right: 740, bottom: 900, width: 720, height: 860, x: 20, y: 40 },
+        diagram: {
+          found: true,
+          rendered: true,
+          tooLarge: true,
+          viewportRect: { left: 20, top: 40, right: 740, bottom: 900, width: 720, height: 860, x: 20, y: 40 },
+        },
+        warnings: [
+          {
+            code: "rendered-diagram-too-large",
+            severity: "info",
+            anchor: "q:q1/b:diagram1",
+            message: "The selected diagram occupies almost the whole rendered page.",
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+
+  const result = runMauthAssistantTool(
+    document,
+    {
+      name: "mauth.layout.check",
+      arguments: { mode: "student", autoRepair: true },
+    },
+    { assistantContext: { renderedMetrics } },
+  );
+  const check = result.data as MauthLayoutCheck;
+  const diagram = result.document?.questions[0].contentBlocks.find((block) => block.id === "diagram1");
+
+  assert.equal(result.ok, true);
+  assert.equal(check.repair?.applied, true);
+  assert(check.repair?.repairedCodes.includes("rendered-diagram-too-large"));
+  assert.deepEqual(result.changedIds, ["diagram1"]);
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.widthPx : undefined, 630);
+  assert.equal(diagram?.kind === "diagram" ? diagram.graphConfig.heightPx : undefined, 270);
+});
+
+test("layout auto-repair leaves multiple rendered diagram size warnings untouched", () => {
+  const document = documentFixture();
+  document.questions = [
+    {
+      ...question("q1", [
+        diagramBlock("diagram1", { type: "graph2d", widthPx: 700, heightPx: 300, functions: [] } as unknown as GraphConfig),
+        diagramBlock("diagram2", { type: "graph2d", widthPx: 680, heightPx: 320, functions: [] } as unknown as GraphConfig),
+      ]),
+      marks: 0,
+    },
+  ];
+  const renderedMetrics: MauthPreviewRenderedMetrics = {
+    available: true,
+    source: "browser-preview",
+    activeAnchor: null,
+    pageCount: 1,
+    pages: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        usedHeightPx: 900,
+        totalHeightPx: 1000,
+        remainingHeightPx: 100,
+        usedPercent: 90,
+        anchorCount: 2,
+        overflow: false,
+      },
+    ],
+    anchors: ["diagram1", "diagram2"].map((blockId, index) => ({
+      anchor: `q:q1/b:${blockId}`,
+      kind: "questionBlock" as const,
+      role: "module" as const,
+      pageIndex: 0,
+      pageNumber: 1,
+      selected: false,
+      viewportRect: { left: 20, top: 40 + index * 360, right: 720, bottom: 360 + index * 360, width: 700, height: 320, x: 20, y: 40 },
+      pageRelativeRect: { left: 20, top: 40 + index * 360, right: 720, bottom: 360 + index * 360, width: 700, height: 320, x: 20, y: 40 },
+      diagram: {
+        found: true,
+        rendered: true,
+        tooLarge: true,
+        viewportRect: { left: 20, top: 40 + index * 360, right: 720, bottom: 360 + index * 360, width: 700, height: 320, x: 20, y: 40 },
+      },
+      warnings: [
+        {
+          code: "rendered-diagram-too-large",
+          severity: "info" as const,
+          anchor: `q:q1/b:${blockId}`,
+          message: "The selected diagram occupies almost the whole rendered page.",
+        },
+      ],
+    })),
+    warnings: [],
+  };
+
+  const result = runMauthAssistantTool(
+    document,
+    {
+      name: "mauth.layout.check",
+      arguments: { mode: "student", autoRepair: true },
+    },
+    { assistantContext: { renderedMetrics } },
+  );
+  const check = result.data as MauthLayoutCheck;
+
+  assert.equal(result.ok, true);
+  assert.equal(check.repair?.applied, false);
+  assert.deepEqual(result.changedIds, []);
+  assert(check.repair?.remainingCodes.includes("rendered-diagram-too-large"));
+});
+
 test("normalises visible assistant mark notes into hidden solution tick annotations", () => {
   const result = runMauthAssistantTool(documentFixture(), {
     name: "mauth.author.ensureSolutions",
