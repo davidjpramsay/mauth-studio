@@ -1,0 +1,14 @@
+{
+  "name": "@mauth-studio/diagram-penrose",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.mjs",
+  "bin": {
+    "diagram-penrose-render": "src/cli.mjs"
+  },
+  "dependencies": {
+    "@penrose/core": "^3.3.0",
+    "jsdom": "^27.3.0"
+  }
+}

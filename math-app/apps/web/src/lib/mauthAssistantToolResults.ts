@@ -1,0 +1,371 @@
+import type { AssistantChatResponse, AssistantToolOutput } from "./api.ts";
+import { geometry2dPrimitiveKindLabel, geometry2dPrimitiveTargetFromAnchor } from "./diagramGeometry2d.ts";
+
+export type MauthAssistantToolStatusTone = "tool-success" | "tool-warning" | "tool-error";
+export type MauthAssistantToolStatusState = "committed" | "completed" | "preflight-failed" | "needs-repair" | "needs-review" | "unreadable";
+
+export interface MauthAssistantToolStatusSummary {
+  label: "Tool result" | "Final status";
+  toolName: string;
+  state: MauthAssistantToolStatusState;
+  stateLabel: string;
+  actionLabel?: string;
+  actionPrompt?: string;
+  targetLabel?: string;
+  committedDocument: boolean | null;
+  commitLabel: string;
+  detail: string;
+  changedLabel?: string;
+}
+
+export interface MauthAssistantToolStatusMessage {
+  content: string;
+  tone: MauthAssistantToolStatusTone;
+  summary: MauthAssistantToolStatusSummary;
+}
+
+const LOCAL_TERMINAL_TOOL_NAMES = new Set([
+  "mauth.document.inspect",
+  "mauth.preview.inspect",
+  "mauth.validation.run",
+  "mauth.layout.check",
+  "mauth.question.upsert",
+  "mauth.author.replaceQuestion",
+  "mauth.author.addDiagram",
+  "mauth.author.ensureSolutions",
+  "mauth.author.adjustResponseSpaces",
+  "mauth.format.apply",
+  "mauth.settings.apply",
+]);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+export function assistantToolOutputRecord(toolOutput: AssistantToolOutput) {
+  return asRecord(toolOutput.output);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toolNameForOutput(toolOutput: AssistantToolOutput) {
+  const output = assistantToolOutputRecord(toolOutput);
+  return stringValue(output?.toolName) || stringValue(toolOutput.name) || "assistant tool";
+}
+
+function compactDetail(value: unknown) {
+  const text = stringValue(value).replace(/\s+/g, " ");
+  if (!text) return "";
+  return text.length > 360 ? `${text.slice(0, 357)}...` : text;
+}
+
+function outputDetail(output: Record<string, unknown> | null) {
+  return compactDetail(output?.error) || compactDetail(output?.message);
+}
+
+function semanticReviewDetail(output: Record<string, unknown> | null) {
+  const semanticReview = asRecord(output?.semanticReview);
+  const checklist = Array.isArray(semanticReview?.checklist) ? semanticReview.checklist : [];
+  const firstChecklistItem = checklist.find((item) => typeof item === "string" && item.trim());
+  return compactDetail(firstChecklistItem) || outputDetail(output);
+}
+
+function statusContent(toolName: string, status: string, detail: string) {
+  const suffix = detail ? ` ${detail}` : "";
+  return `**Tool result:** \`${toolName}\` ${status}.${suffix}`;
+}
+
+function finalStatusContent(toolName: string, message: string, detail: string) {
+  const suffix = detail ? ` ${detail}` : "";
+  return `**Final status:** ${message} \`${toolName}\`.${suffix}`;
+}
+
+export function assistantVisibleProviderMessage(response: Pick<AssistantChatResponse, "message" | "toolCalls">) {
+  const message = response.message.trim();
+  if (!message) return "";
+  return response.toolCalls.length ? "" : message;
+}
+
+function changedLabel(output: Record<string, unknown> | null) {
+  const changedIds = Array.isArray(output?.changedIds) ? output.changedIds.length : 0;
+  const changedPaths = Array.isArray(output?.changedPaths) ? output.changedPaths.length : 0;
+  const parts: string[] = [];
+  if (changedIds) parts.push(`${changedIds} item${changedIds === 1 ? "" : "s"}`);
+  if (changedPaths) parts.push(`${changedPaths} path${changedPaths === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function changedIds(output: Record<string, unknown> | null) {
+  return Array.isArray(output?.changedIds)
+    ? output.changedIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+    : [];
+}
+
+function moduleKindLabel(module: Record<string, unknown>) {
+  const kind = stringValue(module.kind);
+  const diagramType = stringValue(module.diagramType);
+  if (kind === "diagram") return diagramType === "geometry2d" ? "2D diagram" : diagramType ? `Diagram · ${diagramType}` : "Diagram";
+  if (kind === "space") return "Space";
+  if (kind === "text") return "Text";
+  if (kind === "table") return "Table";
+  if (kind === "columns") return "Columns";
+  if (kind === "choices") return "Choices";
+  return kind ? `${kind.charAt(0).toUpperCase()}${kind.slice(1)}` : "Module";
+}
+
+function geometryPrimitiveLabel(anchor: string, question: Record<string, unknown> | null, targetId: string) {
+  const target = geometry2dPrimitiveTargetFromAnchor(anchor);
+  if (!target || !question) return "";
+  const diagrams = Array.isArray(question.diagrams) ? question.diagrams : [];
+  const diagram = diagrams
+    .map(asRecord)
+    .find(
+      (item) =>
+        item && (stringValue(item.id) === targetId || stringValue(item.anchor) === anchor.replace(/\/g(?:pt|seg|arc|ang|dec):\d+$/, "")),
+    );
+  const summary = asRecord(diagram?.summary);
+  if (stringValue(summary?.renderer || diagram?.graphType) !== "geometry2d") return "";
+  const data = asRecord(summary?.data);
+  const items = Array.isArray(data?.[target.listKey]) ? (data[target.listKey] as unknown[]) : [];
+  const primitive = asRecord(items[target.index]);
+  const kindLabel = geometry2dPrimitiveKindLabel(target.kind);
+  const idValue = stringValue(primitive?.id);
+  const decorationKind = target.kind === "decoration" ? stringValue(primitive?.kind) : "";
+  const suffix = idValue || decorationKind;
+  return suffix ? `${kindLabel} ${target.index + 1}: ${suffix}` : `${kindLabel} ${target.index + 1}`;
+}
+
+function outputTargetLabel(output: Record<string, unknown> | null) {
+  const explicitTargetLabel = stringValue(output?.targetLabel);
+  if (explicitTargetLabel) return explicitTargetLabel;
+  const postEditInspection = asRecord(output?.postEditInspection);
+  const repairTarget = asRecord(output?.repairTarget);
+  const target = asRecord(postEditInspection?.target);
+  const question = asRecord(postEditInspection?.question);
+  const questionNumber =
+    numberValue(question?.questionNumber) ?? numberValue(target?.questionNumber) ?? numberValue(repairTarget?.questionNumber);
+  const targetId = stringValue(target?.blockId) || stringValue(repairTarget?.targetId) || changedIds(output)[0] || "";
+  const modules = Array.isArray(question?.modules) ? question.modules : [];
+  const module = modules.map(asRecord).find((item) => item && stringValue(item.id) === targetId);
+  const parts = questionNumber ? [`Question ${questionNumber}`] : [];
+  if (module) {
+    parts.push(moduleKindLabel(module));
+  } else if (targetId && postEditInspection) {
+    parts.push(`Target ${targetId}`);
+  }
+  const primitiveLabel = geometryPrimitiveLabel(stringValue(target?.anchor), question, targetId);
+  if (primitiveLabel) parts.push(primitiveLabel);
+  return parts.join(" · ");
+}
+
+function commitLabel(committedDocument: boolean | null) {
+  if (committedDocument === true) return "Yes";
+  if (committedDocument === false) return "No";
+  return "Unknown";
+}
+
+function repairAction(
+  state: MauthAssistantToolStatusState,
+  toolName: string,
+  detail: string,
+): Pick<MauthAssistantToolStatusSummary, "actionLabel" | "actionPrompt"> {
+  const detailText = detail ? ` Use this validation detail: ${detail}` : "";
+  if (state === "preflight-failed") {
+    return {
+      actionLabel: "Try repair",
+      actionPrompt: `Repair the failed local Mauth tool result above. No document changes were committed. Keep the same target, use the validation detail, and call ${toolName} again with corrected arguments.${detailText}`,
+    };
+  }
+  if (state === "needs-repair") {
+    return {
+      actionLabel: "Try repair",
+      actionPrompt: `Repair the local Mauth edit above. The document already changed, but inspection says it still needs repair. Keep the same target, adjust or replace the existing item instead of appending a duplicate, and call the focused Mauth tool again.${detailText}`,
+    };
+  }
+  if (state === "needs-review") {
+    return {
+      actionLabel: "Review result",
+      actionPrompt: `Review the local Mauth edit above against my original request. If it is correct, report that plainly. If it is not correct, repair the same target before saying the edit is complete.${detailText}`,
+    };
+  }
+  return {};
+}
+
+function statusSummary(
+  label: MauthAssistantToolStatusSummary["label"],
+  toolName: string,
+  state: MauthAssistantToolStatusState,
+  stateLabel: string,
+  committedDocument: boolean | null,
+  detail: string,
+  output: Record<string, unknown> | null,
+): MauthAssistantToolStatusSummary {
+  const action = repairAction(state, toolName, detail);
+  return {
+    label,
+    toolName,
+    state,
+    stateLabel,
+    ...action,
+    targetLabel: outputTargetLabel(output) || undefined,
+    committedDocument,
+    commitLabel: commitLabel(committedDocument),
+    detail,
+    changedLabel: changedLabel(output) || undefined,
+  };
+}
+
+export function assistantTerminalToolStatusMessage(toolOutput: AssistantToolOutput): MauthAssistantToolStatusMessage | null {
+  const output = assistantToolOutputRecord(toolOutput);
+  const toolName = toolNameForOutput(toolOutput);
+  if (output?.ok !== true || !LOCAL_TERMINAL_TOOL_NAMES.has(toolName)) return null;
+  const semanticReview = asRecord(output.semanticReview);
+  if (semanticReview?.required === true) return null;
+  const committedDocument = typeof output.committedDocument === "boolean" ? output.committedDocument : null;
+  const status = committedDocument === true ? "committed changes" : "completed";
+  const detail = outputDetail(output) || "Completed the edit.";
+  return {
+    tone: "tool-success",
+    content: statusContent(toolName, status, detail),
+    summary: statusSummary(
+      "Tool result",
+      toolName,
+      committedDocument === true ? "committed" : "completed",
+      committedDocument === true ? "Committed" : "Completed",
+      committedDocument,
+      detail,
+      output,
+    ),
+  };
+}
+
+export function assistantContinuingToolStatusMessages(toolOutputs: readonly AssistantToolOutput[]): MauthAssistantToolStatusMessage[] {
+  return toolOutputs.flatMap((toolOutput) => {
+    const output = assistantToolOutputRecord(toolOutput);
+    const toolName = toolNameForOutput(toolOutput);
+    if (!output) {
+      return [
+        {
+          tone: "tool-error" as const,
+          content: statusContent(toolName, "returned an unreadable result", "The local tool output was not an object."),
+          summary: statusSummary(
+            "Tool result",
+            toolName,
+            "unreadable",
+            "Unreadable",
+            null,
+            "The local tool output was not an object.",
+            null,
+          ),
+        },
+      ];
+    }
+
+    if (output.ok !== true) {
+      const committed = output.committedDocument === true;
+      const detail = outputDetail(output) || "The local tool failed before the assistant could continue.";
+      return [
+        {
+          tone: committed ? ("tool-warning" as const) : ("tool-error" as const),
+          content: statusContent(toolName, committed ? "committed changes, but needs repair" : "did not commit changes", detail),
+          summary: statusSummary(
+            "Tool result",
+            toolName,
+            committed ? "needs-repair" : "preflight-failed",
+            committed ? "Needs repair" : "Preflight failed",
+            committed,
+            detail,
+            output,
+          ),
+        },
+      ];
+    }
+
+    const semanticReview = asRecord(output.semanticReview);
+    if (semanticReview?.required === true) {
+      const detail = semanticReviewDetail(output);
+      return [
+        {
+          tone: "tool-warning" as const,
+          content: statusContent(toolName, "committed changes and requested review before declaring the edit complete", detail),
+          summary: statusSummary(
+            "Tool result",
+            toolName,
+            "needs-review",
+            "Needs review",
+            output.committedDocument === true,
+            detail,
+            output,
+          ),
+        },
+      ];
+    }
+
+    return [];
+  });
+}
+
+export function assistantFinalToolStateMessage(toolOutputs: readonly AssistantToolOutput[]): MauthAssistantToolStatusMessage | null {
+  for (const toolOutput of toolOutputs) {
+    const output = assistantToolOutputRecord(toolOutput);
+    const toolName = toolNameForOutput(toolOutput);
+    if (!output) {
+      return {
+        tone: "tool-error",
+        content: finalStatusContent(toolName, "I could not verify the local result from", "The local tool output was not an object."),
+        summary: statusSummary(
+          "Final status",
+          toolName,
+          "unreadable",
+          "Unreadable",
+          null,
+          "The local tool output was not an object.",
+          null,
+        ),
+      };
+    }
+
+    if (output.ok !== true) {
+      const detail = outputDetail(output) || "The local tool failed before the assistant could finish.";
+      if (output.committedDocument === true) {
+        return {
+          tone: "tool-warning",
+          content: finalStatusContent(
+            toolName,
+            "I applied changes with",
+            `They need repair before this can be treated as complete. ${detail}`,
+          ),
+          summary: statusSummary("Final status", toolName, "needs-repair", "Needs repair", true, detail, output),
+        };
+      }
+
+      return {
+        tone: "tool-error",
+        content: finalStatusContent(toolName, "I did not apply that edit through", detail),
+        summary: statusSummary("Final status", toolName, "preflight-failed", "Preflight failed", false, detail, output),
+      };
+    }
+
+    const semanticReview = asRecord(output.semanticReview);
+    if (semanticReview?.required === true) {
+      const detail = semanticReviewDetail(output);
+      return {
+        tone: "tool-warning",
+        content: finalStatusContent(
+          toolName,
+          "I applied changes with",
+          `They need review before this can be treated as complete. ${detail}`,
+        ),
+        summary: statusSummary("Final status", toolName, "needs-review", "Needs review", output.committedDocument === true, detail, output),
+      };
+    }
+  }
+
+  return null;
+}

@@ -1,0 +1,38 @@
+{
+  "id": "right_triangle_geometry",
+  "version": 1,
+  "section": "Geometry",
+  "template": "Triangle ABC is right angled at B. AB = {legA} and BC = {legB}. Find AC.",
+  "parameters": {
+    "legA": "int[3,8]",
+    "legB": "int[4,12]"
+  },
+  "generator": "question_engine.plugins.geometry.generate",
+  "solution": "question_engine.plugins.geometry.solution",
+  "diagram": {
+    "type": "geometricConstruction",
+    "style": "geometry",
+    "options": {
+      "penrosePreset": "geometry",
+      "scalePercent": 100
+    },
+    "data": {
+      "objects": [
+        { "type": "point", "name": "A" },
+        { "type": "point", "name": "B" },
+        { "type": "point", "name": "C" }
+      ],
+      "relationships": [
+        { "type": "triangle", "points": ["A", "B", "C"] },
+        { "type": "rightAngle", "at": "B" },
+        { "type": "labelLength", "between": ["A", "B"], "value": "{legA}" },
+        { "type": "labelLength", "between": ["B", "C"], "value": "{legB}" }
+      ]
+    }
+  },
+  "marks": {
+    "method": 1,
+    "answer": 1
+  },
+  "marking": "default"
+}

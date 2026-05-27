@@ -1,0 +1,43 @@
+type Point
+type Line
+type Circle
+type Triangle
+type Angle
+type Ray
+type NamedSegment
+type LengthLabel
+
+predicate On(Point p, Line l)
+predicate Between(Point a, Point b, Point c)
+predicate HidePoint(Point p)
+predicate Perpendicular(Line l1, Line l2)
+predicate PerpendicularToSegment(Line l, Point a, Point b)
+predicate Parallel(Line l1, Line l2)
+predicate ParallelToSegment(Line l, Point a, Point b)
+predicate Triangle(Point a, Point b, Point c)
+predicate RightAngle(Point a, Point b, Point c)
+predicate LabelsSegment(LengthLabel label, Point a, Point b)
+predicate Segment(NamedSegment s, Point a, Point b)
+predicate VectorSegment(NamedSegment s, Point a, Point b)
+predicate LineThrough(Line l, Point a, Point b)
+predicate RayFrom(Ray r, Point start, Point through)
+predicate CircleWithCenter(Circle c, Point center)
+predicate CircleThrough(Circle c, Point center, Point through)
+predicate OnCircle(Point p, Circle c)
+predicate Tangent(Line l, Circle c, Point p)
+predicate Secant(Line l, Circle c, Point a, Point b)
+predicate Midpoint(Point m, Point a, Point b)
+predicate AngleBisector(Line l, Point a, Point b, Point c)
+predicate PerpendicularBisector(Line l, Point a, Point b)
+predicate EqualLength(Point a, Point b, Point c, Point d)
+predicate EqualLength2(Point a, Point b, Point c, Point d)
+predicate EqualLength3(Point a, Point b, Point c, Point d)
+predicate EqualNamedLength(NamedSegment s1, NamedSegment s2)
+predicate EqualNamedLength2(NamedSegment s1, NamedSegment s2)
+predicate EqualNamedLength3(NamedSegment s1, NamedSegment s2)
+predicate AngleMark(Point a, Point b, Point c)
+predicate AngleMark2(Point a, Point b, Point c)
+predicate AngleMark3(Point a, Point b, Point c)
+predicate LabelsAngle(LengthLabel label, Point a, Point b, Point c)
+predicate LabelsCircle(LengthLabel label, Circle c)
+predicate LabelsLine(LengthLabel label, Line l)

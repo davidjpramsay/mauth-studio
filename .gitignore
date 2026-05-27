@@ -4,7 +4,6 @@
 *.log
 *.pid
 tmp/
-math-app/
 mauth-workbench/*
 !mauth-workbench/.gitignore
 !mauth-workbench/README.md

@@ -1,0 +1,21 @@
+{
+  "id": "high_school_mathematics",
+  "title": "High School Mathematics",
+  "formatting": "default",
+  "marking": "default",
+  "numbering": "continuous",
+  "sections": [
+    {
+      "title": "Algebra",
+      "instructions": "Show all working. Exact equivalent algebraic forms are accepted."
+    },
+    {
+      "title": "Graphs and Diagrams",
+      "instructions": "Use the supplied diagram or graph where shown."
+    },
+    {
+      "title": "Tables",
+      "instructions": "Use the table values to answer the question."
+    }
+  ]
+}

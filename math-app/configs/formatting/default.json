@@ -1,0 +1,19 @@
+{
+  "id": "default",
+  "showMarks": true,
+  "marksStyle": "right-aligned",
+  "questionSpacing": "large",
+  "diagramPosition": "below",
+  "fontSize": "12pt",
+  "numbering": "numeric",
+  "sectionHeaders": true,
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "widthPx": 793.700787,
+    "heightPx": 1122.519685,
+    "paddingXPx": 76,
+    "paddingYPx": 76,
+    "showPageBreaks": true
+  }
+}
