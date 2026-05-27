@@ -198,6 +198,13 @@ RESPONSE_SPACE_REQUEST_TERMS = (
     "line count",
     "layout space",
 )
+RESPONSE_SPACE_LINE_COUNT_PATTERN = re.compile(r"\b([1-5]?\d|60)\s*(?:lines?|rows?)\b", re.IGNORECASE)
+RESPONSE_SPACE_DELTA_PATTERN = re.compile(
+    r"\b(?:add|increase|extra|additional)\s+(?:by\s+)?([1-5]?\d|60)\s*(?:extra\s*)?(?:lines?|rows?)\b",
+    re.IGNORECASE,
+)
+PART_LABEL_PATTERN = re.compile(r"\bpart\s*(?:\(([a-z])\)|([a-z])\b)", re.IGNORECASE)
+SUBPART_LABEL_PATTERN = re.compile(r"\bsubpart\s*(?:\(([ivxlcdm]+)\)|([ivxlcdm]+)\b)", re.IGNORECASE)
 ASSISTANT_HELP_REQUEST_TERMS = (
     "what can this assistant do",
     "what can you do",
@@ -5549,6 +5556,183 @@ def direct_validation_run_response(model: str, text: str) -> dict[str, Any]:
     }
 
 
+def response_space_part_labels(text: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    part_match = PART_LABEL_PATTERN.search(text)
+    if part_match:
+        labels["partLabel"] = (part_match.group(1) or part_match.group(2)).lower()
+    subpart_match = SUBPART_LABEL_PATTERN.search(text)
+    if subpart_match:
+        labels["subpartLabel"] = (subpart_match.group(1) or subpart_match.group(2)).lower()
+    return labels
+
+
+def direct_response_space_arguments(request: AssistantChatRequest) -> dict[str, Any] | None:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return None
+
+    current_messages = latest_user_messages(request.messages)
+    text = request_text(current_messages)
+    compact_summary = compact_document_summary(request.documentSummary, current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, request.attachments)
+    if (
+        not intent.asks_for_response_space
+        or intent.asks_for_solution
+        or intent.asks_for_marking_edit
+        or not intent.has_specific_question
+    ):
+        return None
+
+    if RESPONSE_SPACE_DELTA_PATTERN.search(text):
+        return None
+
+    line_match = RESPONSE_SPACE_LINE_COUNT_PATTERN.search(text)
+    if line_match:
+        lines = int(line_match.group(1))
+        mode = "set"
+    elif any(
+        term in text
+        for term in (
+            "more space",
+            "more answer space",
+            "more response space",
+            "more working space",
+            "extra space",
+            "extra answer space",
+            "extra response space",
+            "extra working space",
+        )
+    ):
+        lines = 10
+        mode = "atLeast"
+    else:
+        return None
+
+    target: dict[str, Any] = {
+        "questionNumber": intent.target_question_number,
+        "lines": lines,
+        "mode": mode,
+        **response_space_part_labels(text),
+    }
+    return {"targets": [target]}
+
+
+def direct_response_space_response(model: str, request: AssistantChatRequest) -> dict[str, Any] | None:
+    arguments = direct_response_space_arguments(request)
+    if not arguments:
+        return None
+
+    target = arguments["targets"][0]
+    question_number = target["questionNumber"]
+    return {
+        "configured": True,
+        "model": model,
+        "message": f"Adjusting Question {question_number} answer space.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-response-space",
+                "callId": "local-response-space",
+                "name": "mauth_author_adjust_response_spaces",
+                "arguments": arguments,
+                "mauthToolName": "mauth.author.adjustResponseSpaces",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth response-space routing; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
+def requested_boolean_toggle(text: str, terms: tuple[str, ...]) -> bool | None:
+    if not any(term in text for term in terms):
+        return None
+    if any(term in text for term in ("hide", "turn off", "switch off", "disable", "remove")):
+        return False
+    if any(term in text for term in ("show", "turn on", "switch on", "enable")):
+        return True
+    return None
+
+
+def direct_selected_settings_arguments(request: AssistantChatRequest) -> dict[str, Any] | None:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return None
+
+    current_messages = latest_user_messages(request.messages)
+    text = request_text(current_messages)
+    compact_summary = compact_document_summary(request.documentSummary, current_messages)
+    if not assistant_target_reference_from_summary(compact_summary) and "@mauth[" not in text:
+        return None
+
+    intent = classify_request_intent(compact_summary, current_messages, request.attachments)
+    if intent.kind != "settings":
+        return None
+
+    diagram: dict[str, Any] = {}
+    specific_fields: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("showAxisLabels", ("axis labels", "axis label")),
+        ("showAxisNumbers", ("axis numbers", "axis number", "tick labels", "tick label")),
+        ("showMajorGrid", ("major grid", "major gridlines", "major gridline")),
+        ("showFunctionArrows", ("function arrows", "function arrow")),
+        ("showNodeDots", ("node dots", "node dot")),
+        ("showNodeLabels", ("node labels", "node label")),
+    )
+    for field, terms in specific_fields:
+        value = requested_boolean_toggle(text, terms)
+        if value is not None:
+            diagram[field] = value
+
+    if not any(
+        term in text
+        for term in ("axis labels", "axis label", "axis numbers", "axis number", "tick labels", "tick label")
+    ):
+        axes_value = requested_boolean_toggle(text, ("axes", "axis"))
+        if axes_value is not None:
+            diagram["showAxes"] = axes_value
+    if not any(term in text for term in ("major grid", "major gridlines", "major gridline")):
+        grid_value = requested_boolean_toggle(text, ("grid", "gridlines", "gridline"))
+        if grid_value is not None:
+            diagram["showGrid"] = grid_value
+    if "function arrow" not in text and "function arrows" not in text:
+        arrow_value = requested_boolean_toggle(text, ("arrows", "arrow"))
+        if arrow_value is not None:
+            diagram["showArrows"] = arrow_value
+
+    scale_match = re.search(r"\bscale(?:\s+(?:to|at))?\s+([1-2]?\d{1,2}|300)\s*%", text)
+    if scale_match:
+        diagram["scalePercent"] = int(scale_match.group(1))
+
+    if not diagram:
+        return None
+    return {"diagram": diagram}
+
+
+def direct_selected_settings_response(model: str, request: AssistantChatRequest) -> dict[str, Any] | None:
+    arguments = direct_selected_settings_arguments(request)
+    if not arguments:
+        return None
+    return {
+        "configured": True,
+        "model": model,
+        "message": "Updating the selected module settings.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-selected-settings",
+                "callId": "local-selected-settings",
+                "name": "mauth_update_selected_settings",
+                "arguments": arguments,
+                "mauthToolName": "mauth.settings.apply",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(
+            model, source="native Mauth selected-settings routing; no OpenAI tokens used"
+        ),
+        "error": None,
+    }
+
+
 def direct_assistant_help_response(model: str) -> dict[str, Any]:
     return {
         "configured": True,
@@ -5652,6 +5836,14 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
 
     if should_use_direct_assistant_help(request):
         return direct_assistant_help_response(model)
+
+    response_space_response = direct_response_space_response(model, request)
+    if response_space_response:
+        return response_space_response
+
+    selected_settings_response = direct_selected_settings_response(model, request)
+    if selected_settings_response:
+        return selected_settings_response
 
     clarification_question = direct_clarification_question(request)
     if clarification_question:
