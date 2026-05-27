@@ -450,7 +450,7 @@ export function MauthAssistantPanel({
   onSendChat: () => void;
   onClose: () => void;
 }) {
-  const canSend = Boolean(chatInput.trim() || chatAttachments.length) && !chatRunning && providerConfigured !== false;
+  const canSend = Boolean(chatInput.trim() || chatAttachments.length) && !chatRunning;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const statusPopoverRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -523,9 +523,10 @@ export function MauthAssistantPanel({
                 ) : (
                   <CircleX className="size-4 text-red-700" aria-hidden="true" />
                 )}
-                {connected ? "Assistant connected" : "Assistant disconnected"}
+                {connected ? "Assistant connected" : "Provider unavailable"}
               </div>
               <p className="mt-2 leading-relaxed text-muted-foreground">{statusTitle}</p>
+              {!connected ? <p className="mt-2 leading-relaxed text-muted-foreground">Local Mauth checks can still run.</p> : null}
             </div>
           ) : null}
           <div className="flex items-center gap-2">
@@ -715,7 +716,9 @@ export function MauthAssistantPanel({
               {chatRunning ? "Working" : "Ask"}
             </Button>
             {providerConfigured === false ? (
-              <span className="text-xs text-muted-foreground">Add the backend API key, then restart the API server.</span>
+              <span className="text-xs text-muted-foreground">
+                Local checks still work; edits that need the provider require an API key.
+              </span>
             ) : (
               <span className="text-xs text-muted-foreground">
                 {chatAttachments.length

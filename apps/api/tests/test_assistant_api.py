@@ -238,6 +238,122 @@ def test_validation_prompt_uses_native_fast_path_without_key(monkeypatch):
     ]
 
 
+def test_response_space_prompt_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Make Question 1 answer space 12 lines."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Adjusting Question 1 answer space."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-response-space",
+            "callId": "local-response-space",
+            "name": "mauth_author_adjust_response_spaces",
+            "arguments": {"targets": [{"questionNumber": 1, "lines": 12, "mode": "set"}]},
+            "mauthToolName": "mauth.author.adjustResponseSpaces",
+            "mauthArguments": {"targets": [{"questionNumber": 1, "lines": 12, "mode": "set"}]},
+        }
+    ]
+
+
+def test_more_working_space_prompt_uses_native_at_least_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Give question 2 part (b) more working space."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthToolName"] == "mauth.author.adjustResponseSpaces"
+    assert data["toolCalls"][0]["mauthArguments"] == {
+        "targets": [{"questionNumber": 2, "lines": 10, "mode": "atLeast", "partLabel": "b"}]
+    }
+    assert data["usage"]["totalTokens"] == 0
+
+
+def test_extra_lines_prompt_does_not_use_set_space_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Add 2 extra lines to question 1."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is False
+    assert data["toolCalls"] == []
+    assert "OPENAI_API_KEY" in data["message"]
+
+
+def test_selected_setting_toggle_uses_native_fast_path_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Hide the grid on this graph."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q1/b:g1",
+                    "target": {"kind": "questionBlock", "questionNumber": 1, "blockId": "g1"},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Updating the selected module settings."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-selected-settings",
+            "callId": "local-selected-settings",
+            "name": "mauth_update_selected_settings",
+            "arguments": {"diagram": {"showGrid": False}},
+            "mauthToolName": "mauth.settings.apply",
+            "mauthArguments": {"diagram": {"showGrid": False}},
+        }
+    ]
+
+
+def test_selected_axis_label_toggle_does_not_hide_axes(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Hide axis labels on this graph."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q1/b:g1",
+                    "target": {"kind": "questionBlock", "questionNumber": 1, "blockId": "g1"},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthArguments"] == {"diagram": {"showAxisLabels": False}}
+
+
 def test_assistant_help_prompt_uses_native_fast_path(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
