@@ -225,11 +225,75 @@ FORMATTING_REQUEST_TERMS = (
     "move diagram",
     "diagram right",
     "diagram left",
+    "diagram center",
+    "diagram centre",
     "align diagram",
+    "align this diagram",
     "make the solution fit",
     "tidy",
     "blank space",
 )
+DIAGRAM_ALIGNMENT_TERMS = (
+    "align diagram",
+    "align this diagram",
+    "move diagram",
+    "center diagram",
+    "centre diagram",
+    "center this diagram",
+    "centre this diagram",
+    "diagram left",
+    "diagram right",
+    "diagram center",
+    "diagram centre",
+)
+PAGE_BREAK_REQUEST_TERMS = (
+    "new page",
+    "page break",
+    "start on new page",
+    "separate page",
+)
+PAGE_BREAK_REMOVE_TERMS = (
+    "remove",
+    "clear",
+    "delete",
+    "take out",
+    "get rid of",
+)
+PAGE_BREAK_SET_TERMS = (
+    "put",
+    "start",
+    "move",
+    "place",
+    "add",
+    "insert",
+    "set",
+)
+TIDY_SPACING_TERMS = (
+    "tidy spacing",
+    "tidy the spacing",
+    "tidy question spacing",
+    "remove unnecessary blank space",
+    "remove extra blank space",
+    "clean up spacing",
+)
+SOLUTION_FIT_TERMS = (
+    "make the solution fit",
+    "fit the solution",
+    "fit solution",
+    "solution fit",
+)
+MODULE_MOVE_TERMS = (
+    "move this module",
+    "move selected module",
+    "move current module",
+)
+MODULE_KIND_TERMS = {
+    "diagram": ("diagram", "graph", "chart"),
+    "table": ("table",),
+    "text": ("text", "wording", "paragraph"),
+    "space": ("answer space", "working space", "response space", "space"),
+    "choices": ("choices", "options", "multiple choice"),
+}
 SETTINGS_REQUEST_TERMS = (
     "setting",
     "settings",
@@ -1636,6 +1700,10 @@ def next_question_number_from_summary(summary: dict[str, Any] | None) -> int:
 def assistant_target_reference_from_summary(summary: dict[str, Any] | None) -> dict[str, Any] | None:
     value = summary.get("assistantTargetReference") if isinstance(summary, dict) else None
     return value if isinstance(value, dict) else None
+
+
+def string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
 
 
 def assistant_target_reference_question_number(summary: dict[str, Any] | None) -> int | None:
@@ -5733,6 +5801,279 @@ def direct_selected_settings_response(model: str, request: AssistantChatRequest)
     }
 
 
+def assistant_reference_target(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    reference = assistant_target_reference_from_summary(summary)
+    if not reference:
+        return None
+    target = reference.get("target")
+    return target if isinstance(target, dict) else None
+
+
+def assistant_reference_question(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    reference = assistant_target_reference_from_summary(summary)
+    if not reference:
+        return None
+    question = reference.get("question")
+    return question if isinstance(question, dict) else None
+
+
+def assistant_reference_selected_block(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    reference = assistant_target_reference_from_summary(summary)
+    if not reference:
+        return None
+    selected_block = reference.get("selectedBlock")
+    return selected_block if isinstance(selected_block, dict) else None
+
+
+def direct_format_base_target(
+    compact_summary: dict[str, Any] | None,
+    intent: AssistantRequestIntent,
+    text: str,
+) -> dict[str, Any] | None:
+    target: dict[str, Any] = {}
+    reference_target = assistant_reference_target(compact_summary)
+    reference_question = assistant_reference_question(compact_summary)
+
+    question_number = None
+    for container in (reference_question, reference_target):
+        value = container.get("questionNumber") if isinstance(container, dict) else None
+        if isinstance(value, int) and value > 0:
+            question_number = value
+            break
+
+    if question_number:
+        target["questionNumber"] = question_number
+    elif intent.has_specific_question:
+        target["questionNumber"] = intent.target_question_number
+    else:
+        question_id = string_value(
+            reference_question.get("id") if isinstance(reference_question, dict) else None
+        ) or string_value(reference_target.get("questionId") if isinstance(reference_target, dict) else None)
+        if question_id:
+            target["questionId"] = question_id
+
+    if isinstance(reference_target, dict):
+        part_id = string_value(reference_target.get("partId"))
+        subpart_id = string_value(reference_target.get("subpartId"))
+        if part_id:
+            target["partId"] = part_id
+        if subpart_id:
+            target["subpartId"] = subpart_id
+
+    for key, value in response_space_part_labels(text).items():
+        target[key] = value
+
+    if not any(key in target for key in ("questionNumber", "questionId")):
+        return None
+    return target
+
+
+def direct_page_break_operation(text: str, target: dict[str, Any]) -> dict[str, Any] | None:
+    if not any(term in text for term in PAGE_BREAK_REQUEST_TERMS):
+        return None
+    operation = (
+        "removePageBreakBefore"
+        if any(term in text for term in PAGE_BREAK_REMOVE_TERMS)
+        else "setPageBreakBefore"
+        if any(term in text for term in PAGE_BREAK_SET_TERMS) or "new page" in text or "page break" in text
+        else ""
+    )
+    if not operation:
+        return None
+    return {"type": operation, "target": target}
+
+
+def direct_diagram_alignment(text: str) -> str | None:
+    if not any(term in text for term in DIAGRAM_ALIGNMENT_TERMS):
+        return None
+    if any(term in text for term in ("center", "centered", "centre", "centred")):
+        return "center"
+    if any(term in text for term in ("left align", "align left", "diagram left", "to the left", "on the left")):
+        return "left"
+    if "right angle" not in text and any(
+        term in text for term in ("right align", "align right", "diagram right", "to the right", "on the right")
+    ):
+        return "right"
+    return None
+
+
+def direct_diagram_alignment_operation(
+    compact_summary: dict[str, Any] | None,
+    text: str,
+    target: dict[str, Any],
+) -> dict[str, Any] | None:
+    alignment = direct_diagram_alignment(text)
+    if not alignment:
+        return None
+    operation: dict[str, Any] = {"type": "setDiagramAlignment", "target": target, "diagramAlign": alignment}
+    selected_block = assistant_reference_selected_block(compact_summary)
+    if isinstance(selected_block, dict) and selected_block.get("kind") == "diagram":
+        block_id = string_value(selected_block.get("id"))
+        if block_id:
+            operation["blockId"] = block_id
+    return operation
+
+
+def direct_fit_solution_operation(text: str, target: dict[str, Any]) -> dict[str, Any] | None:
+    if not any(term in text for term in SOLUTION_FIT_TERMS):
+        return None
+    return {"type": "fitSolutionToSpace", "target": target}
+
+
+def direct_tidy_spacing_operation(text: str, target: dict[str, Any]) -> dict[str, Any] | None:
+    if not any(term in text for term in TIDY_SPACING_TERMS):
+        return None
+    return {"type": "tidyQuestionSpacing", "target": target}
+
+
+def question_summary_for_number(summary: dict[str, Any] | None, question_number: int) -> dict[str, Any] | None:
+    questions = summary.get("questions") if isinstance(summary, dict) else None
+    if not isinstance(questions, list):
+        return None
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        index = question.get("index")
+        if isinstance(index, int) and index + 1 == question_number:
+            return question
+    return None
+
+
+def modules_for_format_target(question: dict[str, Any] | None, target: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(question, dict):
+        return []
+
+    part_id = string_value(target.get("partId"))
+    subpart_id = string_value(target.get("subpartId"))
+    if part_id:
+        parts = question.get("parts")
+        if not isinstance(parts, list):
+            return []
+        part = next((item for item in parts if isinstance(item, dict) and item.get("id") == part_id), None)
+        if subpart_id:
+            subparts = part.get("subparts") if isinstance(part, dict) else None
+            subpart = next(
+                (item for item in subparts or [] if isinstance(item, dict) and item.get("id") == subpart_id), None
+            )
+            modules = subpart.get("modules") if isinstance(subpart, dict) else None
+            return [module for module in modules or [] if isinstance(module, dict)]
+        modules = part.get("modules") if isinstance(part, dict) else None
+        return [module for module in modules or [] if isinstance(module, dict)]
+
+    modules = question.get("modules")
+    return [module for module in modules or [] if isinstance(module, dict)]
+
+
+def requested_module_destination_kind(text: str) -> str:
+    for kind, terms in MODULE_KIND_TERMS.items():
+        if any(term in text for term in terms):
+            return kind
+    return ""
+
+
+def direct_module_move_operation(
+    compact_summary: dict[str, Any] | None,
+    text: str,
+    target: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not any(term in text for term in MODULE_MOVE_TERMS):
+        return None
+    position = (
+        "after"
+        if any(term in text for term in ("below", "after", "under", "beneath"))
+        else "before"
+        if any(term in text for term in ("above", "before", "over"))
+        else ""
+    )
+    if not position:
+        return None
+
+    selected_block = assistant_reference_selected_block(compact_summary)
+    source_block_id = string_value(selected_block.get("id") if isinstance(selected_block, dict) else None)
+    if not source_block_id:
+        return None
+
+    question_number = target.get("questionNumber")
+    if not isinstance(question_number, int):
+        return None
+    question = question_summary_for_number(compact_summary, question_number)
+    destination_kind = requested_module_destination_kind(text)
+    if not destination_kind:
+        return None
+    candidates = [
+        module
+        for module in modules_for_format_target(question, target)
+        if module.get("kind") == destination_kind and string_value(module.get("id")) != source_block_id
+    ]
+    if len(candidates) != 1:
+        return None
+
+    destination_id = string_value(candidates[0].get("id"))
+    if not destination_id:
+        return None
+    operation: dict[str, Any] = {"type": "moveModule", "blockId": source_block_id, "to": target}
+    if position == "after":
+        operation["afterBlockId"] = destination_id
+    else:
+        operation["beforeBlockId"] = destination_id
+    return operation
+
+
+def direct_formatting_arguments(request: AssistantChatRequest) -> dict[str, Any] | None:
+    if request.previousResponseId or request.toolOutputs or request.attachments:
+        return None
+
+    current_messages = latest_user_messages(request.messages)
+    text = request_text(current_messages)
+    compact_summary = compact_document_summary(request.documentSummary, current_messages)
+    intent = classify_request_intent(compact_summary, current_messages, request.attachments)
+    if intent.asks_to_write_question or intent.asks_to_append_question or intent.asks_for_marking_edit:
+        return None
+
+    target = direct_format_base_target(compact_summary, intent, text)
+    if not target:
+        return None
+
+    operations = [
+        operation
+        for operation in (
+            direct_module_move_operation(compact_summary, text, target),
+            direct_page_break_operation(text, target),
+            direct_diagram_alignment_operation(compact_summary, text, target),
+            direct_fit_solution_operation(text, target),
+            direct_tidy_spacing_operation(text, target),
+        )
+        if operation
+    ]
+    if not operations:
+        return None
+    return {"operations": operations}
+
+
+def direct_formatting_response(model: str, request: AssistantChatRequest) -> dict[str, Any] | None:
+    arguments = direct_formatting_arguments(request)
+    if not arguments:
+        return None
+    return {
+        "configured": True,
+        "model": model,
+        "message": "Applying formatting changes.",
+        "responseId": None,
+        "toolCalls": [
+            {
+                "id": "local-formatting",
+                "callId": "local-formatting",
+                "name": "mauth_fix_question_formatting",
+                "arguments": arguments,
+                "mauthToolName": "mauth.format.apply",
+                "mauthArguments": arguments,
+            }
+        ],
+        "usage": zero_token_usage_summary(model, source="native Mauth formatting routing; no OpenAI tokens used"),
+        "error": None,
+    }
+
+
 def direct_assistant_help_response(model: str) -> dict[str, Any]:
     return {
         "configured": True,
@@ -5844,6 +6185,10 @@ async def create_assistant_response(request: AssistantChatRequest) -> dict[str, 
     selected_settings_response = direct_selected_settings_response(model, request)
     if selected_settings_response:
         return selected_settings_response
+
+    formatting_response = direct_formatting_response(model, request)
+    if formatting_response:
+        return formatting_response
 
     clarification_question = direct_clarification_question(request)
     if clarification_question:

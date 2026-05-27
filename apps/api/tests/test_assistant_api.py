@@ -354,6 +354,155 @@ def test_selected_axis_label_toggle_does_not_hide_axes(monkeypatch):
     assert data["toolCalls"][0]["mauthArguments"] == {"diagram": {"showAxisLabels": False}}
 
 
+def test_question_page_break_prompt_uses_native_formatting_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Put Question 2 on a new page."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["message"] == "Applying formatting changes."
+    assert data["responseId"] is None
+    assert data["usage"]["totalTokens"] == 0
+    assert data["usage"]["estimatedCostUsd"] == 0
+    assert data["toolCalls"] == [
+        {
+            "id": "local-formatting",
+            "callId": "local-formatting",
+            "name": "mauth_fix_question_formatting",
+            "arguments": {
+                "operations": [{"type": "setPageBreakBefore", "target": {"questionNumber": 2}}],
+            },
+            "mauthToolName": "mauth.format.apply",
+            "mauthArguments": {
+                "operations": [{"type": "setPageBreakBefore", "target": {"questionNumber": 2}}],
+            },
+        }
+    ]
+
+
+def test_part_page_break_remove_uses_active_question_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Remove the page break before part (b)."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q3",
+                    "question": {"id": "q3", "questionNumber": 3},
+                    "target": {"kind": "question", "questionNumber": 3},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthArguments"] == {
+        "operations": [{"type": "removePageBreakBefore", "target": {"questionNumber": 3, "partLabel": "b"}}]
+    }
+    assert data["usage"]["totalTokens"] == 0
+
+
+def test_selected_diagram_alignment_prompt_uses_native_formatting_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Center this diagram."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q1/b:d1",
+                    "question": {"id": "q1", "questionNumber": 1},
+                    "target": {"kind": "questionBlock", "questionNumber": 1, "blockId": "d1"},
+                    "selectedBlock": {"id": "d1", "kind": "diagram", "anchor": "q:q1/b:d1"},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthArguments"] == {
+        "operations": [
+            {
+                "type": "setDiagramAlignment",
+                "target": {"questionNumber": 1},
+                "diagramAlign": "center",
+                "blockId": "d1",
+            }
+        ]
+    }
+
+
+def test_tidy_spacing_prompt_uses_native_formatting_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Tidy spacing in Question 4."}]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthArguments"] == {
+        "operations": [{"type": "tidyQuestionSpacing", "target": {"questionNumber": 4}}]
+    }
+
+
+def test_selected_module_move_prompt_uses_native_formatting_fast_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "Move this module below the diagram."}],
+            "documentSummary": {
+                "assistantTargetReference": {
+                    "activeAnchor": "q:q1/b:t1",
+                    "question": {"id": "q1", "questionNumber": 1},
+                    "target": {"kind": "questionBlock", "questionNumber": 1, "blockId": "t1"},
+                    "selectedBlock": {"id": "t1", "kind": "text", "anchor": "q:q1/b:t1"},
+                },
+                "questions": [
+                    {
+                        "id": "q1",
+                        "index": 0,
+                        "modules": [
+                            {"id": "d1", "kind": "diagram"},
+                            {"id": "t1", "kind": "text"},
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configured"] is True
+    assert data["toolCalls"][0]["mauthArguments"] == {
+        "operations": [
+            {
+                "type": "moveModule",
+                "blockId": "t1",
+                "to": {"questionNumber": 1},
+                "afterBlockId": "d1",
+            }
+        ]
+    }
+
+
 def test_assistant_help_prompt_uses_native_fast_path(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
