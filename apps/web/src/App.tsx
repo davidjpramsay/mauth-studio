@@ -548,6 +548,17 @@ interface SubsectionDropPreview {
   intent: SubsectionDropIntent;
 }
 
+interface PointerSubsectionDragSession {
+  target: SubsectionDragTarget;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+  lastPreview: SubsectionDropPreview | null;
+  handle: HTMLElement;
+  cleanup: () => void;
+}
+
 interface QuestionDropPreview {
   questionId: string;
   placement: Exclude<DropPlacement, "inside">;
@@ -3012,6 +3023,81 @@ function subsectionKey(target?: SubsectionDragTarget | null) {
   return `${target.kind}:${target.questionId}:${target.partId ?? ""}:${target.subpartId ?? ""}:${target.id}`;
 }
 
+function isSubsectionDragKind(value: string | undefined): value is SubsectionDragKind {
+  return value === "question-block" || value === "part" || value === "part-block" || value === "subpart" || value === "subpart-block";
+}
+
+function isSubsectionContainerKind(value: string | undefined): value is SubsectionContainerKind {
+  return value === "question" || value === "part" || value === "subpart";
+}
+
+function isContainerOrderItemKind(value: string | undefined): value is ContainerOrderItem["kind"] {
+  return value === "block" || value === "part" || value === "subpart";
+}
+
+function subsectionTargetDataAttributes(target: SubsectionDragTarget): Record<string, string> {
+  return {
+    "data-subsection-target-kind": target.kind,
+    "data-subsection-target-question-id": target.questionId,
+    "data-subsection-target-id": target.id,
+    ...(target.partId ? { "data-subsection-target-part-id": target.partId } : {}),
+    ...(target.subpartId ? { "data-subsection-target-subpart-id": target.subpartId } : {}),
+  };
+}
+
+function subsectionContainerDataAttributes(container: SubsectionContainerRef): Record<string, string> {
+  return {
+    "data-subsection-container-kind": container.kind,
+    "data-subsection-container-question-id": container.questionId,
+    ...(container.partId ? { "data-subsection-container-part-id": container.partId } : {}),
+    ...(container.subpartId ? { "data-subsection-container-subpart-id": container.subpartId } : {}),
+  };
+}
+
+function subsectionTargetFromDataset(dataset: DOMStringMap): SubsectionDragTarget | null {
+  const kind = dataset.subsectionTargetKind;
+  const questionId = dataset.subsectionTargetQuestionId;
+  const id = dataset.subsectionTargetId;
+  if (!isSubsectionDragKind(kind) || !questionId || !id) return null;
+  if ((kind === "part-block" || kind === "subpart" || kind === "subpart-block") && !dataset.subsectionTargetPartId) return null;
+  if (kind === "subpart-block" && !dataset.subsectionTargetSubpartId) return null;
+  return {
+    kind,
+    questionId,
+    id,
+    ...(dataset.subsectionTargetPartId ? { partId: dataset.subsectionTargetPartId } : {}),
+    ...(dataset.subsectionTargetSubpartId ? { subpartId: dataset.subsectionTargetSubpartId } : {}),
+  };
+}
+
+function subsectionContainerFromDataset(dataset: DOMStringMap): SubsectionContainerRef | null {
+  const kind = dataset.subsectionContainerKind;
+  const questionId = dataset.subsectionContainerQuestionId;
+  if (!isSubsectionContainerKind(kind) || !questionId) return null;
+  if ((kind === "part" || kind === "subpart") && !dataset.subsectionContainerPartId) return null;
+  if (kind === "subpart" && !dataset.subsectionContainerSubpartId) return null;
+  return {
+    kind,
+    questionId,
+    ...(dataset.subsectionContainerPartId ? { partId: dataset.subsectionContainerPartId } : {}),
+    ...(dataset.subsectionContainerSubpartId ? { subpartId: dataset.subsectionContainerSubpartId } : {}),
+  };
+}
+
+function subsectionTargetElementFromPoint(clientX: number, clientY: number) {
+  const element = document.elementFromPoint(clientX, clientY);
+  if (!(element instanceof Element)) return null;
+  const targetElement = element.closest("[data-subsection-target-kind]");
+  if (!(targetElement instanceof HTMLElement)) return null;
+  const target = subsectionTargetFromDataset(targetElement.dataset);
+  return target ? { element, targetElement, target } : null;
+}
+
+function dragPlacementFromRect(rect: DOMRect, clientY: number): Exclude<DropPlacement, "inside"> {
+  if (rect.height <= 0) return "after";
+  return clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
 function subsectionItemKind(target: SubsectionDragTarget): SubsectionItemKind {
   if (target.kind === "part") return "part";
   if (target.kind === "subpart") return "subpart";
@@ -3086,6 +3172,29 @@ function firstOrderItemInContainer(questions: QuestionBlock[], container: Subsec
   return withoutOrderItem(orderItemsForContainer(questions, container), skipItem)[0];
 }
 
+function subsectionDropWouldKeepSameOrder(
+  active: SubsectionDragTarget,
+  container: SubsectionContainerRef,
+  beforeItem: ContainerOrderItem | undefined,
+  questions: QuestionBlock[],
+) {
+  const activeContainer = subsectionSourceContainer(active);
+  if (containerKey(activeContainer) !== containerKey(container)) return false;
+
+  const activeItem = subsectionOrderItem(active);
+  if (!activeItem) return false;
+
+  const orderedKeys = orderItemsForContainer(questions, container).map(orderItemKey);
+  const activeIndex = orderedKeys.indexOf(orderItemKey(activeItem));
+  if (activeIndex < 0) return false;
+
+  if (!beforeItem) return activeIndex === orderedKeys.length - 1;
+
+  const beforeKey = orderItemKey(beforeItem);
+  const beforeIndex = orderedKeys.indexOf(beforeKey);
+  return beforeIndex === activeIndex || beforeIndex === activeIndex + 1;
+}
+
 function dropIntentForContainer(
   active: SubsectionDragTarget,
   container: SubsectionContainerRef,
@@ -3094,6 +3203,7 @@ function dropIntentForContainer(
 ): SubsectionDropIntent | null {
   if (!canDropIntoContainer(active, container)) return null;
   const beforeItem = placement === "start" ? firstOrderItemInContainer(questions, container, subsectionOrderItem(active)) : undefined;
+  if (subsectionDropWouldKeepSameOrder(active, container, beforeItem, questions)) return null;
 
   if (container.kind === "subpart") {
     return {
@@ -3113,6 +3223,7 @@ function dropIntentBeforeOrderItem(
 ): SubsectionDropIntent | null {
   if (!canDropIntoContainer(active, container)) return null;
   const activeItem = subsectionOrderItem(active);
+  if (subsectionDropWouldKeepSameOrder(active, container, beforeItem, questions)) return null;
   const orderedItems = withoutOrderItem(orderItemsForContainer(questions, container), activeItem);
   if (!orderedItems.some((item) => orderItemKey(item) === orderItemKey(beforeItem))) return null;
 
@@ -3137,6 +3248,7 @@ function subsectionDropIntent(
   if (!canDropIntoContainer(active, targetContainer)) return null;
 
   const beforeItem = placement === "before" ? targetItem : nextOrderItemInContainer(questions, targetContainer, targetItem, activeItem);
+  if (subsectionDropWouldKeepSameOrder(active, targetContainer, beforeItem, questions)) return null;
   if (targetContainer.kind === "subpart") {
     return {
       container: targetContainer,
@@ -3148,40 +3260,32 @@ function subsectionDropIntent(
 }
 
 function dragPlacementFromEvent(event: DragEvent<HTMLElement>): Exclude<DropPlacement, "inside"> {
-  const rect = event.currentTarget.getBoundingClientRect();
-  if (rect.height <= 0) return "after";
-  return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  return dragPlacementFromRect(event.currentTarget.getBoundingClientRect(), event.clientY);
 }
 
-function adjacentSiblingDropPlacement(
-  active: SubsectionDragTarget,
-  target: SubsectionDragTarget,
-  placement: Exclude<DropPlacement, "inside">,
-  questions: QuestionBlock[],
-): Exclude<DropPlacement, "inside"> {
-  const activeContainer = subsectionSourceContainer(active);
-  const targetContainer = subsectionSourceContainer(target);
-  if (containerKey(activeContainer) !== containerKey(targetContainer)) return placement;
-
-  const activeItem = subsectionOrderItem(active);
-  const targetItem = subsectionOrderItem(target);
-  if (!activeItem || !targetItem) return placement;
-
-  const orderedKeys = orderItemsForContainer(questions, targetContainer).map(orderItemKey);
-  const activeIndex = orderedKeys.indexOf(orderItemKey(activeItem));
-  const targetIndex = orderedKeys.indexOf(orderItemKey(targetItem));
-  if (activeIndex < 0 || targetIndex < 0) return placement;
-
-  if (placement === "after" && activeIndex === targetIndex + 1) return "before";
-  if (placement === "before" && activeIndex === targetIndex - 1) return "after";
-  return placement;
+function panelDragRegionFromElement(target: EventTarget | null, currentTarget: HTMLElement): PanelDragRegion | null {
+  if (!(target instanceof Element)) return null;
+  const region = target.closest("[data-panel-region]");
+  if (!(region instanceof HTMLElement) || !currentTarget.contains(region)) return null;
+  return region.dataset.panelRegion === "body" || region.dataset.panelRegion === "header" ? region.dataset.panelRegion : null;
 }
 
 function panelDragRegionFromEvent(event: DragEvent<HTMLElement>): PanelDragRegion | null {
-  if (!(event.target instanceof Element)) return null;
-  const region = event.target.closest("[data-panel-region]");
-  if (!(region instanceof HTMLElement) || !event.currentTarget.contains(region)) return null;
-  return region.dataset.panelRegion === "body" || region.dataset.panelRegion === "header" ? region.dataset.panelRegion : null;
+  return panelDragRegionFromElement(event.target, event.currentTarget);
+}
+
+function panelInsideDropIntentForRegion(
+  active: SubsectionDragTarget,
+  target: SubsectionDragTarget,
+  region: PanelDragRegion | null,
+  questions: QuestionBlock[],
+): SubsectionDropIntent | null {
+  if (region !== "body") return null;
+  const activeKind = subsectionItemKind(active);
+  if (target.kind === "part" && (activeKind === "block" || activeKind === "subpart")) {
+    return dropIntentForContainer(active, { kind: "part", questionId: target.questionId, partId: target.id }, questions, "end");
+  }
+  return null;
 }
 
 function panelInsideDropIntent(
@@ -3190,12 +3294,7 @@ function panelInsideDropIntent(
   event: DragEvent<HTMLElement>,
   questions: QuestionBlock[],
 ): SubsectionDropIntent | null {
-  if (panelDragRegionFromEvent(event) !== "body") return null;
-  const activeKind = subsectionItemKind(active);
-  if (target.kind === "part" && (activeKind === "block" || activeKind === "subpart")) {
-    return dropIntentForContainer(active, { kind: "part", questionId: target.questionId, partId: target.id }, questions, "end");
-  }
-  return null;
+  return panelInsideDropIntentForRegion(active, target, panelDragRegionFromEvent(event), questions);
 }
 
 function subsectionDropPreviewForEvent(
@@ -3207,7 +3306,7 @@ function subsectionDropPreviewForEvent(
   const insideIntent = panelInsideDropIntent(active, target, event, questions);
   if (insideIntent) return { placement: "inside", intent: insideIntent };
   const requestedPlacement = dragPlacementFromEvent(event);
-  const placement = adjacentSiblingDropPlacement(active, target, requestedPlacement, questions);
+  const placement = requestedPlacement;
   const intent = subsectionDropIntent(active, target, placement, questions);
   if (intent) return { placement, intent };
   if (placement !== requestedPlacement) {
@@ -3215,6 +3314,35 @@ function subsectionDropPreviewForEvent(
     return requestedIntent ? { placement: requestedPlacement, intent: requestedIntent } : null;
   }
   return null;
+}
+
+function subsectionDropPreviewForPointer(
+  active: SubsectionDragTarget,
+  target: SubsectionDragTarget,
+  targetElement: HTMLElement,
+  eventTarget: EventTarget | null,
+  clientY: number,
+  questions: QuestionBlock[],
+): Pick<SubsectionDropPreview, "placement" | "intent"> | null {
+  const insideIntent = panelInsideDropIntentForRegion(active, target, panelDragRegionFromElement(eventTarget, targetElement), questions);
+  if (insideIntent) return { placement: "inside", intent: insideIntent };
+  const requestedPlacement = dragPlacementFromRect(targetElement.getBoundingClientRect(), clientY);
+  const placement = requestedPlacement;
+  const intent = subsectionDropIntent(active, target, placement, questions);
+  if (intent) return { placement, intent };
+  if (placement !== requestedPlacement) {
+    const requestedIntent = subsectionDropIntent(active, target, requestedPlacement, questions);
+    return requestedIntent ? { placement: requestedPlacement, intent: requestedIntent } : null;
+  }
+  return null;
+}
+
+function subsectionDropPreviewTargetKey(target: SubsectionDragTarget, preview: Pick<SubsectionDropPreview, "placement" | "intent">) {
+  if (preview.placement === "inside") return subsectionKey(target);
+  const beforeItem =
+    preview.intent.beforeItem ??
+    (preview.intent.beforeBlockId ? ({ kind: "block", id: preview.intent.beforeBlockId } satisfies ContainerOrderItem) : undefined);
+  return beforeItem ? itemDropKey(preview.intent.container, beforeItem) : containerDropKey(preview.intent.container, "end");
 }
 
 function serializeSubsectionDrag(target: SubsectionDragTarget) {
@@ -8274,10 +8402,15 @@ export default function App() {
   const pendingEditorJumpAnchorRef = useRef<string | null>(null);
   const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
   const previewEditClickStartRef = useRef<PreviewEditClickStart | null>(null);
+  const pointerSubsectionDragRef = useRef<PointerSubsectionDragSession | null>(null);
   const deleteActiveEditorSelectionRef = useRef<() => boolean>(() => false);
   const previewZoomRef = useRef(1);
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => pointerSubsectionDragRef.current?.cleanup();
+  }, []);
 
   const collectCurrentRenderedPreviewMetrics = useCallback(
     () => collectRenderedPreviewMetrics(previewPaneRef.current, activeTocItemId),
@@ -11454,6 +11587,149 @@ export default function App() {
     );
   }
 
+  function clearPointerSubsectionDrag() {
+    pointerSubsectionDragRef.current?.cleanup();
+  }
+
+  function subsectionPointerDropPreview(clientX: number, clientY: number, active: SubsectionDragTarget): SubsectionDropPreview | null {
+    const element = document.elementFromPoint(clientX, clientY);
+    if (element instanceof Element) {
+      const itemDropElement = element.closest("[data-subsection-item-drop]");
+      if (itemDropElement instanceof HTMLElement) {
+        const container = subsectionContainerFromDataset(itemDropElement.dataset);
+        const beforeKind = itemDropElement.dataset.subsectionBeforeItemKind;
+        const beforeId = itemDropElement.dataset.subsectionBeforeItemId;
+        if (container && isContainerOrderItemKind(beforeKind) && beforeId) {
+          const beforeItem: ContainerOrderItem = { kind: beforeKind, id: beforeId };
+          const intent = dropIntentBeforeOrderItem(active, container, beforeItem, questionsRef.current);
+          if (intent) return { targetKey: itemDropKey(container, beforeItem), placement: "before", intent };
+        }
+      }
+
+      const containerDropElement = element.closest("[data-subsection-container-drop]");
+      if (containerDropElement instanceof HTMLElement) {
+        const container = subsectionContainerFromDataset(containerDropElement.dataset);
+        const placement = containerDropElement.dataset.subsectionContainerPlacement === "start" ? "start" : "end";
+        const intent = container ? dropIntentForContainer(active, container, questionsRef.current, placement) : null;
+        if (container && intent) {
+          return { targetKey: containerDropKey(container, placement), placement: "inside", intent };
+        }
+      }
+    }
+
+    const targetCandidate = subsectionTargetElementFromPoint(clientX, clientY);
+    if (!targetCandidate) return null;
+    const preview = subsectionDropPreviewForPointer(
+      active,
+      targetCandidate.target,
+      targetCandidate.targetElement,
+      targetCandidate.element,
+      clientY,
+      questionsRef.current,
+    );
+    return preview
+      ? { targetKey: subsectionDropPreviewTargetKey(targetCandidate.target, preview), placement: preview.placement, intent: preview.intent }
+      : null;
+  }
+
+  function scrollEditorPaneNearPointer(clientY: number) {
+    const pane = editorPaneRef.current;
+    if (!pane) return;
+    const rect = pane.getBoundingClientRect();
+    const edgeSize = 72;
+    const maxStep = 18;
+    const topDistance = clientY - rect.top;
+    const bottomDistance = rect.bottom - clientY;
+    if (topDistance >= 0 && topDistance < edgeSize) {
+      pane.scrollTop -= Math.ceil(((edgeSize - topDistance) / edgeSize) * maxStep);
+    } else if (bottomDistance >= 0 && bottomDistance < edgeSize) {
+      pane.scrollTop += Math.ceil(((edgeSize - bottomDistance) / edgeSize) * maxStep);
+    }
+  }
+
+  function beginPointerSubsectionDrag(session: PointerSubsectionDragSession) {
+    if (session.active) return;
+    session.active = true;
+    setDraggedSubsection(session.target);
+    setDragOverSubsection(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+  }
+
+  function handleSubsectionPointerDown(event: ReactPointerEvent<HTMLElement>, target: SubsectionDragTarget) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearPointerSubsectionDrag();
+
+    const handle = event.currentTarget;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      if (moveEvent.pointerId !== session.pointerId) return;
+      const distance = Math.hypot(moveEvent.clientX - session.startX, moveEvent.clientY - session.startY);
+      if (!session.active && distance < 4) return;
+      moveEvent.preventDefault();
+      beginPointerSubsectionDrag(session);
+      scrollEditorPaneNearPointer(moveEvent.clientY);
+      const preview = subsectionPointerDropPreview(moveEvent.clientX, moveEvent.clientY, session.target);
+      session.lastPreview = preview;
+      setDragOverSubsection(preview);
+    }
+
+    function finishPointerDrag(finishEvent: globalThis.PointerEvent) {
+      if (finishEvent.pointerId !== session.pointerId) return;
+      finishEvent.preventDefault();
+      finishEvent.stopPropagation();
+      const preview = session.active
+        ? (subsectionPointerDropPreview(finishEvent.clientX, finishEvent.clientY, session.target) ?? session.lastPreview)
+        : null;
+      session.cleanup();
+      if (preview) moveSubsection(session.target, preview.intent);
+    }
+
+    const session: PointerSubsectionDragSession = {
+      target,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      lastPreview: null,
+      handle,
+      cleanup: () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", finishPointerDrag);
+        window.removeEventListener("pointercancel", finishPointerDrag);
+        document.body.style.userSelect = previousUserSelect;
+        document.body.style.cursor = previousCursor;
+        try {
+          if (handle.hasPointerCapture(session.pointerId)) handle.releasePointerCapture(session.pointerId);
+        } catch {
+          // Pointer capture may already be released by the browser.
+        }
+        if (pointerSubsectionDragRef.current === session) pointerSubsectionDragRef.current = null;
+        setDraggedSubsection(null);
+        setDragOverSubsection(null);
+      },
+    };
+
+    pointerSubsectionDragRef.current = session;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // Window-level listeners below keep the drag usable even without capture.
+    }
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", finishPointerDrag, { passive: false });
+    window.addEventListener("pointercancel", finishPointerDrag, { passive: false });
+  }
+
   function handleSubsectionDragStart(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
     event.stopPropagation();
     const payload = serializeSubsectionDrag(target);
@@ -11481,7 +11757,11 @@ export default function App() {
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
-    setDragOverSubsection({ targetKey: subsectionKey(target), placement: preview.placement, intent: preview.intent });
+    setDragOverSubsection({
+      targetKey: subsectionDropPreviewTargetKey(target, preview),
+      placement: preview.placement,
+      intent: preview.intent,
+    });
   }
 
   function handleSubsectionDragLeave(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
@@ -11492,8 +11772,12 @@ export default function App() {
 
   function handleSubsectionDrop(event: DragEvent<HTMLElement>, target: SubsectionDragTarget) {
     const active = readSubsectionDrag(event);
-    const activePreview = dragOverSubsection?.targetKey === subsectionKey(target) ? dragOverSubsection : null;
     const preview = active ? subsectionDropPreviewForEvent(active, target, event, questionsRef.current) : null;
+    const activePreview = preview
+      ? dragOverSubsection?.targetKey === subsectionDropPreviewTargetKey(target, preview)
+        ? dragOverSubsection
+        : null
+      : null;
     const intent = activePreview?.intent ?? preview?.intent ?? null;
     if (!active || !intent) return;
     event.preventDefault();
@@ -11622,10 +11906,6 @@ export default function App() {
       draggedSubsection && subsectionKey(draggedSubsection) === subsectionKey(target) && "scale-[0.995] opacity-70 shadow-2xl",
       dropPlacement === "inside" &&
         "bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background shadow-[0_0_0_4px_hsl(var(--primary)/0.10)]",
-      dropPlacement === "before" &&
-        "before:absolute before:-top-2 before:left-2 before:right-2 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
-      dropPlacement === "after" &&
-        "after:absolute after:-bottom-2 after:left-2 after:right-2 after:z-20 after:h-1 after:rounded-full after:bg-primary after:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] after:content-['']",
     );
   }
 
@@ -11649,6 +11929,9 @@ export default function App() {
     return (
       <div
         key={targetKey}
+        data-subsection-container-drop="true"
+        data-subsection-container-placement={placement}
+        {...subsectionContainerDataAttributes(container)}
         onDragOver={(event) => handleContainerDropZoneDragOver(event, container, placement)}
         onDragLeave={(event) => handleContainerDropZoneDragLeave(event, container, placement)}
         onDrop={(event) => handleContainerDropZoneDrop(event, container, placement)}
@@ -11689,6 +11972,10 @@ export default function App() {
     return (
       <div
         key={targetKey}
+        data-subsection-item-drop="true"
+        data-subsection-before-item-kind={beforeItem.kind}
+        data-subsection-before-item-id={beforeItem.id}
+        {...subsectionContainerDataAttributes(container)}
         onDragOver={(event) => handleItemDropZoneDragOver(event, container, beforeItem)}
         onDragLeave={(event) => handleItemDropZoneDragLeave(event, container, beforeItem)}
         onDrop={(event) => handleItemDropZoneDrop(event, container, beforeItem)}
@@ -11711,20 +11998,27 @@ export default function App() {
 
   function subsectionDragHandle(target: SubsectionDragTarget, label: string) {
     return (
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
+      <div
+        role="button"
+        tabIndex={0}
         draggable
+        data-subsection-drag-handle="true"
         title={label}
         aria-label={label}
         onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => handleSubsectionPointerDown(event, target)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
         onDragStart={(event) => handleSubsectionDragStart(event, target)}
         onDragEnd={handleSubsectionDragEnd}
-        className="size-8 cursor-grab text-muted-foreground active:cursor-grabbing"
+        className="inline-flex size-8 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
       >
-        <GripVertical />
-      </Button>
+        <GripVertical className="pointer-events-none size-4" aria-hidden="true" />
+      </div>
     );
   }
 
@@ -12070,6 +12364,7 @@ export default function App() {
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
+      ...subsectionTargetDataAttributes(blockTarget),
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
@@ -12233,6 +12528,7 @@ export default function App() {
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
+      ...subsectionTargetDataAttributes(partBlockTarget),
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
@@ -12398,6 +12694,7 @@ export default function App() {
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
+      ...subsectionTargetDataAttributes(subpartBlockTarget),
       className: wrapperClassName,
       onPointerDownCapture: activateBlockAnchor,
       onFocusCapture: activateBlockAnchor,
@@ -12624,6 +12921,12 @@ export default function App() {
     const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
     const subpartActive = isActiveEditorAnchor(subpartAnchor);
     const subpartUsesSolutionSpace = safeMarkValue(subpart.marks) > 0;
+    const subpartContainer: SubsectionContainerRef = {
+      kind: "subpart",
+      questionId: question.id,
+      partId: part.id,
+      subpartId: subpart.id,
+    };
     const subpartSolutionSlotAction = {
       label: "Solution slot",
       tooltip: "Add paired answer space and solution text",
@@ -12636,6 +12939,7 @@ export default function App() {
         key={subpart.id}
         data-drag-preview
         data-scroll-anchor={subpartAnchor}
+        {...subsectionTargetDataAttributes(subpartTarget)}
         className={cn("rounded-md transition-all", subsectionDragClasses(subpartTarget))}
         onDragOver={(event) => {
           if (handleEditorPageBreakDragOver(event, subpartTarget)) return;
@@ -12675,23 +12979,19 @@ export default function App() {
           active={subpartActive}
           openSignal={subpartOpenSignal}
         >
-          {subpart.contentBlocks.some((block) => block.kind !== "pageBreak")
-            ? containerDropZone(
-                { kind: "subpart", questionId: question.id, partId: part.id, subpartId: subpart.id },
-                "start",
-                Boolean(draggedSubsection),
-              )
-            : null}
           <div className="flex flex-col gap-3">
-            {subpart.contentBlocks.map((block, blockIndex) =>
-              block.kind === "pageBreak" ? null : renderSubpartContentBlock(question, part, subpart, block, blockIndex),
-            )}
+            {subpart.contentBlocks.map((block, blockIndex) => {
+              if (block.kind === "pageBreak") return null;
+              const beforeItem: ContainerOrderItem = { kind: "block", id: block.id };
+              return (
+                <Fragment key={block.id}>
+                  {itemDropZone(subpartContainer, beforeItem, Boolean(draggedSubsection))}
+                  {renderSubpartContentBlock(question, part, subpart, block, blockIndex)}
+                </Fragment>
+              );
+            })}
           </div>
-          {containerDropZone(
-            { kind: "subpart", questionId: question.id, partId: part.id, subpartId: subpart.id },
-            "end",
-            Boolean(draggedSubsection),
-          )}
+          {containerDropZone(subpartContainer, "end", Boolean(draggedSubsection))}
           <ContentInsertionActions
             buttonLabel="Add"
             centered
@@ -12760,6 +13060,7 @@ export default function App() {
       <div key={part.id} data-scroll-anchor={partAnchor}>
         <div
           data-drag-preview
+          {...subsectionTargetDataAttributes(partTarget)}
           className={cn("rounded-md transition-all", subsectionDragClasses(partTarget))}
           onDragOver={(event) => {
             if (handleEditorPageBreakDragOver(event, partTarget)) return;
@@ -13248,13 +13549,6 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                {questionItems.length
-                                  ? containerDropZone(
-                                      { kind: "question", questionId: question.id },
-                                      "start",
-                                      Boolean(draggedSubsection || draggedEditorPageBreak),
-                                    )
-                                  : null}
                                 <div className="flex flex-col gap-3">
                                   {questionItems.map((item, itemIndex) => {
                                     const beforeItem: ContainerOrderItem =
