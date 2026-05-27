@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: math-app/pnpm-lock.yaml
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,11 +36,13 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install web dependencies
+        working-directory: math-app
         run: pnpm install --frozen-lockfile
 
       - name: Install API dependencies
-        working-directory: apps/api
+        working-directory: math-app/apps/api
         run: uv sync
 
       - name: Run checks
+        working-directory: math-app
         run: pnpm check
