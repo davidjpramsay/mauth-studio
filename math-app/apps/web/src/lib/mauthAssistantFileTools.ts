@@ -350,8 +350,11 @@ export async function runMauthAssistantFileTool(
     }
 
     if (call.name === "mauth.files.save" || call.name === "mauth.files.saveAs") {
-      const rawPath = stringArg(call.arguments, "path") ?? stringArg(call.arguments, "name");
-      if (!rawPath) return failFileTool(call.name, "File path or name is required.");
+      const rawPath =
+        stringArg(call.arguments, "path") ??
+        stringArg(call.arguments, "name") ??
+        (call.name === "mauth.files.save" ? (context.activeFilePath ?? undefined) : undefined);
+      if (!rawPath) return failFileTool(call.name, "This test has not been saved yet. Use save as with a file name first.");
       const content = stringArg(call.arguments, "content");
       if (typeof content !== "string") return failFileTool(call.name, "File content is required.");
       const files = await driver.listFiles(context.projectId);
