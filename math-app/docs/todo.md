@@ -280,6 +280,7 @@ Status: file-backed prototype implemented.
 - The header distinguishes saved project files from recovery drafts: saved files show `Saved to file`, changed files show `Unsaved file changes`, new unsaved documents show `New file not saved`, and the tooltip exposes the active project path plus draft-backup state. Draft backup is recovery-only, not a saved project file.
 - Version snapshots are created before overwrite, restore, and delete. Restoring a version creates a new current revision.
 - Save conflict protection is implemented for the active editor file: browser/manual/assistant saves use the revision loaded with the file, restored autosave drafts keep that revision, create-only saves use `baseRevision: null`, and stale/missing revisions block Save with a red header warning instead of overwriting disk changes.
+- Assistant file opens now protect current work at the adapter boundary: dirty saved active files are saved with the loaded revision before opening the target, while dirty unsaved documents block the open and ask for Save as first.
 - Product direction: make file save/revision handling quiet and automatic. Safe background work should save dirty active files before file operations, refresh file state, and keep autosave drafts aligned after API/Codex edits. User-facing messages should stay short and appear only for real data-loss choices.
 - Logo asset storage has a backend-backed prototype under `storage/assets/logos`.
 

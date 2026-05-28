@@ -8314,6 +8314,16 @@ export default function App() {
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
   const [legacySavedTests, setLegacySavedTests] = useState<SavedTest[]>(loadLegacySavedTests);
   const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
+  const cleanUnsavedDocumentFingerprintRef = useRef<string | null>(
+    initialEditorDraft
+      ? null
+      : editorDocumentFingerprint(
+          DEFAULT_FRONT_MATTER,
+          initialQuestions,
+          DEFAULT_FORMATTING_CONFIG,
+          selectedLogoForFrontMatter(logos, DEFAULT_FRONT_MATTER),
+        ),
+  );
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
   const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
   const [storageHydrated, setStorageHydrated] = useState(false);
@@ -8439,6 +8449,7 @@ export default function App() {
     ensureProject,
     activeProjectFilePathRef,
     activeProjectFileRevisionRef,
+    hasUnsavedDocumentChanges: hasUnsavedAssistantDocumentChanges,
     getActiveAnchor: () => activeTocItemId,
     getRenderedPreviewMetrics: collectCurrentRenderedPreviewMetrics,
     waitForRenderedPreviewMetrics,
@@ -9231,6 +9242,13 @@ export default function App() {
     );
   }
 
+  function hasUnsavedAssistantDocumentChanges() {
+    const currentFingerprint = currentAssistantDocumentFingerprint();
+    if (activeProjectFilePathRef.current) return lastProjectSaveFingerprint !== currentFingerprint;
+    const cleanUnsavedFingerprint = cleanUnsavedDocumentFingerprintRef.current;
+    return cleanUnsavedFingerprint === null || cleanUnsavedFingerprint !== currentFingerprint;
+  }
+
   function parseAssistantProjectDocument(document: ProjectFileDocument): EditorDocumentState {
     const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
     const savedTest = normalizeSavedTest(parsed);
@@ -9429,6 +9447,12 @@ export default function App() {
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
     formattingConfigRef.current = nextFormattingConfig;
+    cleanUnsavedDocumentFingerprintRef.current = editorDocumentFingerprint(
+      nextFrontMatter,
+      nextQuestions,
+      nextFormattingConfig,
+      currentLogo,
+    );
     activeProjectFilePathRef.current = null;
     activeProjectFileRevisionRef.current = null;
     setActiveProjectFilePath(null);

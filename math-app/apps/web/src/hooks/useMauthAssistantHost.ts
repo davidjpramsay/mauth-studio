@@ -42,6 +42,7 @@ interface UseMauthAssistantHostOptions<Q extends MauthQuestionLike, F extends ob
   ensureProject: () => ProjectSummary | Promise<ProjectSummary>;
   activeProjectFilePathRef: RefValue<string | null>;
   activeProjectFileRevisionRef: RefValue<number | null>;
+  hasUnsavedDocumentChanges: () => boolean;
   getActiveAnchor?: () => string | null;
   getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
   waitForRenderedPreviewMetrics?: (context: MauthAssistantToolCommitContext) => Promise<MauthPreviewRenderedMetrics | null>;
@@ -195,6 +196,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
   ensureProject,
   activeProjectFilePathRef,
   activeProjectFileRevisionRef,
+  hasUnsavedDocumentChanges,
   getActiveAnchor,
   getRenderedPreviewMetrics,
   waitForRenderedPreviewMetrics,
@@ -218,6 +220,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
       getProjectId: async () => (await ensureProject()).id,
       getActiveFilePath: () => activeProjectFilePathRef.current,
       getActiveFileRevision: () => activeProjectFileRevisionRef.current,
+      hasUnsavedDocumentChanges,
       getActiveAnchor,
       getRenderedPreviewMetrics,
       waitForRenderedPreviewMetrics,
@@ -248,6 +251,7 @@ export function useMauthAssistantHost<Q extends MauthQuestionLike, F extends obj
     documentOptions,
     ensureProject,
     getDocument,
+    hasUnsavedDocumentChanges,
     getActiveAnchor,
     getRenderedPreviewMetrics,
     waitForRenderedPreviewMetrics,
