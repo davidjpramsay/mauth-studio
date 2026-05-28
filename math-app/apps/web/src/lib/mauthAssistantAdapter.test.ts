@@ -124,6 +124,9 @@ function createMemoryDriver(seed: StoredFile[] = []): MauthProjectFileDriver {
     async saveFile(_projectId, path, request: ProjectFileSaveRequest) {
       ensureParentFolders(path);
       const existing = files.get(path);
+      if (typeof request.baseRevision === "number" && existing && existing.summary.revision !== request.baseRevision) {
+        throw new Error("File has changed since it was loaded");
+      }
       const kind = request.kind === "folder" ? "folder" : "file";
       const summary: ProjectFileSummary = {
         ...(existing?.summary ?? fileSummary(path, kind)),
@@ -166,6 +169,7 @@ function adapterHost(
     getProjectId: () => "project-1",
     getActiveFilePath: () => activeFilePath,
     getActiveFileRevision: () => activeFileRevision,
+    hasUnsavedDocumentChanges: () => false,
     setActiveFilePath: (path, context) => {
       activeFilePath = path;
       const data = context.data as { document?: ProjectFileDocument } | undefined;
@@ -1132,6 +1136,98 @@ test("opens a file by parsing and committing the project-file content", async ()
   assert.equal(result.committedDocument, true);
   assert.equal(harness.document.frontMatter.assessmentTitle, "Opened");
   assert.deepEqual(harness.activePaths, ["tests/Opened.test.json"]);
+});
+
+test("saves a dirty active file before opening another file", async () => {
+  const openedDocument = documentFixture("Opened");
+  const driver = createMemoryDriver([
+    { summary: fileSummary("tests", "folder"), content: null, versions: [] },
+    { summary: fileSummary("tests/Open.test.json", "file"), content: JSON.stringify(documentFixture("Old")), versions: [] },
+    { summary: fileSummary("tests/Opened.test.json", "file"), content: JSON.stringify(openedDocument), versions: [] },
+  ]);
+  const harness = adapterHost({ fileDriver: driver, hasUnsavedDocumentChanges: () => true }, documentFixture("Updated"));
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.open",
+    arguments: { path: "Opened" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.committedDocument, true);
+  assert.deepEqual(result.changedPaths, ["tests/Open.test.json"]);
+  assert.deepEqual(harness.activePaths, ["tests/Open.test.json", "tests/Opened.test.json"]);
+  assert.equal(harness.document.frontMatter.assessmentTitle, "Opened");
+  const savedCurrent = await driver.getFile("project-1", "tests/Open.test.json");
+  assert.equal(JSON.parse(savedCurrent.content ?? "{}").frontMatter.assessmentTitle, "Updated");
+  assert.equal(savedCurrent.revision, 2);
+});
+
+test("does not save a clean active file before opening another file", async () => {
+  const openedDocument = documentFixture("Opened");
+  const driver = createMemoryDriver([
+    { summary: fileSummary("tests", "folder"), content: null, versions: [] },
+    { summary: fileSummary("tests/Open.test.json", "file"), content: JSON.stringify(documentFixture("Old")), versions: [] },
+    { summary: fileSummary("tests/Opened.test.json", "file"), content: JSON.stringify(openedDocument), versions: [] },
+  ]);
+  const harness = adapterHost({ fileDriver: driver, hasUnsavedDocumentChanges: () => false }, documentFixture("Updated"));
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.open",
+    arguments: { path: "Opened" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.changedPaths, []);
+  assert.deepEqual(harness.activePaths, ["tests/Opened.test.json"]);
+  const savedCurrent = await driver.getFile("project-1", "tests/Open.test.json");
+  assert.equal(JSON.parse(savedCurrent.content ?? "{}").frontMatter.assessmentTitle, "Old");
+  assert.equal(savedCurrent.revision, 1);
+});
+
+test("refuses to open another file when dirty current work has not been saved as a file", async () => {
+  const driver = createMemoryDriver([
+    { summary: fileSummary("tests", "folder"), content: null, versions: [] },
+    { summary: fileSummary("tests/Opened.test.json", "file"), content: JSON.stringify(documentFixture("Opened")), versions: [] },
+  ]);
+  const harness = adapterHost({ fileDriver: driver, hasUnsavedDocumentChanges: () => true }, documentFixture("Unsaved"));
+  harness.setActiveFile(null, null);
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.open",
+    arguments: { path: "Opened" },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.toolName, "mauth.files.open");
+  assert.match(result.error ?? "", /save it as a file/i);
+  assert.equal(result.committedDocument, false);
+  assert.equal(harness.document.frontMatter.assessmentTitle, "Unsaved");
+  assert.deepEqual(harness.commits, []);
+  assert.deepEqual(harness.activePaths, []);
+});
+
+test("does not open another file when the dirty active-file pre-save conflicts", async () => {
+  const driver = createMemoryDriver([
+    { summary: fileSummary("tests", "folder"), content: null, versions: [] },
+    { summary: fileSummary("tests/Open.test.json", "file", 2), content: JSON.stringify(documentFixture("Disk")), versions: [] },
+    { summary: fileSummary("tests/Opened.test.json", "file"), content: JSON.stringify(documentFixture("Opened")), versions: [] },
+  ]);
+  const harness = adapterHost({ fileDriver: driver, hasUnsavedDocumentChanges: () => true }, documentFixture("Updated"));
+  harness.setActiveFile("tests/Open.test.json", 1);
+
+  const result = await runMauthAssistantAdapterTool(harness.host, {
+    name: "mauth.files.open",
+    arguments: { path: "Opened" },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.toolName, "mauth.files.open");
+  assert.match(result.error ?? "", /could not save/i);
+  assert.match(result.error ?? "", /changed since it was loaded/i);
+  assert.equal(result.committedDocument, false);
+  assert.equal(harness.document.frontMatter.assessmentTitle, "Updated");
+  assert.deepEqual(harness.commits, []);
+  assert.deepEqual(harness.activePaths, []);
 });
 
 test("clears active file path when deleting the active file", async () => {

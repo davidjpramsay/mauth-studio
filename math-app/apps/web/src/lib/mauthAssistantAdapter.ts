@@ -78,6 +78,7 @@ export interface MauthAssistantAdapterHost<
   getProjectId?: () => string | null | Promise<string | null>;
   getActiveFilePath?: () => string | null;
   getActiveFileRevision?: () => number | null;
+  hasUnsavedDocumentChanges?: () => boolean;
   getActiveAnchor?: () => string | null;
   getRenderedPreviewMetrics?: () => MauthPreviewRenderedMetrics | null;
   waitForRenderedPreviewMetrics?: (context: MauthAssistantToolCommitContext) => Promise<MauthPreviewRenderedMetrics | null>;
@@ -618,6 +619,30 @@ function nextActiveFilePath(result: MauthAssistantFileToolResult) {
   return result.changedPaths.length === 1 ? result.changedPaths[0] : undefined;
 }
 
+function uniqueChangedPaths(...pathGroups: Array<readonly string[] | undefined>) {
+  return [...new Set(pathGroups.flatMap((paths) => paths ?? []))];
+}
+
+function fileOpenPreflightFailureResult<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
+  error: string,
+  activeFilePath: string | null | undefined,
+  saveResult?: MauthAssistantFileToolResult,
+): MauthAssistantAdapterResult<Q, F, C> {
+  return {
+    ok: false,
+    toolName: "mauth.files.open",
+    kind: "file",
+    data: saveResult?.data,
+    files: saveResult?.files,
+    changedIds: [],
+    changedPaths: saveResult?.changedPaths ?? [],
+    warnings: [{ code: "assistant-file-open-preflight-save-failed", message: error }],
+    error,
+    committedDocument: false,
+    activeFilePath,
+  };
+}
+
 async function documentOptions<Q extends MauthQuestionLike, F extends object, C extends object = Record<string, unknown>>(
   host: MauthAssistantAdapterHost<Q, F, C>,
 ): Promise<MauthAssistantToolOptions<Q, F, C>> {
@@ -742,6 +767,45 @@ export async function runMauthAssistantAdapterTool<
     return failAdapterTool(call.name, "file", "Assistant project id is not configured.") as MauthAssistantAdapterResult<Q, F, C>;
   }
 
+  let preOpenSaveResult: MauthAssistantFileToolResult | null = null;
+  if (call.name === "mauth.files.open" && host.hasUnsavedDocumentChanges?.()) {
+    const activeFilePath = host.getActiveFilePath?.() ?? null;
+    if (!activeFilePath) {
+      return fileOpenPreflightFailureResult<Q, F, C>(
+        "The current test has unsaved changes and has not been saved as a file yet. Save it as a file before opening another test.",
+        activeFilePath,
+      );
+    }
+
+    const saveCall = await addSerializedContent(host, { name: "mauth.files.save", arguments: {} });
+    const saveResult = await runMauthAssistantFileTool(
+      host.fileDriver,
+      {
+        projectId: resolvedProjectId,
+        activeFilePath,
+        activeFileRevision: host.getActiveFileRevision?.() ?? null,
+      },
+      saveCall,
+    );
+    const saveContext = { toolName: "mauth.files.save" as const, reason: "assistant-file-open-preflight-save", data: saveResult.data };
+    if (saveResult.ok && saveResult.files && host.onFilesChanged) {
+      await host.onFilesChanged(saveResult.files, saveContext);
+    }
+
+    if (!saveResult.ok) {
+      const saveError = saveResult.error ? ` ${saveResult.error}` : "";
+      return fileOpenPreflightFailureResult<Q, F, C>(
+        `Could not save the current test before opening another file.${saveError}`,
+        activeFilePath,
+        saveResult,
+      );
+    }
+
+    const savedPath = nextActiveFilePath(saveResult);
+    if (savedPath && host.setActiveFilePath) await host.setActiveFilePath(savedPath, saveContext);
+    preOpenSaveResult = saveResult;
+  }
+
   const fileCall = await addSerializedContent(host, call as MauthAssistantFileToolCall);
   const result = await runMauthAssistantFileTool(
     host.fileDriver,
@@ -767,7 +831,11 @@ export async function runMauthAssistantAdapterTool<
     const document = await host.parseProjectFileDocument(projectDocument, context);
     await host.commitDocument(document, { ...context, reason: "assistant-file-open" });
     if (host.setActiveFilePath) await host.setActiveFilePath(projectDocument.path, context);
-    return fileToolResult(result, document, true, projectDocument.path);
+    return {
+      ...fileToolResult(result, document, true, projectDocument.path),
+      files: result.files ?? preOpenSaveResult?.files,
+      changedPaths: uniqueChangedPaths(preOpenSaveResult?.changedPaths, result.changedPaths),
+    };
   }
 
   if (result.ok && (call.name === "mauth.files.save" || call.name === "mauth.files.saveAs")) {

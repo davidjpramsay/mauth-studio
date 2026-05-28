@@ -310,7 +310,7 @@ export function describeMauthAssistantFileTools(): MauthAssistantFileToolDescrip
       "Use saveAs for new tests and save for an explicit existing file path.",
       "Use duplicate/rename/move/delete through the project-file driver so metadata, revisions, and version snapshots remain consistent.",
       "After a file tool changes the tree, refresh the file list before making dependent file operations.",
-      "The caller still owns active editor state, unsaved-current-document handling, and autosave draft updates.",
+      "The adapter owns active editor state, dirty-current-document protection before open, and autosave draft updates.",
     ],
   };
 }
