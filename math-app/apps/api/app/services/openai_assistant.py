@@ -244,6 +244,34 @@ FILE_SAVE_AS_PATTERN = re.compile(
     r"\bsave(?:\s+(?:this|current))?(?:\s+(?:file|test|document))?\s+as\s+(?P<path>[^\n]{1,160})$",
     re.IGNORECASE,
 )
+FILE_CREATE_FOLDER_PATTERN = re.compile(
+    r"\b(?:create|make|add)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_DUPLICATE_PATTERN = re.compile(
+    r"\b(?:duplicate|copy)\s+(?:the\s+)?(?:project\s+)?(?:file|test|folder)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_DELETE_PATTERN = re.compile(
+    r"\b(?:delete|remove)\s+(?:the\s+)?(?:project\s+)?(?:file|test|folder)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_RENAME_PATTERN = re.compile(
+    r"\brename\s+(?:the\s+)?(?:project\s+)?(?:file|test|folder)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160}?)\s+to\s+(?P<new_name>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_MOVE_PATTERN = re.compile(
+    r"\bmove\s+(?:the\s+)?(?:project\s+)?(?:file|test|folder)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160}?)\s+(?:to|into)\s+(?:the\s+)?(?:folder\s+)?(?P<target>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_VERSIONS_LIST_PATTERN = re.compile(
+    r"\b(?:show|list)\s+(?:the\s+)?(?:versions?|version\s+history|revision\s+history|history)\s+(?:for|of)\s+(?:the\s+)?(?:file|test)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
+FILE_RESTORE_VERSION_PATTERN = re.compile(
+    r"\brestore\s+(?:version|revision)\s+(?P<version_id>[^\n]{1,160}?)\s+(?:for|of)\s+(?:the\s+)?(?:file|test)\s+(?:called\s+|named\s+)?(?P<path>[^\n]{1,160})$",
+    re.IGNORECASE,
+)
 FILE_SAVE_CURRENT_TERMS = (
     "save",
     "save file",
@@ -6127,6 +6155,8 @@ def direct_formatting_response(model: str, request: AssistantChatRequest) -> dic
 
 def clean_file_path_value(value: str) -> str:
     cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] in ("'", '"', "`") and cleaned[-1] == cleaned[0]:
+        cleaned = cleaned[1:-1].strip()
     cleaned = re.sub(r"\s+please[.!?]?$", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = cleaned.rstrip(".!?").strip()
     if not cleaned or len(cleaned) > 160:
@@ -6139,9 +6169,16 @@ def clean_file_path_value(value: str) -> str:
     return cleaned
 
 
+def quoted_file_values(text: str) -> list[str]:
+    return [
+        value
+        for value in (clean_file_path_value(match.group("value")) for match in FILE_QUOTED_VALUE_PATTERN.finditer(text))
+        if value
+    ]
+
+
 def single_quoted_file_value(text: str) -> str:
-    values = [clean_file_path_value(match.group("value")) for match in FILE_QUOTED_VALUE_PATTERN.finditer(text)]
-    values = [value for value in values if value]
+    values = quoted_file_values(text)
     return values[0] if len(values) == 1 else ""
 
 
@@ -6153,6 +6190,18 @@ def direct_file_path_from_pattern(text: str, pattern: re.Pattern[str]) -> str:
     if not match:
         return ""
     return clean_file_path_value(match.group("path"))
+
+
+def direct_file_pair_from_pattern(
+    text: str, pattern: re.Pattern[str], left_group: str, right_group: str
+) -> tuple[str, str]:
+    match = pattern.search(text)
+    if not match:
+        return "", ""
+    quoted = quoted_file_values(text)
+    if len(quoted) == 2:
+        return quoted[0], quoted[1]
+    return clean_file_path_value(match.group(left_group)), clean_file_path_value(match.group(right_group))
 
 
 def direct_file_call(request: AssistantChatRequest) -> dict[str, Any] | None:
@@ -6184,6 +6233,69 @@ def direct_file_call(request: AssistantChatRequest) -> dict[str, Any] | None:
             "arguments": arguments,
             "message": "Listing project files.",
         }
+
+    if "folder" in text and any(term in text for term in ("create", "make", "add")):
+        path = direct_file_path_from_pattern(raw_text, FILE_CREATE_FOLDER_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.createFolder",
+                "arguments": {"path": path},
+                "message": "Creating project folder.",
+            }
+
+    if ("duplicate" in text or "copy" in text) and ("file" in text or "test" in text or "folder" in text):
+        path = direct_file_path_from_pattern(raw_text, FILE_DUPLICATE_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.duplicate",
+                "arguments": {"path": path},
+                "message": "Duplicating project file.",
+            }
+
+    if "rename" in text and ("file" in text or "test" in text or "folder" in text):
+        path, new_name = direct_file_pair_from_pattern(raw_text, FILE_RENAME_PATTERN, "path", "new_name")
+        if path and new_name:
+            return {
+                "toolName": "mauth.files.rename",
+                "arguments": {"path": path, "newName": new_name},
+                "message": "Renaming project file.",
+            }
+
+    if "move" in text and ("file" in text or "test" in text or "folder" in text):
+        path, target_folder = direct_file_pair_from_pattern(raw_text, FILE_MOVE_PATTERN, "path", "target")
+        if path and target_folder:
+            return {
+                "toolName": "mauth.files.move",
+                "arguments": {"path": path, "targetFolderPath": target_folder},
+                "message": "Moving project file.",
+            }
+
+    if ("delete" in text or "remove" in text) and ("file" in text or "test" in text or "folder" in text):
+        path = direct_file_path_from_pattern(raw_text, FILE_DELETE_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.delete",
+                "arguments": {"path": path},
+                "message": "Deleting project file.",
+            }
+
+    if ("version" in text or "revision" in text or "history" in text) and "restore" not in text:
+        path = direct_file_path_from_pattern(raw_text, FILE_VERSIONS_LIST_PATTERN)
+        if path:
+            return {
+                "toolName": "mauth.files.versions.list",
+                "arguments": {"path": path},
+                "message": "Listing file versions.",
+            }
+
+    if "restore" in text and ("version" in text or "revision" in text):
+        version_id, path = direct_file_pair_from_pattern(raw_text, FILE_RESTORE_VERSION_PATTERN, "version_id", "path")
+        if path and version_id:
+            return {
+                "toolName": "mauth.files.versions.restore",
+                "arguments": {"path": path, "versionId": version_id},
+                "message": "Restoring file version.",
+            }
 
     if "open" in text and ("file" in text or "test" in text):
         path = direct_file_path_from_pattern(raw_text, FILE_OPEN_PATTERN)

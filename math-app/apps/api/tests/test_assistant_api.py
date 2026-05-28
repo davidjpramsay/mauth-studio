@@ -598,6 +598,66 @@ def test_file_save_current_prompt_uses_native_fast_path_without_key(monkeypatch)
     assert data["toolCalls"][0]["mauthArguments"] == {}
 
 
+def test_file_maintenance_prompts_use_native_fast_paths_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    cases = [
+        (
+            'Create folder "Term 1".',
+            "Creating project folder.",
+            "mauth.files.createFolder",
+            {"path": "Term 1"},
+        ),
+        (
+            'Duplicate file "Saved Test".',
+            "Duplicating project file.",
+            "mauth.files.duplicate",
+            {"path": "Saved Test"},
+        ),
+        (
+            'Rename file "Old Test" to "New Test".',
+            "Renaming project file.",
+            "mauth.files.rename",
+            {"path": "Old Test", "newName": "New Test"},
+        ),
+        (
+            'Move file "Saved Test" to folder "Archive".',
+            "Moving project file.",
+            "mauth.files.move",
+            {"path": "Saved Test", "targetFolderPath": "Archive"},
+        ),
+        (
+            'Delete file "Old Test".',
+            "Deleting project file.",
+            "mauth.files.delete",
+            {"path": "Old Test"},
+        ),
+        (
+            'Show version history for file "Saved Test".',
+            "Listing file versions.",
+            "mauth.files.versions.list",
+            {"path": "Saved Test"},
+        ),
+        (
+            'Restore version "version-2" for file "Saved Test".',
+            "Restoring file version.",
+            "mauth.files.versions.restore",
+            {"path": "Saved Test", "versionId": "version-2"},
+        ),
+    ]
+
+    for prompt, message, tool_name, arguments in cases:
+        response = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": prompt}]})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["configured"] is True
+        assert data["message"] == message
+        assert data["usage"]["totalTokens"] == 0
+        assert data["toolCalls"][0]["mauthToolName"] == tool_name
+        assert data["toolCalls"][0]["mauthArguments"] == arguments
+
+
 def test_multi_step_file_prompt_still_requires_provider(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
