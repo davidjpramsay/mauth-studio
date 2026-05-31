@@ -70,9 +70,20 @@ async function ensureGalleryOpen(page) {
 }
 
 async function ensureDisplayOnly(page) {
-  const displayOnlyButton = page.getByRole("button", { name: "Display only" });
-  if ((await displayOnlyButton.getAttribute("aria-pressed")) !== "true") {
-    await displayOnlyButton.click({ force: true });
+  const hideEditorButton = page.getByRole("button", { name: "Hide editor" });
+  if (await hideEditorButton.isVisible().catch(() => false)) {
+    await hideEditorButton.click({ force: true });
+    return;
+  }
+
+  const manualEditorButton = page.getByRole("button", { name: "Manual editor mode" });
+  if (await manualEditorButton.isVisible().catch(() => false)) {
+    return;
+  }
+
+  const legacyDisplayOnlyButton = page.getByRole("button", { name: "Display only" });
+  if ((await legacyDisplayOnlyButton.getAttribute("aria-pressed").catch(() => null)) !== "true") {
+    await legacyDisplayOnlyButton.click({ force: true });
   }
 }
 

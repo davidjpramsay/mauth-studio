@@ -2,7 +2,7 @@
 
 Mauth is a rule-driven high-school mathematics assessment authoring app designed for a human teacher and an external coding agent to use together.
 
-The product direction is agent-native rather than in-app-chat-first: Mauth should expose clear document state, deterministic actions, validation, preview, and file operations that Codex, Claude Code, or another local agent can operate reliably.
+The product direction is agent-native rather than in-app-chat-first: Mauth should expose clear document state, deterministic actions, validation, preview, and file operations that Codex, Claude Code, or another local agent can operate reliably through a local agent bridge.
 
 ## Structure
 
@@ -40,15 +40,29 @@ Open `http://localhost:5173`.
 
 ## Agent Workflow
 
-Use Mauth with external agents through the repo and browser, not through a built-in provider chat panel.
+Use Mauth with external agents through the repo, local app APIs, and browser verification, not through a built-in provider chat panel.
 
 1. Start in the `Development` chat/work stream when changing app code, schemas, tests, or docs.
 2. Start in the `Authoring` chat/work stream when using Mauth to create, inspect, convert, or polish maths assessments.
-3. Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
+3. Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
 4. Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
 5. Promote only durable app code, docs, tests, fixtures, and configs into source control.
 
-The old provider-backed chat panel has been removed. The structured Mauth action layer remains the contract for deterministic edits and future external automation.
+The target authoring loop is `snapshot -> action dry-run -> validation -> action apply -> browser verification`. The old provider-backed chat panel has been removed. The structured Mauth action layer remains the contract for deterministic edits and future external automation.
+
+With the API and web app running, the local agent bridge is available at `/api/agent/current/*`. Check it with:
+
+```bash
+pnpm agent:doctor
+```
+
+Claude/Codex MCP clients can use:
+
+```bash
+pnpm agent:mcp
+```
+
+See `docs/agent-local-setup.md` and `docs/agent-bridge.md`.
 
 ## Verify
 

@@ -17,6 +17,8 @@ import type {
   DiagramTextSide,
   FormattingConfig,
   GraphConfig,
+  MauthAgentFileState,
+  MauthAgentSnapshot,
   ProjectFileDocument,
   ProjectFileSummary,
   ProjectFileVersion,
@@ -136,6 +138,13 @@ import {
   type MauthDocumentActionOptions,
   type MauthDocumentActionResult,
 } from "@/lib/mauthActions";
+import {
+  formatMauthActionValidationIssues,
+  typedMauthDocumentActions,
+  validateMauthDocumentActionPayloads,
+} from "@/lib/mauthActionValidation";
+import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
+import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
   TEST_FILE_ROOT_LABEL,
@@ -8386,6 +8395,7 @@ export default function App() {
     isVisibleProjectFile: isVisibleProjectTestFile,
   });
   const [lastProjectSaveFingerprint, setLastProjectSaveFingerprint] = useState<string | null>(null);
+  const lastProjectSaveFingerprintRef = useRef<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
   const [previewZoom, setPreviewZoom] = useState(1);
@@ -8413,6 +8423,11 @@ export default function App() {
   const previewZoomRef = useRef(1);
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
+
+  function updateLastProjectSaveFingerprint(nextFingerprint: string | null) {
+    lastProjectSaveFingerprintRef.current = nextFingerprint;
+    setLastProjectSaveFingerprint(nextFingerprint);
+  }
 
   useEffect(() => {
     return () => pointerSubsectionDragRef.current?.cleanup();
@@ -8512,7 +8527,7 @@ export default function App() {
           setActiveProjectFilePath(autosave.activeProjectFilePath ?? null);
           setActiveProjectFileRevision(autosave.activeProjectFileRevision ?? null);
           setProjectSaveConflict(null);
-          setLastProjectSaveFingerprint(null);
+          updateLastProjectSaveFingerprint(null);
         }
 
         setDraftAutosaveStatus("ready");
@@ -8554,7 +8569,7 @@ export default function App() {
     setActiveProjectFilePath(null);
     setActiveProjectFileRevision(null);
     setProjectSaveConflict(null);
-    setLastProjectSaveFingerprint(null);
+    updateLastProjectSaveFingerprint(null);
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
   }, [storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
 
@@ -9320,7 +9335,7 @@ export default function App() {
     setActiveProjectFilePath(null);
     setActiveProjectFileRevision(null);
     setProjectSaveConflict(null);
-    setLastProjectSaveFingerprint(null);
+    updateLastProjectSaveFingerprint(null);
     setActiveQuestionId(nextQuestions[0].id);
     setActiveTocItemId(nextAnchor);
     setActiveRailItemId(nextAnchor);
@@ -9337,7 +9352,7 @@ export default function App() {
     queueDocumentJump(nextAnchor, nextAnchor);
   }
 
-  async function writeCurrentTestProjectFile(filePath: string, testName: string) {
+  async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: EditorDocumentState) {
     setProjectFilesStatus("saving");
     setProjectFilesMessage("Saving");
 
@@ -9354,13 +9369,14 @@ export default function App() {
 
     const existingFile =
       loadedFilePath === filePath ? undefined : projectFiles.find((file) => file.kind === "file" && file.path === filePath);
-    const currentLogo = selectedLogoForFrontMatter(logos, frontMatter);
+    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
     const savedTest = createSavedTestSnapshot({
       testId: `project-file:${filePath}`,
       name: testName,
-      frontMatter,
-      questions,
-      formattingConfig,
+      frontMatter: document.frontMatter,
+      questions: document.questions,
+      formattingConfig: nextFormattingConfig,
       logo: currentLogo,
     });
 
@@ -9396,10 +9412,198 @@ export default function App() {
     setActiveProjectFilePath(filePath);
     setActiveProjectFileRevision(savedDocument.revision);
     setProjectSaveConflict(null);
-    setLastProjectSaveFingerprint(editorDocumentFingerprint(frontMatter, questions, formattingConfig, currentLogo));
+    updateLastProjectSaveFingerprint(
+      editorDocumentFingerprint(document.frontMatter, document.questions, nextFormattingConfig, currentLogo),
+    );
     setProjectFilesStatus("ready");
     setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
   }
+
+  async function writeCurrentTestProjectFile(filePath: string, testName: string) {
+    await writeEditorDocumentToProjectFile(filePath, testName, currentEditorDocument());
+  }
+
+  function agentBridgeError(
+    status: number,
+    code: string,
+    error: string,
+    extra: Record<string, unknown> = {},
+  ): MauthAgentBridgeHandlerResult {
+    return {
+      status,
+      body: { success: false, code, error, ...extra },
+    };
+  }
+
+  function agentFileState(document: EditorDocumentState): MauthAgentFileState {
+    const activePath = activeProjectFilePathRef.current;
+    const activeRevision = activeProjectFileRevisionRef.current;
+    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
+    const documentFingerprint = editorDocumentFingerprint(document.frontMatter, document.questions, document.formattingConfig, currentLogo);
+    const dirty = Boolean(activePath && lastProjectSaveFingerprintRef.current !== documentFingerprint);
+    const saveStatus: MauthAgentFileState["saveStatus"] = fileOperationBusy
+      ? "loading"
+      : activeProjectRevisionIssue
+        ? "conflict"
+        : activePath
+          ? dirty
+            ? "dirty"
+            : "saved"
+          : "draft";
+
+    return {
+      projectId: activeProject?.id ?? null,
+      projectName: activeProject?.name ?? null,
+      activePath,
+      activeRevision,
+      dirty,
+      saveStatus,
+      autosaveStatus: draftAutosaveStatus,
+      autosaveMessage: draftAutosaveMessage,
+    };
+  }
+
+  function buildCurrentAgentSnapshot(
+    validation: unknown = validateSolutionCompleteness(frontMatterRef.current, questionsRef.current),
+    document: EditorDocumentState = currentEditorDocument(),
+  ): MauthAgentSnapshot {
+    return buildMauthAgentSnapshot<QuestionBlock, FrontMatterConfig, FormattingConfig>({
+      document,
+      file: agentFileState(document),
+      validation,
+    });
+  }
+
+  function readAgentDocumentActions(
+    payload: Record<string, unknown>,
+  ): { ok: true; actions: MauthDocumentAction[] } | { ok: false; response: MauthAgentBridgeHandlerResult } {
+    const rawActions = payload.actions;
+    if (!Array.isArray(rawActions)) {
+      return {
+        ok: false,
+        response: agentBridgeError(400, "INVALID_REQUEST", "Payload must include actions as an array."),
+      };
+    }
+
+    const validation = validateMauthDocumentActionPayloads(rawActions);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        response: agentBridgeError(400, "VALIDATION_FAILED", formatMauthActionValidationIssues(validation.issues), {
+          validationIssues: validation.issues,
+          snapshot: buildCurrentAgentSnapshot(),
+        }),
+      };
+    }
+
+    return { ok: true, actions: typedMauthDocumentActions(rawActions) };
+  }
+
+  function handleAgentSnapshot(): MauthAgentBridgeHandlerResult {
+    return {
+      status: 200,
+      body: buildCurrentAgentSnapshot() as unknown as Record<string, unknown>,
+    };
+  }
+
+  function handleAgentActionsPreview(payload: Record<string, unknown>): MauthAgentBridgeHandlerResult {
+    const parsed = readAgentDocumentActions(payload);
+    if (!parsed.ok) return parsed.response;
+
+    const result = previewEditorDocumentActions(parsed.actions);
+    if (!result.ok || result.preview?.valid === false) {
+      return agentBridgeError(400, "ACTION_FAILED", result.error || result.preview?.error || "Action preview failed.", {
+        result,
+        snapshot: buildCurrentAgentSnapshot(result.validation),
+      });
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        result,
+        snapshot: buildCurrentAgentSnapshot(result.validation, result.document as EditorDocumentState),
+      },
+    };
+  }
+
+  async function handleAgentActionsApply(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
+    const baseSnapshotId = payload.baseSnapshotId;
+    if (typeof baseSnapshotId !== "string" || !baseSnapshotId) {
+      return agentBridgeError(400, "INVALID_REQUEST", "actions.apply requires baseSnapshotId.");
+    }
+
+    const parsed = readAgentDocumentActions(payload);
+    if (!parsed.ok) return parsed.response;
+
+    const currentSnapshot = buildCurrentAgentSnapshot();
+    if (baseSnapshotId !== currentSnapshot.snapshotId) {
+      return agentBridgeError(409, "STALE_SNAPSHOT", "Current editor state no longer matches baseSnapshotId.", {
+        snapshot: currentSnapshot,
+      });
+    }
+
+    const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
+      currentEditorDocument(),
+      parsed.actions,
+      editorDocumentActionOptions(),
+    );
+    if (!result.ok) {
+      return agentBridgeError(400, "ACTION_FAILED", result.error || "Action apply failed.", {
+        result,
+        snapshot: currentSnapshot,
+      });
+    }
+
+    const activeFilePath = activeProjectFilePathRef.current;
+    if (result.changedIds.length && activeFilePath) {
+      try {
+        await writeEditorDocumentToProjectFile(activeFilePath, currentProjectFileName, result.document as EditorDocumentState);
+      } catch (error) {
+        const conflict = projectFileConflictFromError(error, activeFilePath, activeProjectFileRevisionRef.current);
+        return agentBridgeError(409, "SAVE_CONFLICT", conflict?.message || "Project file save failed; live editor state was not mutated.", {
+          result,
+          snapshot: currentSnapshot,
+        });
+      }
+    }
+
+    if (result.changedIds.length) {
+      setEditorDocumentWithHistory(result.document as EditorDocumentState);
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        result,
+        snapshot: buildCurrentAgentSnapshot(result.validation, result.document as EditorDocumentState),
+      },
+    };
+  }
+
+  function handleAgentValidation(): MauthAgentBridgeHandlerResult {
+    const validation = validateSolutionCompleteness(frontMatterRef.current, questionsRef.current);
+    return {
+      status: 200,
+      body: {
+        success: true,
+        validation,
+        snapshot: buildCurrentAgentSnapshot(validation),
+      },
+    };
+  }
+
+  useMauthAgentBridge({
+    enabled: storageHydrated,
+    handlers: {
+      snapshot: handleAgentSnapshot,
+      preview: handleAgentActionsPreview,
+      apply: handleAgentActionsApply,
+      validation: handleAgentValidation,
+    },
+  });
 
   async function saveCurrentTestToProjectFile(folderPath = "") {
     let saveTargetPath = activeProjectFilePath;
@@ -9461,7 +9665,7 @@ export default function App() {
     setActiveProjectFilePath(filePath);
     setActiveProjectFileRevision(revision);
     setProjectSaveConflict(null);
-    setLastProjectSaveFingerprint(
+    updateLastProjectSaveFingerprint(
       editorDocumentFingerprint(
         nextFrontMatter,
         nextQuestions,
@@ -9761,7 +9965,7 @@ export default function App() {
         setActiveProjectFilePath(openedDuplicatePath);
         setActiveProjectFileRevision(openedDuplicateRevision);
         setProjectSaveConflict(null);
-        setLastProjectSaveFingerprint(openedDuplicateFingerprint);
+        updateLastProjectSaveFingerprint(openedDuplicateFingerprint);
       }
       setProjectFilesStatus("ready");
       setProjectFilesMessage(
@@ -9973,7 +10177,7 @@ export default function App() {
         activeProjectFileRevisionRef.current = null;
         setActiveProjectFileRevision(null);
         setProjectSaveConflict(null);
-        setLastProjectSaveFingerprint(null);
+        updateLastProjectSaveFingerprint(null);
       }
       setProjectFilesStatus("ready");
       setProjectFilesMessage(sources.length === 1 ? "Deleted 1 item" : `Deleted ${sources.length} items`);

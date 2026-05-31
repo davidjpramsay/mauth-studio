@@ -45,6 +45,21 @@ The dry-run `preview` summary reports:
 
 Applying the proposal should call the same action batch again without `dryRun`.
 
+## Local Agent Bridge
+
+The action layer is the core mutation engine for the planned local agent bridge described in `docs/agent-bridge.md`.
+
+Bridge writes should:
+
+- read the current document snapshot first
+- preview the action batch before committing it
+- require a current revision or mutation token
+- use an idempotency key for retryable write requests
+- apply batches atomically through the existing editor history/autosave path
+- return changed ids, warnings, validation output, and the next snapshot
+
+The bridge should not create a second document-save path. Project-file saves, loaded revisions, autosave drafts, and version snapshots must remain aligned with the existing storage API.
+
 ## Agent Use
 
 External agents should prefer actions over ad hoc state edits when the action exists.
@@ -59,7 +74,7 @@ Use structured actions for:
 - changing page breaks and document formatting
 - running validation and layout checks
 
-Use direct source edits only when the requested app change is outside the document action contract.
+Use direct source edits only when the requested app change is outside the document action contract. For assessment authoring, direct project-file JSON edits are a fallback for recovery or migration, not the primary workflow.
 
 ## Human UI Use
 
@@ -110,3 +125,5 @@ The durable pieces that remain are:
 - the integrated `workspace/` folder for agent artifacts
 
 Future AI integration should build from these contracts outward, preferably as an external-agent workflow or explicit MCP/App surface, not as another opaque in-app chat loop.
+
+The preferred next integration is a local agent bridge over snapshots, action preview/apply, validation, comments, suggestions, presence, and events. MCP/App wrappers should call that same bridge rather than inventing another mutation path.

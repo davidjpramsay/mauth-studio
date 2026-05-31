@@ -1,6 +1,7 @@
 import type {
   DiagramSpec,
   GeneratedTest,
+  MauthAgentRequest,
   PenroseDiagramResponse,
   ProjectFileDocument,
   ProjectFileSaveRequest,
@@ -113,6 +114,19 @@ async function putJson<TResponse>(path: string, body: unknown): Promise<TRespons
 async function getJson<TResponse>(path: string): Promise<TResponse> {
   const response = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+
+  return response.json() as Promise<TResponse>;
+}
+
+async function getJsonWithSignal<TResponse>(path: string, signal?: AbortSignal): Promise<TResponse> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    signal,
   });
 
   if (!response.ok) {
@@ -283,4 +297,31 @@ export function restoreProjectFileVersion(projectId: string, filePath: string, v
 
 export function renderPenroseDiagram(spec: DiagramSpec, signal?: AbortSignal) {
   return postJsonWithSignal<PenroseDiagramResponse>("/api/diagram/penrose", spec, signal);
+}
+
+export interface MauthAgentEditorRegistrationResponse {
+  success: boolean;
+  sessionId: string;
+  pollUrl: string;
+  respondUrl: string;
+}
+
+export interface MauthAgentBrowserResponsePayload {
+  sessionId: string;
+  requestId: string;
+  status: number;
+  body: Record<string, unknown>;
+}
+
+export function registerMauthAgentEditorSession(sessionId: string, label = "Mauth web editor", signal?: AbortSignal) {
+  return postJsonWithSignal<MauthAgentEditorRegistrationResponse>("/api/agent/current/browser/register", { sessionId, label }, signal);
+}
+
+export function pollMauthAgentRequests(sessionId: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ sessionId, timeoutSeconds: "25" });
+  return getJsonWithSignal<MauthAgentRequest>(`/api/agent/current/browser/requests?${query.toString()}`, signal);
+}
+
+export function respondMauthAgentRequest(payload: MauthAgentBrowserResponsePayload, signal?: AbortSignal) {
+  return postJsonWithSignal<{ success: boolean }>("/api/agent/current/browser/respond", payload, signal);
 }

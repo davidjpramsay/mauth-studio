@@ -10,9 +10,9 @@ Mauth Studio is a rule-driven high-school mathematics assessment authoring syste
 
 Do not put marking or formatting decisions inside question generator logic.
 
-Product direction: build for Codex/Claude-style external agent authoring first. Human UI should remain usable and clear, but new features, schemas, editor actions, validation, and docs should assume an AI agent will often create, inspect, and edit the document through structured operations or browser control. Prefer explicit document state, deterministic validators, reversible actions, stable labels, and small focused controls over UI-only behaviour that an agent cannot reason about or reproduce.
+Product direction: build for Codex/Claude-style external agent authoring first. Human UI should remain usable and clear, but new features, schemas, editor actions, validation, and docs should assume an AI agent will often create, inspect, and edit the document through a structured local agent bridge, Mauth actions, and browser verification. Prefer explicit document state, deterministic validators, reversible actions, stable labels, and small focused controls over UI-only behaviour that an agent cannot reason about or reproduce.
 
-The old provider-backed chat panel is not the product path. Treat this file plus `docs/local-ai-workflow.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
+The old provider-backed chat panel is not the product path. Treat this file plus `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
 
 ## Commands
 
@@ -58,6 +58,8 @@ Do not commit local authoring data or generated output:
 
 The app stores live tests, autosave, reusable logo assets, and prototype project files under `storage/`, with browser fallback state in localStorage. Treat those as user data, not source code. Logos are not built in: starter logos are editable seed data added once for new or migrated browsers, and the shared logo library is independent of any one saved test. Project/file storage lives under `storage/projects`; use revision-aware saves and version snapshots. The Files drawer ZIP backup/import path is the supported portable backup workflow and includes project files, version snapshots, and reusable logo assets. Treat legacy `storage/tests` as migration input only, while `storage/autosave/current-test.json` is the current recovery draft and should not be confused with a saved file.
 
+For assessment authoring, direct edits under `storage/projects` are a recovery fallback, not the normal workflow. Prefer, in order: the local agent bridge when available, structured Mauth actions, the project-file API, or the visible Files drawer. Keep active editor state, project-file metadata, loaded revisions, version snapshots, and autosave aligned.
+
 ## Mauthdown
 
 Mauthdown is the AI-friendly file format for tests. Prefer explicit containers:
@@ -88,7 +90,9 @@ Keep AI authoring behaviour split into focused rule sets. The machine-readable c
 
 All brains operate on the same Mauthdown/test schema. Do not let formatting, diagram, or solutions rules leak into question-writing logic.
 
-AI-authored document edits should prefer the structured Mauth action layer in `apps/web/src/lib/mauthActions.ts` when the action exists. Human UI controls should use the same action path where practical, so external agents can rely on deterministic edit contracts instead of guessing local React state. Use document action batches when edits touch front matter, logo/school-name selection, page format, and question content together; use question action batches for question-only edits. Use `module.move`, `part.move`, and `subpart.move` for relocating existing content so ids, undo/history, mixed `itemOrder`, and validation remain intact. For large model-generated edits, run a document-action dry run first and inspect the preview summary before committing the same batch. Keep `pnpm test:web-actions` passing when changing the action contract.
+AI-authored document edits should prefer the structured Mauth action layer in `apps/web/src/lib/mauthActions.ts` when the action exists. Human UI controls should use the same action path where practical, so external agents can rely on deterministic edit contracts instead of guessing local React state. Use document action batches when edits touch front matter, logo/school-name selection, page format, and question content together; use question action batches for question-only edits. Use `module.move`, `part.move`, and `subpart.move` for relocating existing content so ids, undo/history, mixed `itemOrder`, and validation remain intact. For large model-generated edits, run a document-action dry run first and inspect the preview summary before committing the same batch.
+
+The target authoring loop is: read the current Mauth snapshot, dry-run a structured action batch, inspect preview/validation output, apply the same batch with revision/idempotency protection, then verify in the browser. Keep `pnpm test:web-actions` passing when changing the action contract.
 
 Formatting brain rule: treat `:::space` blocks as intentional working area, not generic page filler. If a manual page break immediately follows a question, do not add a trailing question-level space block just to fill the remaining page area. Keep spaces inside parts/subparts when they are intended answer space for that part.
 

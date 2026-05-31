@@ -90,7 +90,9 @@ Programmatic edits to user files should go through the project-file API rather t
 
 The product goal is that save/revision safety feels automatic, not chatty. The app/API should quietly do safe maintenance work in the background: save the current dirty file before opening or moving another file, refresh file listings after file operations, carry the loaded revision through autosave, and update the active autosave draft after API-level programmatic edits. Only interrupt the teacher when the system cannot choose safely without risking data loss. In that case, present a short choice such as reload the changed file or save the current draft as a copy.
 
-Agent file operations should go through the project-file API or the visible Files drawer workflow. Preserve revision checks: saving the active file must use the loaded revision, not a freshly listed revision, so external edits cannot bypass conflict protection. Autosave records must include `frontMatter`, `questions`, `formattingConfig`, optional `logo`, and the active project file revision so recovered drafts preserve exam/school-test template choice and page formatting.
+Agent file operations should go through the local agent bridge when it exists, or through the project-file API or visible Files drawer workflow today. Preserve revision checks: saving the active file must use the loaded revision, not a freshly listed revision, so external edits cannot bypass conflict protection. Autosave records must include `frontMatter`, `questions`, `formattingConfig`, optional `logo`, and the active project file revision so recovered drafts preserve exam/school-test template choice and page formatting.
+
+Direct writes to project content files are recovery and migration tools, not the normal assessment-authoring path. If they are used, repair the project index, version metadata, active autosave draft, and browser state before treating the file as safe to reopen.
 
 ## Project Backups
 

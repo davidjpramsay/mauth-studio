@@ -6,14 +6,17 @@
     "dev:web": "pnpm --dir apps/web dev --host 0.0.0.0",
     "build:web": "pnpm --dir apps/web build",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000",
+    "agent:mcp": "node scripts/mauth-agent-mcp.mjs",
+    "agent:doctor": "node scripts/mauth-agent-doctor.mjs",
     "smoke:diagram-gallery": "node scripts/diagram-gallery-smoke.mjs",
     "smoke:editor:columns": "node scripts/editor-columns-smoke.mjs",
     "smoke:editor:inspector": "node scripts/editor-columns-smoke.mjs",
     "smoke:context-menu-actions": "node scripts/context-menu-actions-smoke.mjs",
     "smoke:graph3d": "node scripts/graph3d-render-smoke.mjs",
     "smoke:file-manager": "node scripts/file-manager-smoke.mjs",
+    "smoke:agent-bridge": "node scripts/agent-bridge-smoke.mjs",
     "test:api": "cd apps/api && uv run pytest",
-    "test:web-actions": "node --experimental-strip-types --test apps/web/src/lib/*Actions.test.ts apps/web/src/components/editor/selectionInspectorPatches.test.ts apps/web/src/components/graphs/graphTypography.test.ts",
+    "test:web-actions": "node --experimental-strip-types --test apps/web/src/lib/*Actions.test.ts apps/web/src/lib/mauthAgentSnapshot.test.ts apps/web/src/components/editor/selectionInspectorPatches.test.ts apps/web/src/components/graphs/graphTypography.test.ts",
     "test:plotly": "node --experimental-strip-types --test packages/diagram-plotly/tests/*.test.ts",
     "test": "pnpm test:api && pnpm test:web-actions && pnpm test:plotly && pnpm build:web",
     "format": "pnpm format:web && pnpm format:api",
@@ -35,6 +38,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/test": "^1.59.1",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -42,6 +46,7 @@
     "globals": "^17.5.0",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.59.1",
+    "zod": "^4.4.3"
   }
 }

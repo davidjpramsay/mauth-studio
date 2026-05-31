@@ -1,0 +1,84 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
+
+import { buildMauthAgentSnapshot } from "./mauthAgentSnapshot.ts";
+import type { MauthQuestionLike } from "./mauthActions.ts";
+
+interface TestFrontMatter {
+  assessmentTitle: string;
+  logoId: string;
+}
+
+interface TestFormattingConfig {
+  showMarks: boolean;
+}
+
+function textBlock(id: string, text: string): ContentBlock {
+  return { id, kind: "text", text };
+}
+
+function spaceBlock(id: string, lines: number): ContentBlock {
+  return { id, kind: "space", lines };
+}
+
+function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
+  return { id, kind: "diagram", graphConfig };
+}
+
+function question(blocks: ContentBlock[]): MauthQuestionLike {
+  return {
+    id: "q1",
+    marks: 4,
+    text: "Differentiate the function.",
+    contentBlocks: blocks,
+    itemOrder: blocks.map((block) => ({ kind: "block", id: block.id })),
+    parts: [],
+  };
+}
+
+function snapshotFor(blocks: ContentBlock[]) {
+  return buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
+    document: {
+      frontMatter: { assessmentTitle: "Calculus", logoId: "school" },
+      formattingConfig: { showMarks: true },
+      questions: [question(blocks)],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: "tests/calculus.test.json",
+      activeRevision: 7,
+      dirty: false,
+      saveStatus: "saved",
+    },
+    generatedAt: "2026-05-31T00:00:00.000Z",
+  });
+}
+
+test("buildMauthAgentSnapshot emits a stable mutation base for unchanged document state", () => {
+  const first = snapshotFor([textBlock("b1", "Find $f'(x)$."), spaceBlock("s1", 4)]);
+  const second = snapshotFor([textBlock("b1", "Find $f'(x)$."), spaceBlock("s1", 4)]);
+
+  assert.equal(first.snapshotId, second.snapshotId);
+  assert.equal(first.mutationBase.snapshotId, first.snapshotId);
+  assert.equal(first.mutationBase.activeProjectFilePath, "tests/calculus.test.json");
+  assert.equal(first.mutationBase.activeProjectFileRevision, 7);
+});
+
+test("buildMauthAgentSnapshot changes snapshot id when editable content changes", () => {
+  const first = snapshotFor([textBlock("b1", "Find $f'(x)$.")]);
+  const second = snapshotFor([textBlock("b1", "Find $g'(x)$.")]);
+
+  assert.notEqual(first.snapshotId, second.snapshotId);
+});
+
+test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
+  const snapshot = snapshotFor([diagramBlock("d1", { type: "graph2d", expression: "x^2" }), spaceBlock("s1", 6)]);
+
+  assert.equal(snapshot.questionCount, 1);
+  assert.equal(snapshot.totalMarks, 4);
+  assert.equal(snapshot.questions[0].modules[0].graphType, "graph2d");
+  assert.equal(snapshot.questions[0].modules[1].lines, 6);
+});

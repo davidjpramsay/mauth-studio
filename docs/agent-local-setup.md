@@ -1,0 +1,82 @@
+# Local Agent Setup
+
+This is the intended Codex/Claude Code workflow for Mauth authoring.
+
+## Local Project Folder
+
+Clone or pull the repo into a normal local project folder. From the repo root:
+
+```bash
+pnpm install
+cd apps/api
+uv sync
+cd ../..
+```
+
+Run the app in two terminals:
+
+```bash
+pnpm dev:api
+pnpm dev:web
+```
+
+Open `http://localhost:5173` and keep exactly one Mauth editor tab active.
+
+Check the bridge:
+
+```bash
+pnpm agent:doctor
+```
+
+## MCP
+
+The MCP server wraps the local HTTP bridge. It does not read or write React state, localStorage, or `storage/projects` files directly.
+
+Claude Desktop example:
+
+```json
+{
+  "mcpServers": {
+    "mauth": {
+      "command": "pnpm",
+      "args": ["--dir", "/Users/djpramsay@acc.edu.au/Documents/Code/Mauth", "agent:mcp"],
+      "env": {
+        "MAUTH_AGENT_API_URL": "http://127.0.0.1:8000"
+      }
+    }
+  }
+}
+```
+
+Tool loop:
+
+```text
+mauth_snapshot
+mauth_actions_preview
+mauth_actions_apply
+mauth_validation_run
+mauth_comment_create
+mauth_suggestion_create
+mauth_events_read
+```
+
+`mauth_actions_apply` requires `baseSnapshotId` from the latest snapshot and uses an `Idempotency-Key` header internally.
+Comments and suggestions are review state; they do not mutate the document.
+
+## Proof-Style Split
+
+The human app remains the review surface: preview, file drawer, validation, browser print, and human judgement.
+
+The local bridge is the agent control surface: snapshot, dry run, apply, validation, events, and presence.
+
+This gives local Codex/Claude the structure of an API-driven product without making the app hosted-first. Hosted collaboration can come later, but V1 assumes the repo, API, and browser are running on the user’s machine.
+
+## Failure Modes
+
+- `APP_NOT_CONNECTED`: start the API/web app and open `http://localhost:5173`.
+- `MULTIPLE_ACTIVE_EDITORS`: close extra Mauth tabs.
+- `STALE_SNAPSHOT`: call `mauth_snapshot` again and rebuild the action batch.
+- `VALIDATION_FAILED`: repair the action payload.
+- `ACTION_FAILED`: inspect the action result and current snapshot.
+- `SAVE_CONFLICT`: reload or resolve the active project file before applying again.
+- `BRIDGE_TIMEOUT`: reload the browser app and retry.

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import bootstrap  # noqa: F401
+from app.api.agent import agent_discovery_router, agent_router
 from app.api.diagram import router as diagram_router
 from app.api.format import router as format_router
 from app.api.math import router as math_router
@@ -34,6 +35,8 @@ app.include_router(tests_router, prefix="/api/tests", tags=["tests"])
 app.include_router(format_router, prefix="/api/format", tags=["formatting"])
 app.include_router(diagram_router, prefix="/api/diagram", tags=["diagram"])
 app.include_router(storage_router, prefix="/api/storage", tags=["storage"])
+app.include_router(agent_router, prefix="/api/agent/current", tags=["agent"])
+app.include_router(agent_discovery_router, tags=["agent"])
 
 
 @app.get("/api/health")

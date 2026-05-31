@@ -730,3 +730,180 @@ export interface ProjectFileSaveRequest {
   sortOrder?: number;
   baseRevision?: number | null;
 }
+
+export type MauthAgentBridgeErrorCode =
+  | "APP_NOT_CONNECTED"
+  | "MULTIPLE_ACTIVE_EDITORS"
+  | "STALE_SNAPSHOT"
+  | "VALIDATION_FAILED"
+  | "ACTION_FAILED"
+  | "SAVE_CONFLICT"
+  | "BRIDGE_TIMEOUT"
+  | "INVALID_REQUEST"
+  | "IDEMPOTENCY_KEY_REUSED";
+
+export type MauthAgentRequestKind = "snapshot" | "actions.preview" | "actions.apply" | "validation.run";
+
+export interface MauthAgentMutationBase {
+  snapshotId: string;
+  activeProjectFilePath?: string | null;
+  activeProjectFileRevision?: number | null;
+  dirty: boolean;
+  preferredPrecondition: "baseSnapshotId";
+}
+
+export interface MauthAgentFileState {
+  projectId?: string | null;
+  projectName?: string | null;
+  activePath?: string | null;
+  activeRevision?: number | null;
+  dirty: boolean;
+  saveStatus: "saved" | "dirty" | "draft" | "conflict" | "loading" | "unknown";
+  autosaveStatus?: string;
+  autosaveMessage?: string;
+}
+
+export interface MauthAgentModuleSummary {
+  id: string;
+  kind: ContentBlock["kind"] | string;
+  visibility?: ContentBlockVisibility;
+  textPreview?: string;
+  marks?: number;
+  lines?: number;
+  choiceCount?: number;
+  rowCount?: number;
+  columnCount?: number;
+  graphType?: DiagramType | string;
+  diagramAlign?: DiagramAlignment;
+  childModules?: MauthAgentModuleSummary[];
+}
+
+export interface MauthAgentSubpartSummary {
+  id: string;
+  label?: string;
+  marks: number;
+  textPreview?: string;
+  pageBreakBefore?: boolean;
+  modules: MauthAgentModuleSummary[];
+}
+
+export interface MauthAgentPartSummary {
+  id: string;
+  label?: string;
+  marks: number;
+  textPreview?: string;
+  pageBreakBefore?: boolean;
+  modules: MauthAgentModuleSummary[];
+  subparts: MauthAgentSubpartSummary[];
+}
+
+export interface MauthAgentQuestionSummary {
+  id: string;
+  label: string;
+  marks: number;
+  textPreview?: string;
+  pageBreakAfter?: boolean;
+  modules: MauthAgentModuleSummary[];
+  parts: MauthAgentPartSummary[];
+}
+
+export interface MauthAgentSnapshot {
+  success: true;
+  snapshotId: string;
+  generatedAt: string;
+  mutationBase: MauthAgentMutationBase;
+  file: MauthAgentFileState;
+  frontMatter: Record<string, unknown>;
+  formattingConfig?: Record<string, unknown>;
+  questions: MauthAgentQuestionSummary[];
+  questionCount: number;
+  totalMarks: number;
+  validation?: unknown;
+  warnings: Array<{ code: string; message: string; targetId?: string }>;
+  _links: {
+    snapshot: string;
+    preview: { method: "POST"; href: string };
+    apply: { method: "POST"; href: string };
+    validation: { method: "POST"; href: string };
+    presence: { method: "POST"; href: string };
+    events: string;
+    comments: string;
+    suggestions: string;
+    docs: string;
+  };
+}
+
+export interface MauthAgentQueuedRequest {
+  requestId: string;
+  kind: MauthAgentRequestKind;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface MauthAgentRequest {
+  request: MauthAgentQueuedRequest | null;
+}
+
+export interface MauthAgentApplyResult {
+  success: boolean;
+  snapshot?: MauthAgentSnapshot;
+  result?: unknown;
+  code?: MauthAgentBridgeErrorCode | string;
+  error?: string;
+  validationIssues?: unknown;
+}
+
+export interface MauthAgentEvent {
+  id: number;
+  type: string;
+  actor?: string;
+  message?: string;
+  requestId?: string;
+  at: string;
+  data?: Record<string, unknown>;
+}
+
+export interface MauthAgentPresence {
+  id: string;
+  name?: string;
+  status: string;
+  details?: string;
+  at: string;
+}
+
+export interface MauthAgentReviewTarget {
+  kind: "document" | "question" | "part" | "subpart" | "module" | "textRange";
+  questionId?: string;
+  partId?: string;
+  subpartId?: string;
+  blockId?: string;
+  start?: number;
+  end?: number;
+  label?: string;
+}
+
+export interface MauthAgentComment {
+  id: string;
+  actor?: string;
+  body: string;
+  severity: "note" | "warning" | "error";
+  target?: MauthAgentReviewTarget;
+  snapshotId?: string;
+  status: "open" | "resolved";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MauthAgentSuggestion {
+  id: string;
+  actor?: string;
+  title?: string;
+  body: string;
+  target?: MauthAgentReviewTarget;
+  actions?: unknown[];
+  replacementText?: string;
+  snapshotId?: string;
+  status: "proposed" | "accepted" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+}

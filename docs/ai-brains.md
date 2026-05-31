@@ -56,6 +56,8 @@ When an external agent uses these brains, the expected loop is:
 6. Apply the accepted action through normal editor history/autosave.
 7. Keep scratch artifacts in `workspace/`.
 
+As the local agent bridge is built, this loop should become `snapshot -> actions preview -> validation -> actions apply -> browser verification`. Brain rules should teach agents to use that bridge, not raw project files, hidden React state, browser localStorage, or a provider-backed chat route.
+
 If a workflow cannot be expressed as document state, an explicit action, a preview result, a validation result, or a reversible file operation, improve the app contract rather than relying on hidden prompt judgement.
 
 ## Checks
