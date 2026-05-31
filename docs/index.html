@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mauth Studio | Agent-native maths assessment authoring</title>
+    <meta
+      name="description"
+      content="Mauth Studio is a local-first high-school mathematics assessment authoring app with a structured bridge for Codex, Claude Code, and other local agents."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #121722;
+        --muted: #5c6676;
+        --soft: #eef3f8;
+        --line: #d8e0e9;
+        --blue: #2554c7;
+        --blue-dark: #18367f;
+        --green: #216f52;
+        --page: #ffffff;
+        --panel: #f8fafc;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        letter-spacing: 0;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .site-header {
+        align-items: center;
+        background: rgba(255, 255, 255, 0.94);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 24px;
+        justify-content: space-between;
+        min-height: 72px;
+        padding: 14px clamp(20px, 5vw, 72px);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      .brand {
+        align-items: center;
+        display: flex;
+        gap: 12px;
+        font-weight: 750;
+        text-decoration: none;
+      }
+
+      .brand img {
+        height: 38px;
+        width: auto;
+      }
+
+      .nav {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        justify-content: flex-end;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .nav a {
+        text-decoration: none;
+      }
+
+      .nav a:hover {
+        color: var(--blue);
+      }
+
+      .button {
+        align-items: center;
+        background: var(--ink);
+        border: 1px solid var(--ink);
+        color: white;
+        display: inline-flex;
+        font-size: 0.95rem;
+        font-weight: 700;
+        min-height: 44px;
+        padding: 0 18px;
+        text-decoration: none;
+      }
+
+      .button.secondary {
+        background: white;
+        color: var(--ink);
+      }
+
+      .hero {
+        min-height: clamp(520px, calc(100vh - 220px), 680px);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .hero::before {
+        background-image:
+          linear-gradient(90deg, rgba(8, 15, 30, 0.9) 0%, rgba(8, 15, 30, 0.72) 36%, rgba(8, 15, 30, 0.1) 100%),
+          url("./assets/mauth-bridge-smoke.png");
+        background-position: center;
+        background-size: cover;
+        content: "";
+        inset: 0;
+        position: absolute;
+      }
+
+      .hero-content {
+        color: white;
+        display: grid;
+        min-height: clamp(520px, calc(100vh - 220px), 680px);
+        padding: clamp(48px, 8vw, 88px) clamp(20px, 7vw, 96px) clamp(72px, 10vw, 112px);
+        place-items: center start;
+        position: relative;
+        width: min(760px, 100%);
+      }
+
+      h1 {
+        font-size: clamp(3.1rem, 8vw, 7.5rem);
+        line-height: 0.92;
+        margin: 0;
+        max-width: 720px;
+      }
+
+      .hero p {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: clamp(1.05rem, 2vw, 1.35rem);
+        line-height: 1.55;
+        margin: 28px 0 0;
+        max-width: 620px;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .hero-actions .button.secondary {
+        background: rgba(255, 255, 255, 0.9);
+        border-color: transparent;
+      }
+
+      .hero-actions .button {
+        background: white;
+        border-color: white;
+        color: var(--ink);
+      }
+
+      .section {
+        padding: clamp(64px, 9vw, 120px) clamp(20px, 6vw, 88px);
+      }
+
+      .section-inner {
+        margin: 0 auto;
+        max-width: 1160px;
+      }
+
+      .intro {
+        background: var(--page);
+        margin-top: -56px;
+        position: relative;
+      }
+
+      .lead-grid {
+        display: grid;
+        gap: clamp(28px, 5vw, 72px);
+        grid-template-columns: minmax(0, 0.95fr) minmax(280px, 1.05fr);
+      }
+
+      h2 {
+        font-size: clamp(2rem, 4vw, 4rem);
+        line-height: 1;
+        margin: 0;
+        max-width: 760px;
+      }
+
+      h3 {
+        font-size: 1.05rem;
+        margin: 0 0 12px;
+      }
+
+      p {
+        color: var(--muted);
+        font-size: 1.02rem;
+        line-height: 1.68;
+        margin: 0;
+      }
+
+      .workflow {
+        border-left: 3px solid var(--blue);
+        display: grid;
+        gap: 14px;
+        padding-left: 24px;
+      }
+
+      .workflow code {
+        background: var(--soft);
+        color: var(--blue-dark);
+        display: block;
+        font:
+          700 0.95rem/1.4 "SFMono-Regular",
+          Consolas,
+          monospace;
+        padding: 12px 14px;
+      }
+
+      .split {
+        background: var(--panel);
+      }
+
+      .two-column {
+        display: grid;
+        gap: 1px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .surface {
+        background: white;
+        min-height: 360px;
+        padding: clamp(28px, 5vw, 56px);
+      }
+
+      .surface ul {
+        color: var(--muted);
+        line-height: 1.7;
+        margin: 22px 0 0;
+        padding-left: 20px;
+      }
+
+      .surface strong {
+        color: var(--ink);
+      }
+
+      .code-panel {
+        background: #0d1320;
+        color: #d8e6ff;
+        font:
+          700 0.92rem/1.75 "SFMono-Regular",
+          Consolas,
+          monospace;
+        overflow-x: auto;
+        padding: clamp(24px, 5vw, 44px);
+      }
+
+      .code-panel span {
+        color: #86efac;
+      }
+
+      .docs {
+        display: grid;
+        gap: 28px;
+        grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
+      }
+
+      .links {
+        display: grid;
+        gap: 12px;
+      }
+
+      .links a {
+        border-bottom: 1px solid var(--line);
+        color: var(--blue-dark);
+        display: flex;
+        justify-content: space-between;
+        min-height: 48px;
+        padding: 12px 0;
+        text-decoration: none;
+      }
+
+      .links a:hover {
+        color: var(--blue);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        padding: 28px clamp(20px, 6vw, 88px);
+      }
+
+      @media (max-width: 780px) {
+        .site-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .nav {
+          justify-content: flex-start;
+        }
+
+        .hero::before {
+          background-image:
+            linear-gradient(180deg, rgba(8, 15, 30, 0.92) 0%, rgba(8, 15, 30, 0.7) 58%, rgba(8, 15, 30, 0.2) 100%),
+            url("./assets/mauth-bridge-smoke.png");
+        }
+
+        .hero,
+        .hero-content {
+          min-height: calc(100vh - 230px);
+        }
+
+        .hero-content {
+          padding-bottom: 56px;
+          padding-top: 46px;
+        }
+
+        .lead-grid,
+        .two-column,
+        .docs {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#">
+        <img src="./assets/mauth-logo-lockup.png" alt="Mauth Studio" />
+      </a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#bridge">Bridge</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#setup">Setup</a>
+        <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-label="Mauth Studio">
+        <div class="hero-content">
+          <div>
+            <h1>Mauth Studio</h1>
+            <p>
+              Agent-native maths assessment authoring for teachers who want a real browser editor, deterministic validation, and local Codex
+              or Claude control without raw JSON file edits.
+            </p>
+            <div class="hero-actions">
+              <a class="button" href="#setup">Run locally</a>
+              <a class="button secondary" href="#workflow">See the agent loop</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section intro" id="bridge">
+        <div class="section-inner lead-grid">
+          <div>
+            <h2>Human review surface. Agent control surface.</h2>
+          </div>
+          <div class="workflow">
+            <p>
+              Mauth keeps assessment authoring local. The web app remains the place where a teacher reviews layout, diagrams, solutions,
+              files, and print output. The bridge gives local agents a structured contract for making changes.
+            </p>
+            <code>snapshot -> dry run -> apply -> validate -> browser check</code>
+          </div>
+        </div>
+      </section>
+
+      <section class="section split">
+        <div class="section-inner two-column">
+          <article class="surface">
+            <h3>For teachers</h3>
+            <p>
+              Build printable high-school mathematics tests and worksheets with questions, parts, subparts, diagrams, tables, working space,
+              and solutions.
+            </p>
+            <ul>
+              <li><strong>Preview first:</strong> A4 pages render in the browser before print.</li>
+              <li><strong>Recover safely:</strong> Autosave, project files, logos, and versions stay local.</li>
+              <li><strong>Review clearly:</strong> Agent comments and suggestions are separate from committed edits.</li>
+            </ul>
+          </article>
+          <article class="surface">
+            <h3>For Codex and Claude</h3>
+            <p>
+              Work through explicit document state and deterministic actions instead of guessing React state or editing saved project JSON
+              directly.
+            </p>
+            <ul>
+              <li><strong>Read:</strong> `mauth_snapshot` exposes stable ids and validation state.</li>
+              <li><strong>Preview:</strong> `mauth_actions_preview` dry-runs action batches.</li>
+              <li><strong>Apply:</strong> `mauth_actions_apply` commits through history, autosave, and revision checks.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="workflow">
+        <div class="section-inner docs">
+          <div>
+            <h2>Local-first, MCP-ready.</h2>
+            <p>
+              The HTTP bridge is the canonical contract. MCP wraps that bridge for Claude Desktop, Codex, and other local tools. Successful
+              edits still flow through the same web app action layer the human UI uses.
+            </p>
+          </div>
+          <pre class="code-panel"><span>pnpm dev:api</span>
+<span>pnpm dev:web</span>
+
+open http://localhost:5173
+
+pnpm agent:doctor
+pnpm agent:mcp
+pnpm smoke:agent-bridge</pre>
+        </div>
+      </section>
+
+      <section class="section split" id="setup">
+        <div class="section-inner docs">
+          <div>
+            <h2>Start with the repo docs.</h2>
+            <p>
+              The product page gives the shape. The repo docs are the operating contract for development, authoring, MCP setup, bridge
+              endpoints, action batches, storage rules, and AI rule brains.
+            </p>
+          </div>
+          <div class="links">
+            <a href="https://github.com/davidjpramsay/mauth-studio#readme">README.md <span>overview</span></a>
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/agent-local-setup.md"
+              >agent-local-setup.md <span>local workflow</span></a
+            >
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/agent-bridge.md"
+              >agent-bridge.md <span>bridge contract</span></a
+            >
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/mauth-actions.md"
+              >mauth-actions.md <span>action schema</span></a
+            >
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/ai-brains.md">ai-brains.md <span>agent rules</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>Mauth Studio is local-first software for mathematics assessment authoring with structured external-agent control.</footer>
+  </body>
+</html>
