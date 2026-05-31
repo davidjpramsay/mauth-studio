@@ -1,9 +1,21 @@
-# Local secrets and disposable scratch
+node_modules/
+.venv/
 .env
 .env.*
-*.log
-*.pid
+!.env.example
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+apps/web/.tmp/
 tmp/
-mauth-workbench/*
-!mauth-workbench/.gitignore
-!mauth-workbench/README.md
+storage/
+drafts/
+output/
+workspace/*
+!workspace/.gitignore
+!workspace/README.md
+.DS_Store
+*.pyc
