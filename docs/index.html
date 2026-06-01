@@ -528,8 +528,12 @@ Please help me use two separate chats/work streams where practical:
 4. Start the local app:
    pnpm dev:api
    pnpm dev:web
-5. Open the web URL printed by pnpm dev:web in the browser. It is usually http://localhost:5173, but Vite may choose another port if 5173 is busy. Then run:
+5. Open the web URL printed by pnpm dev:web in the browser. It is usually http://localhost:5173, but Vite may choose another port if 5173 is busy.
+   If it uses the usual URL, run:
    pnpm agent:doctor
+   pnpm smoke:agent-bridge
+   If Vite chose a different URL, run the doctor with that URL instead, for example:
+   MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
    pnpm smoke:agent-bridge
 6. If I want Claude or Codex MCP tools, configure:
    pnpm agent:mcp

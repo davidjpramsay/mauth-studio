@@ -81,5 +81,7 @@ if (!allOk) {
   console.log("  pnpm dev:api");
   console.log("  pnpm dev:web");
   console.log(`  open ${WEB_URL}`);
+  console.log("\nIf pnpm dev:web printed a different web URL, pass it to the doctor, for example:");
+  console.log("  MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor");
   process.exitCode = 1;
 }

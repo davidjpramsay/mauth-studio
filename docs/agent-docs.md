@@ -17,6 +17,12 @@ Run:
 pnpm agent:doctor
 ```
 
+If Vite prints a different web URL, pass it to the doctor:
+
+```bash
+MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
+```
+
 ## HTTP Contract
 
 ```text
