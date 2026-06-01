@@ -6,7 +6,7 @@
     <title>Mauth Studio | Agent-native maths assessment authoring</title>
     <meta
       name="description"
-      content="Mauth Studio is a local-first high-school mathematics assessment authoring app with a structured bridge for Codex, Claude Code, and other local agents."
+      content="Mauth Studio is an alpha local-first high-school mathematics assessment authoring app with a structured bridge for Codex, Claude Code, and other local agents."
     />
     <style>
       :root {
@@ -407,6 +407,7 @@
       </a>
       <nav class="nav" aria-label="Primary navigation">
         <a href="#bridge">Bridge</a>
+        <a href="#status">Status</a>
         <a href="#workflow">Workflow</a>
         <a href="#install">Install</a>
         <a href="#setup">Setup</a>
@@ -420,8 +421,8 @@
           <div>
             <h1>Mauth Studio</h1>
             <p>
-              Agent-native maths assessment authoring for teachers who want a real browser editor, deterministic validation, and local Codex
-              or Claude control without raw JSON file edits.
+              Alpha agent-native maths assessment authoring for teachers who want a real browser editor, deterministic validation, and local
+              Codex or Claude control without raw JSON file edits.
             </p>
             <div class="hero-actions">
               <a class="button" href="#install">Copy install prompt</a>
@@ -475,6 +476,34 @@
         </div>
       </section>
 
+      <section class="section" id="status">
+        <div class="section-inner two-column">
+          <article class="surface">
+            <h3>Alpha software</h3>
+            <p>
+              Mauth Studio is still in active development. Expect app code, schemas, docs, tests, and agent workflows to change as the local
+              bridge matures.
+            </p>
+            <ul>
+              <li>
+                <strong>Fork or clone:</strong> fork the repo for your own public copy, or clone it locally for an agent-operated project.
+              </li>
+              <li><strong>Change the app:</strong> agents can edit source code, tests, docs, and CI in a normal Git workflow.</li>
+              <li><strong>Keep user data out:</strong> do not commit local `storage/`, drafts, temporary output, or generated files.</li>
+            </ul>
+          </article>
+          <article class="surface">
+            <h3>Two chat work streams</h3>
+            <p>Keep development and assessment authoring in separate agent chats where practical.</p>
+            <ul>
+              <li><strong>Mauth Development:</strong> app code, architecture, schemas, tests, docs, CI, and repository maintenance.</li>
+              <li><strong>Mauth Authoring:</strong> create, inspect, convert, and polish assessments through the app and bridge.</li>
+              <li><strong>Shared contract:</strong> both streams should read `AGENTS.md` and the bridge/action docs.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
       <section class="section" id="workflow">
         <div class="section-inner docs">
           <div>
@@ -501,7 +530,8 @@ pnpm smoke:agent-bridge</pre>
             <h2>Paste this into Codex or Claude.</h2>
             <p>
               This is the fastest way to set up Mauth locally. The prompt asks the agent to clone the repo, install dependencies, run the
-              API and web app, open the browser, and use the structured bridge contract.
+              API and web app, open the browser, and use the structured bridge contract. It also tells the agent to keep development and
+              authoring work separate.
             </p>
           </div>
           <article class="prompt-card" aria-label="Copyable local setup prompt">
@@ -512,7 +542,13 @@ pnpm smoke:agent-bridge</pre>
             <textarea id="install-prompt" readonly spellcheck="false">
 Set up Mauth Studio locally for Codex or Claude Code.
 
-1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder.
+Mauth Studio is alpha software. Work in a local clone or fork. It is okay for the agent to change app code, schemas, tests, docs, and CI in a development workflow.
+
+Use two separate chats/work streams where practical:
+- Mauth Development: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
+- Mauth Authoring: create, inspect, convert, and polish assessments through the app, bridge, MCP tools, or browser.
+
+1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder, or fork it first if you want your own public copy.
 2. Read AGENTS.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
 3. From the repo root, install dependencies:
    pnpm install

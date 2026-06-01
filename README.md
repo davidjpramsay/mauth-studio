@@ -6,6 +6,17 @@ The browser is the review and print surface. Codex, Claude Code, Cursor, or anot
 
 ![Mauth Studio preview](docs/assets/mauth-bridge-smoke.png)
 
+## Development Status
+
+Mauth Studio is alpha software. Expect active changes to app code, schemas, docs, tests, and agent workflows.
+
+Fork the repo if you want your own public copy, or clone it locally if you just want an agent-operated project folder. Agents are expected to make code changes in the repo when working in the development stream.
+
+Recommended setup:
+
+- `Mauth Development`: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
+- `Mauth Authoring`: creating, inspecting, converting, and polishing assessments through the app, bridge, MCP tools, or browser.
+
 ## What It Builds
 
 - Printable maths tests and worksheets.
@@ -92,6 +103,7 @@ Use Mauth through the repo, local app APIs, MCP tools, and browser verification.
 
 - Use the `Development` work stream for app code, schemas, tests, docs, CI, and repo maintenance.
 - Use the `Authoring` work stream for creating, inspecting, converting, or polishing assessments.
+- Keep these as separate chats where practical so code changes and assessment authoring do not get mixed together.
 - Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
 - Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
 
