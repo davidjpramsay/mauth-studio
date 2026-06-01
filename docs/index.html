@@ -47,8 +47,8 @@
 
       .site-header {
         align-items: center;
-        background: rgba(255, 255, 255, 0.94);
-        border-bottom: 1px solid var(--line);
+        background: #050a17;
+        border-bottom: 1px solid #1f2c43;
         display: flex;
         gap: 24px;
         justify-content: space-between;
@@ -78,7 +78,7 @@
         flex-wrap: wrap;
         gap: 20px;
         justify-content: flex-end;
-        color: var(--muted);
+        color: rgba(255, 255, 255, 0.78);
         font-size: 0.94rem;
       }
 
@@ -87,7 +87,19 @@
       }
 
       .nav a:hover {
-        color: var(--blue);
+        color: white;
+      }
+
+      .site-header .button.secondary {
+        background: transparent;
+        border-color: rgba(255, 255, 255, 0.72);
+        color: white;
+      }
+
+      .site-header .button.secondary:hover {
+        background: white;
+        border-color: white;
+        color: var(--ink);
       }
 
       .button {
