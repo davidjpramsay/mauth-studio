@@ -23,7 +23,7 @@ Recommended setup:
 
 ## What It Builds
 
-- Printable maths tests and worksheets.
+- Printable maths tests, exams, and worksheets.
 - Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
 - MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
 - Local project files, autosave drafts, logo assets, and version snapshots.
@@ -137,7 +137,7 @@ pnpm smoke:diagram-gallery
 
 ## Mauthdown
 
-Mauthdown is the editable source format for tests and worksheets. It is Markdown plus explicit containers for title pages, questions, parts, subparts, text, choice lists, tables, diagrams, spaces, and page breaks. See `docs/mauthdown.md`.
+Mauthdown is the editable source format for tests, exams, and worksheets. It is Markdown plus explicit containers for title pages, questions, parts, subparts, text, choice lists, tables, diagrams, spaces, and page breaks. See `docs/mauthdown.md`.
 
 ## Storage
 
