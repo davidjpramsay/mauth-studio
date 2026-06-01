@@ -575,7 +575,7 @@ Do not edit storage/projects files directly. Use Mauth actions, the local HTTP b
         } catch {
           installPrompt.focus();
           installPrompt.select();
-          copyButton.textContent = "Select prompt";
+          copyButton.textContent = document.execCommand("copy") ? "Copied" : "Select prompt";
         }
 
         window.setTimeout(() => {
