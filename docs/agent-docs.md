@@ -9,7 +9,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-Open `http://localhost:5173`.
+Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`).
 
 Run:
 

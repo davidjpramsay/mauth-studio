@@ -72,7 +72,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-Open `http://localhost:5173`, then check the local bridge:
+Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`), then check the local bridge:
 
 ```bash
 pnpm agent:doctor

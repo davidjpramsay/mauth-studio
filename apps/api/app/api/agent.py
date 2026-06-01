@@ -153,7 +153,7 @@ def _active_editor_error_unlocked() -> tuple[int, dict[str, Any]] | None:
             503,
             _error_body(
                 "APP_NOT_CONNECTED",
-                "Open Mauth Studio in a browser at http://localhost:5173 before using the local agent bridge.",
+                "Open Mauth Studio in a browser at the web URL printed by pnpm dev:web before using the local agent bridge.",
             ),
         )
     if len(active_sessions) > 1:
@@ -269,7 +269,7 @@ def _dispatch_to_browser(kind: str, payload: dict[str, Any]) -> tuple[int, dict[
                 503,
                 _error_body(
                     "APP_NOT_CONNECTED",
-                    "Open Mauth Studio in a browser at http://localhost:5173 before using the local agent bridge.",
+                    "Open Mauth Studio in a browser at the web URL printed by pnpm dev:web before using the local agent bridge.",
                 ),
             )
         if len(active_sessions) > 1:

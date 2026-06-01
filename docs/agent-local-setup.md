@@ -20,7 +20,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-Open `http://localhost:5173` and keep exactly one Mauth editor tab active.
+Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
 
 Check the bridge:
 
@@ -73,7 +73,7 @@ This gives local Codex/Claude the structure of an API-driven product without mak
 
 ## Failure Modes
 
-- `APP_NOT_CONNECTED`: start the API/web app and open `http://localhost:5173`.
+- `APP_NOT_CONNECTED`: start the API/web app and open the web URL printed by `pnpm dev:web`.
 - `MULTIPLE_ACTIVE_EDITORS`: close extra Mauth tabs.
 - `STALE_SNAPSHOT`: call `mauth_snapshot` again and rebuild the action batch.
 - `VALIDATION_FAILED`: repair the action payload.
