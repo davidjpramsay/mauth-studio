@@ -1,38 +1,22 @@
 # Mauth Studio
 
-Mauth Studio is a local-first high-school mathematics assessment authoring app designed for a human teacher and an external coding agent to use together.
+Mauth Studio is a local-first mathematics assessment authoring app for teachers working with external coding agents.
 
-It is not another chat box inside an editor. The teacher uses the web app as the review and print surface, while Codex, Claude Code, Cursor, or another local agent uses a structured bridge to read the live document, dry-run edits, apply deterministic action batches, run validation, and leave review comments.
+The browser is the review and print surface. Codex, Claude Code, Cursor, or another local agent can use the local HTTP/MCP bridge to inspect the live document, preview edits, apply structured action batches, run validation, and verify the result in the browser.
 
 ![Mauth Studio preview](docs/assets/mauth-bridge-smoke.png)
 
-## What It Does
+## What It Builds
 
-- Builds printable mathematics tests and worksheets with title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
-- Keeps maths services, question generation, marking rules, formatting rules, and rendering adapters separated so assessment behaviour is explainable and testable.
-- Stores project files, autosave drafts, logo assets, and version snapshots through the local FastAPI storage layer.
-- Exposes an agent-native authoring contract: snapshot, preview, apply, validation, comments, suggestions, presence, and events.
-- Lets external agents work through local HTTP/MCP tools instead of editing raw project JSON.
+- Printable maths tests and worksheets.
+- Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
+- MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
+- Local project files, autosave drafts, logo assets, and version snapshots.
+- Agent-readable snapshots, deterministic actions, validation, comments, suggestions, presence, and events.
 
-## Why Agent-Native
+## Agent-Native Workflow
 
-Most AI-assisted document tools ask the model to infer hidden UI state or rewrite files directly. Mauth takes the opposite route:
-
-```text
-human teacher reviews in the browser
-        +
-local agent reads explicit document state
-        +
-agent proposes structured Mauth actions
-        +
-app dry-runs, validates, applies, autosaves, and saves with revision checks
-```
-
-That means agent edits are inspectable, retryable, reversible through editor history, and checked against the same validators the app uses.
-
-## Local Authoring Loop
-
-With the API and web app running, an agent should use this loop:
+Mauth avoids hidden UI state and raw JSON edits. The target loop is:
 
 ```text
 mauth_snapshot
@@ -42,17 +26,17 @@ mauth_validation_run
 browser verification
 ```
 
-Comments and suggestions are review state only; they do not mutate the document until an explicit action batch is previewed and applied.
+Agents should preview large edits before applying them. Successful applies go through the app action layer, editor history, autosave, and revision-aware project-file saves.
 
-Example Codex/Claude workflow:
+Example:
 
 ```text
-1. Call mauth_snapshot and identify the question/module ids to edit.
-2. Build a MauthDocumentAction batch, for example module.update or frontMatter.update.
-3. Call mauth_actions_preview with the action batch.
-4. If preview.valid is true, call mauth_actions_apply with the same actions and baseSnapshotId.
-5. Call mauth_validation_run.
-6. Inspect the browser preview before treating the edit as done.
+1. Call mauth_snapshot.
+2. Build a MauthDocumentAction batch.
+3. Call mauth_actions_preview.
+4. Apply the same batch with mauth_actions_apply.
+5. Run mauth_validation_run.
+6. Check the browser preview.
 ```
 
 ## Quick Start
@@ -86,9 +70,9 @@ Claude/Codex MCP clients can use:
 pnpm agent:mcp
 ```
 
-See `docs/agent-local-setup.md`, `docs/agent-bridge.md`, and the simple product page at `docs/index.html`.
+See `docs/agent-local-setup.md`, `docs/agent-bridge.md`, and `docs/index.html`.
 
-## Structure
+## Repo Map
 
 - `apps/api`: FastAPI services for maths, formatting, diagrams, storage, and project files.
 - `apps/web`: Vite, React, TypeScript, Tailwind, MathJax SVG math rendering, JSXGraph, Penrose SVG rendering, and Plotly charts.
@@ -99,20 +83,19 @@ See `docs/agent-local-setup.md`, `docs/agent-bridge.md`, and the simple product 
 - `packages/diagram-penrose`: Penrose Domain/Style files and JSON-to-Substance/SVG rendering for static geometric construction diagrams.
 - `packages/diagram-plotly`: Plotly chart-spec adapter for statistics diagrams.
 - `configs`: JSON rules for question types, formatting, marking, and AI-readable authoring brains.
-- `workspace`: local scratch and generated artifacts for Codex/human work. It is intentionally ignored by Git except for its guide files.
-- `chats`: project-level starting prompts for the two intended agent work streams.
+- `workspace`: ignored local scratch space for generated artifacts.
+- `chats`: starter prompts for the intended agent work streams.
 
 ## Agent Workflow
 
-Use Mauth with external agents through the repo, local app APIs, and browser verification, not through a built-in provider chat panel.
+Use Mauth through the repo, local app APIs, MCP tools, and browser verification. The old provider-backed in-app chat panel is not the product path.
 
-1. Start in the `Development` chat/work stream when changing app code, schemas, tests, or docs.
-2. Start in the `Authoring` chat/work stream when using Mauth to create, inspect, convert, or polish maths assessments.
-3. Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
-4. Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
-5. Promote only durable app code, docs, tests, fixtures, and configs into source control.
+- Use the `Development` work stream for app code, schemas, tests, docs, CI, and repo maintenance.
+- Use the `Authoring` work stream for creating, inspecting, converting, or polishing assessments.
+- Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
+- Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
 
-The target authoring loop is `snapshot -> action dry-run -> validation -> action apply -> browser verification`. The old provider-backed chat panel has been removed. The structured Mauth action layer remains the contract for deterministic edits and future external automation.
+Comments and suggestions are review state only. They do not mutate the document until an explicit action batch is previewed and applied.
 
 ## Verify
 
