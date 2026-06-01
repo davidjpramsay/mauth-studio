@@ -286,6 +286,55 @@
         grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
       }
 
+      .prompt-layout {
+        display: grid;
+        gap: clamp(28px, 5vw, 56px);
+        grid-template-columns: minmax(0, 0.72fr) minmax(320px, 1.28fr);
+      }
+
+      .prompt-card {
+        background: #0d1320;
+        border: 1px solid #22304b;
+        color: white;
+        padding: clamp(20px, 4vw, 32px);
+      }
+
+      .prompt-head {
+        align-items: center;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .prompt-head h3 {
+        color: white;
+        margin: 0;
+      }
+
+      .copy-button {
+        background: white;
+        border-color: white;
+        color: var(--ink);
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      #install-prompt {
+        background: #060b15;
+        border: 1px solid #263654;
+        color: #d8e6ff;
+        display: block;
+        font:
+          700 0.88rem/1.6 "SFMono-Regular",
+          Consolas,
+          monospace;
+        min-height: 430px;
+        padding: 18px;
+        resize: vertical;
+        width: 100%;
+      }
+
       .links {
         display: grid;
         gap: 12px;
@@ -339,8 +388,14 @@
 
         .lead-grid,
         .two-column,
-        .docs {
+        .docs,
+        .prompt-layout {
           grid-template-columns: 1fr;
+        }
+
+        .prompt-head {
+          align-items: flex-start;
+          flex-direction: column;
         }
       }
     </style>
@@ -353,6 +408,7 @@
       <nav class="nav" aria-label="Primary navigation">
         <a href="#bridge">Bridge</a>
         <a href="#workflow">Workflow</a>
+        <a href="#install">Install</a>
         <a href="#setup">Setup</a>
         <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio">GitHub</a>
       </nav>
@@ -368,7 +424,7 @@
               or Claude control without raw JSON file edits.
             </p>
             <div class="hero-actions">
-              <a class="button" href="#setup">Run locally</a>
+              <a class="button" href="#install">Copy install prompt</a>
               <a class="button secondary" href="#workflow">See the agent loop</a>
             </div>
           </div>
@@ -439,6 +495,47 @@ pnpm smoke:agent-bridge</pre>
         </div>
       </section>
 
+      <section class="section split" id="install">
+        <div class="section-inner prompt-layout">
+          <div>
+            <h2>Paste this into Codex or Claude.</h2>
+            <p>
+              This is the fastest way to set up Mauth locally. The prompt asks the agent to clone the repo, install dependencies, run the
+              API and web app, open the browser, and use the structured bridge contract.
+            </p>
+          </div>
+          <article class="prompt-card" aria-label="Copyable local setup prompt">
+            <div class="prompt-head">
+              <h3>Local setup prompt</h3>
+              <button class="button copy-button" type="button" data-copy-prompt>Copy prompt</button>
+            </div>
+            <textarea id="install-prompt" readonly spellcheck="false">
+Set up Mauth Studio locally for Codex or Claude Code.
+
+1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder.
+2. Read AGENTS.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
+3. From the repo root, install dependencies:
+   pnpm install
+   cd apps/api
+   uv sync
+   cd ../..
+4. Start the local app in two terminals:
+   pnpm dev:api
+   pnpm dev:web
+5. Open http://localhost:5173 and run:
+   pnpm agent:doctor
+   pnpm smoke:agent-bridge
+6. If configuring MCP, use:
+   pnpm agent:mcp
+7. For document edits, use the bridge loop:
+   snapshot -> preview -> apply -> validate -> browser verification
+
+Do not edit storage/projects files directly. Use Mauth actions, the local HTTP bridge, MCP tools, or browser verification so changes go through editor history, autosave, validation, and revision-aware saves.</textarea
+            >
+          </article>
+        </div>
+      </section>
+
       <section class="section split" id="setup">
         <div class="section-inner docs">
           <div>
@@ -466,5 +563,25 @@ pnpm smoke:agent-bridge</pre>
     </main>
 
     <footer>Mauth Studio is local-first software for mathematics assessment authoring with structured external-agent control.</footer>
+    <script>
+      const copyButton = document.querySelector("[data-copy-prompt]");
+      const installPrompt = document.querySelector("#install-prompt");
+
+      copyButton?.addEventListener("click", async () => {
+        if (!(installPrompt instanceof HTMLTextAreaElement) || !(copyButton instanceof HTMLButtonElement)) return;
+        try {
+          await navigator.clipboard.writeText(installPrompt.value.trim());
+          copyButton.textContent = "Copied";
+        } catch {
+          installPrompt.focus();
+          installPrompt.select();
+          copyButton.textContent = "Select prompt";
+        }
+
+        window.setTimeout(() => {
+          copyButton.textContent = "Copy prompt";
+        }, 1800);
+      });
+    </script>
   </body>
 </html>
