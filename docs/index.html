@@ -182,6 +182,7 @@
 
       .section {
         padding: clamp(64px, 9vw, 120px) clamp(20px, 6vw, 88px);
+        scroll-margin-top: 96px;
       }
 
       .section-inner {
@@ -406,12 +407,8 @@
         <img src="./assets/mauth-logo-lockup.png" alt="Mauth Studio" />
       </a>
       <nav class="nav" aria-label="Primary navigation">
-        <a href="#bridge">Bridge</a>
-        <a href="#status">Status</a>
-        <a href="#workflow">Workflow</a>
-        <a href="#install">Install</a>
-        <a href="#setup">Setup</a>
-        <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio">GitHub</a>
+        <a href="#what">What is Mauth?</a>
+        <a class="button secondary" href="#install">Install</a>
       </nav>
     </header>
 
@@ -421,28 +418,28 @@
           <div>
             <h1>Mauth Studio</h1>
             <p>
-              Alpha agent-native maths assessment authoring for teachers who want a real browser editor, deterministic validation, and local
-              Codex or Claude control without raw JSON file edits.
+              An alpha local app for making maths tests and worksheets with help from Codex or Claude. You run it on your computer, review
+              the test in a browser, and keep your files local.
             </p>
             <div class="hero-actions">
-              <a class="button" href="#install">Copy install prompt</a>
-              <a class="button secondary" href="#workflow">See the agent loop</a>
+              <a class="button" href="#what">What is Mauth?</a>
+              <a class="button secondary" href="#install">Install with an agent</a>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="section intro" id="bridge">
+      <section class="section intro" id="what">
         <div class="section-inner lead-grid">
           <div>
-            <h2>Human review surface. Agent control surface.</h2>
+            <h2>What is Mauth Studio?</h2>
           </div>
           <div class="workflow">
             <p>
-              Mauth keeps assessment authoring local. The web app remains the place where a teacher reviews layout, diagrams, solutions,
-              files, and print output. The bridge gives local agents a structured contract for making changes.
+              Mauth Studio is a work-in-progress tool for teachers who make maths assessments. The app shows printable A4 pages in the
+              browser. Your AI helper can help create tests, fix layout, improve diagrams, or change the app itself.
             </p>
-            <code>snapshot -> dry run -> apply -> validate -> browser check</code>
+            <code>teacher reviews in browser -> AI helper works in the local repo</code>
           </div>
         </div>
       </section>
@@ -451,87 +448,57 @@
         <div class="section-inner two-column">
           <article class="surface">
             <h3>For teachers</h3>
-            <p>
-              Build printable high-school mathematics tests and worksheets with questions, parts, subparts, diagrams, tables, working space,
-              and solutions.
-            </p>
+            <p>Build printable maths tests and worksheets with title pages, questions, diagrams, tables, working space, and solutions.</p>
             <ul>
-              <li><strong>Preview first:</strong> A4 pages render in the browser before print.</li>
-              <li><strong>Recover safely:</strong> Autosave, project files, logos, and versions stay local.</li>
-              <li><strong>Review clearly:</strong> Agent comments and suggestions are separate from committed edits.</li>
+              <li><strong>Preview before print:</strong> see the A4 pages in the browser.</li>
+              <li><strong>Keep files local:</strong> project files, autosave, logos, and versions stay on your machine.</li>
+              <li><strong>Ask for help:</strong> Codex or Claude can help write, edit, check, and improve assessments.</li>
             </ul>
           </article>
           <article class="surface">
-            <h3>For Codex and Claude</h3>
-            <p>
-              Work through explicit document state and deterministic actions instead of guessing React state or editing saved project JSON
-              directly.
-            </p>
+            <h3>For AI helpers</h3>
+            <p>Use two chats if you can. This keeps app changes separate from test-writing work.</p>
             <ul>
-              <li><strong>Read:</strong> `mauth_snapshot` exposes stable ids and validation state.</li>
-              <li><strong>Preview:</strong> `mauth_actions_preview` dry-runs action batches.</li>
-              <li><strong>Apply:</strong> `mauth_actions_apply` commits through history, autosave, and revision checks.</li>
+              <li><strong>Mauth Development:</strong> change app code, tests, docs, and setup.</li>
+              <li><strong>Mauth Authoring:</strong> make or polish tests using the running app.</li>
+              <li><strong>Use the app:</strong> do not edit saved project files directly.</li>
             </ul>
           </article>
         </div>
       </section>
 
-      <section class="section" id="status">
+      <section class="section">
         <div class="section-inner two-column">
           <article class="surface">
-            <h3>Alpha software</h3>
+            <h3>Still in development</h3>
             <p>
-              Mauth Studio is still in active development. Expect app code, schemas, docs, tests, and agent workflows to change as the local
-              bridge matures.
+              Mauth Studio is alpha software. It is public so people and their agents can inspect it, fork it, clone it, and improve it.
             </p>
             <ul>
-              <li>
-                <strong>Fork or clone:</strong> fork the repo for your own public copy, or clone it locally for an agent-operated project.
-              </li>
-              <li><strong>Change the app:</strong> agents can edit source code, tests, docs, and CI in a normal Git workflow.</li>
-              <li><strong>Keep user data out:</strong> do not commit local `storage/`, drafts, temporary output, or generated files.</li>
+              <li><strong>Fork:</strong> make your own public copy on GitHub.</li>
+              <li><strong>Clone:</strong> keep a local copy on your computer.</li>
+              <li><strong>Expect changes:</strong> the app, docs, and agent workflow will keep improving.</li>
             </ul>
           </article>
           <article class="surface">
-            <h3>Two chat work streams</h3>
-            <p>Keep development and assessment authoring in separate agent chats where practical.</p>
+            <h3>What your agent can change</h3>
+            <p>Your agent is allowed to work on the app, not just use it.</p>
             <ul>
-              <li><strong>Mauth Development:</strong> app code, architecture, schemas, tests, docs, CI, and repository maintenance.</li>
-              <li><strong>Mauth Authoring:</strong> create, inspect, convert, and polish assessments through the app and bridge.</li>
-              <li><strong>Shared contract:</strong> both streams should read `AGENTS.md` and the bridge/action docs.</li>
+              <li><strong>App code:</strong> React, FastAPI, shared types, tests, and docs.</li>
+              <li><strong>Assessment content:</strong> questions, diagrams, formatting, and solutions.</li>
+              <li><strong>Setup:</strong> install problems, checks, local servers, and GitHub Pages docs.</li>
             </ul>
           </article>
-        </div>
-      </section>
-
-      <section class="section" id="workflow">
-        <div class="section-inner docs">
-          <div>
-            <h2>Local-first, MCP-ready.</h2>
-            <p>
-              The HTTP bridge is the canonical contract. MCP wraps that bridge for Claude Desktop, Codex, and other local tools. Successful
-              edits still flow through the same web app action layer the human UI uses.
-            </p>
-          </div>
-          <pre class="code-panel"><span>pnpm dev:api</span>
-<span>pnpm dev:web</span>
-
-open http://localhost:5173
-
-pnpm agent:doctor
-pnpm agent:mcp
-pnpm smoke:agent-bridge</pre>
         </div>
       </section>
 
       <section class="section split" id="install">
         <div class="section-inner prompt-layout">
           <div>
-            <h2>Paste this into Codex or Claude.</h2>
+            <h2>Install with Codex or Claude.</h2>
             <p>
-              This is the fastest way to set up Mauth locally. The prompt asks the agent to clone the repo, install dependencies, run the
-              API and web app, open the browser, and use the structured bridge contract. It also tells the agent to keep development and
-              authoring work separate.
+              Copy this prompt into a new Codex or Claude Code chat. It asks the agent to set up Mauth in a local folder, explain what it is
+              doing, start the app, and check that it works.
             </p>
           </div>
           <article class="prompt-card" aria-label="Copyable local setup prompt">
@@ -540,45 +507,44 @@ pnpm smoke:agent-bridge</pre>
               <button class="button copy-button" type="button" data-copy-prompt>Copy prompt</button>
             </div>
             <textarea id="install-prompt" readonly spellcheck="false">
-Set up Mauth Studio locally for Codex or Claude Code.
+Set up Mauth Studio locally for me. I am a novice, so explain what you are doing in plain language and do as much of the setup as you can.
 
-Mauth Studio is alpha software. Work in a local clone or fork. It is okay for the agent to change app code, schemas, tests, docs, and CI in a development workflow.
+Mauth Studio is alpha software. Work in a local clone or fork. It is okay for you to change app code, schemas, tests, docs, and CI when working in the development chat.
 
-Use two separate chats/work streams where practical:
+Please help me use two separate chats/work streams where practical:
 - Mauth Development: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
-- Mauth Authoring: create, inspect, convert, and polish assessments through the app, bridge, MCP tools, or browser.
+- Mauth Authoring: create, inspect, convert, and polish assessments through the running app.
 
-1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder, or fork it first if you want your own public copy.
+1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder, or help me fork it first if I want my own public copy.
 2. Read AGENTS.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
-3. From the repo root, install dependencies:
+3. From the repo root, install what Mauth needs:
    pnpm install
    cd apps/api
    uv sync
    cd ../..
-4. Start the local app in two terminals:
+4. Start the local app:
    pnpm dev:api
    pnpm dev:web
-5. Open http://localhost:5173 and run:
+5. Open http://localhost:5173 in the browser and run:
    pnpm agent:doctor
    pnpm smoke:agent-bridge
-6. If configuring MCP, use:
+6. If I want Claude or Codex MCP tools, configure:
    pnpm agent:mcp
-7. For document edits, use the bridge loop:
-   snapshot -> preview -> apply -> validate -> browser verification
+7. When editing an assessment, use the running app, browser checks, and structured Mauth actions where possible.
 
-Do not edit storage/projects files directly. Use Mauth actions, the local HTTP bridge, MCP tools, or browser verification so changes go through editor history, autosave, validation, and revision-aware saves.</textarea
+Do not edit storage/projects files directly. Keep local storage, drafts, screenshots, and temporary output out of Git unless I explicitly ask for them.</textarea
             >
           </article>
         </div>
       </section>
 
-      <section class="section split" id="setup">
+      <section class="section split">
         <div class="section-inner docs">
           <div>
-            <h2>Start with the repo docs.</h2>
+            <h2>Want the technical details?</h2>
             <p>
-              The product page gives the shape. The repo docs are the operating contract for development, authoring, MCP setup, bridge
-              endpoints, action batches, storage rules, and AI rule brains.
+              Most users can start with the install prompt. These docs are for the agent or for anyone who wants to understand the deeper
+              app contract.
             </p>
           </div>
           <div class="links">
@@ -598,7 +564,7 @@ Do not edit storage/projects files directly. Use Mauth actions, the local HTTP b
       </section>
     </main>
 
-    <footer>Mauth Studio is local-first software for mathematics assessment authoring with structured external-agent control.</footer>
+    <footer>Mauth Studio is an alpha local app for making maths assessments with help from external AI coding agents.</footer>
     <script>
       const copyButton = document.querySelector("[data-copy-prompt]");
       const installPrompt = document.querySelector("#install-prompt");

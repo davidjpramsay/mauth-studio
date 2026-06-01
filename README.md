@@ -10,6 +10,10 @@ The browser is the review and print surface. Codex, Claude Code, Cursor, or anot
 
 Mauth Studio is alpha software. Expect active changes to app code, schemas, docs, tests, and agent workflows.
 
+If you are new to the project, start with the public page and copy the install prompt into Codex or Claude:
+
+[davidjpramsay.github.io/mauth-studio](https://davidjpramsay.github.io/mauth-studio/)
+
 Fork the repo if you want your own public copy, or clone it locally if you just want an agent-operated project folder. Agents are expected to make code changes in the repo when working in the development stream.
 
 Recommended setup:
