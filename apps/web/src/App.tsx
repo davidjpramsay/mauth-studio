@@ -8263,7 +8263,6 @@ function DiagramBlockEditor({
       "graph-editor-controls p-3",
       <Geometry2DGraphEditor
         config={config}
-        settingsMode={settingsMode}
         anchor={anchor}
         activeAnchor={activeAnchor}
         onActivateAnchor={onActivateAnchor}

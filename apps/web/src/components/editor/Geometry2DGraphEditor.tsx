@@ -4,23 +4,19 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
-  GEOMETRY_2D_CHILD_SEGMENTS,
   createGeometry2DArc,
   createGeometry2DAngle,
   createGeometry2DDecoration,
   createGeometry2DPoint,
   createGeometry2DSegment,
   geometry2dChildAnchor,
-  geometry2dCounts,
   geometry2dData,
   geometry2dPatch,
-  type Geometry2DListKey,
 } from "@/lib/diagramGeometry2d";
 import { cn } from "@/lib/utils";
 
 interface Geometry2DGraphEditorProps {
   config: GraphConfig;
-  settingsMode?: "inline" | "inspector";
   anchor?: string;
   activeAnchor?: string;
   onActivateAnchor?: (anchor: string) => void;
@@ -82,11 +78,13 @@ function GeometryItemButton({
 function GeometrySection({
   title,
   onAdd,
+  addLabel,
   actions,
   children,
 }: {
   title: string;
   onAdd?: () => void;
+  addLabel?: string;
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -97,7 +95,7 @@ function GeometrySection({
         {actions ?? (
           <Button type="button" variant="outline" size="sm" onClick={onAdd}>
             <PlusCircle className="mr-2 size-4" aria-hidden="true" />
-            Add
+            {addLabel ?? "Add"}
           </Button>
         )}
       </div>
@@ -106,66 +104,23 @@ function GeometrySection({
   );
 }
 
-function selectedGeometrySummary(activeAnchor: string | undefined, anchor: string | undefined, data: Graph2DGeometryData) {
-  if (!activeAnchor || !anchor || !activeAnchor.startsWith(`${anchor}/`)) return "";
-  const selected: Array<[Geometry2DListKey, string, readonly unknown[] | undefined]> = [
-    ["points", "Point", data.points],
-    ["segments", "Segment", data.segments],
-    ["arcs", "Arc", data.arcs],
-    ["angles", "Angle", data.angles],
-    ["decorations", "Marker", data.decorations],
-  ];
-  const match = selected.find(([key]) => activeAnchor.startsWith(`${anchor}/${GEOMETRY_2D_CHILD_SEGMENTS[key]}:`));
-  if (!match) return "";
-  const [key, label, items] = match;
-  const prefix = `${anchor}/${GEOMETRY_2D_CHILD_SEGMENTS[key]}:`;
-  const index = Number(activeAnchor.slice(prefix.length));
-  if (!Number.isInteger(index) || index < 0 || index >= (items?.length ?? 0)) return "";
-  return `${label} ${index + 1} selected`;
-}
-
-export function Geometry2DGraphEditor({
-  config,
-  settingsMode = "inline",
-  anchor,
-  activeAnchor,
-  onActivateAnchor,
-  onChange,
-}: Geometry2DGraphEditorProps) {
+export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivateAnchor, onChange }: Geometry2DGraphEditorProps) {
   const data = geometry2dData(config);
   const points = data.points ?? [];
   const segments = data.segments ?? [];
   const arcs = data.arcs ?? [];
   const angles = data.angles ?? [];
   const decorations = data.decorations ?? [];
-  const counts = geometry2dCounts(data);
 
   const setData = (nextData: Graph2DGeometryData) => patchGeometryData(config, onChange, nextData);
 
-  if (settingsMode === "inspector") {
-    const selectedSummary = selectedGeometrySummary(activeAnchor, anchor, data);
-    return (
-      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
-        {[
-          ["Points", counts.pointCount],
-          ["Segments", counts.segmentCount],
-          ["Arcs", counts.arcCount],
-          ["Angles", counts.angleCount],
-          ["Markers", counts.decorationCount],
-        ].map(([label, count]) => (
-          <div key={label} className="rounded-md border bg-muted/20 px-2 py-1.5">
-            <div className="font-semibold text-muted-foreground">{label}</div>
-            <div className="text-sm font-semibold text-foreground">{count}</div>
-          </div>
-        ))}
-        {selectedSummary ? <div className="col-span-2 truncate text-muted-foreground sm:col-span-5">{selectedSummary}</div> : null}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <GeometrySection title="Points" onAdd={() => setData({ ...data, points: [...points, createGeometry2DPoint(points.length)] })}>
+      <GeometrySection
+        title="Points"
+        addLabel="Add point"
+        onAdd={() => setData({ ...data, points: [...points, createGeometry2DPoint(points.length)] })}
+      >
         {points.map((point, index) => {
           const itemAnchor = geometry2dChildAnchor(anchor, "points", index);
           return (
@@ -182,7 +137,11 @@ export function Geometry2DGraphEditor({
         })}
       </GeometrySection>
 
-      <GeometrySection title="Segments" onAdd={() => setData({ ...data, segments: [...segments, createGeometry2DSegment(points)] })}>
+      <GeometrySection
+        title="Segments"
+        addLabel="Add segment"
+        onAdd={() => setData({ ...data, segments: [...segments, createGeometry2DSegment(points)] })}
+      >
         {segments.map((segment, index) => {
           const itemAnchor = geometry2dChildAnchor(anchor, "segments", index);
           return (
@@ -199,7 +158,7 @@ export function Geometry2DGraphEditor({
         })}
       </GeometrySection>
 
-      <GeometrySection title="Arcs" onAdd={() => setData({ ...data, arcs: [...arcs, createGeometry2DArc(points)] })}>
+      <GeometrySection title="Arcs" addLabel="Add arc" onAdd={() => setData({ ...data, arcs: [...arcs, createGeometry2DArc(points)] })}>
         {arcs.map((arc, index) => {
           const itemAnchor = geometry2dChildAnchor(anchor, "arcs", index);
           return (
@@ -216,7 +175,11 @@ export function Geometry2DGraphEditor({
         })}
       </GeometrySection>
 
-      <GeometrySection title="Angles" onAdd={() => setData({ ...data, angles: [...angles, createGeometry2DAngle(points)] })}>
+      <GeometrySection
+        title="Angles"
+        addLabel="Add angle"
+        onAdd={() => setData({ ...data, angles: [...angles, createGeometry2DAngle(points)] })}
+      >
         {angles.map((angle, index) => {
           const itemAnchor = geometry2dChildAnchor(anchor, "angles", index);
           return (
