@@ -7,6 +7,7 @@ import {
   MIXED_MATH_LINE_PATTERN,
   unescapeTextMathDelimiters,
 } from "./mathDelimiters.ts";
+import { plainTextForSimpleInlineLatex } from "./latex.ts";
 
 function tokens(pattern: RegExp, source: string) {
   return Array.from(source.matchAll(new RegExp(pattern))).map((match) => match[0]);
@@ -24,4 +25,12 @@ test("display math delimiters ignore escaped dollars before the block", () => {
   const source = String.raw`Cost is \$20 before $$x^2 + 1$$ is shown.`;
 
   assert.deepEqual(tokens(DISPLAY_MATH_BLOCK_PATTERN, source), [String.raw`$$x^2 + 1$$`]);
+});
+
+test("simple inline numeric latex can render as normal prose text", () => {
+  assert.equal(plainTextForSimpleInlineLatex(String.raw`5.7\%`), "5.7%");
+  assert.equal(plainTextForSimpleInlineLatex(String.raw`\textstyle 7\%`), "7%");
+  assert.equal(plainTextForSimpleInlineLatex("15"), "15");
+  assert.equal(plainTextForSimpleInlineLatex(String.raw`x=1`), null);
+  assert.equal(plainTextForSimpleInlineLatex(String.raw`\frac{1}{2}`), null);
 });

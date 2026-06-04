@@ -32,6 +32,7 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 ## Shared Conventions
 
 - Use `$...$` for inline maths and `$$...$$` for display maths.
+- Write simple prose values as normal text, such as `7%`, `15`, `18 months`, and `5.7% p.a.`; reserve LaTeX for real formulae, equations, coordinates, variables, and symbolic notation.
 - Do not emit `\(...\)`, `\[...\]`, escaped-dollar artefacts, or currency symbols inside maths delimiters.
 - Use hidden `[[marks:n]]` annotations for solution-copy mark ticks.
 - Every marked free-response item needs a student response surface.

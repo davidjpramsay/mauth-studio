@@ -7,6 +7,8 @@ DISPLAY_MATH = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTALL)
 INLINE_MATH = re.compile(r"(?<!\\)\$((?:\\\$|[^$\n])+?)(?<!\\)\$")
 INLINE_FORMATTING = re.compile(r"(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)")
 ESCAPED_TEXT_DOLLAR = re.compile(r"\\\$")
+LEADING_STYLE_COMMAND = re.compile(r"^\\(?:display|text|script|scriptscript)style\b")
+SIMPLE_INLINE_NUMBER = re.compile(r"^[+-]?(?:(?:\d+(?:[ ,]\d{3})+|\d+)(?:\.\d+)?|\.\d+)(?:\s*%)?$")
 
 
 class FormattingEngine:
@@ -168,6 +170,10 @@ class FormattingEngine:
 
         def inline_replacer(match):
             latex = match.group(1).strip()
+            plain_text = cls._plain_text_for_simple_inline_latex(latex)
+            if plain_text is not None:
+                placeholders.append(html.escape(plain_text))
+                return f"@@MATH{len(placeholders) - 1}@@"
             if latex and not re.match(r"^\\(?:display|text|script|scriptscript)style\b", latex):
                 latex = f"\\displaystyle {latex}"
             placeholders.append(f'<span class="inline-latex">{html.escape(latex)}</span>')
@@ -180,6 +186,15 @@ class FormattingEngine:
         for index, replacement in enumerate(placeholders):
             text = text.replace(f"@@MATH{index}@@", replacement)
         return text
+
+    @staticmethod
+    def _plain_text_for_simple_inline_latex(latex: str) -> str | None:
+        candidate = LEADING_STYLE_COMMAND.sub("", latex.strip()).strip()
+        candidate = re.sub(r"\\,", " ", candidate)
+        candidate = candidate.replace(r"\%", "%")
+        candidate = re.sub(r"\s+", " ", candidate)
+        candidate = re.sub(r"\s+(?=%$)", "", candidate).strip()
+        return candidate if SIMPLE_INLINE_NUMBER.match(candidate) else None
 
     @staticmethod
     def _inline_formatting_html(match: re.Match) -> str:

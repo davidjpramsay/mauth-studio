@@ -105,7 +105,7 @@ Markdown **bold** and _italic_ are supported.
 :::
 ```
 
-Use `$...$` for inline maths and `$$...$$` for display maths. Maths renders through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default, so formulas stay in the sentence while fractions and operators use display-style sizing. This is a local wrapper rather than MathJax display mode, because display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`.
+Use `$...$` for inline maths and `$$...$$` for display maths. Write simple prose values as normal text, not LaTeX: use `7%`, `15`, `18 months`, `5.7% p.a.`, and `2024 to 2025` unless the value is part of a real formula, equation, coordinate, variable statement, or symbolic table heading. Maths renders through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default, so formulas stay in the sentence while fractions and operators use display-style sizing. This is a local wrapper rather than MathJax display mode, because display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`.
 
 Keep currency escapes outside maths. For monetary random variables, write mathematical values numerically, such as `$E(Y)=-0.094$`, then use prose such as `-\$0.094` per game if the unit is dollars. Do not write escaped currency inside maths, such as `$-\$0.094$`.
 

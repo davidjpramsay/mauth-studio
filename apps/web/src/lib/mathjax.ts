@@ -5,7 +5,7 @@ import { TeX } from "mathjax-full/js/input/tex.js";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
 
-import { inlineDisplayLatex, normalizeLatexSource } from "@/lib/latex";
+import { inlineDisplayLatex, normalizeLatexSource, plainTextForSimpleInlineLatex } from "@/lib/latex";
 
 const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
@@ -51,6 +51,9 @@ function escapeHtml(value: string) {
 export function renderMathJaxSvg(latex: string, display = false) {
   const trimmed = normalizeLatexSource(latex);
   if (!trimmed) return "";
+
+  const plainText = display ? null : plainTextForSimpleInlineLatex(trimmed);
+  if (plainText !== null) return escapeHtml(plainText);
 
   const source = display ? trimmed : inlineDisplayLatex(trimmed);
   const cacheKey = `${display ? "display" : "inline"}\n${source}`;
