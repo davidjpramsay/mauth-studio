@@ -3,9 +3,10 @@ import json
 import re
 from pathlib import Path
 
-DISPLAY_MATH = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
-INLINE_MATH = re.compile(r"\$(.+?)\$")
+DISPLAY_MATH = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTALL)
+INLINE_MATH = re.compile(r"(?<!\\)\$((?:\\\$|[^$\n])+?)(?<!\\)\$")
 INLINE_FORMATTING = re.compile(r"(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)")
+ESCAPED_TEXT_DOLLAR = re.compile(r"\\\$")
 
 
 class FormattingEngine:
@@ -174,7 +175,7 @@ class FormattingEngine:
 
         text = DISPLAY_MATH.sub(display_replacer, source or "")
         text = INLINE_MATH.sub(inline_replacer, text)
-        text = html.escape(text).replace("\n", "<br>")
+        text = html.escape(ESCAPED_TEXT_DOLLAR.sub("$", text)).replace("\n", "<br>")
         text = INLINE_FORMATTING.sub(cls._inline_formatting_html, text)
         for index, replacement in enumerate(placeholders):
             text = text.replace(f"@@MATH{index}@@", replacement)

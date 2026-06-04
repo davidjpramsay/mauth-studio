@@ -144,6 +144,7 @@ import {
   validateMauthDocumentActionPayloads,
 } from "@/lib/mauthActionValidation";
 import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
+import { DISPLAY_MATH_BLOCK_PATTERN, MIXED_MATH_LINE_PATTERN, unescapeTextMathDelimiters } from "@/lib/mathDelimiters";
 import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
@@ -2573,23 +2574,25 @@ function markLabel(marks: number) {
 }
 
 function renderInlineFormatting(text: string): ReactNode[] {
-  return text.split(/(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g).map((segment, index) => {
-    const key = `${segment}-${index}`;
-    if (segment.startsWith("***") && segment.endsWith("***")) {
-      return (
-        <strong key={key}>
-          <em>{segment.slice(3, -3)}</em>
-        </strong>
-      );
-    }
-    if (segment.startsWith("**") && segment.endsWith("**")) {
-      return <strong key={key}>{segment.slice(2, -2)}</strong>;
-    }
-    if (segment.startsWith("*") && segment.endsWith("*")) {
-      return <em key={key}>{segment.slice(1, -1)}</em>;
-    }
-    return <span key={key}>{segment}</span>;
-  });
+  return unescapeTextMathDelimiters(text)
+    .split(/(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g)
+    .map((segment, index) => {
+      const key = `${segment}-${index}`;
+      if (segment.startsWith("***") && segment.endsWith("***")) {
+        return (
+          <strong key={key}>
+            <em>{segment.slice(3, -3)}</em>
+          </strong>
+        );
+      }
+      if (segment.startsWith("**") && segment.endsWith("**")) {
+        return <strong key={key}>{segment.slice(2, -2)}</strong>;
+      }
+      if (segment.startsWith("*") && segment.endsWith("*")) {
+        return <em key={key}>{segment.slice(1, -1)}</em>;
+      }
+      return <span key={key}>{segment}</span>;
+    });
 }
 
 function FormattedText({ text, className }: { text: string; className?: string }) {
@@ -3534,7 +3537,7 @@ function isDisplayMathLine(source: string) {
 
 function parseMixedMathLine(source: string) {
   const segments: MixedMathSegment[] = [];
-  const regex = /(\$\$[\s\S]+?\$\$(?:\s*\[\[marks:\d+]])?|\$[^$\n]+?\$(?:\s*\[\[marks:\d+]])?)/g;
+  const regex = new RegExp(MIXED_MATH_LINE_PATTERN);
   let cursor = 0;
   let match: RegExpExecArray | null;
 
@@ -3611,7 +3614,7 @@ function parseMixedMathText(source: string) {
 
 function parseMixedMathUncached(source: string) {
   const segments: MixedMathSegment[] = [];
-  const displayRegex = /(\$\$[\s\S]+?\$\$(?:\s*\[\[marks:\d+]])?)/g;
+  const displayRegex = new RegExp(DISPLAY_MATH_BLOCK_PATTERN);
   let cursor = 0;
   let match: RegExpExecArray | null;
 

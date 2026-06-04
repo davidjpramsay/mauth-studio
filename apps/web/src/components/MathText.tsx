@@ -1,8 +1,7 @@
 import { Latex } from "@/components/Latex";
+import { DELIMITED_MATH_PATTERN, unescapeTextMathDelimiters } from "@/lib/mathDelimiters";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
-
-const DELIMITED_MATH_PATTERN = /(\$\$[\s\S]+?\$\$|\$[^$]+\$)/g;
 
 function stripMathDelimiters(value: string) {
   const trimmed = value.trim();
@@ -34,7 +33,7 @@ export function MathText({ source, className }: { source?: string | null; classN
   if (!matches.length) {
     return (
       <span className={cn("inline-flex items-center whitespace-nowrap align-middle", className)}>
-        {looksLikeBareMath(text) ? <Latex latex={stripMathDelimiters(text)} /> : text}
+        {looksLikeBareMath(text) ? <Latex latex={stripMathDelimiters(text)} /> : unescapeTextMathDelimiters(text)}
       </span>
     );
   }
@@ -45,13 +44,13 @@ export function MathText({ source, className }: { source?: string | null; classN
     const start = match.index ?? 0;
     const token = match[0];
     if (start > cursor) {
-      parts.push(<span key={`text-${index}`}>{text.slice(cursor, start)}</span>);
+      parts.push(<span key={`text-${index}`}>{unescapeTextMathDelimiters(text.slice(cursor, start))}</span>);
     }
     parts.push(<Latex key={`math-${index}`} latex={stripMathDelimiters(token)} />);
     cursor = start + token.length;
   });
   if (cursor < text.length) {
-    parts.push(<span key="text-end">{text.slice(cursor)}</span>);
+    parts.push(<span key="text-end">{unescapeTextMathDelimiters(text.slice(cursor))}</span>);
   }
 
   return <span className={cn("inline-flex items-center gap-1 whitespace-nowrap align-middle", className)}>{parts}</span>;
