@@ -1,5 +1,6 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
+import { graphFunctionNaturalBoundaries, graphFunctionNaturalDomainText } from "./graphFunctionDomains.ts";
 import { diagramIntentFromText, type MauthDiagramIntent } from "./mauthDiagramIntent.ts";
 import { inspectDiagramSemantics, type MauthDiagramSemanticWarning } from "./mauthDiagramSemanticInspection.ts";
 
@@ -248,6 +249,58 @@ function visibleGraphFunctionExpressions(config: GraphConfig) {
     });
   if (expressions.length) return expressions;
   return typeof config.expression === "string" && config.expression.trim() ? [config.expression.trim()] : [];
+}
+
+function functionDomainBoundaryViolation(
+  functionEntry: Record<string, unknown>,
+  config: GraphConfig,
+  boundary: ReturnType<typeof graphFunctionNaturalBoundaries>[number],
+) {
+  const domainValue = boundary.side === "left" ? functionEntry.domainMin : functionEntry.domainMax;
+  const graphValue = boundary.side === "left" ? config.xMin : config.xMax;
+  const value = finiteGraphNumber(domainValue) ?? finiteGraphNumber(graphValue);
+  if (value === undefined) return undefined;
+  const tolerance = 1e-6;
+  if (boundary.side === "left") {
+    return boundary.strict ? value <= boundary.boundary + tolerance : value < boundary.boundary - tolerance;
+  }
+  return boundary.strict ? value >= boundary.boundary - tolerance : value > boundary.boundary + tolerance;
+}
+
+function inspectGraph2dNaturalDomains(config: GraphConfig): MauthDiagramInspectionWarning[] {
+  const warnings: MauthDiagramInspectionWarning[] = [];
+  for (const { entry, index, expression } of sourceGraphFunctions(config)) {
+    for (const boundary of graphFunctionNaturalBoundaries(expression)) {
+      if (!functionDomainBoundaryViolation(entry, config, boundary)) continue;
+      const pathIndex = index >= 0 ? `[${index}]` : "";
+      const pathSuffix = boundary.side === "left" ? "domainMin" : "domainMax";
+      warnings.push({
+        code: "graph2d-natural-domain-crossed",
+        severity: "warning",
+        message: `The function ${expression} contains ${boundary.source}, so its natural domain is ${graphFunctionNaturalDomainText(boundary)}. Keep the function domain inside that boundary and draw the asymptote or endpoint as a separate feature.`,
+        path: `graphConfig.functions${pathIndex}.${pathSuffix}`,
+      });
+    }
+  }
+  return warnings;
+}
+
+function sourceRequiresMinorGrid(contextText: string) {
+  return /\bminor\s+grids?\b|\bminor\s+grid\s+lines?\b|\bfine\s+grids?\b|\bsmall\s+squares?\b|\bsubdivisions?\b|\bhalf[-\s]?unit\s+grids?\b|\b0\.(?:1|2|25|5)\s*(?:unit|units|grid|interval|spacing|squares?)\b/i.test(
+    contextText,
+  );
+}
+
+function inspectCoordinateMinorGrid(config: GraphConfig, contextText: string): MauthDiagramInspectionWarning[] {
+  if (config.showMinorGrid !== true || sourceRequiresMinorGrid(contextText)) return [];
+  return [
+    {
+      code: `${config.type}-unnecessary-minor-grid`,
+      severity: "warning",
+      message: `${config.type} has showMinorGrid enabled, but the prompt/source does not mention minor grid lines, subdivisions, small squares, or fractional grid spacing. Default copied coordinate graphs to major grid only unless the source uses a minor grid.`,
+      path: "graphConfig.showMinorGrid",
+    },
+  ];
 }
 
 function compositeSectorTriangleContext(contextText: string) {
@@ -619,6 +672,8 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
   const warnings: MauthDiagramInspectionWarning[] = [];
   const visibleExpressions = visibleGraphFunctionExpressions(config);
   const expectedStraightLineCount = straightLineGraphExpectation(contextText);
+  warnings.push(...inspectGraph2dNaturalDomains(config));
+  warnings.push(...inspectCoordinateMinorGrid(config, contextText));
 
   if (/\b(?:slope|direction)\s+field\b/i.test(contextText)) {
     const slopeField = isRecord(data.slopeField) ? data.slopeField : {};
@@ -1207,7 +1262,7 @@ function inspectVector2d(config: GraphConfig, contextText: string): MauthDiagram
   const metadata = graphMetadata(config);
   const vector2d = isRecord(metadata.vector2d) ? metadata.vector2d : {};
   const vectors = Array.isArray(vector2d.vectors) ? vector2d.vectors : [];
-  const warnings: MauthDiagramInspectionWarning[] = [];
+  const warnings: MauthDiagramInspectionWarning[] = [...inspectCoordinateMinorGrid(config, contextText)];
   if (!vectors.length) {
     warnings.push({
       code: "vector2d-vectors-missing",
@@ -1363,6 +1418,7 @@ export function isAgentDiagramInspectionWarningBlocking(warning: MauthDiagramIns
     warning.code === "graph2d-straight-line-mismatch" ||
     warning.code === "graph2d-slope-field-missing" ||
     warning.code === "graph2d-slope-field-point-missing" ||
+    warning.code === "graph2d-natural-domain-crossed" ||
     warning.code === "graph2d-source-equation-missing" ||
     warning.code === "graph2d-source-domain-mismatch" ||
     warning.code === "graph2d-source-point-missing" ||

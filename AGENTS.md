@@ -62,9 +62,10 @@ For assessment authoring, direct edits under `storage/projects` are a recovery f
 
 ## Mauthdown
 
-Mauthdown is the AI-friendly file format for tests. Prefer explicit containers:
+Mauthdown is the AI-friendly file format for tests, exams, and worksheets. Prefer explicit containers:
 
 - `:::question`
+- top-level section headings in `sectionHeadings`/`documentFlow`
 - `:::part`
 - `:::subpart`
 - `:::text`
@@ -77,7 +78,13 @@ Mauthdown is the AI-friendly file format for tests. Prefer explicit containers:
 
 Question, part, and subpart labels are automatic. Do not store visible labels like `(a)` or `(i)` in text unless they are part of the actual question content.
 
-Use `$...$` for inline maths and `$$...$$` for display maths. Write simple prose values as normal text, not LaTeX: use `7%`, `15`, `18 months`, `5.7% p.a.`, and `2024 to 2025` unless the value is part of a real formula, equation, coordinate, variable statement, or symbolic table heading. Maths is rendered through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default so it stays in the sentence while fractions and operators use display-style sizing. This is a local wrapper, not MathJax display mode, because MathJax display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`. TeX still shrinks content inside fraction numerators and denominators; for printable questions, solutions, table cells, and diagram labels, write nested large expressions explicitly, such as `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`. Markdown `**bold**`, `*italic*`, and `***bold italic***` are supported in text blocks. Table cells use the same inline maths and formatting renderer.
+Use `$...$` for inline maths and `$$...$$` for display maths. Write simple prose values as normal text, not LaTeX: use `7%`, `15`, `18 months`, `5.7% p.a.`, and `2024 to 2025` unless the value is part of a real formula, equation, coordinate, variable statement, symbolic table heading, or a mathematical answer option in a choices block. Maths is rendered through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default so it stays in the sentence while fractions and operators use display-style sizing. This is a local wrapper, not MathJax display mode, because MathJax display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`. TeX still shrinks content inside fraction numerators and denominators; for printable questions, solutions, table cells, and diagram labels, write nested large expressions explicitly, such as `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`. Markdown `**bold**`, `*italic*`, and `***bold italic***` are supported in text blocks. Table cells use the same inline maths and formatting renderer.
+
+Document templates are explicit. Use `frontMatter.titlePageTemplate = "standard"` for school tests, `"exam"` for exam booklets, and `"worksheet"` for compact worksheets where the heading and questions share the first page. Worksheet headings use the selected mini logo, school name, assessment title, subject title, the bottom heading rule as the name area, and a mark field only when marks exist; do not use `frontMatter.assessmentSubtitle` for worksheets. For worksheet column layouts, use normal `:::columns` modules inside the relevant question, part, or subpart rather than document-level worksheet columns.
+
+Use top-level section headings for worksheet sections such as `Multiple choice` and `Short answer`. Do not fake these as zero-mark questions or first text modules inside a question. In JSON/action snapshots they live in `sectionHeadings` and `documentFlow`; use `sectionHeading.add`, `sectionHeading.update`, `sectionHeading.delete`, and `sectionHeading.reorder` actions when available.
+
+For worksheet multiple-choice questions, prefer compact `:::choices layout="inline"` when the options are short enough to fit on one line; `layout="two-column"` also renders as a compact wrapped row in worksheet preview when it fits. Keep all mathematical options in the same visual mode: if some choices use algebraic LaTeX, wrap simple numeric choices such as `$18$`, `$-3$`, and `$24$` in inline maths too.
 
 ## AI Rule Brains
 
@@ -115,6 +122,10 @@ Current diagram systems:
 - `statsChart`: Plotly-backed statistical charts.
 
 Keep these rendering systems separate. Do not unify Penrose, Plotly, and JSXGraph internals.
+
+For copied `graph2d` and `vector2d` coordinate graphs, default to major grid lines only. Use `showMinorGrid: true` only when the source visibly uses minor grid lines, small squares, or fractional grid spacing; do not add minor grid lines just to make a graph look more detailed.
+
+For `graph2d` functions with natural boundaries, singularities, endpoints, or asymptotes, choose the function domain and view window together. Infer valid domains for `log`, `ln`, `log10`, `sqrt`, reciprocal/rational forms, and trigonometric asymptotes before setting `domainMin`/`domainMax`. Draw asymptotes as separate dashed `line_segment` features with `span: "grid"` and keep the function strictly inside undefined boundaries so the curve and arrowheads do not clip into the asymptote. For multi-branch functions, use separate function entries or pieces for each valid interval rather than one plotted interval crossing a singularity.
 
 For Penrose diagrams, normal authoring should edit Substance only. The app supplies family presets such as `geometry` and `sets`. Use `EqualLength(AB, CD)` with named segments for readable geometry side constraints; `EqualLength(A, B, C, D)` is supported for compact point-pair constraints. New `setDiagram` blocks should default to the `sets` preset rather than embedding generated Domain or Style.
 

@@ -1024,6 +1024,19 @@ export function FunctionGraphEditor({
 
                       {showInlineSettings && feature.kind === "line_segment" ? (
                         <div className="graph-auto-grid mt-2 border-t pt-2">
+                          <label className="col-span-full flex flex-col gap-2 text-xs font-medium">
+                            Span
+                            <select
+                              value={feature.span ?? "manual"}
+                              onChange={(event) =>
+                                updateFeature(featureIndex, { span: event.target.value as NonNullable<GraphFeature["span"]> })
+                              }
+                              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            >
+                              <option value="manual">Manual endpoints</option>
+                              <option value="grid">Span grid</option>
+                            </select>
+                          </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             Start x
                             <input

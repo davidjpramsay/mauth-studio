@@ -2112,6 +2112,26 @@ export function SelectionInspector({
                               ) : null}
                               {feature.kind === "line_segment" ? (
                                 <div className="grid grid-cols-2 gap-2 border-t pt-2">
+                                  <label className="col-span-2 flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                                    Span
+                                    <select
+                                      value={feature.span ?? "manual"}
+                                      aria-label={`${selectedBlock.label} feature ${featureIndex + 1} span`}
+                                      onChange={(event) =>
+                                        onBlockChange(selectedBlock, {
+                                          graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                                            features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
+                                              span: event.target.value as NonNullable<GraphFeature["span"]>,
+                                            }),
+                                          }),
+                                        })
+                                      }
+                                      className={controlClassName}
+                                    >
+                                      <option value="manual">Manual endpoints</option>
+                                      <option value="grid">Span grid</option>
+                                    </select>
+                                  </label>
                                   {[
                                     ["Start x", "x1"],
                                     ["Start y", "y1"],

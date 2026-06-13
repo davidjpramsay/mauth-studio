@@ -82,3 +82,33 @@ test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
   assert.equal(snapshot.questions[0].modules[0].graphType, "graph2d");
   assert.equal(snapshot.questions[0].modules[1].lines, 6);
 });
+
+test("buildMauthAgentSnapshot exposes section headings and document flow", () => {
+  const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
+    document: {
+      frontMatter: { assessmentTitle: "Calculus", logoId: "school" },
+      formattingConfig: { showMarks: true },
+      questions: [question([textBlock("b1", "Choose the correct response.")])],
+      sectionHeadings: [{ id: "section-1", title: "Multiple choice" }],
+      documentFlow: [
+        { kind: "sectionHeading", id: "section-1" },
+        { kind: "question", id: "q1" },
+      ],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: "tests/calculus.test.json",
+      activeRevision: 7,
+      dirty: false,
+      saveStatus: "saved",
+    },
+    generatedAt: "2026-05-31T00:00:00.000Z",
+  });
+
+  assert.deepEqual(snapshot.sectionHeadings, [{ id: "section-1", title: "Multiple choice" }]);
+  assert.deepEqual(snapshot.documentFlow, [
+    { kind: "sectionHeading", id: "section-1", title: "Multiple choice" },
+    { kind: "question", id: "q1", label: "Question 1" },
+  ]);
+});

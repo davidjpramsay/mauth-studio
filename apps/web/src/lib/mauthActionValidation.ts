@@ -629,6 +629,15 @@ function validateMovePlacement(value: unknown, path: string, issues: MauthAction
   else stringField(value, "subpartId", path, issues);
 }
 
+function validateDocumentFlowItem(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a document flow item", "{ kind, id }");
+    return;
+  }
+  enumField(value, "kind", path, new Set(["sectionHeading", "question"]), issues);
+  stringField(value, "id", path, issues);
+}
+
 function validateOptionalPlacement(
   record: Record<string, unknown>,
   key: string,
@@ -656,6 +665,33 @@ function validateAction(action: Record<string, unknown>, path: string, issues: M
   }
 
   switch (action.type) {
+    case "sectionHeading.add": {
+      const heading = recordField(action, "heading", path, issues);
+      if (heading) {
+        stringField(heading, "id", `${path}.heading`, issues);
+        stringValueField(heading, "title", `${path}.heading`, issues);
+      }
+      if (hasOwn(action, "beforeItem")) validateDocumentFlowItem(action.beforeItem, `${path}.beforeItem`, issues);
+      if (hasOwn(action, "afterItem")) validateDocumentFlowItem(action.afterItem, `${path}.afterItem`, issues);
+      if (hasOwn(action, "beforeItem") && hasOwn(action, "afterItem")) {
+        addIssue(issues, path, "must use either beforeItem or afterItem, not both", "one placement target");
+      }
+      break;
+    }
+    case "sectionHeading.update": {
+      stringField(action, "sectionHeadingId", path, issues);
+      const patch = recordField(action, "patch", path, issues);
+      if (patch) stringValueField(patch, "title", `${path}.patch`, issues, true);
+      break;
+    }
+    case "sectionHeading.delete":
+      stringField(action, "sectionHeadingId", path, issues);
+      break;
+    case "sectionHeading.reorder":
+      stringField(action, "sectionHeadingId", path, issues);
+      validateDocumentFlowItem(action.targetItem, `${path}.targetItem`, issues);
+      enumField(action, "placement", path, PLACEMENTS, issues);
+      break;
     case "question.add":
       validateQuestionLike(action.question, `${path}.question`, issues);
       stringField(action, "afterQuestionId", path, issues, true);

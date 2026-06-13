@@ -425,6 +425,7 @@ export interface GraphFeature {
   fillOpacity?: number;
   strokeWidth?: number;
   strokeStyle?: "none" | "solid" | "dashed";
+  span?: "manual" | "grid";
   size?: number;
   x?: number;
   y?: number;
@@ -807,6 +808,15 @@ export interface MauthAgentQuestionSummary {
   parts: MauthAgentPartSummary[];
 }
 
+export interface MauthAgentSectionHeadingSummary {
+  id: string;
+  title: string;
+}
+
+export type MauthAgentDocumentFlowItem =
+  | { kind: "sectionHeading"; id: string; title?: string }
+  | { kind: "question"; id: string; label?: string };
+
 export interface MauthAgentSnapshot {
   success: true;
   snapshotId: string;
@@ -815,6 +825,8 @@ export interface MauthAgentSnapshot {
   file: MauthAgentFileState;
   frontMatter: Record<string, unknown>;
   formattingConfig?: Record<string, unknown>;
+  sectionHeadings: MauthAgentSectionHeadingSummary[];
+  documentFlow: MauthAgentDocumentFlowItem[];
   questions: MauthAgentQuestionSummary[];
   questionCount: number;
   totalMarks: number;

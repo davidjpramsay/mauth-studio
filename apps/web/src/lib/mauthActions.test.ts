@@ -1241,6 +1241,64 @@ test("updates document formatting and page format", () => {
   assert.equal(formatting.document.formattingConfig?.page?.paddingXPx, 64);
 });
 
+test("adds, updates, deletes, and reorders section headings", () => {
+  const initial = {
+    frontMatter: { logoId: "logo-1", schoolName: "School", assessmentTitle: "worksheet", startQuestionNumber: 1 },
+    questions: [question("q1"), question("q2")],
+    sectionHeadings: [],
+    documentFlow: [
+      { kind: "question" as const, id: "q1" },
+      { kind: "question" as const, id: "q2" },
+    ],
+  };
+
+  const added = applyMauthDocumentAction(initial, {
+    type: "sectionHeading.add",
+    heading: { id: "section-1", title: "Multiple choice" },
+    beforeItem: { kind: "question", id: "q1" },
+  });
+  assert.equal(added.ok, true);
+  assert.deepEqual(added.changedIds, ["section-1"]);
+  assert.deepEqual(added.document.sectionHeadings, [{ id: "section-1", title: "Multiple choice" }]);
+  assert.deepEqual(added.document.documentFlow, [
+    { kind: "sectionHeading", id: "section-1" },
+    { kind: "question", id: "q1" },
+    { kind: "question", id: "q2" },
+  ]);
+
+  const updated = applyMauthDocumentAction(added.document, {
+    type: "sectionHeading.update",
+    sectionHeadingId: "section-1",
+    patch: { title: "Short answer" },
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.document.sectionHeadings?.[0]?.title, "Short answer");
+
+  const reordered = applyMauthDocumentAction(updated.document, {
+    type: "sectionHeading.reorder",
+    sectionHeadingId: "section-1",
+    targetItem: { kind: "question", id: "q2" },
+    placement: "after",
+  });
+  assert.equal(reordered.ok, true);
+  assert.deepEqual(reordered.document.documentFlow, [
+    { kind: "question", id: "q1" },
+    { kind: "question", id: "q2" },
+    { kind: "sectionHeading", id: "section-1" },
+  ]);
+
+  const removed = applyMauthDocumentAction(reordered.document, {
+    type: "sectionHeading.delete",
+    sectionHeadingId: "section-1",
+  });
+  assert.equal(removed.ok, true);
+  assert.deepEqual(removed.document.sectionHeadings, []);
+  assert.deepEqual(removed.document.documentFlow, [
+    { kind: "question", id: "q1" },
+    { kind: "question", id: "q2" },
+  ]);
+});
+
 test("document batches combine front matter and question actions atomically", () => {
   const initial = {
     frontMatter: { logoId: "logo-1", schoolName: "School", assessmentTitle: "test", startQuestionNumber: 1 },

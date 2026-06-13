@@ -44,6 +44,13 @@ export interface MauthQuestionLike {
   pageBreakAfter?: boolean;
 }
 
+export interface MauthSectionHeadingLike {
+  id: string;
+  title: string;
+}
+
+export type MauthDocumentFlowItem = { kind: "sectionHeading"; id: string } | { kind: "question"; id: string };
+
 export type MauthContentScope =
   | { kind: "question"; questionId: string }
   | { kind: "part"; questionId: string; partId: string }
@@ -129,6 +136,10 @@ export type MauthAction =
 
 export type MauthDocumentAction =
   | MauthAction
+  | { type: "sectionHeading.add"; heading: MauthSectionHeadingLike; beforeItem?: MauthDocumentFlowItem; afterItem?: MauthDocumentFlowItem }
+  | { type: "sectionHeading.update"; sectionHeadingId: string; patch: { title?: string } }
+  | { type: "sectionHeading.delete"; sectionHeadingId: string }
+  | { type: "sectionHeading.reorder"; sectionHeadingId: string; targetItem: MauthDocumentFlowItem; placement: "before" | "after" }
   | { type: "frontMatter.update"; patch: Record<string, unknown> }
   | { type: "frontMatter.replace"; frontMatter: object }
   | { type: "frontMatter.logo.set"; logoId: string; schoolName?: string }
@@ -166,6 +177,10 @@ export const MAUTH_CONTENT_ACTION_TYPES = [
 ] as const satisfies readonly MauthAction["type"][];
 
 export const MAUTH_DOCUMENT_ONLY_ACTION_TYPES = [
+  "sectionHeading.add",
+  "sectionHeading.update",
+  "sectionHeading.delete",
+  "sectionHeading.reorder",
   "frontMatter.update",
   "frontMatter.replace",
   "frontMatter.logo.set",
@@ -201,6 +216,8 @@ export interface MauthDocumentLike<
 > {
   frontMatter: F;
   questions: Q[];
+  sectionHeadings?: MauthSectionHeadingLike[];
+  documentFlow?: MauthDocumentFlowItem[];
   formattingConfig?: C;
 }
 
@@ -378,6 +395,80 @@ function normalizeFormattingConfig<Q extends MauthQuestionLike, F extends object
   options: MauthDocumentActionOptions<Q, F, C>,
 ) {
   return options.normalizeFormattingConfig ? options.normalizeFormattingConfig(formattingConfig) : formattingConfig;
+}
+
+function documentFlowItemKey(item: MauthDocumentFlowItem) {
+  return `${item.kind}:${item.id}`;
+}
+
+function normalizedSectionHeadings<Q extends MauthQuestionLike, F extends object, C extends object>(document: MauthDocumentLike<Q, F, C>) {
+  const seen = new Set<string>();
+  const headings: MauthSectionHeadingLike[] = [];
+  for (const heading of document.sectionHeadings ?? []) {
+    if (!heading.id || seen.has(heading.id)) continue;
+    headings.push({ id: heading.id, title: typeof heading.title === "string" ? heading.title : "" });
+    seen.add(heading.id);
+  }
+  return headings;
+}
+
+function normalizedDocumentFlow<Q extends MauthQuestionLike, F extends object, C extends object>(
+  document: MauthDocumentLike<Q, F, C>,
+  sectionHeadings = normalizedSectionHeadings(document),
+) {
+  const allowedQuestionIds = new Set(document.questions.map((question) => question.id));
+  const allowedHeadingIds = new Set(sectionHeadings.map((heading) => heading.id));
+  const seen = new Set<string>();
+  const flow: MauthDocumentFlowItem[] = [];
+
+  for (const item of document.documentFlow ?? []) {
+    if (item.kind !== "question" && item.kind !== "sectionHeading") continue;
+    if (item.kind === "question" && !allowedQuestionIds.has(item.id)) continue;
+    if (item.kind === "sectionHeading" && !allowedHeadingIds.has(item.id)) continue;
+    const key = documentFlowItemKey(item);
+    if (seen.has(key)) continue;
+    flow.push(item);
+    seen.add(key);
+  }
+
+  for (const heading of sectionHeadings) {
+    const item = { kind: "sectionHeading", id: heading.id } satisfies MauthDocumentFlowItem;
+    const key = documentFlowItemKey(item);
+    if (!seen.has(key)) {
+      flow.push(item);
+      seen.add(key);
+    }
+  }
+
+  for (const question of document.questions) {
+    const item = { kind: "question", id: question.id } satisfies MauthDocumentFlowItem;
+    const key = documentFlowItemKey(item);
+    if (!seen.has(key)) {
+      flow.push(item);
+      seen.add(key);
+    }
+  }
+
+  return flow;
+}
+
+function documentFlowContainsItem(flow: readonly MauthDocumentFlowItem[], item: MauthDocumentFlowItem) {
+  const key = documentFlowItemKey(item);
+  return flow.some((candidate) => documentFlowItemKey(candidate) === key);
+}
+
+function documentFlowWithInsertedItem(
+  flow: readonly MauthDocumentFlowItem[],
+  item: MauthDocumentFlowItem,
+  beforeItem?: MauthDocumentFlowItem,
+  afterItem?: MauthDocumentFlowItem,
+) {
+  const cleaned = flow.filter((candidate) => documentFlowItemKey(candidate) !== documentFlowItemKey(item));
+  const target = beforeItem ?? afterItem;
+  if (!target) return [...cleaned, item];
+  const targetIndex = cleaned.findIndex((candidate) => documentFlowItemKey(candidate) === documentFlowItemKey(target));
+  if (targetIndex < 0) return null;
+  return insertArrayItem(cleaned, item, beforeItem ? targetIndex : targetIndex + 1);
 }
 
 function isQuestionAction(action: MauthDocumentAction): action is MauthAction {
@@ -621,6 +712,7 @@ function summarizeSuccessfulPreviewAction<Q extends MauthQuestionLike, F extends
   summary.counts.warnings += result.warnings.length;
 
   if (
+    action.type === "sectionHeading.add" ||
     action.type === "question.add" ||
     action.type === "part.add" ||
     action.type === "subpart.add" ||
@@ -629,6 +721,7 @@ function summarizeSuccessfulPreviewAction<Q extends MauthQuestionLike, F extends
   ) {
     addUnique(summary.addedIds, result.changedIds);
   } else if (
+    action.type === "sectionHeading.delete" ||
     action.type === "question.delete" ||
     action.type === "part.delete" ||
     action.type === "subpart.delete" ||
@@ -638,6 +731,7 @@ function summarizeSuccessfulPreviewAction<Q extends MauthQuestionLike, F extends
   } else if (action.type === "part.move" || action.type === "subpart.move" || action.type === "module.move") {
     addUnique(summary.movedIds, result.changedIds);
   } else if (
+    action.type === "sectionHeading.reorder" ||
     action.type === "question.reorder" ||
     action.type === "part.reorder" ||
     action.type === "subpart.reorder" ||
@@ -1562,6 +1656,76 @@ export function applyMauthDocumentAction<Q extends MauthQuestionLike, F extends 
       return documentFail(action, document, result.error ?? "Action was not applied.", result.changedIds[0], result.warnings);
     }
     return documentOk(action, { ...document, questions: result.questions }, result.changedIds, result.warnings, result.validation);
+  }
+
+  if (action.type === "sectionHeading.add") {
+    const heading = action.heading;
+    if (!heading.id) return documentFail(action, document, "Section heading id is required.");
+    const sectionHeadings = normalizedSectionHeadings(document);
+    if (sectionHeadings.some((candidate) => candidate.id === heading.id)) {
+      return documentFail(action, document, `Section heading ${heading.id} already exists.`, heading.id);
+    }
+    const nextSectionHeadings = [...sectionHeadings, { id: heading.id, title: heading.title }];
+    const currentFlow = normalizedDocumentFlow(document, nextSectionHeadings);
+    const flowItem = { kind: "sectionHeading", id: heading.id } satisfies MauthDocumentFlowItem;
+    const documentFlow = documentFlowWithInsertedItem(currentFlow, flowItem, action.beforeItem, action.afterItem);
+    if (!documentFlow) return documentFail(action, document, "Section heading placement target was not found.", heading.id);
+    return documentOk(action, { ...document, sectionHeadings: nextSectionHeadings, documentFlow }, [heading.id]);
+  }
+
+  if (action.type === "sectionHeading.update") {
+    const sectionHeadings = normalizedSectionHeadings(document);
+    const index = sectionHeadings.findIndex((heading) => heading.id === action.sectionHeadingId);
+    if (index < 0)
+      return documentFail(action, document, `Section heading ${action.sectionHeadingId} was not found.`, action.sectionHeadingId);
+    const current = sectionHeadings[index];
+    const nextHeading = {
+      ...current,
+      ...(typeof action.patch.title === "string" ? { title: action.patch.title } : {}),
+    };
+    if (valuesEqual(current, nextHeading)) return documentOk(action, document, []);
+    const nextSectionHeadings = [...sectionHeadings];
+    nextSectionHeadings[index] = nextHeading;
+    return documentOk(
+      action,
+      { ...document, sectionHeadings: nextSectionHeadings, documentFlow: normalizedDocumentFlow(document, nextSectionHeadings) },
+      [action.sectionHeadingId],
+    );
+  }
+
+  if (action.type === "sectionHeading.delete") {
+    const sectionHeadings = normalizedSectionHeadings(document);
+    if (!sectionHeadings.some((heading) => heading.id === action.sectionHeadingId)) {
+      return documentFail(action, document, `Section heading ${action.sectionHeadingId} was not found.`, action.sectionHeadingId);
+    }
+    const nextSectionHeadings = sectionHeadings.filter((heading) => heading.id !== action.sectionHeadingId);
+    const documentFlow = normalizedDocumentFlow(document, sectionHeadings).filter(
+      (item) => item.kind !== "sectionHeading" || item.id !== action.sectionHeadingId,
+    );
+    return documentOk(action, { ...document, sectionHeadings: nextSectionHeadings, documentFlow }, [action.sectionHeadingId]);
+  }
+
+  if (action.type === "sectionHeading.reorder") {
+    const sectionHeadings = normalizedSectionHeadings(document);
+    if (!sectionHeadings.some((heading) => heading.id === action.sectionHeadingId)) {
+      return documentFail(action, document, `Section heading ${action.sectionHeadingId} was not found.`, action.sectionHeadingId);
+    }
+    const currentFlow = normalizedDocumentFlow(document, sectionHeadings);
+    const movedItem = { kind: "sectionHeading", id: action.sectionHeadingId } satisfies MauthDocumentFlowItem;
+    if (!documentFlowContainsItem(currentFlow, action.targetItem)) {
+      return documentFail(action, document, "Section heading reorder target was not found.", action.sectionHeadingId);
+    }
+    if (documentFlowItemKey(movedItem) === documentFlowItemKey(action.targetItem)) {
+      return documentFail(action, document, "Section heading cannot be reordered relative to itself.", action.sectionHeadingId);
+    }
+    const documentFlow = reorderArrayItem(
+      currentFlow,
+      (item) => documentFlowItemKey(item) === documentFlowItemKey(movedItem),
+      (item) => documentFlowItemKey(item) === documentFlowItemKey(action.targetItem),
+      action.placement,
+    );
+    if (!documentFlow) return documentFail(action, document, "Section heading reorder failed.", action.sectionHeadingId);
+    return documentOk(action, { ...document, sectionHeadings, documentFlow }, [action.sectionHeadingId]);
   }
 
   if (action.type === "frontMatter.update") {

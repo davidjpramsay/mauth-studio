@@ -143,7 +143,7 @@ pnpm smoke:diagram-gallery
 
 ## Mauthdown
 
-Mauthdown is the editable source format for tests, exams, and worksheets. It is Markdown plus explicit containers for title pages, questions, parts, subparts, text, choice lists, tables, diagrams, spaces, and page breaks. See `docs/mauthdown.md`.
+Mauthdown is the editable source format for tests, exams, and worksheets. It is Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
 
 ## Storage
 

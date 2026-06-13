@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type {
   CSSProperties,
@@ -40,6 +40,7 @@ import {
   FolderOpen,
   GitBranch,
   GripVertical,
+  Heading2,
   ImagePlus,
   ListTree,
   ListOrdered,
@@ -232,10 +233,29 @@ const DEFAULT_FORMATTING_CONFIG: FormattingConfig = {
     ...DEFAULT_PAGE_FORMAT,
   },
 };
+const DEFAULT_WORKSHEET_FORMATTING_CONFIG: FormattingConfig = {
+  ...DEFAULT_FORMATTING_CONFIG,
+  id: "worksheet",
+  showMarks: false,
+  questionSpacing: "compact",
+  fontSize: "11pt",
+  sectionHeaders: false,
+  page: {
+    size: "A4",
+    orientation: "portrait",
+    ...DEFAULT_PAGE_FORMAT,
+    paddingXPx: 56,
+    paddingYPx: 52,
+  },
+};
 const TEST_FORMAT_PRESETS = [
   {
     id: "high-school-mathematics-test",
     label: "High school mathematics test",
+  },
+  {
+    id: "worksheet",
+    label: "Worksheet",
   },
   {
     id: "exam-booklet",
@@ -260,19 +280,15 @@ const NEW_TEST_TEMPLATES: Array<{
     description: "School-logo exam cover, structure page, running headers, question footers, and supplementary pages.",
     formatPresetId: "exam-booklet",
   },
-];
-const PAGE_PRESETS = [
   {
-    id: "a4-portrait",
-    label: "A4 portrait",
-    page: {
-      size: "A4",
-      orientation: "portrait",
-      ...DEFAULT_PAGE_FORMAT,
-    },
+    id: "worksheet",
+    title: "Worksheet",
+    description: "Compact heading with questions starting immediately on the first page.",
+    formatPresetId: "worksheet",
   },
 ];
 const QUESTION_GAP_PX = 32;
+const WORKSHEET_QUESTION_GAP_PX = 16;
 const PREVIEW_FIT_PADDING_PX = 40;
 const MIN_PREVIEW_SCALE = 0.55;
 const MAX_PREVIEW_FIT_SCALE = 1;
@@ -299,6 +315,7 @@ const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const AUTOSAVE_DEBOUNCE_MS = 900;
+const LOCAL_DRAFT_DEBOUNCE_MS = 250;
 const STARTER_LOGOS: LogoAsset[] = [
   {
     id: "acc-logo",
@@ -411,6 +428,16 @@ const DEFAULT_EXAM_FRONT_MATTER: FrontMatterConfig = {
   showInstructions: false,
   exam: DEFAULT_EXAM_TITLE_PAGE,
 };
+const DEFAULT_WORKSHEET_FRONT_MATTER: FrontMatterConfig = {
+  ...DEFAULT_FRONT_MATTER,
+  titlePageTemplate: "worksheet",
+  subjectTitle: "Mathematics",
+  assessmentTitle: "Worksheet",
+  showAssessmentSubtitle: false,
+  assessmentSubtitle: "",
+  showDeclaration: false,
+  showInstructions: false,
+};
 const EXAM_SECTION_PRESETS: Array<{
   id: ExamSectionPresetId;
   label: string;
@@ -510,6 +537,13 @@ interface QuestionBlock {
   pageBreakAfter?: boolean;
 }
 
+interface DocumentSectionHeading {
+  id: string;
+  title: string;
+}
+
+type DocumentFlowItem = { kind: "sectionHeading"; id: string } | { kind: "question"; id: string };
+
 type SubsectionDragKind = "question-block" | "part" | "part-block" | "subpart" | "subpart-block";
 type SubsectionItemKind = "block" | "part" | "subpart";
 type SubsectionContainerKind = "question" | "part" | "subpart";
@@ -538,7 +572,19 @@ interface SubsectionDropIntent {
 type DropPlacement = "before" | "after" | "inside";
 type MoveDirection = -1 | 1;
 type PanelDragRegion = "header" | "body";
-type TocItemKind = "title" | "question" | "pageBreak" | "text" | "choices" | "table" | "diagram" | "columns" | "space" | "part" | "subpart";
+type TocItemKind =
+  | "title"
+  | "sectionHeading"
+  | "question"
+  | "pageBreak"
+  | "text"
+  | "choices"
+  | "table"
+  | "diagram"
+  | "columns"
+  | "space"
+  | "part"
+  | "subpart";
 
 const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
 const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
@@ -610,6 +656,8 @@ type ThemeMode = "light" | "dark";
 interface EditorHistorySnapshot {
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  sectionHeadings: DocumentSectionHeading[];
+  documentFlow: DocumentFlowItem[];
   formattingConfig: FormattingConfig;
 }
 
@@ -635,7 +683,7 @@ interface LogoAsset {
   schoolName?: string;
 }
 
-type TitlePageTemplate = "standard" | "exam";
+type TitlePageTemplate = "standard" | "exam" | "worksheet";
 type ExamSectionPresetId = "section-one-calculator-free" | "section-two-calculator-assumed";
 
 interface ExamStructureRowConfig {
@@ -718,6 +766,8 @@ interface SavedTest {
   name: string;
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  sectionHeadings: DocumentSectionHeading[];
+  documentFlow: DocumentFlowItem[];
   formattingConfig: FormattingConfig;
   logo?: LogoAsset;
   createdAt: string;
@@ -826,7 +876,18 @@ function assessmentTitleText(value: string) {
 }
 
 function titlePageTemplateFromValue(value: unknown): TitlePageTemplate {
-  return value === "exam" ? "exam" : "standard";
+  if (value === "exam" || value === "worksheet") return value;
+  return "standard";
+}
+
+function titlePageTemplateLabel(template: TitlePageTemplate) {
+  if (template === "exam") return "School exam booklet";
+  if (template === "worksheet") return "Worksheet";
+  return "School test title page";
+}
+
+function projectFileTypeForFrontMatter(frontMatter: FrontMatterConfig) {
+  return frontMatter.titlePageTemplate === "worksheet" ? "worksheet" : "test";
 }
 
 function stringOrDefault(value: unknown, fallback: string) {
@@ -968,14 +1029,14 @@ function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
         ? candidate.sectionHeading
         : DEFAULT_FRONT_MATTER.assessmentSubtitle;
   const titlePageTemplate = titlePageTemplateFromValue(candidate.titlePageTemplate);
+  const rawAssessmentTitle =
+    typeof candidate.assessmentTitle === "string" ? candidate.assessmentTitle : DEFAULT_FRONT_MATTER.assessmentTitle;
   return {
     titlePageTemplate,
     logoId: typeof candidate.logoId === "string" ? candidate.logoId : DEFAULT_FRONT_MATTER.logoId,
     schoolName: typeof candidate.schoolName === "string" ? candidate.schoolName : DEFAULT_FRONT_MATTER.schoolName,
     subjectTitle: typeof candidate.subjectTitle === "string" ? candidate.subjectTitle : DEFAULT_FRONT_MATTER.subjectTitle,
-    assessmentTitle: assessmentTitleText(
-      typeof candidate.assessmentTitle === "string" ? candidate.assessmentTitle : DEFAULT_FRONT_MATTER.assessmentTitle,
-    ),
+    assessmentTitle: titlePageTemplate === "worksheet" ? rawAssessmentTitle : assessmentTitleText(rawAssessmentTitle),
     nameLabel: typeof candidate.nameLabel === "string" ? candidate.nameLabel : DEFAULT_FRONT_MATTER.nameLabel,
     markLabel: typeof candidate.markLabel === "string" ? candidate.markLabel : DEFAULT_FRONT_MATTER.markLabel,
     startQuestionNumber,
@@ -1031,23 +1092,12 @@ function formattingPresetLabel(formattingConfig: FormattingConfig) {
   return TEST_FORMAT_PRESETS.find((preset) => preset.id === formattingConfig.id)?.label ?? formattingConfig.id ?? "Custom test format";
 }
 
-function pagePresetId(formattingConfig: FormattingConfig) {
-  const page = normalizePageFormattingConfig(formattingConfig.page);
-  const a4Page = PAGE_PRESETS[0].page;
-  if (
-    page.size === a4Page.size &&
-    page.orientation === a4Page.orientation &&
-    page.widthPx === a4Page.widthPx &&
-    page.heightPx === a4Page.heightPx
-  ) {
-    return PAGE_PRESETS[0].id;
-  }
-  return "custom";
-}
-
-function formatSettingNumber(value: unknown, fallback: number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
+function formattingConfigForPresetId(presetId: FormattingConfig["id"]): FormattingConfig {
+  if (presetId === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FORMATTING_CONFIG);
+  return {
+    ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
+    id: presetId ?? DEFAULT_FORMATTING_CONFIG.id,
+  };
 }
 
 function normalizedStartQuestionNumber(frontMatter: FrontMatterConfig) {
@@ -2380,17 +2430,119 @@ function normalizeQuestionBlocks(value: unknown): QuestionBlock[] {
   });
 }
 
+function normalizeSectionHeadings(value: unknown): DocumentSectionHeading[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  return value.flatMap((heading): DocumentSectionHeading[] => {
+    const record = asRecord(heading);
+    if (!record) return [];
+    const headingId = typeof record.id === "string" && record.id.trim() ? record.id : id("section");
+    if (seen.has(headingId)) return [];
+    seen.add(headingId);
+    const title = typeof record.title === "string" ? record.title : "";
+    return [{ id: headingId, title }];
+  });
+}
+
+function flowItemKey(item: DocumentFlowItem) {
+  return `${item.kind}:${item.id}`;
+}
+
+function defaultDocumentFlow(questions: QuestionBlock[]): DocumentFlowItem[] {
+  return questions.map((question) => ({ kind: "question", id: question.id }));
+}
+
+function normalizeDocumentFlow(value: unknown, questions: QuestionBlock[], sectionHeadings: DocumentSectionHeading[]): DocumentFlowItem[] {
+  const allowedQuestionIds = new Set(questions.map((question) => question.id));
+  const allowedHeadingIds = new Set(sectionHeadings.map((heading) => heading.id));
+  const seen = new Set<string>();
+  const normalized: DocumentFlowItem[] = [];
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      const record = asRecord(item);
+      if (!record || typeof record.id !== "string") return;
+      const kind = record.kind;
+      if (kind !== "question" && kind !== "sectionHeading") return;
+      if (kind === "question" && !allowedQuestionIds.has(record.id)) return;
+      if (kind === "sectionHeading" && !allowedHeadingIds.has(record.id)) return;
+      const flowItem = { kind, id: record.id } satisfies DocumentFlowItem;
+      const key = flowItemKey(flowItem);
+      if (seen.has(key)) return;
+      seen.add(key);
+      normalized.push(flowItem);
+    });
+  }
+
+  for (const heading of sectionHeadings) {
+    const item = { kind: "sectionHeading", id: heading.id } satisfies DocumentFlowItem;
+    const key = flowItemKey(item);
+    if (!seen.has(key)) {
+      normalized.push(item);
+      seen.add(key);
+    }
+  }
+
+  for (const question of questions) {
+    const item = { kind: "question", id: question.id } satisfies DocumentFlowItem;
+    const key = flowItemKey(item);
+    if (!seen.has(key)) {
+      normalized.push(item);
+      seen.add(key);
+    }
+  }
+
+  return normalized.length ? normalized : defaultDocumentFlow(questions);
+}
+
+function normalizedDocumentFlowFromState(
+  previousQuestions: QuestionBlock[],
+  questions: QuestionBlock[],
+  sectionHeadings: DocumentSectionHeading[],
+  documentFlow: DocumentFlowItem[],
+) {
+  const normalizedFlow = normalizeDocumentFlow(documentFlow, previousQuestions, sectionHeadings);
+  const headingIds = new Set(sectionHeadings.map((heading) => heading.id));
+  const nextQuestionItems = questions.map((question) => ({ kind: "question", id: question.id }) satisfies DocumentFlowItem);
+  const reconciled: DocumentFlowItem[] = [];
+  let nextQuestionIndex = 0;
+
+  normalizedFlow.forEach((item) => {
+    if (item.kind === "sectionHeading") {
+      if (headingIds.has(item.id)) reconciled.push(item);
+      return;
+    }
+    const nextQuestionItem = nextQuestionItems[nextQuestionIndex];
+    if (nextQuestionItem) {
+      reconciled.push(nextQuestionItem);
+      nextQuestionIndex += 1;
+    }
+  });
+
+  while (nextQuestionIndex < nextQuestionItems.length) {
+    reconciled.push(nextQuestionItems[nextQuestionIndex]);
+    nextQuestionIndex += 1;
+  }
+
+  return normalizeDocumentFlow(reconciled, questions, sectionHeadings);
+}
+
 function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null {
   const record = asRecord(value);
   if (!record) return null;
   const frontMatter = normalizeFrontMatter(record.frontMatter);
   const questions = normalizeQuestionBlocks(record.questions);
+  const sectionHeadings = normalizeSectionHeadings(record.sectionHeadings);
+  const documentFlow = normalizeDocumentFlow(record.documentFlow, questions, sectionHeadings);
   const formattingConfig = normalizeFormattingConfig(record.formattingConfig);
   if (!frontMatter || !questions.length) return null;
 
   return {
     frontMatter,
     questions,
+    sectionHeadings,
+    documentFlow,
     formattingConfig,
     logo: normalizeLogoAsset(record.logo),
     activeProjectFilePath: typeof record.activeProjectFilePath === "string" ? record.activeProjectFilePath : undefined,
@@ -2463,13 +2615,18 @@ function normalizeSavedTests(value: unknown): SavedTest[] {
     if (!frontMatter || typeof record.id !== "string" || typeof record.name !== "string") return [];
     const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
     const updatedAt = typeof record.updatedAt === "string" ? record.updatedAt : createdAt;
+    const questions = normalizeQuestionBlocks(record.questions);
+    const sectionHeadings = normalizeSectionHeadings(record.sectionHeadings);
+    const documentFlow = normalizeDocumentFlow(record.documentFlow, questions, sectionHeadings);
 
     return [
       {
         id: record.id,
         name: record.name,
         frontMatter,
-        questions: normalizeQuestionBlocks(record.questions),
+        questions,
+        sectionHeadings,
+        documentFlow,
         formattingConfig: normalizeFormattingConfig(record.formattingConfig),
         logo: normalizeLogoAsset(record.logo),
         createdAt,
@@ -2529,6 +2686,8 @@ function createSavedTestSnapshot({
   name,
   frontMatter,
   questions,
+  sectionHeadings,
+  documentFlow,
   formattingConfig,
   logo,
   createdAt,
@@ -2537,17 +2696,24 @@ function createSavedTestSnapshot({
   name: string;
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
+  sectionHeadings?: DocumentSectionHeading[];
+  documentFlow?: DocumentFlowItem[];
   formattingConfig: FormattingConfig;
   logo?: LogoAsset;
   createdAt?: string;
 }): SavedTest {
   const now = new Date().toISOString();
+  const normalizedQuestions = normalizeQuestionBlocks(questions);
+  const normalizedHeadings = normalizeSectionHeadings(sectionHeadings);
+  const normalizedFlow = normalizeDocumentFlow(documentFlow, normalizedQuestions, normalizedHeadings);
 
   return {
     id: testId,
     name,
     frontMatter: cloneSerializable(frontMatter),
-    questions: cloneSerializable(normalizeQuestionBlocks(questions)),
+    questions: cloneSerializable(normalizedQuestions),
+    sectionHeadings: cloneSerializable(normalizedHeadings),
+    documentFlow: cloneSerializable(normalizedFlow),
     formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
     logo: savedLogoSnapshot(logo),
     createdAt: createdAt ?? now,
@@ -2560,10 +2726,16 @@ function editorDocumentFingerprint(
   questions: QuestionBlock[],
   formattingConfig: FormattingConfig,
   logo?: LogoAsset | null,
+  sectionHeadings: DocumentSectionHeading[] = [],
+  documentFlow: DocumentFlowItem[] = defaultDocumentFlow(questions),
 ) {
+  const normalizedQuestions = normalizeQuestionBlocks(questions);
+  const normalizedHeadings = normalizeSectionHeadings(sectionHeadings);
   return JSON.stringify({
     frontMatter: cloneSerializable(frontMatter),
-    questions: cloneSerializable(normalizeQuestionBlocks(questions)),
+    questions: cloneSerializable(normalizedQuestions),
+    sectionHeadings: cloneSerializable(normalizedHeadings),
+    documentFlow: cloneSerializable(normalizeDocumentFlow(documentFlow, normalizedQuestions, normalizedHeadings)),
     formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
     logo: savedLogoSnapshot(logo),
   });
@@ -2703,6 +2875,10 @@ function questionScrollAnchor(questionId: string) {
   return `q:${questionId}`;
 }
 
+function sectionHeadingScrollAnchor(sectionHeadingId: string) {
+  return `sh:${sectionHeadingId}`;
+}
+
 function pageBreakScrollAnchor(questionId: string) {
   return `pb:${questionId}`;
 }
@@ -2757,6 +2933,10 @@ function questionIdFromScrollAnchor(anchor: string) {
   return questionSegment?.startsWith("q:") ? questionSegment.slice(2) : "";
 }
 
+function sectionHeadingIdFromScrollAnchor(anchor: string) {
+  return anchor.startsWith("sh:") ? anchor.slice(3) : "";
+}
+
 function pageBreakQuestionIdFromScrollAnchor(anchor: string) {
   return anchor.startsWith("pb:") ? anchor.slice(3) : "";
 }
@@ -2795,6 +2975,7 @@ function previewAnchorFromEventTarget(target: EventTarget | null, container: HTM
 
 type ParsedScrollAnchorKind =
   | "frontMatter"
+  | "sectionHeading"
   | "pageBreak"
   | "question"
   | "questionBlock"
@@ -2807,6 +2988,7 @@ type ParsedScrollAnchorKind =
 
 interface ParsedScrollAnchor {
   kind: ParsedScrollAnchorKind;
+  sectionHeadingId?: string;
   questionId?: string;
   partId?: string;
   subpartId?: string;
@@ -2817,6 +2999,7 @@ interface ParsedScrollAnchor {
 
 function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
   if (anchor === SCROLL_ANCHOR_FRONT_MATTER) return { kind: "frontMatter" };
+  if (anchor.startsWith("sh:")) return { kind: "sectionHeading", sectionHeadingId: sectionHeadingIdFromScrollAnchor(anchor) };
   if (anchor.startsWith("pb:")) return { kind: "pageBreak", questionId: pageBreakQuestionIdFromScrollAnchor(anchor) };
 
   const [questionSegment, ...segments] = anchor.split("/");
@@ -3692,7 +3875,15 @@ function mixedMathLayoutType(type?: MixedMathSegmentType): "text" | "inline" | "
   return type;
 }
 
-function MixedMath({ source, showSolutionMarks = false }: { source: string; showSolutionMarks?: boolean }) {
+function MixedMath({
+  source,
+  showSolutionMarks = false,
+  plainSimpleInlineLatex = true,
+}: {
+  source: string;
+  showSolutionMarks?: boolean;
+  plainSimpleInlineLatex?: boolean;
+}) {
   const segments = useMemo(() => parseMixedMath(source), [source]);
   return (
     <div className="mixed-math">
@@ -3738,7 +3929,7 @@ function MixedMath({ source, showSolutionMarks = false }: { source: string; show
           return <InlineMathText key={`${segment.content}-${index}`} source={textContent} />;
         }
         if (segment.type === "inline") {
-          const inlineMath = <Latex latex={segment.content} />;
+          const inlineMath = <Latex latex={segment.content} plainSimpleInlineLatex={plainSimpleInlineLatex} />;
           if (marks) {
             return (
               <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
@@ -4413,7 +4604,13 @@ const previewContentRuntime: PreviewContentRuntime = {
 
 const previewContentRenderers: PreviewContentRenderers = {
   renderDiagram: (props) => <DiagramPreview {...props} />,
-  renderMath: (source, options) => <MixedMath source={source} showSolutionMarks={Boolean(options?.showSolutionMarks)} />,
+  renderMath: (source, options) => (
+    <MixedMath
+      source={source}
+      showSolutionMarks={Boolean(options?.showSolutionMarks)}
+      plainSimpleInlineLatex={options?.plainSimpleInlineLatex ?? true}
+    />
+  ),
   renderSolutionMarkTicks: (count) => <SolutionMarkTicks count={count} />,
 };
 
@@ -4431,12 +4628,26 @@ function contentBlocksHaveDiagram(blocks: EditorContentBlock[], showSolutions = 
   });
 }
 
+function contentBlocksHaveVisibilityReplacementSlot(blocks: EditorContentBlock[]): boolean {
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+    const block = blocks[blockIndex];
+    if (block.kind === "pageBreak") continue;
+    if (visibilityReplacementSlotAt(blocks, blockIndex)) return true;
+    if (block.kind === "columns") {
+      const columns = normalizeColumnsBlock(block).columns;
+      if (columns.some(contentBlocksHaveVisibilityReplacementSlot)) return true;
+    }
+  }
+  return false;
+}
+
 interface PreviewSegment {
   id: string;
-  kind: "question-start" | "question-block" | "part-group" | "page-break";
-  questionIndex: number;
+  kind: "worksheet-header" | "section-heading" | "question-start" | "question-block" | "part-group" | "page-break";
+  questionIndex?: number;
   spacingTop: number;
-  question: QuestionBlock;
+  sectionHeading?: DocumentSectionHeading;
+  question?: QuestionBlock;
   block?: EditorContentBlock;
   blocks?: EditorContentBlock[];
   part?: EditorPart;
@@ -4465,7 +4676,7 @@ interface PreviewPageSegmentEntry {
 
 interface PreviewQuestionSegmentGroup {
   id: string;
-  question: QuestionBlock;
+  question?: QuestionBlock;
   entries: PreviewPageSegmentEntry[];
 }
 
@@ -4540,8 +4751,16 @@ function groupPreviewPageSegments(entries: PreviewPageSegmentEntry[]): PreviewQu
   const groups: PreviewQuestionSegmentGroup[] = [];
 
   for (const entry of entries) {
+    if (!entry.segment.question) {
+      groups.push({
+        id: entry.segment.id,
+        entries: [entry],
+      });
+      continue;
+    }
+
     const previousGroup = groups.at(-1);
-    if (previousGroup?.question.id === entry.segment.question.id) {
+    if (previousGroup?.question?.id === entry.segment.question.id) {
       previousGroup.entries.push(entry);
       continue;
     }
@@ -4561,6 +4780,7 @@ function A4PreviewPageFrame({ children, last = false }: { children: ReactNode; l
 }
 
 function frontMatterPageCount(frontMatter: FrontMatterConfig) {
+  if (frontMatter.titlePageTemplate === "worksheet") return 0;
   return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
 }
 
@@ -4619,14 +4839,30 @@ function pushPartGroupSegment({
   });
 }
 
-function buildPreviewSegments(questions: QuestionBlock[], showSolutions: boolean): PreviewSegment[] {
-  return questions.flatMap((question, questionIndex) => {
+function questionSpacingPx(formattingConfig?: FormattingConfig) {
+  const spacing = normalizeFormattingConfig(formattingConfig).questionSpacing;
+  if (spacing === "compact") return WORKSHEET_QUESTION_GAP_PX;
+  if (spacing === "tight") return 10;
+  return QUESTION_GAP_PX;
+}
+
+function buildPreviewSegments(
+  frontMatter: FrontMatterConfig,
+  questions: QuestionBlock[],
+  sectionHeadings: DocumentSectionHeading[],
+  documentFlow: DocumentFlowItem[],
+  showSolutions: boolean,
+  formattingConfig?: FormattingConfig,
+): PreviewSegment[] {
+  const gapPx = questionSpacingPx(formattingConfig);
+  const questionSegmentsById = new Map<string, PreviewSegment[]>();
+  questions.forEach((question, questionIndex) => {
     const segments: PreviewSegment[] = [
       {
         id: `${question.id}:start`,
         kind: "question-start",
         questionIndex,
-        spacingTop: questionIndex === 0 ? 0 : QUESTION_GAP_PX,
+        spacingTop: gapPx,
         question,
       },
     ];
@@ -4743,8 +4979,47 @@ function buildPreviewSegments(questions: QuestionBlock[], showSolutions: boolean
       });
     }
 
-    return segments;
+    questionSegmentsById.set(question.id, segments);
   });
+
+  const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
+  const questionSegments: PreviewSegment[] = [];
+  let topLevelItemCount = 0;
+
+  normalizeDocumentFlow(documentFlow, questions, sectionHeadings).forEach((flowItem) => {
+    const spacingTop = topLevelItemCount === 0 ? 0 : gapPx;
+
+    if (flowItem.kind === "sectionHeading") {
+      const sectionHeading = sectionHeadingMap.get(flowItem.id);
+      if (!sectionHeading) return;
+      questionSegments.push({
+        id: `section-heading:${sectionHeading.id}`,
+        kind: "section-heading",
+        spacingTop,
+        sectionHeading,
+      });
+      topLevelItemCount += 1;
+      return;
+    }
+
+    const segments = questionSegmentsById.get(flowItem.id);
+    if (!segments?.length) return;
+    const [firstSegment, ...remainingSegments] = segments;
+    questionSegments.push({ ...firstSegment, spacingTop });
+    questionSegments.push(...remainingSegments);
+    topLevelItemCount += 1;
+  });
+
+  if (frontMatter.titlePageTemplate !== "worksheet") return questionSegments;
+
+  return [
+    {
+      id: "worksheet-header",
+      kind: "worksheet-header",
+      spacingTop: 0,
+    },
+    ...questionSegments,
+  ];
 }
 
 function previewPartBlockRowIds(partItems: OrderedPartItem[], showSolutions: boolean) {
@@ -5282,6 +5557,69 @@ function TestFrontMatterPreview({
   );
 }
 
+function WorksheetHeaderPreview({
+  frontMatter,
+  logo,
+  totalMarks,
+  activePreviewAnchor,
+}: {
+  frontMatter: FrontMatterConfig;
+  logo?: LogoAsset;
+  totalMarks: number;
+  activePreviewAnchor?: string;
+}) {
+  const schoolName = frontMatter.schoolName
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <header
+      className="worksheet-header"
+      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+      data-preview-structure-anchor="true"
+      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FRONT_MATTER, activePreviewAnchor)}
+    >
+      <div className="worksheet-heading-lockup">
+        {logo ? (
+          <div className="worksheet-mini-logo">
+            <img src={logo.src} alt={`${logo.name} logo`} />
+          </div>
+        ) : null}
+        <div className="worksheet-title-copy">
+          {schoolName ? (
+            <p className="worksheet-school-name">
+              <FrontMatterInlineText text={schoolName} />
+            </p>
+          ) : null}
+          <h1>
+            <FrontMatterInlineText text={frontMatter.assessmentTitle} />
+          </h1>
+          <p className="worksheet-subject-line">
+            <FrontMatterInlineText text={frontMatter.subjectTitle} />
+          </p>
+        </div>
+      </div>
+      <div className="worksheet-student-fields">
+        <div className="worksheet-name-line">
+          <span>Name:</span>
+          <span aria-hidden="true" />
+        </div>
+        {totalMarks > 0 ? (
+          <div className="worksheet-mark-line">
+            <span>
+              <FrontMatterInlineText text={`${frontMatter.markLabel}:`} />
+            </span>
+            <span aria-hidden="true" />
+            <strong>{totalMarks}</strong>
+          </div>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
 function FrontMatterPreviewPages({
   frontMatter,
   logo,
@@ -5297,6 +5635,8 @@ function FrontMatterPreviewPages({
   activePreviewAnchor?: string;
   showPageBreaks: boolean;
 }) {
+  if (frontMatter.titlePageTemplate === "worksheet") return null;
+
   if (frontMatter.titlePageTemplate === "exam") {
     return (
       <>
@@ -5337,6 +5677,8 @@ function FrontMatterPreviewPages({
 const TestPreviewSegment = memo(function TestPreviewSegment({
   segment,
   frontMatter,
+  logo,
+  totalMarks = 0,
   firstOnPage = false,
   measureOnly = false,
   showSolutions = true,
@@ -5346,6 +5688,8 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
 }: {
   segment: PreviewSegment;
   frontMatter: FrontMatterConfig;
+  logo?: LogoAsset;
+  totalMarks?: number;
   firstOnPage?: boolean;
   measureOnly?: boolean;
   showSolutions?: boolean;
@@ -5353,10 +5697,42 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
   activePreviewAnchor?: string;
   onGraphConfigChange?: (change: PreviewGraphConfigChange) => void;
 }) {
-  const questionNumber = questionDisplayNumber(frontMatter, segment.questionIndex);
+  const questionNumber =
+    typeof segment.questionIndex === "number" ? questionDisplayNumber(frontMatter, segment.questionIndex) : frontMatter.startQuestionNumber;
   const paddingTop = firstOnPage ? 0 : segment.spacingTop;
 
-  if (segment.kind === "question-start") {
+  if (segment.kind === "worksheet-header") {
+    return (
+      <div className="test-preview-segment worksheet-header-segment" data-measure-segment={measureOnly ? "true" : undefined}>
+        <WorksheetHeaderPreview
+          frontMatter={frontMatter}
+          logo={logo}
+          totalMarks={totalMarks}
+          activePreviewAnchor={measureOnly ? undefined : activePreviewAnchor}
+        />
+      </div>
+    );
+  }
+
+  if (segment.kind === "section-heading" && segment.sectionHeading) {
+    const anchor = sectionHeadingScrollAnchor(segment.sectionHeading.id);
+    return (
+      <div
+        className="test-preview-segment test-section-heading"
+        data-scroll-anchor={measureOnly ? undefined : anchor}
+        data-preview-structure-anchor={measureOnly ? undefined : "true"}
+        data-preview-selected={previewSelectionAttr(measureOnly ? undefined : anchor, activePreviewAnchor)}
+        data-measure-segment={measureOnly ? "true" : undefined}
+        style={{ paddingTop }}
+      >
+        <h3>
+          <FrontMatterInlineText text={segment.sectionHeading.title || "Section heading"} />
+        </h3>
+      </div>
+    );
+  }
+
+  if (segment.kind === "question-start" && segment.question) {
     return (
       <div
         className="test-preview-segment test-question-start"
@@ -5372,11 +5748,12 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
     );
   }
 
-  if (segment.kind === "question-block" && segment.block) {
+  if (segment.kind === "question-block" && segment.question && segment.block) {
+    const question = segment.question;
     return (
       <div
         className="test-preview-segment test-question-block"
-        data-scroll-anchor={measureOnly ? undefined : questionBlockScrollAnchor(segment.question.id, segment.block.id)}
+        data-scroll-anchor={measureOnly ? undefined : questionBlockScrollAnchor(question.id, segment.block.id)}
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
       >
@@ -5385,8 +5762,8 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
           measureOnly={measureOnly}
           showSolutions={showSolutions}
           activePreviewAnchor={activePreviewAnchor}
-          blockAnchorFor={(block) => questionBlockScrollAnchor(segment.question.id, block.id)}
-          onGraphConfigChange={(blockId, graphConfig) => onGraphConfigChange?.({ questionId: segment.question.id, blockId, graphConfig })}
+          blockAnchorFor={(block) => questionBlockScrollAnchor(question.id, block.id)}
+          onGraphConfigChange={(blockId, graphConfig) => onGraphConfigChange?.({ questionId: question.id, blockId, graphConfig })}
         />
       </div>
     );
@@ -5396,7 +5773,8 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
     return <div className="test-preview-segment" data-measure-segment={measureOnly ? "true" : undefined} />;
   }
 
-  if (segment.kind === "part-group" && segment.part) {
+  if (segment.kind === "part-group" && segment.question && segment.part) {
+    const question = segment.question;
     const part = segment.part;
     const hasSubparts = part.subparts.length > 0;
     const partLabel = alphaLabel(segment.partIndex ?? 0);
@@ -5407,12 +5785,9 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
     return (
       <section
         className="test-preview-segment test-part-group"
-        data-scroll-anchor={measureOnly ? undefined : partScrollAnchor(segment.question.id, part.id)}
+        data-scroll-anchor={measureOnly ? undefined : partScrollAnchor(question.id, part.id)}
         data-preview-structure-anchor={measureOnly ? undefined : "true"}
-        data-preview-selected={previewSelectionAttr(
-          measureOnly ? undefined : partScrollAnchor(segment.question.id, part.id),
-          activePreviewAnchor,
-        )}
+        data-preview-selected={previewSelectionAttr(measureOnly ? undefined : partScrollAnchor(question.id, part.id), activePreviewAnchor)}
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
       >
@@ -5455,13 +5830,15 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                     ? [item.block, nextItem.block]
                     : undefined;
                 const rowBlocks = diagramReplacementBlocks ?? replacementBlocks ?? pairedBlocks ?? [item.block];
+                const rowHasVisibilitySlot = Boolean(diagramReplacementBlocks || replacementBlocks);
                 rows.push(
                   <div
                     key={rowBlocks.length > 1 ? `${item.id}:${rowBlocks[1].id}` : item.id}
-                    data-scroll-anchor={measureOnly ? undefined : partBlockScrollAnchor(segment.question.id, part.id, item.block.id)}
+                    data-scroll-anchor={measureOnly ? undefined : partBlockScrollAnchor(question.id, part.id, item.block.id)}
                     className={cn(
                       "test-question-part",
                       item.block.kind === "diagram" && "test-question-row-with-diagram",
+                      rowHasVisibilitySlot && "test-question-row-with-visibility-slot",
                       item.block.kind === "text" && isSolutionTextBlock(item.block) && "test-solution-row",
                     )}
                   >
@@ -5472,9 +5849,9 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                         measureOnly={measureOnly}
                         showSolutions={showSolutions}
                         activePreviewAnchor={activePreviewAnchor}
-                        blockAnchorFor={(block) => partBlockScrollAnchor(segment.question.id, part.id, block.id)}
+                        blockAnchorFor={(block) => partBlockScrollAnchor(question.id, part.id, block.id)}
                         onGraphConfigChange={(blockId, graphConfig) =>
-                          onGraphConfigChange?.({ questionId: segment.question.id, partId: part.id, blockId, graphConfig })
+                          onGraphConfigChange?.({ questionId: question.id, partId: part.id, blockId, graphConfig })
                         }
                       />
                     </div>
@@ -5493,15 +5870,16 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
               rows.push(
                 <div
                   key={item.subpart.id}
-                  data-scroll-anchor={measureOnly ? undefined : subpartScrollAnchor(segment.question.id, part.id, item.subpart.id)}
+                  data-scroll-anchor={measureOnly ? undefined : subpartScrollAnchor(question.id, part.id, item.subpart.id)}
                   data-preview-structure-anchor={measureOnly ? undefined : "true"}
                   data-preview-selected={previewSelectionAttr(
-                    measureOnly ? undefined : subpartScrollAnchor(segment.question.id, part.id, item.subpart.id),
+                    measureOnly ? undefined : subpartScrollAnchor(question.id, part.id, item.subpart.id),
                     activePreviewAnchor,
                   )}
                   className={cn(
                     "test-question-subpart",
                     contentBlocksHaveDiagram(item.subpart.contentBlocks, showSolutions) && "test-question-row-with-diagram",
+                    contentBlocksHaveVisibilityReplacementSlot(item.subpart.contentBlocks) && "test-question-row-with-visibility-slot",
                   )}
                 >
                   <span className="test-part-label">({romanLabel(Math.max(0, subpartIndex))})</span>
@@ -5511,10 +5889,10 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                       measureOnly={measureOnly}
                       showSolutions={showSolutions}
                       activePreviewAnchor={activePreviewAnchor}
-                      blockAnchorFor={(block) => subpartBlockScrollAnchor(segment.question.id, part.id, item.subpart.id, block.id)}
+                      blockAnchorFor={(block) => subpartBlockScrollAnchor(question.id, part.id, item.subpart.id, block.id)}
                       onGraphConfigChange={(blockId, graphConfig) =>
                         onGraphConfigChange?.({
-                          questionId: segment.question.id,
+                          questionId: question.id,
                           partId: part.id,
                           subpartId: item.subpart.id,
                           blockId,
@@ -5542,6 +5920,8 @@ interface PaginatedTestPreviewProps {
   logos: LogoAsset[];
   totalMarks: number;
   questions: QuestionBlock[];
+  sectionHeadings: DocumentSectionHeading[];
+  documentFlow: DocumentFlowItem[];
   formattingConfig?: FormattingConfig;
   scale?: number;
   showSolutions?: boolean;
@@ -5554,6 +5934,8 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
   logos,
   totalMarks,
   questions,
+  sectionHeadings,
+  documentFlow,
   formattingConfig,
   scale = 1,
   showSolutions = true,
@@ -5561,10 +5943,14 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
   onGraphConfigChange,
 }: PaginatedTestPreviewProps) {
   const measureRef = useRef<HTMLDivElement>(null);
-  const pageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
-  const showMarks = formattingConfig?.showMarks ?? DEFAULT_FORMATTING_CONFIG.showMarks ?? true;
+  const normalizedFormatting = useMemo(() => normalizeFormattingConfig(formattingConfig), [formattingConfig]);
+  const pageFormat = useMemo(() => pageFormatFromConfig(normalizedFormatting), [normalizedFormatting]);
+  const showMarks = normalizedFormatting.showMarks ?? DEFAULT_FORMATTING_CONFIG.showMarks ?? true;
   const previewStyle = useMemo(() => pageStyle(pageFormat, scale), [pageFormat, scale]);
-  const segments = useMemo(() => buildPreviewSegments(questions, showSolutions), [questions, showSolutions]);
+  const segments = useMemo(
+    () => buildPreviewSegments(frontMatter, questions, sectionHeadings, documentFlow, showSolutions, normalizedFormatting),
+    [documentFlow, frontMatter, normalizedFormatting, questions, sectionHeadings, showSolutions],
+  );
   const fallbackPages = useMemo<PreviewPage[]>(() => [{ segmentIndexes: segments.map((_, index) => index), overflow: false }], [segments]);
   const [pages, setPages] = useState<PreviewPage[]>(fallbackPages);
   const frontMatterLogo = useMemo(() => selectedLogoForFrontMatter(logos, frontMatter), [frontMatter, logos]);
@@ -5581,7 +5967,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
     );
     const nextPages = buildMeasuredPages(segmentHeights, segments, pageFormat, reservedPageHeight);
     setPages((currentPages) => (pagesAreEqual(currentPages, nextPages) ? currentPages : nextPages));
-  }, [pageFormat, reservedPageHeight, segments, showMarks]);
+  }, [frontMatterLogo, pageFormat, reservedPageHeight, segments, showMarks]);
 
   const visiblePages = pages.length ? pages : fallbackPages;
   const supplementaryPageCount = bookletSupplementaryPageCount(frontMatter, visiblePages.length);
@@ -5602,19 +5988,61 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
     [segments, visiblePages],
   );
 
+  const renderPreviewGroup = (group: PreviewQuestionSegmentGroup) => {
+    const content = group.entries.map(({ segment, segmentPageIndex }) => (
+      <TestPreviewSegment
+        key={segment.id}
+        segment={segment}
+        frontMatter={frontMatter}
+        logo={frontMatterLogo}
+        totalMarks={totalMarks}
+        firstOnPage={segmentPageIndex === 0}
+        showSolutions={showSolutions}
+        showMarks={showMarks}
+        activePreviewAnchor={activePreviewAnchor}
+        onGraphConfigChange={onGraphConfigChange}
+      />
+    ));
+
+    if (!group.question) {
+      return (
+        <div key={group.id} className="test-preview-document-group">
+          {content}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={group.id}
+        className="test-preview-question-group"
+        data-scroll-anchor={questionScrollAnchor(group.question.id)}
+        data-preview-structure-anchor="true"
+        data-preview-selected={previewSelectionAttr(questionScrollAnchor(group.question.id), activePreviewAnchor)}
+      >
+        {content}
+      </div>
+    );
+  };
+
   return (
-    <div className="a4-preview-root" style={previewStyle}>
+    <div
+      className={cn("a4-preview-root", frontMatter.titlePageTemplate === "worksheet" && "a4-preview-root-worksheet")}
+      style={previewStyle}
+    >
       <div className="a4-preview-shell">
         <div className="a4-preview-stack">
-          <FrontMatterPreviewPages
-            frontMatter={frontMatter}
-            logo={frontMatterLogo}
-            totalMarks={totalMarks}
-            questionCount={questions.length}
-            activePreviewAnchor={activePreviewAnchor}
-            showPageBreaks={pageFormat.showPageBreaks}
-          />
-          {pageFormat.showPageBreaks ? (
+          {frontMatter.titlePageTemplate !== "worksheet" ? (
+            <FrontMatterPreviewPages
+              frontMatter={frontMatter}
+              logo={frontMatterLogo}
+              totalMarks={totalMarks}
+              questionCount={questions.length}
+              activePreviewAnchor={activePreviewAnchor}
+              showPageBreaks={pageFormat.showPageBreaks}
+            />
+          ) : null}
+          {frontMatter.titlePageTemplate !== "worksheet" && pageFormat.showPageBreaks ? (
             <div className="a4-page-break" aria-hidden="true">
               <span>A4 page break</span>
             </div>
@@ -5630,28 +6058,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
                     <div className="a4-page-content">
                       {isExamTemplate ? <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} /> : null}
                       <div className={cn("test-preview-flow", isExamTemplate && "school-exam-question-flow")}>
-                        {groups.map((group) => (
-                          <div
-                            key={group.id}
-                            className="test-preview-question-group"
-                            data-scroll-anchor={questionScrollAnchor(group.question.id)}
-                            data-preview-structure-anchor="true"
-                            data-preview-selected={previewSelectionAttr(questionScrollAnchor(group.question.id), activePreviewAnchor)}
-                          >
-                            {group.entries.map(({ segment, segmentPageIndex }) => (
-                              <TestPreviewSegment
-                                key={segment.id}
-                                segment={segment}
-                                frontMatter={frontMatter}
-                                firstOnPage={segmentPageIndex === 0}
-                                showSolutions={showSolutions}
-                                showMarks={showMarks}
-                                activePreviewAnchor={activePreviewAnchor}
-                                onGraphConfigChange={onGraphConfigChange}
-                              />
-                            ))}
-                          </div>
-                        ))}
+                        <div className="test-preview-question-list">{groups.map(renderPreviewGroup)}</div>
                       </div>
                       {page.overflow ? (
                         <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
@@ -5701,6 +6108,8 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
                   key={segment.id}
                   segment={segment}
                   frontMatter={frontMatter}
+                  logo={frontMatterLogo}
+                  totalMarks={totalMarks}
                   measureOnly
                   showSolutions={showSolutions}
                   showMarks={showMarks}
@@ -6397,14 +6806,14 @@ function NewTestDialog({
           <div className="flex min-w-0 items-center gap-2">
             <PlusCircle className="size-5 text-primary" aria-hidden="true" />
             <h2 id="new-test-dialog-title" className="truncate text-base font-semibold">
-              New test
+              New document
             </h2>
           </div>
-          <Button type="button" variant="ghost" size="icon" title="Close new test" aria-label="Close new test" onClick={onClose}>
+          <Button type="button" variant="ghost" size="icon" title="Close new document" aria-label="Close new document" onClick={onClose}>
             <X />
           </Button>
         </header>
-        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
           {NEW_TEST_TEMPLATES.map((template) => (
             <button
               key={template.id}
@@ -6415,6 +6824,8 @@ function NewTestDialog({
               <span className="flex size-10 items-center justify-center rounded-md border bg-background text-primary transition group-hover:border-primary">
                 {template.id === "exam" ? (
                   <ListTree className="size-5" aria-hidden="true" />
+                ) : template.id === "worksheet" ? (
+                  <Columns3 className="size-5" aria-hidden="true" />
                 ) : (
                   <FileText className="size-5" aria-hidden="true" />
                 )}
@@ -6509,36 +6920,27 @@ function FrontMatterEditor({
     <div className="flex flex-col gap-3">
       <CollapsiblePanel
         title={
-          <InlineSummaryTitle label="Title" summary={`${frontMatter.subjectTitle} - ${assessmentTitleText(frontMatter.assessmentTitle)}`} />
+          <InlineSummaryTitle
+            label="Title"
+            summary={`${frontMatter.subjectTitle} - ${
+              titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+            }`}
+          />
         }
         defaultOpen={false}
         className="bg-muted/20"
         openSignal={openSignal}
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-            Title page template
-            <select
-              value={titlePageTemplate}
-              onChange={(event) => {
-                const nextTemplate = titlePageTemplateFromValue(event.target.value);
-                onChange({
-                  titlePageTemplate: nextTemplate,
-                  ...(nextTemplate === "exam"
-                    ? {
-                        ...examSectionPresetPatch(exam, exam.sectionPreset),
-                        showDeclaration: false,
-                        showInstructions: false,
-                      }
-                    : { showDeclaration: true, showInstructions: true }),
-                });
-              }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+          <div className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+            Template
+            <div
+              className="flex min-h-9 items-center rounded-md border border-border bg-muted/30 px-2 text-sm font-normal text-muted-foreground"
+              aria-label={`Document template: ${titlePageTemplateLabel(titlePageTemplate)}`}
             >
-              <option value="standard">School test title page</option>
-              <option value="exam">School exam booklet</option>
-            </select>
-          </label>
+              {titlePageTemplateLabel(titlePageTemplate)}
+            </div>
+          </div>
           {titlePageTemplate === "exam" ? (
             <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
               Exam section
@@ -6555,79 +6957,107 @@ function FrontMatterEditor({
               </select>
             </label>
           ) : null}
-          <div className="rounded-md border bg-background p-3 md:col-span-2">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[88px_minmax(0,1fr)] md:items-center">
-              <div className="flex h-24 items-center justify-center rounded-md border bg-white p-2">
-                {selectedLogo ? (
-                  <img className="max-h-full max-w-full object-contain" src={selectedLogo.src} alt={`${selectedLogo.name} logo`} />
-                ) : (
-                  <span className="text-xs text-muted-foreground">No logo</span>
-                )}
-              </div>
-              <div className="flex min-w-0 flex-col gap-3">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                    Logo
-                    <select
-                      value={frontMatter.logoId}
-                      onChange={(event) => onChange({ logoId: event.target.value })}
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    >
-                      {logos.map((logoOption) => (
-                        <option key={logoOption.id} value={logoOption.id}>
-                          {logoOption.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-2 text-xs font-medium">
-                    Logo name
-                    <input
-                      value={logoNameDraft}
-                      onChange={(event) => setLogoNameDraft(event.target.value)}
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-2 text-xs font-medium">
-                    School name
-                    <Textarea
-                      value={frontMatter.schoolName}
-                      onChange={(event) => onChange({ schoolName: event.target.value })}
-                      className="min-h-16 font-mono text-sm"
-                    />
-                  </label>
+          {titlePageTemplate === "worksheet" ? (
+            <>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Logo
+                <select
+                  value={frontMatter.logoId}
+                  onChange={(event) => onChange({ logoId: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="">No logo</option>
+                  {logos.map((logoOption) => (
+                    <option key={logoOption.id} value={logoOption.id}>
+                      {logoOption.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                School name
+                <input
+                  value={frontMatter.schoolName}
+                  onChange={(event) => onChange({ schoolName: event.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                />
+              </label>
+            </>
+          ) : (
+            <div className="rounded-md border bg-background p-3 md:col-span-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[88px_minmax(0,1fr)] md:items-center">
+                <div className="flex h-24 items-center justify-center rounded-md border bg-white p-2">
+                  {selectedLogo ? (
+                    <img className="max-h-full max-w-full object-contain" src={selectedLogo.src} alt={`${selectedLogo.name} logo`} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No logo</span>
+                  )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-                    <ImagePlus className="size-4" aria-hidden="true" />
-                    Add logo
-                    <input
-                      type="file"
-                      accept="image/*,.svg"
-                      className="sr-only"
-                      onChange={(event) => {
-                        const file = event.currentTarget.files?.[0];
-                        if (file) onAddLogo(file);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  </label>
-                  <Button type="button" variant="outline" size="sm" disabled={!logoHasDraftChanges} onClick={handleUpdateLogo}>
-                    <Save data-icon="inline-start" />
-                    Update logo
-                  </Button>
-                  {selectedLogo && logos.length > 1 ? (
-                    <Button type="button" variant="outline" size="sm" onClick={() => onRemoveLogo(selectedLogo.id)}>
-                      <Trash2 data-icon="inline-start" />
-                      Remove logo
+                <div className="flex min-w-0 flex-col gap-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+                      Logo
+                      <select
+                        value={frontMatter.logoId}
+                        onChange={(event) => onChange({ logoId: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      >
+                        {logos.map((logoOption) => (
+                          <option key={logoOption.id} value={logoOption.id}>
+                            {logoOption.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Logo name
+                      <input
+                        value={logoNameDraft}
+                        onChange={(event) => setLogoNameDraft(event.target.value)}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      School name
+                      <Textarea
+                        value={frontMatter.schoolName}
+                        onChange={(event) => onChange({ schoolName: event.target.value })}
+                        className="min-h-16 font-mono text-sm"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                      <ImagePlus className="size-4" aria-hidden="true" />
+                      Add logo
+                      <input
+                        type="file"
+                        accept="image/*,.svg"
+                        className="sr-only"
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) onAddLogo(file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                    <Button type="button" variant="outline" size="sm" disabled={!logoHasDraftChanges} onClick={handleUpdateLogo}>
+                      <Save data-icon="inline-start" />
+                      Update logo
                     </Button>
-                  ) : null}
+                    {selectedLogo && logos.length > 1 ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => onRemoveLogo(selectedLogo.id)}>
+                        <Trash2 data-icon="inline-start" />
+                        Remove logo
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
           <label className="flex flex-col gap-2 text-xs font-medium">
-            Subject title
+            {titlePageTemplate === "worksheet" ? "Course" : "Subject title"}
             <input
               value={frontMatter.subjectTitle}
               onChange={(event) => onChange({ subjectTitle: event.target.value })}
@@ -6635,23 +7065,29 @@ function FrontMatterEditor({
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
-            Assessment title
+            {titlePageTemplate === "worksheet" ? "Worksheet title" : "Assessment title"}
             <input
-              value={assessmentTitleText(frontMatter.assessmentTitle)}
-              onChange={(event) => onChange({ assessmentTitle: assessmentTitleText(event.target.value) })}
+              value={titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)}
+              onChange={(event) =>
+                onChange({
+                  assessmentTitle: titlePageTemplate === "worksheet" ? event.target.value : assessmentTitleText(event.target.value),
+                })
+              }
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
-          {titlePageTemplate === "standard" ? (
+          {titlePageTemplate !== "exam" ? (
             <>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Name label
-                <input
-                  value={frontMatter.nameLabel}
-                  onChange={(event) => onChange({ nameLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
+              {titlePageTemplate !== "worksheet" ? (
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Name label
+                  <input
+                    value={frontMatter.nameLabel}
+                    onChange={(event) => onChange({ nameLabel: event.target.value })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+              ) : null}
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Mark label
                 <input
@@ -6673,34 +7109,36 @@ function FrontMatterEditor({
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
-          <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
-            <label className="flex h-9 items-center gap-2 text-xs font-medium">
-              <input
-                type="checkbox"
-                checked={frontMatter.showAssessmentSubtitle}
-                onChange={(event) => onChange({ showAssessmentSubtitle: event.target.checked })}
-              />
-              Show assessment subtitle
-            </label>
-            <label className="flex flex-col gap-2 text-xs font-medium">
-              Assessment subtitle
-              {titlePageTemplate === "exam" ? (
-                <Textarea
-                  value={frontMatter.assessmentSubtitle}
-                  onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
-                  placeholder={"Section One:\nCalculator-free"}
-                  className="min-h-16 text-sm"
-                />
-              ) : (
+          {titlePageTemplate !== "worksheet" ? (
+            <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
+              <label className="flex h-9 items-center gap-2 text-xs font-medium">
                 <input
-                  value={frontMatter.assessmentSubtitle}
-                  onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
-                  placeholder="Calculator Free Section"
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  type="checkbox"
+                  checked={frontMatter.showAssessmentSubtitle}
+                  onChange={(event) => onChange({ showAssessmentSubtitle: event.target.checked })}
                 />
-              )}
-            </label>
-          </div>
+                Show assessment subtitle
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Assessment subtitle
+                {titlePageTemplate === "exam" ? (
+                  <Textarea
+                    value={frontMatter.assessmentSubtitle}
+                    onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
+                    placeholder={"Section One:\nCalculator-free"}
+                    className="min-h-16 text-sm"
+                  />
+                ) : (
+                  <input
+                    value={frontMatter.assessmentSubtitle}
+                    onChange={(event) => onChange({ assessmentSubtitle: event.target.value })}
+                    placeholder="Calculator Free Section"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                )}
+              </label>
+            </div>
+          ) : null}
         </div>
       </CollapsiblePanel>
 
@@ -7189,37 +7627,23 @@ function FrontMatterEditor({
 
 function TestFormatEditor({
   formattingConfig,
+  titlePageTemplate,
   openSignal,
   onFormattingChange,
-  onPageChange,
   onReset,
 }: {
   formattingConfig: FormattingConfig;
+  titlePageTemplate: TitlePageTemplate;
   openSignal?: number;
   onFormattingChange: (patch: Partial<FormattingConfig>) => void;
-  onPageChange: (patch: Partial<NonNullable<FormattingConfig["page"]>>) => void;
   onReset: () => void;
 }) {
   const normalizedFormatting = normalizeFormattingConfig(formattingConfig);
-  const page = normalizePageFormattingConfig(normalizedFormatting.page);
-  const selectedPagePresetId = pagePresetId(normalizedFormatting);
-  const formatPresetOptions = TEST_FORMAT_PRESETS.some((preset) => preset.id === normalizedFormatting.id)
-    ? TEST_FORMAT_PRESETS
-    : [...TEST_FORMAT_PRESETS, { id: normalizedFormatting.id ?? "custom", label: "Custom current style" }];
-  const pagePresetOptions =
-    selectedPagePresetId === "custom" ? [...PAGE_PRESETS, { id: "custom", label: "Custom current size", page }] : PAGE_PRESETS;
-  const summary = `${formattingPresetLabel(normalizedFormatting)} · ${page.size ?? "Page"} ${page.orientation ?? ""} · ${
-    normalizedFormatting.showMarks ? "marks shown" : "marks hidden"
-  }`;
-  const setPagePreset = (presetId: string) => {
-    const preset = PAGE_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
-    onPageChange(preset.page);
-  };
+  const summary = `${formattingPresetLabel(normalizedFormatting)} · ${normalizedFormatting.showMarks ? "marks shown" : "marks hidden"}`;
 
   return (
     <CollapsiblePanel
-      title={<InlineSummaryTitle label="Test format" summary={summary} />}
+      title={<InlineSummaryTitle label={titlePageTemplate === "worksheet" ? "Worksheet format" : "Test format"} summary={summary} />}
       defaultOpen={false}
       className="bg-muted/20"
       openSignal={openSignal}
@@ -7230,23 +7654,6 @@ function TestFormatEditor({
       }
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-          Test style
-          <select
-            value={normalizedFormatting.id ?? DEFAULT_FORMATTING_CONFIG.id}
-            onChange={(event) => {
-              const preset = TEST_FORMAT_PRESETS.find((item) => item.id === event.target.value);
-              if (preset) onFormattingChange({ id: preset.id });
-            }}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {formatPresetOptions.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="flex h-9 items-center gap-2 text-xs font-medium md:col-span-2">
           <input
             type="checkbox"
@@ -7254,68 +7661,6 @@ function TestFormatEditor({
             onChange={(event) => onFormattingChange({ showMarks: event.target.checked })}
           />
           Show mark labels on questions, parts, and subparts
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Page
-          <select
-            value={selectedPagePresetId}
-            onChange={(event) => setPagePreset(event.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {pagePresetOptions.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex h-9 items-end gap-2 text-xs font-medium md:mt-6">
-          <input
-            type="checkbox"
-            checked={page.showPageBreaks ?? true}
-            onChange={(event) => onPageChange({ showPageBreaks: event.target.checked })}
-          />
-          Show page break labels in preview
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Page width
-          <input
-            type="number"
-            min={1}
-            value={formatSettingNumber(page.widthPx, DEFAULT_PAGE_FORMAT.widthPx)}
-            onChange={(event) => onPageChange({ widthPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.widthPx) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Page height
-          <input
-            type="number"
-            min={1}
-            value={formatSettingNumber(page.heightPx, DEFAULT_PAGE_FORMAT.heightPx)}
-            onChange={(event) => onPageChange({ heightPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.heightPx) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Side margin
-          <input
-            type="number"
-            min={0}
-            value={formatSettingNumber(page.paddingXPx, DEFAULT_PAGE_FORMAT.paddingXPx)}
-            onChange={(event) => onPageChange({ paddingXPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.paddingXPx) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Top/bottom margin
-          <input
-            type="number"
-            min={0}
-            value={formatSettingNumber(page.paddingYPx, DEFAULT_PAGE_FORMAT.paddingYPx)}
-            onChange={(event) => onPageChange({ paddingYPx: formatSettingNumber(event.target.value, DEFAULT_PAGE_FORMAT.paddingYPx) })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
         </label>
       </div>
     </CollapsiblePanel>
@@ -7554,12 +7899,20 @@ function tocBlockKind(block: EditorContentBlock): TocItemKind {
   return "text";
 }
 
-function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlock[], showSolutions: boolean) {
+function buildDocumentToc(
+  frontMatter: FrontMatterConfig,
+  questions: QuestionBlock[],
+  sectionHeadings: DocumentSectionHeading[],
+  documentFlow: DocumentFlowItem[],
+  showSolutions: boolean,
+) {
   const items: DocumentTocItem[] = [
     {
       id: SCROLL_ANCHOR_FRONT_MATTER,
-      label: "Title Page",
-      summary: `${frontMatter.subjectTitle} - ${assessmentTitleText(frontMatter.assessmentTitle)}`,
+      label: frontMatter.titlePageTemplate === "worksheet" ? "Worksheet heading" : "Title Page",
+      summary: `${frontMatter.subjectTitle} - ${
+        frontMatter.titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+      }`,
       kind: "title",
       depth: 0,
       editorAnchor: SCROLL_ANCHOR_FRONT_MATTER,
@@ -7567,7 +7920,30 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
     },
   ];
 
-  questions.forEach((question, questionIndex) => {
+  const questionMap = new Map(questions.map((question, index) => [question.id, { question, questionIndex: index }]));
+  const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
+  const normalizedFlow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
+
+  normalizedFlow.forEach((flowItem) => {
+    if (flowItem.kind === "sectionHeading") {
+      const heading = sectionHeadingMap.get(flowItem.id);
+      if (!heading) return;
+      const headingAnchor = sectionHeadingScrollAnchor(heading.id);
+      items.push({
+        id: headingAnchor,
+        label: heading.title.trim() || "Section heading",
+        summary: "Worksheet section",
+        kind: "sectionHeading",
+        depth: 0,
+        editorAnchor: headingAnchor,
+        previewAnchor: headingAnchor,
+      });
+      return;
+    }
+
+    const questionEntry = questionMap.get(flowItem.id);
+    if (!questionEntry) return;
+    const { question, questionIndex } = questionEntry;
     const questionAnchor = questionScrollAnchor(question.id);
     items.push({
       id: questionAnchor,
@@ -7671,6 +8047,7 @@ function buildDocumentToc(frontMatter: FrontMatterConfig, questions: QuestionBlo
 
 function TocItemIcon({ kind }: { kind: TocItemKind }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
+  if (kind === "sectionHeading") return <Heading2 className="size-4" aria-hidden="true" />;
   if (kind === "question") return null;
   if (kind === "pageBreak") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   if (kind === "part" || kind === "subpart") return <GitBranch className="size-4" aria-hidden="true" />;
@@ -7701,6 +8078,15 @@ function existingOrFirstQuestionId(questions: QuestionBlock[], preferredQuestion
 function firstQuestionAnchor(questions: QuestionBlock[]) {
   const questionId = firstQuestionId(questions);
   return questionId ? questionScrollAnchor(questionId) : SCROLL_ANCHOR_FRONT_MATTER;
+}
+
+function flowItemAnchor(item?: DocumentFlowItem | null) {
+  if (!item) return "";
+  return item.kind === "sectionHeading" ? sectionHeadingScrollAnchor(item.id) : questionScrollAnchor(item.id);
+}
+
+function firstDocumentFlowAnchor(documentFlow: DocumentFlowItem[], questions: QuestionBlock[]) {
+  return flowItemAnchor(documentFlow[0]) || firstQuestionAnchor(questions);
 }
 
 function isTocBranchItem(item: DocumentTocItem, items: DocumentTocItem[]) {
@@ -7741,7 +8127,7 @@ function tocSummaryText(source: string) {
 }
 
 function tocRailItems(items: DocumentTocItem[]) {
-  return items.filter((item) => item.kind === "title" || (item.kind === "question" && item.depth === 0));
+  return items.filter((item) => item.kind === "title" || item.kind === "sectionHeading" || (item.kind === "question" && item.depth === 0));
 }
 
 function tocRailPageBreakItem(questionItem: DocumentTocItem, questionId: string): DocumentTocItem {
@@ -7759,6 +8145,7 @@ function tocRailPageBreakItem(questionItem: DocumentTocItem, questionId: string)
 
 function tocRailLabel(item: DocumentTocItem) {
   if (item.kind === "title") return "T";
+  if (item.kind === "sectionHeading") return "§";
   if (item.kind === "pageBreak") return "";
   return item.label.replace(/^Question\s+/i, "");
 }
@@ -7769,7 +8156,7 @@ function activeTocRailItemId(items: DocumentTocItem[], activeItemId: string) {
 
   for (let index = activeIndex; index >= 0; index -= 1) {
     const item = items[index];
-    if (item.kind === "title" || (item.kind === "question" && item.depth === 0)) return item.id;
+    if (item.kind === "title" || item.kind === "sectionHeading" || (item.kind === "question" && item.depth === 0)) return item.id;
   }
 
   return activeItemId;
@@ -7917,11 +8304,14 @@ function DocumentNavigatorRail({
   onContextMenu,
   onSelectPageBreak,
   onToggleEditorAtItem,
+  onAddSectionHeading,
   onAddQuestion,
   onAddPageBreakAfterQuestion,
   onMoveQuestion,
+  onMoveSectionHeading,
   onMovePageBreak,
   onDeleteQuestion,
+  onDeleteSectionHeading,
   onDeletePageBreak,
   onQuestionDragStart,
   onQuestionDragOver,
@@ -7948,11 +8338,14 @@ function DocumentNavigatorRail({
   onContextMenu: (event: ReactMouseEvent<HTMLElement>, item: DocumentTocItem) => void;
   onSelectPageBreak: (item: DocumentTocItem) => void;
   onToggleEditorAtItem: (item: DocumentTocItem) => void;
+  onAddSectionHeading: () => void;
   onAddQuestion: () => void;
   onAddPageBreakAfterQuestion: (questionId: string) => void;
   onMoveQuestion: (questionId: string, direction: MoveDirection) => void;
+  onMoveSectionHeading: (sectionHeadingId: string, direction: MoveDirection) => void;
   onMovePageBreak: (questionId: string, direction: MoveDirection) => void;
   onDeleteQuestion: (questionId: string) => void;
+  onDeleteSectionHeading: (sectionHeadingId: string) => void;
   onDeletePageBreak: (questionId: string) => void;
   onQuestionDragStart: (event: DragEvent<HTMLElement>, questionId: string) => void;
   onQuestionDragOver: (event: DragEvent<HTMLElement>, questionId: string) => void;
@@ -8044,7 +8437,9 @@ function DocumentNavigatorRail({
 
           const active = item.id === activeRailItemId;
           const questionId = questionIdFromScrollAnchor(item.editorAnchor);
-          const togglesEditor = item.kind === "title" || Boolean(questionId);
+          const sectionHeadingId = sectionHeadingIdFromScrollAnchor(item.editorAnchor);
+          const movableItemId = questionId || sectionHeadingId;
+          const togglesEditor = item.kind === "title" || item.kind === "sectionHeading" || Boolean(questionId);
           const draggable = Boolean(questionId);
           const dragging = draggedQuestionId === questionId;
           const dropPlacement =
@@ -8061,34 +8456,42 @@ function DocumentNavigatorRail({
               data-drag-preview={draggable ? true : undefined}
               data-context-anchor={item.editorAnchor}
               title={
-                draggable
+                movableItemId
                   ? `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor. Alt+Up/Alt+Down moves it. Delete removes it.`
                   : `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor.`
               }
               aria-label={
-                draggable
+                movableItemId
                   ? `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor. Press Alt+Up or Alt+Down to move it. Press Delete to remove it.`
                   : `${item.label}. Click selects it and jumps the display. Double-click opens or closes the editor.`
               }
               aria-current={active ? "location" : undefined}
-              aria-keyshortcuts={draggable ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
-              onClick={() => (item.kind === "title" || questionId ? onPreviewJump(item) : onJump(item))}
+              aria-keyshortcuts={movableItemId ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
+              onClick={() => (item.kind === "title" || item.kind === "sectionHeading" || questionId ? onPreviewJump(item) : onJump(item))}
               onContextMenu={(event) => onContextMenu(event, item)}
               onDoubleClick={togglesEditor ? () => onToggleEditorAtItem(item) : undefined}
               onKeyDown={
-                questionId
+                movableItemId
                   ? (event) => {
                       if (keyboardDeleteRequested(event)) {
                         event.preventDefault();
                         event.stopPropagation();
-                        onDeleteQuestion(questionId);
+                        if (sectionHeadingId) {
+                          onDeleteSectionHeading(sectionHeadingId);
+                        } else {
+                          onDeleteQuestion(questionId);
+                        }
                         return;
                       }
                       const direction = keyboardMoveDirection(event);
                       if (!direction) return;
                       event.preventDefault();
                       event.stopPropagation();
-                      onMoveQuestion(questionId, direction);
+                      if (sectionHeadingId) {
+                        onMoveSectionHeading(sectionHeadingId, direction);
+                      } else {
+                        onMoveQuestion(questionId, direction);
+                      }
                     }
                   : undefined
               }
@@ -8140,7 +8543,16 @@ function DocumentNavigatorRail({
           );
         })}
       </nav>
-      <div className="flex h-20 shrink-0 flex-col items-center justify-center gap-1 border-t">
+      <div className="flex h-28 shrink-0 flex-col items-center justify-center gap-1 border-t">
+        <button
+          type="button"
+          title="Add section heading"
+          aria-label="Add section heading"
+          onClick={onAddSectionHeading}
+          className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
+        >
+          <Heading2 className="size-4" aria-hidden="true" />
+        </button>
         <button
           type="button"
           title="Add question"
@@ -8182,6 +8594,39 @@ function PageBreakStructurePanel({ label, active, onRemove }: { label: string; a
           <span className="truncate text-sm font-semibold">{label}</span>
         </div>
         <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+      </div>
+    </section>
+  );
+}
+
+function SectionHeadingStructurePanel({
+  heading,
+  active,
+  onChange,
+  onRemove,
+}: {
+  heading: DocumentSectionHeading;
+  active: boolean;
+  onChange: (title: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <section className={cn("rounded-lg border bg-card p-4 shadow-panel transition-colors", active && EDITOR_ACTIVE_PANEL_CLASS)}>
+      <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor={`section-heading-${heading.id}`}>
+            Section title
+          </label>
+          <input
+            id={`section-heading-${heading.id}`}
+            type="text"
+            value={heading.title}
+            onChange={(event) => onChange(event.target.value)}
+            className="h-11 rounded-md border border-input bg-background px-3 text-base font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+            placeholder="Multiple choice"
+          />
+        </div>
+        <RemoveActionButton label="Remove section heading" onRemove={onRemove} />
       </div>
     </section>
   );
@@ -8313,6 +8758,11 @@ function DiagramBlockEditor({
 export default function App() {
   const initialEditorDraft = loadInitialEditorDraft();
   const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [createQuestion()], [initialEditorDraft]);
+  const initialSectionHeadings = useMemo(() => initialEditorDraft?.sectionHeadings ?? [], [initialEditorDraft]);
+  const initialDocumentFlow = useMemo(
+    () => normalizeDocumentFlow(initialEditorDraft?.documentFlow, initialQuestions, initialSectionHeadings),
+    [initialEditorDraft, initialQuestions, initialSectionHeadings],
+  );
   const [frontMatter, setFrontMatter] = useState<FrontMatterConfig>(() => initialEditorDraft?.frontMatter ?? DEFAULT_FRONT_MATTER);
   const [formattingConfig, setFormattingConfig] = useState<FormattingConfig>(
     () => initialEditorDraft?.formattingConfig ?? DEFAULT_FORMATTING_CONFIG,
@@ -8320,6 +8770,8 @@ export default function App() {
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
   const [legacySavedTests, setLegacySavedTests] = useState<SavedTest[]>(loadLegacySavedTests);
   const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
+  const [sectionHeadings, setSectionHeadings] = useState<DocumentSectionHeading[]>(() => initialSectionHeadings);
+  const [documentFlow, setDocumentFlow] = useState<DocumentFlowItem[]>(() => initialDocumentFlow);
   const cleanUnsavedDocumentFingerprintRef = useRef<string | null>(
     initialEditorDraft
       ? null
@@ -8328,6 +8780,8 @@ export default function App() {
           initialQuestions,
           DEFAULT_FORMATTING_CONFIG,
           selectedLogoForFrontMatter(logos, DEFAULT_FRONT_MATTER),
+          initialSectionHeadings,
+          initialDocumentFlow,
         ),
   );
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
@@ -8344,8 +8798,8 @@ export default function App() {
   const [paneMode, setPaneMode] = useState<PaneMode>("preview");
   const [tocOpen, setTocOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [activeTocItemId, setActiveTocItemId] = useState(() => firstQuestionAnchor(initialQuestions));
-  const [activeRailItemId, setActiveRailItemId] = useState(() => firstQuestionAnchor(initialQuestions));
+  const [activeTocItemId, setActiveTocItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
+  const [activeRailItemId, setActiveRailItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
   const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
   const [showSolutions, setShowSolutions] = useState(false);
   const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
@@ -8410,6 +8864,8 @@ export default function App() {
   const frontMatterRef = useRef(frontMatter);
   const formattingConfigRef = useRef(formattingConfig);
   const questionsRef = useRef(questions);
+  const sectionHeadingsRef = useRef(sectionHeadings);
+  const documentFlowRef = useRef(documentFlow);
   const logosRef = useRef(logos);
   const legacySavedTestsRef = useRef(legacySavedTests);
   const activeProjectFilePathRef = useRef(activeProjectFilePath);
@@ -8430,6 +8886,20 @@ export default function App() {
     lastProjectSaveFingerprintRef.current = nextFingerprint;
     setLastProjectSaveFingerprint(nextFingerprint);
   }
+
+  const currentDraftSnapshotForStorage = useCallback(
+    (): AutosavedEditorSnapshot => ({
+      frontMatter: frontMatterRef.current,
+      questions: questionsRef.current,
+      sectionHeadings: sectionHeadingsRef.current,
+      documentFlow: documentFlowRef.current,
+      formattingConfig: formattingConfigRef.current,
+      activeProjectFilePath: activeProjectFilePathRef.current ?? undefined,
+      activeProjectFileRevision: activeProjectFileRevisionRef.current ?? undefined,
+      logo: selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
+    }),
+    [],
+  );
 
   useEffect(() => {
     return () => pointerSubsectionDragRef.current?.cleanup();
@@ -8575,17 +9045,35 @@ export default function App() {
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
   }, [storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!storageHydrated) return;
-    persistCurrentDraft({
-      frontMatter,
-      questions,
-      formattingConfig,
-      activeProjectFilePath: activeProjectFilePath ?? undefined,
-      activeProjectFileRevision: activeProjectFileRevision ?? undefined,
-      logo: selectedLogoForFrontMatter(logosRef.current, frontMatter),
-    });
-  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, questions, storageHydrated]);
+    const timeoutId = window.setTimeout(() => {
+      persistCurrentDraft(currentDraftSnapshotForStorage());
+    }, LOCAL_DRAFT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeProjectFilePath,
+    activeProjectFileRevision,
+    currentDraftSnapshotForStorage,
+    formattingConfig,
+    frontMatter,
+    documentFlow,
+    questions,
+    sectionHeadings,
+    storageHydrated,
+  ]);
+
+  useEffect(() => {
+    if (!storageHydrated) return;
+
+    const persistLatestDraft = () => {
+      persistCurrentDraft(currentDraftSnapshotForStorage());
+    };
+
+    window.addEventListener("pagehide", persistLatestDraft);
+    return () => window.removeEventListener("pagehide", persistLatestDraft);
+  }, [currentDraftSnapshotForStorage, storageHydrated]);
 
   useEffect(() => {
     if (!storageHydrated || draftAutosaveStatus === "unavailable") return;
@@ -8598,6 +9086,8 @@ export default function App() {
       saveStorageAutosave<AutosavedEditorSnapshot>({
         frontMatter,
         questions,
+        sectionHeadings,
+        documentFlow,
         formattingConfig,
         activeProjectFilePath: activeProjectFilePath ?? undefined,
         activeProjectFileRevision: activeProjectFileRevision ?? undefined,
@@ -8621,9 +9111,26 @@ export default function App() {
     return () => window.clearTimeout(timeoutId);
     // draftAutosaveStatus is used as a guard; including it would reschedule autosave status updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, questions, storageHydrated]);
+  }, [
+    activeProjectFilePath,
+    activeProjectFileRevision,
+    documentFlow,
+    formattingConfig,
+    frontMatter,
+    questions,
+    sectionHeadings,
+    storageHydrated,
+  ]);
 
+  const previewFrontMatter = useDeferredValue(frontMatter);
+  const previewQuestions = useDeferredValue(questions);
+  const previewSectionHeadings = useDeferredValue(sectionHeadings);
+  const previewDocumentFlow = useDeferredValue(documentFlow);
+  const previewFormattingConfig = useDeferredValue(formattingConfig);
+  const previewLogos = useDeferredValue(logos);
+  const previewShowSolutions = useDeferredValue(showSolutions);
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
+  const previewTotalMarks = useMemo(() => previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0), [previewQuestions]);
   const canUndo = historyVersion >= 0 && undoStackRef.current.length > 0;
   const canRedo = historyVersion >= 0 && redoStackRef.current.length > 0;
   const showEditor = paneMode === "split";
@@ -8659,7 +9166,10 @@ export default function App() {
     }),
     [tocOpen],
   );
-  const documentTocItems = useMemo(() => buildDocumentToc(frontMatter, questions, showSolutions), [frontMatter, questions, showSolutions]);
+  const documentTocItems = useMemo(
+    () => buildDocumentToc(frontMatter, questions, sectionHeadings, documentFlow, showSolutions),
+    [documentFlow, frontMatter, questions, sectionHeadings, showSolutions],
+  );
   const solutionValidation = useMemo(() => validateSolutionCompleteness(frontMatter, questions), [frontMatter, questions]);
   const printModeLabel = showSolutions ? "Solutions" : "Student";
   const printModeTitle = showSolutions
@@ -8670,8 +9180,16 @@ export default function App() {
     return previewAnchorForEditorAnchor(activeTocItemId, documentTocItems);
   }, [activeTocItemId, documentTocItems]);
   const currentDocumentFingerprint = useMemo(
-    () => editorDocumentFingerprint(frontMatter, questions, formattingConfig, selectedLogoForFrontMatter(logos, frontMatter)),
-    [formattingConfig, frontMatter, logos, questions],
+    () =>
+      editorDocumentFingerprint(
+        frontMatter,
+        questions,
+        formattingConfig,
+        selectedLogoForFrontMatter(logos, frontMatter),
+        sectionHeadings,
+        documentFlow,
+      ),
+    [documentFlow, formattingConfig, frontMatter, logos, questions, sectionHeadings],
   );
   const hasUnsavedProjectChanges = Boolean(activeProjectFilePath && lastProjectSaveFingerprint !== currentDocumentFingerprint);
   const activeProjectFileSummary = activeProjectFilePath ? projectFiles.find((file) => file.path === activeProjectFilePath) : undefined;
@@ -8744,29 +9262,53 @@ export default function App() {
         ? "draft"
         : draftAutosaveStatus;
   const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? null;
+  const activeSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
+  const activeSectionHeading = sectionHeadings.find((heading) => heading.id === activeSectionHeadingId) ?? null;
+  const editingSectionHeading = Boolean(activeSectionHeading);
   const editingFrontMatter = activeTocItemId === SCROLL_ANCHOR_FRONT_MATTER;
   const pageBreakQuestionIds = useMemo(() => pageBreakQuestionIdSet(questions), [questions]);
   const activePageBreakQuestionId = pageBreakQuestionIdFromScrollAnchor(activeTocItemId);
   const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
   const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
   const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
-  const selectionInspectorVisible = showInspectorPane && !editingFrontMatter && !editingPageBreak && Boolean(selectedEditorBlock);
+  const selectionInspectorVisible =
+    showInspectorPane && !editingFrontMatter && !editingPageBreak && !editingSectionHeading && Boolean(selectedEditorBlock);
 
   useLayoutEffect(() => {
     frontMatterRef.current = frontMatter;
     formattingConfigRef.current = formattingConfig;
     questionsRef.current = questions;
+    sectionHeadingsRef.current = sectionHeadings;
+    documentFlowRef.current = documentFlow;
     logosRef.current = logos;
     legacySavedTestsRef.current = legacySavedTests;
     activeProjectFilePathRef.current = activeProjectFilePath;
     activeProjectFileRevisionRef.current = activeProjectFileRevision;
-  }, [activeProjectFilePath, activeProjectFileRevision, formattingConfig, frontMatter, legacySavedTests, logos, questions]);
+  }, [
+    activeProjectFilePath,
+    activeProjectFileRevision,
+    documentFlow,
+    formattingConfig,
+    frontMatter,
+    legacySavedTests,
+    logos,
+    questions,
+    sectionHeadings,
+  ]);
 
   useEffect(() => {
     if (!questions.length) {
       setActiveQuestionId("");
       setActiveTocItemId(SCROLL_ANCHOR_FRONT_MATTER);
       setActiveRailItemId(SCROLL_ANCHOR_FRONT_MATTER);
+      return;
+    }
+
+    if (activeSectionHeadingId) {
+      if (sectionHeadings.some((heading) => heading.id === activeSectionHeadingId)) return;
+      const fallbackAnchor = firstDocumentFlowAnchor(normalizeDocumentFlow(documentFlow, questions, sectionHeadings), questions);
+      setActiveTocItemId(fallbackAnchor);
+      setActiveRailItemId(fallbackAnchor);
       return;
     }
 
@@ -8785,7 +9327,7 @@ export default function App() {
       setActiveTocItemId(nextAnchor);
       setActiveRailItemId(nextAnchor);
     }
-  }, [activePageBreakQuestionId, activeQuestionId, questions]);
+  }, [activePageBreakQuestionId, activeQuestionId, activeSectionHeadingId, documentFlow, questions, sectionHeadings]);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -8814,7 +9356,17 @@ export default function App() {
     const previewPane = previewPaneRef.current;
     if (!previewPane || !showPreview || paneMode !== "split") return;
     syncPreviewSelection(previewPane, activePreviewAnchor);
-  }, [activePreviewAnchor, frontMatter, formattingConfig, paneMode, questions, showPreview, showSolutions]);
+  }, [
+    activePreviewAnchor,
+    paneMode,
+    previewDocumentFlow,
+    previewFormattingConfig,
+    previewFrontMatter,
+    previewQuestions,
+    previewSectionHeadings,
+    previewShowSolutions,
+    showPreview,
+  ]);
 
   useEffect(() => {
     const previewPane = previewPaneRef.current;
@@ -8984,6 +9536,8 @@ export default function App() {
     return {
       frontMatter: frontMatterRef.current,
       questions: questionsRef.current,
+      sectionHeadings: sectionHeadingsRef.current,
+      documentFlow: documentFlowRef.current,
       formattingConfig: formattingConfigRef.current,
     };
   }
@@ -8996,13 +9550,21 @@ export default function App() {
 
   function setQuestionsWithHistory(updater: QuestionBlock[] | ((current: QuestionBlock[]) => QuestionBlock[])) {
     pushEditorHistory();
-    setQuestions((current) => (typeof updater === "function" ? updater(current) : updater));
+    const previousQuestions = questionsRef.current;
+    const nextQuestions = typeof updater === "function" ? updater(previousQuestions) : updater;
+    const nextFlow = normalizedDocumentFlowFromState(previousQuestions, nextQuestions, sectionHeadingsRef.current, documentFlowRef.current);
+    questionsRef.current = nextQuestions;
+    documentFlowRef.current = nextFlow;
+    setQuestions(nextQuestions);
+    setDocumentFlow(nextFlow);
   }
 
   function currentEditorDocument(): EditorDocumentState {
     return {
       frontMatter: frontMatterRef.current,
       questions: questionsRef.current,
+      sectionHeadings: sectionHeadingsRef.current,
+      documentFlow: documentFlowRef.current,
       formattingConfig: formattingConfigRef.current,
     };
   }
@@ -9010,15 +9572,30 @@ export default function App() {
   function setEditorDocumentWithHistory(document: {
     frontMatter: FrontMatterConfig;
     questions: QuestionBlock[];
+    sectionHeadings?: DocumentSectionHeading[];
+    documentFlow?: DocumentFlowItem[];
     formattingConfig?: FormattingConfig;
   }) {
     const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+    const previousQuestions = questionsRef.current;
+    const nextQuestions = normalizeQuestionBlocks(document.questions);
+    const nextSectionHeadings = normalizeSectionHeadings(document.sectionHeadings ?? sectionHeadingsRef.current);
+    const nextDocumentFlow = normalizedDocumentFlowFromState(
+      previousQuestions,
+      nextQuestions,
+      nextSectionHeadings,
+      document.documentFlow ?? documentFlowRef.current,
+    );
     pushEditorHistory();
     setFrontMatter(document.frontMatter);
-    setQuestions(document.questions);
+    setQuestions(nextQuestions);
+    setSectionHeadings(nextSectionHeadings);
+    setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(nextFormattingConfig);
     frontMatterRef.current = document.frontMatter;
-    questionsRef.current = document.questions;
+    questionsRef.current = nextQuestions;
+    sectionHeadingsRef.current = nextSectionHeadings;
+    documentFlowRef.current = nextDocumentFlow;
     formattingConfigRef.current = nextFormattingConfig;
   }
 
@@ -9028,6 +9605,44 @@ export default function App() {
 
   function normalizeEditorFormattingConfig(nextFormattingConfig?: FormattingConfig) {
     return normalizeFormattingConfig(nextFormattingConfig);
+  }
+
+  function documentActionChangesTitlePageTemplate(action: MauthDocumentAction) {
+    const currentTemplate = titlePageTemplateFromValue(frontMatterRef.current.titlePageTemplate);
+    if (action.type === "frontMatter.update") {
+      const patch = asRecord(action.patch);
+      if (!patch || !Object.prototype.hasOwnProperty.call(patch, "titlePageTemplate")) return false;
+      return titlePageTemplateFromValue(patch.titlePageTemplate) !== currentTemplate;
+    }
+
+    if (action.type === "frontMatter.replace") {
+      const replacement = asRecord(action.frontMatter);
+      if (!replacement || !Object.prototype.hasOwnProperty.call(replacement, "titlePageTemplate")) return currentTemplate !== "standard";
+      return titlePageTemplateFromValue(replacement.titlePageTemplate) !== currentTemplate;
+    }
+
+    return false;
+  }
+
+  function templateLockedDocumentActionResult(
+    actions: readonly MauthDocumentAction[],
+    actionType: MauthDocumentAction | "batch",
+  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> | null {
+    const blockedAction = actions.find(documentActionChangesTitlePageTemplate);
+    if (!blockedAction) return null;
+
+    const document = currentEditorDocument();
+    const message = "Document template cannot be changed after creation. Create a new document from the desired template instead.";
+    return {
+      ok: false,
+      actionType: actionType === "batch" ? "batch" : actionType.type,
+      document,
+      questions: document.questions,
+      changedIds: [],
+      warnings: [{ code: "template-locked", message, targetId: "frontMatter.titlePageTemplate" }],
+      error: message,
+      appliedActionTypes: [blockedAction.type],
+    };
   }
 
   function editorDocumentActionOptions(): Omit<MauthDocumentActionOptions<QuestionBlock, FrontMatterConfig, FormattingConfig>, "dryRun"> {
@@ -9056,6 +9671,9 @@ export default function App() {
   function applyEditorDocumentAction(
     action: MauthDocumentAction,
   ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    const lockedResult = templateLockedDocumentActionResult([action], action);
+    if (lockedResult) return lockedResult;
+
     const result = applyMauthDocumentAction<QuestionBlock, FrontMatterConfig, FormattingConfig>(
       currentEditorDocument(),
       action,
@@ -9070,6 +9688,9 @@ export default function App() {
   function previewEditorDocumentActions(
     actions: MauthDocumentAction[],
   ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    const lockedResult = templateLockedDocumentActionResult(actions, "batch");
+    if (lockedResult) return lockedResult;
+
     return previewMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
       currentEditorDocument(),
       actions,
@@ -9080,6 +9701,9 @@ export default function App() {
   function applyEditorDocumentActions(
     actions: MauthDocumentAction[],
   ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
+    const lockedResult = templateLockedDocumentActionResult(actions, "batch");
+    if (lockedResult) return lockedResult;
+
     const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
       currentEditorDocument(),
       actions,
@@ -9152,6 +9776,8 @@ export default function App() {
 
   function restoreEditorSnapshot(snapshot: EditorHistorySnapshot) {
     const nextActiveQuestionId = existingOrFirstQuestionId(snapshot.questions, activeQuestionId);
+    const nextSectionHeadings = normalizeSectionHeadings(snapshot.sectionHeadings);
+    const nextDocumentFlow = normalizeDocumentFlow(snapshot.documentFlow, snapshot.questions, nextSectionHeadings);
     const snapshotLogo = "logo" in snapshot ? normalizeLogoAsset(snapshot.logo) : undefined;
     if (snapshotLogo) {
       setLogos((current) => {
@@ -9166,9 +9792,13 @@ export default function App() {
     }
     setFrontMatter(snapshot.frontMatter);
     setQuestions(snapshot.questions);
+    setSectionHeadings(nextSectionHeadings);
+    setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(snapshot.formattingConfig);
     frontMatterRef.current = snapshot.frontMatter;
     questionsRef.current = snapshot.questions;
+    sectionHeadingsRef.current = nextSectionHeadings;
+    documentFlowRef.current = nextDocumentFlow;
     formattingConfigRef.current = snapshot.formattingConfig;
     if (nextActiveQuestionId !== activeQuestionId) {
       const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
@@ -9176,6 +9806,12 @@ export default function App() {
       setActiveTocItemId(nextAnchor);
       setActiveRailItemId(nextAnchor);
     } else {
+      const activeTocSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
+      if (activeTocSectionHeadingId && !nextSectionHeadings.some((heading) => heading.id === activeTocSectionHeadingId)) {
+        const nextAnchor = firstDocumentFlowAnchor(nextDocumentFlow, snapshot.questions);
+        setActiveTocItemId(nextAnchor);
+        setActiveRailItemId(nextAnchor);
+      }
       const activeTocQuestionId = questionIdFromScrollAnchor(activeTocItemId);
       if (activeTocQuestionId && !snapshot.questions.some((question) => question.id === activeTocQuestionId)) {
         const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
@@ -9209,6 +9845,90 @@ export default function App() {
     undoStackRef.current = [...undoStackRef.current.slice(-(HISTORY_LIMIT - 1)), currentEditorSnapshot()];
     restoreEditorSnapshot(snapshot);
     setHistoryVersion((current) => current + 1);
+  }
+
+  function setSectionFlowWithHistory(nextSectionHeadings: DocumentSectionHeading[], nextDocumentFlow: DocumentFlowItem[]) {
+    const normalizedHeadings = normalizeSectionHeadings(nextSectionHeadings);
+    const normalizedFlow = normalizeDocumentFlow(nextDocumentFlow, questionsRef.current, normalizedHeadings);
+    pushEditorHistory();
+    sectionHeadingsRef.current = normalizedHeadings;
+    documentFlowRef.current = normalizedFlow;
+    setSectionHeadings(normalizedHeadings);
+    setDocumentFlow(normalizedFlow);
+  }
+
+  function topLevelFlowInsertIndex(anchor: string) {
+    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
+    const sectionHeadingId = sectionHeadingIdFromScrollAnchor(anchor);
+    if (sectionHeadingId) {
+      const headingIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
+      return headingIndex >= 0 ? headingIndex + 1 : normalizedFlow.length;
+    }
+
+    const questionId = questionIdFromScrollAnchor(anchor);
+    if (questionId) {
+      const questionIndex = normalizedFlow.findIndex((item) => item.kind === "question" && item.id === questionId);
+      return questionIndex >= 0 ? questionIndex : normalizedFlow.length;
+    }
+
+    return normalizedFlow.length;
+  }
+
+  function addSectionHeading() {
+    const heading = { id: id("section"), title: "Section heading" } satisfies DocumentSectionHeading;
+    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
+    const insertIndex = topLevelFlowInsertIndex(activeRailItemId || activeTocItemId);
+    const clampedInsertIndex = Math.max(0, Math.min(insertIndex, normalizedFlow.length));
+    const nextFlow = [
+      ...normalizedFlow.slice(0, clampedInsertIndex),
+      { kind: "sectionHeading", id: heading.id } satisfies DocumentFlowItem,
+      ...normalizedFlow.slice(clampedInsertIndex),
+    ];
+    setSectionFlowWithHistory([...sectionHeadingsRef.current, heading], nextFlow);
+    const anchor = sectionHeadingScrollAnchor(heading.id);
+    setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
+    revealEditorAnchor(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
+  }
+
+  function updateSectionHeading(sectionHeadingId: string, title: string) {
+    const existing = sectionHeadingsRef.current.find((heading) => heading.id === sectionHeadingId);
+    if (!existing || existing.title === title) return;
+    setSectionFlowWithHistory(
+      sectionHeadingsRef.current.map((heading) => (heading.id === sectionHeadingId ? { ...heading, title } : heading)),
+      documentFlowRef.current,
+    );
+  }
+
+  function removeSectionHeading(sectionHeadingId: string) {
+    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
+    const removedIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
+    const nextHeadings = sectionHeadingsRef.current.filter((heading) => heading.id !== sectionHeadingId);
+    const nextFlow = normalizedFlow.filter((item) => item.kind !== "sectionHeading" || item.id !== sectionHeadingId);
+    setSectionFlowWithHistory(nextHeadings, nextFlow);
+    const fallbackAnchor =
+      flowItemAnchor(nextFlow[Math.min(Math.max(removedIndex, 0), nextFlow.length - 1)]) || firstQuestionAnchor(questionsRef.current);
+    setActiveTocItemId(fallbackAnchor);
+    setActiveRailItemId(fallbackAnchor);
+    const fallbackQuestionId = questionIdFromScrollAnchor(fallbackAnchor);
+    if (fallbackQuestionId) setActiveQuestionId(fallbackQuestionId);
+    queueDocumentJump(fallbackAnchor, fallbackAnchor, { preservePaneMode: true });
+  }
+
+  function moveSectionHeadingByKeyboard(sectionHeadingId: string, direction: MoveDirection) {
+    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
+    const sourceIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
+    const targetIndex = sourceIndex + direction;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= normalizedFlow.length) return;
+    const nextFlow = [...normalizedFlow];
+    const [item] = nextFlow.splice(sourceIndex, 1);
+    nextFlow.splice(targetIndex, 0, item);
+    setSectionFlowWithHistory(sectionHeadingsRef.current, nextFlow);
+    const anchor = sectionHeadingScrollAnchor(sectionHeadingId);
+    setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
   }
 
   function updateQuestion(questionId: string, patch: Partial<QuestionBlock>) {
@@ -9247,14 +9967,12 @@ export default function App() {
     applyEditorDocumentAction({ type: "formatting.update", patch: patch as Record<string, unknown> });
   }
 
-  function updatePageFormat(patch: Partial<NonNullable<FormattingConfig["page"]>>) {
-    applyEditorDocumentAction({ type: "pageFormat.update", patch: patch as Record<string, unknown> });
-  }
-
   function resetTestFormat() {
+    const template = frontMatterRef.current.titlePageTemplate;
+    const presetId = NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id;
     applyEditorDocumentAction({
       type: "formatting.update",
-      patch: cloneSerializable(DEFAULT_FORMATTING_CONFIG) as Record<string, unknown>,
+      patch: cloneSerializable(formattingConfigForPresetId(presetId)) as Record<string, unknown>,
     });
   }
 
@@ -9307,30 +10025,38 @@ export default function App() {
   function createNewTestFromTemplate(template: TitlePageTemplate) {
     pushEditorHistory();
     const currentLogo = selectedLogoFromLibrary(logos, frontMatter.logoId);
-    const frontMatterTemplate = template === "exam" ? DEFAULT_EXAM_FRONT_MATTER : DEFAULT_FRONT_MATTER;
+    const frontMatterTemplate =
+      template === "exam" ? DEFAULT_EXAM_FRONT_MATTER : template === "worksheet" ? DEFAULT_WORKSHEET_FRONT_MATTER : DEFAULT_FRONT_MATTER;
     const nextFrontMatter = {
       ...cloneSerializable(frontMatterTemplate),
       logoId: currentLogo.id,
       schoolName: currentLogo.schoolName ?? frontMatter.schoolName,
     };
     const nextQuestions = [createQuestion()];
-    const nextFormattingConfig = {
-      ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
-      id: NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
-    };
+    const nextSectionHeadings: DocumentSectionHeading[] = [];
+    const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
+    const nextFormattingConfig = formattingConfigForPresetId(
+      NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
+    );
     const nextAnchor = questionScrollAnchor(nextQuestions[0].id);
 
     setFrontMatter(nextFrontMatter);
     setQuestions(nextQuestions);
+    setSectionHeadings(nextSectionHeadings);
+    setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(nextFormattingConfig);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
+    sectionHeadingsRef.current = nextSectionHeadings;
+    documentFlowRef.current = nextDocumentFlow;
     formattingConfigRef.current = nextFormattingConfig;
     cleanUnsavedDocumentFingerprintRef.current = editorDocumentFingerprint(
       nextFrontMatter,
       nextQuestions,
       nextFormattingConfig,
       currentLogo,
+      nextSectionHeadings,
+      nextDocumentFlow,
     );
     activeProjectFilePathRef.current = null;
     activeProjectFileRevisionRef.current = null;
@@ -9378,6 +10104,8 @@ export default function App() {
       name: testName,
       frontMatter: document.frontMatter,
       questions: document.questions,
+      sectionHeadings: document.sectionHeadings,
+      documentFlow: document.documentFlow,
       formattingConfig: nextFormattingConfig,
       logo: currentLogo,
     });
@@ -9388,7 +10116,7 @@ export default function App() {
       savedDocument = await saveProjectFile(project.id, filePath, {
         content: JSON.stringify(savedTest, null, 2),
         kind: "file",
-        fileType: "test",
+        fileType: projectFileTypeForFrontMatter(document.frontMatter),
         metadata: {
           format: "saved-test-json",
           source: "mauth-studio",
@@ -9415,7 +10143,14 @@ export default function App() {
     setActiveProjectFileRevision(savedDocument.revision);
     setProjectSaveConflict(null);
     updateLastProjectSaveFingerprint(
-      editorDocumentFingerprint(document.frontMatter, document.questions, nextFormattingConfig, currentLogo),
+      editorDocumentFingerprint(
+        document.frontMatter,
+        document.questions,
+        nextFormattingConfig,
+        currentLogo,
+        document.sectionHeadings,
+        document.documentFlow,
+      ),
     );
     setProjectFilesStatus("ready");
     setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
@@ -9441,7 +10176,14 @@ export default function App() {
     const activePath = activeProjectFilePathRef.current;
     const activeRevision = activeProjectFileRevisionRef.current;
     const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
-    const documentFingerprint = editorDocumentFingerprint(document.frontMatter, document.questions, document.formattingConfig, currentLogo);
+    const documentFingerprint = editorDocumentFingerprint(
+      document.frontMatter,
+      document.questions,
+      document.formattingConfig,
+      currentLogo,
+      document.sectionHeadings,
+      document.documentFlow,
+    );
     const dirty = Boolean(activePath && lastProjectSaveFingerprintRef.current !== documentFingerprint);
     const saveStatus: MauthAgentFileState["saveStatus"] = fileOperationBusy
       ? "loading"
@@ -9546,6 +10288,14 @@ export default function App() {
       });
     }
 
+    const lockedResult = templateLockedDocumentActionResult(parsed.actions, "batch");
+    if (lockedResult) {
+      return agentBridgeError(400, "ACTION_FAILED", lockedResult.error || "Action apply failed.", {
+        result: lockedResult,
+        snapshot: currentSnapshot,
+      });
+    }
+
     const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
       currentEditorDocument(),
       parsed.actions,
@@ -9645,16 +10395,22 @@ export default function App() {
     pushEditorHistory();
     const nextFrontMatter = cloneSerializable(savedTest.frontMatter);
     const nextQuestions = normalizeQuestionBlocks(savedTest.questions);
+    const nextSectionHeadings = normalizeSectionHeadings(savedTest.sectionHeadings);
+    const nextDocumentFlow = normalizeDocumentFlow(savedTest.documentFlow, nextQuestions, nextSectionHeadings);
     const nextFormattingConfig = normalizeFormattingConfig(savedTest.formattingConfig);
     setFrontMatter(nextFrontMatter);
     setQuestions(nextQuestions);
+    setSectionHeadings(nextSectionHeadings);
+    setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(nextFormattingConfig);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
+    sectionHeadingsRef.current = nextSectionHeadings;
+    documentFlowRef.current = nextDocumentFlow;
     formattingConfigRef.current = nextFormattingConfig;
     setActiveQuestionId(firstQuestionId(nextQuestions));
-    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
-    setActiveRailItemId(firstQuestionAnchor(nextQuestions));
+    setActiveTocItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
+    setActiveRailItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
     setDraggedQuestionId(null);
     setDragOverQuestion(null);
     setDraggedPageBreakQuestionId(null);
@@ -9673,6 +10429,8 @@ export default function App() {
         nextQuestions,
         nextFormattingConfig,
         savedTest.logo ?? selectedLogoFromLibrary(logosRef.current, nextFrontMatter.logoId),
+        nextSectionHeadings,
+        nextDocumentFlow,
       ),
     );
 
@@ -9936,6 +10694,8 @@ export default function App() {
             name: testFileDisplayName(testPathBasename(targetTestPath)),
             frontMatter,
             questions,
+            sectionHeadings,
+            documentFlow,
             formattingConfig,
             logo: currentLogo,
           });
@@ -9949,7 +10709,14 @@ export default function App() {
             },
           });
           openedDuplicatePath = targetFilePath;
-          openedDuplicateFingerprint = editorDocumentFingerprint(frontMatter, questions, formattingConfig, currentLogo);
+          openedDuplicateFingerprint = editorDocumentFingerprint(
+            frontMatter,
+            questions,
+            formattingConfig,
+            currentLogo,
+            sectionHeadings,
+            documentFlow,
+          );
           openedDuplicateRevision = duplicatedDocument.revision;
         } else {
           await copyProjectItem(project.id, filePath, targetFilePath, currentFiles);
@@ -10661,6 +11428,7 @@ export default function App() {
   function fallbackContextLabel(anchor: string) {
     const parsed = parseScrollAnchor(anchor);
     if (parsed.kind === "frontMatter") return "Title Page";
+    if (parsed.kind === "sectionHeading") return "Section heading";
     if (parsed.kind === "pageBreak") return "Page break";
     if (parsed.kind === "question") return "Question";
     if (parsed.kind === "part") return "Part";
@@ -10912,6 +11680,11 @@ export default function App() {
 
   function moveAnchorTarget(anchor: string, direction: MoveDirection) {
     const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "sectionHeading" && parsed.sectionHeadingId) {
+      moveSectionHeadingByKeyboard(parsed.sectionHeadingId, direction);
+      return true;
+    }
+
     if (parsed.kind === "question" && parsed.questionId) {
       moveQuestionByKeyboard(parsed.questionId, direction);
       return true;
@@ -10940,6 +11713,11 @@ export default function App() {
 
   function canMoveAnchorTarget(anchor: string, direction: MoveDirection) {
     const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "sectionHeading" && parsed.sectionHeadingId) {
+      const flow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
+      const index = flow.findIndex((item) => item.kind === "sectionHeading" && item.id === parsed.sectionHeadingId);
+      return index >= 0 && Boolean(flow[index + direction]);
+    }
     if (parsed.kind === "question" && parsed.questionId) {
       const index = questions.findIndex((question) => question.id === parsed.questionId);
       return index >= 0 && Boolean(questions[index + direction]);
@@ -10960,6 +11738,7 @@ export default function App() {
 
   function canDuplicateAnchorTarget(anchor: string) {
     const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "sectionHeading") return false;
     if (parsed.kind === "columnBlock") return Boolean(columnBlockContextFromParsed(parsed)?.block);
     return (
       parsed.kind === "question" || parsed.kind === "part" || parsed.kind === "subpart" || Boolean(blockContextFromParsed(parsed)?.block)
@@ -12280,6 +13059,10 @@ export default function App() {
 
   function deleteEditorSelection(anchor: string) {
     const parsed = parseScrollAnchor(anchor);
+    if (parsed.kind === "sectionHeading" && parsed.sectionHeadingId) {
+      removeSectionHeading(parsed.sectionHeadingId);
+      return true;
+    }
     if (!parsed.questionId) return false;
 
     const question = questions.find((current) => current.id === parsed.questionId);
@@ -13365,11 +14148,14 @@ export default function App() {
             onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
             onSelectPageBreak={selectPageBreakInRail}
             onToggleEditorAtItem={toggleEditorAtTocItem}
+            onAddSectionHeading={addSectionHeading}
             onAddQuestion={addQuestion}
             onAddPageBreakAfterQuestion={addPageBreakAfterQuestion}
             onMoveQuestion={moveQuestionByKeyboard}
+            onMoveSectionHeading={moveSectionHeadingByKeyboard}
             onMovePageBreak={movePageBreakByKeyboard}
             onDeleteQuestion={removeQuestion}
+            onDeleteSectionHeading={removeSectionHeading}
             onDeletePageBreak={removePageBreakAfterQuestion}
             onQuestionDragStart={handleQuestionDragStart}
             onQuestionDragOver={handleQuestionDragOver}
@@ -13423,9 +14209,9 @@ export default function App() {
                           />
                           <TestFormatEditor
                             formattingConfig={formattingConfig}
+                            titlePageTemplate={frontMatter.titlePageTemplate}
                             openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
                             onFormattingChange={updateFormattingConfig}
-                            onPageChange={updatePageFormat}
                             onReset={resetTestFormat}
                           />
                         </div>
@@ -13450,7 +14236,20 @@ export default function App() {
                       </div>
                     ) : null}
 
-                    {!editingFrontMatter && !editingPageBreak ? (
+                    {!editingFrontMatter && !editingPageBreak && editingSectionHeading && activeSectionHeading ? (
+                      <div className="flex flex-col gap-4">
+                        <div data-scroll-anchor={sectionHeadingScrollAnchor(activeSectionHeading.id)}>
+                          <SectionHeadingStructurePanel
+                            heading={activeSectionHeading}
+                            active={isActiveEditorAnchor(sectionHeadingScrollAnchor(activeSectionHeading.id))}
+                            onChange={(title) => updateSectionHeading(activeSectionHeading.id, title)}
+                            onRemove={() => removeSectionHeading(activeSectionHeading.id)}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {!editingFrontMatter && !editingPageBreak && !editingSectionHeading ? (
                       <div className="flex flex-col gap-4">
                         {questions.map((question, index) => {
                           if (question.id !== activeQuestion?.id) return null;
@@ -13653,13 +14452,15 @@ export default function App() {
                 onContextMenuCapture={handlePreviewContextMenu}
               >
                 <PaginatedTestPreview
-                  frontMatter={frontMatter}
-                  logos={logos}
-                  totalMarks={totalMarks}
-                  questions={questions}
-                  formattingConfig={formattingConfig}
+                  frontMatter={previewFrontMatter}
+                  logos={previewLogos}
+                  totalMarks={previewTotalMarks}
+                  questions={previewQuestions}
+                  sectionHeadings={previewSectionHeadings}
+                  documentFlow={previewDocumentFlow}
+                  formattingConfig={previewFormattingConfig}
                   scale={previewLayoutScale}
-                  showSolutions={showSolutions}
+                  showSolutions={previewShowSolutions}
                   onGraphConfigChange={handlePreviewGraphConfigChange}
                 />
               </section>
@@ -13720,6 +14521,8 @@ export default function App() {
             logos={logos}
             totalMarks={totalMarks}
             questions={questions}
+            sectionHeadings={sectionHeadings}
+            documentFlow={documentFlow}
             formattingConfig={formattingConfig}
             scale={1}
             showSolutions={showSolutions}

@@ -42,6 +42,7 @@ const GRAPH_FEATURE_LABEL_MODES = new Set([
   "name_and_value",
 ]);
 const GRAPH_FEATURE_STROKE_STYLES = new Set(["none", "solid", "dashed"]);
+const GRAPH_FEATURE_SPANS = new Set(["manual", "grid"]);
 const GRAPH_FEATURE_INTERSECTION_TARGETS = new Set(["function", "xAxis", "yAxis"]);
 const GRAPH_FEATURE_CLIP_SIDES = new Set(["above", "below", "left", "right", "inside", "outside"]);
 const GRAPH_AXES = new Set(["x", "y"]);
@@ -613,6 +614,7 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
     optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
     optionalNumber(entry, "strokeWidth", entryPath, issues, { min: 0 });
     optionalEnum(entry, "strokeStyle", entryPath, GRAPH_FEATURE_STROKE_STYLES, issues);
+    optionalEnum(entry, "span", entryPath, GRAPH_FEATURE_SPANS, issues);
     optionalNumber(entry, "size", entryPath, issues, { positive: true });
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);

@@ -56,7 +56,7 @@ export interface PreviewContentRenderers {
     solutionTone?: boolean;
     onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   }) => ReactNode;
-  renderMath: (source: string, options?: { showSolutionMarks?: boolean }) => ReactNode;
+  renderMath: (source: string, options?: { showSolutionMarks?: boolean; plainSimpleInlineLatex?: boolean }) => ReactNode;
   renderSolutionMarkTicks: (count: number) => ReactNode;
 }
 
@@ -94,7 +94,7 @@ function ChoiceListPreview({
       {choices.map((choice, index) => (
         <div key={`${choice}-${index}`} className="test-choice-item">
           <span className="test-choice-label">{runtime.choiceLabel(block.numberingStyle, index)}</span>
-          <div className="test-choice-content">{renderers.renderMath(choice)}</div>
+          <div className="test-choice-content">{renderers.renderMath(choice, { plainSimpleInlineLatex: false })}</div>
         </div>
       ))}
     </div>

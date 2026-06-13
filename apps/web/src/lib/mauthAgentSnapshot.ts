@@ -151,6 +151,8 @@ function snapshotIdFor<Q extends MauthQuestionLike, F extends object, C extends 
       },
       frontMatter: input.document.frontMatter,
       formattingConfig: input.document.formattingConfig,
+      sectionHeadings: input.document.sectionHeadings,
+      documentFlow: input.document.documentFlow,
       questions: input.document.questions,
     }),
   )}`;
@@ -163,6 +165,18 @@ export function buildMauthAgentSnapshot<
 >(input: BuildMauthAgentSnapshotInput<Q, F, C>): MauthAgentSnapshot {
   const snapshotId = snapshotIdFor(input);
   const questions = input.document.questions.map(summarizeQuestion);
+  const questionLabels = new Map(questions.map((question) => [question.id, question.label]));
+  const sectionHeadings = (input.document.sectionHeadings ?? []).map((heading) => ({
+    id: heading.id,
+    title: heading.title,
+  }));
+  const sectionHeadingTitles = new Map(sectionHeadings.map((heading) => [heading.id, heading.title]));
+  const documentFlow =
+    input.document.documentFlow?.map((item) =>
+      item.kind === "sectionHeading"
+        ? { kind: item.kind, id: item.id, title: sectionHeadingTitles.get(item.id) }
+        : { kind: item.kind, id: item.id, label: questionLabels.get(item.id) },
+    ) ?? questions.map((question) => ({ kind: "question" as const, id: question.id, label: question.label }));
 
   return {
     success: true,
@@ -178,6 +192,8 @@ export function buildMauthAgentSnapshot<
     file: input.file,
     frontMatter: input.document.frontMatter as Record<string, unknown>,
     formattingConfig: input.document.formattingConfig as Record<string, unknown> | undefined,
+    sectionHeadings,
+    documentFlow,
     questions,
     questionCount: questions.length,
     totalMarks: questions.reduce((total, question) => total + question.marks, 0),

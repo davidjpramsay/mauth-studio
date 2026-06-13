@@ -32,7 +32,8 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 ## Shared Conventions
 
 - Use `$...$` for inline maths and `$$...$$` for display maths.
-- Write simple prose values as normal text, such as `7%`, `15`, `18 months`, and `5.7% p.a.`; reserve LaTeX for real formulae, equations, coordinates, variables, and symbolic notation.
+- Write simple prose values as normal text, such as `7%`, `15`, `18 months`, and `5.7% p.a.`; reserve LaTeX for real formulae, equations, coordinates, variables, symbolic notation, and mathematical answer options in choices blocks.
+- In a choices block, keep mathematical typography consistent: if some options are algebraic LaTeX, wrap simple numeric options such as `$18$`, `$-3$`, and `$24$` in inline maths too.
 - Do not emit `\(...\)`, `\[...\]`, escaped-dollar artefacts, or currency symbols inside maths delimiters.
 - Use hidden `[[marks:n]]` annotations for solution-copy mark ticks.
 - Every marked free-response item needs a student response surface.
@@ -44,6 +45,8 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 - Geometry proof prompts need a mechanism, not just ingredients.
 - For two-circle proof questions, the second circle must be essential through a shared tangent, touching point, common chord, shared secant, parallel chord/tangent, equal central angle, equal radius relationship, or angle relationship that transfers information between circles.
 - Source-conversion work should preserve meaningful source line breaks, final answers, and stated rounding.
+- Graph authoring should infer natural domains, singularities, endpoints, and asymptotes before setting function domains and view windows. For `log`, `ln`, `log10`, `sqrt`, reciprocal/rational forms, and trigonometric asymptotes, choose `domainMin`/`domainMax` and `xMin`/`xMax`/`yMin`/`yMax` together so the curve is valid, readable, and not clipped or flattened. Draw asymptotes as separate dashed `line_segment` features with `span: "grid"`; do not draw the function on an undefined boundary. For functions with multiple branches, use separate function entries or pieces for each valid interval rather than one plotted interval crossing a singularity.
+- Copied coordinate graphs should use major grid lines only by default. Set `showMinorGrid: true` only when the source visibly uses minor grid lines, small squares, or fractional grid spacing.
 
 ## Agent Loop
 

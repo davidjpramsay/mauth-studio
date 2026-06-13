@@ -10,7 +10,7 @@ Every action returns:
 
 - `ok`: whether the action was applied.
 - `actionType`: the action that ran.
-- `document`: included for document actions; contains next front matter, questions, and optional formatting config.
+- `document`: included for document actions; contains next front matter, questions, optional section headings/document flow, and optional formatting config.
 - `questions`: the next question array.
 - `changedIds`: ids affected by the action.
 - `warnings`: structured warnings with code, message, and optional target id.
@@ -70,11 +70,25 @@ Use structured actions for:
 - changing marks
 - adding answer spaces and solution-only blocks
 - moving modules between text, tables, diagrams, columns, and spaces
+- adding, renaming, deleting, or moving top-level section headings between questions
 - updating selected module or diagram settings
 - changing page breaks and document formatting
 - running validation and layout checks
 
 Use direct source edits only when the requested app change is outside the document action contract. For assessment authoring, direct project-file JSON edits are a fallback for recovery or migration, not the primary workflow.
+
+## Section Headings
+
+Use section headings for document-level worksheet/course labels such as `Multiple choice` and `Short answer`.
+
+Available document actions:
+
+- `sectionHeading.add`: add `{ id, title }`, optionally before or after a `{ kind, id }` flow item.
+- `sectionHeading.update`: rename a heading with `patch.title`.
+- `sectionHeading.delete`: remove a heading from `sectionHeadings` and `documentFlow`.
+- `sectionHeading.reorder`: move a heading before or after a question or another heading.
+
+Do not create a zero-mark question just to show a section title. Questions should remain actual question content.
 
 ## Human UI Use
 

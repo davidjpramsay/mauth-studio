@@ -14,6 +14,8 @@ import type {
 } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
+import { clampDomainToNaturalBoundaries, separateRangeFromStrictNaturalBoundaries } from "@/lib/graphFunctionDomains";
+import { lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import {
   GRAPH_LABEL_FONT_CSS,
@@ -137,6 +139,8 @@ function toJavaScriptExpression(expression: string) {
     .replace(/\^/g, "**")
     .replace(/\bpi\b/gi, "Math.PI")
     .replace(/\be\b/g, "Math.E")
+    .replace(/\bln\(/gi, "Math.log(")
+    .replace(/\blog10\(/gi, "Math.log10(")
     .replace(/\b(sin|cos|tan|asin|acos|atan|sqrt|abs|log|exp)\(/g, "Math.$1(");
 
   return normalizeUnaryMinusBeforePowers(jsExpression);
@@ -601,12 +605,12 @@ function graphFunctionDomain(graphFunction: GraphFunction, graphConfig: GraphCon
   const xMin = graphConfig.xMin ?? -10;
   const xMax = graphConfig.xMax ?? 10;
   if ((graphFunction.domainMode ?? "auto") !== "manual") {
-    return { xStart: xMin, xEnd: xMax, isManual: false };
+    return { ...clampDomainToNaturalBoundaries(graphFunction.expression, { xStart: xMin, xEnd: xMax }, graphConfig), isManual: false };
   }
 
   const xStart = Number.isFinite(graphFunction.domainMin) ? (graphFunction.domainMin as number) : xMin;
   const xEnd = Number.isFinite(graphFunction.domainMax) ? (graphFunction.domainMax as number) : xMax;
-  return { xStart, xEnd, isManual: true };
+  return { ...clampDomainToNaturalBoundaries(graphFunction.expression, { xStart, xEnd }, graphConfig), isManual: true };
 }
 
 function maxFunctionXPadding(graphConfig: GraphConfig, xSpan: number, majorStep: number) {
@@ -898,15 +902,25 @@ function yInView(y: number, yMin: number, yMax: number) {
 
 function intervalPieces(graphFunction: GraphFunction, graphConfig: GraphConfig): IntervalPiece[] {
   if (graphFunction.kind === "piecewise" && graphFunction.pieces?.length) {
-    return graphFunction.pieces.map((piece: GraphFunctionPiece) => ({
-      expression: piece.expression,
-      xStart: piece.xMin ?? graphConfig.xMin ?? -10,
-      xEnd: piece.xMax ?? graphConfig.xMax ?? 10,
-      includeStart: piece.includeStart ?? true,
-      includeEnd: piece.includeEnd ?? true,
-      isPiecewise: true,
-      isManualDomain: false,
-    }));
+    return graphFunction.pieces.map((piece: GraphFunctionPiece) => {
+      const domain = clampDomainToNaturalBoundaries(
+        piece.expression,
+        {
+          xStart: piece.xMin ?? graphConfig.xMin ?? -10,
+          xEnd: piece.xMax ?? graphConfig.xMax ?? 10,
+        },
+        graphConfig,
+      );
+      return {
+        expression: piece.expression,
+        xStart: domain.xStart,
+        xEnd: domain.xEnd,
+        includeStart: piece.includeStart ?? true,
+        includeEnd: piece.includeEnd ?? true,
+        isPiecewise: true,
+        isManualDomain: false,
+      };
+    });
   }
 
   const domain = graphFunctionDomain(graphFunction, graphConfig);
@@ -1395,13 +1409,16 @@ function createFreeLabel(board: JXG.Board, feature: GraphFeature, color: string,
   createLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
 }
 
-function createLineSegmentFeature(board: JXG.Board, feature: GraphFeature, color: string, onLabelMove?: (x: number, y: number) => void) {
-  const x1 = Number.isFinite(feature.x1) ? (feature.x1 as number) : 0;
-  const y1 = Number.isFinite(feature.y1) ? (feature.y1 as number) : 0;
-  const x2 = Number.isFinite(feature.x2) ? (feature.x2 as number) : 0;
-  const y2 = Number.isFinite(feature.y2) ? (feature.y2 as number) : 0;
-  const start = board.create("point", [x1, y1], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
-  const end = board.create("point", [x2, y2], { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+function createLineSegmentFeature(
+  board: JXG.Board,
+  feature: GraphFeature,
+  graphConfig: GraphConfig,
+  color: string,
+  onLabelMove?: (x: number, y: number) => void,
+) {
+  const [startCoords, endCoords] = lineSegmentFeatureEndpoints(feature, graphConfig);
+  const start = board.create("point", startCoords, { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
+  const end = board.create("point", endCoords, { visible: false, fixed: true, withLabel: false } as Record<string, unknown>);
   board.create("segment", [start, end], {
     fixed: true,
     highlight: false,
@@ -1417,8 +1434,8 @@ function createLineSegmentFeature(board: JXG.Board, feature: GraphFeature, color
   if (label.trim()) {
     createLabelText(
       board,
-      Number.isFinite(feature.labelX) ? (feature.labelX as number) : (x1 + x2) / 2,
-      Number.isFinite(feature.labelY) ? (feature.labelY as number) : (y1 + y2) / 2,
+      Number.isFinite(feature.labelX) ? (feature.labelX as number) : (startCoords[0] + endCoords[0]) / 2,
+      Number.isFinite(feature.labelY) ? (feature.labelY as number) : (startCoords[1] + endCoords[1]) / 2,
       label,
       color,
       onLabelMove,
@@ -3358,7 +3375,7 @@ function renderGraphFeature(
   }
 
   if (feature.kind === "line_segment") {
-    createLineSegmentFeature(board, feature, color, handleLabelMove);
+    createLineSegmentFeature(board, feature, graphConfig, color, handleLabelMove);
     return;
   }
 
@@ -3748,7 +3765,15 @@ export function FunctionGraph({ graphConfig, solutionColor, solutionFeatureColor
               : boundedFunctionExtension(evaluator, piece.xEnd, 1, autoFunctionExtension, functionYAllowance(ySpan));
         const xStart = piece.xStart - leftExtension;
         const xEnd = piece.xEnd + rightExtension;
-        const plotRange = visiblePlotRange(evaluator, xStart, xEnd, yMin - functionYPadding, yMax + functionYPadding);
+        const renderRange = separateRangeFromStrictNaturalBoundaries(piece.expression, { xStart, xEnd }, graphConfig);
+        if (renderRange.xEnd <= renderRange.xStart) return;
+        const plotRange = visiblePlotRange(
+          evaluator,
+          renderRange.xStart,
+          renderRange.xEnd,
+          yMin - functionYPadding,
+          yMax + functionYPadding,
+        );
         if (!plotRange) return;
 
         const hasInternalStart =

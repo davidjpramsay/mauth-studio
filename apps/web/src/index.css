@@ -798,6 +798,120 @@
     gap: 0.7rem;
   }
 
+  .worksheet-header {
+    align-items: end;
+    border-bottom: 1.5px solid #0f172a;
+    color: #0f172a;
+    display: grid;
+    font-family: Montserrat, Arial, ui-sans-serif, system-ui, sans-serif;
+    gap: 1.2rem;
+    grid-template-columns: minmax(0, 1fr) 15.5rem;
+    margin-bottom: 1.05rem;
+    margin-inline: -0.45rem;
+    padding-inline: 0.45rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .worksheet-heading-lockup {
+    align-items: center;
+    display: flex;
+    gap: 0.65rem;
+    min-width: 0;
+  }
+
+  .worksheet-mini-logo {
+    align-items: center;
+    display: flex;
+    flex: 0 0 3.55rem;
+    height: 3.55rem;
+    justify-content: center;
+    overflow: hidden;
+    width: 3.55rem;
+  }
+
+  .worksheet-mini-logo img {
+    display: block;
+    max-height: 100%;
+    max-width: 100%;
+    object-fit: contain;
+  }
+
+  .worksheet-title-copy {
+    min-width: 0;
+  }
+
+  .worksheet-school-name {
+    color: #475569;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.1;
+    margin: 0 0 0.18rem;
+    text-transform: uppercase;
+  }
+
+  .worksheet-title-copy h1 {
+    color: #0f172a;
+    font-size: 15pt;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1;
+    margin: 0;
+  }
+
+  .worksheet-subject-line {
+    color: #334155;
+    font-size: 9.2pt;
+    font-weight: 600;
+    line-height: 1.2;
+    margin: 0.2rem 0 0;
+  }
+
+  .worksheet-student-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .worksheet-name-line {
+    align-items: baseline;
+    display: grid;
+    font-size: 9.4pt;
+    font-weight: 600;
+    gap: 0.4rem;
+    grid-template-columns: max-content minmax(7.5rem, 1fr);
+    line-height: 1.1;
+  }
+
+  .worksheet-name-line > span:nth-child(2) {
+    border-bottom: 0;
+    display: block;
+    min-width: 0;
+  }
+
+  .worksheet-mark-line {
+    align-items: baseline;
+    display: grid;
+    gap: 0.35rem;
+    grid-template-columns: max-content minmax(0, 1fr) auto;
+    line-height: 1.1;
+  }
+
+  .worksheet-mark-line {
+    font-size: 9.4pt;
+  }
+
+  .worksheet-mark-line > span:nth-child(2) {
+    border-bottom: 1.1px solid #0f172a;
+    display: block;
+    min-width: 0;
+  }
+
+  .worksheet-mark-line strong {
+    font-weight: 600;
+  }
+
   .exam-title-page {
     color: #111827;
     display: flex;
@@ -1482,6 +1596,12 @@
     flex-direction: column;
   }
 
+  .test-preview-question-list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
   .test-preview-segment {
     --test-block-margin-block: 0.45rem 0 0.35rem;
     --test-content-gap: 0.72rem;
@@ -1493,6 +1613,18 @@
 
   .test-preview-question-group {
     box-sizing: border-box;
+  }
+
+  .test-section-heading {
+    color: #111827;
+    font-size: 10pt;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .test-section-heading h3 {
+    font: inherit;
+    margin: 0;
   }
 
   .test-content-stack {
@@ -1655,6 +1787,16 @@
     align-items: start;
   }
 
+  .test-question-row-with-visibility-slot {
+    align-items: start;
+  }
+
+  .test-question-row-with-visibility-slot .test-part-label,
+  .test-question-row-with-visibility-slot .test-part-mark {
+    align-self: start;
+    padding-top: 0.45rem;
+  }
+
   .test-choice-list {
     display: flex;
     flex-direction: column;
@@ -1683,6 +1825,21 @@
   }
 
   .test-choice-list-inline .test-choice-item {
+    min-width: max-content;
+  }
+
+  .a4-preview-root-worksheet .test-choice-list-two-column,
+  .a4-preview-root-worksheet .test-choice-list-inline {
+    align-items: baseline;
+    column-gap: 0.9rem;
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: space-between;
+    row-gap: 0.45rem;
+  }
+
+  .a4-preview-root-worksheet .test-choice-list-two-column .test-choice-item,
+  .a4-preview-root-worksheet .test-choice-list-inline .test-choice-item {
     min-width: max-content;
   }
 

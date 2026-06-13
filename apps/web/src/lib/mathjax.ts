@@ -48,15 +48,22 @@ function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-export function renderMathJaxSvg(latex: string, display = false) {
+export interface MathJaxRenderOptions {
+  display?: boolean;
+  plainSimpleInlineLatex?: boolean;
+}
+
+export function renderMathJaxSvg(latex: string, options: boolean | MathJaxRenderOptions = false) {
+  const display = typeof options === "boolean" ? options : (options.display ?? false);
+  const plainSimpleInlineLatex = typeof options === "boolean" ? true : (options.plainSimpleInlineLatex ?? true);
   const trimmed = normalizeLatexSource(latex);
   if (!trimmed) return "";
 
-  const plainText = display ? null : plainTextForSimpleInlineLatex(trimmed);
+  const plainText = display || !plainSimpleInlineLatex ? null : plainTextForSimpleInlineLatex(trimmed);
   if (plainText !== null) return escapeHtml(plainText);
 
   const source = display ? trimmed : inlineDisplayLatex(trimmed);
-  const cacheKey = `${display ? "display" : "inline"}\n${source}`;
+  const cacheKey = `${display ? "display" : "inline"}:${plainSimpleInlineLatex ? "plain-simple" : "math-simple"}\n${source}`;
   const cached = getCachedRender(cacheKey);
   if (cached !== undefined) return cached;
 
