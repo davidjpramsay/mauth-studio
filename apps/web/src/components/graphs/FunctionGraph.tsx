@@ -161,9 +161,9 @@ const AXIS_COLOR = "#000000";
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
 const BOARD_EDGE_PADDING_RATIO = 0.022;
-const BOARD_EDGE_PADDING_MIN_MAJOR_STEPS = 0.22;
+const BOARD_EDGE_PADDING_MIN_UNITS = 0.22;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
-const AXIS_LABEL_EDGE_PADDING_MIN_MAJOR_STEPS = 0.32;
+const AXIS_LABEL_EDGE_PADDING_MIN_UNITS = 0.32;
 const ARROW_SCAN_STEPS = 180;
 const AXIS_ARROW_SIZE = 4;
 const AXIS_STROKE_WIDTH = 2;
@@ -532,12 +532,12 @@ function axisLabelStep({ graphConfig, axis, majorStep }: { graphConfig: GraphCon
   return positiveNumber(majorStep, 1);
 }
 
-function boardEdgePadding(span: number, majorStep: number) {
-  return Math.max(span * BOARD_EDGE_PADDING_RATIO, majorStep * BOARD_EDGE_PADDING_MIN_MAJOR_STEPS);
+function boardEdgePadding(span: number) {
+  return Math.max(span * BOARD_EDGE_PADDING_RATIO, BOARD_EDGE_PADDING_MIN_UNITS);
 }
 
-function axisLabelEdgePadding(span: number, majorStep: number) {
-  return Math.max(span * AXIS_LABEL_EDGE_PADDING_RATIO, majorStep * AXIS_LABEL_EDGE_PADDING_MIN_MAJOR_STEPS);
+function axisLabelEdgePadding(span: number) {
+  return Math.max(span * AXIS_LABEL_EDGE_PADDING_RATIO, AXIS_LABEL_EDGE_PADDING_MIN_UNITS);
 }
 
 function graphFunctionDomain(graphFunction: GraphFunction, graphConfig: GraphConfig) {
@@ -569,10 +569,10 @@ function graphBoardSizing(graphConfig: GraphConfig) {
   const yMinorStep = minorGridStep(graphConfig.gridMinorStepY, graphConfig.gridMinorStep, 0.5);
   const xAxisExtension = 0;
   const yAxisExtension = 0;
-  const axisLabelPaddingX = showAxes && showAxisLabels ? axisLabelEdgePadding(xSpan, xMajorStep) : 0;
-  const axisLabelPaddingY = showAxes && showAxisLabels ? axisLabelEdgePadding(ySpan, yMajorStep) : 0;
-  const boardPaddingX = Math.max(xAxisExtension + boardEdgePadding(xSpan, xMajorStep) + axisLabelPaddingX, xSpan * 0.015);
-  const boardPaddingY = Math.max(yAxisExtension + boardEdgePadding(ySpan, yMajorStep) + axisLabelPaddingY, ySpan * 0.015);
+  const axisLabelPaddingX = showAxes && showAxisLabels ? axisLabelEdgePadding(xSpan) : 0;
+  const axisLabelPaddingY = showAxes && showAxisLabels ? axisLabelEdgePadding(ySpan) : 0;
+  const boardPaddingX = Math.max(xAxisExtension + boardEdgePadding(xSpan) + axisLabelPaddingX, xSpan * 0.015);
+  const boardPaddingY = Math.max(yAxisExtension + boardEdgePadding(ySpan) + axisLabelPaddingY, ySpan * 0.015);
 
   return {
     xMin,
@@ -752,17 +752,39 @@ function renderPolarGrid(board: JXG.Board, graphConfig: GraphConfig) {
 }
 
 export function graphDisplayHeight(graphConfig?: GraphConfig | null) {
-  const fallbackHeight = graphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT;
-  if (!graphConfig?.equalScale) return fallbackHeight;
+  return graphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT;
+}
 
-  const { xSpan, ySpan, boardPaddingX, boardPaddingY } = graphBoardSizing(graphConfig);
-  const boardWidth = xSpan + boardPaddingX * 2;
-  const boardHeight = ySpan + boardPaddingY * 2;
-  const displayWidth = graphConfig.widthPx ?? DEFAULT_GRAPH_WIDTH;
-  if (!Number.isFinite(boardWidth) || boardWidth <= 0 || !Number.isFinite(boardHeight) || boardHeight <= 0) {
-    return fallbackHeight;
+function functionBoardBoundingBox(
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  displayWidth: number,
+  displayHeight: number,
+  equalScale: boolean,
+): [number, number, number, number] {
+  if (!equalScale || displayWidth <= 0 || displayHeight <= 0) return [left, top, right, bottom];
+
+  const boardWidth = right - left;
+  const boardHeight = top - bottom;
+  if (boardWidth <= 0 || boardHeight <= 0) return [left, top, right, bottom];
+
+  const displayRatio = displayWidth / displayHeight;
+  const boardRatio = boardWidth / boardHeight;
+  if (!Number.isFinite(displayRatio) || displayRatio <= 0 || !Number.isFinite(boardRatio) || boardRatio <= 0) {
+    return [left, top, right, bottom];
   }
-  return Math.max(1, displayWidth * (boardHeight / boardWidth));
+
+  if (boardRatio < displayRatio) {
+    const nextWidth = boardHeight * displayRatio;
+    const padding = (nextWidth - boardWidth) / 2;
+    return [left - padding, top, right + padding, bottom];
+  }
+
+  const nextHeight = boardWidth / displayRatio;
+  const padding = (nextHeight - boardHeight) / 2;
+  return [left, top + padding, right, bottom - padding];
 }
 
 function sameX(left: number, right: number) {
@@ -3459,6 +3481,8 @@ export function FunctionGraph({
     const showFunctionArrows = graphConfig.showFunctionArrows ?? true;
     const gridMajorColor = graphConfig.gridMajorColor || GRID_MAJOR_COLOR;
     const gridMinorColor = graphConfig.gridMinorColor || GRID_MINOR_COLOR;
+    const displayWidth = graphConfig.widthPx ?? DEFAULT_GRAPH_WIDTH;
+    const displayHeight = graphDisplayHeight(graphConfig);
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -3471,7 +3495,15 @@ export function FunctionGraph({
     });
 
     const board = JXG.JSXGraph.initBoard(boardId, {
-      boundingbox: [xMin - boardPaddingX, yMax + boardPaddingY, xMax + boardPaddingX, yMin - boardPaddingY],
+      boundingbox: functionBoardBoundingBox(
+        xMin - boardPaddingX,
+        yMax + boardPaddingY,
+        xMax + boardPaddingX,
+        yMin - boardPaddingY,
+        displayWidth,
+        displayHeight,
+        graphConfig.equalScale === true,
+      ),
       axis: false,
       grid: false,
       showCopyright: false,
