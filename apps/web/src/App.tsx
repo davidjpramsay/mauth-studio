@@ -15407,28 +15407,6 @@ export default function App() {
             <section className="flex min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.12),transparent_38%),linear-gradient(180deg,#f8fbff_0%,#eef3fb_100%)] p-6">
               <div className="flex max-w-xl flex-col items-center text-center">
                 <div className="relative mb-5">
-                  <svg
-                    viewBox="0 0 150 110"
-                    className="pointer-events-none absolute -right-28 -top-8 hidden h-24 w-32 text-blue-500/80 sm:block"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M132 18C87 4 64 22 68 48c4 25 32 24 37 7 4-15-13-25-29-16-19 11-26 35-48 49"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="8"
-                    />
-                    <path
-                      d="M31 88l-25 2 12-22"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="8"
-                    />
-                  </svg>
                   <Button
                     type="button"
                     variant="ghost"
