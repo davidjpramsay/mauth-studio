@@ -15414,9 +15414,9 @@ export default function App() {
                     title="New document"
                     aria-label="Create a new Mauth document"
                     onClick={startNewTest}
-                    className="size-20 rounded-full border border-blue-200 bg-white text-blue-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:text-blue-700 hover:shadow-md focus-visible:ring-blue-500"
+                    className="size-24 rounded-full border border-blue-200 bg-white text-blue-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:text-blue-700 hover:shadow-md focus-visible:ring-blue-500 [&_svg]:size-14"
                   >
-                    <FileText className="size-10" aria-hidden="true" />
+                    <FileText aria-hidden="true" />
                   </Button>
                 </div>
                 <p
