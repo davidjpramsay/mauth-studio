@@ -72,7 +72,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               <input
                 type="number"
                 min={240}
-                step={20}
+                step={1}
                 value={numberInputValue(config.widthPx)}
                 onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.widthPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -83,7 +83,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               <input
                 type="number"
                 min={180}
-                step={20}
+                step={1}
                 value={numberInputValue(config.heightPx)}
                 onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.heightPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -96,7 +96,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Azimuth
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.az)}
                 onChange={(event) => updateView({ az: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.az })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -106,7 +106,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Elevation
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.el)}
                 onChange={(event) => updateView({ el: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.el })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -116,7 +116,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Bank
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.bank)}
                 onChange={(event) => updateView({ bank: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.bank })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"

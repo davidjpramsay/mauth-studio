@@ -405,7 +405,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={120}
-              step={20}
+              step={1}
               value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
               aria-label={`${selectedBlock.label} 2D diagram width`}
               onChange={(event) =>
@@ -421,7 +421,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={120}
-              step={20}
+              step={1}
               value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
               aria-label={`${selectedBlock.label} 2D diagram height`}
               onChange={(event) => updateCanvas({ heightPx: inspectorOptionalNumber(event.target.value) })}
@@ -500,7 +500,7 @@ function Geometry2DInspector({
               {label}
               <input
                 type="number"
-                step={0.25}
+                step={1}
                 value={inspectorNumberInputValue(point[field as keyof Graph2DGeometryPoint] as number | undefined)}
                 aria-label={`${selectedBlock.label} point ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
                 onChange={(event) =>
@@ -603,7 +603,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={0.5}
-              step={0.5}
+              step={1}
               value={inspectorNumberInputValue(segment.strokeWidth)}
               aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} weight`}
               onChange={(event) => patchSegment(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
@@ -618,7 +618,7 @@ function Geometry2DInspector({
               {label}
               <input
                 type="number"
-                step={0.25}
+                step={1}
                 value={inspectorNumberInputValue(segment[field as keyof Graph2DGeometrySegment] as number | undefined)}
                 aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
                 onChange={(event) =>
@@ -720,7 +720,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={0.5}
-              step={0.5}
+              step={1}
               value={inspectorNumberInputValue(arc.strokeWidth)}
               aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} weight`}
               onChange={(event) => patchArc(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
@@ -735,7 +735,7 @@ function Geometry2DInspector({
               {label}
               <input
                 type="number"
-                step={0.25}
+                step={1}
                 value={inspectorNumberInputValue(arc[field as keyof Graph2DGeometryArc] as number | undefined)}
                 aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
                 onChange={(event) =>
@@ -826,7 +826,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={0.05}
-              step={0.05}
+              step={1}
               value={inspectorNumberInputValue(angle.radius)}
               aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} radius`}
               onChange={(event) => patchAngle(selectedGeometryChild.index, { radius: inspectorOptionalNumber(event.target.value) })}
@@ -866,7 +866,7 @@ function Geometry2DInspector({
             <input
               type="number"
               min={0.5}
-              step={0.5}
+              step={1}
               value={inspectorNumberInputValue(angle.strokeWidth)}
               aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} weight`}
               onChange={(event) => patchAngle(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
@@ -881,7 +881,7 @@ function Geometry2DInspector({
               {label}
               <input
                 type="number"
-                step={0.25}
+                step={1}
                 value={inspectorNumberInputValue(angle[field as keyof Graph2DGeometryAngle] as number | undefined)}
                 aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
                 onChange={(event) =>
@@ -1014,7 +1014,7 @@ function Geometry2DInspector({
           <input
             type="number"
             min={0.05}
-            step={0.05}
+            step={1}
             value={inspectorNumberInputValue(decoration.size ?? decoration.radius)}
             aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} size`}
             onChange={(event) =>
@@ -1346,7 +1346,7 @@ export function SelectionInspector({
                       type="number"
                       min={25}
                       max={250}
-                      step={5}
+                      step={1}
                       value={inspectorNumberInputValue(penroseScalePercent(selectedDiagramConfig))}
                       aria-label={`${selectedBlock.label} Penrose scale`}
                       onChange={(event) =>
@@ -1552,7 +1552,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={40}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
                       aria-label={`${selectedBlock.label} image width`}
                       onChange={(event) =>
@@ -1570,7 +1570,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={40}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
                       aria-label={`${selectedBlock.label} image height`}
                       onChange={(event) =>
@@ -1728,7 +1728,7 @@ export function SelectionInspector({
                                     type="number"
                                     min={0.5}
                                     max={10}
-                                    step={0.5}
+                                    step={1}
                                     value={inspectorNumberInputValue(graphFunction.strokeWidth)}
                                     aria-label={`${selectedBlock.label} function ${functionIndex + 1} weight`}
                                     onChange={(event) =>
@@ -1804,7 +1804,7 @@ export function SelectionInspector({
                                         Left x
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(graphFunction.domainMin ?? selectedDiagramConfig.xMin)}
                                           aria-label={`${selectedBlock.label} function ${functionIndex + 1} left domain`}
                                           onChange={(event) =>
@@ -1823,7 +1823,7 @@ export function SelectionInspector({
                                         Right x
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(graphFunction.domainMax ?? selectedDiagramConfig.xMax)}
                                           aria-label={`${selectedBlock.label} function ${functionIndex + 1} right domain`}
                                           onChange={(event) =>
@@ -1885,7 +1885,7 @@ export function SelectionInspector({
                                     Label x
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(graphFunction.labelX)}
                                       aria-label={`${selectedBlock.label} function ${functionIndex + 1} label x`}
                                       onChange={(event) =>
@@ -1904,7 +1904,7 @@ export function SelectionInspector({
                                     Label y
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(graphFunction.labelY)}
                                       aria-label={`${selectedBlock.label} function ${functionIndex + 1} label y`}
                                       onChange={(event) =>
@@ -2071,7 +2071,7 @@ export function SelectionInspector({
                                             type="number"
                                             min={0.5}
                                             max={10}
-                                            step={0.5}
+                                            step={1}
                                             value={inspectorNumberInputValue(feature.strokeWidth)}
                                             disabled={featureStrokeStyle === "none"}
                                             aria-label={`${selectedBlock.label} feature ${featureIndex + 1} weight`}
@@ -2098,7 +2098,7 @@ export function SelectionInspector({
                                       type="number"
                                       min={0.05}
                                       max={0.8}
-                                      step={0.05}
+                                      step={1}
                                       value={inspectorNumberInputValue(feature.fillOpacity)}
                                       aria-label={`${selectedBlock.label} feature ${featureIndex + 1} fill opacity`}
                                       onChange={(event) =>
@@ -2121,7 +2121,7 @@ export function SelectionInspector({
                                     x
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(feature.x)}
                                       aria-label={`${selectedBlock.label} feature ${featureIndex + 1} x`}
                                       onChange={(event) =>
@@ -2140,7 +2140,7 @@ export function SelectionInspector({
                                     y
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(feature.y)}
                                       aria-label={`${selectedBlock.label} feature ${featureIndex + 1} y`}
                                       onChange={(event) =>
@@ -2189,7 +2189,7 @@ export function SelectionInspector({
                                       {label}
                                       <input
                                         type="number"
-                                        step={0.5}
+                                        step={1}
                                         value={inspectorNumberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
                                         aria-label={`${selectedBlock.label} feature ${featureIndex + 1} ${label.toLowerCase()}`}
                                         onChange={(event) =>
@@ -2240,7 +2240,7 @@ export function SelectionInspector({
                                       <input
                                         type="number"
                                         min={field === "size" ? 0.05 : undefined}
-                                        step={field === "size" ? 0.05 : 0.5}
+                                        step={1}
                                         value={inspectorNumberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
                                         aria-label={`${selectedBlock.label} feature ${featureIndex + 1} ${label.toLowerCase()}`}
                                         onChange={(event) =>
@@ -2338,7 +2338,7 @@ export function SelectionInspector({
                                     From x
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(feature.xMin)}
                                       aria-label={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
                                       onChange={(event) =>
@@ -2357,7 +2357,7 @@ export function SelectionInspector({
                                     To x
                                     <input
                                       type="number"
-                                      step={0.5}
+                                      step={1}
                                       value={inspectorNumberInputValue(feature.xMax)}
                                       aria-label={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
                                       onChange={(event) =>
@@ -2427,7 +2427,7 @@ export function SelectionInspector({
                                         x
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(feature.x)}
                                           aria-label={`${selectedBlock.label} feature ${featureIndex + 1} tangent x`}
                                           onChange={(event) =>
@@ -2446,7 +2446,7 @@ export function SelectionInspector({
                                         y
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(feature.y)}
                                           aria-label={`${selectedBlock.label} feature ${featureIndex + 1} tangent y`}
                                           onChange={(event) =>
@@ -2468,7 +2468,7 @@ export function SelectionInspector({
                                         From x
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(feature.xMin)}
                                           aria-label={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
                                           onChange={(event) =>
@@ -2487,7 +2487,7 @@ export function SelectionInspector({
                                         To x
                                         <input
                                           type="number"
-                                          step={0.5}
+                                          step={1}
                                           value={inspectorNumberInputValue(feature.xMax)}
                                           aria-label={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
                                           onChange={(event) =>
@@ -2575,7 +2575,7 @@ export function SelectionInspector({
                         <input
                           type="number"
                           min={240}
-                          step={20}
+                          step={1}
                           value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
                           onChange={(event) =>
                             onBlockChange(selectedBlock, {
@@ -2601,7 +2601,7 @@ export function SelectionInspector({
                           <input
                             type="number"
                             min={160}
-                            step={20}
+                            step={1}
                             value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
                             onChange={(event) =>
                               onBlockChange(selectedBlock, {
@@ -2662,7 +2662,7 @@ export function SelectionInspector({
                         X major
                         <DraftInspectorNumberInput
                           min={0.1}
-                          step={0.5}
+                          step={1}
                           value={selectedDiagramConfig.gridMajorStepX}
                           fallbackValue={selectedDiagramConfig.gridMajorStep}
                           onChange={(value) =>
@@ -2680,7 +2680,7 @@ export function SelectionInspector({
                         Y major
                         <DraftInspectorNumberInput
                           min={0.1}
-                          step={0.5}
+                          step={1}
                           value={selectedDiagramConfig.gridMajorStepY}
                           fallbackValue={selectedDiagramConfig.gridMajorStep}
                           onChange={(value) =>
@@ -2712,7 +2712,7 @@ export function SelectionInspector({
                         X minor
                         <DraftInspectorNumberInput
                           min={0.1}
-                          step={0.5}
+                          step={1}
                           value={selectedDiagramConfig.gridMinorStepX}
                           fallbackValue={selectedDiagramConfig.gridMinorStep}
                           onChange={(value) =>
@@ -2729,7 +2729,7 @@ export function SelectionInspector({
                         Y minor
                         <DraftInspectorNumberInput
                           min={0.1}
-                          step={0.5}
+                          step={1}
                           value={selectedDiagramConfig.gridMinorStepY}
                           fallbackValue={selectedDiagramConfig.gridMinorStep}
                           onChange={(value) =>
@@ -2881,7 +2881,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={160}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
                       onChange={(event) =>
                         onBlockChange(selectedBlock, {
@@ -2898,7 +2898,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={120}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
                       onChange={(event) =>
                         onBlockChange(selectedBlock, {
@@ -2921,7 +2921,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={240}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
                       aria-label={`${selectedBlock.label} 3D width`}
                       onChange={(event) =>
@@ -2939,7 +2939,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={180}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
                       aria-label={`${selectedBlock.label} 3D height`}
                       onChange={(event) =>
@@ -2958,7 +2958,7 @@ export function SelectionInspector({
                     Azimuth
                     <input
                       type="number"
-                      step={0.05}
+                      step={1}
                       value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).az)}
                       aria-label={`${selectedBlock.label} 3D azimuth`}
                       onChange={(event) =>
@@ -2978,7 +2978,7 @@ export function SelectionInspector({
                     Elevation
                     <input
                       type="number"
-                      step={0.05}
+                      step={1}
                       value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).el)}
                       aria-label={`${selectedBlock.label} 3D elevation`}
                       onChange={(event) =>
@@ -2998,7 +2998,7 @@ export function SelectionInspector({
                     Bank
                     <input
                       type="number"
-                      step={0.05}
+                      step={1}
                       value={inspectorNumberInputValue(graph3dViewState(selectedDiagramConfig).bank)}
                       aria-label={`${selectedBlock.label} 3D bank`}
                       onChange={(event) =>
@@ -3057,7 +3057,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={240}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedStatsChartSpec.options?.widthPx)}
                       aria-label={`${selectedBlock.label} chart width`}
                       onChange={(event) =>
@@ -3073,7 +3073,7 @@ export function SelectionInspector({
                     <input
                       type="number"
                       min={180}
-                      step={20}
+                      step={1}
                       value={inspectorNumberInputValue(selectedStatsChartSpec.options?.heightPx)}
                       aria-label={`${selectedBlock.label} chart height`}
                       onChange={(event) =>
@@ -3121,7 +3121,7 @@ export function SelectionInspector({
                       type="number"
                       min={0}
                       max={1}
-                      step={0.05}
+                      step={1}
                       value={inspectorNumberInputValue(
                         typeof selectedStatsChartSpec.options?.fillOpacity === "number" ? selectedStatsChartSpec.options.fillOpacity : 1,
                       )}

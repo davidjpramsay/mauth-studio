@@ -459,7 +459,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       <input
                         type="number"
                         min={0.05}
-                        step={0.05}
+                        step={1}
                         value={numberInputValue(marker.radius)}
                         onChange={(event) =>
                           updateAngleMarker(markerIndex, { radius: Math.max(0.05, optionalNumber(event.target.value) ?? 0.45) })

@@ -127,7 +127,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={25}
               max={250}
-              step={5}
+              step={1}
               value={numberInputValue(scalePercent)}
               onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"

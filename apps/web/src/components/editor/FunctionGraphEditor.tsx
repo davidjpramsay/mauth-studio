@@ -421,7 +421,7 @@ export function FunctionGraphEditor({
                   <input
                     type="number"
                     min={240}
-                    step={20}
+                    step={1}
                     value={numberInputValue(config.widthPx)}
                     onChange={(event) => updateDiagramWidth(event.target.value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -440,7 +440,7 @@ export function FunctionGraphEditor({
                     <input
                       type="number"
                       min={160}
-                      step={20}
+                      step={1}
                       value={numberInputValue(config.heightPx)}
                       onChange={(event) => patchConfig({ heightPx: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -465,7 +465,7 @@ export function FunctionGraphEditor({
                   X major interval
                   <DraftNumberInput
                     min={0.1}
-                    step={0.5}
+                    step={1}
                     value={config.gridMajorStepX}
                     fallbackValue={config.gridMajorStep}
                     onChange={(value) => patchConfig({ gridMajorStepX: value, axisLabelStepX: value })}
@@ -476,7 +476,7 @@ export function FunctionGraphEditor({
                   Y major interval
                   <DraftNumberInput
                     min={0.1}
-                    step={0.5}
+                    step={1}
                     value={config.gridMajorStepY}
                     fallbackValue={config.gridMajorStep}
                     onChange={(value) => patchConfig({ gridMajorStepY: value, axisLabelStepY: value })}
@@ -501,7 +501,7 @@ export function FunctionGraphEditor({
                   X minor interval
                   <DraftNumberInput
                     min={0}
-                    step={0.5}
+                    step={1}
                     value={config.gridMinorStepX}
                     fallbackValue={config.gridMinorStep}
                     onChange={(value) => patchConfig({ gridMinorStepX: value })}
@@ -512,7 +512,7 @@ export function FunctionGraphEditor({
                   Y minor interval
                   <DraftNumberInput
                     min={0}
-                    step={0.5}
+                    step={1}
                     value={config.gridMinorStepY}
                     fallbackValue={config.gridMinorStep}
                     onChange={(value) => patchConfig({ gridMinorStepY: value })}
@@ -643,7 +643,7 @@ export function FunctionGraphEditor({
                         type="number"
                         min={0.5}
                         max={10}
-                        step={0.5}
+                        step={1}
                         value={numberInputValue(graphFunction.strokeWidth)}
                         onChange={(event) => updateFunction(functionIndex, { strokeWidth: optionalNumber(event.target.value) })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -714,7 +714,7 @@ export function FunctionGraphEditor({
                         <input
                           aria-label={`Function ${functionIndex + 1} left domain`}
                           type="number"
-                          step={0.5}
+                          step={1}
                           value={numberInputValue(graphFunction.domainMin ?? config.xMin)}
                           onChange={(event) => updateFunction(functionIndex, { domainMin: optionalNumber(event.target.value) })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -725,7 +725,7 @@ export function FunctionGraphEditor({
                         <input
                           aria-label={`Function ${functionIndex + 1} right domain`}
                           type="number"
-                          step={0.5}
+                          step={1}
                           value={numberInputValue(graphFunction.domainMax ?? config.xMax)}
                           onChange={(event) => updateFunction(functionIndex, { domainMax: optionalNumber(event.target.value) })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -763,7 +763,7 @@ export function FunctionGraphEditor({
                     Label x
                     <input
                       type="number"
-                      step={0.5}
+                      step={1}
                       value={numberInputValue(graphFunction.labelX)}
                       onChange={(event) => updateFunction(functionIndex, { labelX: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -773,7 +773,7 @@ export function FunctionGraphEditor({
                     Label y
                     <input
                       type="number"
-                      step={0.5}
+                      step={1}
                       value={numberInputValue(graphFunction.labelY)}
                       onChange={(event) => updateFunction(functionIndex, { labelY: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -982,7 +982,7 @@ export function FunctionGraphEditor({
                                 type="number"
                                 min={0.5}
                                 max={10}
-                                step={0.5}
+                                step={1}
                                 value={numberInputValue(feature.strokeWidth)}
                                 disabled={featureStrokeStyle === "none"}
                                 onChange={(event) => updateFeature(featureIndex, { strokeWidth: optionalNumber(event.target.value) })}
@@ -1045,7 +1045,7 @@ export function FunctionGraphEditor({
                             x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x)}
                               onChange={(event) => updateFeature(featureIndex, { x: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1055,7 +1055,7 @@ export function FunctionGraphEditor({
                             y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y)}
                               onChange={(event) => updateFeature(featureIndex, { y: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1083,7 +1083,7 @@ export function FunctionGraphEditor({
                             Start x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x1)}
                               onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1093,7 +1093,7 @@ export function FunctionGraphEditor({
                             Start y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y1)}
                               onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1103,7 +1103,7 @@ export function FunctionGraphEditor({
                             End x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x2)}
                               onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1113,7 +1113,7 @@ export function FunctionGraphEditor({
                             End y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y2)}
                               onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1147,7 +1147,7 @@ export function FunctionGraphEditor({
                               <input
                                 type="number"
                                 min={field === "size" ? 0.05 : undefined}
-                                step={field === "size" ? 0.05 : 0.5}
+                                step={1}
                                 value={numberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
                                 onChange={(event) =>
                                   updateFeature(featureIndex, { [field]: optionalNumber(event.target.value) } as Partial<GraphFeature>)
@@ -1216,7 +1216,7 @@ export function FunctionGraphEditor({
                             From x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.xMin)}
                               onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1226,7 +1226,7 @@ export function FunctionGraphEditor({
                             To x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.xMax)}
                               onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1239,7 +1239,7 @@ export function FunctionGraphEditor({
                                 type="number"
                                 min={0.05}
                                 max={0.8}
-                                step={0.05}
+                                step={1}
                                 value={numberInputValue(feature.fillOpacity)}
                                 onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
                                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1287,7 +1287,7 @@ export function FunctionGraphEditor({
                                 x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.x)}
                                   onChange={(event) =>
                                     updateRelationTangentCoordinate(
@@ -1306,7 +1306,7 @@ export function FunctionGraphEditor({
                                   y
                                   <input
                                     type="number"
-                                    step={0.5}
+                                    step={1}
                                     value={numberInputValue(feature.y)}
                                     onChange={(event) =>
                                       updateRelationTangentCoordinate(
@@ -1328,7 +1328,7 @@ export function FunctionGraphEditor({
                                 From x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.xMin)}
                                   onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1338,7 +1338,7 @@ export function FunctionGraphEditor({
                                 To x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.xMax)}
                                   onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1351,7 +1351,7 @@ export function FunctionGraphEditor({
                                     type="number"
                                     min={0.05}
                                     max={0.8}
-                                    step={0.05}
+                                    step={1}
                                     value={numberInputValue(feature.fillOpacity)}
                                     onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
                                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"

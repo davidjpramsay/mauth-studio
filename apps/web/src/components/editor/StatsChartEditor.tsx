@@ -165,7 +165,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={240}
-              step={20}
+              step={1}
               value={numberInputValue(options.widthPx)}
               onChange={(event) => updateOptions({ widthPx: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -176,7 +176,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={180}
-              step={20}
+              step={1}
               value={numberInputValue(options.heightPx)}
               onChange={(event) => updateOptions({ heightPx: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -297,7 +297,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={0}
               max={1}
-              step={0.05}
+              step={1}
               value={numberInputValue(typeof options.fillOpacity === "number" ? options.fillOpacity : 1)}
               disabled={options.showFill === false}
               onChange={(event) => {
@@ -319,7 +319,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Mean
             <input
               type="number"
-              step={0.1}
+              step={1}
               value={numberInputValue(data.mean)}
               onChange={(event) => updateData({ mean: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -330,7 +330,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={0.01}
-              step={0.1}
+              step={1}
               value={numberInputValue(data.stdDev)}
               onChange={(event) => updateData({ stdDev: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -340,7 +340,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Range min
             <input
               type="number"
-              step={0.5}
+              step={1}
               value={numberInputValue(range[0])}
               onChange={(event) => updateData({ range: [optionalNumber(event.target.value) ?? range[0], range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -350,7 +350,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Range max
             <input
               type="number"
-              step={0.5}
+              step={1}
               value={numberInputValue(range[1])}
               onChange={(event) => updateData({ range: [range[0], optionalNumber(event.target.value) ?? range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -376,7 +376,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={0}
               max={1}
-              step={0.05}
+              step={1}
               value={numberInputValue(data.probability)}
               onChange={(event) => updateData({ probability: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -432,7 +432,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
                 <input
                   type="number"
                   min={0}
-                  step={0.5}
+                  step={1}
                   value={numberInputValue(data.binSize)}
                   onChange={(event) => updateData({ binSize: optionalNumber(event.target.value) })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
