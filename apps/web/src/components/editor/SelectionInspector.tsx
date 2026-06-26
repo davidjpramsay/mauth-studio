@@ -1269,6 +1269,16 @@ export function SelectionInspector({
                 className={controlClassName}
               />
             </label>
+            <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={selectedSpaceBlock.showLines !== false}
+                aria-label={`${selectedBlock.label} show ruled lines`}
+                onChange={(event) => onBlockChange(selectedBlock, { showLines: event.currentTarget.checked })}
+                className="size-4 rounded border-input"
+              />
+              Show ruled lines
+            </label>
           </div>
         ) : selectedDiagramBlock && selectedDiagramConfig ? (
           <div className="space-y-3 p-3">
