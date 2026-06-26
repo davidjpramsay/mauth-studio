@@ -1284,7 +1284,7 @@ function quickDiagramInsertActions(onAddDiagramType: (type: string) => void) {
   }));
 }
 
-function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): EditorContentBlock {
+function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): Extract<ContentBlock, { kind: "space" }> {
   return { id: id("space"), kind: "space", lines, ...blockVisibilityFields(visibility) };
 }
 
@@ -1299,7 +1299,7 @@ function columnsBlock(columnCount: ColumnCount = 2, visibility?: ContentBlockVis
 }
 
 function solutionSlotBlocks(lines = DEFAULT_SOLUTION_SLOT_LINES): EditorContentBlock[] {
-  return [spaceBlock(lines, "student"), textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")];
+  return [{ ...spaceBlock(lines, "student"), showLines: false }, textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")];
 }
 
 function contentBlockForKind(kind: ContentBlockKind, visibility?: ContentBlockVisibility): EditorContentBlock {

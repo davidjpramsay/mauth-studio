@@ -27,6 +27,7 @@
     "As a sizing heuristic, give short one-mark free-response items at least a small answer space, routine two- or three-mark items enough room for several working lines, and multi-step items enough room for method plus final answer. Prefer a little too much student space over a cramped response area.",
     "Do not remove or shrink student answer space simply because the solution is short. The student copy is allowed to have more room than the solution uses.",
     "For shared student/solution documents, newly created response Space blocks should be explicit student answer/work spaces and immediately adjacent to the worked-solution module that replaces them.",
+    "New paired answer/solution slots should default to blank response space with showLines false. Only turn on ruled lines when the teacher requests lines or an existing source/layout deliberately uses them.",
     "If the solution copy still shows a student answer-space block, treat it as an unpaired missing-solution signal. Add or repair the adjacent solution module rather than deleting the answer space or calling the layout done.",
     "Existing or imported plain Space blocks with no visibility field are shared ordinary blocks until deliberately converted; do not infer student-only visibility from kind: \"space\" alone.",
     "Ordinary question modules should remain shared between the student copy and solution copy; only student answer spaces and worked-solution modules should change across the solution toggle.",
