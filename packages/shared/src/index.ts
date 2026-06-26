@@ -201,6 +201,10 @@ export interface GraphConfig {
   showAxisNumbers?: boolean;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  xAxisLabelX?: number;
+  xAxisLabelY?: number;
+  yAxisLabelX?: number;
+  yAxisLabelY?: number;
   axisLabelIntervalMode?: "auto" | "manual";
   axisLabelStepX?: number;
   axisLabelStepY?: number;
@@ -595,6 +599,7 @@ export interface SpaceContentBlock extends ContentBlockVisibilityOptions {
   id: string;
   kind: "space";
   lines: number;
+  showLines?: boolean;
 }
 
 export interface PageBreakContentBlock extends ContentBlockVisibilityOptions {
@@ -667,6 +672,7 @@ export type ProjectFileKind = "file" | "folder";
 export type MauthProjectFileType =
   | "folder"
   | "mauthdown"
+  | "notes"
   | "worksheet"
   | "test"
   | "diagram"
@@ -683,6 +689,8 @@ export interface ProjectSummary {
   name: string;
   description?: string | null;
   metadata: Record<string, unknown>;
+  workspacePath?: string;
+  documentsPath?: string;
   fileCount: number;
   createdAt: string;
   updatedAt: string;

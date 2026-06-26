@@ -1,7 +1,21 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import type { ProjectFileSummary, ProjectFileVersion } from "@mauth-studio/shared";
-import { ChevronLeft, ChevronRight, Copy, Download, FileText, FolderOpen, Pencil, PlusCircle, Trash2, Upload, X } from "lucide-react";
+import type { ProjectFileSummary, ProjectFileVersion, ProjectSummary } from "@mauth-studio/shared";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  FileText,
+  FolderOpen,
+  Pencil,
+  PlusCircle,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +35,9 @@ import {
 } from "@/lib/projectFiles";
 import { cn } from "@/lib/utils";
 
+const RECENT_PROJECT_FILES_KEY = "mauth.recentProjectFiles.v1";
+const RECENT_PROJECT_FILES_LIMIT = 10;
+
 export interface ProjectFileVersionPreviewSummary {
   kind: "test" | "raw";
   title: string;
@@ -31,6 +48,7 @@ export interface ProjectFileVersionPreviewSummary {
 }
 
 interface TestFileManagerProps {
+  activeProject: ProjectSummary | null;
   files: ProjectFileSummary[];
   status: ProjectFilesStatus;
   message: string;
@@ -41,6 +59,7 @@ interface TestFileManagerProps {
   onCreateFolder: (folderPath: string) => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onRefreshFiles: () => void;
   onRenameItem: (filePath: string) => void;
   onDuplicateItems: (filePaths: string[]) => void;
   onMoveItems: (filePaths: string[], targetFolderPath: string) => void;
@@ -49,7 +68,28 @@ interface TestFileManagerProps {
   onRestoreVersion: (filePath: string, versionId: string) => Promise<void>;
 }
 
+function readRecentProjectFilePaths() {
+  try {
+    const raw = window.localStorage.getItem(RECENT_PROJECT_FILES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string").slice(0, RECENT_PROJECT_FILES_LIMIT)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentProjectFilePaths(filePaths: string[]) {
+  try {
+    window.localStorage.setItem(RECENT_PROJECT_FILES_KEY, JSON.stringify(filePaths.slice(0, RECENT_PROJECT_FILES_LIMIT)));
+  } catch {
+    // Recents are convenience UI only; storage failures should not block file work.
+  }
+}
+
 function TestFileManager({
+  activeProject,
   files,
   status,
   message,
@@ -60,6 +100,7 @@ function TestFileManager({
   onCreateFolder,
   onExportBackup,
   onImportBackup,
+  onRefreshFiles,
   onRenameItem,
   onDuplicateItems,
   onMoveItems,
@@ -77,10 +118,29 @@ function TestFileManager({
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [versionStatus, setVersionStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [versionMessage, setVersionMessage] = useState("");
+  const [pathCopied, setPathCopied] = useState(false);
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [recentProjectFilePaths, setRecentProjectFilePaths] = useState<string[]>(() => readRecentProjectFilePaths());
   const backupImportInputRef = useRef<HTMLInputElement>(null);
+  const documentsPath = activeProject?.documentsPath ?? activeProject?.workspacePath ?? "";
   const visibleEntries = useMemo(() => visibleTestFiles(files), [files]);
   const folderOptions = useMemo(() => testFolderOptions(files), [files]);
-  const currentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
+  const rawCurrentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
+  const cleanFileSearchQuery = fileSearchQuery.trim().toLowerCase();
+  const fileSearchTerms = useMemo(() => cleanFileSearchQuery.split(/\s+/).filter(Boolean), [cleanFileSearchQuery]);
+  const currentItems = useMemo(() => {
+    if (!fileSearchTerms.length) return rawCurrentItems;
+    return visibleEntries
+      .filter(({ testPath }) => {
+        const displayName = testFileDisplayName(testPathBasename(testPath));
+        const haystack = `${testPath} ${displayName}`.toLowerCase();
+        return fileSearchTerms.every((term) => haystack.includes(term));
+      })
+      .sort((left, right) => {
+        if (left.file.kind !== right.file.kind) return left.file.kind === "folder" ? -1 : 1;
+        return testFileDisplayName(testPathBasename(left.testPath)).localeCompare(testFileDisplayName(testPathBasename(right.testPath)));
+      });
+  }, [fileSearchTerms, rawCurrentItems, visibleEntries]);
   const currentItemPaths = useMemo(() => currentItems.map((item) => item.testPath), [currentItems]);
   const selectedEntries = useMemo(
     () => visibleEntries.filter(({ testPath }) => selectedPaths.has(testPath)),
@@ -92,6 +152,15 @@ function TestFileManager({
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? versions[0] ?? null;
   const selectedVersionPreview = selectedVersion ? buildVersionPreview(selectedVersion) : null;
   const activeRelativePath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
+  const recentEntries = useMemo(() => {
+    return recentProjectFilePaths
+      .map((filePath) => {
+        const file = files.find((candidate) => candidate.path === filePath && candidate.kind === "file");
+        const testPath = file ? testPathFromProjectPath(file.path) : null;
+        return file && testPath ? { file, testPath } : null;
+      })
+      .filter((entry): entry is { file: ProjectFileSummary; testPath: string } => Boolean(entry));
+  }, [files, recentProjectFilePaths]);
   const busy = status === "loading" || status === "saving";
   const breadcrumbTargets = useMemo(() => {
     const parts = currentFolderPath.split("/").filter(Boolean);
@@ -129,6 +198,21 @@ function TestFileManager({
       setVersionMessage("");
     }
   }, [lastSelectedPath, versionsTestPath, visibleEntries]);
+
+  useEffect(() => {
+    if (!activeProjectFilePath) return;
+    const activeFile = files.find((file) => file.path === activeProjectFilePath && file.kind === "file");
+    if (!activeFile) return;
+    setRecentProjectFilePaths((current) => {
+      const next = [activeProjectFilePath, ...current.filter((filePath) => filePath !== activeProjectFilePath)].slice(
+        0,
+        RECENT_PROJECT_FILES_LIMIT,
+      );
+      if (next.length === current.length && next.every((filePath, index) => filePath === current[index])) return current;
+      writeRecentProjectFilePaths(next);
+      return next;
+    });
+  }, [activeProjectFilePath, files]);
 
   function navigateToFolder(folderPath: string) {
     setCurrentFolderPath(normalizeTestFolderPath(folderPath));
@@ -291,6 +375,10 @@ function TestFileManager({
     onOpenFile(projectPathForTestPath(selectedEntry.testPath));
   }
 
+  function openRecentFile(filePath: string) {
+    onOpenFile(filePath);
+  }
+
   async function openVersionHistory() {
     if (!selectedEntry || selectedEntry.file.kind === "folder") return;
     const testPath = selectedEntry.testPath;
@@ -337,6 +425,28 @@ function TestFileManager({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
+      {documentsPath ? (
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/35 px-3 py-2 text-sm">
+          <div className="min-w-0">
+            <div className="font-medium text-foreground">Local documents folder</div>
+            <div className="truncate font-mono text-xs text-muted-foreground">{documentsPath}</div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void navigator.clipboard.writeText(documentsPath).then(() => {
+                setPathCopied(true);
+                window.setTimeout(() => setPathCopied(false), 1500);
+              });
+            }}
+          >
+            <Copy className="mr-2 size-4" />
+            {pathCopied ? "Copied" : "Copy path"}
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onNewTest} disabled={busy}>
           <PlusCircle data-icon="inline-start" />
@@ -354,6 +464,10 @@ function TestFileManager({
           <Upload data-icon="inline-start" />
           Import ZIP
         </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onRefreshFiles} disabled={busy}>
+          <RefreshCw data-icon="inline-start" />
+          Refresh
+        </Button>
         <input
           ref={backupImportInputRef}
           type="file"
@@ -366,6 +480,59 @@ function TestFileManager({
           }}
         />
       </div>
+
+      <label className="relative block text-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <input
+          type="search"
+          value={fileSearchQuery}
+          onChange={(event) => setFileSearchQuery(event.currentTarget.value)}
+          placeholder="Search files"
+          className="h-9 w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
+        />
+      </label>
+
+      {!cleanFileSearchQuery && recentEntries.length ? (
+        <section className="rounded-lg border bg-background">
+          <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold">Recent documents</h3>
+              <p className="truncate text-xs text-muted-foreground">Quick access to the last opened local files</p>
+            </div>
+          </div>
+          <div className="max-h-44 overflow-y-auto">
+            {recentEntries.map(({ file, testPath }) => {
+              const active = activeRelativePath === testPath;
+              const name = testFileDisplayName(testPathBasename(testPath));
+              const folder = parentTestPath(testPath);
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent/60"
+                  onClick={() => openRecentFile(file.path)}
+                >
+                  <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{name}</span>
+                      {active ? (
+                        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                          Open
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {folder || TEST_FILE_ROOT_LABEL} - {new Date(file.updatedAt).toLocaleString()}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="flex min-h-9 items-center gap-2 rounded-md border bg-background px-2 text-sm">
         <Button
@@ -426,7 +593,7 @@ function TestFileManager({
         onDragLeave={(event) => handleDragLeaveFolder(event, currentFolderPath)}
         onDrop={(event) => handleDropOnFolder(event, currentFolderPath)}
       >
-        <div className="max-h-[56vh] min-h-72 overflow-y-auto">
+        <div className="h-full min-h-0 overflow-y-auto">
           {currentItems.length ? (
             currentItems.map(({ file, testPath }) => {
               const active = activeRelativePath === testPath;
@@ -474,8 +641,12 @@ function TestFileManager({
                     </span>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {file.kind === "folder"
-                        ? "Folder"
-                        : `${formatProjectFileSize(file.sizeBytes)} - ${new Date(file.updatedAt).toLocaleString()}`}
+                        ? cleanFileSearchQuery && parentTestPath(testPath)
+                          ? `Folder - ${parentTestPath(testPath)}`
+                          : "Folder"
+                        : `${formatProjectFileSize(file.sizeBytes)} - ${new Date(file.updatedAt).toLocaleString()}${
+                            cleanFileSearchQuery && parentTestPath(testPath) ? ` - ${parentTestPath(testPath)}` : ""
+                          }`}
                     </span>
                   </span>
                   <ChevronRight className={cn("size-4 text-muted-foreground", file.kind !== "folder" && "opacity-0")} aria-hidden="true" />
@@ -484,7 +655,13 @@ function TestFileManager({
             })
           ) : (
             <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-              {status === "loading" ? "Loading files..." : status === "error" ? message || "Files unavailable." : "No files here yet."}
+              {status === "loading"
+                ? "Loading files..."
+                : status === "error"
+                  ? message || "Files unavailable."
+                  : cleanFileSearchQuery
+                    ? "No matching files."
+                    : "No files here yet."}
             </div>
           )}
         </div>
@@ -649,6 +826,7 @@ function TestFileManager({
 
 export function FileManagementDrawer({
   open,
+  activeProject,
   projectFiles,
   projectFilesStatus,
   projectFilesMessage,
@@ -660,6 +838,7 @@ export function FileManagementDrawer({
   onCreateProjectFolder,
   onExportProjectBackup,
   onImportProjectBackup,
+  onRefreshProjectFiles,
   onRenameProjectFile,
   onDuplicateProjectFiles,
   onMoveProjectFiles,
@@ -668,6 +847,7 @@ export function FileManagementDrawer({
   onRestoreProjectFileVersion,
 }: {
   open: boolean;
+  activeProject: ProjectSummary | null;
   projectFiles: ProjectFileSummary[];
   projectFilesStatus: ProjectFilesStatus;
   projectFilesMessage: string;
@@ -679,6 +859,7 @@ export function FileManagementDrawer({
   onCreateProjectFolder: (folderPath: string) => void;
   onExportProjectBackup: () => void;
   onImportProjectBackup: (file: File) => void;
+  onRefreshProjectFiles: () => void;
   onRenameProjectFile: (filePath: string) => void;
   onDuplicateProjectFiles: (filePaths: string[]) => void;
   onMoveProjectFiles: (filePaths: string[], targetFolderPath: string) => void;
@@ -706,6 +887,7 @@ export function FileManagementDrawer({
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
           <TestFileManager
+            activeProject={activeProject}
             files={projectFiles}
             status={projectFilesStatus}
             message={projectFilesMessage}
@@ -719,6 +901,7 @@ export function FileManagementDrawer({
             onCreateFolder={onCreateProjectFolder}
             onExportBackup={onExportProjectBackup}
             onImportBackup={onImportProjectBackup}
+            onRefreshFiles={onRefreshProjectFiles}
             onRenameItem={onRenameProjectFile}
             onDuplicateItems={onDuplicateProjectFiles}
             onMoveItems={onMoveProjectFiles}

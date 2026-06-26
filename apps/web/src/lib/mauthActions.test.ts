@@ -298,6 +298,16 @@ test("applies named module settings updates deterministically", () => {
   result = applyMauthAction(questions, {
     type: "module.settings.update",
     scope: { kind: "question", questionId: "q1" },
+    blockId: "space",
+    settings: { kind: "space", showLines: false },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  assert.equal((findContentBlock(questions[0].contentBlocks, "space") as Extract<ContentBlock, { kind: "space" }>).showLines, false);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
     blockId: "table",
     settings: { kind: "table", rows: 3, columns: 3, tableAlign: "right", cellAlignment: "left", showHeader: false },
   });
@@ -660,7 +670,7 @@ test("adds paired solution slots", () => {
   const initial = [question("q1")];
   const studentSpace = spaceBlock("space-1", 8);
   studentSpace.visibility = "student";
-  const solution = textBlock("solution-1", "**Solution.**");
+  const solution = textBlock("solution-1", "\n");
   solution.visibility = "solution";
 
   const result = applyMauthAction(initial, {
@@ -1154,7 +1164,7 @@ test("batch creates a multipart question with blocks and solution slots", () => 
   const prompt = textBlock("text-1", "Differentiate the following.");
   const answerSpace = spaceBlock("space-1", 6);
   answerSpace.visibility = "student";
-  const solution = textBlock("solution-1", "**Solution.**");
+  const solution = textBlock("solution-1", "\n");
   solution.visibility = "solution";
 
   const result = applyMauthActions(

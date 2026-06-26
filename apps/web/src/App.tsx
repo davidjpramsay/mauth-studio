@@ -248,6 +248,13 @@ const DEFAULT_WORKSHEET_FORMATTING_CONFIG: FormattingConfig = {
     paddingYPx: 52,
   },
 };
+const DEFAULT_NOTES_FORMATTING_CONFIG: FormattingConfig = {
+  ...DEFAULT_WORKSHEET_FORMATTING_CONFIG,
+  id: "math-notes",
+  questionSpacing: "compact",
+  fontSize: "11pt",
+  sectionHeaders: true,
+};
 const TEST_FORMAT_PRESETS = [
   {
     id: "high-school-mathematics-test",
@@ -260,6 +267,10 @@ const TEST_FORMAT_PRESETS = [
   {
     id: "exam-booklet",
     label: "School exam booklet",
+  },
+  {
+    id: "math-notes",
+    label: "Math notes",
   },
 ];
 const NEW_TEST_TEMPLATES: Array<{
@@ -286,6 +297,12 @@ const NEW_TEST_TEMPLATES: Array<{
     description: "Compact heading with questions starting immediately on the first page.",
     formatPresetId: "worksheet",
   },
+  {
+    id: "notes",
+    title: "Math notes",
+    description: "Printable notes with headings, Markdown-style text, diagrams, tables, columns, and examples.",
+    formatPresetId: "math-notes",
+  },
 ];
 const QUESTION_GAP_PX = 32;
 const WORKSHEET_QUESTION_GAP_PX = 16;
@@ -302,7 +319,7 @@ const WHEEL_DELTA_PAGE = 2;
 const DEFAULT_SOLUTION_SLOT_LINES = 8;
 const MIN_SOLUTION_SLOT_LINES = 4;
 const MAX_SOLUTION_SLOT_LINES = 18;
-const DEFAULT_SOLUTION_SLOT_TEXT = "**Solution.**\n\n";
+const DEFAULT_SOLUTION_SLOT_TEXT = "\n";
 const LOGO_LIBRARY_STORAGE_KEY = "mauth-studio.logo-library.v1";
 const LOGO_STARTER_SEED_STORAGE_KEY = "mauth-studio.logo-starter-seed.v1";
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
@@ -316,6 +333,7 @@ const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
 const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 const LOCAL_DRAFT_DEBOUNCE_MS = 250;
+const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
 const STARTER_LOGOS: LogoAsset[] = [
   {
     id: "acc-logo",
@@ -359,9 +377,9 @@ const DEFAULT_EXAM_TITLE_PAGE: ExamTitlePageConfig = {
   examHeading: "Semester One Examination, 2021",
   bookletTitle: "Question/Answer booklet",
   candidateLabelText: "",
-  studentNumberLabel: "WA student number:",
-  studentNumberFiguresLabel: "In figures",
-  studentNumberWordsLabel: "In words",
+  studentNumberLabel: "NAME:",
+  studentNumberFiguresLabel: "",
+  studentNumberWordsLabel: "",
   timeTitle: "Time allowed for this section",
   readingTimeLabel: "Reading time before commencing work:",
   readingTime: "five minutes",
@@ -410,7 +428,6 @@ const DEFAULT_EXAM_TITLE_PAGE: ExamTitlePageConfig = {
   instructionsTitle: "Instructions to candidates",
   instructionsBody:
     "1. The rules for the conduct of the Western Australian external examinations are detailed in the Year 12 Information Handbook 2020: Part II Examinations. Sitting this examination implies that you agree to abide by these rules.\n\n2. Write your answers in this Question/Answer booklet preferably using a blue/black pen. Do not use erasable or gel pens.\n\n3. You must be careful to confine your answers to the specific questions asked and to follow any instructions that are specific to a particular question.\n\n4. Show all your working clearly. Your working should be in sufficient detail to allow your answers to be checked readily and for marks to be awarded for reasoning. Incorrect answers given without supporting reasoning cannot be allocated any marks. For any question or part question worth more than two marks, valid working or justification is required to receive full marks. If you repeat any question, ensure that you cancel the answer you do not wish to have marked.\n\n5. It is recommended that you do not use pencil, except in diagrams.\n\n6. Supplementary pages for planning/continuing your answers to questions are provided at the end of this Question/Answer booklet. If you use these pages to continue an answer, indicate at the original answer where the answer is continued, i.e. give the page number.\n\n7. The Formula sheet is not to be handed in with your Question/Answer booklet.",
-  cutOffNotice: "DO NOT WRITE IN THIS AREA AS IT WILL BE CUT OFF",
   footerText: "See next page",
   endOfQuestionsFooterText: "End of questions",
   supplementaryPageTitle: "Supplementary page",
@@ -435,6 +452,18 @@ const DEFAULT_WORKSHEET_FRONT_MATTER: FrontMatterConfig = {
   assessmentTitle: "Worksheet",
   showAssessmentSubtitle: false,
   assessmentSubtitle: "",
+  showDeclaration: false,
+  showInstructions: false,
+};
+const DEFAULT_NOTES_FRONT_MATTER: FrontMatterConfig = {
+  ...DEFAULT_FRONT_MATTER,
+  titlePageTemplate: "notes",
+  subjectTitle: "Mathematics",
+  assessmentTitle: "Math Notes",
+  nameLabel: "",
+  markLabel: "",
+  showAssessmentSubtitle: true,
+  assessmentSubtitle: "Definitions, worked examples, diagrams, and reminders",
   showDeclaration: false,
   showInstructions: false,
 };
@@ -530,6 +559,7 @@ type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "
 interface QuestionBlock {
   id: string;
   section: string;
+  text?: string;
   marks: number;
   contentBlocks: EditorContentBlock[];
   parts: EditorPart[];
@@ -613,6 +643,7 @@ interface PointerSubsectionDragSession {
 interface QuestionDropPreview {
   questionId: string;
   placement: Exclude<DropPlacement, "inside">;
+  surface?: "question" | "pageBreakBoundary";
 }
 
 interface PageBreakDropPreview {
@@ -667,6 +698,7 @@ interface AutosavedEditorSnapshot extends EditorHistorySnapshot {
   logo?: LogoAsset;
   activeProjectFilePath?: string;
   activeProjectFileRevision?: number;
+  documentOpen?: boolean;
   updatedAt?: string;
 }
 
@@ -683,7 +715,7 @@ interface LogoAsset {
   schoolName?: string;
 }
 
-type TitlePageTemplate = "standard" | "exam" | "worksheet";
+type TitlePageTemplate = "standard" | "exam" | "worksheet" | "notes";
 type ExamSectionPresetId = "section-one-calculator-free" | "section-two-calculator-assumed";
 
 interface ExamStructureRowConfig {
@@ -731,7 +763,6 @@ interface ExamTitlePageConfig {
   structureRows: ExamStructureRowConfig[];
   instructionsTitle: string;
   instructionsBody: string;
-  cutOffNotice: string;
   footerText: string;
   endOfQuestionsFooterText: string;
   supplementaryPageTitle: string;
@@ -876,17 +907,19 @@ function assessmentTitleText(value: string) {
 }
 
 function titlePageTemplateFromValue(value: unknown): TitlePageTemplate {
-  if (value === "exam" || value === "worksheet") return value;
+  if (value === "exam" || value === "worksheet" || value === "notes") return value;
   return "standard";
 }
 
 function titlePageTemplateLabel(template: TitlePageTemplate) {
   if (template === "exam") return "School exam booklet";
   if (template === "worksheet") return "Worksheet";
+  if (template === "notes") return "Math notes";
   return "School test title page";
 }
 
 function projectFileTypeForFrontMatter(frontMatter: FrontMatterConfig) {
+  if (frontMatter.titlePageTemplate === "notes") return "notes";
   return frontMatter.titlePageTemplate === "worksheet" ? "worksheet" : "test";
 }
 
@@ -997,7 +1030,6 @@ function normalizeExamTitlePage(value: unknown): ExamTitlePageConfig {
     structureRows,
     instructionsTitle: stringOrDefault(record?.instructionsTitle, DEFAULT_EXAM_TITLE_PAGE.instructionsTitle),
     instructionsBody: stringOrDefault(record?.instructionsBody, DEFAULT_EXAM_TITLE_PAGE.instructionsBody),
-    cutOffNotice: stringOrDefault(record?.cutOffNotice, DEFAULT_EXAM_TITLE_PAGE.cutOffNotice),
     footerText: stringOrDefault(record?.footerText, DEFAULT_EXAM_TITLE_PAGE.footerText),
     endOfQuestionsFooterText: stringOrDefault(record?.endOfQuestionsFooterText, DEFAULT_EXAM_TITLE_PAGE.endOfQuestionsFooterText),
     supplementaryPageTitle: stringOrDefault(record?.supplementaryPageTitle, DEFAULT_EXAM_TITLE_PAGE.supplementaryPageTitle),
@@ -1036,7 +1068,8 @@ function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
     logoId: typeof candidate.logoId === "string" ? candidate.logoId : DEFAULT_FRONT_MATTER.logoId,
     schoolName: typeof candidate.schoolName === "string" ? candidate.schoolName : DEFAULT_FRONT_MATTER.schoolName,
     subjectTitle: typeof candidate.subjectTitle === "string" ? candidate.subjectTitle : DEFAULT_FRONT_MATTER.subjectTitle,
-    assessmentTitle: titlePageTemplate === "worksheet" ? rawAssessmentTitle : assessmentTitleText(rawAssessmentTitle),
+    assessmentTitle:
+      titlePageTemplate === "worksheet" || titlePageTemplate === "notes" ? rawAssessmentTitle : assessmentTitleText(rawAssessmentTitle),
     nameLabel: typeof candidate.nameLabel === "string" ? candidate.nameLabel : DEFAULT_FRONT_MATTER.nameLabel,
     markLabel: typeof candidate.markLabel === "string" ? candidate.markLabel : DEFAULT_FRONT_MATTER.markLabel,
     startQuestionNumber,
@@ -1094,6 +1127,7 @@ function formattingPresetLabel(formattingConfig: FormattingConfig) {
 
 function formattingConfigForPresetId(presetId: FormattingConfig["id"]): FormattingConfig {
   if (presetId === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FORMATTING_CONFIG);
+  if (presetId === "math-notes") return cloneSerializable(DEFAULT_NOTES_FORMATTING_CONFIG);
   return {
     ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
     id: presetId ?? DEFAULT_FORMATTING_CONFIG.id,
@@ -1206,13 +1240,39 @@ function tableBlock(): EditorContentBlock {
   };
 }
 
-function diagramBlock(): EditorContentBlock {
+function diagramBlock(graphConfig: GraphConfig = DEFAULT_2D_GRAPH): EditorContentBlock {
   return {
     id: id("diagram"),
     kind: "diagram",
     diagramAlign: "center",
-    graphConfig: withGraphDefaults(DEFAULT_2D_GRAPH),
+    graphConfig: withGraphDefaults(graphConfig),
   };
+}
+
+function diagramBlockForType(type: string): EditorContentBlock {
+  const baseConfig = withGraphDefaults(DEFAULT_2D_GRAPH);
+  return diagramBlock(updateGraphConfig(baseConfig, diagramTypePatch(type, baseConfig)));
+}
+
+const QUICK_INSERT_DIAGRAM_TYPES = [
+  { value: "graph2d", label: "2D graph" },
+  { value: "statsChart", label: "Statistics chart" },
+  { value: "geometry2d", label: "2D diagram" },
+  { value: "vector2d", label: "Vector graph" },
+  { value: "graph3d", label: "3D graph" },
+  { value: "geometricConstruction", label: "Geometric construction" },
+  { value: "network", label: "Network" },
+  { value: "setDiagram", label: "Set diagram" },
+  { value: "image", label: "Image" },
+];
+
+function quickDiagramInsertActions(onAddDiagramType: (type: string) => void) {
+  return QUICK_INSERT_DIAGRAM_TYPES.map((diagramType) => ({
+    label: diagramType.label,
+    tooltip: `Add ${diagramType.label.toLowerCase()} here`,
+    icon: <ImagePlus className="size-4" aria-hidden="true" />,
+    onClick: () => onAddDiagramType(diagramType.value),
+  }));
 }
 
 function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): EditorContentBlock {
@@ -1845,10 +1905,29 @@ function createQuestion(): QuestionBlock {
   return {
     id: id("question"),
     section: "Algebra",
+    text: "",
     marks: 0,
     contentBlocks: [],
     parts: [],
     itemOrder: [],
+    pageBreakAfter: false,
+  };
+}
+
+function createNotesSection(): QuestionBlock {
+  const introBlock: EditorContentBlock = {
+    id: id("text"),
+    kind: "text",
+    text: "Use this space for definitions, worked examples, diagrams, tables, columns, and reminders.",
+  };
+  return {
+    id: id("notes"),
+    section: "Introduction",
+    text: "",
+    marks: 0,
+    contentBlocks: [introBlock],
+    parts: [],
+    itemOrder: [{ kind: "block", id: introBlock.id }],
     pageBreakAfter: false,
   };
 }
@@ -2132,10 +2211,23 @@ function spaceLines(value: unknown) {
   return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 3;
 }
 
+function spaceShowsLines(value: unknown) {
+  return value !== false;
+}
+
 function defaultSolutionSlotLines(marks: number) {
   const safeMarks = safeMarkValue(marks);
   if (!safeMarks) return DEFAULT_SOLUTION_SLOT_LINES;
   return Math.max(MIN_SOLUTION_SLOT_LINES, Math.min(MAX_SOLUTION_SLOT_LINES, Math.ceil(safeMarks * 3 + 2)));
+}
+
+function defaultSolutionSlotLinesForDocument(frontMatter: FrontMatterConfig, marks: number) {
+  const baseLines = defaultSolutionSlotLines(marks);
+  if (frontMatter.titlePageTemplate !== "exam") return baseLines;
+
+  const safeMarks = safeMarkValue(marks);
+  const generousExamLines = safeMarks ? Math.ceil(safeMarks * 3 + 4) : DEFAULT_SOLUTION_SLOT_LINES + 2;
+  return Math.max(baseLines, Math.min(MAX_SOLUTION_SLOT_LINES, generousExamLines));
 }
 
 function requestedSolutionSlotLines(defaultLines: number) {
@@ -2150,6 +2242,12 @@ function defaultSavedTestName(frontMatter: FrontMatterConfig) {
     .filter(Boolean)
     .join(" - ");
   return name || "Untitled test";
+}
+
+function printFileNameForDocument(frontMatter: FrontMatterConfig, baseName: string, showSolutions: boolean) {
+  const cleanBaseName = safeProjectFileName(baseName || defaultSavedTestName(frontMatter));
+  if (frontMatter.titlePageTemplate === "notes") return cleanBaseName;
+  return `${cleanBaseName} - ${showSolutions ? "Solutions" : "Student"}`;
 }
 
 function formatShortDateTime(value: unknown) {
@@ -2344,6 +2442,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           id: blockId,
           kind: "space",
           lines: spaceLines(record.lines),
+          showLines: spaceShowsLines(record.showLines),
           ...blockVisibilityFields(visibility),
         },
       ];
@@ -2420,6 +2519,7 @@ function normalizeQuestionBlocks(value: unknown): QuestionBlock[] {
       withNormalizedQuestionOrder({
         id: typeof record.id === "string" ? record.id : id("question"),
         section: typeof record.section === "string" ? record.section : "Algebra",
+        text: typeof record.text === "string" ? record.text : "",
         marks,
         contentBlocks: filteredContentBlocks,
         parts,
@@ -2550,6 +2650,7 @@ function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null
       typeof record.activeProjectFileRevision === "number" && Number.isInteger(record.activeProjectFileRevision)
         ? record.activeProjectFileRevision
         : undefined,
+    documentOpen: typeof record.documentOpen === "boolean" ? record.documentOpen : undefined,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
   };
 }
@@ -4229,12 +4330,14 @@ function UploadedImageDiagram({ graphConfig }: { graphConfig?: GraphConfig | nul
 
 function DiagramPreview({
   graphConfig,
+  anchor,
   measureOnly = false,
   showSolutions = true,
   solutionTone = false,
   onGraphConfigChange,
 }: {
   graphConfig?: GraphConfig | null;
+  anchor?: string;
   measureOnly?: boolean;
   showSolutions?: boolean;
   solutionTone?: boolean;
@@ -4261,7 +4364,7 @@ function DiagramPreview({
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
     case "geometry2d":
-      return <FunctionGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return <FunctionGraph graphConfig={config} previewAnchor={anchor} onGraphConfigChange={visibleGraphConfigChange} />;
     case "vector2d":
       return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "graph3d":
@@ -4274,6 +4377,7 @@ function DiagramPreview({
       return (
         <FunctionGraph
           graphConfig={config}
+          previewAnchor={anchor}
           solutionColor={solutionColor}
           solutionFeatureColor={solutionFeatureColor}
           onGraphConfigChange={visibleGraphConfigChange}
@@ -4641,9 +4745,14 @@ function contentBlocksHaveVisibilityReplacementSlot(blocks: EditorContentBlock[]
   return false;
 }
 
+function promptTextBlock(id: string, text?: string): Extract<EditorContentBlock, { kind: "text" }> | null {
+  const trimmed = text?.trim();
+  return trimmed ? { id, kind: "text", text: trimmed } : null;
+}
+
 interface PreviewSegment {
   id: string;
-  kind: "worksheet-header" | "section-heading" | "question-start" | "question-block" | "part-group" | "page-break";
+  kind: "worksheet-header" | "notes-header" | "section-heading" | "question-start" | "question-block" | "part-group" | "page-break";
   questionIndex?: number;
   spacingTop: number;
   sectionHeading?: DocumentSectionHeading;
@@ -4780,7 +4889,7 @@ function A4PreviewPageFrame({ children, last = false }: { children: ReactNode; l
 }
 
 function frontMatterPageCount(frontMatter: FrontMatterConfig) {
-  if (frontMatter.titlePageTemplate === "worksheet") return 0;
+  if (frontMatter.titlePageTemplate === "worksheet" || frontMatter.titlePageTemplate === "notes") return 0;
   return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
 }
 
@@ -5010,12 +5119,12 @@ function buildPreviewSegments(
     topLevelItemCount += 1;
   });
 
-  if (frontMatter.titlePageTemplate !== "worksheet") return questionSegments;
+  if (frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes") return questionSegments;
 
   return [
     {
-      id: "worksheet-header",
-      kind: "worksheet-header",
+      id: frontMatter.titlePageTemplate === "notes" ? "notes-header" : "worksheet-header",
+      kind: frontMatter.titlePageTemplate === "notes" ? "notes-header" : "worksheet-header",
       spacingTop: 0,
     },
     ...questionSegments,
@@ -5110,6 +5219,29 @@ function buildMeasuredPages(
   return pages;
 }
 
+function buildExplicitBreakPages(segments: PreviewSegment[]): PreviewPage[] {
+  if (!segments.length) return [{ segmentIndexes: [], overflow: false }];
+
+  const pages: PreviewPage[] = [];
+  let currentSegmentIndexes: number[] = [];
+
+  const pushCurrentPage = () => {
+    pages.push({ segmentIndexes: currentSegmentIndexes, overflow: false });
+    currentSegmentIndexes = [];
+  };
+
+  segments.forEach((segment, segmentIndex) => {
+    if (segment.kind === "page-break") {
+      if (currentSegmentIndexes.length) pushCurrentPage();
+      return;
+    }
+    currentSegmentIndexes.push(segmentIndex);
+  });
+
+  if (currentSegmentIndexes.length || !pages.length) pushCurrentPage();
+  return pages;
+}
+
 function examStructureRows(frontMatter: FrontMatterConfig, totalMarks: number, questionCount: number) {
   const exam = normalizeExamTitlePage(frontMatter.exam);
   return exam.structureRows.map((row) =>
@@ -5139,6 +5271,12 @@ function ExamTextLines({ text }: { text: string }) {
       ))}
     </>
   );
+}
+
+function examStudentNameLabel(exam: ExamTitlePageConfig) {
+  const label = exam.studentNumberLabel.trim();
+  if (!label || /^(?:wa\s+)?student\s+number:?$/i.test(label)) return "NAME:";
+  return label;
 }
 
 function ExamInstructionList({ text }: { text: string }) {
@@ -5190,15 +5328,6 @@ function SchoolExamRunningHeader({
         <FrontMatterInlineText text={rightText} />
       </strong>
     </header>
-  );
-}
-
-function SchoolExamCutOffNotice({ text, side = "right" }: { text: string; side?: "left" | "right" }) {
-  if (!text.trim()) return null;
-  return (
-    <aside className={cn("school-exam-cut-off-notice", side === "left" && "school-exam-cut-off-notice-left")}>
-      <FrontMatterInlineText text={text} />
-    </aside>
   );
 }
 
@@ -5273,26 +5402,10 @@ function ExamCoverPage({
           ) : null}
         </div>
         <div className="school-exam-student-number">
-          <div className="school-exam-student-number-figures">
-            <span>
-              <FrontMatterInlineText text={exam.studentNumberLabel} />
-            </span>
-            <span>
-              <FrontMatterInlineText text={exam.studentNumberFiguresLabel} />
-            </span>
-            <div className="exam-student-number-boxes" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-          </div>
-          <div className="school-exam-student-number-words">
-            <span>
-              <FrontMatterInlineText text={exam.studentNumberWordsLabel} />
-            </span>
-            <span aria-hidden="true" />
-            <span aria-hidden="true" />
-          </div>
+          <span>
+            <FrontMatterInlineText text={examStudentNameLabel(exam)} />
+          </span>
+          <span className="school-exam-student-name-line" aria-hidden="true" />
         </div>
       </section>
 
@@ -5416,7 +5529,6 @@ function ExamStructurePage({
         </h2>
         <ExamInstructionList text={exam.instructionsBody} />
       </section>
-      <SchoolExamCutOffNotice text={exam.cutOffNotice} />
       <SchoolExamPageFooter text={exam.footerText} />
     </section>
   );
@@ -5438,7 +5550,6 @@ function SchoolExamSupplementaryPage({ frontMatter, pageNumber }: { frontMatter:
               <FrontMatterInlineText text={`${exam.supplementaryQuestionNumberLabel} ________`} />
             </p>
           </section>
-          <SchoolExamCutOffNotice text={exam.cutOffNotice} side="left" />
         </div>
       </div>
     </section>
@@ -5620,6 +5731,59 @@ function WorksheetHeaderPreview({
   );
 }
 
+function NotesHeaderPreview({
+  frontMatter,
+  logo,
+  activePreviewAnchor,
+}: {
+  frontMatter: FrontMatterConfig;
+  logo?: LogoAsset;
+  activePreviewAnchor?: string;
+}) {
+  const schoolName = frontMatter.schoolName
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <header
+      className="notes-header"
+      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+      data-preview-structure-anchor="true"
+      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FRONT_MATTER, activePreviewAnchor)}
+    >
+      {logo ? (
+        <div className="notes-mini-logo">
+          <img src={logo.src} alt={`${logo.name} logo`} />
+        </div>
+      ) : null}
+      <div className="notes-title-copy">
+        {schoolName ? (
+          <p className="notes-school-name">
+            <FrontMatterInlineText text={schoolName} />
+          </p>
+        ) : null}
+        <h1>
+          <FrontMatterInlineText text={frontMatter.assessmentTitle || "Math Notes"} />
+        </h1>
+        <p className="notes-subject-line">
+          <FrontMatterInlineText text={frontMatter.subjectTitle || "Mathematics"} />
+        </p>
+        {frontMatter.showAssessmentSubtitle && frontMatter.assessmentSubtitle.trim() ? (
+          <p className="notes-subtitle-line">
+            <FrontMatterInlineText text={frontMatter.assessmentSubtitle} />
+          </p>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+function notesSectionTitle(question: QuestionBlock, index: number) {
+  return question.text?.trim() || question.section.trim() || `Heading ${index + 1}`;
+}
+
 function FrontMatterPreviewPages({
   frontMatter,
   logo,
@@ -5635,7 +5799,7 @@ function FrontMatterPreviewPages({
   activePreviewAnchor?: string;
   showPageBreaks: boolean;
 }) {
-  if (frontMatter.titlePageTemplate === "worksheet") return null;
+  if (frontMatter.titlePageTemplate === "worksheet" || frontMatter.titlePageTemplate === "notes") return null;
 
   if (frontMatter.titlePageTemplate === "exam") {
     return (
@@ -5714,6 +5878,14 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
     );
   }
 
+  if (segment.kind === "notes-header") {
+    return (
+      <div className="test-preview-segment notes-header-segment" data-measure-segment={measureOnly ? "true" : undefined}>
+        <NotesHeaderPreview frontMatter={frontMatter} logo={logo} activePreviewAnchor={measureOnly ? undefined : activePreviewAnchor} />
+      </div>
+    );
+  }
+
   if (segment.kind === "section-heading" && segment.sectionHeading) {
     const anchor = sectionHeadingScrollAnchor(segment.sectionHeading.id);
     return (
@@ -5733,17 +5905,34 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
   }
 
   if (segment.kind === "question-start" && segment.question) {
+    const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
+    const questionPromptBlock = isNotesTemplate ? null : promptTextBlock(`${segment.question.id}:prompt`, segment.question.text);
     return (
       <div
-        className="test-preview-segment test-question-start"
+        className={cn("test-preview-segment test-question-start", isNotesTemplate && "notes-section-start")}
         data-scroll-anchor={measureOnly ? undefined : questionScrollAnchor(segment.question.id)}
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
       >
         <div className="test-question-header flex items-start justify-between gap-4">
-          <h3 className="font-bold">Question {questionNumber}</h3>
-          <span className="whitespace-nowrap font-bold">{showMarks ? markLabel(questionMarks(segment.question)) : ""}</span>
+          <h3 className="font-bold">
+            {isNotesTemplate ? <FrontMatterInlineText text={notesSectionTitle(segment.question, segment.questionIndex ?? 0)} /> : null}
+            {!isNotesTemplate ? `Question ${questionNumber}` : null}
+          </h3>
+          <span className="whitespace-nowrap font-bold">
+            {showMarks && !isNotesTemplate ? markLabel(questionMarks(segment.question)) : ""}
+          </span>
         </div>
+        {questionPromptBlock ? (
+          <div className="test-question-prompt-row">
+            <PreviewContentBlocks
+              blocks={[questionPromptBlock]}
+              measureOnly={measureOnly}
+              showSolutions={showSolutions}
+              activePreviewAnchor={activePreviewAnchor}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -5776,12 +5965,14 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
   if (segment.kind === "part-group" && segment.question && segment.part) {
     const question = segment.question;
     const part = segment.part;
+    const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
     const hasSubparts = part.subparts.length > 0;
     const partLabel = alphaLabel(segment.partIndex ?? 0);
     const partItems = segment.partItems ?? orderedPartItems(part);
     const visiblePartBlockRowIds = previewPartBlockRowIds(partItems, showSolutions);
     const firstContentItemId = visiblePartBlockRowIds[0];
-    const showPartLabel = segment.showPartLabel !== false;
+    const showPartLabel = !isNotesTemplate && segment.showPartLabel !== false;
+    const partPromptBlock = promptTextBlock(`${part.id}:prompt`, part.text);
     return (
       <section
         className="test-preview-segment test-part-group"
@@ -5791,7 +5982,20 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
       >
-        {showPartLabel && hasSubparts && !visiblePartBlockRowIds.length ? (
+        {showPartLabel && partPromptBlock ? (
+          <div className="test-question-part">
+            <span className="test-part-label">({partLabel})</span>
+            <div className="test-part-content">
+              <PreviewContentBlocks
+                blocks={[partPromptBlock]}
+                measureOnly={measureOnly}
+                showSolutions={showSolutions}
+                activePreviewAnchor={activePreviewAnchor}
+              />
+            </div>
+            <span className="test-part-mark">{showMarks && !hasSubparts ? markLabel(part.marks) : ""}</span>
+          </div>
+        ) : showPartLabel && hasSubparts && !visiblePartBlockRowIds.length ? (
           <div className="test-question-part">
             <span className="test-part-label">({partLabel})</span>
             <div className="test-part-content" />
@@ -5842,7 +6046,9 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                       item.block.kind === "text" && isSolutionTextBlock(item.block) && "test-solution-row",
                     )}
                   >
-                    <span className="test-part-label">{showPartLabel && item.id === firstContentItemId ? `(${partLabel})` : ""}</span>
+                    <span className="test-part-label">
+                      {showPartLabel && !partPromptBlock && item.id === firstContentItemId ? `(${partLabel})` : ""}
+                    </span>
                     <div className="test-part-content">
                       <PreviewContentBlocks
                         blocks={rowBlocks}
@@ -5856,7 +6062,7 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                       />
                     </div>
                     <span className="test-part-mark">
-                      {showMarks && !hasSubparts && item.id === firstContentItemId ? markLabel(part.marks) : ""}
+                      {showMarks && !hasSubparts && !partPromptBlock && item.id === firstContentItemId ? markLabel(part.marks) : ""}
                     </span>
                   </div>,
                 );
@@ -5867,6 +6073,8 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
               }
 
               const subpartIndex = part.subparts.findIndex((subpart) => subpart.id === item.subpart.id);
+              const subpartPromptBlock = promptTextBlock(`${item.subpart.id}:prompt`, item.subpart.text);
+              const subpartBlocks = subpartPromptBlock ? [subpartPromptBlock, ...item.subpart.contentBlocks] : item.subpart.contentBlocks;
               rows.push(
                 <div
                   key={item.subpart.id}
@@ -5882,14 +6090,18 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                     contentBlocksHaveVisibilityReplacementSlot(item.subpart.contentBlocks) && "test-question-row-with-visibility-slot",
                   )}
                 >
-                  <span className="test-part-label">({romanLabel(Math.max(0, subpartIndex))})</span>
+                  <span className="test-part-label">{isNotesTemplate ? "" : `(${romanLabel(Math.max(0, subpartIndex))})`}</span>
                   <div className="test-part-content">
                     <PreviewContentBlocks
-                      blocks={item.subpart.contentBlocks}
+                      blocks={subpartBlocks}
                       measureOnly={measureOnly}
                       showSolutions={showSolutions}
                       activePreviewAnchor={activePreviewAnchor}
-                      blockAnchorFor={(block) => subpartBlockScrollAnchor(question.id, part.id, item.subpart.id, block.id)}
+                      blockAnchorFor={(block) =>
+                        block.id === subpartPromptBlock?.id
+                          ? undefined
+                          : subpartBlockScrollAnchor(question.id, part.id, item.subpart.id, block.id)
+                      }
                       onGraphConfigChange={(blockId, graphConfig) =>
                         onGraphConfigChange?.({
                           questionId: question.id,
@@ -5951,7 +6163,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
     () => buildPreviewSegments(frontMatter, questions, sectionHeadings, documentFlow, showSolutions, normalizedFormatting),
     [documentFlow, frontMatter, normalizedFormatting, questions, sectionHeadings, showSolutions],
   );
-  const fallbackPages = useMemo<PreviewPage[]>(() => [{ segmentIndexes: segments.map((_, index) => index), overflow: false }], [segments]);
+  const fallbackPages = useMemo<PreviewPage[]>(() => buildExplicitBreakPages(segments), [segments]);
   const [pages, setPages] = useState<PreviewPage[]>(fallbackPages);
   const frontMatterLogo = useMemo(() => selectedLogoForFrontMatter(logos, frontMatter), [frontMatter, logos]);
   const exam = useMemo(() => normalizeExamTitlePage(frontMatter.exam), [frontMatter.exam]);
@@ -6027,12 +6239,16 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
 
   return (
     <div
-      className={cn("a4-preview-root", frontMatter.titlePageTemplate === "worksheet" && "a4-preview-root-worksheet")}
+      className={cn(
+        "a4-preview-root",
+        frontMatter.titlePageTemplate === "worksheet" && "a4-preview-root-worksheet",
+        frontMatter.titlePageTemplate === "notes" && "a4-preview-root-notes",
+      )}
       style={previewStyle}
     >
       <div className="a4-preview-shell">
         <div className="a4-preview-stack">
-          {frontMatter.titlePageTemplate !== "worksheet" ? (
+          {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" ? (
             <FrontMatterPreviewPages
               frontMatter={frontMatter}
               logo={frontMatterLogo}
@@ -6042,7 +6258,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
               showPageBreaks={pageFormat.showPageBreaks}
             />
           ) : null}
-          {frontMatter.titlePageTemplate !== "worksheet" && pageFormat.showPageBreaks ? (
+          {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" && pageFormat.showPageBreaks ? (
             <div className="a4-page-break" aria-hidden="true">
               <span>A4 page break</span>
             </div>
@@ -6065,7 +6281,6 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
                           A single block in this question is taller than the available A4 page space.
                         </div>
                       ) : null}
-                      {isExamTemplate ? <SchoolExamCutOffNotice text={exam.cutOffNotice} /> : null}
                       {isExamTemplate ? (
                         <SchoolExamPageFooter text={isLastQuestionPage ? exam.endOfQuestionsFooterText : exam.footerText} />
                       ) : null}
@@ -6151,6 +6366,7 @@ interface ColumnsBlockEditorProps {
   anchor?: string;
   activeAnchor?: string;
   showSolutions?: boolean;
+  spaceLabelPrefix?: string;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -6169,6 +6385,7 @@ function ColumnsBlockEditor({
   anchor,
   activeAnchor,
   showSolutions = true,
+  spaceLabelPrefix = "Answer space",
   dragHandle,
   muted = false,
   active = false,
@@ -6183,6 +6400,12 @@ function ColumnsBlockEditor({
   const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
   const addColumnBlock = (columnIndex: number, kind: ColumnsChildBlockKind) => {
     const block = contentBlockForKind(kind);
+    const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, block] : column));
+    updateColumns(columns);
+    if (anchor) onActivateAnchor?.(columnChildScrollAnchor(anchor, columnIndex, block.id));
+  };
+  const addColumnDiagramBlock = (columnIndex: number, type: string) => {
+    const block = diagramBlockForType(type);
     const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, block] : column));
     updateColumns(columns);
     if (anchor) onActivateAnchor?.(columnChildScrollAnchor(anchor, columnIndex, block.id));
@@ -6226,16 +6449,18 @@ function ColumnsBlockEditor({
     };
 
     if (child.kind === "space") {
+      const spaceLabel = `${spaceLabelPrefix} ${childNumber}`;
       return wrapChild(
         <SpaceBlockEditor
-          label={`${childLabelPrefix} answer space ${childNumber}`}
-          title={<InlineSummaryTitle label={`Answer space ${childNumber}`} summary={spaceBlockSummary(child.lines)} />}
+          label={`${childLabelPrefix} ${spaceLabelPrefix.toLowerCase()} ${childNumber}`}
+          title={<InlineSummaryTitle label={spaceLabel} summary={spaceBlockSummary(child.lines)} />}
           lines={child.lines}
+          showLines={child.showLines ?? true}
           settingsMode="inspector"
           muted
           active={childActive}
           openSignal={childOpenSignal}
-          onChange={(lines) => updateColumnBlock(columnIndex, child.id, { lines })}
+          onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch)}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
         />,
       );
@@ -6307,6 +6532,7 @@ function ColumnsBlockEditor({
           anchor={childAnchor}
           activeAnchor={activeAnchor}
           showSolutions={showSolutions}
+          spaceLabelPrefix={spaceLabelPrefix}
           muted
           active={childActive}
           openSignal={childOpenSignal}
@@ -6363,6 +6589,7 @@ function ColumnsBlockEditor({
               onAddChoices={() => addColumnBlock(columnIndex, "choices")}
               onAddTable={() => addColumnBlock(columnIndex, "table")}
               onAddDiagram={() => addColumnBlock(columnIndex, "diagram")}
+              diagramActions={quickDiagramInsertActions((type) => addColumnDiagramBlock(columnIndex, type))}
               onAddSpace={() => addColumnBlock(columnIndex, "space")}
             />
           </section>
@@ -6401,17 +6628,21 @@ function HeaderFileControls({
   fileStatusMessage,
   fileStatusTitle,
   saveStatus,
+  documentOpen,
   onNewTest,
   onSaveTest,
   onOpenFiles,
+  onCloseFile,
 }: {
   currentFileName: string;
   fileStatusMessage: string;
   fileStatusTitle: string;
   saveStatus: HeaderSaveStatus;
+  documentOpen: boolean;
   onNewTest: () => void;
   onSaveTest: () => void;
   onOpenFiles: () => void;
+  onCloseFile: () => void;
 }) {
   return (
     <div className="flex w-auto max-w-full shrink-0 items-center gap-2 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
@@ -6440,6 +6671,7 @@ function HeaderFileControls({
         size="icon"
         title="Save current test"
         aria-label="Save current test"
+        disabled={!documentOpen}
         onClick={onSaveTest}
         className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
       >
@@ -6456,6 +6688,18 @@ function HeaderFileControls({
       >
         <FolderOpen className="size-4" aria-hidden="true" />
         Files
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        title="Close current file"
+        aria-label="Close current file"
+        disabled={!documentOpen}
+        onClick={onCloseFile}
+        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
+      >
+        <X />
       </Button>
     </div>
   );
@@ -6796,7 +7040,7 @@ function NewTestDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" onMouseDown={onClose}>
       <section
-        className="w-full max-w-2xl rounded-xl border bg-background shadow-2xl"
+        className="w-full max-w-4xl rounded-xl border bg-background shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-test-dialog-title"
@@ -6813,7 +7057,7 @@ function NewTestDialog({
             <X />
           </Button>
         </header>
-        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-4">
           {NEW_TEST_TEMPLATES.map((template) => (
             <button
               key={template.id}
@@ -6826,6 +7070,8 @@ function NewTestDialog({
                   <ListTree className="size-5" aria-hidden="true" />
                 ) : template.id === "worksheet" ? (
                   <Columns3 className="size-5" aria-hidden="true" />
+                ) : template.id === "notes" ? (
+                  <Heading2 className="size-5" aria-hidden="true" />
                 ) : (
                   <FileText className="size-5" aria-hidden="true" />
                 )}
@@ -6880,6 +7126,7 @@ function FrontMatterEditor({
   }
 
   const titlePageTemplate = frontMatter.titlePageTemplate ?? "standard";
+  const isCompactDocumentTemplate = titlePageTemplate === "worksheet" || titlePageTemplate === "notes";
   const exam = normalizeExamTitlePage(frontMatter.exam);
   const activeExamSectionPreset = examSectionPresetById(exam.sectionPreset);
   const updateExam = (patch: Partial<ExamTitlePageConfig>) => onChange({ exam: { ...exam, ...patch } });
@@ -6923,7 +7170,7 @@ function FrontMatterEditor({
           <InlineSummaryTitle
             label="Title"
             summary={`${frontMatter.subjectTitle} - ${
-              titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+              isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
             }`}
           />
         }
@@ -6957,7 +7204,7 @@ function FrontMatterEditor({
               </select>
             </label>
           ) : null}
-          {titlePageTemplate === "worksheet" ? (
+          {isCompactDocumentTemplate ? (
             <>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Logo
@@ -7057,7 +7304,7 @@ function FrontMatterEditor({
             </div>
           )}
           <label className="flex flex-col gap-2 text-xs font-medium">
-            {titlePageTemplate === "worksheet" ? "Course" : "Subject title"}
+            {isCompactDocumentTemplate ? "Course" : "Subject title"}
             <input
               value={frontMatter.subjectTitle}
               onChange={(event) => onChange({ subjectTitle: event.target.value })}
@@ -7065,12 +7312,12 @@ function FrontMatterEditor({
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
-            {titlePageTemplate === "worksheet" ? "Worksheet title" : "Assessment title"}
+            {titlePageTemplate === "notes" ? "Notes title" : titlePageTemplate === "worksheet" ? "Worksheet title" : "Assessment title"}
             <input
-              value={titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)}
+              value={isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)}
               onChange={(event) =>
                 onChange({
-                  assessmentTitle: titlePageTemplate === "worksheet" ? event.target.value : assessmentTitleText(event.target.value),
+                  assessmentTitle: isCompactDocumentTemplate ? event.target.value : assessmentTitleText(event.target.value),
                 })
               }
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -7078,7 +7325,7 @@ function FrontMatterEditor({
           </label>
           {titlePageTemplate !== "exam" ? (
             <>
-              {titlePageTemplate !== "worksheet" ? (
+              {!isCompactDocumentTemplate ? (
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Name label
                   <input
@@ -7088,27 +7335,31 @@ function FrontMatterEditor({
                   />
                 </label>
               ) : null}
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Mark label
-                <input
-                  value={frontMatter.markLabel}
-                  onChange={(event) => onChange({ markLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
+              {titlePageTemplate !== "notes" ? (
+                <label className="flex flex-col gap-2 text-xs font-medium">
+                  Mark label
+                  <input
+                    value={frontMatter.markLabel}
+                    onChange={(event) => onChange({ markLabel: event.target.value })}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+              ) : null}
             </>
           ) : null}
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Start questions at
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={frontMatter.startQuestionNumber}
-              onChange={(event) => onChange({ startQuestionNumber: Math.max(1, Math.floor(Number(event.target.value) || 1)) })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            />
-          </label>
+          {titlePageTemplate !== "notes" ? (
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Start questions at
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={frontMatter.startQuestionNumber}
+                onChange={(event) => onChange({ startQuestionNumber: Math.max(1, Math.floor(Number(event.target.value) || 1)) })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+          ) : null}
           {titlePageTemplate !== "worksheet" ? (
             <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
               <label className="flex h-9 items-center gap-2 text-xs font-medium">
@@ -7183,26 +7434,10 @@ function FrontMatterEditor({
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
-                Student number label
+                Student name label
                 <input
                   value={exam.studentNumberLabel}
                   onChange={(event) => updateExam({ studentNumberLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Student number figures label
-                <input
-                  value={exam.studentNumberFiguresLabel}
-                  onChange={(event) => updateExam({ studentNumberFiguresLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Student number words label
-                <input
-                  value={exam.studentNumberWordsLabel}
-                  onChange={(event) => updateExam({ studentNumberWordsLabel: event.target.value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
@@ -7470,14 +7705,6 @@ function FrontMatterEditor({
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
-                Cut-off notice
-                <input
-                  value={exam.cutOffNotice}
-                  onChange={(event) => updateExam({ cutOffNotice: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
                 Continued footer text
                 <input
                   value={exam.footerText}
@@ -7639,11 +7866,19 @@ function TestFormatEditor({
   onReset: () => void;
 }) {
   const normalizedFormatting = normalizeFormattingConfig(formattingConfig);
-  const summary = `${formattingPresetLabel(normalizedFormatting)} · ${normalizedFormatting.showMarks ? "marks shown" : "marks hidden"}`;
+  const showMarkControls = titlePageTemplate !== "notes";
+  const summary = showMarkControls
+    ? `${formattingPresetLabel(normalizedFormatting)} · ${normalizedFormatting.showMarks ? "marks shown" : "marks hidden"}`
+    : formattingPresetLabel(normalizedFormatting);
 
   return (
     <CollapsiblePanel
-      title={<InlineSummaryTitle label={titlePageTemplate === "worksheet" ? "Worksheet format" : "Test format"} summary={summary} />}
+      title={
+        <InlineSummaryTitle
+          label={titlePageTemplate === "notes" ? "Notes format" : titlePageTemplate === "worksheet" ? "Worksheet format" : "Test format"}
+          summary={summary}
+        />
+      }
       defaultOpen={false}
       className="bg-muted/20"
       openSignal={openSignal}
@@ -7653,16 +7888,18 @@ function TestFormatEditor({
         </Button>
       }
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="flex h-9 items-center gap-2 text-xs font-medium md:col-span-2">
-          <input
-            type="checkbox"
-            checked={normalizedFormatting.showMarks ?? true}
-            onChange={(event) => onFormattingChange({ showMarks: event.target.checked })}
-          />
-          Show mark labels on questions, parts, and subparts
-        </label>
-      </div>
+      {showMarkControls ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="flex h-9 items-center gap-2 text-xs font-medium md:col-span-2">
+            <input
+              type="checkbox"
+              checked={normalizedFormatting.showMarks ?? true}
+              onChange={(event) => onFormattingChange({ showMarks: event.target.checked })}
+            />
+            Show mark labels on questions, parts, and subparts
+          </label>
+        </div>
+      ) : null}
     </CollapsiblePanel>
   );
 }
@@ -7906,12 +8143,14 @@ function buildDocumentToc(
   documentFlow: DocumentFlowItem[],
   showSolutions: boolean,
 ) {
+  const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
+  const isCompactDocumentTemplate = frontMatter.titlePageTemplate === "worksheet" || isNotesTemplate;
   const items: DocumentTocItem[] = [
     {
       id: SCROLL_ANCHOR_FRONT_MATTER,
-      label: frontMatter.titlePageTemplate === "worksheet" ? "Worksheet heading" : "Title Page",
+      label: isNotesTemplate ? "Notes heading" : frontMatter.titlePageTemplate === "worksheet" ? "Worksheet heading" : "Title Page",
       summary: `${frontMatter.subjectTitle} - ${
-        frontMatter.titlePageTemplate === "worksheet" ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+        isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
       }`,
       kind: "title",
       depth: 0,
@@ -7932,7 +8171,7 @@ function buildDocumentToc(
       items.push({
         id: headingAnchor,
         label: heading.title.trim() || "Section heading",
-        summary: "Worksheet section",
+        summary: isNotesTemplate ? "Notes section" : "Worksheet section",
         kind: "sectionHeading",
         depth: 0,
         editorAnchor: headingAnchor,
@@ -7947,7 +8186,7 @@ function buildDocumentToc(
     const questionAnchor = questionScrollAnchor(question.id);
     items.push({
       id: questionAnchor,
-      label: `Question ${questionDisplayNumber(frontMatter, questionIndex)}`,
+      label: isNotesTemplate ? notesSectionTitle(question, questionIndex) : `Question ${questionDisplayNumber(frontMatter, questionIndex)}`,
       summary: firstTextSource(question.contentBlocks, showSolutions) || markLabel(questionMarks(question)),
       kind: "question",
       depth: 0,
@@ -7980,7 +8219,7 @@ function buildDocumentToc(
       const partAnchor = partScrollAnchor(question.id, item.part.id);
       items.push({
         id: partAnchor,
-        label: `Part (${partLabel})`,
+        label: isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`,
         summary: partPanelSummary(item.part.contentBlocks, showSolutions) || markLabel(partMarks(item.part)),
         kind: "part",
         depth: 1,
@@ -8013,7 +8252,7 @@ function buildDocumentToc(
         const subpartAnchor = subpartScrollAnchor(question.id, item.part.id, partItem.subpart.id);
         items.push({
           id: subpartAnchor,
-          label: `Subpart (${subpartLabel})`,
+          label: isNotesTemplate ? `Detail ${subpartIndex + 1}` : `Subpart (${subpartLabel})`,
           summary: partPanelSummary(partItem.subpart.contentBlocks, showSolutions) || markLabel(partItem.subpart.marks),
           kind: "subpart",
           depth: 2,
@@ -8147,6 +8386,7 @@ function tocRailLabel(item: DocumentTocItem) {
   if (item.kind === "title") return "T";
   if (item.kind === "sectionHeading") return "§";
   if (item.kind === "pageBreak") return "";
+  if (!/^Question\s+/i.test(item.label)) return "H";
   return item.label.replace(/^Question\s+/i, "");
 }
 
@@ -8306,6 +8546,7 @@ function DocumentNavigatorRail({
   onToggleEditorAtItem,
   onAddSectionHeading,
   onAddQuestion,
+  questionItemLabel = "question",
   onAddPageBreakAfterQuestion,
   onMoveQuestion,
   onMoveSectionHeading,
@@ -8317,6 +8558,9 @@ function DocumentNavigatorRail({
   onQuestionDragOver,
   onQuestionDragLeave,
   onQuestionDrop,
+  onQuestionDragOverPageBreak,
+  onQuestionDragLeavePageBreak,
+  onQuestionDropPageBreak,
   onQuestionDragEnd,
   onPageBreakDragStart,
   onPageBreakDragOver,
@@ -8340,6 +8584,7 @@ function DocumentNavigatorRail({
   onToggleEditorAtItem: (item: DocumentTocItem) => void;
   onAddSectionHeading: () => void;
   onAddQuestion: () => void;
+  questionItemLabel?: string;
   onAddPageBreakAfterQuestion: (questionId: string) => void;
   onMoveQuestion: (questionId: string, direction: MoveDirection) => void;
   onMoveSectionHeading: (sectionHeadingId: string, direction: MoveDirection) => void;
@@ -8351,6 +8596,9 @@ function DocumentNavigatorRail({
   onQuestionDragOver: (event: DragEvent<HTMLElement>, questionId: string) => void;
   onQuestionDragLeave: (event: DragEvent<HTMLElement>, questionId: string) => void;
   onQuestionDrop: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDragOverPageBreak: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDragLeavePageBreak: (event: DragEvent<HTMLElement>, questionId: string) => void;
+  onQuestionDropPageBreak: (event: DragEvent<HTMLElement>, questionId: string) => void;
   onQuestionDragEnd: () => void;
   onPageBreakDragStart: (event: DragEvent<HTMLElement>, questionId: string) => void;
   onPageBreakDragOver: (event: DragEvent<HTMLElement>, questionId: string) => void;
@@ -8396,6 +8644,11 @@ function DocumentNavigatorRail({
             const questionId = pageBreakQuestionIdFromScrollAnchor(item.editorAnchor);
             const active = item.id === activeRailItemId;
             const dragging = draggedPageBreakQuestionId === questionId;
+            const questionDropTarget =
+              draggedQuestionId &&
+              dragOverQuestion?.surface === "pageBreakBoundary" &&
+              dragOverQuestion.questionId === questionId &&
+              draggedQuestionId !== questionId;
             return (
               <button
                 key={item.id}
@@ -8423,11 +8676,25 @@ function DocumentNavigatorRail({
                   onMovePageBreak(questionId, direction);
                 }}
                 onDragStart={(event) => onPageBreakDragStart(event, questionId)}
+                onDragOver={(event) => {
+                  onQuestionDragOverPageBreak(event, questionId);
+                  onPageBreakDragOver(event, questionId);
+                }}
+                onDragLeave={(event) => {
+                  onQuestionDragLeavePageBreak(event, questionId);
+                  onPageBreakDragLeave(event, questionId);
+                }}
+                onDrop={(event) => {
+                  onQuestionDropPageBreak(event, questionId);
+                  onPageBreakDrop(event, questionId);
+                }}
                 onDragEnd={onPageBreakDragEnd}
                 className={cn(
-                  "flex h-6 w-8 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-sm border border-primary/60 bg-primary/15 text-primary transition-colors hover:bg-primary/20 active:cursor-grabbing",
+                  "relative flex h-6 w-8 shrink-0 cursor-grab touch-manipulation items-center justify-center rounded-sm border border-primary/60 bg-primary/15 text-primary transition-colors hover:bg-primary/20 active:cursor-grabbing",
                   active && "border-primary bg-primary text-primary-foreground shadow-sm hover:bg-primary",
                   dragging && "scale-95 opacity-60 shadow-lg",
+                  questionDropTarget &&
+                    "before:absolute before:-top-1.5 before:left-0 before:right-0 before:z-20 before:h-1 before:rounded-full before:bg-primary before:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] before:content-['']",
                 )}
               >
                 <SeparatorHorizontal className="size-4" aria-hidden="true" />
@@ -8443,7 +8710,10 @@ function DocumentNavigatorRail({
           const draggable = Boolean(questionId);
           const dragging = draggedQuestionId === questionId;
           const dropPlacement =
-            questionId && dragOverQuestion?.questionId === questionId && draggedQuestionId !== questionId
+            questionId &&
+            dragOverQuestion?.questionId === questionId &&
+            dragOverQuestion.surface !== "pageBreakBoundary" &&
+            draggedQuestionId !== questionId
               ? dragOverQuestion.placement
               : null;
           const pageBreakDropPlacement =
@@ -8555,8 +8825,8 @@ function DocumentNavigatorRail({
         </button>
         <button
           type="button"
-          title="Add question"
-          aria-label="Add question"
+          title={`Add ${questionItemLabel}`}
+          aria-label={`Add ${questionItemLabel}`}
           onClick={onAddQuestion}
           className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
         >
@@ -8567,11 +8837,11 @@ function DocumentNavigatorRail({
           title={
             selectedQuestionId
               ? canAddPageBreak
-                ? "Add page break after selected question"
-                : "Selected question already has a page break"
-              : "Select a question to add a page break"
+                ? `Add page break after selected ${questionItemLabel}`
+                : `Selected ${questionItemLabel} already has a page break`
+              : `Select a ${questionItemLabel} to add a page break`
           }
-          aria-label="Add page break after selected question"
+          aria-label={`Add page break after selected ${questionItemLabel}`}
           disabled={!canAddPageBreak}
           onClick={() => {
             if (selectedQuestionId) onAddPageBreakAfterQuestion(selectedQuestionId);
@@ -8757,6 +9027,7 @@ function DiagramBlockEditor({
 
 export default function App() {
   const initialEditorDraft = loadInitialEditorDraft();
+  const initialEditorDocumentOpen = initialEditorDraft?.documentOpen !== false;
   const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [createQuestion()], [initialEditorDraft]);
   const initialSectionHeadings = useMemo(() => initialEditorDraft?.sectionHeadings ?? [], [initialEditorDraft]);
   const initialDocumentFlow = useMemo(
@@ -8767,6 +9038,7 @@ export default function App() {
   const [formattingConfig, setFormattingConfig] = useState<FormattingConfig>(
     () => initialEditorDraft?.formattingConfig ?? DEFAULT_FORMATTING_CONFIG,
   );
+  const [editorDocumentOpen, setEditorDocumentOpen] = useState(initialEditorDocumentOpen);
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
   const [legacySavedTests, setLegacySavedTests] = useState<SavedTest[]>(loadLegacySavedTests);
   const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
@@ -8843,8 +9115,8 @@ export default function App() {
     setProjectSaveConflict,
     refreshProjectFiles,
   } = useProjectFilesController({
-    initialActiveProjectFilePath: initialEditorDraft?.activeProjectFilePath ?? null,
-    initialActiveProjectFileRevision: initialEditorDraft?.activeProjectFileRevision ?? null,
+    initialActiveProjectFilePath: initialEditorDocumentOpen ? (initialEditorDraft?.activeProjectFilePath ?? null) : null,
+    initialActiveProjectFileRevision: initialEditorDocumentOpen ? (initialEditorDraft?.activeProjectFileRevision ?? null) : null,
     legacySavedTests,
     storageHydrated,
     buildLegacySavedTestImport,
@@ -8870,6 +9142,7 @@ export default function App() {
   const legacySavedTestsRef = useRef(legacySavedTests);
   const activeProjectFilePathRef = useRef(activeProjectFilePath);
   const activeProjectFileRevisionRef = useRef(activeProjectFileRevision);
+  const activeProjectFileSyncInFlightRef = useRef(false);
   const undoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const redoStackRef = useRef<EditorHistorySnapshot[]>([]);
   const autosaveSequenceRef = useRef(0);
@@ -8881,6 +9154,14 @@ export default function App() {
   const previewZoomRef = useRef(1);
   const previewGestureStartZoomRef = useRef(1);
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
+  const showSolutionsRef = useRef(showSolutions);
+  const editorDocumentOpenRef = useRef(editorDocumentOpen);
+  const printOriginalDocumentTitleRef = useRef<string | null>(null);
+
+  function setEditorDocumentOpenState(open: boolean) {
+    editorDocumentOpenRef.current = open;
+    setEditorDocumentOpen(open);
+  }
 
   function updateLastProjectSaveFingerprint(nextFingerprint: string | null) {
     lastProjectSaveFingerprintRef.current = nextFingerprint;
@@ -8896,6 +9177,7 @@ export default function App() {
       formattingConfig: formattingConfigRef.current,
       activeProjectFilePath: activeProjectFilePathRef.current ?? undefined,
       activeProjectFileRevision: activeProjectFileRevisionRef.current ?? undefined,
+      documentOpen: editorDocumentOpenRef.current,
       logo: selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
     }),
     [],
@@ -8906,15 +9188,44 @@ export default function App() {
   }, []);
 
   const printDocument = useCallback(() => {
+    const activeFileName = activeProjectFilePathRef.current
+      ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePathRef.current) ?? activeProjectFilePathRef.current))
+      : defaultSavedTestName(frontMatterRef.current);
+    const printTitle = printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
+    if (printOriginalDocumentTitleRef.current === null) {
+      printOriginalDocumentTitleRef.current = document.title;
+    }
+    document.title = printTitle;
     flushSync(() => setPrintPreviewMounted(true));
-    window.print();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => window.print());
+    });
   }, []);
 
   useEffect(() => {
+    const setPrintDocumentTitle = () => {
+      const activeFileName = activeProjectFilePathRef.current
+        ? testFileDisplayName(
+            testPathBasename(testPathFromProjectPath(activeProjectFilePathRef.current) ?? activeProjectFilePathRef.current),
+          )
+        : defaultSavedTestName(frontMatterRef.current);
+      if (printOriginalDocumentTitleRef.current === null) {
+        printOriginalDocumentTitleRef.current = document.title;
+      }
+      document.title = printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
+    };
+
     const handleBeforePrint = () => {
+      setPrintDocumentTitle();
       flushSync(() => setPrintPreviewMounted(true));
     };
-    const handleAfterPrint = () => setPrintPreviewMounted(false);
+    const handleAfterPrint = () => {
+      setPrintPreviewMounted(false);
+      if (printOriginalDocumentTitleRef.current !== null) {
+        document.title = printOriginalDocumentTitleRef.current;
+        printOriginalDocumentTitleRef.current = null;
+      }
+    };
 
     window.addEventListener("beforeprint", handleBeforePrint);
     window.addEventListener("afterprint", handleAfterPrint);
@@ -8991,15 +9302,34 @@ export default function App() {
 
         const browserAutosave = loadCurrentDraft() as AutosavedEditorSnapshot | null;
         const diskAutosave = normalizeEditorSnapshot(autosaveResponse.autosave);
-        const autosave = newerAutosave(browserAutosave, diskAutosave);
+        let autosave = newerAutosave(browserAutosave, diskAutosave);
+        let autosaveProject: ProjectSummary | null = null;
+        let autosaveCleanFingerprint: string | null = null;
+        let autosaveConflict: ProjectSaveConflict | null = null;
+        if (autosave?.documentOpen === false) {
+          autosave = {
+            ...autosave,
+            activeProjectFilePath: undefined,
+            activeProjectFileRevision: undefined,
+          };
+        } else if (autosave?.activeProjectFilePath && typeof autosave.activeProjectFileRevision === "number") {
+          const resolvedAutosave = await resolveAutosaveAgainstProjectFile(autosave);
+          if (cancelled) return;
+          autosave = resolvedAutosave.snapshot;
+          autosaveProject = resolvedAutosave.project;
+          autosaveCleanFingerprint = resolvedAutosave.cleanFingerprint;
+          autosaveConflict = resolvedAutosave.conflict;
+        }
         if (autosave) {
           restoreEditorSnapshot(autosave);
+          if (autosaveProject) setActiveProject(autosaveProject);
           activeProjectFilePathRef.current = autosave.activeProjectFilePath ?? null;
           activeProjectFileRevisionRef.current = autosave.activeProjectFileRevision ?? null;
           setActiveProjectFilePath(autosave.activeProjectFilePath ?? null);
           setActiveProjectFileRevision(autosave.activeProjectFileRevision ?? null);
-          setProjectSaveConflict(null);
-          updateLastProjectSaveFingerprint(null);
+          setProjectSaveConflict(autosaveConflict);
+          updateLastProjectSaveFingerprint(autosaveCleanFingerprint);
+          setEditorDocumentOpenState(autosave.documentOpen !== false);
         }
 
         setDraftAutosaveStatus("ready");
@@ -9021,7 +9351,7 @@ export default function App() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!storageHydrated) return;
+    if (!storageHydrated || !editorDocumentOpen) return;
     if (!shouldSeedScreenshotStarter(questions)) return;
 
     const nextFrontMatter = createScreenshotStarterFrontMatter();
@@ -9043,7 +9373,7 @@ export default function App() {
     setProjectSaveConflict(null);
     updateLastProjectSaveFingerprint(null);
     window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
-  }, [storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
+  }, [editorDocumentOpen, storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
 
   useEffect(() => {
     if (!storageHydrated) return;
@@ -9056,6 +9386,7 @@ export default function App() {
     activeProjectFilePath,
     activeProjectFileRevision,
     currentDraftSnapshotForStorage,
+    editorDocumentOpen,
     formattingConfig,
     frontMatter,
     documentFlow,
@@ -9081,9 +9412,11 @@ export default function App() {
     const autosaveSequence = autosaveSequenceRef.current + 1;
     autosaveSequenceRef.current = autosaveSequence;
     setDraftAutosaveStatus("saving");
-    setDraftAutosaveMessage(activeProjectFilePath ? "Autosaving file draft" : "Autosaving draft");
+    setDraftAutosaveMessage(
+      activeProjectFilePath ? "Autosaving file draft" : editorDocumentOpen ? "Autosaving draft" : "Saving closed workspace state",
+    );
     const timeoutId = window.setTimeout(() => {
-      saveStorageAutosave<AutosavedEditorSnapshot>({
+      const autosaveSnapshot: AutosavedEditorSnapshot = {
         frontMatter,
         questions,
         sectionHeadings,
@@ -9092,20 +9425,54 @@ export default function App() {
         activeProjectFilePath: activeProjectFilePath ?? undefined,
         activeProjectFileRevision: activeProjectFileRevision ?? undefined,
         logo: selectedLogoForFrontMatter(logosRef.current, frontMatter),
-      })
-        .then((autosaveResponse) => {
-          if (autosaveSequenceRef.current !== autosaveSequence) return;
-          setDraftAutosaveStatus("saved");
-          const updatedAt = autosaveResponse.autosave.updatedAt
-            ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
-            : "now";
-          setDraftAutosaveMessage(`Autosaved draft at ${updatedAt}`);
-        })
-        .catch(() => {
+      };
+
+      async function saveDraftIfProjectRevisionIsCurrent() {
+        try {
+          if (activeProjectFilePath && typeof activeProjectFileRevision === "number") {
+            const project = activeProject ?? (await getDefaultProject());
+            const filesResponse = await listProjectFiles(project.id);
+            const summary = filesResponse.files.find((file) => file.path === activeProjectFilePath && file.kind === "file");
+            setActiveProject(project);
+            setProjectFiles(filesResponse.files);
+            if (summary && summary.revision > activeProjectFileRevision) {
+              const conflict = {
+                filePath: activeProjectFilePath,
+                message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
+                localRevision: activeProjectFileRevision,
+                currentRevision: summary.revision,
+              };
+              if (lastProjectSaveFingerprintRef.current === currentEditorDocumentFingerprint()) {
+                setDraftAutosaveStatus("ready");
+                setDraftAutosaveMessage("File changed on disk; reloading");
+                void syncActiveProjectFileFromDisk();
+                return;
+              }
+              setProjectSaveConflict(conflict);
+              setProjectFilesStatus("error");
+              setProjectFilesMessage("File changed on disk");
+              setDraftAutosaveStatus("ready");
+              setDraftAutosaveMessage("Draft not autosaved; file changed on disk");
+              return;
+            }
+          }
+
+          await saveStorageAutosave<AutosavedEditorSnapshot>(autosaveSnapshot).then((autosaveResponse) => {
+            if (autosaveSequenceRef.current !== autosaveSequence) return;
+            setDraftAutosaveStatus("saved");
+            const updatedAt = autosaveResponse.autosave.updatedAt
+              ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
+              : "now";
+            setDraftAutosaveMessage(`Autosaved draft at ${updatedAt}`);
+          });
+        } catch {
           if (autosaveSequenceRef.current !== autosaveSequence) return;
           setDraftAutosaveStatus("unavailable");
           setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
-        });
+        }
+      }
+
+      void saveDraftIfProjectRevisionIsCurrent();
     }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeoutId);
@@ -9115,6 +9482,7 @@ export default function App() {
     activeProjectFilePath,
     activeProjectFileRevision,
     documentFlow,
+    editorDocumentOpen,
     formattingConfig,
     frontMatter,
     questions,
@@ -9128,7 +9496,10 @@ export default function App() {
   const previewDocumentFlow = useDeferredValue(documentFlow);
   const previewFormattingConfig = useDeferredValue(formattingConfig);
   const previewLogos = useDeferredValue(logos);
-  const previewShowSolutions = useDeferredValue(showSolutions);
+  const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
+  const supportsSolutionTools = !isNotesTemplate;
+  const effectiveShowSolutions = supportsSolutionTools ? showSolutions : false;
+  const previewShowSolutions = useDeferredValue(effectiveShowSolutions);
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
   const previewTotalMarks = useMemo(() => previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0), [previewQuestions]);
   const canUndo = historyVersion >= 0 && undoStackRef.current.length > 0;
@@ -9167,14 +9538,16 @@ export default function App() {
     [tocOpen],
   );
   const documentTocItems = useMemo(
-    () => buildDocumentToc(frontMatter, questions, sectionHeadings, documentFlow, showSolutions),
-    [documentFlow, frontMatter, questions, sectionHeadings, showSolutions],
+    () => buildDocumentToc(frontMatter, questions, sectionHeadings, documentFlow, effectiveShowSolutions),
+    [documentFlow, effectiveShowSolutions, frontMatter, questions, sectionHeadings],
   );
   const solutionValidation = useMemo(() => validateSolutionCompleteness(frontMatter, questions), [frontMatter, questions]);
-  const printModeLabel = showSolutions ? "Solutions" : "Student";
-  const printModeTitle = showSolutions
-    ? "Print output is currently the solutions copy. Hide solutions before printing the student copy."
-    : "Print output is currently the student copy. Show solutions before printing the solutions copy.";
+  const printModeLabel = isNotesTemplate ? "Notes" : effectiveShowSolutions ? "Solutions" : "Student";
+  const printModeTitle = isNotesTemplate
+    ? "Print output is currently the notes copy."
+    : effectiveShowSolutions
+      ? "Print output is currently the solutions copy. Hide solutions before printing the student copy."
+      : "Print output is currently the student copy. Show solutions before printing the solutions copy.";
   const activePreviewAnchor = useMemo(() => {
     if (activeTocItemId.startsWith("pb:")) return undefined;
     return previewAnchorForEditorAnchor(activeTocItemId, documentTocItems);
@@ -9207,60 +9580,71 @@ export default function App() {
         : null;
   const activeProjectSavedAt = formatShortDateTime(activeProjectFileSummary?.updatedAt);
   const draftBackupSummary = draftBackupStatusSummary(draftAutosaveStatus, draftAutosaveMessage);
-  const currentProjectFileName = activeProjectFilePath
-    ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? activeProjectFilePath))
-    : "Untitled test";
+  const currentProjectFileName = !editorDocumentOpen
+    ? "No file open"
+    : activeProjectFilePath
+      ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? activeProjectFilePath))
+      : "Untitled test";
   const fileOperationBusy = projectFilesStatus === "saving" || projectFilesStatus === "loading";
   const headerFileStatusMessage = fileOperationBusy
     ? projectFilesMessage || "Working with files"
-    : activeProjectFilePath
-      ? activeProjectRevisionIssue
-        ? "File changed outside app · reload or Save as"
-        : hasUnsavedProjectChanges
-          ? `Unsaved file changes · ${draftBackupSummary}`
-          : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
-      : `New file not saved · ${draftBackupSummary}`;
+    : !editorDocumentOpen
+      ? "Create a new Mauth document to begin"
+      : activeProjectFilePath
+        ? activeProjectRevisionIssue
+          ? "File changed outside app · reload or Save as"
+          : hasUnsavedProjectChanges
+            ? `Unsaved file changes · ${draftBackupSummary}`
+            : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
+        : `New file not saved · ${draftBackupSummary}`;
   const headerFileStatusTitle = fileOperationBusy
     ? [projectFilesMessage || "Working with files", activeProjectPathLabel ? `Current file: ${activeProjectPathLabel}` : ""]
         .filter(Boolean)
         .join("\n")
-    : activeProjectFilePath
-      ? [
-          `File: ${currentProjectFileName}`,
-          `Path: ${activeProjectPathLabel}`,
-          activeProjectRevisionIssue
-            ? [
-                `File save: ${activeProjectRevisionIssue.message}`,
-                typeof activeProjectRevisionIssue.localRevision === "number"
-                  ? `Loaded revision: ${activeProjectRevisionIssue.localRevision}`
-                  : "",
-                typeof activeProjectRevisionIssue.currentRevision === "number"
-                  ? `Disk revision: ${activeProjectRevisionIssue.currentRevision}`
-                  : "",
-              ]
-                .filter(Boolean)
-                .join("\n")
-            : hasUnsavedProjectChanges
-              ? "File save: unsaved changes. Press Save to write the project file."
-              : `File save: saved${activeProjectSavedAt ? ` ${activeProjectSavedAt}` : ""}`,
-          `Draft backup: ${draftBackupSummary}`,
-        ].join("\n")
-      : [
-          `File: ${currentProjectFileName}`,
-          "File save: not saved yet. Press Save or Save as to create a project file.",
-          `Draft backup: ${draftBackupSummary}`,
-        ].join("\n");
+    : !editorDocumentOpen
+      ? "No file is open. Create a new Mauth document or open one from Files."
+      : activeProjectFilePath
+        ? [
+            `File: ${currentProjectFileName}`,
+            `Path: ${activeProjectPathLabel}`,
+            activeProjectRevisionIssue
+              ? [
+                  `File save: ${activeProjectRevisionIssue.message}`,
+                  typeof activeProjectRevisionIssue.localRevision === "number"
+                    ? `Loaded revision: ${activeProjectRevisionIssue.localRevision}`
+                    : "",
+                  typeof activeProjectRevisionIssue.currentRevision === "number"
+                    ? `Disk revision: ${activeProjectRevisionIssue.currentRevision}`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n")
+              : hasUnsavedProjectChanges
+                ? "File save: unsaved changes. Press Save to write the project file."
+                : `File save: saved${activeProjectSavedAt ? ` ${activeProjectSavedAt}` : ""}`,
+            `Draft backup: ${draftBackupSummary}`,
+          ].join("\n")
+        : [
+            `File: ${currentProjectFileName}`,
+            "File save: not saved yet. Press Save or Save as to create a project file.",
+            `Draft backup: ${draftBackupSummary}`,
+          ].join("\n");
   const headerStorageStatus: HeaderSaveStatus = fileOperationBusy
     ? "saving"
-    : activeProjectFilePath
-      ? activeProjectRevisionIssue
-        ? "conflict"
-        : hasUnsavedProjectChanges
-          ? "dirty"
-          : "saved"
-      : draftAutosaveStatus === "saved"
-        ? "draft"
-        : draftAutosaveStatus;
+    : !editorDocumentOpen
+      ? "ready"
+      : activeProjectFilePath
+        ? activeProjectRevisionIssue
+          ? "conflict"
+          : hasUnsavedProjectChanges
+            ? "dirty"
+            : "saved"
+        : draftAutosaveStatus === "saved"
+          ? "draft"
+          : draftAutosaveStatus;
+  const hasUnsavedDraftChanges = Boolean(
+    editorDocumentOpen && !activeProjectFilePath && cleanUnsavedDocumentFingerprintRef.current !== currentDocumentFingerprint,
+  );
   const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? null;
   const activeSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
   const activeSectionHeading = sectionHeadings.find((heading) => heading.id === activeSectionHeadingId) ?? null;
@@ -9284,6 +9668,7 @@ export default function App() {
     legacySavedTestsRef.current = legacySavedTests;
     activeProjectFilePathRef.current = activeProjectFilePath;
     activeProjectFileRevisionRef.current = activeProjectFileRevision;
+    showSolutionsRef.current = showSolutions;
   }, [
     activeProjectFilePath,
     activeProjectFileRevision,
@@ -9294,6 +9679,7 @@ export default function App() {
     logos,
     questions,
     sectionHeadings,
+    showSolutions,
   ]);
 
   useEffect(() => {
@@ -9566,6 +9952,116 @@ export default function App() {
       sectionHeadings: sectionHeadingsRef.current,
       documentFlow: documentFlowRef.current,
       formattingConfig: formattingConfigRef.current,
+    };
+  }
+
+  function currentEditorDocumentFingerprint() {
+    return editorDocumentFingerprint(
+      frontMatterRef.current,
+      questionsRef.current,
+      formattingConfigRef.current,
+      selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
+      sectionHeadingsRef.current,
+      documentFlowRef.current,
+    );
+  }
+
+  function editorSnapshotFingerprint(snapshot: EditorHistorySnapshot, logo?: LogoAsset | null) {
+    return editorDocumentFingerprint(
+      snapshot.frontMatter,
+      snapshot.questions,
+      snapshot.formattingConfig,
+      logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter),
+      snapshot.sectionHeadings,
+      snapshot.documentFlow,
+    );
+  }
+
+  function savedTestFingerprint(savedTest: SavedTest) {
+    return editorSnapshotFingerprint(savedTest, savedTest.logo ?? selectedLogoForFrontMatter(logosRef.current, savedTest.frontMatter));
+  }
+
+  function autosaveSnapshotFingerprint(snapshot: AutosavedEditorSnapshot) {
+    return editorSnapshotFingerprint(snapshot, snapshot.logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter));
+  }
+
+  function savedTestAutosaveSnapshot(savedTest: SavedTest, filePath: string, revision: number | null): AutosavedEditorSnapshot {
+    return {
+      frontMatter: savedTest.frontMatter,
+      questions: savedTest.questions,
+      sectionHeadings: savedTest.sectionHeadings,
+      documentFlow: savedTest.documentFlow,
+      formattingConfig: savedTest.formattingConfig,
+      logo: savedTest.logo,
+      activeProjectFilePath: filePath,
+      activeProjectFileRevision: revision ?? undefined,
+      updatedAt: savedTest.updatedAt,
+    };
+  }
+
+  function parseSavedTestContent(content: string | null) {
+    if (!content) return null;
+    try {
+      return normalizeSavedTest(JSON.parse(content) as unknown);
+    } catch {
+      return null;
+    }
+  }
+
+  async function projectFileRevisionFingerprint(projectId: string, filePath: string, revision: number) {
+    try {
+      const versionsResponse = await listProjectFileVersions(projectId, filePath);
+      const matchingVersion = versionsResponse.versions.find((version) => version.revision === revision);
+      const savedTest = matchingVersion ? parseSavedTestContent(matchingVersion.content) : null;
+      return savedTest ? savedTestFingerprint(savedTest) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveAutosaveAgainstProjectFile(snapshot: AutosavedEditorSnapshot): Promise<{
+    snapshot: AutosavedEditorSnapshot;
+    project: ProjectSummary | null;
+    cleanFingerprint: string | null;
+    conflict: ProjectSaveConflict | null;
+  }> {
+    const filePath = snapshot.activeProjectFilePath;
+    const localRevision = snapshot.activeProjectFileRevision;
+    if (!filePath || typeof localRevision !== "number") {
+      return { snapshot, project: null, cleanFingerprint: null, conflict: null };
+    }
+
+    const project = activeProject ?? (await getDefaultProject());
+    const document = await getProjectFile(project.id, filePath);
+    const savedTest = parseSavedTestContent(document.content);
+    if (!savedTest) return { snapshot, project, cleanFingerprint: null, conflict: null };
+
+    const currentFingerprint = savedTestFingerprint(savedTest);
+    if (document.revision <= localRevision) {
+      return { snapshot, project, cleanFingerprint: currentFingerprint, conflict: null };
+    }
+
+    const snapshotFingerprint = autosaveSnapshotFingerprint(snapshot);
+    const baseFingerprint = await projectFileRevisionFingerprint(project.id, filePath, localRevision);
+    if (baseFingerprint && snapshotFingerprint === baseFingerprint) {
+      return {
+        snapshot: savedTestAutosaveSnapshot(savedTest, filePath, document.revision),
+        project,
+        cleanFingerprint: currentFingerprint,
+        conflict: null,
+      };
+    }
+
+    return {
+      snapshot,
+      project,
+      cleanFingerprint: baseFingerprint,
+      conflict: {
+        filePath,
+        message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
+        localRevision,
+        currentRevision: document.revision,
+      },
     };
   }
 
@@ -10015,6 +10511,7 @@ export default function App() {
   }
 
   function saveCurrentTest() {
+    if (!editorDocumentOpenRef.current) return;
     void saveCurrentTestToProjectFile("");
   }
 
@@ -10022,17 +10519,82 @@ export default function App() {
     setNewTestDialogOpen(true);
   }
 
+  function persistClosedEditorState() {
+    const closedSnapshot: AutosavedEditorSnapshot = {
+      ...currentDraftSnapshotForStorage(),
+      activeProjectFilePath: undefined,
+      activeProjectFileRevision: undefined,
+      documentOpen: false,
+    };
+    persistCurrentDraft(closedSnapshot);
+    if (draftAutosaveStatus !== "unavailable") {
+      void saveStorageAutosave<AutosavedEditorSnapshot>(closedSnapshot)
+        .then((autosaveResponse) => {
+          const updatedAt = autosaveResponse.autosave.updatedAt
+            ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
+            : "now";
+          setDraftAutosaveStatus("saved");
+          setDraftAutosaveMessage(`Closed workspace saved at ${updatedAt}`);
+        })
+        .catch(() => {
+          setDraftAutosaveStatus("unavailable");
+          setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
+        });
+    }
+  }
+
+  function closeEditorDocument() {
+    setEditorDocumentOpenState(false);
+    activeProjectFilePathRef.current = null;
+    activeProjectFileRevisionRef.current = null;
+    setActiveProjectFilePath(null);
+    setActiveProjectFileRevision(null);
+    setProjectSaveConflict(null);
+    updateLastProjectSaveFingerprint(null);
+    setNewTestDialogOpen(false);
+    setFileManagerOpen(false);
+    setContextMenu(null);
+    persistClosedEditorState();
+  }
+
+  async function closeCurrentDocument() {
+    if (!editorDocumentOpenRef.current || fileOperationBusy) return;
+
+    if (activeProjectFilePath && hasUnsavedProjectChanges) {
+      const shouldSave = window.confirm(`Save changes to "${currentProjectFileName}" before closing?`);
+      if (!shouldSave) return;
+      try {
+        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+      } catch {
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("Close cancelled; save failed");
+        return;
+      }
+    } else if (hasUnsavedDraftChanges) {
+      const shouldClose = window.confirm("This document has not been saved to a file. Close without saving it?");
+      if (!shouldClose) return;
+    }
+
+    closeEditorDocument();
+  }
+
   function createNewTestFromTemplate(template: TitlePageTemplate) {
     pushEditorHistory();
     const currentLogo = selectedLogoFromLibrary(logos, frontMatter.logoId);
     const frontMatterTemplate =
-      template === "exam" ? DEFAULT_EXAM_FRONT_MATTER : template === "worksheet" ? DEFAULT_WORKSHEET_FRONT_MATTER : DEFAULT_FRONT_MATTER;
+      template === "exam"
+        ? DEFAULT_EXAM_FRONT_MATTER
+        : template === "worksheet"
+          ? DEFAULT_WORKSHEET_FRONT_MATTER
+          : template === "notes"
+            ? DEFAULT_NOTES_FRONT_MATTER
+            : DEFAULT_FRONT_MATTER;
     const nextFrontMatter = {
       ...cloneSerializable(frontMatterTemplate),
       logoId: currentLogo.id,
       schoolName: currentLogo.schoolName ?? frontMatter.schoolName,
     };
-    const nextQuestions = [createQuestion()];
+    const nextQuestions = template === "notes" ? [createNotesSection()] : [createQuestion()];
     const nextSectionHeadings: DocumentSectionHeading[] = [];
     const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
     const nextFormattingConfig = formattingConfigForPresetId(
@@ -10045,6 +10607,7 @@ export default function App() {
     setSectionHeadings(nextSectionHeadings);
     setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(nextFormattingConfig);
+    setEditorDocumentOpenState(true);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
     sectionHeadingsRef.current = nextSectionHeadings;
@@ -10158,6 +10721,63 @@ export default function App() {
 
   async function writeCurrentTestProjectFile(filePath: string, testName: string) {
     await writeEditorDocumentToProjectFile(filePath, testName, currentEditorDocument());
+  }
+
+  async function saveCurrentEditorRecoveryCopy(project: ProjectSummary, sourcePath: string) {
+    setProjectFilesStatus("saving");
+    setProjectFilesMessage("Saving recovery copy");
+
+    const document = currentEditorDocument();
+    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const suffix = Math.random().toString(36).slice(2, 6);
+    const recoveryName = `${safeProjectFileName(currentProjectFileName)} recovery ${timestamp}-${suffix}`;
+    const recoveryPath = projectPathForTestPath(joinTestPath("Recovery", ensureTestFileName(recoveryName)));
+    const savedTest = createSavedTestSnapshot({
+      testId: `project-file:${recoveryPath}`,
+      name: recoveryName,
+      frontMatter: document.frontMatter,
+      questions: document.questions,
+      sectionHeadings: document.sectionHeadings,
+      documentFlow: document.documentFlow,
+      formattingConfig: nextFormattingConfig,
+      logo: currentLogo,
+    });
+
+    const savedDocument = await saveProjectFile(project.id, recoveryPath, {
+      content: JSON.stringify(savedTest, null, 2),
+      kind: "file",
+      fileType: projectFileTypeForFrontMatter(document.frontMatter),
+      metadata: {
+        format: "saved-test-json",
+        source: "mauth-studio",
+        recoveryFor: sourcePath,
+        recoveryReason: "open-project-file-save-conflict",
+      },
+      baseRevision: null,
+    });
+    const refreshedFiles = await listProjectFiles(project.id);
+    setActiveProject(project);
+    setProjectFiles(refreshedFiles.files);
+    return savedDocument;
+  }
+
+  async function saveCurrentProjectFileBeforeOpening(project: ProjectSummary) {
+    if (!hasUnsavedProjectChanges || !activeProjectFilePath) return;
+
+    try {
+      await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+    } catch (error) {
+      const conflict = projectFileConflictFromError(error, activeProjectFilePath, activeProjectFileRevisionRef.current);
+      const missingRevision = error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR;
+      if (!conflict && !missingRevision) throw error;
+
+      await saveCurrentEditorRecoveryCopy(project, activeProjectFilePath);
+      setProjectSaveConflict(null);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage("Saved recovery copy before opening");
+    }
   }
 
   function agentBridgeError(
@@ -10403,6 +11023,7 @@ export default function App() {
     setSectionHeadings(nextSectionHeadings);
     setDocumentFlow(nextDocumentFlow);
     setFormattingConfig(nextFormattingConfig);
+    setEditorDocumentOpenState(true);
     frontMatterRef.current = nextFrontMatter;
     questionsRef.current = nextQuestions;
     sectionHeadingsRef.current = nextSectionHeadings;
@@ -10461,9 +11082,7 @@ export default function App() {
       }
 
       const fileName = testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath));
-      if (hasUnsavedProjectChanges && activeProjectFilePath) {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      }
+      await saveCurrentProjectFileBeforeOpening(project);
 
       setProjectFilesStatus("loading");
       setProjectFilesMessage(`Opening ${fileName}`);
@@ -10491,6 +11110,79 @@ export default function App() {
       setProjectFilesMessage("Open failed");
     }
   }
+
+  async function syncActiveProjectFileFromDisk() {
+    if (fileOperationBusy) return;
+    const filePath = activeProjectFilePathRef.current;
+    if (!filePath) return;
+
+    const project = activeProject ?? (await getDefaultProject());
+    const filesResponse = await listProjectFiles(project.id);
+    setActiveProject(project);
+    setProjectFiles(filesResponse.files);
+
+    const summary = filesResponse.files.find((file) => file.path === filePath);
+    if (!summary || summary.kind !== "file") return;
+
+    const localRevision = activeProjectFileRevisionRef.current;
+    if (typeof localRevision === "number" && summary.revision <= localRevision) return;
+
+    const conflict = {
+      filePath,
+      message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
+      localRevision,
+      currentRevision: summary.revision,
+    };
+
+    if (lastProjectSaveFingerprintRef.current !== currentEditorDocumentFingerprint()) {
+      setProjectSaveConflict(conflict);
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("File changed on disk");
+      return;
+    }
+
+    try {
+      const document = await getProjectFile(project.id, filePath);
+      const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
+      const savedTest = normalizeSavedTest(parsed);
+      if (!savedTest) throw new Error("Unsupported project file");
+
+      applySavedProjectDocument(project, filePath, savedTest, document.revision);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Reloaded ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))} from disk`);
+    } catch {
+      setProjectSaveConflict(conflict);
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Reload failed");
+    }
+  }
+
+  useEffect(() => {
+    if (!storageHydrated || !activeProjectFilePath) return;
+
+    let cancelled = false;
+    const runSync = () => {
+      if (cancelled || document.visibilityState === "hidden" || activeProjectFileSyncInFlightRef.current) return;
+      activeProjectFileSyncInFlightRef.current = true;
+      void syncActiveProjectFileFromDisk().finally(() => {
+        activeProjectFileSyncInFlightRef.current = false;
+      });
+    };
+
+    runSync();
+    const intervalId = window.setInterval(runSync, ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS);
+    window.addEventListener("focus", runSync);
+    document.addEventListener("visibilitychange", runSync);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", runSync);
+      document.removeEventListener("visibilitychange", runSync);
+    };
+    // syncActiveProjectFileFromDisk reads the current document/file refs; these deps only start/stop the watcher.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectFilePath, fileOperationBusy, storageHydrated]);
 
   async function loadProjectFileVersions(filePath: string) {
     const project = activeProject ?? (await getDefaultProject());
@@ -11273,8 +11965,12 @@ export default function App() {
   function openEditorFromPreviewAnchor(anchor: string) {
     if (!anchor) return;
     const tocItem = tocItemForPreviewAnchor(anchor);
-    const editorAnchor = tocItem?.editorAnchor ?? anchor;
-    const activeAnchor = tocItem?.id ?? editorAnchor;
+    const graphChildParentAnchor = graphChildParentScrollAnchor(anchor);
+    const graphChildSuffix =
+      graphChildParentAnchor && anchor.startsWith(`${graphChildParentAnchor}/`) ? anchor.slice(graphChildParentAnchor.length) : "";
+    const editorAnchor =
+      graphChildSuffix && tocItem?.editorAnchor ? `${tocItem.editorAnchor}${graphChildSuffix}` : (tocItem?.editorAnchor ?? anchor);
+    const activeAnchor = graphChildSuffix ? editorAnchor : (tocItem?.id ?? editorAnchor);
     const questionId = questionIdFromScrollAnchor(editorAnchor);
     if (questionId) selectQuestionInEditor(questionId);
     setActiveTocItemId(activeAnchor);
@@ -11842,6 +12538,14 @@ export default function App() {
     applyEditorAction({ type: "question.reorder", questionId: draggedId, targetQuestionId: targetId, placement });
   }
 
+  function isQuestionDropNoop(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
+    if (draggedId === targetId) return true;
+    const draggedIndex = questions.findIndex((question) => question.id === draggedId);
+    const targetIndex = questions.findIndex((question) => question.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return true;
+    return (placement === "before" && targetIndex === draggedIndex + 1) || (placement === "after" && targetIndex === draggedIndex - 1);
+  }
+
   function moveQuestionByKeyboard(questionId: string, direction: MoveDirection) {
     const sourceIndex = questions.findIndex((question) => question.id === questionId);
     const targetQuestion = questions[sourceIndex + direction];
@@ -12213,10 +12917,14 @@ export default function App() {
     if (readPageBreakDrag(event)) return;
 
     const activeQuestionId = draggedQuestionId || event.dataTransfer.getData("text/plain");
-    if (!activeQuestionId || activeQuestionId === questionId || !questions.some((question) => question.id === activeQuestionId)) return;
+    const placement = dragPlacementFromEvent(event);
+    if (!activeQuestionId || isQuestionDropNoop(activeQuestionId, questionId, placement)) {
+      setDragOverQuestion((current) => (current?.questionId === questionId ? null : current));
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    setDragOverQuestion({ questionId, placement: dragPlacementFromEvent(event) });
+    setDragOverQuestion({ questionId, placement, surface: "question" });
   }
 
   function handleQuestionDragLeave(event: DragEvent<HTMLElement>, questionId: string) {
@@ -12240,6 +12948,7 @@ export default function App() {
     setDraggedPageBreakQuestionId(null);
     setDragOverPageBreak(null);
     if (activeQuestionId && questions.some((question) => question.id === activeQuestionId)) {
+      if (isQuestionDropNoop(activeQuestionId, questionId, placement)) return;
       const anchor = questionScrollAnchor(activeQuestionId);
       reorderQuestion(activeQuestionId, questionId, placement);
       selectQuestionInEditor(activeQuestionId);
@@ -12247,6 +12956,48 @@ export default function App() {
       setActiveRailItemId(anchor);
       queueDocumentJump(anchor, anchor, { preservePaneMode: true });
     }
+  }
+
+  function handleQuestionDragOverPageBreak(event: DragEvent<HTMLElement>, questionId: string) {
+    const activeSubsection = readSubsectionDrag(event);
+    if (activeSubsection) return;
+    if (readPageBreakDrag(event)) return;
+
+    const activeQuestionId = draggedQuestionId || event.dataTransfer.getData("text/plain");
+    if (!activeQuestionId || activeQuestionId === questionId || !questions.some((question) => question.id === activeQuestionId)) {
+      setDragOverQuestion((current) => (current?.questionId === questionId && current.surface === "pageBreakBoundary" ? null : current));
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverQuestion({ questionId, placement: "after", surface: "pageBreakBoundary" });
+  }
+
+  function handleQuestionDragLeavePageBreak(event: DragEvent<HTMLElement>, questionId: string) {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    setDragOverQuestion((current) => (current?.questionId === questionId && current.surface === "pageBreakBoundary" ? null : current));
+  }
+
+  function handleQuestionDropPageBreak(event: DragEvent<HTMLElement>, questionId: string) {
+    const activeSubsection = readSubsectionDrag(event);
+    if (activeSubsection) return;
+    if (readPageBreakDrag(event)) return;
+
+    const activeQuestionId = draggedQuestionId || event.dataTransfer.getData("text/plain");
+    if (!activeQuestionId || activeQuestionId === questionId || !questions.some((question) => question.id === activeQuestionId)) return;
+    event.preventDefault();
+    setDraggedQuestionId(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    const anchor = questionScrollAnchor(activeQuestionId);
+    reorderQuestion(activeQuestionId, questionId, "after");
+    movePageBreakAfterQuestion(questionId, activeQuestionId);
+    selectQuestionInEditor(activeQuestionId);
+    setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
   }
 
   function handleQuestionDragEnd() {
@@ -12829,9 +13580,17 @@ export default function App() {
   }
 
   function addQuestion() {
-    const question = createQuestion();
+    const question = frontMatterRef.current.titlePageTemplate === "notes" ? createNotesSection() : createQuestion();
     const anchor = questionScrollAnchor(question.id);
-    applyEditorAction({ type: "question.add", question });
+    const actions: MauthAction[] =
+      frontMatterRef.current.titlePageTemplate === "exam" && questions.length
+        ? [
+            { type: "question.update", questionId: questions[questions.length - 1].id, patch: { pageBreakAfter: true } },
+            { type: "question.add", question },
+          ]
+        : [{ type: "question.add", question }];
+    const result = applyEditorActions(actions);
+    if (!result.ok) return;
     selectQuestionInEditor(question.id);
     setActiveTocItemId(anchor);
     setActiveRailItemId(anchor);
@@ -12869,7 +13628,8 @@ export default function App() {
 
   function removeQuestion(questionId: string) {
     const removedIndex = questions.findIndex((question) => question.id === questionId);
-    const fallbackQuestion = questions.length <= 1 ? createQuestion() : undefined;
+    const fallbackQuestion =
+      questions.length <= 1 ? (frontMatterRef.current.titlePageTemplate === "notes" ? createNotesSection() : createQuestion()) : undefined;
     const result = applyEditorAction({ type: "question.delete", questionId, fallbackQuestion });
     if (!result.ok) return;
     const nextQuestions = result.questions;
@@ -12897,10 +13657,26 @@ export default function App() {
     }
   }
 
-  function addQuestionSolutionSlot(questionId: string) {
+  function addQuestionDiagramBlock(questionId: string, type: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const defaultLines = defaultSolutionSlotLines(question.parts.length ? questionMarks(question) : question.marks);
+    const block = diagramBlockForType(type);
+    const result = applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
+    if (result.ok) {
+      const anchor = questionBlockScrollAnchor(question.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
+  }
+
+  function addQuestionSolutionSlot(questionId: string) {
+    if (frontMatterRef.current.titlePageTemplate === "notes") return;
+    const question = questions.find((current) => current.id === questionId);
+    if (!question) return;
+    const defaultLines = defaultSolutionSlotLinesForDocument(
+      frontMatterRef.current,
+      question.parts.length ? questionMarks(question) : question.marks,
+    );
     const lines = requestedSolutionSlotLines(defaultLines);
     if (lines === null) return;
     const blocks = solutionSlotBlocks(lines);
@@ -13015,8 +13791,19 @@ export default function App() {
     }
   }
 
+  function addPartDiagramBlock(questionId: string, part: EditorPart, type: string) {
+    const block = diagramBlockForType(type);
+    const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
+    if (result.ok) {
+      const anchor = partBlockScrollAnchor(questionId, part.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
+  }
+
   function addPartSolutionSlot(questionId: string, part: EditorPart) {
-    const defaultLines = defaultSolutionSlotLines(part.subparts?.length ? partMarks(part) : part.marks);
+    if (frontMatterRef.current.titlePageTemplate === "notes") return;
+    const defaultLines = defaultSolutionSlotLinesForDocument(frontMatterRef.current, part.subparts?.length ? partMarks(part) : part.marks);
     const lines = requestedSolutionSlotLines(defaultLines);
     if (lines === null) return;
     const blocks = solutionSlotBlocks(lines);
@@ -13042,8 +13829,23 @@ export default function App() {
     }
   }
 
+  function addSubpartDiagramBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, type: string) {
+    const block = diagramBlockForType(type);
+    const result = applyEditorAction({
+      type: "module.add",
+      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
+      blocks: [block],
+    });
+    if (result.ok) {
+      const anchor = subpartBlockScrollAnchor(questionId, part.id, subpart.id, block.id);
+      activateEditorAnchor(anchor);
+      revealEditorAnchor(anchor);
+    }
+  }
+
   function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
-    const lines = requestedSolutionSlotLines(defaultSolutionSlotLines(subpart.marks));
+    if (frontMatterRef.current.titlePageTemplate === "notes") return;
+    const lines = requestedSolutionSlotLines(defaultSolutionSlotLinesForDocument(frontMatterRef.current, subpart.marks));
     if (lines === null) return;
     applyEditorAction({
       type: "solutionSlot.add",
@@ -13158,7 +13960,7 @@ export default function App() {
     _itemCount: number,
     questionItems: OrderedQuestionItem[],
   ) {
-    if (!isOrderedBlockVisible(questionItems, itemIndex, showSolutions)) return null;
+    if (!isOrderedBlockVisible(questionItems, itemIndex, effectiveShowSolutions)) return null;
 
     const blockIndex = Math.max(
       0,
@@ -13185,17 +13987,19 @@ export default function App() {
     };
 
     if (block.kind === "space") {
+      const spacePanelLabel = isNotesTemplate ? `Blank space ${blockIndex + 1}` : `Answer space ${blockIndex + 1}`;
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Answer space ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
+            label={spacePanelLabel}
+            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
+            showLines={block.showLines ?? true}
             settingsMode="inspector"
-            dragHandle={subsectionDragHandle(blockTarget, `Drag answer space ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(blockTarget, `Drag ${spacePanelLabel}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
-            onChange={(lines) => updateContentBlock(question.id, block.id, { lines })}
+            onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
         </div>,
@@ -13209,7 +14013,7 @@ export default function App() {
             label={`Diagram block ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
             settingsMode="inspector"
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
@@ -13234,7 +14038,8 @@ export default function App() {
             block={block}
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
+            spaceLabelPrefix={isNotesTemplate ? "Blank space" : "Answer space"}
             dragHandle={subsectionDragHandle(blockTarget, `Drag columns block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -13317,7 +14122,7 @@ export default function App() {
     _itemCount: number,
     partItems: OrderedPartItem[],
   ) {
-    if (!isOrderedBlockVisible(partItems, itemIndex, showSolutions)) return null;
+    if (!isOrderedBlockVisible(partItems, itemIndex, effectiveShowSolutions)) return null;
 
     const blockIndex = Math.max(
       0,
@@ -13349,18 +14154,20 @@ export default function App() {
     };
 
     if (block.kind === "space") {
+      const spacePanelLabel = isNotesTemplate ? `Subheading blank space ${blockIndex + 1}` : `Part answer space ${blockIndex + 1}`;
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Part answer space ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Part answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
+            label={spacePanelLabel}
+            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
+            showLines={block.showLines ?? true}
             settingsMode="inspector"
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part answer space ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(partBlockTarget, `Drag ${spacePanelLabel}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
-            onChange={(lines) => updatePartContentBlock(question.id, part.id, block.id, { lines })}
+            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
         </div>,
@@ -13374,7 +14181,7 @@ export default function App() {
             label={`Part diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
             settingsMode="inspector"
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
@@ -13400,7 +14207,8 @@ export default function App() {
             block={block}
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
+            spaceLabelPrefix={isNotesTemplate ? "Subheading blank space" : "Answer space"}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part columns ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -13486,7 +14294,7 @@ export default function App() {
     block: EditorContentBlock,
     blockIndex: number,
   ) {
-    if (!isContentBlockVisibleInScope(subpart.contentBlocks, blockIndex, showSolutions)) return null;
+    if (!isContentBlockVisibleInScope(subpart.contentBlocks, blockIndex, effectiveShowSolutions)) return null;
 
     const subpartBlockTarget: SubsectionDragTarget = {
       kind: "subpart-block",
@@ -13515,18 +14323,22 @@ export default function App() {
     };
 
     if (block.kind === "space") {
+      const spacePanelLabel = isNotesTemplate ? `Detail blank space ${blockIndex + 1}` : `Subpart answer space ${blockIndex + 1}`;
       return withInsertAfter(
         <div key={block.id} {...wrapperProps}>
           <SpaceBlockEditor
-            label={`Subpart answer space ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Subpart answer space ${blockIndex + 1}`} summary={spaceBlockSummary(block.lines)} />}
+            label={spacePanelLabel}
+            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
             lines={block.lines}
+            showLines={block.showLines ?? true}
             settingsMode="inspector"
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart answer space ${blockIndex + 1}`)}
+            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag ${spacePanelLabel}`)}
             muted
             active={blockActive}
             openSignal={blockOpenSignal}
-            onChange={(lines) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { lines })}
+            onChange={(patch) =>
+              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
+            }
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
         </div>,
@@ -13540,7 +14352,7 @@ export default function App() {
             label={`Subpart diagram ${blockIndex + 1}`}
             graphConfig={block.graphConfig}
             alignment={block.diagramAlign}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
             settingsMode="inspector"
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
@@ -13566,7 +14378,8 @@ export default function App() {
             block={block}
             anchor={blockAnchor}
             activeAnchor={activeTocItemId}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
+            spaceLabelPrefix={isNotesTemplate ? "Detail blank space" : "Answer space"}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart columns ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -13649,7 +14462,13 @@ export default function App() {
 
   function renderEditorPageBreakRow(target: EditorPageBreakTarget) {
     const moving = editorPageBreakKey(draggedEditorPageBreak) === editorPageBreakKey(target);
-    const contextLabel = target.kind === "part" ? "next part" : "next subpart";
+    const contextLabel = isNotesTemplate
+      ? target.kind === "part"
+        ? "next subheading"
+        : "next detail"
+      : target.kind === "part"
+        ? "next part"
+        : "next subpart";
     return (
       <div
         key={`page-break-row-${editorPageBreakKey(target)}`}
@@ -13730,7 +14549,8 @@ export default function App() {
     const subpartAnchor = subpartScrollAnchor(question.id, part.id, subpart.id);
     const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
     const subpartActive = isActiveEditorAnchor(subpartAnchor);
-    const subpartUsesSolutionSpace = safeMarkValue(subpart.marks) > 0;
+    const subpartPanelLabel = isNotesTemplate ? `Detail ${subpartIndex + 1}` : `Subpart (${subpartLabel})`;
+    const subpartUsesSolutionSpace = supportsSolutionTools && safeMarkValue(subpart.marks) > 0;
     const subpartContainer: SubsectionContainerRef = {
       kind: "subpart",
       questionId: question.id,
@@ -13765,22 +14585,24 @@ export default function App() {
         }}
       >
         <CollapsiblePanel
-          title={<InlineSummaryTitle label={`Subpart (${subpartLabel})`} summary={partPanelSummary(subpart.contentBlocks)} />}
-          leading={subsectionDragHandle(subpartTarget, `Drag subpart ${subpartLabel}`)}
+          title={<InlineSummaryTitle label={subpartPanelLabel} summary={partPanelSummary(subpart.contentBlocks)} />}
+          leading={subsectionDragHandle(subpartTarget, `Drag ${subpartPanelLabel}`)}
           onHeaderContextMenu={(event) => openContextMenu(event, subpartAnchor, "editor")}
           actions={
             <>
-              <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                Marks
-                <input
-                  type="number"
-                  min={0}
-                  value={subpart.marks}
-                  onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
-                  className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <RemoveActionButton label={`Remove subpart ${subpartLabel}`} onRemove={() => removeSubpart(question.id, part, subpart.id)} />
+              {!isNotesTemplate ? (
+                <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
+                  Marks
+                  <input
+                    type="number"
+                    min={0}
+                    value={subpart.marks}
+                    onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
+                    className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                  />
+                </label>
+              ) : null}
+              <RemoveActionButton label={`Remove ${subpartPanelLabel}`} onRemove={() => removeSubpart(question.id, part, subpart.id)} />
             </>
           }
           className="bg-muted/20"
@@ -13810,6 +14632,7 @@ export default function App() {
             onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
             onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
             onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
+            diagramActions={quickDiagramInsertActions((type) => addSubpartDiagramBlock(question.id, part, subpart, type))}
             onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns")}
             onAddSpace={() =>
               subpartUsesSolutionSpace
@@ -13822,7 +14645,7 @@ export default function App() {
                 ? "Add the default paired student answer space and solution block for this marked subpart"
                 : undefined
             }
-            extraActions={subpartUsesSolutionSpace ? [] : [subpartSolutionSlotAction]}
+            extraActions={[...(subpartUsesSolutionSpace || !supportsSolutionTools ? [] : [subpartSolutionSlotAction])]}
           />
         </CollapsiblePanel>
       </div>
@@ -13841,12 +14664,15 @@ export default function App() {
     const partAnchor = partScrollAnchor(question.id, part.id);
     const partOpenSignal = openSignalForAnchor(partAnchor);
     const partActive = isActiveEditorAnchor(partAnchor);
-    const partUsesSolutionSpace = !subparts.length && safeMarkValue(part.marks) > 0;
+    const partPanelLabel = isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`;
+    const partUsesSolutionSpace = supportsSolutionTools && !subparts.length && safeMarkValue(part.marks) > 0;
     const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
     const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
     const partInsertAction = {
-      label: "Subpart",
-      tooltip: "Add a roman-numbered item, such as (i), inside this part",
+      label: isNotesTemplate ? "Detail" : "Subpart",
+      tooltip: isNotesTemplate
+        ? "Add a nested detail section inside this subheading"
+        : "Add a roman-numbered item, such as (i), inside this part",
       icon: <GitBranch className="size-4" aria-hidden="true" />,
       onClick: () => addSubpart(question.id, part),
     };
@@ -13886,19 +14712,20 @@ export default function App() {
           }}
         >
           <CollapsiblePanel
-            title={<InlineSummaryTitle label={`Part (${partLabel})`} summary={partPanelSummary(part.contentBlocks)} />}
-            leading={subsectionDragHandle(partTarget, `Drag part ${partLabel}`)}
+            title={<InlineSummaryTitle label={partPanelLabel} summary={partPanelSummary(part.contentBlocks)} />}
+            leading={subsectionDragHandle(partTarget, `Drag ${partPanelLabel}`)}
             onHeaderContextMenu={(event) => openContextMenu(event, partAnchor, "editor")}
             actions={
               <>
-                {subparts.length ? (
+                {!isNotesTemplate && subparts.length ? (
                   <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                     Marks
                     <div className="flex h-8 w-20 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
                       {markLabel(partMarks(part))}
                     </div>
                   </div>
-                ) : (
+                ) : null}
+                {!isNotesTemplate && !subparts.length ? (
                   <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                     Marks
                     <input
@@ -13909,8 +14736,8 @@ export default function App() {
                       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
-                )}
-                <RemoveActionButton label={`Remove part ${partLabel}`} onRemove={() => removePart(question.id, part.id)} />
+                ) : null}
+                <RemoveActionButton label={`Remove ${partPanelLabel}`} onRemove={() => removePart(question.id, part.id)} />
               </>
             }
             className="bg-background"
@@ -13961,13 +14788,18 @@ export default function App() {
               onAddChoices={() => addPartBlock(question.id, part, "choices")}
               onAddTable={() => addPartBlock(question.id, part, "table")}
               onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
+              diagramActions={quickDiagramInsertActions((type) => addPartDiagramBlock(question.id, part, type))}
               onAddColumns={() => addPartBlock(question.id, part, "columns")}
               onAddSpace={() => (partUsesSolutionSpace ? addPartSolutionSlot(question.id, part) : addPartBlock(question.id, part, "space"))}
               spaceActionLabel={partUsesSolutionSpace ? "Answer + solution" : "Space"}
               spaceActionTooltip={
                 partUsesSolutionSpace ? "Add the default paired student answer space and solution block for this marked part" : undefined
               }
-              extraActions={[...(partUsesSolutionSpace ? [] : [partSolutionSlotAction]), partInsertAction, partPageBreakInsertAction]}
+              extraActions={[
+                ...(partUsesSolutionSpace || !supportsSolutionTools ? [] : [partSolutionSlotAction]),
+                partInsertAction,
+                partPageBreakInsertAction,
+              ]}
             />
           </CollapsiblePanel>
         </div>
@@ -14031,6 +14863,7 @@ export default function App() {
                 size="icon"
                 title="Save current test"
                 aria-label="Save current test"
+                disabled={!editorDocumentOpen}
                 onClick={saveCurrentTest}
                 className={HEADER_ICON_BUTTON_CLASS}
               >
@@ -14047,6 +14880,18 @@ export default function App() {
               >
                 <FolderOpen />
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Close current file"
+                aria-label="Close current file"
+                disabled={!editorDocumentOpen}
+                onClick={() => void closeCurrentDocument()}
+                className={HEADER_ICON_BUTTON_CLASS}
+              >
+                <X />
+              </Button>
             </div>
             <div className="hidden min-w-0 flex-1 items-center justify-end gap-2 md:flex">
               <HeaderFileControls
@@ -14054,9 +14899,11 @@ export default function App() {
                 fileStatusMessage={headerFileStatusMessage}
                 fileStatusTitle={headerFileStatusTitle}
                 saveStatus={headerStorageStatus}
+                documentOpen={editorDocumentOpen}
                 onNewTest={startNewTest}
                 onSaveTest={saveCurrentTest}
                 onOpenFiles={openFileManager}
+                onCloseFile={() => void closeCurrentDocument()}
               />
               <div className={HEADER_GROUP_CLASS}>
                 <Button
@@ -14073,28 +14920,32 @@ export default function App() {
                 </Button>
               </div>
               <div className={HEADER_GROUP_CLASS}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title={showSolutions ? "Hide solutions" : "Show solutions"}
-                  aria-label={showSolutions ? "Hide solutions" : "Show solutions"}
-                  aria-pressed={showSolutions}
-                  onClick={() => setShowSolutions((current) => !current)}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, showSolutions && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  {showSolutions ? <Eye /> : <EyeOff />}
-                </Button>
+                {editorDocumentOpen && supportsSolutionTools ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title={showSolutions ? "Hide solutions" : "Show solutions"}
+                    aria-label={showSolutions ? "Hide solutions" : "Show solutions"}
+                    aria-pressed={showSolutions}
+                    onClick={() => setShowSolutions((current) => !current)}
+                    className={cn(HEADER_ICON_BUTTON_CLASS, showSolutions && HEADER_ICON_ACTIVE_CLASS)}
+                  >
+                    {showSolutions ? <Eye /> : <EyeOff />}
+                  </Button>
+                ) : null}
                 <button
                   type="button"
                   className={cn(
                     "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors",
+                    !editorDocumentOpen && "cursor-not-allowed opacity-50",
                     showSolutions
                       ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
                       : "border-emerald-300/30 bg-emerald-500/15 text-emerald-50 hover:bg-emerald-500/25 hover:text-white",
                   )}
                   title={`${printModeTitle} Open print dialog.`}
                   aria-label={`Print mode: ${printModeLabel}`}
+                  disabled={!editorDocumentOpen}
                   onClick={printDocument}
                 >
                   <FileText className="size-4" aria-hidden="true" />
@@ -14109,7 +14960,7 @@ export default function App() {
                   size="icon"
                   title="Undo"
                   aria-label="Undo"
-                  disabled={!canUndo}
+                  disabled={!editorDocumentOpen || !canUndo}
                   onClick={undoEdit}
                   className={HEADER_ICON_BUTTON_CLASS}
                 >
@@ -14121,7 +14972,7 @@ export default function App() {
                   size="icon"
                   title="Redo"
                   aria-label="Redo"
-                  disabled={!canRedo}
+                  disabled={!editorDocumentOpen || !canRedo}
                   onClick={redoEdit}
                   className={HEADER_ICON_BUTTON_CLASS}
                 >
@@ -14132,344 +14983,412 @@ export default function App() {
           </div>
         </header>
 
-        <main className="app-main grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={appShellStyle}>
-          <DocumentNavigatorRail
-            open={tocOpen}
-            items={documentTocItems}
-            activeItemId={activeRailItemId}
-            draggedQuestionId={draggedQuestionId}
-            dragOverQuestion={dragOverQuestion}
-            draggedPageBreakQuestionId={draggedPageBreakQuestionId}
-            dragOverPageBreak={dragOverPageBreak}
-            pageBreakQuestionIds={pageBreakQuestionIds}
-            onToggle={() => setTocOpen((current) => !current)}
-            onJump={jumpToTocItem}
-            onPreviewJump={jumpPreviewToTocItem}
-            onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
-            onSelectPageBreak={selectPageBreakInRail}
-            onToggleEditorAtItem={toggleEditorAtTocItem}
-            onAddSectionHeading={addSectionHeading}
-            onAddQuestion={addQuestion}
-            onAddPageBreakAfterQuestion={addPageBreakAfterQuestion}
-            onMoveQuestion={moveQuestionByKeyboard}
-            onMoveSectionHeading={moveSectionHeadingByKeyboard}
-            onMovePageBreak={movePageBreakByKeyboard}
-            onDeleteQuestion={removeQuestion}
-            onDeleteSectionHeading={removeSectionHeading}
-            onDeletePageBreak={removePageBreakAfterQuestion}
-            onQuestionDragStart={handleQuestionDragStart}
-            onQuestionDragOver={handleQuestionDragOver}
-            onQuestionDragLeave={handleQuestionDragLeave}
-            onQuestionDrop={handleQuestionDrop}
-            onQuestionDragEnd={handleQuestionDragEnd}
-            onPageBreakDragStart={handlePageBreakDragStart}
-            onPageBreakDragOver={handlePageBreakDragOver}
-            onPageBreakDragLeave={handlePageBreakDragLeave}
-            onPageBreakDrop={handlePageBreakDrop}
-            onPageBreakDragEnd={handlePageBreakDragEnd}
-          />
-          {tocOpen ? (
-            <DocumentNavigator
-              items={documentTocItems}
-              activeItemId={activeTocItemId}
-              onJump={jumpToTocItem}
-              onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
-            />
-          ) : null}
-          <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
-            {showEditor ? (
-              <section
-                ref={editorPaneRef}
-                className={cn(
-                  "editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r",
-                  paneMode === "split" && "split-pane-scroll",
-                )}
-              >
-                <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
-                  <div className="flex w-full min-w-0 flex-col gap-4">
-                    {editingFrontMatter ? (
-                      <div
-                        className={cn(
-                          "rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                          isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
-                        )}
-                        data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
-                      >
-                        <div className="flex flex-col gap-3">
-                          <FrontMatterEditor
-                            frontMatter={frontMatter}
-                            logos={logos}
-                            openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                            questionCount={questions.length}
-                            totalMarks={totalMarks}
-                            onChange={updateFrontMatter}
-                            onAddLogo={addLogo}
-                            onUpdateLogo={updateLogo}
-                            onRemoveLogo={removeLogo}
-                          />
-                          <TestFormatEditor
-                            formattingConfig={formattingConfig}
-                            titlePageTemplate={frontMatter.titlePageTemplate}
-                            openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                            onFormattingChange={updateFormattingConfig}
-                            onReset={resetTestFormat}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {!editingFrontMatter && editingPageBreak && activePageBreakQuestion ? (
-                      <div className="flex flex-col gap-4">
-                        <div data-scroll-anchor={pageBreakScrollAnchor(activePageBreakQuestion.id)}>
-                          <PageBreakStructurePanel
-                            label={`Page break after Question ${questionDisplayNumber(
-                              frontMatter,
-                              Math.max(
-                                0,
-                                questions.findIndex((question) => question.id === activePageBreakQuestion.id),
-                              ),
-                            )}`}
-                            active={isActiveEditorAnchor(pageBreakScrollAnchor(activePageBreakQuestion.id))}
-                            onRemove={() => removePageBreakAfterQuestion(activePageBreakQuestion.id)}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {!editingFrontMatter && !editingPageBreak && editingSectionHeading && activeSectionHeading ? (
-                      <div className="flex flex-col gap-4">
-                        <div data-scroll-anchor={sectionHeadingScrollAnchor(activeSectionHeading.id)}>
-                          <SectionHeadingStructurePanel
-                            heading={activeSectionHeading}
-                            active={isActiveEditorAnchor(sectionHeadingScrollAnchor(activeSectionHeading.id))}
-                            onChange={(title) => updateSectionHeading(activeSectionHeading.id, title)}
-                            onRemove={() => removeSectionHeading(activeSectionHeading.id)}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {!editingFrontMatter && !editingPageBreak && !editingSectionHeading ? (
-                      <div className="flex flex-col gap-4">
-                        {questions.map((question, index) => {
-                          if (question.id !== activeQuestion?.id) return null;
-
-                          const hasParts = question.parts.length > 0;
-                          const questionItems = orderedQuestionItems(question);
-                          const questionAnchor = questionScrollAnchor(question.id);
-                          const questionActive = isActiveEditorAnchor(questionAnchor);
-                          const questionUsesSolutionSpace = !hasParts && safeMarkValue(question.marks) > 0;
-                          const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
-                          const questionSolutionSlotAction = {
-                            label: "Solution slot",
-                            tooltip: "Add paired answer space and solution text",
-                            icon: <FileText className="size-4" aria-hidden="true" />,
-                            onClick: () => addQuestionSolutionSlot(question.id),
-                          };
-
-                          return (
-                            <div key={question.id} className="contents">
-                              <article
-                                className={cn(
-                                  "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                                  questionActive && EDITOR_ACTIVE_PANEL_CLASS,
-                                )}
-                                data-scroll-anchor={questionAnchor}
-                              >
-                                <div
-                                  className="mb-4 flex flex-wrap items-center justify-between gap-3"
-                                  data-panel-region="header"
-                                  onContextMenu={(event) => openContextMenu(event, questionAnchor, "editor")}
-                                >
-                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      title={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                      aria-label={`Jump preview to Question ${questionDisplayNumber(frontMatter, index)}`}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        jumpPreviewToQuestion(question.id);
-                                      }}
-                                      className={cn(
-                                        "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
-                                        questionActive &&
-                                          "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-                                      )}
-                                    >
-                                      Question {questionDisplayNumber(frontMatter, index)}
-                                    </Button>
-                                    {hasParts ? (
-                                      <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                                        {markLabel(questionMarks(question))}
-                                      </Badge>
-                                    ) : (
-                                      <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                        <span className="font-medium text-muted-foreground">Marks</span>
-                                        <input
-                                          aria-label={`Question ${questionDisplayNumber(frontMatter, index)} marks`}
-                                          type="number"
-                                          min={0}
-                                          value={question.marks}
-                                          onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                                          className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
-                                        />
-                                      </label>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      title={`Remove Question ${index + 1}`}
-                                      aria-label={`Remove Question ${index + 1}`}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        removeQuestion(question.id);
-                                      }}
-                                      className="size-9 shrink-0"
-                                    >
-                                      <Trash2 />
-                                    </Button>
-                                  </div>
-                                </div>
-
-                                <div className="flex flex-col gap-3">
-                                  {questionItems.map((item, itemIndex) => {
-                                    const beforeItem: ContainerOrderItem =
-                                      item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
-                                    const beforeDropZone = itemDropZone(
-                                      { kind: "question", questionId: question.id },
-                                      beforeItem,
-                                      Boolean(draggedSubsection || draggedEditorPageBreak),
-                                    );
-
-                                    return item.kind === "block" ? (
-                                      <Fragment key={item.id}>
-                                        {beforeDropZone}
-                                        {renderQuestionContentBlock(question, item.block, itemIndex, questionItems.length, questionItems)}
-                                      </Fragment>
-                                    ) : (
-                                      <Fragment key={item.id}>
-                                        {beforeDropZone}
-                                        {item.part.pageBreakBefore
-                                          ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
-                                          : null}
-                                        {renderPartPanel(question, item.part)}
-                                      </Fragment>
-                                    );
-                                  })}
-                                </div>
-                                {containerDropZone(
-                                  { kind: "question", questionId: question.id },
-                                  "end",
-                                  Boolean(draggedSubsection || draggedEditorPageBreak),
-                                )}
-                                <ContentInsertionActions
-                                  buttonLabel="Add"
-                                  centered
-                                  className="mt-4 pt-3"
-                                  onAddText={() => addQuestionBlock(question.id, "text")}
-                                  onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                  onAddTable={() => addQuestionBlock(question.id, "table")}
-                                  onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                                  onAddColumns={() => addQuestionBlock(question.id, "columns")}
-                                  onAddSpace={() =>
-                                    questionUsesSolutionSpace
-                                      ? addQuestionSolutionSlot(question.id)
-                                      : addQuestionBlock(question.id, "space")
-                                  }
-                                  spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
-                                  spaceActionTooltip={
-                                    questionUsesSolutionSpace
-                                      ? "Add the default paired student answer space and solution block for this marked question"
-                                      : undefined
-                                  }
-                                  extraActions={[
-                                    ...(questionUsesSolutionSpace ? [] : [questionSolutionSlotAction]),
-                                    {
-                                      label: "Part",
-                                      tooltip: "Add a lettered question part, such as (a), (b), (c)",
-                                      icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                      onClick: () => addPart(question.id),
-                                    },
-                                    {
-                                      label: "Page break",
-                                      tooltip: nextPartPageBreakTarget
-                                        ? "Add a page-break row before an existing part"
-                                        : "Add a part first, then insert a page-break row before it",
-                                      icon: <FileText className="size-4" aria-hidden="true" />,
-                                      disabled: !nextPartPageBreakTarget,
-                                      onClick: () => addPartPageBreak(question.id),
-                                    },
-                                  ]}
-                                />
-                              </article>
+        <main className="app-main grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={editorDocumentOpen ? appShellStyle : undefined}>
+          {editorDocumentOpen ? (
+            <>
+              <DocumentNavigatorRail
+                open={tocOpen}
+                items={documentTocItems}
+                activeItemId={activeRailItemId}
+                draggedQuestionId={draggedQuestionId}
+                dragOverQuestion={dragOverQuestion}
+                draggedPageBreakQuestionId={draggedPageBreakQuestionId}
+                dragOverPageBreak={dragOverPageBreak}
+                pageBreakQuestionIds={pageBreakQuestionIds}
+                onToggle={() => setTocOpen((current) => !current)}
+                onJump={jumpToTocItem}
+                onPreviewJump={jumpPreviewToTocItem}
+                onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
+                onSelectPageBreak={selectPageBreakInRail}
+                onToggleEditorAtItem={toggleEditorAtTocItem}
+                onAddSectionHeading={addSectionHeading}
+                onAddQuestion={addQuestion}
+                questionItemLabel={isNotesTemplate ? "heading" : "question"}
+                onAddPageBreakAfterQuestion={addPageBreakAfterQuestion}
+                onMoveQuestion={moveQuestionByKeyboard}
+                onMoveSectionHeading={moveSectionHeadingByKeyboard}
+                onMovePageBreak={movePageBreakByKeyboard}
+                onDeleteQuestion={removeQuestion}
+                onDeleteSectionHeading={removeSectionHeading}
+                onDeletePageBreak={removePageBreakAfterQuestion}
+                onQuestionDragStart={handleQuestionDragStart}
+                onQuestionDragOver={handleQuestionDragOver}
+                onQuestionDragLeave={handleQuestionDragLeave}
+                onQuestionDrop={handleQuestionDrop}
+                onQuestionDragOverPageBreak={handleQuestionDragOverPageBreak}
+                onQuestionDragLeavePageBreak={handleQuestionDragLeavePageBreak}
+                onQuestionDropPageBreak={handleQuestionDropPageBreak}
+                onQuestionDragEnd={handleQuestionDragEnd}
+                onPageBreakDragStart={handlePageBreakDragStart}
+                onPageBreakDragOver={handlePageBreakDragOver}
+                onPageBreakDragLeave={handlePageBreakDragLeave}
+                onPageBreakDrop={handlePageBreakDrop}
+                onPageBreakDragEnd={handlePageBreakDragEnd}
+              />
+              {tocOpen ? (
+                <DocumentNavigator
+                  items={documentTocItems}
+                  activeItemId={activeTocItemId}
+                  onJump={jumpToTocItem}
+                  onContextMenu={(event, item) => openContextMenu(event, item.editorAnchor, "miniToc")}
+                />
+              ) : null}
+              <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={workspaceStyle}>
+                {showEditor ? (
+                  <section
+                    ref={editorPaneRef}
+                    className={cn(
+                      "editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r",
+                      paneMode === "split" && "split-pane-scroll",
+                    )}
+                  >
+                    <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
+                      <div className="flex w-full min-w-0 flex-col gap-4">
+                        {editingFrontMatter ? (
+                          <div
+                            className={cn(
+                              "rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                              isActiveEditorAnchor(SCROLL_ANCHOR_FRONT_MATTER) && EDITOR_ACTIVE_PANEL_CLASS,
+                            )}
+                            data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
+                          >
+                            <div className="flex flex-col gap-3">
+                              <FrontMatterEditor
+                                frontMatter={frontMatter}
+                                logos={logos}
+                                openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                                questionCount={questions.length}
+                                totalMarks={totalMarks}
+                                onChange={updateFrontMatter}
+                                onAddLogo={addLogo}
+                                onUpdateLogo={updateLogo}
+                                onRemoveLogo={removeLogo}
+                              />
+                              <TestFormatEditor
+                                formattingConfig={formattingConfig}
+                                titlePageTemplate={frontMatter.titlePageTemplate}
+                                openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
+                                onFormattingChange={updateFormattingConfig}
+                                onReset={resetTestFormat}
+                              />
                             </div>
-                          );
-                        })}
+                          </div>
+                        ) : null}
+
+                        {!editingFrontMatter && editingPageBreak && activePageBreakQuestion ? (
+                          <div className="flex flex-col gap-4">
+                            <div data-scroll-anchor={pageBreakScrollAnchor(activePageBreakQuestion.id)}>
+                              <PageBreakStructurePanel
+                                label={`Page break after ${
+                                  isNotesTemplate
+                                    ? `Heading ${
+                                        Math.max(
+                                          0,
+                                          questions.findIndex((question) => question.id === activePageBreakQuestion.id),
+                                        ) + 1
+                                      }`
+                                    : `Question ${questionDisplayNumber(
+                                        frontMatter,
+                                        Math.max(
+                                          0,
+                                          questions.findIndex((question) => question.id === activePageBreakQuestion.id),
+                                        ),
+                                      )}`
+                                }`}
+                                active={isActiveEditorAnchor(pageBreakScrollAnchor(activePageBreakQuestion.id))}
+                                onRemove={() => removePageBreakAfterQuestion(activePageBreakQuestion.id)}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {!editingFrontMatter && !editingPageBreak && editingSectionHeading && activeSectionHeading ? (
+                          <div className="flex flex-col gap-4">
+                            <div data-scroll-anchor={sectionHeadingScrollAnchor(activeSectionHeading.id)}>
+                              <SectionHeadingStructurePanel
+                                heading={activeSectionHeading}
+                                active={isActiveEditorAnchor(sectionHeadingScrollAnchor(activeSectionHeading.id))}
+                                onChange={(title) => updateSectionHeading(activeSectionHeading.id, title)}
+                                onRemove={() => removeSectionHeading(activeSectionHeading.id)}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {!editingFrontMatter && !editingPageBreak && !editingSectionHeading ? (
+                          <div className="flex flex-col gap-4">
+                            {questions.map((question, index) => {
+                              if (question.id !== activeQuestion?.id) return null;
+
+                              const hasParts = question.parts.length > 0;
+                              const questionItems = orderedQuestionItems(question);
+                              const questionAnchor = questionScrollAnchor(question.id);
+                              const questionActive = isActiveEditorAnchor(questionAnchor);
+                              const questionPanelLabel = isNotesTemplate
+                                ? `Heading ${index + 1}`
+                                : `Question ${questionDisplayNumber(frontMatter, index)}`;
+                              const questionUsesSolutionSpace = supportsSolutionTools && !hasParts && safeMarkValue(question.marks) > 0;
+                              const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
+                              const questionSolutionSlotAction = {
+                                label: "Solution slot",
+                                tooltip: "Add paired answer space and solution text",
+                                icon: <FileText className="size-4" aria-hidden="true" />,
+                                onClick: () => addQuestionSolutionSlot(question.id),
+                              };
+
+                              return (
+                                <div key={question.id} className="contents">
+                                  <article
+                                    className={cn(
+                                      "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
+                                      questionActive && EDITOR_ACTIVE_PANEL_CLASS,
+                                    )}
+                                    data-scroll-anchor={questionAnchor}
+                                  >
+                                    <div
+                                      className="mb-4 flex flex-wrap items-center justify-between gap-3"
+                                      data-panel-region="header"
+                                      onContextMenu={(event) => openContextMenu(event, questionAnchor, "editor")}
+                                    >
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          title={`Jump preview to ${questionPanelLabel}`}
+                                          aria-label={`Jump preview to ${questionPanelLabel}`}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            jumpPreviewToQuestion(question.id);
+                                          }}
+                                          className={cn(
+                                            "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
+                                            questionActive &&
+                                              "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                                          )}
+                                        >
+                                          {questionPanelLabel}
+                                        </Button>
+                                        {isNotesTemplate ? (
+                                          <label className="flex h-9 min-w-[14rem] flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+                                            <span className="shrink-0 font-medium text-muted-foreground">Title</span>
+                                            <input
+                                              aria-label={`${questionPanelLabel} title`}
+                                              type="text"
+                                              value={question.section}
+                                              onChange={(event) => updateQuestion(question.id, { section: event.target.value })}
+                                              placeholder="Heading title"
+                                              className="h-7 min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
+                                            />
+                                          </label>
+                                        ) : null}
+                                        {!isNotesTemplate && hasParts ? (
+                                          <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
+                                            {markLabel(questionMarks(question))}
+                                          </Badge>
+                                        ) : null}
+                                        {!isNotesTemplate && !hasParts ? (
+                                          <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+                                            <span className="font-medium text-muted-foreground">Marks</span>
+                                            <input
+                                              aria-label={`${questionPanelLabel} marks`}
+                                              type="number"
+                                              min={0}
+                                              value={question.marks}
+                                              onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
+                                              className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
+                                            />
+                                          </label>
+                                        ) : null}
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          title={`Remove ${questionPanelLabel}`}
+                                          aria-label={`Remove ${questionPanelLabel}`}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            removeQuestion(question.id);
+                                          }}
+                                          className="size-9 shrink-0"
+                                        >
+                                          <Trash2 />
+                                        </Button>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3">
+                                      {questionItems.map((item, itemIndex) => {
+                                        const beforeItem: ContainerOrderItem =
+                                          item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
+                                        const beforeDropZone = itemDropZone(
+                                          { kind: "question", questionId: question.id },
+                                          beforeItem,
+                                          Boolean(draggedSubsection || draggedEditorPageBreak),
+                                        );
+
+                                        return item.kind === "block" ? (
+                                          <Fragment key={item.id}>
+                                            {beforeDropZone}
+                                            {renderQuestionContentBlock(
+                                              question,
+                                              item.block,
+                                              itemIndex,
+                                              questionItems.length,
+                                              questionItems,
+                                            )}
+                                          </Fragment>
+                                        ) : (
+                                          <Fragment key={item.id}>
+                                            {beforeDropZone}
+                                            {item.part.pageBreakBefore
+                                              ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
+                                              : null}
+                                            {renderPartPanel(question, item.part)}
+                                          </Fragment>
+                                        );
+                                      })}
+                                    </div>
+                                    {containerDropZone(
+                                      { kind: "question", questionId: question.id },
+                                      "end",
+                                      Boolean(draggedSubsection || draggedEditorPageBreak),
+                                    )}
+                                    <ContentInsertionActions
+                                      buttonLabel="Add"
+                                      centered
+                                      className="mt-4 pt-3"
+                                      onAddText={() => addQuestionBlock(question.id, "text")}
+                                      onAddChoices={() => addQuestionBlock(question.id, "choices")}
+                                      onAddTable={() => addQuestionBlock(question.id, "table")}
+                                      onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                      diagramActions={quickDiagramInsertActions((type) => addQuestionDiagramBlock(question.id, type))}
+                                      onAddColumns={() => addQuestionBlock(question.id, "columns")}
+                                      onAddSpace={() =>
+                                        questionUsesSolutionSpace
+                                          ? addQuestionSolutionSlot(question.id)
+                                          : addQuestionBlock(question.id, "space")
+                                      }
+                                      spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
+                                      spaceActionTooltip={
+                                        questionUsesSolutionSpace
+                                          ? "Add the default paired student answer space and solution block for this marked question"
+                                          : undefined
+                                      }
+                                      extraActions={[
+                                        ...(questionUsesSolutionSpace || !supportsSolutionTools ? [] : [questionSolutionSlotAction]),
+                                        {
+                                          label: isNotesTemplate ? "Subheading" : "Part",
+                                          tooltip: isNotesTemplate
+                                            ? "Add a nested notes subheading"
+                                            : "Add a lettered question part, such as (a), (b), (c)",
+                                          icon: <GitBranch className="size-4" aria-hidden="true" />,
+                                          onClick: () => addPart(question.id),
+                                        },
+                                        {
+                                          label: "Page break",
+                                          tooltip: nextPartPageBreakTarget
+                                            ? "Add a page-break row before an existing part"
+                                            : "Add a part first, then insert a page-break row before it",
+                                          icon: <FileText className="size-4" aria-hidden="true" />,
+                                          disabled: !nextPartPageBreakTarget,
+                                          onClick: () => addPartPageBreak(question.id),
+                                        },
+                                      ]}
+                                    />
+                                  </article>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                {showInspectorPane ? (
+                  selectionInspectorVisible ? (
+                    <SelectionInspector
+                      selectedBlock={selectedEditorBlock}
+                      activeAnchor={activeTocItemId}
+                      onActivateAnchor={activateEditorAnchor}
+                      onBlockChange={updateSelectedBlock}
+                      createTextBlock={textBlock}
+                      diagramTypePatch={diagramTypePatch}
+                      updateGraphConfig={updateGraphConfig}
+                      withGraphDefaults={withGraphDefaults}
+                    />
+                  ) : (
+                    <aside
+                      data-inspector-placement="inline"
+                      className="selection-inspector-pane flex min-h-0 min-w-0 flex-col overflow-hidden border-b bg-card/95 lg:border-b-0 lg:border-r"
+                    >
+                      <div className="shrink-0 border-b p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
+                        <div className="mt-1 truncate text-sm font-semibold">No module selected</div>
+                      </div>
+                    </aside>
+                  )
+                ) : null}
+
+                {showPreview ? (
+                  <section
+                    ref={previewPaneRef}
+                    className={cn(
+                      "preview-pane min-h-0 overflow-auto bg-muted/70 p-4",
+                      paneMode === "split" && "preview-pane-edit-sync split-pane-scroll",
+                    )}
+                    onPointerDownCapture={handlePreviewPointerDown}
+                    onClickCapture={handlePreviewClick}
+                    onContextMenuCapture={handlePreviewContextMenu}
+                  >
+                    <PaginatedTestPreview
+                      frontMatter={previewFrontMatter}
+                      logos={previewLogos}
+                      totalMarks={previewTotalMarks}
+                      questions={previewQuestions}
+                      sectionHeadings={previewSectionHeadings}
+                      documentFlow={previewDocumentFlow}
+                      formattingConfig={previewFormattingConfig}
+                      scale={previewLayoutScale}
+                      showSolutions={previewShowSolutions}
+                      onGraphConfigChange={handlePreviewGraphConfigChange}
+                    />
+                  </section>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <section className="flex min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.12),transparent_38%),linear-gradient(180deg,#f8fbff_0%,#eef3fb_100%)] p-6">
+              <div className="flex max-w-xl flex-col items-center text-center">
+                <div className="mb-5 flex size-16 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600 shadow-sm">
+                  <FileText className="size-8" aria-hidden="true" />
                 </div>
-              </section>
-            ) : null}
-
-            {showInspectorPane ? (
-              selectionInspectorVisible ? (
-                <SelectionInspector
-                  selectedBlock={selectedEditorBlock}
-                  activeAnchor={activeTocItemId}
-                  onActivateAnchor={activateEditorAnchor}
-                  onBlockChange={updateSelectedBlock}
-                  createTextBlock={textBlock}
-                  diagramTypePatch={diagramTypePatch}
-                  updateGraphConfig={updateGraphConfig}
-                  withGraphDefaults={withGraphDefaults}
-                />
-              ) : (
-                <aside
-                  data-inspector-placement="inline"
-                  className="selection-inspector-pane flex min-h-0 min-w-0 flex-col overflow-hidden border-b bg-card/95 lg:border-b-0 lg:border-r"
+                <p
+                  className="text-4xl leading-tight text-slate-800 sm:text-5xl"
+                  style={{ fontFamily: '"Apple Chancery", "Snell Roundhand", "Brush Script MT", cursive' }}
                 >
-                  <div className="shrink-0 border-b p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
-                    <div className="mt-1 truncate text-sm font-semibold">No module selected</div>
-                  </div>
-                </aside>
-              )
-            ) : null}
-
-            {showPreview ? (
-              <section
-                ref={previewPaneRef}
-                className={cn(
-                  "preview-pane min-h-0 overflow-auto bg-muted/70 p-4",
-                  paneMode === "split" && "preview-pane-edit-sync split-pane-scroll",
-                )}
-                onPointerDownCapture={handlePreviewPointerDown}
-                onClickCapture={handlePreviewClick}
-                onContextMenuCapture={handlePreviewContextMenu}
-              >
-                <PaginatedTestPreview
-                  frontMatter={previewFrontMatter}
-                  logos={previewLogos}
-                  totalMarks={previewTotalMarks}
-                  questions={previewQuestions}
-                  sectionHeadings={previewSectionHeadings}
-                  documentFlow={previewDocumentFlow}
-                  formattingConfig={previewFormattingConfig}
-                  scale={previewLayoutScale}
-                  showSolutions={previewShowSolutions}
-                  onGraphConfigChange={handlePreviewGraphConfigChange}
-                />
-              </section>
-            ) : null}
-          </div>
+                  Create a new Mauth document to begin.
+                </p>
+                <div className="mt-8 flex flex-wrap justify-center gap-3">
+                  <Button type="button" onClick={startNewTest} className="gap-2">
+                    <PlusCircle className="size-4" aria-hidden="true" />
+                    New document
+                  </Button>
+                  <Button type="button" variant="outline" onClick={openFileManager} className="gap-2 bg-white/80">
+                    <FolderOpen className="size-4" aria-hidden="true" />
+                    Open files
+                  </Button>
+                </div>
+              </div>
+            </section>
+          )}
         </main>
       </div>
       <FileManagementDrawer
         open={fileManagerOpen}
+        activeProject={activeProject}
         projectFiles={projectFiles}
         projectFilesStatus={projectFilesStatus}
         projectFilesMessage={projectFilesMessage}
@@ -14481,6 +15400,7 @@ export default function App() {
         onCreateProjectFolder={(folderPath) => void createProjectFolder(folderPath)}
         onExportProjectBackup={() => void exportCurrentProjectBackup()}
         onImportProjectBackup={(file) => void importProjectBackupFile(file)}
+        onRefreshProjectFiles={() => void refreshProjectFiles()}
         onRenameProjectFile={(filePath) => void renameProjectFile(filePath)}
         onDuplicateProjectFiles={(filePaths) => void duplicateProjectFiles(filePaths)}
         onMoveProjectFiles={(filePaths, targetFolderPath) => void moveProjectFiles(filePaths, targetFolderPath)}
@@ -14514,7 +15434,7 @@ export default function App() {
         />
       ) : null}
       <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
-      {printPreviewMounted ? (
+      {printPreviewMounted && editorDocumentOpen ? (
         <div className="print-preview-stage" aria-hidden="true">
           <PaginatedTestPreview
             frontMatter={frontMatter}
@@ -14525,7 +15445,7 @@ export default function App() {
             documentFlow={documentFlow}
             formattingConfig={formattingConfig}
             scale={1}
-            showSolutions={showSolutions}
+            showSolutions={effectiveShowSolutions}
           />
         </div>
       ) : null}

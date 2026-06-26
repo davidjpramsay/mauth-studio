@@ -852,10 +852,10 @@
 
   .worksheet-title-copy h1 {
     color: #0f172a;
-    font-size: 15pt;
+    font-size: 9.2pt;
     font-weight: 800;
     letter-spacing: 0;
-    line-height: 1;
+    line-height: 1.2;
     margin: 0;
   }
 
@@ -910,6 +910,72 @@
 
   .worksheet-mark-line strong {
     font-weight: 600;
+  }
+
+  .notes-header {
+    align-items: center;
+    border-bottom: 1.5px solid #0f172a;
+    color: #0f172a;
+    display: flex;
+    font-family: Montserrat, Arial, ui-sans-serif, system-ui, sans-serif;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+    margin-inline: -0.45rem;
+    padding: 0 0.45rem 0.6rem;
+  }
+
+  .notes-mini-logo {
+    align-items: center;
+    display: flex;
+    flex: 0 0 2.65rem;
+    height: 2.65rem;
+    justify-content: center;
+    overflow: hidden;
+    width: 2.65rem;
+  }
+
+  .notes-mini-logo img {
+    display: block;
+    max-height: 100%;
+    max-width: 100%;
+    object-fit: contain;
+  }
+
+  .notes-title-copy {
+    min-width: 0;
+  }
+
+  .notes-school-name {
+    color: #475569;
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.1;
+    margin: 0 0 0.12rem;
+    text-transform: uppercase;
+  }
+
+  .notes-title-copy h1 {
+    color: #0f172a;
+    font-size: 15pt;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  .notes-subject-line,
+  .notes-subtitle-line {
+    color: #334155;
+    font-size: 9pt;
+    font-weight: 600;
+    line-height: 1.22;
+    margin: 0.18rem 0 0;
+  }
+
+  .notes-subtitle-line {
+    color: #64748b;
+    font-weight: 500;
   }
 
   .exam-title-page {
@@ -1034,48 +1100,21 @@
   }
 
   .school-exam-student-number {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .school-exam-student-number-figures {
-    align-items: center;
-    display: grid;
-    gap: 0.7rem;
-    grid-template-columns: max-content max-content max-content;
-  }
-
-  .school-exam-student-number-words {
     align-items: center;
     display: grid;
     gap: 0.75rem;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: max-content minmax(12rem, 1fr);
   }
 
-  .school-exam-student-number-figures > span,
-  .school-exam-student-number-words > span:first-child {
+  .school-exam-student-number > span:first-child {
     white-space: nowrap;
   }
 
-  .school-exam-student-number-words > span:first-child {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .school-exam-student-number-words span[aria-hidden="true"] {
+  .school-exam-student-name-line {
     border-bottom: 1.2px solid #111827;
     display: block;
     height: 1.3rem;
-  }
-
-  .school-exam-student-number-words span[aria-hidden="true"]:nth-child(2) {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .school-exam-student-number-words span[aria-hidden="true"]:nth-child(3) {
-    grid-column: 2;
-    grid-row: 2;
+    min-width: 12rem;
   }
 
   .school-exam-time-block {
@@ -1163,27 +1202,6 @@
     position: absolute;
     right: 0;
     text-align: center;
-  }
-
-  .school-exam-cut-off-notice {
-    bottom: 5.6rem;
-    color: #737373;
-    font-size: 8.2pt;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-    position: absolute;
-    right: -2.7rem;
-    text-orientation: mixed;
-    transform: rotate(90deg);
-    transform-origin: right bottom;
-    white-space: nowrap;
-  }
-
-  .school-exam-cut-off-notice-left {
-    left: -2.7rem;
-    right: auto;
-    transform: rotate(-90deg);
-    transform-origin: left bottom;
   }
 
   .school-exam-supplementary-page {
@@ -1334,29 +1352,6 @@
     line-height: 1.22;
     min-height: 96px;
     padding: 0.62rem 1rem;
-  }
-
-  .exam-student-number-row {
-    align-items: end;
-    display: grid;
-    gap: 0.45rem;
-    grid-template-columns: auto auto auto 1fr;
-    margin-top: 0.7rem;
-  }
-
-  .exam-student-number-boxes {
-    display: inline-grid;
-    grid-template-columns: 3rem 4.6rem 4.6rem;
-  }
-
-  .exam-student-number-boxes span {
-    border: 1.4px solid #111827;
-    display: block;
-    height: 1.8rem;
-  }
-
-  .exam-student-words-label {
-    justify-self: end;
   }
 
   .exam-time-booklets-row {
@@ -1546,20 +1541,6 @@
     line-height: 1.34;
   }
 
-  .exam-cut-off-notice {
-    bottom: 5.8rem;
-    color: #111827;
-    font-size: 7.4pt;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    position: absolute;
-    right: -2.55rem;
-    text-orientation: mixed;
-    transform: rotate(90deg);
-    transform-origin: right bottom;
-    white-space: nowrap;
-  }
-
   .exam-page-footer {
     bottom: 0;
     font-size: 8.4pt;
@@ -1715,8 +1696,17 @@
     color: var(--test-solution-color);
   }
 
+  .test-solution-surface .test-table {
+    color: #0f172a;
+  }
+
   .test-solution-surface .test-table-cell {
-    border-color: var(--test-solution-border-color);
+    border-color: #1f2937;
+  }
+
+  .test-solution-surface .test-table-solution-entry-cell {
+    color: var(--test-solution-color);
+    font-weight: 500;
   }
 
   .solution-mark-ticks {
@@ -1771,6 +1761,29 @@
     margin: 0;
   }
 
+  .test-question-prompt-row {
+    margin-top: 0.45rem;
+  }
+
+  .a4-preview-root-notes .test-preview-segment {
+    --test-content-gap: 0.62rem;
+    font-size: 10pt;
+    line-height: 1.56;
+  }
+
+  .a4-preview-root-notes .notes-section-start .test-question-header {
+    border-bottom: 1px solid #d4dce8;
+    padding-bottom: 0.25rem;
+  }
+
+  .a4-preview-root-notes .notes-section-start h3 {
+    color: #0f172a;
+    font-size: 13pt;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1.18;
+  }
+
   .test-question-part,
   .test-question-subpart {
     align-items: baseline;
@@ -1780,7 +1793,7 @@
   }
 
   .test-solution-row {
-    margin-top: 0.35rem;
+    margin-top: 0.8rem;
   }
 
   .test-question-row-with-diagram {
@@ -1902,6 +1915,7 @@
   .test-table td {
     border: 1px solid #1f2937;
     font-weight: 400;
+    height: 2.65rem;
     min-width: 3rem;
     padding: 0.28rem 0.55rem;
     vertical-align: middle;
@@ -1920,27 +1934,43 @@
   }
 
   .test-table-cell .mixed-math {
-    align-items: center;
-    display: flex;
-    min-height: 2.1rem;
+    display: block;
+    min-height: 0;
     text-align: inherit;
     width: 100%;
   }
 
   .test-table-cell-left .mixed-math {
-    justify-content: flex-start;
+    text-align: left;
   }
 
   .test-table-cell-center .mixed-math {
-    justify-content: center;
+    text-align: center;
   }
 
   .test-table-cell-right .mixed-math {
-    justify-content: flex-end;
+    text-align: right;
   }
 
   .test-table-cell .latex-inline {
     text-align: inherit;
+  }
+
+  .a4-preview-root-notes .test-table {
+    font-size: 9.5pt;
+    line-height: 1.28;
+    width: 100%;
+  }
+
+  .a4-preview-root-notes .test-table th,
+  .a4-preview-root-notes .test-table td {
+    height: auto;
+    padding: 0.24rem 0.4rem;
+  }
+
+  .a4-preview-root-notes .test-table th:first-child,
+  .a4-preview-root-notes .test-table td:first-child {
+    white-space: nowrap;
   }
 
   .test-question-subpart {
@@ -2043,10 +2073,21 @@
   }
 
   .test-diagram-response-space {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(1.55em - 1px),
+      rgb(148 163 184 / 0.65) calc(1.55em - 1px),
+      rgb(148 163 184 / 0.65) 1.55em
+    );
     min-height: calc(var(--space-lines, 3) * 1.55em);
     min-width: 0;
     position: relative;
     z-index: 0;
+  }
+
+  .test-diagram-response-space-blank {
+    background-image: none;
   }
 
   .test-diagram-response-outline {
@@ -2071,7 +2112,18 @@
   }
 
   .test-space-block {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(1.55em - 1px),
+      rgb(148 163 184 / 0.65) calc(1.55em - 1px),
+      rgb(148 163 184 / 0.65) 1.55em
+    );
     height: calc(var(--space-lines, 3) * 1.55em);
+  }
+
+  .test-space-block-blank {
+    background-image: none;
   }
 
   .a4-page-break {
@@ -2214,10 +2266,10 @@
     break-inside: avoid;
     box-sizing: border-box;
     display: block;
-    height: auto;
+    height: calc(297mm - 40.216666mm);
     margin: 0;
     max-height: none;
-    min-height: 0;
+    min-height: calc(297mm - 40.216666mm);
     overflow: visible;
     page-break-after: always;
     page-break-before: auto;
@@ -2235,11 +2287,11 @@
   .print-preview-stage .a4-page {
     box-shadow: none;
     box-sizing: border-box;
-    height: auto;
+    height: calc(297mm - 40.216666mm);
     left: auto;
     margin: 0;
     max-height: none;
-    min-height: 0;
+    min-height: calc(297mm - 40.216666mm);
     overflow: visible;
     padding: 0;
     position: relative;
@@ -2250,7 +2302,7 @@
   .print-preview-stage .a4-page-content,
   .print-preview-stage .test-front-matter,
   .print-preview-stage .exam-title-page {
-    min-height: 0;
+    min-height: calc(297mm - 40.216666mm);
   }
 
   .print-preview-stage .a4-page-break,

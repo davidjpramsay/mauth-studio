@@ -96,6 +96,13 @@ Human UI controls should use the same action path where practical. This keeps un
 
 Do not create a second hidden editing path for agent work.
 
+## Space Module Settings
+
+Use `module.settings.update` for focused answer-space changes instead of replacing the whole module. Space settings accept:
+
+- `lines`: the reserved response-space height, in working-line units.
+- `showLines`: whether the reserved response space renders ruled lines. Set `false` for blank working space while preserving the same height.
+
 ## Diagram Guardrails
 
 AI-authored diagrams should use the real renderer config for the selected diagram type. Do not invent wrapper shapes that bypass `GraphConfig`.

@@ -18,8 +18,10 @@ export interface GraphFunctionDomain {
   xEnd: number;
 }
 
-const NATURAL_BOUNDARY_RENDER_GAP_PX = 4;
-const DEFAULT_GRAPH_RENDER_WIDTH_PX = 680;
+const NATURAL_DOMAIN_EPSILON_RATIO = 1e-12;
+const MIN_NATURAL_DOMAIN_EPSILON = 1e-12;
+const NATURAL_BOUNDARY_MANUAL_SNAP_RATIO = 0.01;
+const MIN_NATURAL_BOUNDARY_MANUAL_SNAP = 0.025;
 
 function stripBalancedOuterParens(expression: string) {
   let source = expression.trim();
@@ -113,19 +115,61 @@ export function graphFunctionNaturalDomainEpsilon(graphConfig: GraphConfig) {
   const xMin = graphConfig.xMin ?? -10;
   const xMax = graphConfig.xMax ?? 10;
   const span = Math.abs(xMax - xMin);
-  return Math.max(span * 1e-6, 1e-6);
+  return Math.max(span * NATURAL_DOMAIN_EPSILON_RATIO, MIN_NATURAL_DOMAIN_EPSILON);
 }
 
 export function graphFunctionNaturalBoundaryRenderGap(graphConfig: GraphConfig) {
+  return graphFunctionNaturalDomainEpsilon(graphConfig);
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
+}
+
+function verticalLineSegmentX(feature: Record<string, unknown>, tolerance: number) {
+  if (feature.kind !== "line_segment" || feature.show === false) return undefined;
+  const x1 = finiteNumber(feature.x1) ? feature.x1 : undefined;
+  const x2 = finiteNumber(feature.x2) ? feature.x2 : undefined;
+  if (x1 === undefined || x2 === undefined || Math.abs(x1 - x2) > tolerance) return undefined;
+  return (x1 + x2) / 2;
+}
+
+function hasMatchingNaturalAsymptoteFeature(graphConfig: GraphConfig, boundary: number, tolerance: number) {
+  return recordArray(graphConfig.features).some((feature) => {
+    const verticalX = verticalLineSegmentX(feature, tolerance);
+    return verticalX !== undefined && Math.abs(verticalX - boundary) <= tolerance;
+  });
+}
+
+export function snapManualDomainToNaturalAsymptotes(
+  expression: string | undefined,
+  domain: GraphFunctionDomain,
+  graphConfig: GraphConfig,
+): GraphFunctionDomain {
+  if (!expression?.trim()) return domain;
   const xMin = graphConfig.xMin ?? -10;
   const xMax = graphConfig.xMax ?? 10;
-  const span = Math.abs(xMax - xMin) || 1;
-  const displayWidth =
-    typeof graphConfig.widthPx === "number" && Number.isFinite(graphConfig.widthPx) && graphConfig.widthPx > 0
-      ? graphConfig.widthPx
-      : DEFAULT_GRAPH_RENDER_WIDTH_PX;
-  const pixelGap = (span / displayWidth) * NATURAL_BOUNDARY_RENDER_GAP_PX;
-  return Math.max(graphFunctionNaturalDomainEpsilon(graphConfig), Math.min(pixelGap, span * 0.025));
+  const span = Math.abs(xMax - xMin);
+  const tolerance = Math.max(span * NATURAL_BOUNDARY_MANUAL_SNAP_RATIO, MIN_NATURAL_BOUNDARY_MANUAL_SNAP);
+  const epsilon = graphFunctionNaturalDomainEpsilon(graphConfig);
+  let { xStart, xEnd } = domain;
+
+  for (const boundary of graphFunctionNaturalBoundaries(expression)) {
+    if (!boundary.strict || !hasMatchingNaturalAsymptoteFeature(graphConfig, boundary.boundary, tolerance)) continue;
+    if (boundary.side === "left") {
+      const distance = xStart - boundary.boundary;
+      if (distance > epsilon && distance <= tolerance) xStart = boundary.boundary + epsilon;
+    } else {
+      const distance = boundary.boundary - xEnd;
+      if (distance > epsilon && distance <= tolerance) xEnd = boundary.boundary - epsilon;
+    }
+  }
+
+  return { xStart, xEnd };
 }
 
 export function clampDomainToNaturalBoundaries(

@@ -19,7 +19,6 @@ const GRID_MINOR_COLOR = "#dddddd";
 const AXIS_COLOR = "#000000";
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_ARROW_SIZE = 4;
-const DEFAULT_AXIS_LABEL_MIN_SPACING_PX = 48;
 const AUTO_AXIS_EXTENSION_RATIO = 0.055;
 const BOARD_EDGE_PADDING_RATIO = 0.022;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
@@ -27,6 +26,7 @@ const X_TICK_LABEL_OFFSET_PX = -18;
 const Y_TICK_LABEL_OFFSET_PX = -10;
 const VECTOR_ARROW_LENGTH_PX = 18;
 const VECTOR_ARROW_HALF_WIDTH_PX = 7;
+const PASSIVE_GRAPH_DECORATION_CSS = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
 const DEFAULT_VECTOR_COLORS = ["#0f766e", "#b45309", "#1d4ed8", "#be123c"];
 const GRAPH_LAYERS = {
   grid: 1,
@@ -137,17 +137,6 @@ function isMultiple(value: number, step: number) {
   return Math.abs(value / step - Math.round(value / step)) < 0.001;
 }
 
-function niceGridAlignedStep(baseStep: number, minimumStep: number) {
-  if (!Number.isFinite(baseStep) || baseStep <= 0) return 1;
-  if (!Number.isFinite(minimumStep) || minimumStep <= baseStep) return baseStep;
-
-  const minimumMultiple = Math.max(1, Math.ceil(minimumStep / baseStep));
-  const magnitude = 10 ** Math.floor(Math.log10(minimumMultiple));
-  const normalized = minimumMultiple / magnitude;
-  const niceMultiple = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  return baseStep * niceMultiple * magnitude;
-}
-
 function vectorLabelStyle(value: unknown, fallback: Vector2DLabelStyle = "boldLower"): Vector2DLabelStyle {
   return value === "arrow" || value === "custom" || value === "boldLower" ? value : fallback;
 }
@@ -200,10 +189,28 @@ function setRenderedDataAttributes(element: unknown, attributes: Record<string, 
   }
 }
 
+function makePassiveDecoration(element: unknown) {
+  const node = (element as JXGElement | undefined)?.rendNode;
+  if (!node) return;
+  node.style.setProperty("pointer-events", "none");
+  node.style.setProperty("user-select", "none");
+  node.style.setProperty("-webkit-user-select", "none");
+  node.style.setProperty("touch-action", "none");
+  node.setAttribute("aria-hidden", "true");
+  node.querySelectorAll("*").forEach((child) => {
+    const childElement = child as HTMLElement | SVGElement;
+    childElement.style.setProperty("pointer-events", "none");
+    childElement.style.setProperty("user-select", "none");
+    childElement.style.setProperty("-webkit-user-select", "none");
+    childElement.style.setProperty("touch-action", "none");
+    childElement.setAttribute("aria-hidden", "true");
+  });
+}
+
 function renderLatexLabelHtml(latex: string, color: string, attributes: Record<string, string | undefined> = {}) {
   const source = stripGraphLatexDelimiters(latex);
   const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : "#0f172a";
-  const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
+  const interactionCss = PASSIVE_GRAPH_DECORATION_CSS;
   if (!source) return "";
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": source, ...attributes });
   try {
@@ -374,30 +381,13 @@ function vectorBoardBoundingBox(
   return [left, top + padding, right, bottom - padding];
 }
 
-function axisLabelStep({
-  graphConfig,
-  axis,
-  majorStep,
-  span,
-  padding,
-  displayPx,
-}: {
-  graphConfig?: GraphConfig | null;
-  axis: "x" | "y";
-  majorStep: number;
-  span: number;
-  padding: number;
-  displayPx: number;
-}) {
+function axisLabelStep({ graphConfig, axis, majorStep }: { graphConfig?: GraphConfig | null; axis: "x" | "y"; majorStep: number }) {
   const manualStep = axis === "x" ? graphConfig?.axisLabelStepX : graphConfig?.axisLabelStepY;
   if ((graphConfig?.axisLabelIntervalMode ?? "auto") === "manual") {
     return positiveNumber(manualStep, majorStep);
   }
 
-  const boardSpan = span + padding * 2;
-  const pixelsPerUnit = boardSpan > 0 && displayPx > 0 ? displayPx / boardSpan : 1;
-  const minSpacingPx = positiveNumber(graphConfig?.axisLabelMinSpacingPx, DEFAULT_AXIS_LABEL_MIN_SPACING_PX);
-  return niceGridAlignedStep(majorStep, minSpacingPx / pixelsPerUnit);
+  return positiveNumber(majorStep, 1);
 }
 
 function axisArrowAttributes() {
@@ -749,8 +739,6 @@ export function Vector2DGraph({
       xMax,
       yMin,
       yMax,
-      xSpan,
-      ySpan,
       xMajorStep,
       yMajorStep,
       xMinorStep,
@@ -775,17 +763,11 @@ export function Vector2DGraph({
       graphConfig,
       axis: "x",
       majorStep: xMajorStep,
-      span: xSpan,
-      padding: boardPaddingX,
-      displayPx: displayWidth,
     });
     const yLabelStep = axisLabelStep({
       graphConfig,
       axis: "y",
       majorStep: yMajorStep,
-      span: ySpan,
-      padding: boardPaddingY,
-      displayPx: displayHeight,
     });
 
     const board = JXG.JSXGraph.initBoard(boardId, {
@@ -839,13 +821,15 @@ export function Vector2DGraph({
         const lineAttributes = gridLineAttributes(false);
         numericRange(xMin, xMax, xMinorStep).forEach((x) => {
           if (isMultiple(x, xMajorStep)) return;
-          board.create(
-            "segment",
-            [
-              [x, yMin],
-              [x, yMax],
-            ],
-            lineAttributes,
+          makePassiveDecoration(
+            board.create(
+              "segment",
+              [
+                [x, yMin],
+                [x, yMax],
+              ],
+              lineAttributes,
+            ),
           );
         });
       }
@@ -854,13 +838,15 @@ export function Vector2DGraph({
         const lineAttributes = gridLineAttributes(false);
         numericRange(yMin, yMax, yMinorStep).forEach((y) => {
           if (isMultiple(y, yMajorStep)) return;
-          board.create(
-            "segment",
-            [
-              [xMin, y],
-              [xMax, y],
-            ],
-            lineAttributes,
+          makePassiveDecoration(
+            board.create(
+              "segment",
+              [
+                [xMin, y],
+                [xMax, y],
+              ],
+              lineAttributes,
+            ),
           );
         });
       }
@@ -868,23 +854,27 @@ export function Vector2DGraph({
       if (showMajorGrid) {
         const lineAttributes = gridLineAttributes(true);
         numericRange(xMin, xMax, xMajorStep).forEach((x) => {
-          board.create(
-            "segment",
-            [
-              [x, yMin],
-              [x, yMax],
-            ],
-            lineAttributes,
+          makePassiveDecoration(
+            board.create(
+              "segment",
+              [
+                [x, yMin],
+                [x, yMax],
+              ],
+              lineAttributes,
+            ),
           );
         });
         numericRange(yMin, yMax, yMajorStep).forEach((y) => {
-          board.create(
-            "segment",
-            [
-              [xMin, y],
-              [xMax, y],
-            ],
-            lineAttributes,
+          makePassiveDecoration(
+            board.create(
+              "segment",
+              [
+                [xMin, y],
+                [xMax, y],
+              ],
+              lineAttributes,
+            ),
           );
         });
       }
@@ -910,55 +900,59 @@ export function Vector2DGraph({
         layer: GRAPH_LAYERS.axis,
       };
 
-      board.create(
-        "axis",
-        [
-          [xMin - xAxisExtension, 0],
-          [xMax + xAxisExtension, 0],
-        ],
-        {
-          ...axisAttributes,
-          name: "",
-          withLabel: false,
-          ticks: {
-            ...ticksAttributes,
-            ticksDistance: xLabelStep,
-            minorTicks: 0,
-            label: {
-              anchorX: "middle",
-              anchorY: "top",
-              offset: [0, X_TICK_LABEL_OFFSET_PX],
-              ...graphLabelAttributes(` color:${AXIS_COLOR};`),
-              strokeColor: AXIS_COLOR,
-              layer: GRAPH_LAYERS.axisLabel,
+      makePassiveDecoration(
+        board.create(
+          "axis",
+          [
+            [xMin - xAxisExtension, 0],
+            [xMax + xAxisExtension, 0],
+          ],
+          {
+            ...axisAttributes,
+            name: "",
+            withLabel: false,
+            ticks: {
+              ...ticksAttributes,
+              ticksDistance: xLabelStep,
+              minorTicks: 0,
+              label: {
+                anchorX: "middle",
+                anchorY: "top",
+                offset: [0, X_TICK_LABEL_OFFSET_PX],
+                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
+                strokeColor: AXIS_COLOR,
+                layer: GRAPH_LAYERS.axisLabel,
+              },
             },
-          },
-        } as Record<string, unknown>,
+          } as Record<string, unknown>,
+        ),
       );
-      board.create(
-        "axis",
-        [
-          [0, yMin - yAxisExtension],
-          [0, yMax + yAxisExtension],
-        ],
-        {
-          ...axisAttributes,
-          name: "",
-          withLabel: false,
-          ticks: {
-            ...ticksAttributes,
-            ticksDistance: yLabelStep,
-            minorTicks: 0,
-            label: {
-              anchorX: "right",
-              anchorY: "middle",
-              offset: [Y_TICK_LABEL_OFFSET_PX, 0],
-              ...graphLabelAttributes(` color:${AXIS_COLOR};`),
-              strokeColor: AXIS_COLOR,
-              layer: GRAPH_LAYERS.axisLabel,
+      makePassiveDecoration(
+        board.create(
+          "axis",
+          [
+            [0, yMin - yAxisExtension],
+            [0, yMax + yAxisExtension],
+          ],
+          {
+            ...axisAttributes,
+            name: "",
+            withLabel: false,
+            ticks: {
+              ...ticksAttributes,
+              ticksDistance: yLabelStep,
+              minorTicks: 0,
+              label: {
+                anchorX: "right",
+                anchorY: "middle",
+                offset: [Y_TICK_LABEL_OFFSET_PX, 0],
+                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
+                strokeColor: AXIS_COLOR,
+                layer: GRAPH_LAYERS.axisLabel,
+              },
             },
-          },
-        } as Record<string, unknown>,
+          } as Record<string, unknown>,
+        ),
       );
 
       if (showAxisLabels) {

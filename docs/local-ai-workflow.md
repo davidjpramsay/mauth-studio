@@ -24,6 +24,8 @@ The `Authoring` name replaces the rough “Mauth Use” label. It is shorter and
 ## What Lives Where
 
 - Root source tree: app source, tests, docs, configs, durable fixtures, and intentional tooling.
+- `~/Documents/Mauth/Documents`: normal local Mauth document files that teachers can manage in Finder, backups, or Git.
+- `~/Documents/Mauth/.mauth`: Mauth metadata, autosave recovery, reusable logos, and version snapshots.
 - `workspace/`: scratch space for OCR crops, PDF conversions, Canvas/QTI exports, eval output, temporary scripts, screenshots, and generated reports.
 - Local `.env` files: local overrides and secrets only. Do not commit them.
 
@@ -53,7 +55,26 @@ verify in browser
 
 Use the bridge endpoints or MCP tools for normal agent authoring. If the bridge is unavailable, use the closest available mechanism and keep the same discipline: inspect current state, preview or test the edit where possible, apply through the app's normal action/file APIs, then verify the rendered result.
 
-Do not make raw project-file JSON edits the normal authoring path. Direct edits under `storage/` are acceptable only for recovery, migration, or deliberate maintenance, and they must keep project metadata, active revision, autosave, and version safety aligned.
+Do not make raw project-file JSON edits the normal authoring path. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/` are acceptable only for recovery, migration, or deliberate maintenance, and they must keep project metadata, active revision, autosave, and version safety aligned.
+
+## Canvas Quiz Page Assets
+
+When building a Canvas quiz from one-PDF-page-per-question images, treat Canvas as a display surface, not as the response collection surface.
+
+Before uploading question images:
+
+1. Regenerate every question PDF and PNG after the latest Mauth edit.
+2. Run `pnpm audit:canvas-assets` against the export folder. The audit checks that each manifest question has one split PDF page, the expected `Question N` label, no stale worksheet/export heading text, and a fresh PNG for that PDF.
+3. Visually inspect the generated PNG contact sheets or individual PNGs when equations, graphs, tables, or split-page boundaries changed. Text extraction cannot prove MathJax SVGs or diagrams are visible.
+
+When updating Canvas questions:
+
+1. Upload the regenerated PNGs.
+2. Update each Canvas quiz item as `question_type: "text_only_question"` with `points_possible: 0` and exactly one image in `question_text`.
+3. Read the Canvas API records back after the update. Do not rely on the edit screen alone.
+4. Treat the upload as incomplete if any item reads back as `essay_question`, has non-zero points, has the wrong file id, has no image, or the question count/order does not match the manifest.
+
+If marks are needed for gradebook reporting, keep them in the exam PDF and local Mauth source, not in these Canvas display-only items.
 
 ## Safe Publish Checklist
 

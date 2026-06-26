@@ -26,7 +26,7 @@ Recommended setup:
 - Printable maths tests, exams, and worksheets.
 - Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
 - MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
-- Local project files, autosave drafts, logo assets, and version snapshots.
+- Visible local document files in `~/Documents/Mauth`, plus autosave drafts, logo assets, and version snapshots.
 - Agent-readable snapshots, deterministic actions, validation, comments, suggestions, presence, and events.
 
 ## Agent-Native Workflow

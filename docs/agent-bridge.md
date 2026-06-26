@@ -30,7 +30,7 @@ Agents should use this loop for document authoring once the bridge exists:
 5. Apply the same batch with the current revision and an idempotency key.
 6. Verify the rendered result in the browser.
 
-Until the bridge exists, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under `storage/projects` are a recovery fallback, not the normal authoring path.
+Until the bridge exists, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
 
 ## Local Endpoints
 

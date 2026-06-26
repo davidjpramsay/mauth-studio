@@ -287,6 +287,8 @@ class AutosaveRequest(BaseModel):
 
     frontMatter: dict[str, Any] = Field(default_factory=dict)
     questions: list[dict[str, Any]] = Field(default_factory=list)
+    sectionHeadings: list[dict[str, Any]] = Field(default_factory=list)
+    documentFlow: list[dict[str, Any]] = Field(default_factory=list)
     formattingConfig: dict[str, Any] = Field(default_factory=dict)
     logo: dict[str, Any] | None = None
     activeProjectFilePath: str | None = None

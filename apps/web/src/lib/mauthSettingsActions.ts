@@ -88,7 +88,7 @@ export type MauthSetDiagramShading = (typeof MAUTH_SET_DIAGRAM_SHADING_KEYS)[num
 export type MauthSetDiagramLabelPreset = (typeof MAUTH_SET_DIAGRAM_LABEL_PRESETS)[number];
 
 export type MauthModuleSettingsUpdate =
-  | { kind: "space"; lines: number }
+  | { kind: "space"; lines?: number; showLines?: boolean }
   | {
       kind: "table";
       rows?: number;
@@ -637,7 +637,14 @@ function diagramSettingsPatch(config: GraphConfig, settings: MauthDiagramSetting
 export function applyModuleSettingsUpdate(block: ContentBlock, settings: MauthModuleSettingsUpdate): MauthSettingsActionApplyResult {
   if (settings.kind === "space") {
     if (block.kind !== "space") return settingsFailure(blockKindError(settings.kind, block.kind));
-    return { ok: true, block: { ...block, lines: inspectorSpaceLines(settings.lines) } };
+    return {
+      ok: true,
+      block: {
+        ...block,
+        ...(settings.lines !== undefined ? { lines: inspectorSpaceLines(settings.lines) } : {}),
+        ...(settings.showLines !== undefined ? { showLines: settings.showLines } : {}),
+      },
+    };
   }
 
   if (settings.kind === "table") {

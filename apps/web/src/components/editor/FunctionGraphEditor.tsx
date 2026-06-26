@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
@@ -37,6 +37,46 @@ function optionalNumber(value: string) {
 
 function numberInputValue(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+
+function DraftNumberInput({
+  value,
+  fallbackValue,
+  min,
+  step,
+  className,
+  onChange,
+}: {
+  value?: number;
+  fallbackValue?: number;
+  min?: number;
+  step?: number;
+  className?: string;
+  onChange: (value: number | undefined) => void;
+}) {
+  const [draftValue, setDraftValue] = useState<string | null>(null);
+  const displayValue = draftValue ?? numberInputValue(value ?? fallbackValue);
+
+  return (
+    <input
+      type="number"
+      min={min}
+      step={step}
+      value={displayValue}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setDraftValue(nextValue);
+        if (nextValue === "") {
+          onChange(undefined);
+          return;
+        }
+        const parsed = Number(nextValue);
+        if (Number.isFinite(parsed)) onChange(parsed);
+      }}
+      onBlur={() => setDraftValue(null)}
+      className={className}
+    />
+  );
 }
 
 function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: string }) {
@@ -422,23 +462,23 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X major interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0.1}
                     step={0.5}
-                    value={numberInputValue(config.gridMajorStepX ?? config.gridMajorStep)}
-                    onChange={(event) => patchConfig({ gridMajorStepX: optionalNumber(event.target.value) })}
+                    value={config.gridMajorStepX}
+                    fallbackValue={config.gridMajorStep}
+                    onChange={(value) => patchConfig({ gridMajorStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y major interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0.1}
                     step={0.5}
-                    value={numberInputValue(config.gridMajorStepY ?? config.gridMajorStep)}
-                    onChange={(event) => patchConfig({ gridMajorStepY: optionalNumber(event.target.value) })}
+                    value={config.gridMajorStepY}
+                    fallbackValue={config.gridMajorStep}
+                    onChange={(value) => patchConfig({ gridMajorStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -458,23 +498,23 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X minor interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0}
                     step={0.5}
-                    value={numberInputValue(config.gridMinorStepX ?? config.gridMinorStep)}
-                    onChange={(event) => patchConfig({ gridMinorStepX: optionalNumber(event.target.value) })}
+                    value={config.gridMinorStepX}
+                    fallbackValue={config.gridMinorStep}
+                    onChange={(value) => patchConfig({ gridMinorStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y minor interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0}
                     step={0.5}
-                    value={numberInputValue(config.gridMinorStepY ?? config.gridMinorStep)}
-                    onChange={(event) => patchConfig({ gridMinorStepY: optionalNumber(event.target.value) })}
+                    value={config.gridMinorStepY}
+                    fallbackValue={config.gridMinorStep}
+                    onChange={(value) => patchConfig({ gridMinorStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>

@@ -15,13 +15,44 @@ from typing import Any
 from app.bootstrap import ROOT
 
 
+def documents_workspace_root() -> Path:
+    configured = os.environ.get("MAUTH_DOCUMENTS_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / "Documents" / "Mauth"
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def storage_root() -> Path:
     configured = os.environ.get("MATH_APP_STORAGE_ROOT")
-    return Path(configured).expanduser() if configured else ROOT / "storage"
+    return Path(configured).expanduser() if configured else documents_workspace_root() / ".mauth"
+
+
+def using_default_visible_workspace() -> bool:
+    return "MATH_APP_STORAGE_ROOT" not in os.environ
+
+
+def copy_tree_if_missing(source: Path, target: Path) -> None:
+    if not source.exists() or target.exists():
+        return
+    shutil.copytree(source, target)
+
+
+def copy_user_project_tree(source: Path, target: Path) -> None:
+    if not source.exists() or target.exists():
+        return
+
+    def ignore_generated(directory: str, names: list[str]) -> set[str]:
+        return {
+            name
+            for name in names
+            if (Path(directory) / name).is_dir() and name.startswith(GENERATED_PROJECT_FOLDER_PREFIXES)
+        }
+
+    shutil.copytree(source, target, ignore=ignore_generated)
 
 
 def safe_file_stem(value: str) -> str:
@@ -99,6 +130,7 @@ PROJECT_BACKUP_VERSION = 1
 PROJECT_BACKUP_MAX_BYTES = 150 * 1024 * 1024
 PROJECT_BACKUP_MAX_ENTRY_BYTES = 25 * 1024 * 1024
 PROJECT_BACKUP_MAX_ENTRIES = 5000
+GENERATED_PROJECT_FOLDER_PREFIXES = ("__file_manager_smoke_",)
 
 
 def data_url_parts(value: str) -> tuple[str, bytes] | None:
@@ -115,6 +147,10 @@ def data_url_parts(value: str) -> tuple[str, bytes] | None:
 
 def data_url(media_type: str, content: bytes) -> str:
     return f"data:{media_type};base64,{b64encode(content).decode('ascii')}"
+
+
+def is_generated_project_folder(path: Path) -> bool:
+    return path.is_dir() and path.name.startswith(GENERATED_PROJECT_FOLDER_PREFIXES)
 
 
 class StorageConflictError(Exception):
@@ -134,11 +170,14 @@ class StorageValidationError(Exception):
 class FileTestStorage:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or storage_root()
+        self.should_migrate_legacy_storage = root is None and using_default_visible_workspace()
+        self.legacy_storage_migrated = False
         self.tests_dir = self.root / "tests"
         self.autosave_dir = self.root / "autosave"
         self.backups_dir = self.root / "backups" / "tests"
 
     def list_tests(self) -> list[dict[str, Any]]:
+        self._migrate_legacy_storage_if_needed()
         self.tests_dir.mkdir(parents=True, exist_ok=True)
         records = []
         for path in sorted(self.tests_dir.glob("*.json")):
@@ -151,12 +190,14 @@ class FileTestStorage:
         return sorted(records, key=lambda record: str(record.get("updatedAt", "")), reverse=True)
 
     def get_test(self, test_id: str) -> dict[str, Any] | None:
+        self._migrate_legacy_storage_if_needed()
         path = self._test_path(test_id)
         if not path.exists():
             return None
         return read_json_file(path)
 
     def save_test(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._migrate_legacy_storage_if_needed()
         requested_id = payload.get("id")
         test_id = (
             safe_file_stem(requested_id)
@@ -185,6 +226,7 @@ class FileTestStorage:
         return record
 
     def delete_test(self, test_id: str) -> bool:
+        self._migrate_legacy_storage_if_needed()
         path = self._test_path(test_id)
         if not path.exists():
             return False
@@ -193,10 +235,13 @@ class FileTestStorage:
         return True
 
     def save_autosave(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._migrate_legacy_storage_if_needed()
         now = utc_now_iso()
         record = {
             "frontMatter": self._dict(payload.get("frontMatter")),
             "questions": self._list(payload.get("questions")),
+            "sectionHeadings": self._list(payload.get("sectionHeadings")),
+            "documentFlow": self._list(payload.get("documentFlow")),
             "formattingConfig": self._dict(payload.get("formattingConfig")),
             "logo": self._optional_dict(payload.get("logo")),
             "activeProjectFilePath": payload.get("activeProjectFilePath")
@@ -205,12 +250,14 @@ class FileTestStorage:
             "activeProjectFileRevision": payload.get("activeProjectFileRevision")
             if isinstance(payload.get("activeProjectFileRevision"), int)
             else None,
+            "documentOpen": payload.get("documentOpen") if isinstance(payload.get("documentOpen"), bool) else True,
             "updatedAt": now,
         }
         atomic_write_json(self.autosave_dir / "current-test.json", record)
         return record
 
     def get_autosave(self) -> dict[str, Any] | None:
+        self._migrate_legacy_storage_if_needed()
         path = self.autosave_dir / "current-test.json"
         if not path.exists():
             return None
@@ -225,6 +272,13 @@ class FileTestStorage:
         backup_path = self.backups_dir / f"{path.stem}-{timestamp}-{suffix}.json"
         backup_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, backup_path)
+
+    def _migrate_legacy_storage_if_needed(self) -> None:
+        if not self.should_migrate_legacy_storage or self.legacy_storage_migrated:
+            return
+        copy_tree_if_missing(ROOT / "storage" / "tests", self.root / "tests")
+        copy_tree_if_missing(ROOT / "storage" / "autosave", self.root / "autosave")
+        self.legacy_storage_migrated = True
 
     @staticmethod
     def _name(payload: dict[str, Any]) -> str:
@@ -247,11 +301,14 @@ class FileTestStorage:
 class FileLogoStorage:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or storage_root()
+        self.should_migrate_legacy_storage = root is None and using_default_visible_workspace()
+        self.legacy_storage_migrated = False
         self.logos_dir = self.root / "assets" / "logos"
         self.files_dir = self.logos_dir / "files"
         self.backups_dir = self.root / "backups" / "logos"
 
     def list_logos(self) -> list[dict[str, Any]]:
+        self._migrate_legacy_storage_if_needed()
         self.logos_dir.mkdir(parents=True, exist_ok=True)
         records = []
         for path in sorted(self.logos_dir.glob("*.json")):
@@ -264,12 +321,14 @@ class FileLogoStorage:
         return sorted(records, key=lambda record: str(record.get("createdAt", "")))
 
     def get_logo(self, logo_id: str) -> dict[str, Any] | None:
+        self._migrate_legacy_storage_if_needed()
         path = self._logo_path(logo_id)
         if not path.exists():
             return None
         return self._public_record(read_json_file(path))
 
     def save_logo(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._migrate_legacy_storage_if_needed()
         requested_id = payload.get("id")
         logo_id = (
             safe_file_stem(requested_id)
@@ -317,6 +376,7 @@ class FileLogoStorage:
         return self._public_record(record)
 
     def delete_logo(self, logo_id: str) -> bool:
+        self._migrate_legacy_storage_if_needed()
         path = self._logo_path(logo_id)
         if not path.exists():
             return False
@@ -342,6 +402,7 @@ class FileLogoStorage:
         return public
 
     def _public_src(self, record: dict[str, Any]) -> str:
+        self._migrate_legacy_storage_if_needed()
         file_name = record.get("fileName")
         if isinstance(file_name, str):
             file_path = self.files_dir / file_name
@@ -368,6 +429,12 @@ class FileLogoStorage:
         backup_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, backup_path)
 
+    def _migrate_legacy_storage_if_needed(self) -> None:
+        if not self.should_migrate_legacy_storage or self.legacy_storage_migrated:
+            return
+        copy_tree_if_missing(ROOT / "storage" / "assets" / "logos", self.root / "assets" / "logos")
+        self.legacy_storage_migrated = True
+
     @staticmethod
     def _name(payload: dict[str, Any]) -> str:
         name = payload.get("name")
@@ -378,13 +445,28 @@ class FileProjectStorage:
     DEFAULT_PROJECT_ID = "local-project"
 
     def __init__(self, root: Path | None = None) -> None:
+        self.workspace_root = documents_workspace_root()
         self.root = root or storage_root()
+        self.uses_visible_workspace = root is None and using_default_visible_workspace()
+        self.visible_workspace_migrated = False
         self.projects_dir = self.root / "projects"
+        self.documents_dir = self.workspace_root / "Documents"
 
     def list_projects(self) -> list[dict[str, Any]]:
+        self._migrate_default_project_to_visible_workspace()
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         projects: list[dict[str, Any]] = []
+        default_path = self._project_path(self.DEFAULT_PROJECT_ID)
+        if default_path.exists():
+            try:
+                record = read_json_file(default_path)
+            except (OSError, json.JSONDecodeError):
+                record = {}
+            if isinstance(record.get("id"), str) and not isinstance(record.get("deletedAt"), str):
+                projects.append(self._project_summary(record))
         for path in sorted(self.projects_dir.glob("*/project.json")):
+            if path == default_path:
+                continue
             try:
                 record = read_json_file(path)
             except (OSError, json.JSONDecodeError):
@@ -394,12 +476,14 @@ class FileProjectStorage:
         return sorted(projects, key=lambda record: str(record.get("updatedAt", "")), reverse=True)
 
     def get_or_create_default_project(self) -> dict[str, Any]:
+        self._migrate_default_project_to_visible_workspace()
         existing = self.get_project(self.DEFAULT_PROJECT_ID)
         if existing is not None:
             return existing
         return self.create_project({"id": self.DEFAULT_PROJECT_ID, "name": "Local Project"})
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
+        self._migrate_default_project_to_visible_workspace()
         path = self._project_path(project_id)
         if not path.exists():
             return None
@@ -409,6 +493,7 @@ class FileProjectStorage:
         return self._project_summary(record)
 
     def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._migrate_default_project_to_visible_workspace()
         requested_id = payload.get("id")
         project_id = (
             safe_file_stem(requested_id)
@@ -457,6 +542,7 @@ class FileProjectStorage:
 
     def list_files(self, project_id: str) -> list[dict[str, Any]]:
         project = self._require_project(project_id)
+        self._reconcile_missing_content(project_id, project)
         files = project.get("files") if isinstance(project.get("files"), dict) else {}
         items = [
             self._public_file(project_id, path, record, project)
@@ -813,16 +899,88 @@ class FileProjectStorage:
         }
 
     def _project_path(self, project_id: str) -> Path:
+        if self.uses_visible_workspace and safe_file_stem(project_id) == self.DEFAULT_PROJECT_ID:
+            return self.root / "project.json"
         return self.projects_dir / safe_file_stem(project_id) / "project.json"
+
+    def _migrate_default_project_to_visible_workspace(self) -> None:
+        if not self.uses_visible_workspace or self.visible_workspace_migrated:
+            return
+        self.visible_workspace_migrated = True
+        target_project = self.root / "project.json"
+        if target_project.exists():
+            return
+        source_project_dir = ROOT / "storage" / "projects" / self.DEFAULT_PROJECT_ID
+        source_project = source_project_dir / "project.json"
+        if not source_project.exists():
+            return
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(target_project, self._project_without_generated_entries(read_json_file(source_project)))
+
+        source_files = source_project_dir / "files"
+        source_tests = source_files / "tests"
+        if source_tests.exists() and not self.documents_dir.exists():
+            copy_user_project_tree(source_tests, self.documents_dir)
+        elif source_tests.exists():
+            for child in source_tests.iterdir():
+                if is_generated_project_folder(child):
+                    continue
+                target = self.documents_dir / child.name
+                if target.exists():
+                    continue
+                if child.is_dir():
+                    copy_user_project_tree(child, target)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(child, target)
+
+        for child in source_files.iterdir() if source_files.exists() else []:
+            if child.name == "tests":
+                continue
+            if is_generated_project_folder(child):
+                continue
+            target = self.workspace_root / child.name
+            if target.exists():
+                continue
+            if child.is_dir():
+                copy_user_project_tree(child, target)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(child, target)
+
+        copy_tree_if_missing(source_project_dir / "versions", self.root / "versions")
+
+    @staticmethod
+    def _project_without_generated_entries(project: dict[str, Any]) -> dict[str, Any]:
+        files = project.get("files") if isinstance(project.get("files"), dict) else {}
+        project["files"] = {
+            path: record
+            for path, record in files.items()
+            if isinstance(path, str)
+            and not any(part.startswith(GENERATED_PROJECT_FOLDER_PREFIXES) for part in PurePosixPath(path).parts)
+        }
+        return project
 
     def _project_dir(self, project_id: str) -> Path:
         return self._project_path(project_id).parent
 
     def _content_path(self, project_id: str, file_path: str) -> Path:
+        if self.uses_visible_workspace and safe_file_stem(project_id) == self.DEFAULT_PROJECT_ID:
+            return self.documents_dir / self._visible_document_path(file_path)
         return self._project_dir(project_id) / "files" / Path(*file_path.split("/"))
 
     def _versions_path(self, project_id: str, file_path: str) -> Path:
         return self._project_dir(project_id) / "versions" / self._encoded_version_path(file_path)
+
+    @staticmethod
+    def _visible_document_path(file_path: str) -> Path:
+        parts = file_path.split("/")
+        if parts and parts[0] == "tests":
+            parts = parts[1:]
+        if not parts:
+            return Path(".")
+        return Path(*parts)
 
     def _load_project(self, project_id: str) -> dict[str, Any]:
         path = self._project_path(project_id)
@@ -849,6 +1007,30 @@ class FileProjectStorage:
         if record.get("kind") == "file" and not content_path.exists():
             raise StorageNotFoundError("Project file content not found")
         return record
+
+    def _reconcile_missing_content(self, project_id: str, project: dict[str, Any]) -> None:
+        files = project.get("files") if isinstance(project.get("files"), dict) else {}
+        now: str | None = None
+        changed = False
+
+        for path, record in files.items():
+            if not isinstance(path, str) or not isinstance(record, dict) or isinstance(record.get("deletedAt"), str):
+                continue
+            content_path = self._content_path(project_id, path)
+            kind = record.get("kind") if record.get("kind") in {"file", "folder"} else "file"
+            missing = kind == "file" and not content_path.exists()
+            missing = missing or (kind == "folder" and not content_path.is_dir())
+            if not missing:
+                continue
+            now = now or utc_now_iso()
+            record["deletedAt"] = now
+            record["updatedAt"] = now
+            record["revision"] = self._revision(record) + 1
+            changed = True
+
+        if changed:
+            project["updatedAt"] = now
+            atomic_write_json(self._project_path(project_id), project)
 
     def _ensure_parent_folders(self, project_id: str, project: dict[str, Any], file_path: str, now: str) -> None:
         files = project.setdefault("files", {})
@@ -877,7 +1059,7 @@ class FileProjectStorage:
                 "createdAt": now,
                 "updatedAt": now,
             }
-            (self._project_dir(project_id) / "files" / Path(*folder_path.split("/"))).mkdir(parents=True, exist_ok=True)
+            self._content_path(project_id, folder_path).mkdir(parents=True, exist_ok=True)
 
     def _snapshot_file(self, project_id: str, file_path: str, record: dict[str, Any], reason: str) -> None:
         content_path = self._content_path(project_id, file_path)
@@ -944,10 +1126,22 @@ class FileProjectStorage:
             "name": record.get("name") if isinstance(record.get("name"), str) else "Untitled project",
             "description": record.get("description") if isinstance(record.get("description"), str) else None,
             "metadata": record.get("metadata") if isinstance(record.get("metadata"), dict) else {},
+            "workspacePath": str(self._workspace_path_for_project(str(record.get("id") or ""))),
+            "documentsPath": str(self._documents_path_for_project(str(record.get("id") or ""))),
             "fileCount": file_count,
             "createdAt": record.get("createdAt"),
             "updatedAt": record.get("updatedAt"),
         }
+
+    def _workspace_path_for_project(self, project_id: str) -> Path:
+        if self.uses_visible_workspace and safe_file_stem(project_id) == self.DEFAULT_PROJECT_ID:
+            return self.workspace_root
+        return self._project_dir(project_id)
+
+    def _documents_path_for_project(self, project_id: str) -> Path:
+        if self.uses_visible_workspace and safe_file_stem(project_id) == self.DEFAULT_PROJECT_ID:
+            return self.documents_dir
+        return self._project_dir(project_id) / "files"
 
     def _backup_import_target_path(
         self,

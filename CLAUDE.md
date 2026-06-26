@@ -33,4 +33,4 @@ The MCP server is a wrapper over the local HTTP bridge:
 pnpm agent:mcp
 ```
 
-Do not bypass the bridge by writing files under `storage/projects` unless the user explicitly asks for recovery or migration work.
+Do not bypass the bridge by writing directly under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/projects` unless the user explicitly asks for recovery or migration work.

@@ -483,6 +483,10 @@ function validateCommonGraphConfig(config: Record<string, unknown>, path: string
   optionalNumber(config, "functionExtension", path, issues, { min: 0 });
   optionalNumber(config, "functionExtensionLeft", path, issues, { min: 0 });
   optionalNumber(config, "functionExtensionRight", path, issues, { min: 0 });
+  optionalNumber(config, "xAxisLabelX", path, issues);
+  optionalNumber(config, "xAxisLabelY", path, issues);
+  optionalNumber(config, "yAxisLabelX", path, issues);
+  optionalNumber(config, "yAxisLabelY", path, issues);
   optionalNumber(config, "axisLabelStepX", path, issues, { positive: true });
   optionalNumber(config, "axisLabelStepY", path, issues, { positive: true });
   optionalNumber(config, "axisLabelMinSpacingPx", path, issues, { positive: true });

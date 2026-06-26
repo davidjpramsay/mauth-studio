@@ -36,7 +36,7 @@ MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
 
 ## MCP
 
-The MCP server wraps the local HTTP bridge. It does not read or write React state, localStorage, or `storage/projects` files directly.
+The MCP server wraps the local HTTP bridge. It does not read or write React state, localStorage, visible document files, `.mauth` metadata, or legacy `storage/projects` files directly.
 
 Claude Desktop example:
 

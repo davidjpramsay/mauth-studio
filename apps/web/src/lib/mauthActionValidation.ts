@@ -261,6 +261,7 @@ function validateContentBlock(value: unknown, path: string, issues: MauthActionV
 
   if (value.kind === "space") {
     numberField(value, "lines", path, issues);
+    booleanField(value, "showLines", path, issues, true);
     if (value.visibility !== "student" && value.studentOnly !== true) {
       addIssue(issues, `${path}.visibility`, "answer-space blocks must be student-only", 'visibility: "student"');
     }
@@ -351,7 +352,8 @@ function validateModuleSettingsUpdate(value: unknown, path: string, issues: Maut
   if (typeof value.kind !== "string") return;
 
   if (value.kind === "space") {
-    numberField(value, "lines", path, issues);
+    numberField(value, "lines", path, issues, true);
+    booleanField(value, "showLines", path, issues, true);
     return;
   }
 

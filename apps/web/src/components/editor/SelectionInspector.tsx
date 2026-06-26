@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
@@ -103,6 +104,46 @@ import { normalizedNetworkDiagramData } from "../../lib/diagramNetwork";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/diagramPenrose";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import { cn } from "../../lib/utils";
+
+function DraftInspectorNumberInput({
+  value,
+  fallbackValue,
+  min,
+  step,
+  className,
+  onChange,
+}: {
+  value?: number;
+  fallbackValue?: number;
+  min?: number;
+  step?: number;
+  className?: string;
+  onChange: (value: number | undefined) => void;
+}) {
+  const [draftValue, setDraftValue] = useState<string | null>(null);
+  const displayValue = draftValue ?? inspectorNumberInputValue(value ?? fallbackValue);
+
+  return (
+    <input
+      type="number"
+      min={min}
+      step={step}
+      value={displayValue}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setDraftValue(nextValue);
+        if (nextValue === "") {
+          onChange(undefined);
+          return;
+        }
+        const parsed = Number(nextValue);
+        if (Number.isFinite(parsed)) onChange(parsed);
+      }}
+      onBlur={() => setDraftValue(null)}
+      className={className}
+    />
+  );
+}
 
 export type SelectedEditorBaseBlockScope =
   | { kind: "question"; questionId: string }
@@ -2613,15 +2654,15 @@ export function SelectionInspector({
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                         X major
-                        <input
-                          type="number"
+                        <DraftInspectorNumberInput
                           min={0.1}
                           step={0.5}
-                          value={inspectorNumberInputValue(selectedDiagramConfig.gridMajorStepX ?? selectedDiagramConfig.gridMajorStep)}
-                          onChange={(event) =>
+                          value={selectedDiagramConfig.gridMajorStepX}
+                          fallbackValue={selectedDiagramConfig.gridMajorStep}
+                          onChange={(value) =>
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                gridMajorStepX: inspectorOptionalNumber(event.target.value),
+                                gridMajorStepX: value,
                               }),
                             })
                           }
@@ -2630,15 +2671,15 @@ export function SelectionInspector({
                       </label>
                       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                         Y major
-                        <input
-                          type="number"
+                        <DraftInspectorNumberInput
                           min={0.1}
                           step={0.5}
-                          value={inspectorNumberInputValue(selectedDiagramConfig.gridMajorStepY ?? selectedDiagramConfig.gridMajorStep)}
-                          onChange={(event) =>
+                          value={selectedDiagramConfig.gridMajorStepY}
+                          fallbackValue={selectedDiagramConfig.gridMajorStep}
+                          onChange={(value) =>
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                gridMajorStepY: inspectorOptionalNumber(event.target.value),
+                                gridMajorStepY: value,
                               }),
                             })
                           }
@@ -2661,15 +2702,15 @@ export function SelectionInspector({
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                         X minor
-                        <input
-                          type="number"
+                        <DraftInspectorNumberInput
                           min={0.1}
                           step={0.5}
-                          value={inspectorNumberInputValue(selectedDiagramConfig.gridMinorStepX ?? selectedDiagramConfig.gridMinorStep)}
-                          onChange={(event) =>
+                          value={selectedDiagramConfig.gridMinorStepX}
+                          fallbackValue={selectedDiagramConfig.gridMinorStep}
+                          onChange={(value) =>
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                gridMinorStepX: inspectorOptionalNumber(event.target.value),
+                                gridMinorStepX: value,
                               }),
                             })
                           }
@@ -2678,15 +2719,15 @@ export function SelectionInspector({
                       </label>
                       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                         Y minor
-                        <input
-                          type="number"
+                        <DraftInspectorNumberInput
                           min={0.1}
                           step={0.5}
-                          value={inspectorNumberInputValue(selectedDiagramConfig.gridMinorStepY ?? selectedDiagramConfig.gridMinorStep)}
-                          onChange={(event) =>
+                          value={selectedDiagramConfig.gridMinorStepY}
+                          fallbackValue={selectedDiagramConfig.gridMinorStep}
+                          onChange={(value) =>
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                gridMinorStepY: inspectorOptionalNumber(event.target.value),
+                                gridMinorStepY: value,
                               }),
                             })
                           }

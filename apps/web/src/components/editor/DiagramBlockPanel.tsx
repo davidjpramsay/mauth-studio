@@ -59,26 +59,6 @@ export function DiagramBlockPanel({
       {showInlineSettings ? (
         <>
           <select
-            aria-label={`${label} type`}
-            value={type}
-            onChange={(event) => onTypeChange(event.target.value)}
-            className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
-          >
-            {diagramTypeGroups.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.values.map((value) => {
-                  const diagramType = diagramTypes.find((candidate) => candidate.value === value);
-                  if (!diagramType) return null;
-                  return (
-                    <option key={diagramType.value} value={diagramType.value}>
-                      {diagramType.label}
-                    </option>
-                  );
-                })}
-              </optgroup>
-            ))}
-          </select>
-          <select
             aria-label={`${label} position`}
             value={alignment}
             onChange={(event) => onAlignmentChange(event.target.value as DiagramAlignment)}
@@ -92,6 +72,26 @@ export function DiagramBlockPanel({
           </select>
         </>
       ) : null}
+      <select
+        aria-label={`${label} type`}
+        value={type}
+        onChange={(event) => onTypeChange(event.target.value)}
+        className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+      >
+        {diagramTypeGroups.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.values.map((value) => {
+              const diagramType = diagramTypes.find((candidate) => candidate.value === value);
+              if (!diagramType) return null;
+              return (
+                <option key={diagramType.value} value={diagramType.value}>
+                  {diagramType.label}
+                </option>
+              );
+            })}
+          </optgroup>
+        ))}
+      </select>
       <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
     </>
   );

@@ -1,13 +1,131 @@
 import io
+import json
 import zipfile
 
 from fastapi.testclient import TestClient
 
 from app.api import storage as storage_api
 from app.main import app
+from app.services import storage as storage_service
 from app.services.storage import FileLogoStorage, FileProjectStorage, FileTestStorage
 
 client = TestClient(app)
+
+
+def test_default_project_uses_visible_documents_workspace(tmp_path, monkeypatch):
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(tmp_path))
+    metadata_dir = tmp_path / ".mauth"
+    metadata_dir.mkdir()
+    (metadata_dir / "project.json").write_text(
+        json.dumps(
+            {
+                "id": "local-project",
+                "name": "Local Project",
+                "description": None,
+                "metadata": {},
+                "files": {},
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = FileProjectStorage()
+    project = service.get_or_create_default_project()
+    saved = service.save_file(
+        project["id"],
+        "tests/Visible worksheet.test.json",
+        {"content": '{"title":"Visible"}\n', "kind": "file", "fileType": "test", "baseRevision": None},
+    )
+
+    assert project["workspacePath"] == str(tmp_path)
+    assert project["documentsPath"] == str(tmp_path / "Documents")
+    assert saved["path"] == "tests/Visible worksheet.test.json"
+    assert (tmp_path / "Documents" / "Visible worksheet.test.json").read_text(
+        encoding="utf-8"
+    ) == '{"title":"Visible"}\n'
+    assert (tmp_path / ".mauth" / "project.json").exists()
+
+
+def test_project_file_list_reconciles_files_deleted_from_visible_workspace(tmp_path, monkeypatch):
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(tmp_path))
+    metadata_dir = tmp_path / ".mauth"
+    metadata_dir.mkdir()
+    (metadata_dir / "project.json").write_text(
+        json.dumps(
+            {
+                "id": "local-project",
+                "name": "Local Project",
+                "description": None,
+                "metadata": {},
+                "files": {},
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = FileProjectStorage()
+    project = service.get_or_create_default_project()
+    service.save_file(
+        project["id"],
+        "tests/Deleted externally.test.json",
+        {"content": '{"title":"Gone"}\n', "kind": "file", "fileType": "test", "baseRevision": None},
+    )
+    visible_file = tmp_path / "Documents" / "Deleted externally.test.json"
+    assert visible_file.exists()
+
+    visible_file.unlink()
+
+    assert [file["path"] for file in service.list_files(project["id"])] == ["tests"]
+    repaired_project = json.loads((tmp_path / ".mauth" / "project.json").read_text(encoding="utf-8"))
+    repaired_record = repaired_project["files"]["tests/Deleted externally.test.json"]
+    assert isinstance(repaired_record["deletedAt"], str)
+    assert repaired_record["revision"] == 2
+
+
+def test_visible_workspace_migration_skips_generated_smoke_folders(tmp_path, monkeypatch):
+    legacy_root = tmp_path / "legacy-root"
+    workspace_root = tmp_path / "workspace"
+    legacy_project_dir = legacy_root / "storage" / "projects" / "local-project"
+    legacy_tests_dir = legacy_project_dir / "files" / "tests"
+    smoke_dir = legacy_tests_dir / "__file_manager_smoke_123"
+    smoke_dir.mkdir(parents=True)
+    (smoke_dir / "Alpha.test.json").write_text('{"title":"Generated"}\n', encoding="utf-8")
+    (legacy_tests_dir / "Real worksheet.test.json").write_text('{"title":"Real"}\n', encoding="utf-8")
+    (legacy_project_dir / "project.json").write_text(
+        json.dumps(
+            {
+                "id": "local-project",
+                "name": "Local Project",
+                "description": None,
+                "metadata": {},
+                "files": {
+                    "tests/Real worksheet.test.json": {"kind": "file", "revision": 1},
+                    "tests/__file_manager_smoke_123": {"kind": "folder", "revision": 1},
+                    "tests/__file_manager_smoke_123/Alpha.test.json": {"kind": "file", "revision": 1},
+                },
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+    monkeypatch.setattr(storage_service, "ROOT", legacy_root)
+
+    service = FileProjectStorage()
+    project = service.get_or_create_default_project()
+
+    assert project["documentsPath"] == str(workspace_root / "Documents")
+    assert (workspace_root / "Documents" / "Real worksheet.test.json").exists()
+    assert not (workspace_root / "Documents" / "__file_manager_smoke_123").exists()
+    assert [file["path"] for file in service.list_files(project["id"])] == ["tests/Real worksheet.test.json"]
 
 
 def test_saved_test_file_storage_round_trip(tmp_path, monkeypatch):
@@ -56,9 +174,15 @@ def test_autosave_file_storage_round_trip(tmp_path, monkeypatch):
         json={
             "frontMatter": {"subjectTitle": "YEAR 10 MATHEMATICS"},
             "questions": [{"id": "question-1"}],
+            "sectionHeadings": [{"id": "section-1", "title": "Multiple choice"}],
+            "documentFlow": [
+                {"kind": "sectionHeading", "id": "section-1"},
+                {"kind": "question", "id": "question-1"},
+            ],
             "formattingConfig": {"id": "exam-booklet", "page": {"size": "A4"}},
             "activeProjectFilePath": "tests/demo.test.json",
             "activeProjectFileRevision": 7,
+            "documentOpen": False,
         },
     )
 
@@ -66,12 +190,16 @@ def test_autosave_file_storage_round_trip(tmp_path, monkeypatch):
     autosave = response.json()["autosave"]
     assert autosave["activeProjectFilePath"] == "tests/demo.test.json"
     assert autosave["activeProjectFileRevision"] == 7
+    assert autosave["documentOpen"] is False
 
     load_response = client.get("/api/storage/tests/autosave")
     assert load_response.status_code == 200
     assert load_response.json()["autosave"]["questions"][0]["id"] == "question-1"
+    assert load_response.json()["autosave"]["sectionHeadings"][0]["title"] == "Multiple choice"
+    assert load_response.json()["autosave"]["documentFlow"][0]["kind"] == "sectionHeading"
     assert load_response.json()["autosave"]["formattingConfig"]["id"] == "exam-booklet"
     assert load_response.json()["autosave"]["activeProjectFileRevision"] == 7
+    assert load_response.json()["autosave"]["documentOpen"] is False
 
 
 def test_logo_file_storage_round_trip(tmp_path, monkeypatch):
