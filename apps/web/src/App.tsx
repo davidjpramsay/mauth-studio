@@ -6670,8 +6670,8 @@ function HeaderFileControls({
         type="button"
         variant="ghost"
         size="icon"
-        title="New test"
-        aria-label="New test"
+        title="New document"
+        aria-label="New document"
         onClick={onNewTest}
         className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
       >
@@ -14888,8 +14888,8 @@ export default function App() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                title="New test"
-                aria-label="New test"
+                title="New document"
+                aria-label="New document"
                 onClick={startNewTest}
                 className={HEADER_ICON_BUTTON_CLASS}
               >
@@ -15406,8 +15406,40 @@ export default function App() {
           ) : (
             <section className="flex min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.12),transparent_38%),linear-gradient(180deg,#f8fbff_0%,#eef3fb_100%)] p-6">
               <div className="flex max-w-xl flex-col items-center text-center">
-                <div className="mb-5 flex size-16 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600 shadow-sm">
-                  <FileText className="size-8" aria-hidden="true" />
+                <div className="relative mb-5">
+                  <svg
+                    viewBox="0 0 150 110"
+                    className="pointer-events-none absolute -right-28 -top-8 hidden h-24 w-32 text-blue-500/80 sm:block"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M132 18C87 4 64 22 68 48c4 25 32 24 37 7 4-15-13-25-29-16-19 11-26 35-48 49"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="8"
+                    />
+                    <path
+                      d="M31 88l-25 2 12-22"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="8"
+                    />
+                  </svg>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title="New document"
+                    aria-label="Create a new Mauth document"
+                    onClick={startNewTest}
+                    className="size-20 rounded-full border border-blue-200 bg-white text-blue-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:text-blue-700 hover:shadow-md focus-visible:ring-blue-500"
+                  >
+                    <FileText className="size-10" aria-hidden="true" />
+                  </Button>
                 </div>
                 <p
                   className="text-4xl leading-tight text-slate-800 sm:text-5xl"

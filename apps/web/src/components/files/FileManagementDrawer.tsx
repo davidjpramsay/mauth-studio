@@ -450,7 +450,7 @@ function TestFileManager({
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onNewTest} disabled={busy}>
           <PlusCircle data-icon="inline-start" />
-          New test
+          New document
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => onCreateFolder(currentFolderPath)} disabled={busy}>
           <PlusCircle data-icon="inline-start" />
