@@ -128,6 +128,7 @@ export function ContentInsertionActions({
   buttonLabel = "Add",
   className,
   centered = false,
+  solutionMode = false,
   spaceActionLabel = "Space",
   spaceActionTooltip,
   onAddText,
@@ -142,6 +143,7 @@ export function ContentInsertionActions({
   buttonLabel?: "Add";
   className?: string;
   centered?: boolean;
+  solutionMode?: boolean;
   spaceActionLabel?: string;
   spaceActionTooltip?: string;
   onAddText?: () => void;
@@ -163,11 +165,14 @@ export function ContentInsertionActions({
   const [open, setOpen] = useState(false);
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null);
   const actionVerb = buttonLabel;
+  const solutionLabel = (label: string) => (solutionMode ? `Solution ${label.toLowerCase()}` : label);
+  const solutionTooltip = (label: string, fallback: string) =>
+    solutionMode ? `${actionVerb} a solution-only ${label.toLowerCase()} here` : fallback;
   const actions: InsertionAction[] = [
     onAddText
       ? {
-          label: "Text",
-          tooltip: `${actionVerb} a text block here`,
+          label: solutionLabel("Text"),
+          tooltip: solutionTooltip("text block", `${actionVerb} a text block here`),
           icon: <Type className="size-4" aria-hidden="true" />,
           onClick: onAddText,
         }
@@ -182,16 +187,16 @@ export function ContentInsertionActions({
       : null,
     onAddTable
       ? {
-          label: "Table",
-          tooltip: `${actionVerb} a table with LaTeX-ready cells`,
+          label: solutionLabel("Table"),
+          tooltip: solutionTooltip("table", `${actionVerb} a table with LaTeX-ready cells`),
           icon: <Table2 className="size-4" aria-hidden="true" />,
           onClick: onAddTable,
         }
       : null,
     onAddDiagram
       ? {
-          label: "Diagram",
-          tooltip: `${actionVerb} a diagram block here`,
+          label: solutionLabel("Diagram"),
+          tooltip: solutionTooltip("diagram block", `${actionVerb} a diagram block here`),
           icon: <ImagePlus className="size-4" aria-hidden="true" />,
           subActions: diagramActions,
           onClick: onAddDiagram,
@@ -199,8 +204,8 @@ export function ContentInsertionActions({
       : null,
     onAddColumns
       ? {
-          label: "Columns",
-          tooltip: `${actionVerb} a 2-column content container`,
+          label: solutionLabel("Columns"),
+          tooltip: solutionTooltip("columns block", `${actionVerb} a 2-column content container`),
           icon: <Columns3 className="size-4" aria-hidden="true" />,
           onClick: onAddColumns,
         }
