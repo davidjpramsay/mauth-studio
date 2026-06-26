@@ -150,8 +150,8 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
 
       {hasSubstanceOverride ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          This set diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured set
-          diagram data.
+          This Venn diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured
+          Venn diagram data.
         </div>
       ) : null}
 

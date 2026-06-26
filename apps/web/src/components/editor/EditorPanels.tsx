@@ -299,7 +299,10 @@ export function ContentInsertionActions({
                   key={`${action.label}-${index}`}
                   className="relative"
                   onMouseEnter={() => {
-                    if (hasSubmenu) setOpenSubmenuIndex(index);
+                    if (!hasSubmenu) setOpenSubmenuIndex(null);
+                  }}
+                  onMouseLeave={() => {
+                    if (hasSubmenu) setOpenSubmenuIndex((current) => (current === index ? null : current));
                   }}
                 >
                   <button
@@ -309,7 +312,7 @@ export function ContentInsertionActions({
                     aria-expanded={hasSubmenu ? submenuOpen : undefined}
                     disabled={action.disabled}
                     onFocus={() => {
-                      if (hasSubmenu) setOpenSubmenuIndex(index);
+                      if (!hasSubmenu) setOpenSubmenuIndex(null);
                     }}
                     onKeyDown={(event) => {
                       if (hasSubmenu && (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ")) {
@@ -336,7 +339,7 @@ export function ContentInsertionActions({
                   {hasSubmenu && submenuOpen ? (
                     <div
                       role="menu"
-                      className="absolute left-[calc(100%+0.25rem)] top-0 z-[110] min-w-56 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
+                      className="absolute left-full top-0 z-[110] min-w-56 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
                     >
                       {subActions.map((subAction, subIndex) => (
                         <button

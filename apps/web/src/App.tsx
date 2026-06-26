@@ -1260,9 +1260,9 @@ const QUICK_INSERT_DIAGRAM_TYPES = [
   { value: "geometry2d", label: "2D diagram" },
   { value: "vector2d", label: "Vector graph" },
   { value: "graph3d", label: "3D graph" },
-  { value: "geometricConstruction", label: "Geometric construction" },
+  { value: "geometricConstruction", label: "Geometric" },
   { value: "network", label: "Network" },
-  { value: "setDiagram", label: "Set diagram" },
+  { value: "setDiagram", label: "Venn diagram" },
   { value: "image", label: "Image" },
 ];
 

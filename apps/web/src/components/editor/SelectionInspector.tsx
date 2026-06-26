@@ -1336,7 +1336,7 @@ export function SelectionInspector({
                   {selectedDiagramConfig.type === "network"
                     ? "Network settings"
                     : selectedDiagramConfig.type === "setDiagram"
-                      ? "Set diagram settings"
+                      ? "Venn diagram settings"
                       : "Penrose settings"}
                 </div>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
