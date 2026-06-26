@@ -15452,7 +15452,12 @@ export default function App() {
                     <PlusCircle className="size-4" aria-hidden="true" />
                     New document
                   </Button>
-                  <Button type="button" variant="outline" onClick={openFileManager} className="gap-2 bg-white/80">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={openFileManager}
+                    className="gap-2 border-slate-500 bg-white/90 text-slate-800 shadow-sm hover:bg-white hover:text-slate-950"
+                  >
                     <FolderOpen className="size-4" aria-hidden="true" />
                     Open files
                   </Button>
