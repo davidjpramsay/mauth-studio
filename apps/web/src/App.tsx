@@ -8286,7 +8286,7 @@ function buildDocumentToc(
 
 function TocItemIcon({ kind }: { kind: TocItemKind }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
-  if (kind === "sectionHeading") return <Heading2 className="size-4" aria-hidden="true" />;
+  if (kind === "sectionHeading") return <SectionSymbolIcon className="size-4 text-base" />;
   if (kind === "question") return null;
   if (kind === "pageBreak") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   if (kind === "part" || kind === "subpart") return <GitBranch className="size-4" aria-hidden="true" />;
@@ -8296,6 +8296,14 @@ function TocItemIcon({ kind }: { kind: TocItemKind }) {
   if (kind === "columns") return <Columns3 className="size-4" aria-hidden="true" />;
   if (kind === "space") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   return <Type className="size-4" aria-hidden="true" />;
+}
+
+function SectionSymbolIcon({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center justify-center font-semibold leading-none", className)} aria-hidden="true">
+      §
+    </span>
+  );
 }
 
 function questionHasPageBreak(question: QuestionBlock) {
@@ -8816,12 +8824,12 @@ function DocumentNavigatorRail({
       <div className="flex h-28 shrink-0 flex-col items-center justify-center gap-1 border-t">
         <button
           type="button"
-          title="Add section heading"
-          aria-label="Add section heading"
+          title="Add section"
+          aria-label="Add section"
           onClick={onAddSectionHeading}
           className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
         >
-          <Heading2 className="size-4" aria-hidden="true" />
+          <SectionSymbolIcon className="size-4 text-base" />
         </button>
         <button
           type="button"
