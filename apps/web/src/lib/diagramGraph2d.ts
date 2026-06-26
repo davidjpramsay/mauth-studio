@@ -169,6 +169,16 @@ export function isRegionFeatureKind(kind?: GraphFeature["kind"]) {
   return kind === "region_between_curves" || kind === "region_curve_axis";
 }
 
+export function isStrokeStyledFeatureKind(kind?: GraphFeature["kind"]) {
+  return (
+    kind === "line_segment" ||
+    kind === "angle_marker" ||
+    kind === "tangent" ||
+    kind === "region_clipped_by_curve" ||
+    isRegionFeatureKind(kind)
+  );
+}
+
 function normalFeatureKind(kind?: GraphFeature["kind"]): GraphFeatureKind {
   return kind === "point_between_points" ? "point" : (kind ?? "point");
 }

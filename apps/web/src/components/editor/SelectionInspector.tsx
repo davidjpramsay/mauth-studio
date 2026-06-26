@@ -97,6 +97,7 @@ import {
   graphFunctionLabel,
   graphHeight,
   isRegionFeatureKind,
+  isStrokeStyledFeatureKind,
   lockedAspectHeight,
 } from "../../lib/diagramGraph2d";
 import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData } from "../../lib/diagramImage";
@@ -1935,6 +1936,7 @@ export function SelectionInspector({
                         const isFreeLabel = feature.kind === "label";
                         const featureStrokeStyle = feature.strokeStyle ?? (isRegionFeatureKind(feature.kind) ? "none" : "solid");
                         const featureLineStyles = isRegionFeatureKind(feature.kind) ? GRAPH_FEATURE_LINE_STYLES : GRAPH_LINE_STYLES;
+                        const showFeatureStrokeControls = isStrokeStyledFeatureKind(feature.kind);
                         const functionOptions = selectedGraphFunctions.map((graphFunction, index) => ({
                           value: index,
                           label: `${index + 1}: ${graphFunction.label || graphFunctionLabel(index)}`,
@@ -2038,51 +2040,55 @@ export function SelectionInspector({
                                         ))}
                                       </select>
                                     </label>
-                                    <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                                      Line style
-                                      <select
-                                        value={featureStrokeStyle}
-                                        aria-label={`${selectedBlock.label} feature ${featureIndex + 1} line style`}
-                                        onChange={(event) =>
-                                          onBlockChange(selectedBlock, {
-                                            graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                              features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                                strokeStyle: event.target.value as NonNullable<GraphFeature["strokeStyle"]>,
-                                              }),
-                                            }),
-                                          })
-                                        }
-                                        className={controlClassName}
-                                      >
-                                        {featureLineStyles.map((style) => (
-                                          <option key={style.value} value={style.value}>
-                                            {style.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                    <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                                      Weight
-                                      <input
-                                        type="number"
-                                        min={0.5}
-                                        max={10}
-                                        step={0.5}
-                                        value={inspectorNumberInputValue(feature.strokeWidth)}
-                                        disabled={featureStrokeStyle === "none"}
-                                        aria-label={`${selectedBlock.label} feature ${featureIndex + 1} weight`}
-                                        onChange={(event) =>
-                                          onBlockChange(selectedBlock, {
-                                            graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                              features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                                strokeWidth: inspectorOptionalNumber(event.target.value),
-                                              }),
-                                            }),
-                                          })
-                                        }
-                                        className={cn(controlClassName, "disabled:cursor-not-allowed disabled:opacity-60")}
-                                      />
-                                    </label>
+                                    {showFeatureStrokeControls ? (
+                                      <>
+                                        <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                                          Line style
+                                          <select
+                                            value={featureStrokeStyle}
+                                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} line style`}
+                                            onChange={(event) =>
+                                              onBlockChange(selectedBlock, {
+                                                graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                                                  features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
+                                                    strokeStyle: event.target.value as NonNullable<GraphFeature["strokeStyle"]>,
+                                                  }),
+                                                }),
+                                              })
+                                            }
+                                            className={controlClassName}
+                                          >
+                                            {featureLineStyles.map((style) => (
+                                              <option key={style.value} value={style.value}>
+                                                {style.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                        <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                                          Weight
+                                          <input
+                                            type="number"
+                                            min={0.5}
+                                            max={10}
+                                            step={0.5}
+                                            value={inspectorNumberInputValue(feature.strokeWidth)}
+                                            disabled={featureStrokeStyle === "none"}
+                                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} weight`}
+                                            onChange={(event) =>
+                                              onBlockChange(selectedBlock, {
+                                                graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                                                  features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
+                                                    strokeWidth: inspectorOptionalNumber(event.target.value),
+                                                  }),
+                                                }),
+                                              })
+                                            }
+                                            className={cn(controlClassName, "disabled:cursor-not-allowed disabled:opacity-60")}
+                                          />
+                                        </label>
+                                      </>
+                                    ) : null}
                                   </>
                                 )}
                                 {isRegionFeatureKind(feature.kind) ? (

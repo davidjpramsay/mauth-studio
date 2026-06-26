@@ -25,6 +25,7 @@ import {
   graphPiecesFromFunction,
   isRegionFeatureKind,
   isSolutionOnlyGraphFeature,
+  isStrokeStyledFeatureKind,
   lockedAspectHeight,
   type GraphFeatureKind,
   type GraphFunctionKind,
@@ -907,6 +908,7 @@ export function FunctionGraphEditor({
                           : GRAPH_FEATURE_LABEL_MODES;
                   const featureLineStyles = isRegionFeatureKind(feature.kind) ? GRAPH_FEATURE_LINE_STYLES : GRAPH_LINE_STYLES;
                   const featureStrokeStyle = feature.strokeStyle ?? (isRegionFeatureKind(feature.kind) ? "none" : "solid");
+                  const showFeatureStrokeControls = isStrokeStyledFeatureKind(feature.kind);
                   const selectedFeatureFunction = functions[feature.functionIndex ?? 0];
                   const selectedFeatureIsRelation = selectedFeatureFunction?.kind === "relation";
                   const isFreeLabel = feature.kind === "label";
@@ -972,7 +974,7 @@ export function FunctionGraphEditor({
                             />
                           </label>
                         ) : null}
-                        {showInlineSettings && !isFreeLabel ? (
+                        {showInlineSettings && showFeatureStrokeControls ? (
                           <>
                             <label className="flex flex-col gap-2 text-xs font-medium">
                               Weight
