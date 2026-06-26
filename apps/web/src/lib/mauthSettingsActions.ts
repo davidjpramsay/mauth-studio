@@ -287,10 +287,20 @@ function graph2dSettingsPatch(config: GraphConfig, settings: Graph2DSettingsUpda
   setIfDefined(patch, "showAxisNumbers", settings.showAxisNumbers);
   setIfDefined(patch, "showArrows", settings.showArrows);
   setIfDefined(patch, "showFunctionArrows", settings.showFunctionArrows);
-  setIfDefined(patch, "gridMajorStep", settings.gridMajorStep);
+  if (settings.gridMajorStep !== undefined) {
+    patch.gridMajorStep = settings.gridMajorStep;
+    patch.axisLabelStepX = settings.gridMajorStep;
+    patch.axisLabelStepY = settings.gridMajorStep;
+  }
   setIfDefined(patch, "gridMinorStep", settings.gridMinorStep);
-  setIfDefined(patch, "gridMajorStepX", settings.gridMajorStepX);
-  setIfDefined(patch, "gridMajorStepY", settings.gridMajorStepY);
+  if (settings.gridMajorStepX !== undefined) {
+    patch.gridMajorStepX = settings.gridMajorStepX;
+    patch.axisLabelStepX = settings.gridMajorStepX;
+  }
+  if (settings.gridMajorStepY !== undefined) {
+    patch.gridMajorStepY = settings.gridMajorStepY;
+    patch.axisLabelStepY = settings.gridMajorStepY;
+  }
   setIfDefined(patch, "gridMinorStepX", settings.gridMinorStepX);
   setIfDefined(patch, "gridMinorStepY", settings.gridMinorStepY);
   if (settings.widthPx !== undefined) {

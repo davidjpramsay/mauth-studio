@@ -2669,6 +2669,7 @@ export function SelectionInspector({
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                 gridMajorStepX: value,
+                                axisLabelStepX: value,
                               }),
                             })
                           }
@@ -2686,6 +2687,7 @@ export function SelectionInspector({
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                 gridMajorStepY: value,
+                                axisLabelStepY: value,
                               }),
                             })
                           }

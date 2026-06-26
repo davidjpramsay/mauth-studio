@@ -468,7 +468,7 @@ export function FunctionGraphEditor({
                     step={0.5}
                     value={config.gridMajorStepX}
                     fallbackValue={config.gridMajorStep}
-                    onChange={(value) => patchConfig({ gridMajorStepX: value })}
+                    onChange={(value) => patchConfig({ gridMajorStepX: value, axisLabelStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -479,7 +479,7 @@ export function FunctionGraphEditor({
                     step={0.5}
                     value={config.gridMajorStepY}
                     fallbackValue={config.gridMajorStep}
-                    onChange={(value) => patchConfig({ gridMajorStepY: value })}
+                    onChange={(value) => patchConfig({ gridMajorStepY: value, axisLabelStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>

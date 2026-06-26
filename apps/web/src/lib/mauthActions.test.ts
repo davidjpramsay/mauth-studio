@@ -835,7 +835,15 @@ test("applies named diagram settings updates across supported renderers", () => 
       type: "diagram.settings.update" as const,
       scope: { kind: "question" as const, questionId: "q1" },
       blockId: "graph",
-      settings: { renderer: "graph2d" as const, widthPx: 800, xMin: -4, showAxes: false, equalScale: true },
+      settings: {
+        renderer: "graph2d" as const,
+        widthPx: 800,
+        xMin: -4,
+        showAxes: false,
+        equalScale: true,
+        gridMajorStepX: 2,
+        gridMajorStepY: 0.5,
+      },
     },
     {
       type: "diagram.settings.update" as const,
@@ -893,6 +901,10 @@ test("applies named diagram settings updates across supported renderers", () => 
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.showAxes : undefined, false);
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.equalScale : undefined, true);
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.lockAspectRatio : undefined, false);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.gridMajorStepX : undefined, 2);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.axisLabelStepX : undefined, 2);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.gridMajorStepY : undefined, 0.5);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.axisLabelStepY : undefined, 0.5);
 
   const vector = findContentBlock(blocks, "vector");
   assert.equal(vector?.kind, "diagram");
