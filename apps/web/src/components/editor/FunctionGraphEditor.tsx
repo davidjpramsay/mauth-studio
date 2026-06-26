@@ -40,6 +40,28 @@ function numberInputValue(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : "";
 }
 
+function numberInputSpinnerMin(min?: number, step?: number) {
+  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
+  return min;
+}
+
+function numberInputSpinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
+  if (step !== 1 || nextValue === "") return nextValue;
+  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
+  if (inputType) return nextValue;
+
+  const previous = Number(previousValue);
+  const next = Number(nextValue);
+  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
+  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
+
+  const previousFraction = previous - Math.trunc(previous);
+  const nextFraction = next - Math.trunc(next);
+  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
+
+  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
+}
+
 function DraftNumberInput({
   value,
   fallbackValue,
@@ -61,11 +83,11 @@ function DraftNumberInput({
   return (
     <input
       type="number"
-      min={min}
+      min={numberInputSpinnerMin(min, step)}
       step={step}
       value={displayValue}
       onChange={(event) => {
-        const nextValue = event.target.value;
+        const nextValue = numberInputSpinnerValue(event.target.value, displayValue, step, event.nativeEvent);
         setDraftValue(nextValue);
         if (nextValue === "") {
           onChange(undefined);

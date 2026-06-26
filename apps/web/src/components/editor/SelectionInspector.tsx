@@ -106,6 +106,28 @@ import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/di
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import { cn } from "../../lib/utils";
 
+function inspectorNumberInputSpinnerMin(min?: number, step?: number) {
+  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
+  return min;
+}
+
+function inspectorNumberInputSpinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
+  if (step !== 1 || nextValue === "") return nextValue;
+  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
+  if (inputType) return nextValue;
+
+  const previous = Number(previousValue);
+  const next = Number(nextValue);
+  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
+  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
+
+  const previousFraction = previous - Math.trunc(previous);
+  const nextFraction = next - Math.trunc(next);
+  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
+
+  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
+}
+
 function DraftInspectorNumberInput({
   value,
   fallbackValue,
@@ -127,11 +149,11 @@ function DraftInspectorNumberInput({
   return (
     <input
       type="number"
-      min={min}
+      min={inspectorNumberInputSpinnerMin(min, step)}
       step={step}
       value={displayValue}
       onChange={(event) => {
-        const nextValue = event.target.value;
+        const nextValue = inspectorNumberInputSpinnerValue(event.target.value, displayValue, step, event.nativeEvent);
         setDraftValue(nextValue);
         if (nextValue === "") {
           onChange(undefined);
