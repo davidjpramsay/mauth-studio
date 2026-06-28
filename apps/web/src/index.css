@@ -913,7 +913,7 @@
   }
 
   .notes-header {
-    align-items: center;
+    align-items: stretch;
     border-bottom: 1.5px solid #0f172a;
     color: #0f172a;
     display: flex;
@@ -926,19 +926,21 @@
 
   .notes-mini-logo {
     align-items: center;
+    align-self: stretch;
     display: flex;
-    flex: 0 0 2.65rem;
-    height: 2.65rem;
+    flex: 0 0 4.2rem;
+    height: auto;
     justify-content: center;
+    min-height: 3.6rem;
     overflow: hidden;
-    width: 2.65rem;
+    width: 4.2rem;
   }
 
   .notes-mini-logo img {
     display: block;
-    max-height: 100%;
-    max-width: 100%;
+    height: 100%;
     object-fit: contain;
+    width: 100%;
   }
 
   .notes-title-copy {
