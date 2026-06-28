@@ -123,7 +123,8 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
   const xValues = data.xValues?.length ? data.xValues : [2, 4, 5, 6, 7];
   const probabilities = data.probabilities?.length ? data.probabilities : [0.1, 0.25, 0.3, 0.15, 0.2];
   const range = data.range ?? [-3, 3];
-  const histogramDataMode = data.dataMode ?? "raw";
+  const histogramDataMode = data.dataMode === "manualProbabilities" ? "manualProbabilities" : "raw";
+  const isManualProbabilityMode = histogramDataMode === "manualProbabilities";
   const histogramBarType = data.barType ?? "continuous";
   const histogramYAxisMode = data.yAxisMode ?? "frequency";
   const histogramYLabelOrientation = data.yLabelOrientation ?? "vertical";
@@ -186,42 +187,53 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
       ) : null}
 
       {data.chartType === "histogram" ? (
-        <section className={cn("grid grid-cols-1 gap-3 md:grid-cols-4", showInlineSettings && "border-t pt-3")}>
+        <section
+          className={cn(
+            "grid grid-cols-1 gap-3",
+            isManualProbabilityMode ? "md:grid-cols-2" : "md:grid-cols-4",
+            showInlineSettings && "border-t pt-3",
+          )}
+        >
           <label className="flex flex-col gap-2 text-xs font-medium">
-            Data mode
+            Bar data
             <select
               value={histogramDataMode}
               onChange={(event) => updateHistogramDataMode(event.target.value as StatsChartData["dataMode"])}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             >
-              <option value="raw">Raw data</option>
-              <option value="manualProbabilities">Manual probabilities</option>
+              <option value="raw">Count raw observations</option>
+              <option value="manualProbabilities">Enter probabilities</option>
             </select>
+            <span className="text-[11px] font-normal leading-snug text-muted-foreground">
+              {isManualProbabilityMode ? "Use matching x-values and probabilities." : "Repeated values are counted as frequencies."}
+            </span>
           </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Bar type
-            <select
-              value={histogramDataMode === "manualProbabilities" ? "discrete" : histogramBarType}
-              disabled={histogramDataMode === "manualProbabilities"}
-              onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
-            >
-              <option value="continuous">Continuous bins</option>
-              <option value="discrete">Discrete values</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Y-axis
-            <select
-              value={histogramYAxisMode}
-              disabled={histogramDataMode === "manualProbabilities"}
-              onChange={(event) => updateHistogramYAxisMode(event.target.value as StatsChartData["yAxisMode"])}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
-            >
-              <option value="frequency">Frequency</option>
-              <option value="relativeFrequency">Relative frequency</option>
-            </select>
-          </label>
+          {!isManualProbabilityMode ? (
+            <>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Bar type
+                <select
+                  value={histogramBarType}
+                  onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="continuous">Continuous bins</option>
+                  <option value="discrete">Discrete values</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Y-axis
+                <select
+                  value={histogramYAxisMode}
+                  onChange={(event) => updateHistogramYAxisMode(event.target.value as StatsChartData["yAxisMode"])}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="frequency">Frequency</option>
+                  <option value="relativeFrequency">Relative frequency</option>
+                </select>
+              </label>
+            </>
+          ) : null}
           <label className="flex flex-col gap-2 text-xs font-medium">
             Y label
             <select
