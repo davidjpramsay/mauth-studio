@@ -95,6 +95,56 @@ where VectorSegment(s, a, b) {
   layer vectorHead below b.labelText
 }
 
+forall NamedSegment s; Point a
+where SelfLoop(s, a) {
+  s.start = a.dot.center
+  s.end = a.dot.center
+  loopCenter = a.dot.center + (24, -24)
+
+  loop = Circle {
+    center: loopCenter
+    r: 18
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+
+  ensure onCanvas(loop, 420, 300)
+  layer loop below a.dot
+  layer loop below a.labelText
+}
+
+forall NamedSegment s; Point a
+where VectorSelfLoop(s, a) {
+  s.start = a.dot.center
+  s.end = a.dot.center
+  loopCenter = a.dot.center + (24, -24)
+  tip = loopCenter + (-13, 13)
+  direction = unit((-1, 1))
+  normal = rot90(direction)
+  base = tip - direction * 12
+
+  loop = Circle {
+    center: loopCenter
+    r: 18
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2.2
+    fillColor: none()
+  }
+
+  vectorHead = Polygon {
+    points: [tip, base + normal * 5.5, base - normal * 5.5]
+    fillColor: rgba(0, 0, 0, 1)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 0
+  }
+
+  ensure onCanvas(loop, 420, 300)
+  layer loop below vectorHead
+  layer loop below a.dot
+  layer vectorHead below a.labelText
+}
+
 forall Line l; Point a; Point b
 where LineThrough(l, a, b) {
   l.shape = Line {
@@ -588,6 +638,13 @@ where LabelsSegment(l, a, b) {
   l.text.center = midpoint(a.dot.center, b.dot.center) + unit(rot90(b.dot.center - a.dot.center + (0.001, 0.001)) + (0.001, 0.001)) * 18
   ensure disjoint(l.text, a.dot, 5)
   ensure disjoint(l.text, b.dot, 5)
+}
+
+forall LengthLabel l; Point a
+where LabelsSelfLoop(l, a) {
+  l.text.center = a.dot.center + (48, -48)
+  ensure onCanvas(l.text, 420, 300)
+  ensure disjoint(l.text, a.dot, 12)
 }
 
 forall LengthLabel l; Point a; Point b; Point c

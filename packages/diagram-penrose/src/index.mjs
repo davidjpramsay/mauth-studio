@@ -154,11 +154,13 @@ export function specToSubstance(spec) {
   const namedSegments = namedSegmentEntries(spec);
   if (namedSegments.length) lines.push(`NamedSegment ${namedSegments.map((segment) => segment.name).join(", ")}`);
   const lengthLabels = lengthLabelEntries(spec);
-  const segmentLabels = segmentLabelEntries(spec);
+  const segmentLabels = segmentLabelEntries(spec).filter((entry) => entry.a !== entry.b);
+  const selfLoopLabels = selfLoopLabelEntries(spec);
   const angleLabels = angleLabelEntries(spec);
   const labelDeclarations = [
     ...lengthLabels.map((_, index) => `sideLabel${index + 1}`),
     ...segmentLabels.map((_, index) => `segmentLabel${index + 1}`),
+    ...selfLoopLabels.map((_, index) => `selfLoopLabel${index + 1}`),
     ...angleLabels.map((_, index) => `angleLabel${index + 1}`),
   ];
   if (labelDeclarations.length) lines.push(`LengthLabel ${labelDeclarations.join(", ")}`);
@@ -192,23 +194,19 @@ export function specToSubstance(spec) {
     if (relation?.type === "segment") {
       const names = relation.points ?? relation.between ?? [];
       if (typeof relation.name === "string" && names.length === 2) {
-        lines.push(
-          `Segment(${assertIdentifier(relation.name, "Segment name")}, ${assertIdentifier(names[0], "Segment start point")}, ${assertIdentifier(
-            names[1],
-            "Segment end point",
-          )})`,
-        );
+        const segmentName = assertIdentifier(relation.name, "Segment name");
+        const start = assertIdentifier(names[0], "Segment start point");
+        const end = assertIdentifier(names[1], "Segment end point");
+        lines.push(start === end ? `SelfLoop(${segmentName}, ${start})` : `Segment(${segmentName}, ${start}, ${end})`);
       }
     }
     if (relation?.type === "vectorSegment") {
       const names = relation.points ?? relation.between ?? [];
       if (typeof relation.name === "string" && names.length === 2) {
-        lines.push(
-          `VectorSegment(${assertIdentifier(relation.name, "Segment name")}, ${assertIdentifier(
-            names[0],
-            "Segment start point",
-          )}, ${assertIdentifier(names[1], "Segment end point")})`,
-        );
+        const segmentName = assertIdentifier(relation.name, "Segment name");
+        const start = assertIdentifier(names[0], "Segment start point");
+        const end = assertIdentifier(names[1], "Segment end point");
+        lines.push(start === end ? `VectorSelfLoop(${segmentName}, ${start})` : `VectorSegment(${segmentName}, ${start}, ${end})`);
       }
     }
     if (relation?.type === "angleMark") {
@@ -228,6 +226,11 @@ export function specToSubstance(spec) {
     const labelName = `segmentLabel${index + 1}`;
     lines.push(labelStatement(labelName, entry.value));
     lines.push(`LabelsSegment(${labelName}, ${entry.a}, ${entry.b})`);
+  });
+  selfLoopLabels.forEach((entry, index) => {
+    const labelName = `selfLoopLabel${index + 1}`;
+    lines.push(labelStatement(labelName, entry.value));
+    lines.push(`LabelsSelfLoop(${labelName}, ${entry.a})`);
   });
   angleLabels.forEach((entry, index) => {
     const labelName = `angleLabel${index + 1}`;
@@ -698,6 +701,25 @@ function segmentLabelEntries(spec) {
   return entries;
 }
 
+function selfLoopLabelEntries(spec) {
+  const entries = [];
+  for (const relation of spec?.data?.relationships ?? []) {
+    if (relation?.type !== "segment" && relation?.type !== "vectorSegment") continue;
+    const value = relation.label ?? relation.value;
+    if (String(value ?? "").trim().length === 0) continue;
+    const names = relation.points ?? relation.between ?? [];
+    if (!Array.isArray(names) || names.length !== 2) continue;
+    const start = assertIdentifier(names[0], "Self-loop label point");
+    const end = assertIdentifier(names[1], "Self-loop label point");
+    if (start !== end) continue;
+    entries.push({
+      a: start,
+      value,
+    });
+  }
+  return entries;
+}
+
 function angleLabelEntries(spec) {
   const entries = [];
   for (const relation of spec?.data?.relationships ?? []) {
@@ -848,10 +870,16 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
       continue;
     }
 
-    const namedSegmentMatch = line.match(/^(Segment|VectorSegment)\(([^)]+)\)$/);
+    const namedSegmentMatch = line.match(/^(Segment|VectorSegment|SelfLoop|VectorSelfLoop)\(([^)]+)\)$/);
     if (namedSegmentMatch) {
       const args = substanceArgs(namedSegmentMatch[2]);
-      if (args.length === 3) {
+      if ((namedSegmentMatch[1] === "SelfLoop" || namedSegmentMatch[1] === "VectorSelfLoop") && args.length === 2) {
+        const segmentName = assertIdentifier(args[0], "Segment name");
+        const point = assertIdentifier(args[1], "Self-loop point");
+        namedSegments.add(segmentName);
+        namedSegmentEndpoints.set(segmentName, [point, point]);
+        objectNames.add(point);
+      } else if (args.length === 3) {
         const segmentName = assertIdentifier(args[0], "Segment name");
         const start = assertIdentifier(args[1], "Segment start point");
         const end = assertIdentifier(args[2], "Segment end point");
@@ -867,7 +895,7 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
       continue;
     }
 
-    const labelConsumerMatch = line.match(/^(LabelsSegment|LabelsAngle|LabelsCircle|LabelsLine)\(([^)]+)\)$/);
+    const labelConsumerMatch = line.match(/^(LabelsSegment|LabelsSelfLoop|LabelsAngle|LabelsCircle|LabelsLine)\(([^)]+)\)$/);
     if (labelConsumerMatch) {
       const args = substanceArgs(labelConsumerMatch[2]);
       if (
@@ -1090,6 +1118,33 @@ function parseSubstanceDiagramSpec(substance) {
         between: [start, end],
         value: labels.get(label) ?? "",
       });
+      continue;
+    }
+
+    const selfLoopLabelMatch = line.match(/^LabelsSelfLoop\(([^)]+)\)$/);
+    if (selfLoopLabelMatch) {
+      const [labelName, pointName] = substanceArgs(selfLoopLabelMatch[1]);
+      if (!labelName || !pointName) continue;
+      const label = assertIdentifier(labelName, "Length label");
+      const point = assertIdentifier(pointName, "Self-loop label point");
+      points.set(point, points.get(point) ?? { type: "point", name: point });
+      relationships.push({
+        type: "labelLength",
+        name: label,
+        between: [point, point],
+        value: labels.get(label) ?? "",
+      });
+      continue;
+    }
+
+    const selfLoopMatch = line.match(/^(SelfLoop|VectorSelfLoop)\(([^)]+)\)$/);
+    if (selfLoopMatch) {
+      const [segmentName, pointName] = substanceArgs(selfLoopMatch[2]);
+      if (!segmentName || !pointName) continue;
+      const point = assertIdentifier(pointName, "Self-loop point");
+      points.set(point, points.get(point) ?? { type: "point", name: point });
+      namedSegments.set(assertIdentifier(segmentName, "Segment name"), [point, point]);
+      relationships.push({ type: selfLoopMatch[1] === "VectorSelfLoop" ? "vectorSegment" : "segment", points: [point, point] });
       continue;
     }
 
