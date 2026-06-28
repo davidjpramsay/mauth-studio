@@ -7,6 +7,7 @@ import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
+const AXIS_3D_LABEL_OFFSET_MULTIPLIER = 1.3;
 const LABEL_ATTRIBUTES = graphLabelAttributes();
 const DEFAULT_3D_VIEW_STATE = {
   az: 1,
@@ -1016,7 +1017,7 @@ export function Basic3DGraph({
         0.18,
         Math.max(ranges[0][1] - ranges[0][0], ranges[1][1] - ranges[1][0], ranges[2][1] - ranges[2][0]) * 0.035,
       );
-      const axisLabelOffset = labelOffset * 3;
+      const axisLabelOffset = labelOffset * AXIS_3D_LABEL_OFFSET_MULTIPLIER;
       const labelContext = graph3dLabelContext(ranges, persistedViewState);
       const pointCoords = points.map((point) => point.coords);
       const axisLabelCoords: Point3DCoords[] = [
