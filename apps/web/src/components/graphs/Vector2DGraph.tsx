@@ -956,8 +956,16 @@ export function Vector2DGraph({
       );
 
       if (showAxisLabels) {
-        createAxisLabelText(board, xMax + xAxisExtension, 0, graphConfig?.xAxisLabel?.trim() || "x", [-10, 8], "middle", "bottom");
-        createAxisLabelText(board, 0, yMax + yAxisExtension, graphConfig?.yAxisLabel?.trim() || "y", [8, -8], "left", "bottom");
+        createAxisLabelText(
+          board,
+          xMax + xAxisExtension,
+          0,
+          graphConfig?.xAxisLabel?.trim() || "\\mathbf{i}",
+          [-10, 8],
+          "middle",
+          "bottom",
+        );
+        createAxisLabelText(board, 0, yMax + yAxisExtension, graphConfig?.yAxisLabel?.trim() || "\\mathbf{j}", [8, -8], "left", "bottom");
       }
     }
 

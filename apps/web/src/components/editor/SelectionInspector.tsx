@@ -2847,7 +2847,7 @@ export function SelectionInspector({
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                    x min
+                    i min
                     <input
                       type="number"
                       value={inspectorNumberInputValue(selectedDiagramConfig.xMin)}
@@ -2862,7 +2862,7 @@ export function SelectionInspector({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                    x max
+                    i max
                     <input
                       type="number"
                       value={inspectorNumberInputValue(selectedDiagramConfig.xMax)}
@@ -2877,7 +2877,7 @@ export function SelectionInspector({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                    y min
+                    j min
                     <input
                       type="number"
                       value={inspectorNumberInputValue(selectedDiagramConfig.yMin)}
@@ -2892,7 +2892,7 @@ export function SelectionInspector({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                    y max
+                    j max
                     <input
                       type="number"
                       value={inspectorNumberInputValue(selectedDiagramConfig.yMax)}

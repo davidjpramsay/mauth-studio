@@ -121,6 +121,8 @@ export const DEFAULT_VECTOR_2D_GRAPH: GraphConfig = {
   showAxes: true,
   showArrows: true,
   showAxisLabels: true,
+  xAxisLabel: "\\mathbf{i}",
+  yAxisLabel: "\\mathbf{j}",
   showAxisNumbers: true,
   axisLabelIntervalMode: "auto",
   axisLabelStepX: undefined,

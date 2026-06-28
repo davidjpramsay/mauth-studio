@@ -170,7 +170,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
       {showInlineSettings ? (
         <section className="flex flex-wrap items-end gap-3">
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            x min
+            i min
             <input
               type="number"
               value={numberInputValue(config.xMin)}
@@ -179,7 +179,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            x max
+            i max
             <input
               type="number"
               value={numberInputValue(config.xMax)}
@@ -188,7 +188,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            y min
+            j min
             <input
               type="number"
               value={numberInputValue(config.yMin)}
@@ -197,7 +197,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            y max
+            j max
             <input
               type="number"
               value={numberInputValue(config.yMax)}
@@ -298,7 +298,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
               </div>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(6,minmax(70px,1fr))_auto] md:items-end">
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Start x
+                  Start i
                   <input
                     type="number"
                     value={numberInputValue(vector.start[0])}
@@ -307,7 +307,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Start y
+                  Start j
                   <input
                     type="number"
                     value={numberInputValue(vector.start[1])}
@@ -316,7 +316,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  x comp.
+                  i comp.
                   <input
                     type="number"
                     value={numberInputValue(vector.components[0])}
@@ -325,7 +325,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  y comp.
+                  j comp.
                   <input
                     type="number"
                     value={numberInputValue(vector.components[1])}
@@ -334,7 +334,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label x
+                  Label i
                   <input
                     type="number"
                     value={numberInputValue(vector.labelX)}
@@ -343,7 +343,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label y
+                  Label j
                   <input
                     type="number"
                     value={numberInputValue(vector.labelY)}
@@ -477,7 +477,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
-                      Label x
+                      Label i
                       <input
                         type="number"
                         value={numberInputValue(marker.labelX)}
@@ -486,7 +486,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
-                      Label y
+                      Label j
                       <input
                         type="number"
                         value={numberInputValue(marker.labelY)}
