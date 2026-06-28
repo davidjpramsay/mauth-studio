@@ -255,24 +255,6 @@ const DEFAULT_NOTES_FORMATTING_CONFIG: FormattingConfig = {
   fontSize: "11pt",
   sectionHeaders: true,
 };
-const TEST_FORMAT_PRESETS = [
-  {
-    id: "high-school-mathematics-test",
-    label: "High school mathematics test",
-  },
-  {
-    id: "worksheet",
-    label: "Worksheet",
-  },
-  {
-    id: "exam-booklet",
-    label: "School exam booklet",
-  },
-  {
-    id: "math-notes",
-    label: "Math notes",
-  },
-];
 const NEW_TEST_TEMPLATES: Array<{
   id: TitlePageTemplate;
   title: string;
@@ -1119,10 +1101,6 @@ function normalizeFormattingConfig(value: unknown): FormattingConfig {
     sectionHeaders: typeof record?.sectionHeaders === "boolean" ? record.sectionHeaders : DEFAULT_FORMATTING_CONFIG.sectionHeaders,
     page: normalizePageFormattingConfig(record?.page),
   };
-}
-
-function formattingPresetLabel(formattingConfig: FormattingConfig) {
-  return TEST_FORMAT_PRESETS.find((preset) => preset.id === formattingConfig.id)?.label ?? formattingConfig.id ?? "Custom test format";
 }
 
 function formattingConfigForPresetId(presetId: FormattingConfig["id"]): FormattingConfig {
@@ -7864,58 +7842,6 @@ function FrontMatterEditor({
   );
 }
 
-function TestFormatEditor({
-  formattingConfig,
-  titlePageTemplate,
-  openSignal,
-  onFormattingChange,
-  onReset,
-}: {
-  formattingConfig: FormattingConfig;
-  titlePageTemplate: TitlePageTemplate;
-  openSignal?: number;
-  onFormattingChange: (patch: Partial<FormattingConfig>) => void;
-  onReset: () => void;
-}) {
-  const normalizedFormatting = normalizeFormattingConfig(formattingConfig);
-  const showMarkControls = titlePageTemplate !== "notes";
-  const summary = showMarkControls
-    ? `${formattingPresetLabel(normalizedFormatting)} · ${normalizedFormatting.showMarks ? "marks shown" : "marks hidden"}`
-    : formattingPresetLabel(normalizedFormatting);
-
-  return (
-    <CollapsiblePanel
-      title={
-        <InlineSummaryTitle
-          label={titlePageTemplate === "notes" ? "Notes format" : titlePageTemplate === "worksheet" ? "Worksheet format" : "Test format"}
-          summary={summary}
-        />
-      }
-      defaultOpen={false}
-      className="bg-muted/20"
-      openSignal={openSignal}
-      actions={
-        <Button type="button" variant="outline" size="sm" onClick={onReset}>
-          Reset
-        </Button>
-      }
-    >
-      {showMarkControls ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label className="flex h-9 items-center gap-2 text-xs font-medium md:col-span-2">
-            <input
-              type="checkbox"
-              checked={normalizedFormatting.showMarks ?? true}
-              onChange={(event) => onFormattingChange({ showMarks: event.target.checked })}
-            />
-            Show mark labels on questions, parts, and subparts
-          </label>
-        </div>
-      ) : null}
-    </CollapsiblePanel>
-  );
-}
-
 function textBlockSummary(text: string) {
   return text.trim().replace(/\s+/g, " ") || "Empty text block";
 }
@@ -10476,19 +10402,6 @@ export default function App() {
         ...(typeof patch.logoId === "string" ? frontMatterPatchForLogo(logosRef.current, patch.logoId) : {}),
         ...patch,
       } as Record<string, unknown>,
-    });
-  }
-
-  function updateFormattingConfig(patch: Partial<FormattingConfig>) {
-    applyEditorDocumentAction({ type: "formatting.update", patch: patch as Record<string, unknown> });
-  }
-
-  function resetTestFormat() {
-    const template = frontMatterRef.current.titlePageTemplate;
-    const presetId = NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id;
-    applyEditorDocumentAction({
-      type: "formatting.update",
-      patch: cloneSerializable(formattingConfigForPresetId(presetId)) as Record<string, unknown>,
     });
   }
 
@@ -15101,13 +15014,6 @@ export default function App() {
                                 onAddLogo={addLogo}
                                 onUpdateLogo={updateLogo}
                                 onRemoveLogo={removeLogo}
-                              />
-                              <TestFormatEditor
-                                formattingConfig={formattingConfig}
-                                titlePageTemplate={frontMatter.titlePageTemplate}
-                                openSignal={openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER)}
-                                onFormattingChange={updateFormattingConfig}
-                                onReset={resetTestFormat}
                               />
                             </div>
                           </div>
