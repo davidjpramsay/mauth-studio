@@ -217,8 +217,8 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
                   onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 >
-                  <option value="continuous">Continuous bins</option>
-                  <option value="discrete">Discrete values</option>
+                  <option value="continuous">Histogram bins (no gaps)</option>
+                  <option value="discrete">Column graph (gaps)</option>
                 </select>
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
