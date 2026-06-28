@@ -718,7 +718,7 @@ Angle and side text labels are rendered as LaTeX. For example, `Label angleTheta
 
 ### Penrose Set Diagrams
 
-Set diagrams use the `sets` preset. The normal path is structured two-set Venn data: universe label, set labels, optional total badges, region labels/counts, and standard shaded-region flags. A new Set Diagram block starts with a two-set Venn diagram and labels for the four standard regions. Use Advanced Substance only for unusual set diagrams outside those controls.
+Set diagrams use the `sets` preset. The normal path is structured two-set or three-set Venn data: universe label, set labels, optional total badges, region labels/counts, and standard shaded-region flags. A new Set Diagram block starts with a two-set Venn diagram and labels for the four standard regions. Set `data.setCount` to `3` for the three-set tool, which uses the eight standard regions `onlyA`, `onlyB`, `onlyC`, `onlyAB`, `onlyAC`, `onlyBC`, `intersection`, and `outside`. Use Advanced Substance only for unusual set diagrams outside those controls.
 
 ````md
 :::diagram type="setDiagram" align="center" scale=100
@@ -746,7 +746,7 @@ LabelsOutside(outside, U, A, B)
 :::
 ````
 
-The API also accepts an empty set diagram spec, such as `{ "type": "setDiagram", "data": {} }`, and fills in the same default `A` and `B` overlapping-set structure.
+The API also accepts an empty set diagram spec, such as `{ "type": "setDiagram", "data": {} }`, and fills in the same default `A` and `B` overlapping-set structure. For three-set Venn diagrams, provide `setCount: 3`, three set entries, and the eight standard regions.
 
 Two-set Venn diagrams can shade the standard regions. In generated diagram data, set `shaded: true` on the matching region. In explicit Penrose Substance, use these predicates:
 
@@ -761,7 +761,7 @@ Use actual region shading for shaded Venn questions rather than relying on label
 
 Venn labels render as plain dark mathematical text. Do not add a white stroke, halo, or label background over shaded regions unless a specific custom diagram deliberately asks for that style.
 
-Place Venn region labels cleanly. Use wider default positions for set-notation region labels such as `A\cap B'`, `A\cap B`, and `A'\cap B` so they sit away from circle outlines. When set-total side tabs are present and the regions contain numeric counts, keep the A-total, A-only, intersection, B-only, and B-total values on a common horizontal baseline where practical, but centre each value inside its own visible region or side tab rather than distributing the labels as one evenly spaced row. Put the set labels `A` and `B` just outside the top of their circles rather than inside the circle regions, and put the outside-region label near the lower-right of the universal rectangle.
+Place Venn region labels cleanly. Use wider default positions for set-notation region labels such as `A\cap B'`, `A\cap B`, and `A'\cap B` so they sit away from circle outlines. When two-set total side tabs are present and the regions contain numeric counts, keep the A-total, A-only, intersection, B-only, and B-total values on a common horizontal baseline where practical, but centre each value inside its own visible region or side tab rather than distributing the labels as one evenly spaced row. Put set labels just outside the circles, and put the outside-region label near the lower-right of the universal rectangle.
 
 Set diagrams also support simple total badges in generated diagram data. Put `countLabel`, `count`, `total`, or `totalLabel` on `universe` to show a small square total box attached to the top-right corner of the universal set, and put one of those fields on a set to show a small arc-only semicircle side-tab count badge attached to that set.
 
@@ -769,9 +769,9 @@ Use those badges only when the question needs that information. The preferred sc
 
 Venn text uses a 10 pt-equivalent maths size to match the rest of the document. The renderer compensates that label size against both diagram `scalePercent` and the default display scale, so scaling the diagram changes the geometry size without making the labels grow or shrink as well.
 
-For the custom two-set Venn renderer, `scalePercent=100` is the normal classroom size and displays the 420 by 300 SVG canvas at 80% by default. This keeps the Venn geometry about 20% smaller while preserving document-sized labels.
+For the custom Venn renderer, `scalePercent=100` is the normal classroom size and displays the 420 by 300 SVG canvas at 80% by default. This keeps the Venn geometry about 20% smaller while preserving document-sized labels.
 
-The web editor exposes the common two-set Venn controls directly. Use the quick buttons for set-notation labels, count regions, count regions with total badges, and one-shaded-region presets. Ordinary labels, optional `U` total box, optional `A`/`B` total tabs, region labels/counts, and shading are stored as separate structured fields. Editing those controls clears any custom Substance override and returns the diagram to structured set data.
+The web editor exposes the common two-set and three-set Venn controls directly. Use the quick buttons for set count, set-notation labels, count regions, count regions with total badges, and one-shaded-region presets. Ordinary labels, optional set/universe totals, region labels/counts, and shading are stored as separate structured fields. Editing those controls clears any custom Substance override and returns the diagram to structured set data.
 
 ```json
 {

@@ -879,7 +879,7 @@ test("applies named diagram settings updates across supported renderers", () => 
       type: "diagram.settings.update" as const,
       scope: { kind: "question" as const, questionId: "q1" },
       blockId: "set",
-      settings: { renderer: "setDiagram" as const, labels: "countsWithTotals" as const, shading: "outside" as const },
+      settings: { renderer: "setDiagram" as const, setCount: 3 as const, labels: "countsWithTotals" as const, shading: "outside" as const },
     },
     {
       type: "diagram.settings.update" as const,
@@ -953,16 +953,26 @@ test("applies named diagram settings updates across supported renderers", () => 
   const set = findContentBlock(blocks, "set");
   const setData =
     set?.kind === "diagram"
-      ? (set.graphConfig.data as { universe: { countLabel: string }; regions: Array<{ label: string; shaded: boolean }> })
+      ? (set.graphConfig.data as {
+          setCount: number;
+          universe: { countLabel: string };
+          sets: Array<{ countLabel: string }>;
+          regions: Array<{ label: string; shaded: boolean }>;
+        })
       : null;
+  assert.equal(setData?.setCount, 3);
   assert.equal(setData?.universe.countLabel, "30");
   assert.deepEqual(
+    setData?.sets.map((setEntry) => setEntry.countLabel),
+    ["16", "13", "11"],
+  );
+  assert.deepEqual(
     setData?.regions.map((region) => region.label),
-    ["8", "10", "6", "6"],
+    ["8", "6", "5", "4", "3", "2", "1", "1"],
   );
   assert.deepEqual(
     setData?.regions.map((region) => region.shaded),
-    [false, false, false, true],
+    [false, false, false, false, false, false, false, true],
   );
 
   const image = findContentBlock(blocks, "image");

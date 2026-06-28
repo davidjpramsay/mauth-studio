@@ -43,6 +43,7 @@ import {
 } from "./diagramGeometry2d.ts";
 import { DEFAULT_IMAGE_DIAGRAM } from "./diagramImage.ts";
 import { DEFAULT_PENROSE_SCALE_PERCENT } from "./diagramPenrose.ts";
+import { normalizedSetDiagramData } from "./diagramSet.ts";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, type Vector2DLabelStyle } from "./diagramVector2d.ts";
 import {
   columnsColumnCountPatch,
@@ -59,6 +60,7 @@ import {
   penroseScalePatch,
   setDiagramCountLabelsPatch,
   setDiagramNotationPatch,
+  setDiagramSetCountPatch,
   setDiagramShadingPatch,
   tableColumnCountPatch,
   tableRowsCountPatch,
@@ -79,7 +81,17 @@ export const MAUTH_DIAGRAM_SETTINGS_RENDERERS = [
   "setDiagram",
   "image",
 ] as const;
-export const MAUTH_SET_DIAGRAM_SHADING_KEYS = ["none", "onlyA", "intersection", "onlyB", "outside"] as const;
+export const MAUTH_SET_DIAGRAM_SHADING_KEYS = [
+  "none",
+  "onlyA",
+  "intersection",
+  "onlyB",
+  "outside",
+  "onlyC",
+  "onlyAB",
+  "onlyAC",
+  "onlyBC",
+] as const;
 export const MAUTH_SET_DIAGRAM_LABEL_PRESETS = ["notation", "counts", "countsWithTotals"] as const;
 
 type ModuleSettingsKind = (typeof MAUTH_MODULE_SETTINGS_KINDS)[number];
@@ -207,6 +219,7 @@ interface NetworkSettingsUpdate {
 }
 
 interface SetDiagramSettingsUpdate {
+  setCount?: 2 | 3;
   labels?: MauthSetDiagramLabelPreset;
   shading?: MauthSetDiagramShading;
 }
@@ -590,25 +603,31 @@ function networkSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpda
   return compactGraphPatch(patches);
 }
 
-function setDiagramRegionIndex(shading: MauthSetDiagramShading) {
+function setDiagramRegionIndex(config: GraphConfig, shading: MauthSetDiagramShading) {
   if (shading === null || shading === "none") return null;
-  if (typeof shading === "number") return Math.max(0, Math.min(3, Math.round(shading)));
+  const data = normalizedSetDiagramData(config);
+  const maxIndex = Math.max(0, data.regions.length - 1);
+  if (typeof shading === "number") return Math.max(0, Math.min(maxIndex, Math.round(shading)));
+  const index = data.regions.findIndex((region) => region.name === shading);
+  if (index >= 0) return index;
   if (shading === "onlyA") return 0;
-  if (shading === "intersection") return 1;
+  if (shading === "intersection") return data.setCount === 3 ? 6 : 1;
   if (shading === "onlyB") return 2;
-  return 3;
+  return maxIndex;
 }
 
 function setDiagramSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpdate & SetDiagramSettingsUpdate): GraphPatch {
   const penrosePatch = penroseSettingsPatch(config, settings);
   const patches: GraphPatch[] = [penrosePatch];
   let nextConfig = mergePatch(config, penrosePatch);
+  if (settings.setCount === 2 || settings.setCount === 3)
+    nextConfig = applyPatchAccumulator(nextConfig, setDiagramSetCountPatch(nextConfig, settings.setCount), patches);
   if (settings.labels === "notation") nextConfig = applyPatchAccumulator(nextConfig, setDiagramNotationPatch(nextConfig), patches);
   if (settings.labels === "counts") nextConfig = applyPatchAccumulator(nextConfig, setDiagramCountLabelsPatch(nextConfig, false), patches);
   if (settings.labels === "countsWithTotals")
     nextConfig = applyPatchAccumulator(nextConfig, setDiagramCountLabelsPatch(nextConfig, true), patches);
   if (settings.shading !== undefined) {
-    applyPatchAccumulator(nextConfig, setDiagramShadingPatch(nextConfig, setDiagramRegionIndex(settings.shading)), patches);
+    applyPatchAccumulator(nextConfig, setDiagramShadingPatch(nextConfig, setDiagramRegionIndex(nextConfig, settings.shading)), patches);
   }
   return compactGraphPatch(patches);
 }

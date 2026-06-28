@@ -200,7 +200,7 @@ import {
   penrosePreset,
   penroseScalePercent,
 } from "@/lib/diagramPenrose";
-import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance } from "@/lib/diagramSet";
+import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, normalizedSetDiagramData } from "@/lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { cn } from "@/lib/utils";
@@ -7890,7 +7890,10 @@ function diagramConfigSummary(graphConfig: GraphConfig) {
   }
   if (config.type === "graph3d") return "3D axes and saved camera view";
   if (config.type === "network") return "Schematic network";
-  if (config.type === "setDiagram") return "Two-set Venn";
+  if (config.type === "setDiagram") {
+    const setCount = normalizedSetDiagramData(config).setCount;
+    return setCount === 3 ? "Three-set Venn" : "Two-set Venn";
+  }
   if (config.type === "geometricConstruction") return "Penrose construction";
   return diagramTypeLabel(config.type);
 }

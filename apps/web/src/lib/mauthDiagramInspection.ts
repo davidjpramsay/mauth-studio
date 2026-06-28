@@ -1405,19 +1405,23 @@ function inspectSetDiagram(config: GraphConfig, contextText: string): MauthDiagr
   const data = graphData(config);
   const sets = recordArray(data.sets);
   const regions = recordArray(data.regions);
+  const setCount = Number(data.setCount ?? data.setsCount ?? data.vennSetCount) >= 3 || sets.length >= 3 || regions.length >= 8 ? 3 : 2;
   if (sets.length < 2) {
     warnings.push({
       code: "set-diagram-sets-missing",
       severity: "warning",
-      message: "Set diagram should contain at least two set entries for a two-set Venn diagram.",
+      message: "Set diagram should contain at least two set entries for a Venn diagram.",
       path: "graphConfig.data.sets",
     });
   }
-  if (regions.length < 4) {
+  if (regions.length < (setCount === 3 ? 8 : 4)) {
     warnings.push({
       code: "set-diagram-regions-incomplete",
       severity: "warning",
-      message: "Set diagram should include the four standard two-set regions: onlyA, intersection, onlyB, and outside.",
+      message:
+        setCount === 3
+          ? "Set diagram should include the eight standard three-set regions: onlyA, onlyB, onlyC, onlyAB, onlyAC, onlyBC, intersection, and outside."
+          : "Set diagram should include the four standard two-set regions: onlyA, intersection, onlyB, and outside.",
       path: "graphConfig.data.regions",
     });
   }

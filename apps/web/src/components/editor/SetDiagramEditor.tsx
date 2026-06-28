@@ -4,17 +4,17 @@ import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
-import { generatedSetPenroseSubstance, normalizedSetDiagramData } from "@/lib/diagramSet";
-
-const SET_REGION_EDITOR_LABELS = ["A only", "A and B", "B only", "Outside"] as const;
-const SET_REGION_COUNT_LABELS = ["8", "10", "6", "6"] as const;
-const SET_SHADING_OPTIONS: Array<{ label: string; regionIndex: number | null }> = [
-  { label: "None", regionIndex: null },
-  { label: "A only", regionIndex: 0 },
-  { label: "A and B", regionIndex: 1 },
-  { label: "B only", regionIndex: 2 },
-  { label: "Outside", regionIndex: 3 },
-];
+import {
+  DEFAULT_SET_DATA,
+  DEFAULT_THREE_SET_DATA,
+  generatedSetPenroseSubstance,
+  normalizedSetDiagramData,
+  setDiagramCountLabels,
+  setDiagramNotationLabel,
+  setDiagramRegionEditorLabels,
+  setDiagramRegionNameAt,
+  setDiagramSetTotalLabels,
+} from "@/lib/diagramSet";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
@@ -58,6 +58,19 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
   const updateUniverse = (patch: Partial<(typeof data)["universe"]>) => {
     patchSetData({ ...data, universe: { ...data.universe, ...patch } });
   };
+  const switchSetCount = (setCount: 2 | 3) => {
+    const defaults = setCount === 3 ? DEFAULT_THREE_SET_DATA : DEFAULT_SET_DATA;
+    patchSetData({
+      ...data,
+      setCount,
+      sets: defaults.sets.map((fallback, index) => ({
+        ...fallback,
+        ...(data.sets[index] ?? {}),
+        countLabel: data.sets[index]?.countLabel ?? "",
+      })),
+      regions: defaults.regions.map((region) => ({ ...region, shaded: false })),
+    });
+  };
   const updateSet = (setIndex: number, patch: Partial<(typeof data)["sets"][number]>) => {
     patchSetData({
       ...data,
@@ -71,30 +84,28 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
     });
   };
   const applyNotationLabels = () => {
-    const [leftSet, rightSet] = data.sets;
     patchSetData({
       ...data,
       regions: data.regions.map((region, index) => ({
         ...region,
-        label:
-          index === 0
-            ? `${leftSet.name} \\cap ${rightSet.name}'`
-            : index === 1
-              ? `${leftSet.name} \\cap ${rightSet.name}`
-              : index === 2
-                ? `${leftSet.name}' \\cap ${rightSet.name}`
-                : `(${leftSet.name} \\cup ${rightSet.name})'`,
+        label: setDiagramNotationLabel(setDiagramRegionNameAt(data.setCount, index, region.name), data.sets),
       })),
     });
   };
+  const regionCountLabels = setDiagramCountLabels(data.setCount);
+  const regionEditorLabels = setDiagramRegionEditorLabels(data.setCount);
+  const shadingOptions = [
+    { label: "None", regionIndex: null },
+    ...regionEditorLabels.map((label, index) => ({ label, regionIndex: index })),
+  ];
   const applyCountLabels = (includeTotals: boolean) => {
     patchSetData({
       ...data,
       universe: { ...data.universe, countLabel: includeTotals ? "30" : "" },
-      sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? (index === 0 ? "18" : "16") : "" })),
+      sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? setDiagramSetTotalLabels(data.setCount)[index] : "" })),
       regions: data.regions.map((region, index) => ({
         ...region,
-        label: SET_REGION_COUNT_LABELS[index] ?? "",
+        label: regionCountLabels[index] ?? "",
       })),
     });
   };
@@ -136,6 +147,22 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
             Original
           </Button>
+          <Button
+            type="button"
+            variant={data.setCount === 2 ? "default" : "outline"}
+            className="self-end"
+            onClick={() => switchSetCount(2)}
+          >
+            2 sets
+          </Button>
+          <Button
+            type="button"
+            variant={data.setCount === 3 ? "default" : "outline"}
+            className="self-end"
+            onClick={() => switchSetCount(3)}
+          >
+            3 sets
+          </Button>
           <Button type="button" variant="outline" className="self-end" onClick={applyNotationLabels}>
             Set notation
           </Button>
@@ -155,7 +182,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
         <label className="flex flex-col gap-2 text-xs font-medium">
           Universe label
           <input
@@ -180,11 +207,21 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
             className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
           />
         </label>
+        {data.setCount === 3 ? (
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            C label
+            <input
+              value={String(data.sets[2]?.label ?? "")}
+              onChange={(event) => updateSet(2, { label: event.target.value })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optional totals</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <label className="flex flex-col gap-2 text-xs font-medium">
             U total box
             <input
@@ -212,6 +249,17 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
+          {data.setCount === 3 ? (
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              C total box
+              <input
+                value={String(data.sets[2]?.countLabel ?? "")}
+                onChange={(event) => updateSet(2, { countLabel: event.target.value })}
+                placeholder="optional"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+          ) : null}
         </div>
       </section>
 
@@ -220,7 +268,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Regions</div>
           {showInlineSettings ? (
             <div className="flex flex-wrap gap-2">
-              {SET_SHADING_OPTIONS.map((option) => (
+              {shadingOptions.map((option) => (
                 <Button
                   key={`${option.label}-${option.regionIndex ?? "none"}`}
                   type="button"
@@ -240,7 +288,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
               key={region.name ?? regionIndex}
               className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[90px_minmax(0,1fr)_90px] md:items-end"
             >
-              <div className="text-sm font-medium">{SET_REGION_EDITOR_LABELS[regionIndex]}</div>
+              <div className="text-sm font-medium">{regionEditorLabels[regionIndex]}</div>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Label or count
                 <input

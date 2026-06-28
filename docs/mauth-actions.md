@@ -114,6 +114,8 @@ Current diagram systems:
 - `statsChart`: Plotly-backed statistics charts.
 - `image`: uploaded/imported bitmap diagrams.
 
+For existing Venn diagrams, prefer `diagram.settings.update` with `renderer: "setDiagram"` for focused edits. It supports `setCount: 2 | 3`, `labels`, and `shading`, so agents can switch between two-set and three-set Venn diagrams without replacing the whole `graphConfig`.
+
 For Penrose geometry, normal authoring should edit Substance with a preset such as `geometry`; do not expose custom Domain or Style as routine teacher input.
 
 ## Validation

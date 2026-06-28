@@ -40,7 +40,6 @@ import {
   INSPECTOR_MAX_TABLE_ROWS,
   INSPECTOR_MIN_TABLE_COLUMNS,
   INSPECTOR_MIN_TABLE_ROWS,
-  INSPECTOR_SET_SHADING_OPTIONS,
   columnsColumnCountPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
@@ -49,6 +48,7 @@ import {
   inspectorNumberInputValue,
   inspectorOptionalNumber,
   inspectorSpaceLines,
+  inspectorSetShadingOptions,
   inspectorTableColumnCount,
   isInspectorPenroseDiagramType,
   networkPresetPatch,
@@ -57,6 +57,7 @@ import {
   penroseScalePatch,
   setDiagramCountLabelsPatch,
   setDiagramNotationPatch,
+  setDiagramSetCountPatch,
   setDiagramShadingPatch,
   tableColumnCountPatch,
   tableRowsCountPatch,
@@ -103,6 +104,7 @@ import {
 import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData } from "../../lib/diagramImage";
 import { normalizedNetworkDiagramData } from "../../lib/diagramNetwork";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/diagramPenrose";
+import { normalizedSetDiagramData } from "../../lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import { cn } from "../../lib/utils";
 
@@ -1100,6 +1102,7 @@ export function SelectionInspector({
   const selectedGeometryChild = selectedGeometryData ? selectedGeometryChildFromAnchor(activeAnchor) : null;
   const selectedGeometryTitle = geometryPrimitiveTitle(selectedGeometryChild, selectedGeometryData);
   const selectedNetworkData = selectedDiagramConfig?.type === "network" ? normalizedNetworkDiagramData(selectedDiagramConfig) : null;
+  const selectedSetData = selectedDiagramConfig?.type === "setDiagram" ? normalizedSetDiagramData(selectedDiagramConfig) : null;
   const selectedImageData = selectedDiagramConfig?.type === "image" ? imageDiagramData(selectedDiagramConfig) : null;
   const selectedStatsChartSpec = selectedDiagramConfig?.type === "statsChart" ? normalizeStatsChartSpec(selectedDiagramConfig) : null;
   const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
@@ -1479,6 +1482,32 @@ export function SelectionInspector({
                 ) : null}
                 {selectedDiagramConfig.type === "setDiagram" ? (
                   <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant={selectedSetData?.setCount === 2 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          onBlockChange(selectedBlock, {
+                            graphConfig: updateGraphConfig(selectedDiagramConfig, setDiagramSetCountPatch(selectedDiagramConfig, 2)),
+                          })
+                        }
+                      >
+                        2 sets
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selectedSetData?.setCount === 3 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          onBlockChange(selectedBlock, {
+                            graphConfig: updateGraphConfig(selectedDiagramConfig, setDiagramSetCountPatch(selectedDiagramConfig, 3)),
+                          })
+                        }
+                      >
+                        3 sets
+                      </Button>
+                    </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 2xl:grid-cols-1">
                       <Button
                         type="button"
@@ -1520,7 +1549,7 @@ export function SelectionInspector({
                     <div className="flex flex-col gap-2">
                       <div className="text-xs font-semibold text-muted-foreground">Shading</div>
                       <div className="grid grid-cols-2 gap-2">
-                        {INSPECTOR_SET_SHADING_OPTIONS.map((option) => (
+                        {inspectorSetShadingOptions(selectedDiagramConfig).map((option) => (
                           <Button
                             key={`${option.label}-${option.regionIndex ?? "none"}`}
                             type="button"

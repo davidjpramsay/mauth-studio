@@ -21,6 +21,7 @@ import {
   penroseScalePatch,
   setDiagramCountLabelsPatch,
   setDiagramNotationPatch,
+  setDiagramSetCountPatch,
   setDiagramShadingPatch,
   tableColumnCountPatch,
   tableRowsCountPatch,
@@ -377,6 +378,41 @@ test("set diagram helper patches update labels, totals, and shading", () => {
   assert.deepEqual(
     shadedData.regions.map((region) => region.shaded),
     [false, false, true, false],
+  );
+
+  const threeSet = setDiagramSetCountPatch(config, 3);
+  const threeSetData = threeSet.data as {
+    setCount: number;
+    sets: Array<{ name: string; label: string }>;
+    regions: Array<{ name: string }>;
+  };
+  assert.equal(threeSetData.setCount, 3);
+  assert.deepEqual(
+    threeSetData.sets.map((set) => set.name),
+    ["P", "Q", "C"],
+  );
+  assert.deepEqual(
+    threeSetData.regions.map((region) => region.name),
+    ["onlyA", "onlyB", "onlyC", "onlyAB", "onlyAC", "onlyBC", "intersection", "outside"],
+  );
+
+  const threeSetNotation = setDiagramNotationPatch({
+    ...config,
+    data: threeSetData,
+  });
+  const threeSetNotationData = threeSetNotation.data as { regions: Array<{ label: string }> };
+  assert.deepEqual(
+    threeSetNotationData.regions.map((region) => region.label),
+    [
+      "P \\cap Q' \\cap C'",
+      "P' \\cap Q \\cap C'",
+      "P' \\cap Q' \\cap C",
+      "P \\cap Q \\cap C'",
+      "P \\cap Q' \\cap C",
+      "P' \\cap Q \\cap C",
+      "P \\cap Q \\cap C",
+      "(P \\cup Q \\cup C)'",
+    ],
   );
 });
 

@@ -5,7 +5,16 @@ import { DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "
 import { finiteGraphNumber, imageDiagramData } from "./diagramImage.ts";
 import { DEFAULT_NETWORK_DATA, networkDataForSave, normalizedNetworkDiagramData } from "./diagramNetwork.ts";
 import { penroseOptions, removePenroseSubstanceOverride } from "./diagramPenrose.ts";
-import { normalizedSetDiagramData } from "./diagramSet.ts";
+import {
+  DEFAULT_SET_DATA,
+  DEFAULT_THREE_SET_DATA,
+  normalizedSetDiagramData,
+  setDiagramCountLabels,
+  setDiagramNotationLabel,
+  setDiagramRegionEditorLabels,
+  setDiagramRegionNameAt,
+  setDiagramSetTotalLabels,
+} from "./diagramSet.ts";
 import { defaultVector2DName, normalizedVector2DEntries, vector2dMetadata, type Vector2DLabelStyle } from "./diagramVector2d.ts";
 
 export type InspectorColumnsBlock = Extract<ContentBlock, { kind: "columns" }>;
@@ -15,14 +24,13 @@ export const INSPECTOR_MIN_TABLE_ROWS = 1;
 export const INSPECTOR_MAX_TABLE_ROWS = 24;
 export const INSPECTOR_MIN_TABLE_COLUMNS = 1;
 export const INSPECTOR_MAX_TABLE_COLUMNS = 12;
-export const INSPECTOR_SET_REGION_COUNT_LABELS = ["8", "10", "6", "6"] as const;
-export const INSPECTOR_SET_SHADING_OPTIONS: Array<{ label: string; regionIndex: number | null }> = [
-  { label: "None", regionIndex: null },
-  { label: "A only", regionIndex: 0 },
-  { label: "A and B", regionIndex: 1 },
-  { label: "B only", regionIndex: 2 },
-  { label: "Outside", regionIndex: 3 },
-];
+export function inspectorSetShadingOptions(config: GraphConfig): Array<{ label: string; regionIndex: number | null }> {
+  const data = normalizedSetDiagramData(config);
+  return [
+    { label: "None", regionIndex: null },
+    ...setDiagramRegionEditorLabels(data.setCount).map((label, index) => ({ label, regionIndex: index })),
+  ];
+}
 
 export function columnsColumnCountPatch(
   block: InspectorColumnsBlock,
@@ -139,19 +147,11 @@ function setDiagramStructuredPatch(config: GraphConfig, data: ReturnType<typeof 
 
 export function setDiagramNotationPatch(config: GraphConfig): Partial<GraphConfig> {
   const data = normalizedSetDiagramData(config);
-  const [leftSet, rightSet] = data.sets;
   return setDiagramStructuredPatch(config, {
     ...data,
     regions: data.regions.map((region, index) => ({
       ...region,
-      label:
-        index === 0
-          ? `${leftSet.name} \\cap ${rightSet.name}'`
-          : index === 1
-            ? `${leftSet.name} \\cap ${rightSet.name}`
-            : index === 2
-              ? `${leftSet.name}' \\cap ${rightSet.name}`
-              : `(${leftSet.name} \\cup ${rightSet.name})'`,
+      label: setDiagramNotationLabel(setDiagramRegionNameAt(data.setCount, index, region.name), data.sets),
     })),
   });
 }
@@ -161,11 +161,26 @@ export function setDiagramCountLabelsPatch(config: GraphConfig, includeTotals: b
   return setDiagramStructuredPatch(config, {
     ...data,
     universe: { ...data.universe, countLabel: includeTotals ? "30" : "" },
-    sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? (index === 0 ? "18" : "16") : "" })),
+    sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? setDiagramSetTotalLabels(data.setCount)[index] : "" })),
     regions: data.regions.map((region, index) => ({
       ...region,
-      label: INSPECTOR_SET_REGION_COUNT_LABELS[index] ?? "",
+      label: setDiagramCountLabels(data.setCount)[index] ?? "",
     })),
+  });
+}
+
+export function setDiagramSetCountPatch(config: GraphConfig, setCount: 2 | 3): Partial<GraphConfig> {
+  const data = normalizedSetDiagramData(config);
+  const defaults = setCount === 3 ? DEFAULT_THREE_SET_DATA : DEFAULT_SET_DATA;
+  return setDiagramStructuredPatch(config, {
+    ...data,
+    setCount,
+    sets: defaults.sets.map((fallback, index) => ({
+      ...fallback,
+      ...(data.sets[index] ?? {}),
+      countLabel: data.sets[index]?.countLabel ?? "",
+    })),
+    regions: defaults.regions.map((region) => ({ ...region, shaded: false })),
   });
 }
 

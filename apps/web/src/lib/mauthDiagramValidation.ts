@@ -125,7 +125,7 @@ const PENROSE_RELATIONSHIP_TYPES = new Set([
   "angleMark",
 ]);
 const PENROSE_OBJECT_TYPES = new Set(["point"]);
-const SET_REGION_NAMES = new Set(["onlyA", "intersection", "onlyB", "outside"]);
+const SET_REGION_NAMES = new Set(["onlyA", "intersection", "onlyB", "outside", "onlyC", "onlyAB", "onlyAC", "onlyBC"]);
 const PENROSE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 const COMMON_UNSUPPORTED_PENROSE_PREDICATES: Array<{
   pattern: RegExp;
@@ -1721,7 +1721,7 @@ function validateSetDiagram(config: Record<string, unknown>, path: string, issue
       setNames.add(entry.name);
     }
   });
-  if (sets && sets.length < 2) addIssue(issues, `${path}.data.sets`, "must contain at least two sets", "two-set Venn data");
+  if (sets && sets.length < 2) addIssue(issues, `${path}.data.sets`, "must contain at least two sets", "Venn data");
 
   const regions = requiredArray(data, "regions", `${path}.data`, issues);
   regions?.forEach((entry, index) => {
@@ -1732,7 +1732,7 @@ function validateSetDiagram(config: Record<string, unknown>, path: string, issue
     }
     validateIdentifier(entry, "name", entryPath, issues);
     if (typeof entry.name === "string" && !SET_REGION_NAMES.has(entry.name)) {
-      addIssue(issues, `${entryPath}.name`, "must be a supported two-set Venn region", [...SET_REGION_NAMES].join(" | "));
+      addIssue(issues, `${entryPath}.name`, "must be a supported Venn region", [...SET_REGION_NAMES].join(" | "));
     }
     optionalString(entry, "label", entryPath, issues);
     optionalString(entry, "value", entryPath, issues);

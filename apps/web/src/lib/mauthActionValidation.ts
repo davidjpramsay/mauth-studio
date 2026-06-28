@@ -401,7 +401,7 @@ function validateSetDiagramShading(value: Record<string, unknown>, path: string,
     issues,
     `${path}.shading`,
     "must be a supported set-region shading key, region index, or null",
-    "none | onlyA | intersection | onlyB | outside | number | null",
+    "none | onlyA | onlyB | onlyC | onlyAB | onlyAC | onlyBC | intersection | outside | number | null",
   );
 }
 
@@ -566,6 +566,9 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
 
   if (value.renderer === "setDiagram") {
     validatePenroseSettings(value, path, issues);
+    if (hasOwn(value, "setCount") && value.setCount !== 2 && value.setCount !== 3) {
+      addIssue(issues, `${path}.setCount`, "must be 2 or 3", "2 | 3");
+    }
     enumField(value, "labels", path, SET_DIAGRAM_LABEL_PRESETS, issues, true);
     validateSetDiagramShading(value, path, issues);
     return;

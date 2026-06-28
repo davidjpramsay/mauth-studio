@@ -243,30 +243,52 @@ export function specToSubstance(spec) {
 
 function defaultSetEntries(spec) {
   const data = spec?.data ?? {};
+  const explicitCount = Number(data.setCount ?? data.setsCount ?? data.vennSetCount);
+  const rawSets = Array.isArray(data.sets) && data.sets.length ? data.sets : data.objects;
+  const rawRegions = Array.isArray(data.regions) ? data.regions : [];
+  const setCount =
+    explicitCount >= 3 ||
+    (Array.isArray(rawSets) && rawSets.filter((entry) => !entry?.type || entry.type === "set").length >= 3) ||
+    rawRegions.length >= 8
+      ? 3
+      : 2;
   const sets = Array.isArray(data.sets) && data.sets.length ? data.sets : data.objects;
   const setEntries = (Array.isArray(sets) ? sets : [])
     .filter((entry) => !entry?.type || entry.type === "set")
-    .slice(0, 2)
+    .slice(0, setCount)
     .map((entry, index) => ({
-      name: assertIdentifier(entry?.name ?? (index === 0 ? "A" : "B"), "Set name"),
-      label: entry?.label ?? (index === 0 ? "A" : "B"),
+      name: assertIdentifier(entry?.name ?? ["A", "B", "C"][index], "Set name"),
+      label: entry?.label ?? ["A", "B", "C"][index],
     }));
 
-  while (setEntries.length < 2) {
+  while (setEntries.length < setCount) {
     const index = setEntries.length;
-    setEntries.push({ name: index === 0 ? "A" : "B", label: index === 0 ? "A" : "B" });
+    setEntries.push({ name: ["A", "B", "C"][index], label: ["A", "B", "C"][index] });
   }
 
   const universe = data.universe && typeof data.universe === "object" ? data.universe : {};
-  const regionDefaults = [
-    { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}'`, predicate: "LabelsLeftOnly" },
-    { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name}`, predicate: "LabelsIntersection" },
-    { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}`, predicate: "LabelsRightOnly" },
-    { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name})'`, predicate: "LabelsOutside" },
-  ];
-  const regions = Array.isArray(data.regions) && data.regions.length ? data.regions : regionDefaults;
+  const regionDefaults =
+    setCount === 3
+      ? [
+          { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}'` },
+          { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}'` },
+          { name: "onlyC", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}` },
+          { name: "onlyAB", label: `${setEntries[0].name} \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}'` },
+          { name: "onlyAC", label: `${setEntries[0].name} \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}` },
+          { name: "onlyBC", label: `${setEntries[0].name}' \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}` },
+          { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}` },
+          { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name} \\cup ${setEntries[2].name})'` },
+        ]
+      : [
+          { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}'`, predicate: "LabelsLeftOnly" },
+          { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name}`, predicate: "LabelsIntersection" },
+          { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}`, predicate: "LabelsRightOnly" },
+          { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name})'`, predicate: "LabelsOutside" },
+        ];
+  const regions = rawRegions.length ? rawRegions : regionDefaults;
 
   return {
+    setCount,
     universe: {
       name: assertIdentifier(universe.name ?? "U", "Universe name"),
       label: universe.label ?? "U",
@@ -424,6 +446,16 @@ const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
   intersection: { x: 210, y: 150 },
   onlyB: { x: 276, y: 150 },
 };
+const THREE_SET_REGION_LABEL_POSITIONS = {
+  onlyA: { x: 132, y: 128 },
+  onlyB: { x: 288, y: 128 },
+  onlyC: { x: 210, y: 226 },
+  onlyAB: { x: 210, y: 102 },
+  onlyAC: { x: 176, y: 170 },
+  onlyBC: { x: 244, y: 170 },
+  intersection: { x: 210, y: 148 },
+  outside: { x: 342, y: 252 },
+};
 
 function setDiagramArcSagitta(radius, halfHeight) {
   return radius - Math.sqrt(Math.max(0, radius * radius - halfHeight * halfHeight));
@@ -467,8 +499,140 @@ function setCountBadge(text, x, y, type = "box", options = {}) {
   return `<g data-role="set-count-badge" data-badge-kind="box"><rect x="${x - width / 2}" y="${y - height / 2}" width="${width}" height="${height}" fill="#ffffff" stroke="#111827" stroke-width="2.1"/><text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
 }
 
+function renderThreeSetDiagramSvg(spec, substance) {
+  const { universe, sets, regions } = setDiagramSourceEntries(spec, substance);
+  const [leftSet, rightSet, lowerSet] = sets;
+  const [onlyA, onlyB, onlyC, onlyAB, onlyAC, onlyBC, intersection, outside] = regions;
+  const regionLabels = {
+    onlyA: setRegionText(onlyA?.label, `${leftSet.name} ∩ ${rightSet.name}′ ∩ ${lowerSet.name}′`),
+    onlyB: setRegionText(onlyB?.label, `${leftSet.name}′ ∩ ${rightSet.name} ∩ ${lowerSet.name}′`),
+    onlyC: setRegionText(onlyC?.label, `${leftSet.name}′ ∩ ${rightSet.name}′ ∩ ${lowerSet.name}`),
+    onlyAB: setRegionText(onlyAB?.label, `${leftSet.name} ∩ ${rightSet.name} ∩ ${lowerSet.name}′`),
+    onlyAC: setRegionText(onlyAC?.label, `${leftSet.name} ∩ ${rightSet.name}′ ∩ ${lowerSet.name}`),
+    onlyBC: setRegionText(onlyBC?.label, `${leftSet.name}′ ∩ ${rightSet.name} ∩ ${lowerSet.name}`),
+    intersection: setRegionText(intersection?.label, `${leftSet.name} ∩ ${rightSet.name} ∩ ${lowerSet.name}`),
+    outside: setRegionText(outside?.label, `(${leftSet.name} ∪ ${rightSet.name} ∪ ${lowerSet.name})′`),
+  };
+  const shaded = {
+    onlyA: onlyA?.shaded === true,
+    onlyB: onlyB?.shaded === true,
+    onlyC: onlyC?.shaded === true,
+    onlyAB: onlyAB?.shaded === true,
+    onlyAC: onlyAC?.shaded === true,
+    onlyBC: onlyBC?.shaded === true,
+    intersection: intersection?.shaded === true,
+    outside: outside?.shaded === true,
+  };
+  const width = DEFAULT_CANVAS_WIDTH;
+  const height = DEFAULT_CANVAS_HEIGHT;
+  const rect = { x: 26, y: 26, width: 368, height: 248 };
+  const left = { cx: 166, cy: 130, r: 78 };
+  const right = { cx: 254, cy: 130, r: 78 };
+  const lower = { cx: 210, cy: 188, r: 78 };
+  const scalePercent = Number(spec?.options?.scalePercent ?? 100);
+  const textScale = setDiagramTextScale(scalePercent);
+  const shadeColor = "rgba(15, 23, 42, 0.24)";
+  const idPrefix = `set-${Math.random().toString(36).slice(2)}`;
+  const circleDef = (circle) => `<circle cx="${circle.cx}" cy="${circle.cy}" r="${circle.r}"/>`;
+  const notMask = (id, circle) =>
+    `<mask id="${idPrefix}-${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#ffffff"/>${circleDef(circle).replace("/>", ' fill="#000000"/>')}</mask>`;
+  const shading = [
+    shaded.outside
+      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${shadeColor}" mask="url(#${idPrefix}-outside)"/>`
+      : "",
+    shaded.onlyA ? `<rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-only-a)"/>` : "",
+    shaded.onlyB ? `<rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-only-b)"/>` : "",
+    shaded.onlyC ? `<rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-only-c)"/>` : "",
+    shaded.onlyAB
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-right-circle)"><rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-not-lower)"/></g></g>`
+      : "",
+    shaded.onlyAC
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-lower-circle)"><rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-not-right)"/></g></g>`
+      : "",
+    shaded.onlyBC
+      ? `<g clip-path="url(#${idPrefix}-right-circle)"><g clip-path="url(#${idPrefix}-lower-circle)"><rect width="${width}" height="${height}" fill="${shadeColor}" mask="url(#${idPrefix}-not-left)"/></g></g>`
+      : "",
+    shaded.intersection
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-right-circle)"><circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="${shadeColor}"/></g></g>`
+      : "",
+  ].join("");
+
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <clipPath id="${idPrefix}-left-circle">${circleDef(left)}</clipPath>
+    <clipPath id="${idPrefix}-right-circle">${circleDef(right)}</clipPath>
+    <clipPath id="${idPrefix}-lower-circle">${circleDef(lower)}</clipPath>
+    ${notMask("not-left", left)}
+    ${notMask("not-right", right)}
+    ${notMask("not-lower", lower)}
+    <mask id="${idPrefix}-outside" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-a" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#ffffff"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-b" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-c" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  ${shading}
+  <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
+  ${setSvgText(normalizeSetLabel(leftSet.label), 112, 66, { textScale })}
+  ${setSvgText(normalizeSetLabel(rightSet.label), 308, 66, { textScale })}
+  ${setSvgText(normalizeSetLabel(lowerSet.label), 210, 266, { textScale })}
+  ${Object.entries(regionLabels)
+    .map(([key, label]) =>
+      setSvgText(label, THREE_SET_REGION_LABEL_POSITIONS[key].x, THREE_SET_REGION_LABEL_POSITIONS[key].y, { textScale }),
+    )
+    .join("\n  ")}
+  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale })}
+  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale })}
+  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale })}
+  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale })}
+</svg>`;
+
+  return {
+    svg,
+    metadata: {
+      width,
+      height,
+      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `0 0 ${width} ${height}`,
+      scalePercent,
+      preset: "sets",
+      presetLabel: "Sets",
+      domainSource: "",
+      substance: substance ?? specToSetSubstance(spec),
+      styleSource: "custom-set-svg",
+      style: spec?.style ?? "sets",
+    },
+  };
+}
+
 function renderSetDiagramSvg(spec, substance) {
   const { universe, sets, regions } = setDiagramSourceEntries(spec, substance);
+  if ((sets?.length ?? 0) >= 3) return renderThreeSetDiagramSvg(spec, substance);
   const [leftSet, rightSet] = sets;
   const regionLabels = {
     onlyA: setRegionText(regions[0]?.label, `${leftSet.name} ∩ ${rightSet.name}′`),
@@ -574,6 +738,18 @@ function renderSetDiagramSvg(spec, substance) {
 
 function specToSetSubstance(spec) {
   const { universe, sets, regions } = defaultSetEntries(spec);
+  if (sets.length >= 3) {
+    const lines = [
+      `Universe ${universe.name}`,
+      `Set ${sets.map((set) => set.name).join(", ")}`,
+      `RegionLabel ${regions.map((region) => region.name).join(", ")}`,
+      labelStatement(universe.name, universe.label),
+      ...sets.map((set) => labelStatement(set.name, set.label)),
+      ...regions.map((region) => labelStatement(region.name, region.label)),
+    ];
+    return `${lines.join("\n")}\n`;
+  }
+
   const [leftSet, rightSet] = sets;
   const lines = [
     `Universe ${universe.name}`,
