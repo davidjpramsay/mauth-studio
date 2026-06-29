@@ -628,6 +628,10 @@ class FileProjectStorage:
         kind = payload.get("kind") if payload.get("kind") in {"file", "folder"} else "file"
         file_type = self._file_type(normalized_path, payload.get("fileType"), kind)
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        if metadata.get("source") == "legacy-saved-tests-migration" and self._is_external_visible_documents_folder(
+            project_id
+        ):
+            raise StorageValidationError("Legacy saved tests can only be imported into the default documents folder")
         revision = self._revision(existing) + 1 if existing is not None else 1
         created_at = (
             existing.get("createdAt") if existing is not None and isinstance(existing.get("createdAt"), str) else now
@@ -998,9 +1002,7 @@ class FileProjectStorage:
         return resolved
 
     def _migrate_default_project_to_visible_workspace(self) -> None:
-        default_documents_dir = self.default_documents_dir.expanduser().resolve()
-        active_documents_dir = self.documents_dir.expanduser().resolve()
-        if active_documents_dir != default_documents_dir or self.root != self.base_root:
+        if self._is_external_visible_documents_folder(self.DEFAULT_PROJECT_ID):
             return
         if (
             not self.uses_visible_workspace
@@ -1063,6 +1065,13 @@ class FileProjectStorage:
             and not any(part.startswith(GENERATED_PROJECT_FOLDER_PREFIXES) for part in PurePosixPath(path).parts)
         }
         return project
+
+    def _is_external_visible_documents_folder(self, project_id: str) -> bool:
+        if not self.uses_visible_workspace or safe_file_stem(project_id) != self.DEFAULT_PROJECT_ID:
+            return False
+        default_documents_dir = self.default_documents_dir.expanduser().resolve()
+        active_documents_dir = self.documents_dir.expanduser().resolve()
+        return active_documents_dir != default_documents_dir or self.root != self.base_root
 
     def _project_dir(self, project_id: str) -> Path:
         return self._project_path(project_id).parent

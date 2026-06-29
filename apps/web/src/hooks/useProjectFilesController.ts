@@ -35,6 +35,10 @@ interface UseProjectFilesControllerOptions<TLegacySavedTest extends LegacySavedT
   isVisibleProjectFile?: (file: ProjectFileSummary) => boolean;
 }
 
+function isExternalDocumentsFolder(project: ProjectSummary) {
+  return Boolean(project.documentsPath && project.workspacePath && project.documentsPath === project.workspacePath);
+}
+
 export function useProjectFilesController<TLegacySavedTest extends LegacySavedTestLike>({
   initialActiveProjectFilePath,
   initialActiveProjectFileRevision,
@@ -60,8 +64,9 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
       let project = await getDefaultProject();
       let filesResponse = await listProjectFiles(project.id);
       const migrationDone = typeof project.metadata?.[LEGACY_SAVED_TESTS_MIGRATED_AT_KEY] === "string";
+      const skipLegacyImport = isExternalDocumentsFolder(project);
 
-      if (!migrationDone) {
+      if (!migrationDone && !skipLegacyImport) {
         let projectFilesForImport = filesResponse.files;
         let importedCount = 0;
         for (const savedTest of legacySavedTests) {

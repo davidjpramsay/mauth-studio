@@ -2,12 +2,13 @@ import io
 import json
 import zipfile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import storage as storage_api
 from app.main import app
 from app.services import storage as storage_service
-from app.services.storage import FileLogoStorage, FileProjectStorage, FileTestStorage
+from app.services.storage import FileLogoStorage, FileProjectStorage, FileTestStorage, StorageValidationError
 
 client = TestClient(app)
 
@@ -158,6 +159,21 @@ def test_external_documents_folder_never_imports_legacy_project_files(tmp_path, 
         "tests",
         "tests/Y10 Units 1-4 Exam S1 Calculator-Free.test.json",
     ]
+    assert not (external_documents / "Old Year 12 Test.test.json").exists()
+    with pytest.raises(StorageValidationError):
+        service.save_file(
+            project["id"],
+            "tests/Old Year 12 Test.test.json",
+            {
+                "content": '{"name":"Old"}\n',
+                "kind": "file",
+                "fileType": "test",
+                "metadata": {
+                    "source": "legacy-saved-tests-migration",
+                    "legacySavedTestId": "old",
+                },
+            },
+        )
     assert not (external_documents / "Old Year 12 Test.test.json").exists()
 
     reloaded_service = FileProjectStorage()
