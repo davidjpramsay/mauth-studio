@@ -88,6 +88,52 @@ def test_project_file_list_reconciles_files_deleted_from_visible_workspace(tmp_p
     assert repaired_record["revision"] == 2
 
 
+def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    external_documents = tmp_path / "Past Tests"
+    nested_folder = external_documents / "Year 10"
+    nested_folder.mkdir(parents=True)
+    (nested_folder / "Term 1.test.json").write_text('{"name":"Term 1"}\n', encoding="utf-8")
+    (external_documents / "Ignore.pdf").write_text("not a mauth file", encoding="utf-8")
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+
+    service = FileProjectStorage()
+    project = service.open_documents_folder(str(external_documents))
+    files = service.list_files(project["id"])
+
+    assert project["workspacePath"] == str(external_documents.resolve())
+    assert project["documentsPath"] == str(external_documents.resolve())
+    assert [file["path"] for file in files] == ["tests", "tests/Year 10", "tests/Year 10/Term 1.test.json"]
+    assert (external_documents / ".mauth" / "project.json").exists()
+    assert not any(file["path"].endswith("Ignore.pdf") for file in files)
+
+    reloaded_service = FileProjectStorage()
+    reloaded_project = reloaded_service.get_or_create_default_project()
+
+    assert reloaded_project["documentsPath"] == str(external_documents.resolve())
+    assert [file["path"] for file in reloaded_service.list_files(reloaded_project["id"])] == [
+        "tests",
+        "tests/Year 10",
+        "tests/Year 10/Term 1.test.json",
+    ]
+
+
+def test_project_storage_can_reset_external_documents_folder(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    external_documents = tmp_path / "Past Tests"
+    external_documents.mkdir()
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+
+    service = FileProjectStorage()
+    service.open_documents_folder(str(external_documents))
+    reset_project = service.reset_documents_folder()
+
+    assert reset_project["documentsPath"] == str(workspace_root / "Documents")
+    assert not (workspace_root / ".mauth" / "workspace.json").exists()
+
+
 def test_visible_workspace_migration_skips_generated_smoke_folders(tmp_path, monkeypatch):
     legacy_root = tmp_path / "legacy-root"
     workspace_root = tmp_path / "workspace"
@@ -125,7 +171,7 @@ def test_visible_workspace_migration_skips_generated_smoke_folders(tmp_path, mon
     assert project["documentsPath"] == str(workspace_root / "Documents")
     assert (workspace_root / "Documents" / "Real worksheet.test.json").exists()
     assert not (workspace_root / "Documents" / "__file_manager_smoke_123").exists()
-    assert [file["path"] for file in service.list_files(project["id"])] == ["tests/Real worksheet.test.json"]
+    assert [file["path"] for file in service.list_files(project["id"])] == ["tests", "tests/Real worksheet.test.json"]
 
 
 def test_saved_test_file_storage_round_trip(tmp_path, monkeypatch):

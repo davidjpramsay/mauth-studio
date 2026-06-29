@@ -315,6 +315,10 @@ class ProjectRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProjectWorkspaceRequest(BaseModel):
+    path: str
+
+
 class ProjectFileRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 

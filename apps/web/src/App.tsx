@@ -119,6 +119,8 @@ import {
   listProjectFileVersions,
   listStoredLogos,
   listStoredTests as listLegacyStoredTests,
+  openDefaultProjectDocumentsFolder,
+  resetDefaultProjectDocumentsFolder,
   deleteProjectFile,
   restoreProjectFileVersion,
   saveProjectFile,
@@ -10716,6 +10718,61 @@ export default function App() {
     }
   }
 
+  async function openDocumentsFolder(folderPath: string) {
+    const cleanPath = folderPath.trim();
+    if (!cleanPath || fileOperationBusy) return;
+
+    try {
+      const currentProject = activeProject ?? (await getDefaultProject());
+      await saveCurrentProjectFileBeforeOpening(currentProject);
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage("Opening folder");
+      const nextProject = await openDefaultProjectDocumentsFolder(cleanPath);
+      const refreshedFiles = await listProjectFiles(nextProject.id);
+      setActiveProject(nextProject);
+      setProjectFiles(refreshedFiles.files);
+      activeProjectFilePathRef.current = null;
+      activeProjectFileRevisionRef.current = null;
+      setActiveProjectFilePath(null);
+      setActiveProjectFileRevision(null);
+      setProjectSaveConflict(null);
+      updateLastProjectSaveFingerprint(null);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Opened folder ${nextProject.documentsPath ?? cleanPath}`);
+    } catch (error) {
+      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(error instanceof Error ? error.message : "Open folder failed");
+    }
+  }
+
+  async function resetDocumentsFolder() {
+    if (fileOperationBusy) return;
+
+    try {
+      const currentProject = activeProject ?? (await getDefaultProject());
+      await saveCurrentProjectFileBeforeOpening(currentProject);
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage("Opening default folder");
+      const nextProject = await resetDefaultProjectDocumentsFolder();
+      const refreshedFiles = await listProjectFiles(nextProject.id);
+      setActiveProject(nextProject);
+      setProjectFiles(refreshedFiles.files);
+      activeProjectFilePathRef.current = null;
+      activeProjectFileRevisionRef.current = null;
+      setActiveProjectFilePath(null);
+      setActiveProjectFileRevision(null);
+      setProjectSaveConflict(null);
+      updateLastProjectSaveFingerprint(null);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage("Opened default folder");
+    } catch (error) {
+      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(error instanceof Error ? error.message : "Default folder failed");
+    }
+  }
+
   function agentBridgeError(
     status: number,
     code: string,
@@ -15368,6 +15425,8 @@ export default function App() {
         onCreateProjectFolder={(folderPath) => void createProjectFolder(folderPath)}
         onExportProjectBackup={() => void exportCurrentProjectBackup()}
         onImportProjectBackup={(file) => void importProjectBackupFile(file)}
+        onOpenDocumentsFolder={(folderPath) => void openDocumentsFolder(folderPath)}
+        onResetDocumentsFolder={() => void resetDocumentsFolder()}
         onRefreshProjectFiles={() => void refreshProjectFiles()}
         onRenameProjectFile={(filePath) => void renameProjectFile(filePath)}
         onDuplicateProjectFiles={(filePaths) => void duplicateProjectFiles(filePaths)}

@@ -217,6 +217,14 @@ export function getDefaultProject() {
   return getJson<ProjectSummary>("/api/storage/projects/default");
 }
 
+export function openDefaultProjectDocumentsFolder(path: string) {
+  return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder", { path });
+}
+
+export function resetDefaultProjectDocumentsFolder() {
+  return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder/reset", {});
+}
+
 export function createProject(project: Partial<ProjectSummary> & { name: string }) {
   return postJson<ProjectSummary>("/api/storage/projects", project);
 }

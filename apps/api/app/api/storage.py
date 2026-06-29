@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from app.models.schemas import AutosaveRequest, LogoAssetRequest, ProjectFileRequest, ProjectRequest, SavedTestRequest
+from app.models.schemas import (
+    AutosaveRequest,
+    LogoAssetRequest,
+    ProjectFileRequest,
+    ProjectRequest,
+    ProjectWorkspaceRequest,
+    SavedTestRequest,
+)
 from app.services.storage import (
     FileLogoStorage,
     FileProjectStorage,
@@ -108,6 +115,22 @@ def list_projects() -> dict:
 def get_default_project() -> dict:
     try:
         return project_storage_service.get_or_create_default_project()
+    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+        raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/documents-folder")
+def open_default_project_documents_folder(request: ProjectWorkspaceRequest) -> dict:
+    try:
+        return project_storage_service.open_documents_folder(request.path)
+    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+        raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/documents-folder/reset")
+def reset_default_project_documents_folder() -> dict:
+    try:
+        return project_storage_service.reset_documents_folder()
     except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
         raise storage_http_error(error) from error
 

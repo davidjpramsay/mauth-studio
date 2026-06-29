@@ -59,6 +59,8 @@ interface TestFileManagerProps {
   onCreateFolder: (folderPath: string) => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onOpenDocumentsFolder: (folderPath: string) => void;
+  onResetDocumentsFolder: () => void;
   onRefreshFiles: () => void;
   onRenameItem: (filePath: string) => void;
   onDuplicateItems: (filePaths: string[]) => void;
@@ -100,6 +102,8 @@ function TestFileManager({
   onCreateFolder,
   onExportBackup,
   onImportBackup,
+  onOpenDocumentsFolder,
+  onResetDocumentsFolder,
   onRefreshFiles,
   onRenameItem,
   onDuplicateItems,
@@ -219,6 +223,27 @@ function TestFileManager({
     setSelectedPaths(new Set());
     setLastSelectedPath(null);
     setDropTargetFolderPath(null);
+  }
+
+  function requestOpenDocumentsFolder() {
+    const folderPath = window.prompt(
+      "Paste the full local folder path to open. Mauth will create/use a hidden .mauth folder there for versions and metadata.",
+      documentsPath,
+    );
+    if (!folderPath?.trim()) return;
+    onOpenDocumentsFolder(folderPath);
+    setCurrentFolderPath("");
+    setSelectedPaths(new Set());
+    setLastSelectedPath(null);
+  }
+
+  function requestResetDocumentsFolder() {
+    const shouldReset = window.confirm("Return to the default Mauth documents folder?");
+    if (!shouldReset) return;
+    onResetDocumentsFolder();
+    setCurrentFolderPath("");
+    setSelectedPaths(new Set());
+    setLastSelectedPath(null);
   }
 
   function clearFileSelection() {
@@ -431,20 +456,29 @@ function TestFileManager({
             <div className="font-medium text-foreground">Local documents folder</div>
             <div className="truncate font-mono text-xs text-muted-foreground">{documentsPath}</div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void navigator.clipboard.writeText(documentsPath).then(() => {
-                setPathCopied(true);
-                window.setTimeout(() => setPathCopied(false), 1500);
-              });
-            }}
-          >
-            <Copy className="mr-2 size-4" />
-            {pathCopied ? "Copied" : "Copy path"}
-          </Button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(documentsPath).then(() => {
+                  setPathCopied(true);
+                  window.setTimeout(() => setPathCopied(false), 1500);
+                });
+              }}
+            >
+              <Copy className="mr-2 size-4" />
+              {pathCopied ? "Copied" : "Copy path"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={requestOpenDocumentsFolder} disabled={busy}>
+              <FolderOpen className="mr-2 size-4" />
+              Open folder
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={requestResetDocumentsFolder} disabled={busy}>
+              Default
+            </Button>
+          </div>
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
@@ -838,6 +872,8 @@ export function FileManagementDrawer({
   onCreateProjectFolder,
   onExportProjectBackup,
   onImportProjectBackup,
+  onOpenDocumentsFolder,
+  onResetDocumentsFolder,
   onRefreshProjectFiles,
   onRenameProjectFile,
   onDuplicateProjectFiles,
@@ -859,6 +895,8 @@ export function FileManagementDrawer({
   onCreateProjectFolder: (folderPath: string) => void;
   onExportProjectBackup: () => void;
   onImportProjectBackup: (file: File) => void;
+  onOpenDocumentsFolder: (folderPath: string) => void;
+  onResetDocumentsFolder: () => void;
   onRefreshProjectFiles: () => void;
   onRenameProjectFile: (filePath: string) => void;
   onDuplicateProjectFiles: (filePaths: string[]) => void;
@@ -901,6 +939,8 @@ export function FileManagementDrawer({
             onCreateFolder={onCreateProjectFolder}
             onExportBackup={onExportProjectBackup}
             onImportBackup={onImportProjectBackup}
+            onOpenDocumentsFolder={onOpenDocumentsFolder}
+            onResetDocumentsFolder={onResetDocumentsFolder}
             onRefreshFiles={onRefreshProjectFiles}
             onRenameItem={onRenameProjectFile}
             onDuplicateItems={onDuplicateProjectFiles}
