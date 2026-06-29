@@ -998,6 +998,10 @@ class FileProjectStorage:
         return resolved
 
     def _migrate_default_project_to_visible_workspace(self) -> None:
+        default_documents_dir = self.default_documents_dir.expanduser().resolve()
+        active_documents_dir = self.documents_dir.expanduser().resolve()
+        if active_documents_dir != default_documents_dir or self.root != self.base_root:
+            return
         if (
             not self.uses_visible_workspace
             or not self.allow_legacy_visible_workspace_migration

@@ -119,6 +119,56 @@ def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatc
     ]
 
 
+def test_external_documents_folder_never_imports_legacy_project_files(tmp_path, monkeypatch):
+    legacy_root = tmp_path / "legacy-root"
+    workspace_root = tmp_path / "workspace"
+    external_documents = tmp_path / "Test 4 - Exam"
+    external_documents.mkdir()
+    (external_documents / "Y10 Units 1-4 Exam S1 Calculator-Free.test.json").write_text(
+        '{"name":"Year 10 exam"}\n',
+        encoding="utf-8",
+    )
+    legacy_project_dir = legacy_root / "storage" / "projects" / "local-project"
+    legacy_tests_dir = legacy_project_dir / "files" / "tests"
+    legacy_tests_dir.mkdir(parents=True)
+    (legacy_tests_dir / "Old Year 12 Test.test.json").write_text('{"name":"Old"}\n', encoding="utf-8")
+    (legacy_project_dir / "project.json").write_text(
+        json.dumps(
+            {
+                "id": "local-project",
+                "name": "Local Project",
+                "description": None,
+                "metadata": {},
+                "files": {
+                    "tests/Old Year 12 Test.test.json": {"kind": "file", "revision": 1},
+                },
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+    monkeypatch.setattr(storage_service, "ROOT", legacy_root)
+
+    service = FileProjectStorage()
+    project = service.open_documents_folder(str(external_documents))
+    assert [file["path"] for file in service.list_files(project["id"])] == [
+        "tests",
+        "tests/Y10 Units 1-4 Exam S1 Calculator-Free.test.json",
+    ]
+    assert not (external_documents / "Old Year 12 Test.test.json").exists()
+
+    reloaded_service = FileProjectStorage()
+    reloaded_project = reloaded_service.get_or_create_default_project()
+    assert [file["path"] for file in reloaded_service.list_files(reloaded_project["id"])] == [
+        "tests",
+        "tests/Y10 Units 1-4 Exam S1 Calculator-Free.test.json",
+    ]
+    assert not (external_documents / "Old Year 12 Test.test.json").exists()
+
+
 def test_project_storage_can_reset_external_documents_folder(tmp_path, monkeypatch):
     workspace_root = tmp_path / "workspace"
     external_documents = tmp_path / "Past Tests"
