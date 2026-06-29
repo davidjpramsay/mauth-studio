@@ -59,6 +59,7 @@ interface TestFileManagerProps {
   onCreateFolder: (folderPath: string) => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onChooseDocumentsFolder: () => void;
   onOpenDocumentsFolder: (folderPath: string) => void;
   onResetDocumentsFolder: () => void;
   onRefreshFiles: () => void;
@@ -102,6 +103,7 @@ function TestFileManager({
   onCreateFolder,
   onExportBackup,
   onImportBackup,
+  onChooseDocumentsFolder,
   onOpenDocumentsFolder,
   onResetDocumentsFolder,
   onRefreshFiles,
@@ -225,7 +227,7 @@ function TestFileManager({
     setDropTargetFolderPath(null);
   }
 
-  function requestOpenDocumentsFolder() {
+  function requestPasteDocumentsFolder() {
     const folderPath = window.prompt(
       "Paste the full local folder path to open. Mauth will create/use a hidden .mauth folder there for versions and metadata.",
       documentsPath,
@@ -471,9 +473,12 @@ function TestFileManager({
               <Copy className="mr-2 size-4" />
               {pathCopied ? "Copied" : "Copy path"}
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={requestOpenDocumentsFolder} disabled={busy}>
+            <Button type="button" variant="outline" size="sm" onClick={onChooseDocumentsFolder} disabled={busy}>
               <FolderOpen className="mr-2 size-4" />
               Open folder
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={requestPasteDocumentsFolder} disabled={busy}>
+              Paste path
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={requestResetDocumentsFolder} disabled={busy}>
               Default
@@ -872,6 +877,7 @@ export function FileManagementDrawer({
   onCreateProjectFolder,
   onExportProjectBackup,
   onImportProjectBackup,
+  onChooseDocumentsFolder,
   onOpenDocumentsFolder,
   onResetDocumentsFolder,
   onRefreshProjectFiles,
@@ -895,6 +901,7 @@ export function FileManagementDrawer({
   onCreateProjectFolder: (folderPath: string) => void;
   onExportProjectBackup: () => void;
   onImportProjectBackup: (file: File) => void;
+  onChooseDocumentsFolder: () => void;
   onOpenDocumentsFolder: (folderPath: string) => void;
   onResetDocumentsFolder: () => void;
   onRefreshProjectFiles: () => void;
@@ -939,6 +946,7 @@ export function FileManagementDrawer({
             onCreateFolder={onCreateProjectFolder}
             onExportBackup={onExportProjectBackup}
             onImportBackup={onImportProjectBackup}
+            onChooseDocumentsFolder={onChooseDocumentsFolder}
             onOpenDocumentsFolder={onOpenDocumentsFolder}
             onResetDocumentsFolder={onResetDocumentsFolder}
             onRefreshFiles={onRefreshProjectFiles}

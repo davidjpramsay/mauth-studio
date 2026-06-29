@@ -221,6 +221,13 @@ export function openDefaultProjectDocumentsFolder(path: string) {
   return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder", { path });
 }
 
+export function chooseDefaultProjectDocumentsFolder() {
+  return postJson<{ cancelled: boolean; path?: string; project?: ProjectSummary }>(
+    "/api/storage/projects/default/documents-folder/choose",
+    {},
+  );
+}
+
 export function resetDefaultProjectDocumentsFolder() {
   return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder/reset", {});
 }

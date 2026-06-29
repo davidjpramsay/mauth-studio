@@ -109,6 +109,7 @@ import { ContextMenu, type ContextMenuAction, type ContextMenuState } from "@/co
 import { Textarea } from "@/components/ui/textarea";
 import {
   ApiError,
+  chooseDefaultProjectDocumentsFolder,
   deleteStoredLogo,
   downloadProjectBackup,
   getDefaultProject,
@@ -10746,6 +10747,40 @@ export default function App() {
     }
   }
 
+  async function chooseDocumentsFolder() {
+    if (fileOperationBusy) return;
+
+    try {
+      const currentProject = activeProject ?? (await getDefaultProject());
+      await saveCurrentProjectFileBeforeOpening(currentProject);
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage("Choose a folder");
+      const result = await chooseDefaultProjectDocumentsFolder();
+      if (result.cancelled) {
+        setProjectFilesStatus("ready");
+        setProjectFilesMessage("Folder selection cancelled");
+        return;
+      }
+      const nextProject = result.project;
+      if (!nextProject) throw new Error("Folder picker did not return a project");
+      const refreshedFiles = await listProjectFiles(nextProject.id);
+      setActiveProject(nextProject);
+      setProjectFiles(refreshedFiles.files);
+      activeProjectFilePathRef.current = null;
+      activeProjectFileRevisionRef.current = null;
+      setActiveProjectFilePath(null);
+      setActiveProjectFileRevision(null);
+      setProjectSaveConflict(null);
+      updateLastProjectSaveFingerprint(null);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Opened folder ${nextProject.documentsPath ?? result.path ?? ""}`);
+    } catch (error) {
+      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(error instanceof Error ? error.message : "Choose folder failed");
+    }
+  }
+
   async function resetDocumentsFolder() {
     if (fileOperationBusy) return;
 
@@ -15425,6 +15460,7 @@ export default function App() {
         onCreateProjectFolder={(folderPath) => void createProjectFolder(folderPath)}
         onExportProjectBackup={() => void exportCurrentProjectBackup()}
         onImportProjectBackup={(file) => void importProjectBackupFile(file)}
+        onChooseDocumentsFolder={() => void chooseDocumentsFolder()}
         onOpenDocumentsFolder={(folderPath) => void openDocumentsFolder(folderPath)}
         onResetDocumentsFolder={() => void resetDocumentsFolder()}
         onRefreshProjectFiles={() => void refreshProjectFiles()}

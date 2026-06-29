@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.models.schemas import (
@@ -125,6 +128,42 @@ def open_default_project_documents_folder(request: ProjectWorkspaceRequest) -> d
         return project_storage_service.open_documents_folder(request.path)
     except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
         raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/documents-folder/choose")
+def choose_default_project_documents_folder() -> dict:
+    if sys.platform != "darwin":
+        raise storage_http_error(StorageValidationError("Native folder picker is only available on macOS"))
+
+    script = """
+set chosenFolder to choose folder with prompt "Choose a Mauth documents folder"
+POSIX path of chosenFolder
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise storage_http_error(StorageValidationError("Native folder picker is unavailable")) from error
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip().lower()
+        if "user canceled" in stderr:
+            return {"cancelled": True}
+        raise storage_http_error(StorageValidationError(result.stderr.strip() or "Folder picker failed"))
+
+    folder_path = result.stdout.strip()
+    if not folder_path:
+        return {"cancelled": True}
+
+    try:
+        project = project_storage_service.open_documents_folder(folder_path)
+    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+        raise storage_http_error(error) from error
+    return {"cancelled": False, "path": folder_path, "project": project}
 
 
 @router.post("/projects/default/documents-folder/reset")
