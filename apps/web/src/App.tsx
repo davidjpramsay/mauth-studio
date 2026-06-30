@@ -2,7 +2,6 @@ import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffe
 import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type {
   ChoiceNumberingStyle,
-  ColumnCount,
   ContentBlock,
   ContentBlockVisibility,
   DiagramAlignment,
@@ -158,13 +157,8 @@ import {
   type AutosavedEditorSnapshot as PersistedEditorSnapshot,
   type SavedDocumentSnapshot,
 } from "@/lib/editorPersistence";
-import {
-  DEFAULT_SOLUTION_SLOT_LINES,
-  DEFAULT_SOLUTION_SLOT_TEXT,
-  DEFAULT_SOLUTION_SPACE_SHOW_LINES,
-  defaultSolutionSlotLines,
-  defaultSolutionSlotLinesForDocument,
-} from "@/lib/solutionSlotDefaults";
+import { contentBlockVisibilityFields, createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
+import { defaultSolutionSlotLines, defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -995,88 +989,6 @@ function questionDisplayNumber(frontMatter: FrontMatterConfig, questionIndex: nu
   return normalizedStartQuestionNumber(frontMatter) + questionIndex;
 }
 
-function textBlock(text = "", visibilityOrSolutionOnly?: ContentBlockVisibility | boolean): EditorContentBlock {
-  const visibility = visibilityOrSolutionOnly === true ? "solution" : visibilityOrSolutionOnly || undefined;
-  return {
-    id: id(visibility === "solution" ? "solution" : "text"),
-    kind: "text",
-    text,
-    ...blockVisibilityFields(visibility),
-  };
-}
-
-function choiceListBlock(choices: string[] = ["", "", ""], visibility?: ContentBlockVisibility): EditorContentBlock {
-  return {
-    id: id(visibility === "solution" ? "solution-choices" : "choices"),
-    kind: "choices",
-    choices,
-    numberingStyle: "roman",
-    layout: "vertical",
-    ...blockVisibilityFields(visibility),
-  };
-}
-
-function tableBlock(visibility?: ContentBlockVisibility): EditorContentBlock {
-  return {
-    id: id(visibility === "solution" ? "solution-table" : "table"),
-    kind: "table",
-    headers: ["", "", ""],
-    rows: [
-      ["x", "0", "1"],
-      ["P(X=x)", "$1-p$", "$p$"],
-    ],
-    showHeader: false,
-    tableAlign: "center",
-    cellAlignment: "center",
-    ...blockVisibilityFields(visibility),
-  };
-}
-
-function diagramBlock(graphConfig: GraphConfig = DEFAULT_2D_GRAPH, visibility?: ContentBlockVisibility): EditorContentBlock {
-  return {
-    id: id(visibility === "solution" ? "solution-diagram" : "diagram"),
-    kind: "diagram",
-    diagramAlign: "center",
-    graphConfig: withGraphDefaults(graphConfig),
-    ...blockVisibilityFields(visibility),
-  };
-}
-
-function diagramBlockForType(type: string, visibility?: ContentBlockVisibility): EditorContentBlock {
-  const baseConfig = withGraphDefaults(DEFAULT_2D_GRAPH);
-  return diagramBlock(updateGraphConfig(baseConfig, diagramTypePatch(type, baseConfig)), visibility);
-}
-
-function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): Extract<ContentBlock, { kind: "space" }> {
-  return { id: id("space"), kind: "space", lines, ...blockVisibilityFields(visibility) };
-}
-
-function columnsBlock(columnCount: ColumnCount = 2, visibility?: ContentBlockVisibility): EditorContentBlock {
-  return {
-    id: id(visibility === "solution" ? "solution-columns" : "columns"),
-    kind: "columns",
-    columnCount,
-    columns: Array.from({ length: columnCount }, () => [textBlock("", visibility)]),
-    ...blockVisibilityFields(visibility),
-  };
-}
-
-function solutionSlotBlocks(lines = DEFAULT_SOLUTION_SLOT_LINES): EditorContentBlock[] {
-  return [
-    { ...spaceBlock(lines, "student"), showLines: DEFAULT_SOLUTION_SPACE_SHOW_LINES },
-    textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution"),
-  ];
-}
-
-function contentBlockForKind(kind: ContentBlockKind, visibility?: ContentBlockVisibility): EditorContentBlock {
-  if (kind === "choices") return choiceListBlock(undefined, visibility);
-  if (kind === "table") return tableBlock(visibility);
-  if (kind === "diagram") return diagramBlock(undefined, visibility);
-  if (kind === "columns") return columnsBlock(undefined, visibility);
-  if (kind === "space") return spaceBlock(undefined, visibility ?? "student");
-  return textBlock("", visibility);
-}
-
 function diagramAlignmentClass(alignment?: DiagramAlignment) {
   if (alignment === "left") return "justify-start";
   if (alignment === "right") return "justify-end";
@@ -1539,6 +1451,23 @@ function updateGraphConfig(graphConfig: GraphConfig, patch: Partial<GraphConfig>
   return next;
 }
 
+const {
+  textBlock,
+  choiceListBlock,
+  diagramBlockForType,
+  spaceBlock,
+  solutionSlotBlocks,
+  solutionTextBlock,
+  studentSpaceBlock,
+  contentBlockForKind,
+} = createEditorContentBlockFactory({
+  id,
+  defaultGraphConfig: DEFAULT_2D_GRAPH,
+  withGraphDefaults,
+  updateGraphConfig,
+  diagramTypePatch,
+});
+
 function orderItemKey(item?: ContainerOrderItem | null) {
   return item ? `${item.kind}:${item.id}` : "";
 }
@@ -1999,15 +1928,6 @@ function normalizedBlockVisibility(record: Record<string, unknown>, blockId: str
   return undefined;
 }
 
-function blockVisibilityFields(visibility?: ContentBlockVisibility) {
-  if (!visibility) return {};
-  return {
-    visibility,
-    ...(visibility === "solution" ? { solutionOnly: true } : {}),
-    ...(visibility === "student" ? { studentOnly: true } : {}),
-  };
-}
-
 function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: ContentBlockVisibility) {
   if (visibility !== "solution") return {};
   const markTicks = Number(record.markTicks);
@@ -2030,7 +1950,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           id: blockId,
           kind: "text",
           text: typeof record.text === "string" ? record.text : "",
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
         },
       ];
     }
@@ -2043,7 +1963,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           choices: normalizeChoiceItems(record.choices),
           numberingStyle: normalizeChoiceNumberingStyle(record.numberingStyle),
           layout: normalizeChoiceListLayout(record.layout),
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
         },
       ];
     }
@@ -2061,7 +1981,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           showHeader: record.showHeader !== false,
           tableAlign: normalizeDiagramAlignment(record.tableAlign),
           cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
           ...surfaceMarkTickFields(record, visibility),
         },
       ];
@@ -2076,7 +1996,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           diagramAlign: normalizeDiagramAlignment(record.diagramAlign),
           diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
           graphConfig: withGraphDefaults(graphConfig),
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
           ...surfaceMarkTickFields(record, visibility),
         },
       ];
@@ -2091,7 +2011,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           kind: "columns",
           columnCount,
           columns: Array.from({ length: columnCount }, (_, index) => normalizeContentBlocks(rawColumns[index])),
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
         },
       ];
     }
@@ -2103,7 +2023,7 @@ function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
           kind: "space",
           lines: spaceLines(record.lines),
           showLines: spaceShowsLines(record.showLines),
-          ...blockVisibilityFields(visibility),
+          ...contentBlockVisibilityFields(visibility),
         },
       ];
     }
@@ -7825,8 +7745,8 @@ export default function App() {
     revealEditorAnchor,
     queueDocumentJump,
     buildSolutionSlotBlocks: solutionSlotBlocks,
-    buildSolutionTextBlock: () => textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution"),
-    buildStudentSpaceBlock: (lines) => spaceBlock(lines, "student"),
+    buildSolutionTextBlock: solutionTextBlock,
+    buildStudentSpaceBlock: studentSpaceBlock,
     spaceLines,
   });
 
