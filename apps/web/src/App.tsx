@@ -91,6 +91,7 @@ import {
   TABLE_CELL_ALIGNMENTS,
 } from "@/components/editor/editorOptions";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
+import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
 import { FunctionGraph } from "@/components/graphs/FunctionGraph";
@@ -156,6 +157,7 @@ import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuCont
 import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
 import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
 import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
+import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
 import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionValidationFixController } from "@/hooks/useSolutionValidationFixController";
 import { useSystemStatusController, type MauthWebBuildInfo, type SystemStatusState } from "@/hooks/useSystemStatusController";
@@ -9681,22 +9683,14 @@ export default function App() {
     isProjectRevisionMissingError: (error) => error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR,
   });
 
-  async function saveConflictRecoveryCopy() {
-    if (!activeProjectRevisionIssue || fileOperationBusy) return;
-    await saveActiveFileRecoveryCopy();
-  }
-
-  async function reloadConflictFileFromDisk() {
-    if (!activeProjectRevisionIssue || fileOperationBusy) return;
-    const shouldReload = await mauthDialogs.confirm({
-      title: "Reload disk file?",
-      description: `Reload "${currentProjectFileName}" from disk? Local unsaved changes in the editor will be discarded. Save a recovery copy first if you need to keep them.`,
-      confirmLabel: "Reload from disk",
-      destructive: true,
-    });
-    if (!shouldReload) return;
-    await reloadActiveProjectFileFromDisk();
-  }
+  const { saveConflictRecoveryCopy, reloadConflictFileFromDisk } = useProjectFileConflictController({
+    conflict: activeProjectRevisionIssue,
+    fileOperationBusy,
+    currentProjectFileName,
+    dialogs: mauthDialogs,
+    saveRecoveryCopy: saveActiveFileRecoveryCopy,
+    reloadFromDisk: reloadActiveProjectFileFromDisk,
+  });
 
   function agentFileState(document: MauthDocumentLike<QuestionBlock, FrontMatterConfig, FormattingConfig>): MauthAgentFileState {
     const activePath = activeProjectFilePathRef.current;
@@ -12910,45 +12904,12 @@ export default function App() {
                   >
                     <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
                       <div className="flex w-full min-w-0 flex-col gap-4">
-                        {activeProjectRevisionIssue ? (
-                          <section className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 shadow-sm">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="min-w-0">
-                                <h2 className="text-sm font-semibold">File changed outside Mauth</h2>
-                                <p className="mt-1 text-sm leading-6">{activeProjectRevisionIssue.message}</p>
-                                <p className="mt-1 text-xs text-amber-800">
-                                  {typeof activeProjectRevisionIssue.localRevision === "number"
-                                    ? `Loaded revision ${activeProjectRevisionIssue.localRevision}`
-                                    : "Loaded revision unknown"}
-                                  {typeof activeProjectRevisionIssue.currentRevision === "number"
-                                    ? ` · disk revision ${activeProjectRevisionIssue.currentRevision}`
-                                    : ""}
-                                </p>
-                              </div>
-                              <div className="flex shrink-0 flex-wrap gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={fileOperationBusy}
-                                  onClick={() => void saveConflictRecoveryCopy()}
-                                  className="border-amber-500 bg-white text-amber-950 hover:bg-amber-100"
-                                >
-                                  Save recovery copy
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={fileOperationBusy}
-                                  onClick={() => void reloadConflictFileFromDisk()}
-                                  className="bg-amber-700 text-white hover:bg-amber-800"
-                                >
-                                  Reload from disk
-                                </Button>
-                              </div>
-                            </div>
-                          </section>
-                        ) : null}
+                        <ProjectFileConflictBanner
+                          conflict={activeProjectRevisionIssue}
+                          disabled={fileOperationBusy}
+                          onSaveRecoveryCopy={() => void saveConflictRecoveryCopy()}
+                          onReloadFromDisk={() => void reloadConflictFileFromDisk()}
+                        />
 
                         {editingFrontMatter ? (
                           <div
