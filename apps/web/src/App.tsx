@@ -94,6 +94,7 @@ import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
 import { FunctionGraph } from "@/components/graphs/FunctionGraph";
 import { Vector2DGraph } from "@/components/graphs/Vector2DGraph";
+import { HeaderFileControls } from "@/components/header/HeaderFileControls";
 import {
   PreviewContentBlocks as PreviewContentBlocksBase,
   type PreviewContentBlocksProps as PreviewContentBlocksBaseProps,
@@ -143,12 +144,7 @@ import { DISPLAY_MATH_BLOCK_PATTERN, MIXED_MATH_LINE_PATTERN, unescapeTextMathDe
 import { useDraftAutosaveController } from "@/hooks/useDraftAutosaveController";
 import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
-import {
-  missingProjectRevisionConflict,
-  useProjectFileStatus,
-  type DraftAutosaveStatus,
-  type HeaderSaveStatus,
-} from "@/hooks/useProjectFileStatus";
+import { missingProjectRevisionConflict, useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import { usePrintController } from "@/hooks/usePrintController";
 import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
@@ -6191,14 +6187,6 @@ function ColumnsBlockEditor({
   );
 }
 
-function storageStatusTone(status: HeaderSaveStatus) {
-  if (status === "saved" || status === "ready") return "bg-emerald-400";
-  if (status === "draft") return "bg-amber-300";
-  if (status === "saving" || status === "loading") return "bg-amber-300";
-  if (status === "dirty") return "bg-orange-300";
-  return "bg-red-400";
-}
-
 function ManualModeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
@@ -6212,88 +6200,6 @@ function ManualModeIcon({ className }: { className?: string }) {
       <circle cx="13" cy="18.5" r="2.1" strokeWidth="2" />
       <circle cx="19" cy="5.5" r="2.1" strokeWidth="2" fill="currentColor" />
     </svg>
-  );
-}
-
-function HeaderFileControls({
-  currentFileName,
-  fileStatusMessage,
-  fileStatusTitle,
-  saveStatus,
-  documentOpen,
-  onNewTest,
-  onSaveTest,
-  onOpenFiles,
-  onCloseFile,
-}: {
-  currentFileName: string;
-  fileStatusMessage: string;
-  fileStatusTitle: string;
-  saveStatus: HeaderSaveStatus;
-  documentOpen: boolean;
-  onNewTest: () => void;
-  onSaveTest: () => void;
-  onOpenFiles: () => void;
-  onCloseFile: () => void;
-}) {
-  return (
-    <div className="flex w-auto max-w-full shrink-0 items-center gap-2 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
-      <span className={cn("ml-1 size-2 shrink-0 rounded-full", storageStatusTone(saveStatus))} title={fileStatusTitle} aria-hidden="true" />
-      <div
-        className="flex h-8 w-[clamp(12rem,30vw,30rem)] flex-col justify-center rounded-md border border-blue-300/20 bg-[#050b1d] px-2"
-        title={fileStatusTitle}
-      >
-        <span className="truncate text-sm font-medium leading-tight text-blue-50">{currentFileName}</span>
-        <span className="truncate text-[10px] leading-tight text-blue-100/70">{fileStatusMessage}</span>
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="New document"
-        aria-label="New document"
-        onClick={onNewTest}
-        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
-      >
-        <PlusCircle />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="Save current test"
-        aria-label="Save current test"
-        disabled={!documentOpen}
-        onClick={onSaveTest}
-        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
-      >
-        <Save />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        title="Open files"
-        aria-label="Open files"
-        onClick={onOpenFiles}
-        className="h-8 shrink-0 border border-blue-300/15 px-2 text-blue-100 hover:bg-blue-500/15 hover:text-white"
-      >
-        <FolderOpen className="size-4" aria-hidden="true" />
-        Files
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="Close current file"
-        aria-label="Close current file"
-        disabled={!documentOpen}
-        onClick={onCloseFile}
-        className={cn(HEADER_ICON_BUTTON_CLASS, "shrink-0")}
-      >
-        <X />
-      </Button>
-    </div>
   );
 }
 
