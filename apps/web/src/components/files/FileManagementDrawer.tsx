@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { ProjectFileSummary, ProjectFileVersion, ProjectSummary } from "@mauth-studio/shared";
 import {
   ChevronLeft,
@@ -37,6 +37,46 @@ import { cn } from "@/lib/utils";
 
 const RECENT_PROJECT_FILES_KEY = "mauth.recentProjectFiles.v1";
 const RECENT_PROJECT_FILES_LIMIT = 10;
+
+function FileDrawerDialog({
+  title,
+  description,
+  children,
+  footer,
+  onClose,
+}: {
+  title: string;
+  description?: string;
+  children?: ReactNode;
+  footer: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" onMouseDown={onClose}>
+      <section
+        className="w-full max-w-lg rounded-xl border bg-background shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="file-drawer-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b p-4">
+          <div className="min-w-0">
+            <h3 id="file-drawer-dialog-title" className="truncate text-base font-semibold">
+              {title}
+            </h3>
+            {description ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p> : null}
+          </div>
+          <Button type="button" variant="ghost" size="icon" title="Close" aria-label="Close dialog" onClick={onClose}>
+            <X />
+          </Button>
+        </header>
+        {children ? <div className="p-4">{children}</div> : null}
+        <footer className="flex justify-end gap-2 border-t p-4">{footer}</footer>
+      </section>
+    </div>
+  );
+}
 
 export interface ProjectFileVersionPreviewSummary {
   kind: "test" | "raw";
@@ -126,6 +166,10 @@ function TestFileManager({
   const [versionMessage, setVersionMessage] = useState("");
   const [pathCopied, setPathCopied] = useState(false);
   const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [pasteFolderDialogOpen, setPasteFolderDialogOpen] = useState(false);
+  const [pasteFolderDraft, setPasteFolderDraft] = useState("");
+  const [resetFolderDialogOpen, setResetFolderDialogOpen] = useState(false);
+  const [restoreVersionToConfirm, setRestoreVersionToConfirm] = useState<ProjectFileVersion | null>(null);
   const [recentProjectFilePaths, setRecentProjectFilePaths] = useState<string[]>(() => readRecentProjectFilePaths());
   const backupImportInputRef = useRef<HTMLInputElement>(null);
   const documentsPath = activeProject?.documentsPath ?? activeProject?.workspacePath ?? "";
@@ -228,24 +272,30 @@ function TestFileManager({
   }
 
   function requestPasteDocumentsFolder() {
-    const folderPath = window.prompt(
-      "Paste the full local folder path to open. Mauth will create/use a hidden .mauth folder there for versions and metadata.",
-      documentsPath,
-    );
-    if (!folderPath?.trim()) return;
+    setPasteFolderDraft(documentsPath ?? "");
+    setPasteFolderDialogOpen(true);
+  }
+
+  function confirmPasteDocumentsFolder() {
+    const folderPath = pasteFolderDraft.trim();
+    if (!folderPath) return;
     onOpenDocumentsFolder(folderPath);
     setCurrentFolderPath("");
     setSelectedPaths(new Set());
     setLastSelectedPath(null);
+    setPasteFolderDialogOpen(false);
   }
 
   function requestResetDocumentsFolder() {
-    const shouldReset = window.confirm("Return to the default Mauth documents folder?");
-    if (!shouldReset) return;
+    setResetFolderDialogOpen(true);
+  }
+
+  function confirmResetDocumentsFolder() {
     onResetDocumentsFolder();
     setCurrentFolderPath("");
     setSelectedPaths(new Set());
     setLastSelectedPath(null);
+    setResetFolderDialogOpen(false);
   }
 
   function clearFileSelection() {
@@ -431,10 +481,14 @@ function TestFileManager({
 
   async function restoreVersion(version: ProjectFileVersion) {
     if (!versionsTestPath) return;
+    setRestoreVersionToConfirm(version);
+  }
+
+  async function confirmRestoreVersion() {
+    if (!versionsTestPath || !restoreVersionToConfirm) return;
     const filePath = projectPathForTestPath(versionsTestPath);
-    const fileName = testFileDisplayName(testPathBasename(versionsTestPath));
-    const shouldRestore = window.confirm(`Restore "${fileName}" to revision ${version.revision}? This creates a new current version.`);
-    if (!shouldRestore) return;
+    const version = restoreVersionToConfirm;
+    setRestoreVersionToConfirm(null);
     setVersionStatus("loading");
     setVersionMessage("Restoring version");
     try {
@@ -859,6 +913,82 @@ function TestFileManager({
             ? `${selectedCount} selected. Drag onto a folder, breadcrumb, or empty folder pane to move.`
             : "Shift-click or Cmd/Ctrl-click to select. Drag onto folders or breadcrumbs to move.")}
       </p>
+
+      {pasteFolderDialogOpen ? (
+        <FileDrawerDialog
+          title="Open local folder"
+          description="Mauth will use the files already in this folder and keep versions and metadata in a hidden .mauth folder."
+          onClose={() => setPasteFolderDialogOpen(false)}
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setPasteFolderDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" form="paste-folder-form" disabled={!pasteFolderDraft.trim() || busy}>
+                Open folder
+              </Button>
+            </>
+          }
+        >
+          <form
+            id="paste-folder-form"
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmPasteDocumentsFolder();
+            }}
+          >
+            <label className="block text-sm font-medium" htmlFor="paste-folder-path">
+              Folder path
+            </label>
+            <input
+              id="paste-folder-path"
+              value={pasteFolderDraft}
+              onChange={(event) => setPasteFolderDraft(event.currentTarget.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
+              autoFocus
+            />
+          </form>
+        </FileDrawerDialog>
+      ) : null}
+
+      {resetFolderDialogOpen ? (
+        <FileDrawerDialog
+          title="Open default folder"
+          description="Return to the default Mauth documents folder. Your current external folder files stay where they are."
+          onClose={() => setResetFolderDialogOpen(false)}
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setResetFolderDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={confirmResetDocumentsFolder} disabled={busy}>
+                Open default folder
+              </Button>
+            </>
+          }
+        />
+      ) : null}
+
+      {restoreVersionToConfirm && versionsTestPath ? (
+        <FileDrawerDialog
+          title="Restore version"
+          description={`Restore ${testFileDisplayName(testPathBasename(versionsTestPath))} to revision ${
+            restoreVersionToConfirm.revision
+          }. This creates a new current version.`}
+          onClose={() => setRestoreVersionToConfirm(null)}
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setRestoreVersionToConfirm(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void confirmRestoreVersion()} disabled={busy}>
+                Restore
+              </Button>
+            </>
+          }
+        />
+      ) : null}
     </section>
   );
 }
