@@ -144,7 +144,6 @@ import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/use
 import {
   isProjectTestFile,
   projectPathForTestPath,
-  safeProjectFileName,
   testFileDisplayName,
   testFilePathKey,
   testPathBasename,
@@ -152,6 +151,7 @@ import {
   uniqueTestPath,
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
+import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -777,11 +777,6 @@ function titlePageTemplateLabel(template: TitlePageTemplate) {
   if (template === "worksheet") return "Worksheet";
   if (template === "notes") return "Math notes";
   return "School test title page";
-}
-
-function projectFileTypeForFrontMatter(frontMatter: FrontMatterConfig) {
-  if (frontMatter.titlePageTemplate === "notes") return "notes";
-  return frontMatter.titlePageTemplate === "worksheet" ? "worksheet" : "test";
 }
 
 function stringOrDefault(value: unknown, fallback: string) {
@@ -2005,20 +2000,6 @@ function defaultSolutionSlotLinesForDocument(frontMatter: FrontMatterConfig, mar
   const safeMarks = safeMarkValue(marks);
   const generousExamLines = safeMarks ? Math.ceil(safeMarks * 3 + 4) : DEFAULT_SOLUTION_SLOT_LINES + 2;
   return Math.max(baseLines, Math.min(MAX_SOLUTION_SLOT_LINES, generousExamLines));
-}
-
-function defaultSavedTestName(frontMatter: FrontMatterConfig) {
-  const name = [frontMatter.subjectTitle, frontMatter.assessmentTitle]
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(" - ");
-  return name || "Untitled test";
-}
-
-function printFileNameForDocument(frontMatter: FrontMatterConfig, baseName: string, showSolutions: boolean) {
-  const cleanBaseName = safeProjectFileName(baseName || defaultSavedTestName(frontMatter));
-  if (frontMatter.titlePageTemplate === "notes") return cleanBaseName;
-  return `${cleanBaseName} - ${showSolutions ? "Solutions" : "Student"}`;
 }
 
 function projectFileSummaryFromApiError(error: ApiError): ProjectFileSummary | null {
