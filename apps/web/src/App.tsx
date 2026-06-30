@@ -155,6 +155,7 @@ import { useMauthActionProposalController } from "@/hooks/useMauthActionProposal
 import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
 import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionValidationFixController } from "@/hooks/useSolutionValidationFixController";
+import { useSolutionModeController } from "@/hooks/useSolutionModeController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
@@ -8428,10 +8429,21 @@ export default function App() {
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
   const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
   const [storageHydrated, setStorageHydrated] = useState(false);
-  const [showSolutions, setShowSolutions] = useState(false);
   const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
   const [systemStatusPanelOpen, setSystemStatusPanelOpen] = useState(false);
+  const {
+    showSolutions,
+    setShowSolutions,
+    showSolutionsRef,
+    isNotesTemplate,
+    supportsSolutionTools,
+    effectiveShowSolutions,
+    previewShowSolutions,
+    insertedBlockVisibility: solutionInsertedBlockVisibility,
+    printModeLabel,
+    printModeTitle,
+  } = useSolutionModeController(frontMatter);
   const {
     status: systemStatus,
     state: systemStatusState,
@@ -8486,7 +8498,6 @@ export default function App() {
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
   const pointerSubsectionDragRef = useRef<PointerSubsectionDragSession | null>(null);
-  const showSolutionsRef = useRef(showSolutions);
 
   function updateLastProjectSaveFingerprint(nextFingerprint: string | null) {
     lastProjectSaveFingerprintRef.current = nextFingerprint;
@@ -8681,10 +8692,6 @@ export default function App() {
   const previewDocumentFlow = useDeferredValue(documentFlow);
   const previewFormattingConfig = useDeferredValue(formattingConfig);
   const previewLogos = useDeferredValue(logos);
-  const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
-  const supportsSolutionTools = !isNotesTemplate;
-  const effectiveShowSolutions = supportsSolutionTools ? showSolutions : false;
-  const previewShowSolutions = useDeferredValue(effectiveShowSolutions);
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
   const previewTotalMarks = useMemo(() => previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0), [previewQuestions]);
   const showEditor = paneMode === "split";
@@ -8722,12 +8729,6 @@ export default function App() {
     () => validateSolutionCompleteness(questions, solutionValidationRuntime(frontMatter)),
     [frontMatter, questions],
   );
-  const printModeLabel = isNotesTemplate ? "Notes" : effectiveShowSolutions ? "Solutions" : "Student";
-  const printModeTitle = isNotesTemplate
-    ? "Print output is currently the notes copy."
-    : effectiveShowSolutions
-      ? "Print output is currently the solutions copy. Hide solutions before printing the student copy."
-      : "Print output is currently the student copy. Show solutions before printing the solutions copy.";
   const activePreviewAnchor = useMemo(() => {
     if (activeTocItemId.startsWith("pb:")) return undefined;
     return previewAnchorForEditorAnchor(activeTocItemId, documentTocItems);
@@ -8885,8 +8886,7 @@ export default function App() {
   useLayoutEffect(() => {
     logosRef.current = logos;
     legacySavedTestsRef.current = legacySavedTests;
-    showSolutionsRef.current = showSolutions;
-  }, [legacySavedTests, logos, showSolutions]);
+  }, [legacySavedTests, logos]);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -12034,7 +12034,7 @@ export default function App() {
       partId: part.id,
       subpartId: subpart.id,
     };
-    const insertedBlockVisibility: ContentBlockVisibility | undefined = effectiveShowSolutions ? "solution" : undefined;
+    const insertedBlockVisibility = solutionInsertedBlockVisibility;
     const subpartSolutionSlotAction = {
       label: "Solution slot",
       tooltip: "Add paired answer space and solution text",
@@ -12148,7 +12148,7 @@ export default function App() {
     const partPanelLabel = isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`;
     const partUsesSolutionSpace = supportsSolutionTools && !subparts.length && safeMarkValue(part.marks) > 0;
     const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
-    const insertedBlockVisibility: ContentBlockVisibility | undefined = effectiveShowSolutions ? "solution" : undefined;
+    const insertedBlockVisibility = solutionInsertedBlockVisibility;
     const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
     const partInsertAction = {
       label: isNotesTemplate ? "Detail" : "Subpart",
@@ -12621,9 +12621,7 @@ export default function App() {
                                 ? `Heading ${index + 1}`
                                 : `Question ${questionDisplayNumber(frontMatter, index)}`;
                               const questionUsesSolutionSpace = supportsSolutionTools && !hasParts && safeMarkValue(question.marks) > 0;
-                              const insertedBlockVisibility: ContentBlockVisibility | undefined = effectiveShowSolutions
-                                ? "solution"
-                                : undefined;
+                              const insertedBlockVisibility = solutionInsertedBlockVisibility;
                               const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
                               const questionSolutionSlotAction = {
                                 label: "Solution slot",
