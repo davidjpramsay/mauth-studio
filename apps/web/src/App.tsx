@@ -1,12 +1,5 @@
 import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  DragEvent,
-  KeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
-} from "react";
+import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type {
   ChoiceNumberingStyle,
   ColumnCount,
@@ -186,6 +179,14 @@ import {
   paddedTableRow,
   plainTableRows,
 } from "@/lib/contentBlockNormalization";
+import {
+  type DocumentTocItem,
+  type DropPlacement,
+  type MoveDirection,
+  type PageBreakDropPreview,
+  type QuestionDropPreview,
+  type TocItemKind,
+} from "@/lib/documentNavigation";
 import { DEFAULT_3D_GRAPH } from "@/lib/diagram3d";
 import {
   DEFAULT_2D_GRAPH,
@@ -208,6 +209,7 @@ import {
 import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, normalizedSetDiagramData } from "@/lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
+import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import {
   measuredLineHeightPx,
   solutionSlotToleranceLines,
@@ -584,22 +586,7 @@ interface SubsectionDropIntent {
   beforeBlockId?: string;
 }
 
-type DropPlacement = "before" | "after" | "inside";
-type MoveDirection = -1 | 1;
 type PanelDragRegion = "header" | "body";
-type TocItemKind =
-  | "title"
-  | "sectionHeading"
-  | "question"
-  | "pageBreak"
-  | "text"
-  | "choices"
-  | "table"
-  | "diagram"
-  | "columns"
-  | "space"
-  | "part"
-  | "subpart";
 
 const SUBSECTION_DRAG_MIME = "application/x-math-subsection";
 const SUBSECTION_DRAG_TEXT_PREFIX = "math-subsection:";
@@ -625,17 +612,6 @@ interface PointerSubsectionDragSession {
   cleanup: () => void;
 }
 
-interface QuestionDropPreview {
-  questionId: string;
-  placement: Exclude<DropPlacement, "inside">;
-  surface?: "question" | "pageBreakBoundary";
-}
-
-interface PageBreakDropPreview {
-  questionId: string;
-  placement: Exclude<DropPlacement, "inside">;
-}
-
 type EditorPageBreakTarget =
   | { kind: "part"; questionId: string; partId: string }
   | { kind: "subpart"; questionId: string; partId: string; subpartId: string };
@@ -644,16 +620,6 @@ interface EditorPageBreakDropPreview {
   targetKey: string;
   placement: Exclude<DropPlacement, "inside">;
   destination: EditorPageBreakTarget;
-}
-
-interface DocumentTocItem {
-  id: string;
-  label: string;
-  summary?: string;
-  kind: TocItemKind;
-  depth: number;
-  editorAnchor: string;
-  previewAnchor: string;
 }
 
 type PaneMode = "split" | "preview";
@@ -3345,21 +3311,6 @@ function parseEditorPageBreakDrag(payload: string): EditorPageBreakTarget | null
   } catch {
     return null;
   }
-}
-
-function keyboardMoveDirection(event: KeyboardEvent<HTMLElement>): MoveDirection | null {
-  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
-  if (event.key === "ArrowUp") return -1;
-  if (event.key === "ArrowDown") return 1;
-  return null;
-}
-
-function keyboardDeleteRequested(event: KeyboardEvent<HTMLElement>) {
-  return !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "Backspace");
-}
-
-function nativeKeyboardDeleteRequested(event: globalThis.KeyboardEvent) {
-  return !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "Backspace");
 }
 
 function questionMarks(question: QuestionBlock) {
