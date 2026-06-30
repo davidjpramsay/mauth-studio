@@ -65,6 +65,7 @@ import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { Vector2DGraphEditor } from "@/components/editor/Vector2DGraphEditor";
 import { NetworkDiagramEditor } from "@/components/editor/NetworkDiagramEditor";
+import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import {
   CHOICE_LIST_LAYOUTS,
   CHOICE_NUMBERING_STYLES,
@@ -229,7 +230,9 @@ import {
   normalizeContentBlockVisibility,
   recoverMissingSolutionSurfaceTicks,
   solutionBlockVisibility as contentBlockVisibility,
+  solutionModeInsertedBlockVisibility,
   visibilityReplacementSlotAt,
+  type SolutionInsertionBlockKind,
   type SolutionVisibilityReplacementSlotGroup,
 } from "@/lib/solutionBlockVisibility";
 import {
@@ -539,7 +542,7 @@ type EditorPart = Omit<QuestionPart, "contentBlocks" | "subparts"> & {
 };
 type OrderedQuestionItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "part"; id: string; part: EditorPart };
 type OrderedPartItem = { kind: "block"; id: string; block: EditorContentBlock } | { kind: "subpart"; id: string; subpart: EditorSubpart };
-type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "space";
+type ContentBlockKind = SolutionInsertionBlockKind;
 
 interface QuestionBlock {
   id: string;
@@ -1046,27 +1049,6 @@ function diagramBlock(graphConfig: GraphConfig = DEFAULT_2D_GRAPH, visibility?: 
 function diagramBlockForType(type: string, visibility?: ContentBlockVisibility): EditorContentBlock {
   const baseConfig = withGraphDefaults(DEFAULT_2D_GRAPH);
   return diagramBlock(updateGraphConfig(baseConfig, diagramTypePatch(type, baseConfig)), visibility);
-}
-
-const QUICK_INSERT_DIAGRAM_TYPES = [
-  { value: "graph2d", label: "2D graph" },
-  { value: "statsChart", label: "Statistics chart" },
-  { value: "geometry2d", label: "2D diagram" },
-  { value: "vector2d", label: "Vector graph" },
-  { value: "graph3d", label: "3D graph" },
-  { value: "geometricConstruction", label: "Geometric" },
-  { value: "network", label: "Network" },
-  { value: "setDiagram", label: "Venn diagram" },
-  { value: "image", label: "Image" },
-];
-
-function quickDiagramInsertActions(onAddDiagramType: (type: string) => void) {
-  return QUICK_INSERT_DIAGRAM_TYPES.map((diagramType) => ({
-    label: diagramType.label,
-    tooltip: `Add ${diagramType.label.toLowerCase()} here`,
-    icon: <ImagePlus className="size-4" aria-hidden="true" />,
-    onClick: () => onAddDiagramType(diagramType.value),
-  }));
 }
 
 function spaceBlock(lines = 3, visibility: ContentBlockVisibility = "student"): Extract<ContentBlock, { kind: "space" }> {
@@ -5120,15 +5102,22 @@ function ColumnsBlockEditor({
   onRemove,
 }: ColumnsBlockEditorProps) {
   const normalized = normalizeColumnsBlock(block);
-  const insertedBlockVisibility: ContentBlockVisibility | undefined = showSolutions ? "solution" : undefined;
   const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
-  const addColumnBlock = (columnIndex: number, kind: ColumnsChildBlockKind, visibility?: ContentBlockVisibility) => {
+  const addColumnBlock = (
+    columnIndex: number,
+    kind: ColumnsChildBlockKind,
+    visibility = solutionModeInsertedBlockVisibility(kind, showSolutions),
+  ) => {
     const block = contentBlockForKind(kind, visibility);
     const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, block] : column));
     updateColumns(columns);
     if (anchor) onActivateAnchor?.(columnChildScrollAnchor(anchor, columnIndex, block.id));
   };
-  const addColumnDiagramBlock = (columnIndex: number, type: string, visibility?: ContentBlockVisibility) => {
+  const addColumnDiagramBlock = (
+    columnIndex: number,
+    type: string,
+    visibility = solutionModeInsertedBlockVisibility("diagram", showSolutions),
+  ) => {
     const block = diagramBlockForType(type, visibility);
     const columns = normalized.columns.map((column, index) => (index === columnIndex ? [...column, block] : column));
     updateColumns(columns);
@@ -5310,11 +5299,11 @@ function ColumnsBlockEditor({
               buttonLabel="Add"
               solutionMode={showSolutions}
               className="pt-1"
-              onAddText={() => addColumnBlock(columnIndex, "text", insertedBlockVisibility)}
+              onAddText={() => addColumnBlock(columnIndex, "text")}
               onAddChoices={() => addColumnBlock(columnIndex, "choices")}
-              onAddTable={() => addColumnBlock(columnIndex, "table", insertedBlockVisibility)}
-              onAddDiagram={() => addColumnBlock(columnIndex, "diagram", insertedBlockVisibility)}
-              diagramActions={quickDiagramInsertActions((type) => addColumnDiagramBlock(columnIndex, type, insertedBlockVisibility))}
+              onAddTable={() => addColumnBlock(columnIndex, "table")}
+              onAddDiagram={() => addColumnBlock(columnIndex, "diagram")}
+              diagramActions={quickDiagramInsertActions((type) => addColumnDiagramBlock(columnIndex, type))}
               onAddSpace={() => addColumnBlock(columnIndex, "space")}
             />
           </section>
@@ -6862,7 +6851,7 @@ export default function App() {
     supportsSolutionTools,
     effectiveShowSolutions,
     previewShowSolutions,
-    insertedBlockVisibility: solutionInsertedBlockVisibility,
+    insertedBlockVisibilityForKind: solutionInsertedBlockVisibilityForKind,
     printModeLabel,
     printModeTitle,
   } = useSolutionModeController(frontMatter);
@@ -9582,7 +9571,7 @@ export default function App() {
     }
   }
 
-  function addQuestionBlock(questionId: string, kind: ContentBlockKind, visibility?: ContentBlockVisibility) {
+  function addQuestionBlock(questionId: string, kind: ContentBlockKind, visibility = solutionInsertedBlockVisibilityForKind(kind)) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
     const block = contentBlockForKind(kind, visibility);
@@ -9594,7 +9583,7 @@ export default function App() {
     }
   }
 
-  function addQuestionDiagramBlock(questionId: string, type: string, visibility?: ContentBlockVisibility) {
+  function addQuestionDiagramBlock(questionId: string, type: string, visibility = solutionInsertedBlockVisibilityForKind("diagram")) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
     const block = diagramBlockForType(type, visibility);
@@ -9703,7 +9692,12 @@ export default function App() {
     applyEditorAction({ type: "subpart.delete", questionId, partId: part.id, subpartId });
   }
 
-  function addPartBlock(questionId: string, part: EditorPart, kind: ContentBlockKind, visibility?: ContentBlockVisibility) {
+  function addPartBlock(
+    questionId: string,
+    part: EditorPart,
+    kind: ContentBlockKind,
+    visibility = solutionInsertedBlockVisibilityForKind(kind),
+  ) {
     const block = contentBlockForKind(kind, visibility);
     const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
     if (result.ok) {
@@ -9713,7 +9707,12 @@ export default function App() {
     }
   }
 
-  function addPartDiagramBlock(questionId: string, part: EditorPart, type: string, visibility?: ContentBlockVisibility) {
+  function addPartDiagramBlock(
+    questionId: string,
+    part: EditorPart,
+    type: string,
+    visibility = solutionInsertedBlockVisibilityForKind("diagram"),
+  ) {
     const block = diagramBlockForType(type, visibility);
     const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
     if (result.ok) {
@@ -9732,7 +9731,7 @@ export default function App() {
     part: EditorPart,
     subpart: EditorSubpart,
     kind: ContentBlockKind,
-    visibility?: ContentBlockVisibility,
+    visibility = solutionInsertedBlockVisibilityForKind(kind),
   ) {
     const block = contentBlockForKind(kind, visibility);
     const result = applyEditorAction({
@@ -9752,7 +9751,7 @@ export default function App() {
     part: EditorPart,
     subpart: EditorSubpart,
     type: string,
-    visibility?: ContentBlockVisibility,
+    visibility = solutionInsertedBlockVisibilityForKind("diagram"),
   ) {
     const block = diagramBlockForType(type, visibility);
     const result = applyEditorAction({
@@ -10462,7 +10461,6 @@ export default function App() {
       partId: part.id,
       subpartId: subpart.id,
     };
-    const insertedBlockVisibility = solutionInsertedBlockVisibility;
     const subpartSolutionSlotAction = {
       label: "Solution slot",
       tooltip: "Add paired answer space and solution text",
@@ -10535,14 +10533,12 @@ export default function App() {
             solutionMode={effectiveShowSolutions}
             centered
             className="mt-3 pt-3"
-            onAddText={() => addSubpartBlock(question.id, part, subpart, "text", insertedBlockVisibility)}
+            onAddText={() => addSubpartBlock(question.id, part, subpart, "text")}
             onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
-            onAddTable={() => addSubpartBlock(question.id, part, subpart, "table", insertedBlockVisibility)}
-            onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram", insertedBlockVisibility)}
-            diagramActions={quickDiagramInsertActions((type) =>
-              addSubpartDiagramBlock(question.id, part, subpart, type, insertedBlockVisibility),
-            )}
-            onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns", insertedBlockVisibility)}
+            onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
+            onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
+            diagramActions={quickDiagramInsertActions((type) => addSubpartDiagramBlock(question.id, part, subpart, type))}
+            onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns")}
             onAddSpace={() =>
               subpartUsesSolutionSpace
                 ? addSubpartSolutionSlot(question.id, part, subpart)
@@ -10576,7 +10572,6 @@ export default function App() {
     const partPanelLabel = isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`;
     const partUsesSolutionSpace = supportsSolutionTools && !subparts.length && safeMarkValue(part.marks) > 0;
     const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
-    const insertedBlockVisibility = solutionInsertedBlockVisibility;
     const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
     const partInsertAction = {
       label: isNotesTemplate ? "Detail" : "Subpart",
@@ -10695,12 +10690,12 @@ export default function App() {
               solutionMode={effectiveShowSolutions}
               centered
               className="mt-3 pt-3"
-              onAddText={() => addPartBlock(question.id, part, "text", insertedBlockVisibility)}
+              onAddText={() => addPartBlock(question.id, part, "text")}
               onAddChoices={() => addPartBlock(question.id, part, "choices")}
-              onAddTable={() => addPartBlock(question.id, part, "table", insertedBlockVisibility)}
-              onAddDiagram={() => addPartBlock(question.id, part, "diagram", insertedBlockVisibility)}
-              diagramActions={quickDiagramInsertActions((type) => addPartDiagramBlock(question.id, part, type, insertedBlockVisibility))}
-              onAddColumns={() => addPartBlock(question.id, part, "columns", insertedBlockVisibility)}
+              onAddTable={() => addPartBlock(question.id, part, "table")}
+              onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
+              diagramActions={quickDiagramInsertActions((type) => addPartDiagramBlock(question.id, part, type))}
+              onAddColumns={() => addPartBlock(question.id, part, "columns")}
               onAddSpace={() => (partUsesSolutionSpace ? addPartSolutionSlot(question.id, part) : addPartBlock(question.id, part, "space"))}
               spaceActionLabel={partUsesSolutionSpace ? "Answer + solution" : "Space"}
               spaceActionTooltip={
@@ -11052,7 +11047,6 @@ export default function App() {
                                 ? `Heading ${index + 1}`
                                 : `Question ${questionDisplayNumber(frontMatter, index)}`;
                               const questionUsesSolutionSpace = supportsSolutionTools && !hasParts && safeMarkValue(question.marks) > 0;
-                              const insertedBlockVisibility = solutionInsertedBlockVisibility;
                               const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
                               const questionSolutionSlotAction = {
                                 label: "Solution slot",
@@ -11184,14 +11178,12 @@ export default function App() {
                                       solutionMode={effectiveShowSolutions}
                                       centered
                                       className="mt-4 pt-3"
-                                      onAddText={() => addQuestionBlock(question.id, "text", insertedBlockVisibility)}
+                                      onAddText={() => addQuestionBlock(question.id, "text")}
                                       onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                      onAddTable={() => addQuestionBlock(question.id, "table", insertedBlockVisibility)}
-                                      onAddDiagram={() => addQuestionBlock(question.id, "diagram", insertedBlockVisibility)}
-                                      diagramActions={quickDiagramInsertActions((type) =>
-                                        addQuestionDiagramBlock(question.id, type, insertedBlockVisibility),
-                                      )}
-                                      onAddColumns={() => addQuestionBlock(question.id, "columns", insertedBlockVisibility)}
+                                      onAddTable={() => addQuestionBlock(question.id, "table")}
+                                      onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
+                                      diagramActions={quickDiagramInsertActions((type) => addQuestionDiagramBlock(question.id, type))}
+                                      onAddColumns={() => addQuestionBlock(question.id, "columns")}
                                       onAddSpace={() =>
                                         questionUsesSolutionSpace
                                           ? addQuestionSolutionSlot(question.id)

@@ -6,6 +6,7 @@ import {
   isContentBlockVisibleInScope,
   recoverMissingSolutionSurfaceTicks,
   solutionBlockVisibility,
+  solutionModeInsertedBlockVisibility,
   visibilityReplacementSlotAt,
 } from "./solutionBlockVisibility.ts";
 
@@ -43,6 +44,17 @@ test("solutionBlockVisibility preserves explicit and legacy solution visibility"
   assert.equal(solutionBlockVisibility({ ...textBlock("solution-opt-out"), solutionOnly: false }), "always");
   assert.equal(solutionBlockVisibility(textBlock("student-text", "Answer here", "student")), "student");
   assert.equal(solutionBlockVisibility({ ...textBlock("legacy-student"), studentOnly: true }), "student");
+});
+
+test("solutionModeInsertedBlockVisibility only makes editable solution surfaces solution-only", () => {
+  const solutionKinds = ["text", "table", "diagram", "columns"] as const;
+  for (const kind of solutionKinds) {
+    assert.equal(solutionModeInsertedBlockVisibility(kind, true), "solution");
+    assert.equal(solutionModeInsertedBlockVisibility(kind, false), undefined);
+  }
+
+  assert.equal(solutionModeInsertedBlockVisibility("choices", true), undefined);
+  assert.equal(solutionModeInsertedBlockVisibility("space", true), undefined);
 });
 
 test("visibilityReplacementSlotAt pairs student spaces with following solution blocks", () => {

@@ -1,5 +1,6 @@
 import { useDeferredValue, useLayoutEffect, useRef, useState } from "react";
-import type { ContentBlockVisibility } from "@mauth-studio/shared";
+
+import { solutionModeInsertedBlockVisibility, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
 
 interface SolutionModeFrontMatter {
   titlePageTemplate?: string;
@@ -12,7 +13,8 @@ export function useSolutionModeController(frontMatter: SolutionModeFrontMatter) 
   const supportsSolutionTools = !isNotesTemplate;
   const effectiveShowSolutions = supportsSolutionTools ? showSolutions : false;
   const previewShowSolutions = useDeferredValue(effectiveShowSolutions);
-  const insertedBlockVisibility: ContentBlockVisibility | undefined = effectiveShowSolutions ? "solution" : undefined;
+  const insertedBlockVisibilityForKind = (kind: SolutionInsertionBlockKind) =>
+    solutionModeInsertedBlockVisibility(kind, effectiveShowSolutions);
   const printModeLabel = isNotesTemplate ? "Notes" : effectiveShowSolutions ? "Solutions" : "Student";
   const printModeTitle = isNotesTemplate
     ? "Print output is currently the notes copy."
@@ -32,7 +34,7 @@ export function useSolutionModeController(frontMatter: SolutionModeFrontMatter) 
     supportsSolutionTools,
     effectiveShowSolutions,
     previewShowSolutions,
-    insertedBlockVisibility,
+    insertedBlockVisibilityForKind,
     printModeLabel,
     printModeTitle,
   };

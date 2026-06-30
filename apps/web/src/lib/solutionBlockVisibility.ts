@@ -1,5 +1,9 @@
 import type { ContentBlock, ContentBlockVisibility } from "@mauth-studio/shared";
 
+export type SolutionInsertionBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "space";
+
+const SOLUTION_MODE_INSERTION_BLOCK_KINDS = new Set<SolutionInsertionBlockKind>(["text", "table", "diagram", "columns"]);
+
 export interface SolutionVisibilityReplacementSlotGroup<TBlock extends ContentBlock = ContentBlock> {
   studentBlock: TBlock;
   solutionBlocks: TBlock[];
@@ -9,6 +13,13 @@ export interface SolutionVisibilityReplacementSlotGroup<TBlock extends ContentBl
 
 export function normalizeContentBlockVisibility(value: unknown): ContentBlockVisibility | undefined {
   return value === "always" || value === "student" || value === "solution" ? value : undefined;
+}
+
+export function solutionModeInsertedBlockVisibility(
+  kind: SolutionInsertionBlockKind,
+  showSolutions: boolean,
+): ContentBlockVisibility | undefined {
+  return showSolutions && SOLUTION_MODE_INSERTION_BLOCK_KINDS.has(kind) ? "solution" : undefined;
 }
 
 export function solutionBlockVisibility(block: ContentBlock): ContentBlockVisibility {
