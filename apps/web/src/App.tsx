@@ -11,7 +11,6 @@ import type {
   GraphConfig,
   MauthAgentFileState,
   ProjectFileSummary,
-  ProjectFileVersion,
   ProjectSummary,
   QuestionPart,
   QuestionSubpart,
@@ -143,7 +142,6 @@ import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
-  formatProjectFileSize,
   isProjectTestFile,
   projectPathForTestPath,
   safeProjectFileName,
@@ -153,6 +151,7 @@ import {
   testPathFromProjectPath,
   uniqueTestPath,
 } from "@/lib/projectFiles";
+import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -5330,59 +5329,11 @@ function ManualModeIcon({ className }: { className?: string }) {
   );
 }
 
-interface VersionPreviewSummary {
-  kind: "test" | "raw";
-  title: string;
-  subtitle: string;
-  details: string[];
-  questions: string[];
-  rawPreview: string;
-}
-
-function projectFileVersionPreview(version: ProjectFileVersion): VersionPreviewSummary {
-  const rawPreview = version.content.length > 6000 ? `${version.content.slice(0, 6000)}\n...` : version.content;
-  try {
-    const parsed = JSON.parse(version.content) as unknown;
-    const savedTest = normalizeSavedTest(parsed);
-    if (!savedTest) throw new Error("Unsupported saved test");
-    const totalMarks = savedTest.questions.reduce((sum, question) => sum + questionMarks(question), 0);
-    return {
-      kind: "test",
-      title: savedTest.name || `Revision ${version.revision}`,
-      subtitle: [savedTest.frontMatter.subjectTitle, savedTest.frontMatter.assessmentTitle].filter(Boolean).join(" - "),
-      details: [
-        `${savedTest.questions.length} question${savedTest.questions.length === 1 ? "" : "s"}`,
-        `${totalMarks} mark${totalMarks === 1 ? "" : "s"}`,
-        `Saved ${new Date(version.createdAt).toLocaleString()}`,
-      ],
-      questions: savedTest.questions.slice(0, 8).map((question, index) => {
-        const marks = questionMarks(question);
-        const partCount = question.parts.length;
-        const blockCount =
-          question.contentBlocks.length +
-          question.parts.reduce(
-            (partSum, part) =>
-              partSum +
-              part.contentBlocks.length +
-              part.subparts.reduce((subpartSum, subpart) => subpartSum + subpart.contentBlocks.length, 0),
-            0,
-          );
-        return `Question ${index + 1}: ${marks} mark${marks === 1 ? "" : "s"}, ${partCount || blockCount} ${
-          partCount ? `part${partCount === 1 ? "" : "s"}` : `module${blockCount === 1 ? "" : "s"}`
-        }`;
-      }),
-      rawPreview,
-    };
-  } catch {
-    return {
-      kind: "raw",
-      title: `Revision ${version.revision}`,
-      subtitle: version.fileType ? `${version.fileType} file` : "File snapshot",
-      details: [`Saved ${new Date(version.createdAt).toLocaleString()}`, `${formatProjectFileSize(version.content.length)} text`],
-      questions: [],
-      rawPreview,
-    };
-  }
+function projectFileVersionPreview(version: Parameters<typeof buildProjectFileVersionPreview>[0]) {
+  return buildProjectFileVersionPreview<QuestionBlock>(version, {
+    parseSavedTest: normalizeSavedTest,
+    questionMarks,
+  });
 }
 
 function FrontMatterEditor({

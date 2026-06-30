@@ -34,19 +34,11 @@ import {
   testPathFromProjectPath,
   visibleTestFiles,
 } from "@/lib/projectFiles";
+import type { ProjectFileVersionPreviewSummary } from "@/lib/projectFileVersionPreview";
 import { cn } from "@/lib/utils";
 
 const RECENT_PROJECT_FILES_KEY = "mauth.recentProjectFiles.v1";
 const RECENT_PROJECT_FILES_LIMIT = 10;
-
-export interface ProjectFileVersionPreviewSummary {
-  kind: "test" | "raw";
-  title: string;
-  subtitle: string;
-  details: string[];
-  questions: string[];
-  rawPreview: string;
-}
 
 interface TestFileManagerProps {
   activeProject: ProjectSummary | null;
