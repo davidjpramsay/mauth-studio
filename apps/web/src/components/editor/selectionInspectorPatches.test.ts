@@ -9,6 +9,9 @@ import { DEFAULT_VECTOR_2D_GRAPH } from "../../lib/diagramVector2d.ts";
 import { applyMauthAction, type MauthQuestionLike } from "../../lib/mauthActions.ts";
 import {
   columnsColumnCountPatch,
+  contentBlockDisplayVisibility,
+  contentBlockMarkTicksPatch,
+  contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
   graphInspectorWidthPatch,
@@ -168,6 +171,36 @@ test("module.update applies inspector layout patches to selected nested modules"
   assert.equal(finalColumns?.kind === "columns" ? finalColumns.columns[2]?.[0]?.id : undefined, "new-column-text");
   assert.equal(findContentBlock(questions[0].contentBlocks, "keep")?.kind, "text");
   assert.equal(findContentBlock(questions[0].contentBlocks, "outside")?.kind, "text");
+});
+
+test("module.update applies solution display and mark tick patches", () => {
+  const initialTable = tableBlock("solution-table-1");
+  let questions = [question("q1", [initialTable])];
+
+  assert.equal(contentBlockDisplayVisibility(initialTable), "solution");
+
+  questions = updateQuestionModule(questions, "solution-table-1", contentBlockVisibilityPatch(initialTable, "always"));
+  const visibleTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(visibleTable?.kind, "table");
+  if (!visibleTable) throw new Error("Expected table block.");
+  assert.equal(contentBlockDisplayVisibility(visibleTable), "always");
+  assert.equal(visibleTable.solutionOnly, false);
+  assert.equal(visibleTable.studentOnly, false);
+
+  questions = updateQuestionModule(questions, "solution-table-1", {
+    ...contentBlockVisibilityPatch(visibleTable, "solution"),
+    ...contentBlockMarkTicksPatch(2),
+  });
+  const solutionTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(solutionTable?.kind, "table");
+  assert.equal(solutionTable ? contentBlockDisplayVisibility(solutionTable) : undefined, "solution");
+  assert.equal(solutionTable?.markTicks, 2);
+
+  if (!solutionTable) throw new Error("Expected solution table block.");
+  questions = updateQuestionModule(questions, "solution-table-1", contentBlockVisibilityPatch(solutionTable, "student"));
+  const studentTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(studentTable ? contentBlockDisplayVisibility(studentTable) : undefined, "student");
+  assert.equal(studentTable?.markTicks, undefined);
 });
 
 test("module.update applies inspector diagram patches and preserves unrelated modules", () => {

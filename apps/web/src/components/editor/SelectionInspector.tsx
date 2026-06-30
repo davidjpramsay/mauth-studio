@@ -3,6 +3,7 @@ import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
   ContentBlock,
+  ContentBlockVisibility,
   DiagramAlignment,
   Graph2DGeometryAngle,
   Graph2DGeometryArc,
@@ -40,7 +41,11 @@ import {
   INSPECTOR_MAX_TABLE_ROWS,
   INSPECTOR_MIN_TABLE_COLUMNS,
   INSPECTOR_MIN_TABLE_ROWS,
+  CONTENT_BLOCK_DISPLAY_OPTIONS,
   columnsColumnCountPatch,
+  contentBlockDisplayVisibility,
+  contentBlockMarkTicksPatch,
+  contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
   graphInspectorWidthPatch,
@@ -1109,6 +1114,11 @@ export function SelectionInspector({
   const selectedSetData = selectedDiagramConfig?.type === "setDiagram" ? normalizedSetDiagramData(selectedDiagramConfig) : null;
   const selectedImageData = selectedDiagramConfig?.type === "image" ? imageDiagramData(selectedDiagramConfig) : null;
   const selectedStatsChartSpec = selectedDiagramConfig?.type === "statsChart" ? normalizeStatsChartSpec(selectedDiagramConfig) : null;
+  const selectedBlockVisibility = contentBlockDisplayVisibility(selectedBlock.block);
+  const selectedMarkTicks =
+    typeof selectedBlock.block.markTicks === "number" && Number.isInteger(selectedBlock.block.markTicks)
+      ? selectedBlock.block.markTicks
+      : 0;
   const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
     if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
     const nextData = { ...selectedStatsChartSpec.data, ...patch };
@@ -1161,6 +1171,41 @@ export function SelectionInspector({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-3 border-b p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Module display</div>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+            Display
+            <select
+              value={selectedBlockVisibility}
+              aria-label={`${selectedBlock.label} display`}
+              onChange={(event) =>
+                onBlockChange(selectedBlock, contentBlockVisibilityPatch(selectedBlock.block, event.target.value as ContentBlockVisibility))
+              }
+              className={controlClassName}
+            >
+              {CONTENT_BLOCK_DISPLAY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedBlockVisibility === "solution" ? (
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Mark ticks
+              <input
+                type="number"
+                min={0}
+                max={20}
+                step={1}
+                value={selectedMarkTicks}
+                aria-label={`${selectedBlock.label} solution mark ticks`}
+                onChange={(event) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(event.currentTarget.value))}
+                className={controlClassName}
+              />
+            </label>
+          ) : null}
+        </div>
         {selectedColumnsBlock ? (
           <div className="space-y-3 p-3">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">

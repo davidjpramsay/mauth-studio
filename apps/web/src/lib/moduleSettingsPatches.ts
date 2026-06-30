@@ -1,4 +1,4 @@
-import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
+import type { ContentBlock, ContentBlockVisibility, GraphConfig } from "@mauth-studio/shared";
 
 import { normalizeColumnCount, normalizeTableBlock, paddedTableRow, plainTablePatch, plainTableRows } from "./contentBlockNormalization.ts";
 import { DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "./diagram3d.ts";
@@ -20,10 +20,39 @@ import { defaultVector2DName, normalizedVector2DEntries, vector2dMetadata, type 
 export type InspectorColumnsBlock = Extract<ContentBlock, { kind: "columns" }>;
 export type InspectorTableBlock = Extract<ContentBlock, { kind: "table" }>;
 
+export const CONTENT_BLOCK_DISPLAY_OPTIONS: Array<{ value: ContentBlockVisibility; label: string }> = [
+  { value: "always", label: "Both copies" },
+  { value: "student", label: "Student only" },
+  { value: "solution", label: "Solutions only" },
+];
+
 export const INSPECTOR_MIN_TABLE_ROWS = 1;
 export const INSPECTOR_MAX_TABLE_ROWS = 24;
 export const INSPECTOR_MIN_TABLE_COLUMNS = 1;
 export const INSPECTOR_MAX_TABLE_COLUMNS = 12;
+
+export function contentBlockDisplayVisibility(block: ContentBlock): ContentBlockVisibility {
+  if (block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))) return "solution";
+  if (block.visibility === "solution") return "solution";
+  if (block.visibility === "student" || block.studentOnly === true) return "student";
+  return "always";
+}
+
+export function contentBlockVisibilityPatch(block: ContentBlock, visibility: ContentBlockVisibility): Partial<ContentBlock> {
+  return {
+    visibility,
+    solutionOnly: visibility === "solution",
+    studentOnly: visibility === "student",
+    ...(visibility !== "solution" && block.markTicks !== undefined ? { markTicks: undefined } : {}),
+  };
+}
+
+export function contentBlockMarkTicksPatch(value: unknown): Partial<ContentBlock> {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return { markTicks: undefined };
+  return { markTicks: Math.min(20, Math.max(0, Math.round(parsed))) };
+}
+
 export function inspectorSetShadingOptions(config: GraphConfig): Array<{ label: string; regionIndex: number | null }> {
   const data = normalizedSetDiagramData(config);
   return [
