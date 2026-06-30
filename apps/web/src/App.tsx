@@ -103,6 +103,7 @@ import {
   type PreviewContentRenderers,
   type PreviewContentRuntime,
 } from "@/components/preview/PreviewContentBlocks";
+import { SolutionValidationPanel } from "@/components/solutions/SolutionValidationPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, type ContextMenuAction } from "@/components/ui/context-menu";
@@ -210,11 +211,7 @@ import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import {
   measuredLineHeightPx,
   solutionSlotToleranceLines,
-  solutionValidationFixLabel,
-  solutionValidationSummary,
   validateSolutionCompleteness,
-  type SolutionValidationIssue,
-  type SolutionValidationResult,
   type SolutionValidationRuntime,
   type SolutionVisibilityReplacementSlotGroup,
 } from "@/lib/solutionValidation";
@@ -6476,88 +6473,6 @@ function SystemStatusPanel({
         </div>
       </section>
     </div>
-  );
-}
-
-function SolutionValidationPanel({
-  result,
-  onClose,
-  onJump,
-  onFix,
-}: {
-  result: SolutionValidationResult;
-  onClose: () => void;
-  onJump: (anchor: string) => void;
-  onFix: (issue: SolutionValidationIssue) => void;
-}) {
-  const summary = solutionValidationSummary(result);
-  return (
-    <aside className="fixed right-4 top-20 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border bg-background shadow-2xl">
-      <div className="flex items-start justify-between gap-3 border-b p-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Solution validation</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
-        </div>
-        <Button type="button" variant="ghost" size="icon" title="Close" aria-label="Close solution validation" onClick={onClose}>
-          <X />
-        </Button>
-      </div>
-      <div className="max-h-[60vh] overflow-y-auto p-3">
-        {!result.checkedItems ? (
-          <p className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-            No marked questions, parts, or subparts were found.
-          </p>
-        ) : !result.issues.length ? (
-          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-            All marked items have a student response surface and a solution.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {result.issues.map((issue) => {
-              const fixLabel = solutionValidationFixLabel(issue.fix);
-              return (
-                <div
-                  key={issue.id}
-                  className={cn(
-                    "w-full rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent",
-                    issue.severity === "error" ? "border-red-300 bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950",
-                  )}
-                >
-                  <span className="mb-1 flex items-center justify-between gap-2">
-                    <button type="button" className="min-w-0 text-left font-semibold hover:underline" onClick={() => onJump(issue.anchor)}>
-                      {issue.label}
-                    </button>
-                    <Badge
-                      variant="secondary"
-                      className={cn(issue.severity === "error" ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900")}
-                    >
-                      {issue.severity}
-                    </Badge>
-                  </span>
-                  <span className="block text-xs leading-relaxed">{issue.message}</span>
-                  <span className="mt-2 flex flex-wrap gap-2">
-                    {fixLabel ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 bg-background/80 px-2 text-xs"
-                        onClick={() => onFix(issue)}
-                      >
-                        {fixLabel}
-                      </Button>
-                    ) : null}
-                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onJump(issue.anchor)}>
-                      Jump
-                    </Button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </aside>
   );
 }
 
@@ -12928,25 +12843,51 @@ export default function App() {
               </div>
               <div className={HEADER_GROUP_CLASS}>
                 {editorDocumentOpen && supportsSolutionTools ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title={showSolutions ? "Switch to Student mode" : "Switch to Solutions mode"}
-                    aria-label={showSolutions ? "Switch to Student mode" : "Switch to Solutions mode"}
-                    aria-pressed={showSolutions}
-                    onClick={() => setShowSolutions((current) => !current)}
-                    className={cn(HEADER_ICON_BUTTON_CLASS, showSolutions && HEADER_ICON_ACTIVE_CLASS)}
+                  <div
+                    role="radiogroup"
+                    aria-label="Editor mode"
+                    className="flex h-8 items-center rounded-md border border-blue-300/20 bg-slate-950/20 p-0.5"
                   >
-                    {showSolutions ? <Eye /> : <EyeOff />}
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      role="radio"
+                      aria-checked={!showSolutions}
+                      title="Edit the student copy"
+                      onClick={() => setShowSolutions(false)}
+                      className={cn(
+                        "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
+                        !showSolutions && HEADER_ICON_ACTIVE_CLASS,
+                      )}
+                    >
+                      <EyeOff className="size-3.5" aria-hidden="true" />
+                      <span>Student</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      role="radio"
+                      aria-checked={showSolutions}
+                      title="Edit the solutions copy"
+                      onClick={() => setShowSolutions(true)}
+                      className={cn(
+                        "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
+                        showSolutions && HEADER_ICON_ACTIVE_CLASS,
+                      )}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      <span>Solutions</span>
+                    </Button>
+                  </div>
                 ) : null}
                 <button
                   type="button"
                   className={cn(
                     "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors",
                     !editorDocumentOpen && "cursor-not-allowed opacity-50",
-                    showSolutions
+                    effectiveShowSolutions
                       ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
                       : "border-emerald-300/30 bg-emerald-500/15 text-emerald-50 hover:bg-emerald-500/25 hover:text-white",
                   )}
