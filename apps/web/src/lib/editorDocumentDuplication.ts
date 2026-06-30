@@ -1,6 +1,8 @@
 import { normalizeColumnsBlock } from "./contentBlockNormalization.ts";
 import type { EditorContentBlock, EditorPart, EditorSubpart, QuestionBlock } from "./editorDocumentNormalization.ts";
 
+const SOLUTION_SURFACE_COPY_KINDS = new Set<EditorContentBlock["kind"]>(["text", "choices", "table", "diagram", "columns"]);
+
 export interface EditorDocumentDuplicationOptions {
   id: (prefix: string) => string;
   cloneSerializable: <T>(value: T) => T;
@@ -13,6 +15,19 @@ export interface EditorColumnBlockPathEntry {
 
 export type EditorColumnBlockPath = EditorColumnBlockPathEntry[];
 
+export function canCreateSolutionSurfaceCopy(block: EditorContentBlock) {
+  return SOLUTION_SURFACE_COPY_KINDS.has(block.kind);
+}
+
+export function studentSurfaceBlockPatch(): Partial<EditorContentBlock> {
+  return {
+    visibility: "student",
+    studentOnly: true,
+    solutionOnly: false,
+    markTicks: undefined,
+  };
+}
+
 export function createEditorDocumentDuplicator({ id, cloneSerializable }: EditorDocumentDuplicationOptions) {
   function duplicatedContentBlock(block: EditorContentBlock): EditorContentBlock {
     const nextBlock = cloneSerializable(block);
@@ -21,6 +36,41 @@ export function createEditorDocumentDuplicator({ id, cloneSerializable }: Editor
       nextBlock.columns = normalizeColumnsBlock(nextBlock).columns.map((column) => column.map(duplicatedContentBlock));
     }
     return nextBlock;
+  }
+
+  function solutionSurfaceContentBlock(block: EditorContentBlock): EditorContentBlock | null {
+    if (!canCreateSolutionSurfaceCopy(block)) return null;
+    const nextBlock = duplicatedContentBlock(block);
+    return solutionVisibleContentBlock(nextBlock);
+  }
+
+  function solutionVisibleContentBlock(block: EditorContentBlock): EditorContentBlock {
+    const nextBlock = {
+      ...block,
+      visibility: "solution" as const,
+      solutionOnly: true,
+      studentOnly: undefined,
+      markTicks: undefined,
+    } as EditorContentBlock;
+    if (nextBlock.kind === "columns") {
+      const normalized = normalizeColumnsBlock(nextBlock);
+      return {
+        ...nextBlock,
+        columnCount: normalized.columnCount,
+        columns: normalized.columns.map((column) => column.map(solutionVisibleContentBlock)),
+      };
+    }
+    return nextBlock;
+  }
+
+  function studentVisibleContentBlock(block: EditorContentBlock): EditorContentBlock {
+    return {
+      ...block,
+      visibility: "student" as const,
+      studentOnly: true,
+      solutionOnly: false,
+      markTicks: undefined,
+    } as EditorContentBlock;
   }
 
   function columnBlockAtPath(rootBlock: EditorContentBlock, path: EditorColumnBlockPath): EditorContentBlock | null {
@@ -33,6 +83,60 @@ export function createEditorDocumentDuplicator({ id, cloneSerializable }: Editor
       currentBlock = nextBlock;
     }
     return currentBlock;
+  }
+
+  function solutionSurfaceColumnBlockCopyAtPath(
+    rootBlock: Extract<EditorContentBlock, { kind: "columns" }>,
+    path: EditorColumnBlockPath,
+  ): { rootBlock: Extract<EditorContentBlock, { kind: "columns" }>; solutionPath: EditorColumnBlockPath } | null {
+    if (!path.length) return null;
+    const copyInColumnsBlock = (
+      columnsBlock: Extract<EditorContentBlock, { kind: "columns" }>,
+      pathIndex: number,
+    ): { block: Extract<EditorContentBlock, { kind: "columns" }>; solutionPath: EditorColumnBlockPath } | null => {
+      const entry = path[pathIndex];
+      if (!entry) return null;
+      const normalized = normalizeColumnsBlock(columnsBlock);
+      const column = normalized.columns[entry.columnIndex];
+      if (!column) return null;
+      const childIndex = column.findIndex((child) => child.id === entry.blockId);
+      if (childIndex < 0) return null;
+
+      if (pathIndex === path.length - 1) {
+        const childBlock = column[childIndex];
+        const nextBlock = solutionSurfaceContentBlock(childBlock);
+        if (!nextBlock) return null;
+        const columns = normalized.columns.map((currentColumn, index) =>
+          index === entry.columnIndex
+            ? [
+                ...currentColumn.slice(0, childIndex),
+                studentVisibleContentBlock(childBlock),
+                nextBlock,
+                ...currentColumn.slice(childIndex + 1),
+              ]
+            : currentColumn,
+        );
+        return {
+          block: { ...columnsBlock, columnCount: normalized.columnCount, columns },
+          solutionPath: path.map((pathEntry, index) => (index === pathIndex ? { ...pathEntry, blockId: nextBlock.id } : { ...pathEntry })),
+        };
+      }
+
+      const childBlock = column[childIndex];
+      if (childBlock.kind !== "columns") return null;
+      const nested = copyInColumnsBlock(childBlock, pathIndex + 1);
+      if (!nested) return null;
+      const columns = normalized.columns.map((currentColumn, index) =>
+        index === entry.columnIndex ? currentColumn.map((child) => (child.id === entry.blockId ? nested.block : child)) : currentColumn,
+      );
+      return {
+        block: { ...columnsBlock, columnCount: normalized.columnCount, columns },
+        solutionPath: nested.solutionPath,
+      };
+    };
+
+    const result = copyInColumnsBlock(rootBlock, 0);
+    return result ? { rootBlock: result.block, solutionPath: result.solutionPath } : null;
   }
 
   function duplicateColumnBlockAtPath(
@@ -137,6 +241,8 @@ export function createEditorDocumentDuplicator({ id, cloneSerializable }: Editor
   return {
     duplicatedContentBlock,
     duplicatedContentBlocks,
+    solutionSurfaceContentBlock,
+    solutionSurfaceColumnBlockCopyAtPath,
     duplicatedSubpart,
     duplicatedPart,
     duplicatedQuestion,

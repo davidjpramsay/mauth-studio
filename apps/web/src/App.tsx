@@ -131,6 +131,7 @@ import { useMauthActionProposalController } from "@/hooks/useMauthActionProposal
 import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
 import { useSolutionModeController } from "@/hooks/useSolutionModeController";
 import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
+import { useSolutionSurfaceCopyController } from "@/hooks/useSolutionSurfaceCopyController";
 import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
@@ -1462,11 +1463,19 @@ const { normalizeQuestionBlocks, normalizeSectionHeadings, normalizeDocumentFlow
   normalizeContentBlocks,
 });
 
-const { duplicatedContentBlock, duplicatedSubpart, duplicatedPart, duplicatedQuestion, columnBlockAtPath, duplicateColumnBlockAtPath } =
-  createEditorDocumentDuplicator({
-    id,
-    cloneSerializable,
-  });
+const {
+  duplicatedContentBlock,
+  duplicatedSubpart,
+  duplicatedPart,
+  duplicatedQuestion,
+  columnBlockAtPath,
+  duplicateColumnBlockAtPath,
+  solutionSurfaceContentBlock,
+  solutionSurfaceColumnBlockCopyAtPath,
+} = createEditorDocumentDuplicator({
+  id,
+  cloneSerializable,
+});
 
 function containerKey(container?: SubsectionContainerRef | null) {
   if (!container) return "";
@@ -7328,6 +7337,17 @@ export default function App() {
     }
   }
 
+  const { createSolutionCopyForSelectedBlock } = useSolutionSurfaceCopyController({
+    questions,
+    showEditor,
+    applyAction: applyEditorAction,
+    applyActions: applyEditorActions,
+    showSolutions: () => setShowSolutions(true),
+    selectContextAnchor,
+    solutionSurfaceContentBlock,
+    solutionSurfaceColumnBlockCopyAtPath,
+  });
+
   function copyAnchorReference(anchor: string) {
     const reference = contextReferenceText(anchor);
     void navigator.clipboard?.writeText(reference).catch(() => undefined);
@@ -10386,6 +10406,7 @@ export default function App() {
                       activeAnchor={activeTocItemId}
                       onActivateAnchor={activateEditorAnchor}
                       onBlockChange={updateSelectedBlock}
+                      onCreateSolutionCopy={createSolutionCopyForSelectedBlock}
                       createTextBlock={textBlock}
                       diagramTypePatch={diagramTypePatch}
                       updateGraphConfig={updateGraphConfig}

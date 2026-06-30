@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createEditorDocumentDuplicator } from "./editorDocumentDuplication.ts";
+import { canCreateSolutionSurfaceCopy, createEditorDocumentDuplicator, studentSurfaceBlockPatch } from "./editorDocumentDuplication.ts";
 import type { EditorContentBlock, EditorPart, QuestionBlock } from "./editorDocumentNormalization.ts";
 
 function testDuplicator() {
@@ -53,6 +53,115 @@ test("duplicatedContentBlock deep-clones columns and preserves solution-layer fi
     2,
   );
   assert.equal(block.kind === "columns" ? block.columns[0][0]?.id : undefined, "solution-table");
+});
+
+test("solutionSurfaceContentBlock makes an editable solution-only copy", () => {
+  const { solutionSurfaceContentBlock } = testDuplicator();
+  const block: EditorContentBlock = {
+    id: "table-original",
+    kind: "table",
+    headers: ["x", "y"],
+    rows: [
+      ["0", ""],
+      ["1", ""],
+    ],
+    visibility: "always",
+    markTicks: 2,
+  };
+
+  const solutionBlock = solutionSurfaceContentBlock(block);
+
+  assert.ok(solutionBlock);
+  assert.equal(solutionBlock.kind, "table");
+  assert.notEqual(solutionBlock.id, block.id);
+  assert.equal(solutionBlock.visibility, "solution");
+  assert.equal(solutionBlock.solutionOnly, true);
+  assert.equal(solutionBlock.studentOnly, undefined);
+  assert.equal(solutionBlock.markTicks, undefined);
+  assert.deepEqual(solutionBlock.kind === "table" ? solutionBlock.rows : [], block.rows);
+  assert.equal(block.visibility, "always");
+});
+
+test("solutionSurfaceContentBlock recursively marks copied columns as solution-only", () => {
+  const { solutionSurfaceContentBlock } = testDuplicator();
+  const block: EditorContentBlock = {
+    id: "columns-original",
+    kind: "columns",
+    columnCount: 2,
+    columns: [
+      [textBlock("student-text")],
+      [
+        {
+          id: "student-table",
+          kind: "table",
+          headers: ["x"],
+          rows: [[""]],
+          visibility: "student",
+          studentOnly: true,
+        },
+      ],
+    ],
+  };
+
+  const solutionBlock = solutionSurfaceContentBlock(block);
+
+  assert.ok(solutionBlock);
+  assert.equal(solutionBlock.kind, "columns");
+  assert.equal(solutionBlock.visibility, "solution");
+  assert.equal(solutionBlock.solutionOnly, true);
+  const firstChild = solutionBlock.kind === "columns" ? solutionBlock.columns[0][0] : null;
+  const secondChild = solutionBlock.kind === "columns" ? solutionBlock.columns[1][0] : null;
+  assert.equal(firstChild?.visibility, "solution");
+  assert.equal(firstChild?.solutionOnly, true);
+  assert.equal(secondChild?.visibility, "solution");
+  assert.equal(secondChild?.solutionOnly, true);
+  assert.notEqual(firstChild?.id, "student-text");
+  assert.notEqual(secondChild?.id, "student-table");
+});
+
+test("solutionSurfaceColumnBlockCopyAtPath pairs nested column block copies", () => {
+  const { columnBlockAtPath, solutionSurfaceColumnBlockCopyAtPath } = testDuplicator();
+  const root: Extract<EditorContentBlock, { kind: "columns" }> = {
+    id: "root-columns",
+    kind: "columns",
+    columnCount: 1,
+    columns: [
+      [
+        {
+          id: "inner-columns",
+          kind: "columns",
+          columnCount: 1,
+          columns: [[textBlock("target")]],
+        },
+      ],
+    ],
+  };
+  const path = [
+    { columnIndex: 0, blockId: "inner-columns" },
+    { columnIndex: 0, blockId: "target" },
+  ];
+
+  const result = solutionSurfaceColumnBlockCopyAtPath(root, path);
+
+  assert.ok(result);
+  const original = columnBlockAtPath(result.rootBlock, path);
+  const solutionCopy = columnBlockAtPath(result.rootBlock, result.solutionPath);
+  assert.equal(original?.visibility, "student");
+  assert.equal(original?.studentOnly, true);
+  assert.equal(solutionCopy?.visibility, "solution");
+  assert.equal(solutionCopy?.solutionOnly, true);
+  assert.notEqual(solutionCopy?.id, "target");
+});
+
+test("solution surface copy helpers reject answer spaces and page breaks", () => {
+  assert.equal(canCreateSolutionSurfaceCopy({ id: "space", kind: "space", lines: 4 }), false);
+  assert.equal(canCreateSolutionSurfaceCopy({ id: "break", kind: "pageBreak" }), false);
+  assert.deepEqual(studentSurfaceBlockPatch(), {
+    visibility: "student",
+    studentOnly: true,
+    solutionOnly: false,
+    markTicks: undefined,
+  });
 });
 
 test("duplicateColumnBlockAtPath duplicates nested blocks and returns the new path", () => {

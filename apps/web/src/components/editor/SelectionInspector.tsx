@@ -23,7 +23,7 @@ import {
   type StatsChartOptions,
   type StatsChartType,
 } from "@mauth-studio/diagram-plotly";
-import { ArrowLeft, Shuffle } from "lucide-react";
+import { ArrowLeft, CopyPlus, Shuffle } from "lucide-react";
 
 import { defaultStatsDataForType } from "./StatsChartEditor";
 import {
@@ -115,6 +115,7 @@ import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/di
 import { normalizedSetDiagramData } from "../../lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import { cn } from "../../lib/utils";
+import { canCreateSolutionSurfaceCopy } from "../../lib/editorDocumentDuplication";
 
 function inspectorNumberInputSpinnerMin(min?: number, step?: number) {
   if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
@@ -206,6 +207,7 @@ export interface SelectionInspectorProps {
   activeAnchor?: string;
   onActivateAnchor?: (anchor: string) => void;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<ContentBlock>) => void;
+  onCreateSolutionCopy?: (selection: SelectedEditorBlock) => void;
   createTextBlock: () => ContentBlock;
   diagramTypePatch: (type: string, current: GraphConfig) => Partial<GraphConfig>;
   updateGraphConfig: (graphConfig: GraphConfig, patch: Partial<GraphConfig>) => GraphConfig;
@@ -1088,6 +1090,7 @@ export function SelectionInspector({
   updateGraphConfig,
   withGraphDefaults,
   onBlockChange,
+  onCreateSolutionCopy,
 }: SelectionInspectorProps) {
   if (!selectedBlock) return null;
 
@@ -1125,6 +1128,7 @@ export function SelectionInspector({
   const selectedSupportsSolutionSurfaceTicks = contentBlockSupportsSolutionSurfaceTicks(selectedBlock.block);
   const selectedSolutionTickLabel = contentBlockSolutionTickLabel(selectedBlock.block);
   const selectedSolutionTickHelp = contentBlockSolutionTickHelp(selectedBlock.block);
+  const canCreateSolutionCopy = selectedBlockVisibility !== "solution" && canCreateSolutionSurfaceCopy(selectedBlock.block);
   const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
     if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
     const nextData = { ...selectedStatsChartSpec.data, ...patch };
@@ -1196,6 +1200,24 @@ export function SelectionInspector({
               ))}
             </select>
           </label>
+          {onCreateSolutionCopy ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canCreateSolutionCopy}
+              title={
+                canCreateSolutionCopy
+                  ? "Create an editable solutions-only copy after this block."
+                  : "Select a student text, choice list, table, diagram, or columns block to copy into the solutions layer."
+              }
+              onClick={() => onCreateSolutionCopy(selectedBlock)}
+              className="justify-start gap-2"
+            >
+              <CopyPlus className="size-4" aria-hidden="true" />
+              Copy to solutions
+            </Button>
+          ) : null}
           {selectedBlockVisibility === "solution" ? (
             selectedSupportsSolutionSurfaceTicks ? (
               <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground" title={selectedSolutionTickHelp}>
