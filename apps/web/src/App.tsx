@@ -154,6 +154,13 @@ import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview"
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import { browserStorageItem, loadBrowserJson, newerAutosaveSnapshot, persistBrowserSnapshot } from "@/lib/browserStorage";
 import {
+  DEFAULT_SOLUTION_SLOT_LINES,
+  DEFAULT_SOLUTION_SLOT_TEXT,
+  DEFAULT_SOLUTION_SPACE_SHOW_LINES,
+  defaultSolutionSlotLines,
+  defaultSolutionSlotLinesForDocument,
+} from "@/lib/solutionSlotDefaults";
+import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
   normalizeChoiceNumberingStyle,
@@ -322,10 +329,6 @@ const DEFAULT_NOTES_FORMATTING_CONFIG: FormattingConfig = {
 const QUESTION_GAP_PX = 32;
 const WORKSHEET_QUESTION_GAP_PX = 16;
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
-const DEFAULT_SOLUTION_SLOT_LINES = 8;
-const MIN_SOLUTION_SLOT_LINES = 4;
-const MAX_SOLUTION_SLOT_LINES = 18;
-const DEFAULT_SOLUTION_SLOT_TEXT = "\n";
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
 const STARTER_DOCUMENT_STORAGE_KEY = "mauth-studio.starter-document.v1";
@@ -1057,7 +1060,10 @@ function columnsBlock(columnCount: ColumnCount = 2, visibility?: ContentBlockVis
 }
 
 function solutionSlotBlocks(lines = DEFAULT_SOLUTION_SLOT_LINES): EditorContentBlock[] {
-  return [{ ...spaceBlock(lines, "student"), showLines: false }, textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")];
+  return [
+    { ...spaceBlock(lines, "student"), showLines: DEFAULT_SOLUTION_SPACE_SHOW_LINES },
+    textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution"),
+  ];
 }
 
 function contentBlockForKind(kind: ContentBlockKind, visibility?: ContentBlockVisibility): EditorContentBlock {
@@ -1981,21 +1987,6 @@ function spaceLines(value: unknown) {
 
 function spaceShowsLines(value: unknown) {
   return value !== false;
-}
-
-function defaultSolutionSlotLines(marks: number) {
-  const safeMarks = safeMarkValue(marks);
-  if (!safeMarks) return DEFAULT_SOLUTION_SLOT_LINES;
-  return Math.max(MIN_SOLUTION_SLOT_LINES, Math.min(MAX_SOLUTION_SLOT_LINES, Math.ceil(safeMarks * 3 + 2)));
-}
-
-function defaultSolutionSlotLinesForDocument(frontMatter: FrontMatterConfig, marks: number) {
-  const baseLines = defaultSolutionSlotLines(marks);
-  if (frontMatter.titlePageTemplate !== "exam") return baseLines;
-
-  const safeMarks = safeMarkValue(marks);
-  const generousExamLines = safeMarks ? Math.ceil(safeMarks * 3 + 4) : DEFAULT_SOLUTION_SLOT_LINES + 2;
-  return Math.max(baseLines, Math.min(MAX_SOLUTION_SLOT_LINES, generousExamLines));
 }
 
 function normalizedBlockVisibility(record: Record<string, unknown>, blockId: string): ContentBlockVisibility | undefined {
