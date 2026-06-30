@@ -1,5 +1,4 @@
 import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import type {
   CSSProperties,
   DragEvent,
@@ -18,8 +17,6 @@ import type {
   FormattingConfig,
   GraphConfig,
   MauthAgentFileState,
-  MauthAgentSnapshot,
-  ProjectFileDocument,
   ProjectFileSummary,
   ProjectFileVersion,
   ProjectSummary,
@@ -105,68 +102,70 @@ import {
 } from "@/components/preview/PreviewContentBlocks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ContextMenu, type ContextMenuAction, type ContextMenuState } from "@/components/ui/context-menu";
+import { ContextMenu, type ContextMenuAction } from "@/components/ui/context-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { useActiveProjectFileSyncController } from "@/hooks/useActiveProjectFileSyncController";
+import { useActiveProjectFileStateController } from "@/hooks/useActiveProjectFileStateController";
+import { useDocumentsFolderController } from "@/hooks/useDocumentsFolderController";
+import { useEditorCloseController } from "@/hooks/useEditorCloseController";
+import { useEditorDocumentStateController } from "@/hooks/useEditorDocumentStateController";
+import { useEditorDocumentActionsController } from "@/hooks/useEditorDocumentActionsController";
+import { useInitialStorageHydrationController } from "@/hooks/useInitialStorageHydrationController";
+import { useProjectBackupController } from "@/hooks/useProjectBackupController";
+import { useNewDocumentController } from "@/hooks/useNewDocumentController";
+import { useProjectAutosaveResolutionController } from "@/hooks/useProjectAutosaveResolutionController";
+import { useProjectFileOperationsController } from "@/hooks/useProjectFileOperationsController";
+import { useProjectDocumentOpenController } from "@/hooks/useProjectDocumentOpenController";
+import { useProjectDocumentPersistenceController } from "@/hooks/useProjectDocumentPersistenceController";
+import { useProjectFolderController } from "@/hooks/useProjectFolderController";
+import { useProjectVersionsController } from "@/hooks/useProjectVersionsController";
 import {
   ApiError,
-  chooseDefaultProjectDocumentsFolder,
   deleteStoredLogo,
-  downloadProjectBackup,
   getDefaultProject,
-  getProjectFile,
   getStorageAutosave,
-  importProjectBackup,
   listProjectFiles,
-  listProjectFileVersions,
   listStoredLogos,
   listStoredTests as listLegacyStoredTests,
-  openDefaultProjectDocumentsFolder,
-  resetDefaultProjectDocumentsFolder,
-  deleteProjectFile,
-  restoreProjectFileVersion,
   saveProjectFile,
   saveStorageAutosave,
   saveStoredLogo,
 } from "@/lib/api";
 import {
-  applyMauthAction,
-  applyMauthActions,
-  applyMauthDocumentAction,
-  applyMauthDocumentActions,
-  previewMauthDocumentActions,
   type MauthAction,
   type MauthActionPreviewSummary,
-  type MauthActionResult,
   type MauthContentScope,
+  type MauthDocumentLike,
   type MauthDocumentAction,
-  type MauthDocumentActionOptions,
   type MauthDocumentActionResult,
 } from "@/lib/mauthActions";
-import {
-  formatMauthActionValidationIssues,
-  typedMauthDocumentActions,
-  validateMauthDocumentActionPayloads,
-} from "@/lib/mauthActionValidation";
-import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
 import { DISPLAY_MATH_BLOCK_PATTERN, MIXED_MATH_LINE_PATTERN, unescapeTextMathDelimiters } from "@/lib/mathDelimiters";
-import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
+import { useDraftAutosaveController } from "@/hooks/useDraftAutosaveController";
+import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
+import {
+  missingProjectRevisionConflict,
+  useProjectFileStatus,
+  type DraftAutosaveStatus,
+  type HeaderSaveStatus,
+} from "@/hooks/useProjectFileStatus";
+import { usePrintController } from "@/hooks/usePrintController";
+import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
+import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
+import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuController";
+import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
+import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
+import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
+import { useSolutionValidationFixController } from "@/hooks/useSolutionValidationFixController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
-  TEST_FILE_ROOT_LABEL,
-  ensureTestFileName,
   formatProjectFileSize,
   isProjectTestFile,
-  joinTestPath,
-  normalizeTestFolderPath,
-  parentTestPath,
-  projectPathContains,
   projectPathForTestPath,
   safeProjectFileName,
   testFileDisplayName,
   testFilePathKey,
   testPathBasename,
   testPathFromProjectPath,
-  topLevelProjectPaths,
   uniqueTestPath,
 } from "@/lib/projectFiles";
 import {
@@ -291,16 +290,7 @@ const NEW_TEST_TEMPLATES: Array<{
 ];
 const QUESTION_GAP_PX = 32;
 const WORKSHEET_QUESTION_GAP_PX = 16;
-const PREVIEW_FIT_PADDING_PX = 40;
-const MIN_PREVIEW_SCALE = 0.55;
-const MAX_PREVIEW_FIT_SCALE = 1;
-const MIN_PREVIEW_ZOOM = 0.7;
-const MAX_PREVIEW_ZOOM = 3;
-const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0018;
-const PREVIEW_ZOOM_STATE_SYNC_DELAY_MS = 160;
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
-const WHEEL_DELTA_LINE = 1;
-const WHEEL_DELTA_PAGE = 2;
 const DEFAULT_SOLUTION_SLOT_LINES = 8;
 const MIN_SOLUTION_SLOT_LINES = 4;
 const MAX_SOLUTION_SLOT_LINES = 18;
@@ -646,14 +636,6 @@ interface EditorPageBreakDropPreview {
   destination: EditorPageBreakTarget;
 }
 
-type SafariGestureEvent = Event & { scale?: number; clientX?: number; clientY?: number };
-
-interface PreviewEditClickStart {
-  x: number;
-  y: number;
-  pointerId: number;
-}
-
 interface DocumentTocItem {
   id: string;
   label: string;
@@ -663,8 +645,6 @@ interface DocumentTocItem {
   editorAnchor: string;
   previewAnchor: string;
 }
-
-type ContextMenuSurface = "miniToc" | "preview" | "editor";
 
 type PaneMode = "split" | "preview";
 type ThemeMode = "light" | "dark";
@@ -686,9 +666,6 @@ interface AutosavedEditorSnapshot extends EditorHistorySnapshot {
   documentOpen?: boolean;
   updatedAt?: string;
 }
-
-type DraftAutosaveStatus = "loading" | "ready" | "saving" | "saved" | "unavailable" | "error";
-type HeaderSaveStatus = DraftAutosaveStatus | "dirty" | "draft" | "conflict";
 
 const HISTORY_LIMIT = 80;
 const PROJECT_FILE_REVISION_MISSING_ERROR = "PROJECT_FILE_REVISION_MISSING";
@@ -2241,27 +2218,6 @@ function printFileNameForDocument(frontMatter: FrontMatterConfig, baseName: stri
   return `${cleanBaseName} - ${showSolutions ? "Solutions" : "Student"}`;
 }
 
-function formatShortDateTime(value: unknown) {
-  if (typeof value !== "string" || !value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function draftBackupStatusSummary(status: DraftAutosaveStatus, message: string) {
-  if (status === "saving") return "backing up draft";
-  if (status === "saved") return message.replace(/^Autosaved draft/, "draft backed up").replace(/^Autosaved/, "draft backed up");
-  if (status === "unavailable") return "browser backup only";
-  if (status === "loading") return "loading draft backup";
-  if (status === "error") return "draft backup error";
-  return message.replace(/^Draft autosave/, "Draft backup") || "draft backup ready";
-}
-
 function projectFileSummaryFromApiError(error: ApiError): ProjectFileSummary | null {
   const body = asRecord(error.detail);
   const detail = asRecord(body?.detail) ?? body;
@@ -2278,14 +2234,6 @@ function projectFileConflictFromError(error: unknown, filePath: string, localRev
     message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
     localRevision,
     currentRevision: current?.revision,
-  };
-}
-
-function missingProjectRevisionConflict(filePath: string): ProjectSaveConflict {
-  return {
-    filePath,
-    message: "This draft was restored without a file revision. Reload the file before saving, or use Save as to keep it as a copy.",
-    localRevision: null,
   };
 }
 
@@ -2884,73 +2832,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function clampPreviewZoom(value: number, maxZoom = MAX_PREVIEW_ZOOM) {
-  if (!Number.isFinite(value)) return 1;
-  return Math.round(clamp(value, MIN_PREVIEW_ZOOM, maxZoom) * 10000) / 10000;
-}
-
-function normalizedPreviewWheelDelta(event: globalThis.WheelEvent, pageHeight: number) {
-  const primaryDelta = event.deltaY === 0 && event.deltaX ? event.deltaX : event.deltaY;
-  if (event.deltaMode === WHEEL_DELTA_LINE) return primaryDelta * 16;
-  if (event.deltaMode === WHEEL_DELTA_PAGE) return primaryDelta * Math.max(pageHeight, 1);
-  return primaryDelta;
-}
-
-function previewPointFromEvent(event: { clientX?: number; clientY?: number }, fallbackElement: HTMLElement) {
-  const rect = fallbackElement.getBoundingClientRect();
-  return {
-    clientX: typeof event.clientX === "number" ? event.clientX : rect.left + rect.width / 2,
-    clientY: typeof event.clientY === "number" ? event.clientY : rect.top + rect.height / 2,
-  };
-}
-
-function previewPaneContentHeight(previewPane: HTMLElement) {
-  const styles = window.getComputedStyle(previewPane);
-  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
-  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-  return Math.max(0, previewPane.clientHeight - paddingTop - paddingBottom);
-}
-
-function previewPaneContentWidth(previewPane: HTMLElement) {
-  const styles = window.getComputedStyle(previewPane);
-  const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
-  const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
-  return Math.max(0, previewPane.clientWidth - paddingLeft - paddingRight);
-}
-
-function previewZoomScrollTarget({
-  previewPane,
-  currentScale,
-  nextScale,
-  point,
-  currentScrollLeft = previewPane.scrollLeft,
-  currentScrollTop = previewPane.scrollTop,
-}: {
-  previewPane: HTMLElement;
-  currentScale: number;
-  nextScale: number;
-  point: { clientX: number; clientY: number };
-  currentScrollLeft?: number;
-  currentScrollTop?: number;
-}) {
-  const paneRect = previewPane.getBoundingClientRect();
-  const localX = clamp(point.clientX - paneRect.left, 0, paneRect.width);
-  const localY = clamp(point.clientY - paneRect.top, 0, paneRect.height);
-  const anchorX = currentScale > 0 ? (currentScrollLeft + localX) / currentScale : currentScrollLeft + localX;
-  const anchorY = currentScale > 0 ? (currentScrollTop + localY) / currentScale : currentScrollTop + localY;
-  return {
-    scrollLeft: anchorX * nextScale - localX,
-    scrollTop: anchorY * nextScale - localY,
-  };
-}
-
 function scrollableRange(element: HTMLElement) {
   const maxScroll = element.scrollHeight - element.clientHeight;
-  return Math.max(0, maxScroll);
-}
-
-function horizontalScrollableRange(element: HTMLElement) {
-  const maxScroll = element.scrollWidth - element.clientWidth;
   return Math.max(0, maxScroll);
 }
 
@@ -4830,13 +4713,6 @@ function useStableEvent<TArgs extends unknown[], TResult>(callback: (...args: TA
   });
 
   return useCallback((...args: TArgs) => callbackRef.current(...args), []);
-}
-
-function applyPreviewScaleStyle(previewRoot: HTMLElement, pageFormat: PageFormat, scale = 1) {
-  previewRoot.style.setProperty("--a4-preview-scale", String(scale));
-  previewRoot.style.setProperty("--a4-preview-page-width", `${pageFormat.widthPx * scale}px`);
-  previewRoot.style.setProperty("--a4-preview-page-height", `${pageFormat.heightPx * scale}px`);
-  previewRoot.style.setProperty("--a4-preview-page-gap", `${16 * scale}px`);
 }
 
 function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
@@ -8254,10 +8130,6 @@ function questionHasPageBreak(question: QuestionBlock) {
   return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
 }
 
-function pageBreakQuestionIdSet(questions: QuestionBlock[]) {
-  return new Set(questions.filter(questionHasPageBreak).map((question) => question.id));
-}
-
 function firstQuestionId(questions: QuestionBlock[]) {
   return questions[0]?.id ?? "";
 }
@@ -8986,16 +8858,105 @@ export default function App() {
     () => normalizeDocumentFlow(initialEditorDraft?.documentFlow, initialQuestions, initialSectionHeadings),
     [initialEditorDraft, initialQuestions, initialSectionHeadings],
   );
-  const [frontMatter, setFrontMatter] = useState<FrontMatterConfig>(() => initialEditorDraft?.frontMatter ?? DEFAULT_FRONT_MATTER);
-  const [formattingConfig, setFormattingConfig] = useState<FormattingConfig>(
-    () => initialEditorDraft?.formattingConfig ?? DEFAULT_FORMATTING_CONFIG,
-  );
-  const [editorDocumentOpen, setEditorDocumentOpen] = useState(initialEditorDocumentOpen);
   const [logos, setLogos] = useState<LogoAsset[]>(loadLogoLibrary);
+  const logosRef = useRef(logos);
   const [legacySavedTests, setLegacySavedTests] = useState<SavedTest[]>(loadLegacySavedTests);
-  const [questions, setQuestions] = useState<QuestionBlock[]>(() => initialQuestions);
-  const [sectionHeadings, setSectionHeadings] = useState<DocumentSectionHeading[]>(() => initialSectionHeadings);
-  const [documentFlow, setDocumentFlow] = useState<DocumentFlowItem[]>(() => initialDocumentFlow);
+  const legacySavedTestsRef = useRef(legacySavedTests);
+  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
+  const [dragOverQuestion, setDragOverQuestion] = useState<QuestionDropPreview | null>(null);
+  const [draggedPageBreakQuestionId, setDraggedPageBreakQuestionId] = useState<string | null>(null);
+  const [dragOverPageBreak, setDragOverPageBreak] = useState<PageBreakDropPreview | null>(null);
+  const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
+  const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
+  const [draggedEditorPageBreak, setDraggedEditorPageBreak] = useState<EditorPageBreakTarget | null>(null);
+  const [dragOverEditorPageBreak, setDragOverEditorPageBreak] = useState<EditorPageBreakDropPreview | null>(null);
+  const [paneMode, setPaneMode] = useState<PaneMode>("preview");
+  const [tocOpen, setTocOpen] = useState(false);
+  const [activeTocItemId, setActiveTocItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
+  const [activeRailItemId, setActiveRailItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
+  const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
+  function clearEditorTransientState() {
+    setDraggedQuestionId(null);
+    setDragOverQuestion(null);
+    setDraggedPageBreakQuestionId(null);
+    setDragOverPageBreak(null);
+    setDraggedSubsection(null);
+    setDragOverSubsection(null);
+    setDraggedEditorPageBreak(null);
+    setDragOverEditorPageBreak(null);
+  }
+
+  const {
+    frontMatter,
+    formattingConfig,
+    editorDocumentOpen,
+    setEditorDocumentOpenState,
+    questions,
+    sectionHeadings,
+    documentFlow,
+    frontMatterRef,
+    formattingConfigRef,
+    questionsRef,
+    sectionHeadingsRef,
+    documentFlowRef,
+    editorDocumentOpenRef,
+    currentEditorDocument,
+    restoreEditorSnapshot,
+    setEditorDocument,
+    setQuestionsWithHistory,
+    setEditorDocumentWithHistory,
+    setSectionFlowWithHistory,
+    canUndo,
+    canRedo,
+    pushEditorHistory,
+    undoEdit,
+    redoEdit,
+  } = useEditorDocumentStateController<
+    FrontMatterConfig,
+    QuestionBlock,
+    DocumentSectionHeading,
+    DocumentFlowItem,
+    FormattingConfig,
+    EditorHistorySnapshot
+  >({
+    historyLimit: HISTORY_LIMIT,
+    initialFrontMatter: initialEditorDraft?.frontMatter ?? DEFAULT_FRONT_MATTER,
+    initialQuestions,
+    initialSectionHeadings,
+    initialDocumentFlow,
+    initialFormattingConfig: initialEditorDraft?.formattingConfig ?? DEFAULT_FORMATTING_CONFIG,
+    initialDocumentOpen: initialEditorDocumentOpen,
+    normalizeQuestions: normalizeQuestionBlocks,
+    normalizeSectionHeadings,
+    normalizeDocumentFlow,
+    normalizeFormattingConfig,
+    documentFlowFromQuestionChange: normalizedDocumentFlowFromState,
+    getActiveQuestionId: () => activeQuestionId,
+    getActiveTocItemId: () => activeTocItemId,
+    existingOrFirstQuestionId,
+    questionScrollAnchor,
+    frontMatterAnchor: SCROLL_ANCHOR_FRONT_MATTER,
+    firstDocumentFlowAnchor,
+    sectionHeadingIdFromScrollAnchor,
+    questionIdFromScrollAnchor,
+    setActiveQuestionId,
+    setActiveTocItemId,
+    setActiveRailItemId,
+    onRestoreSnapshotExtra: (snapshot) => {
+      const snapshotLogo = "logo" in snapshot ? normalizeLogoAsset(snapshot.logo) : undefined;
+      if (!snapshotLogo) return;
+      setLogos((current) => {
+        const next = mergeLogoAssets(current, [snapshotLogo]);
+        if (next !== current) {
+          logosRef.current = next;
+          persistLogoLibrary(next);
+        }
+        return next;
+      });
+      writeLogoToDisk(snapshotLogo);
+    },
+    clearTransientEditorState: clearEditorTransientState,
+  });
   const cleanUnsavedDocumentFingerprintRef = useRef<string | null>(
     initialEditorDraft
       ? null
@@ -9011,31 +8972,9 @@ export default function App() {
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
   const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
   const [storageHydrated, setStorageHydrated] = useState(false);
-  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
-  const [dragOverQuestion, setDragOverQuestion] = useState<QuestionDropPreview | null>(null);
-  const [draggedPageBreakQuestionId, setDraggedPageBreakQuestionId] = useState<string | null>(null);
-  const [dragOverPageBreak, setDragOverPageBreak] = useState<PageBreakDropPreview | null>(null);
-  const [draggedSubsection, setDraggedSubsection] = useState<SubsectionDragTarget | null>(null);
-  const [dragOverSubsection, setDragOverSubsection] = useState<SubsectionDropPreview | null>(null);
-  const [draggedEditorPageBreak, setDraggedEditorPageBreak] = useState<EditorPageBreakTarget | null>(null);
-  const [dragOverEditorPageBreak, setDragOverEditorPageBreak] = useState<EditorPageBreakDropPreview | null>(null);
-  const [paneMode, setPaneMode] = useState<PaneMode>("preview");
-  const [tocOpen, setTocOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [activeTocItemId, setActiveTocItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
-  const [activeRailItemId, setActiveRailItemId] = useState(() => firstDocumentFlowAnchor(initialDocumentFlow, initialQuestions));
-  const [activeQuestionId, setActiveQuestionId] = useState(() => firstQuestionId(initialQuestions));
   const [showSolutions, setShowSolutions] = useState(false);
   const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
-  const [actionProposalOpen, setActionProposalOpen] = useState(false);
-  const [actionProposalText, setActionProposalText] = useState("");
-  const [actionProposalMessage, setActionProposalMessage] = useState("");
-  const [actionProposalResult, setActionProposalResult] = useState<MauthDocumentActionResult<
-    QuestionBlock,
-    FrontMatterConfig,
-    FormattingConfig
-  > | null>(null);
   const buildLegacySavedTestImport = useCallback((savedTest: SavedTest, filesForImport: ProjectFileSummary[]) => {
     const testPath = uniqueTestPath(filesForImport, "", savedTest.name, "file");
     return {
@@ -9077,48 +9016,28 @@ export default function App() {
   const [lastProjectSaveFingerprint, setLastProjectSaveFingerprint] = useState<string | null>(null);
   const lastProjectSaveFingerprintRef = useRef<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
-  const [previewViewport, setPreviewViewport] = useState({ width: 0, height: 0 });
-  const [previewZoom, setPreviewZoom] = useState(1);
   const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
-  const [historyVersion, setHistoryVersion] = useState(0);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const editorPaneRef = useRef<HTMLElement>(null);
   const previewPaneRef = useRef<HTMLElement>(null);
-  const frontMatterRef = useRef(frontMatter);
-  const formattingConfigRef = useRef(formattingConfig);
-  const questionsRef = useRef(questions);
-  const sectionHeadingsRef = useRef(sectionHeadings);
-  const documentFlowRef = useRef(documentFlow);
-  const logosRef = useRef(logos);
-  const legacySavedTestsRef = useRef(legacySavedTests);
-  const activeProjectFilePathRef = useRef(activeProjectFilePath);
-  const activeProjectFileRevisionRef = useRef(activeProjectFileRevision);
-  const activeProjectFileSyncInFlightRef = useRef(false);
-  const undoStackRef = useRef<EditorHistorySnapshot[]>([]);
-  const redoStackRef = useRef<EditorHistorySnapshot[]>([]);
-  const autosaveSequenceRef = useRef(0);
-  const pendingEditorJumpAnchorRef = useRef<string | null>(null);
-  const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
-  const previewEditClickStartRef = useRef<PreviewEditClickStart | null>(null);
   const pointerSubsectionDragRef = useRef<PointerSubsectionDragSession | null>(null);
-  const deleteActiveEditorSelectionRef = useRef<() => boolean>(() => false);
-  const previewZoomRef = useRef(1);
-  const previewGestureStartZoomRef = useRef(1);
-  const previewZoomStateSyncTimerRef = useRef<number | null>(null);
   const showSolutionsRef = useRef(showSolutions);
-  const editorDocumentOpenRef = useRef(editorDocumentOpen);
-  const printOriginalDocumentTitleRef = useRef<string | null>(null);
-
-  function setEditorDocumentOpenState(open: boolean) {
-    editorDocumentOpenRef.current = open;
-    setEditorDocumentOpen(open);
-  }
 
   function updateLastProjectSaveFingerprint(nextFingerprint: string | null) {
     lastProjectSaveFingerprintRef.current = nextFingerprint;
     setLastProjectSaveFingerprint(nextFingerprint);
   }
+
+  const { activeProjectFilePathRef, activeProjectFileRevisionRef, setActiveProjectFileState, clearActiveProjectFileState } =
+    useActiveProjectFileStateController({
+      activeProjectFilePath,
+      activeProjectFileRevision,
+      setActiveProjectFilePath,
+      setActiveProjectFileRevision,
+      setProjectSaveConflict,
+      updateLastProjectSaveFingerprint,
+    });
 
   const currentDraftSnapshotForStorage = useCallback(
     (): AutosavedEditorSnapshot => ({
@@ -9132,60 +9051,30 @@ export default function App() {
       documentOpen: editorDocumentOpenRef.current,
       logo: selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
     }),
-    [],
+    [
+      activeProjectFilePathRef,
+      activeProjectFileRevisionRef,
+      documentFlowRef,
+      editorDocumentOpenRef,
+      formattingConfigRef,
+      frontMatterRef,
+      logosRef,
+      questionsRef,
+      sectionHeadingsRef,
+    ],
   );
 
   useEffect(() => {
     return () => pointerSubsectionDragRef.current?.cleanup();
   }, []);
 
-  const printDocument = useCallback(() => {
+  const resolvePrintTitle = useCallback(() => {
     const activeFileName = activeProjectFilePathRef.current
       ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePathRef.current) ?? activeProjectFilePathRef.current))
       : defaultSavedTestName(frontMatterRef.current);
-    const printTitle = printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
-    if (printOriginalDocumentTitleRef.current === null) {
-      printOriginalDocumentTitleRef.current = document.title;
-    }
-    document.title = printTitle;
-    flushSync(() => setPrintPreviewMounted(true));
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => window.print());
-    });
-  }, []);
-
-  useEffect(() => {
-    const setPrintDocumentTitle = () => {
-      const activeFileName = activeProjectFilePathRef.current
-        ? testFileDisplayName(
-            testPathBasename(testPathFromProjectPath(activeProjectFilePathRef.current) ?? activeProjectFilePathRef.current),
-          )
-        : defaultSavedTestName(frontMatterRef.current);
-      if (printOriginalDocumentTitleRef.current === null) {
-        printOriginalDocumentTitleRef.current = document.title;
-      }
-      document.title = printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
-    };
-
-    const handleBeforePrint = () => {
-      setPrintDocumentTitle();
-      flushSync(() => setPrintPreviewMounted(true));
-    };
-    const handleAfterPrint = () => {
-      setPrintPreviewMounted(false);
-      if (printOriginalDocumentTitleRef.current !== null) {
-        document.title = printOriginalDocumentTitleRef.current;
-        printOriginalDocumentTitleRef.current = null;
-      }
-    };
-
-    window.addEventListener("beforeprint", handleBeforePrint);
-    window.addEventListener("afterprint", handleAfterPrint);
-    return () => {
-      window.removeEventListener("beforeprint", handleBeforePrint);
-      window.removeEventListener("afterprint", handleAfterPrint);
-    };
-  }, []);
+    return printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
+  }, [activeProjectFilePathRef, frontMatterRef, showSolutionsRef]);
+  const printDocument = usePrintController({ resolvePrintTitle, setPrintPreviewMounted });
 
   async function refreshLogoLibraryFromDisk() {
     const logosResponse = await listStoredLogos<unknown>();
@@ -9222,225 +9111,105 @@ export default function App() {
       });
   }
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function hydrateDiskStorage() {
+  const { resolveAutosaveAgainstProjectFile } = useProjectAutosaveResolutionController<AutosavedEditorSnapshot, SavedTest>({
+    activeProject,
+    parseSavedDocument: (content) => {
+      if (!content) return null;
       try {
-        const [testsResponse, autosaveResponse, logosResponse] = await Promise.all([
-          listLegacyStoredTests<unknown>(),
-          getStorageAutosave<unknown>(),
-          listStoredLogos<unknown>(),
-        ]);
-        if (cancelled) return;
-
-        const diskLegacySavedTests = normalizeSavedTests(testsResponse.tests);
-        const mergedLegacySavedTests = mergeLegacySavedTests(diskLegacySavedTests, legacySavedTests);
-        const diskLogos = normalizeLogoAssets(logosResponse.logos);
-        const localLogos = logosRef.current.length ? logosRef.current : STARTER_LOGOS;
-        const legacySavedTestLogos = mergedLegacySavedTests.map((test) => test.logo);
-        const starterLogos = shouldSeedStarterLogos() ? STARTER_LOGOS : [];
-        const mergedLogos = appendMissingLogoAssets(
-          appendMissingLogoAssets(appendMissingLogoAssets(diskLogos.length ? diskLogos : localLogos, starterLogos), localLogos),
-          legacySavedTestLogos,
-        );
-        setLegacySavedTests(mergedLegacySavedTests);
-        setLogos(mergedLogos);
-        logosRef.current = mergedLogos;
-        persistLogoLibrary(mergedLogos);
-        markStarterLogosSeeded();
-        persistLegacySavedTests(mergedLegacySavedTests);
-        Promise.allSettled(mergedLogos.map((logo) => saveStoredLogo<LogoAsset>(logo))).catch(() => undefined);
-
-        const browserAutosave = loadCurrentDraft() as AutosavedEditorSnapshot | null;
-        const diskAutosave = normalizeEditorSnapshot(autosaveResponse.autosave);
-        let autosave = newerAutosave(browserAutosave, diskAutosave);
-        let autosaveProject: ProjectSummary | null = null;
-        let autosaveCleanFingerprint: string | null = null;
-        let autosaveConflict: ProjectSaveConflict | null = null;
-        if (autosave?.documentOpen === false) {
-          autosave = {
-            ...autosave,
-            activeProjectFilePath: undefined,
-            activeProjectFileRevision: undefined,
-          };
-        } else if (autosave?.activeProjectFilePath && typeof autosave.activeProjectFileRevision === "number") {
-          const resolvedAutosave = await resolveAutosaveAgainstProjectFile(autosave);
-          if (cancelled) return;
-          autosave = resolvedAutosave.snapshot;
-          autosaveProject = resolvedAutosave.project;
-          autosaveCleanFingerprint = resolvedAutosave.cleanFingerprint;
-          autosaveConflict = resolvedAutosave.conflict;
-        }
-        if (autosave) {
-          restoreEditorSnapshot(autosave);
-          if (autosaveProject) setActiveProject(autosaveProject);
-          activeProjectFilePathRef.current = autosave.activeProjectFilePath ?? null;
-          activeProjectFileRevisionRef.current = autosave.activeProjectFileRevision ?? null;
-          setActiveProjectFilePath(autosave.activeProjectFilePath ?? null);
-          setActiveProjectFileRevision(autosave.activeProjectFileRevision ?? null);
-          setProjectSaveConflict(autosaveConflict);
-          updateLastProjectSaveFingerprint(autosaveCleanFingerprint);
-          setEditorDocumentOpenState(autosave.documentOpen !== false);
-        }
-
-        setDraftAutosaveStatus("ready");
-        setDraftAutosaveMessage("Draft autosave ready");
+        return normalizeSavedTest(JSON.parse(content) as unknown);
       } catch {
-        setDraftAutosaveStatus("unavailable");
-        setDraftAutosaveMessage("API unavailable: using browser backup only");
-      } finally {
-        if (!cancelled) setStorageHydrated(true);
+        return null;
       }
-    }
+    },
+    savedDocumentFingerprint: (savedTest) =>
+      editorDocumentFingerprint(
+        savedTest.frontMatter,
+        savedTest.questions,
+        savedTest.formattingConfig,
+        savedTest.logo ?? selectedLogoForFrontMatter(logosRef.current, savedTest.frontMatter),
+        savedTest.sectionHeadings,
+        savedTest.documentFlow,
+      ),
+    autosaveSnapshotFingerprint: (snapshot) =>
+      editorDocumentFingerprint(
+        snapshot.frontMatter,
+        snapshot.questions,
+        snapshot.formattingConfig,
+        snapshot.logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter),
+        snapshot.sectionHeadings,
+        snapshot.documentFlow,
+      ),
+    savedDocumentToAutosaveSnapshot: (savedTest, filePath, revision) => ({
+      frontMatter: savedTest.frontMatter,
+      questions: savedTest.questions,
+      sectionHeadings: savedTest.sectionHeadings,
+      documentFlow: savedTest.documentFlow,
+      formattingConfig: savedTest.formattingConfig,
+      logo: savedTest.logo,
+      activeProjectFilePath: filePath,
+      activeProjectFileRevision: revision ?? undefined,
+      updatedAt: savedTest.updatedAt,
+    }),
+  });
 
-    hydrateDiskStorage();
-    return () => {
-      cancelled = true;
-    };
-    // The initial disk hydrate intentionally merges with the legacy browser saved tests captured at mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!storageHydrated || !editorDocumentOpen) return;
-    if (!shouldSeedScreenshotStarter(questions)) return;
-
-    const nextFrontMatter = createScreenshotStarterFrontMatter();
-    const nextQuestions = createScreenshotStarterQuestions();
-    const nextFormattingConfig = cloneSerializable(DEFAULT_FORMATTING_CONFIG);
-    setFrontMatter(nextFrontMatter);
-    setQuestions(nextQuestions);
-    setFormattingConfig(nextFormattingConfig);
-    frontMatterRef.current = nextFrontMatter;
-    questionsRef.current = nextQuestions;
-    formattingConfigRef.current = nextFormattingConfig;
-    setActiveQuestionId(firstQuestionId(nextQuestions));
-    setActiveTocItemId(firstQuestionAnchor(nextQuestions));
-    setActiveRailItemId(firstQuestionAnchor(nextQuestions));
-    activeProjectFilePathRef.current = null;
-    activeProjectFileRevisionRef.current = null;
-    setActiveProjectFilePath(null);
-    setActiveProjectFileRevision(null);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(null);
-    window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID);
-  }, [editorDocumentOpen, storageHydrated, questions, setActiveProjectFilePath, setActiveProjectFileRevision, setProjectSaveConflict]);
-
-  useEffect(() => {
-    if (!storageHydrated) return;
-    const timeoutId = window.setTimeout(() => {
-      persistCurrentDraft(currentDraftSnapshotForStorage());
-    }, LOCAL_DRAFT_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    activeProjectFilePath,
-    activeProjectFileRevision,
-    currentDraftSnapshotForStorage,
-    editorDocumentOpen,
-    formattingConfig,
-    frontMatter,
-    documentFlow,
-    questions,
-    sectionHeadings,
-    storageHydrated,
-  ]);
-
-  useEffect(() => {
-    if (!storageHydrated) return;
-
-    const persistLatestDraft = () => {
-      persistCurrentDraft(currentDraftSnapshotForStorage());
-    };
-
-    window.addEventListener("pagehide", persistLatestDraft);
-    return () => window.removeEventListener("pagehide", persistLatestDraft);
-  }, [currentDraftSnapshotForStorage, storageHydrated]);
-
-  useEffect(() => {
-    if (!storageHydrated || draftAutosaveStatus === "unavailable") return;
-
-    const autosaveSequence = autosaveSequenceRef.current + 1;
-    autosaveSequenceRef.current = autosaveSequence;
-    setDraftAutosaveStatus("saving");
-    setDraftAutosaveMessage(
-      activeProjectFilePath ? "Autosaving file draft" : editorDocumentOpen ? "Autosaving draft" : "Saving closed workspace state",
-    );
-    const timeoutId = window.setTimeout(() => {
-      const autosaveSnapshot: AutosavedEditorSnapshot = {
-        frontMatter,
-        questions,
-        sectionHeadings,
-        documentFlow,
-        formattingConfig,
-        activeProjectFilePath: activeProjectFilePath ?? undefined,
-        activeProjectFileRevision: activeProjectFileRevision ?? undefined,
-        logo: selectedLogoForFrontMatter(logosRef.current, frontMatter),
+  useInitialStorageHydrationController<SavedTest, LogoAsset, AutosavedEditorSnapshot>({
+    loadDiskStorage: async () => {
+      const [testsResponse, autosaveResponse, logosResponse] = await Promise.all([
+        listLegacyStoredTests<unknown>(),
+        getStorageAutosave<unknown>(),
+        listStoredLogos<unknown>(),
+      ]);
+      return {
+        legacySavedTests: normalizeSavedTests(testsResponse.tests),
+        autosave: normalizeEditorSnapshot(autosaveResponse.autosave),
+        logos: normalizeLogoAssets(logosResponse.logos),
       };
-
-      async function saveDraftIfProjectRevisionIsCurrent() {
-        try {
-          if (activeProjectFilePath && typeof activeProjectFileRevision === "number") {
-            const project = activeProject ?? (await getDefaultProject());
-            const filesResponse = await listProjectFiles(project.id);
-            const summary = filesResponse.files.find((file) => file.path === activeProjectFilePath && file.kind === "file");
-            setActiveProject(project);
-            setProjectFiles(filesResponse.files);
-            if (summary && summary.revision > activeProjectFileRevision) {
-              const conflict = {
-                filePath: activeProjectFilePath,
-                message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-                localRevision: activeProjectFileRevision,
-                currentRevision: summary.revision,
-              };
-              if (lastProjectSaveFingerprintRef.current === currentEditorDocumentFingerprint()) {
-                setDraftAutosaveStatus("ready");
-                setDraftAutosaveMessage("File changed on disk; reloading");
-                void syncActiveProjectFileFromDisk();
-                return;
-              }
-              setProjectSaveConflict(conflict);
-              setProjectFilesStatus("error");
-              setProjectFilesMessage("File changed on disk");
-              setDraftAutosaveStatus("ready");
-              setDraftAutosaveMessage("Draft not autosaved; file changed on disk");
-              return;
-            }
-          }
-
-          await saveStorageAutosave<AutosavedEditorSnapshot>(autosaveSnapshot).then((autosaveResponse) => {
-            if (autosaveSequenceRef.current !== autosaveSequence) return;
-            setDraftAutosaveStatus("saved");
-            const updatedAt = autosaveResponse.autosave.updatedAt
-              ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
-              : "now";
-            setDraftAutosaveMessage(`Autosaved draft at ${updatedAt}`);
-          });
-        } catch {
-          if (autosaveSequenceRef.current !== autosaveSequence) return;
-          setDraftAutosaveStatus("unavailable");
-          setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
-        }
-      }
-
-      void saveDraftIfProjectRevisionIsCurrent();
-    }, AUTOSAVE_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-    // draftAutosaveStatus is used as a guard; including it would reschedule autosave status updates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeProjectFilePath,
-    activeProjectFileRevision,
-    documentFlow,
-    editorDocumentOpen,
-    formattingConfig,
-    frontMatter,
-    questions,
-    sectionHeadings,
-    storageHydrated,
-  ]);
+    },
+    fallbackLegacySavedTests: legacySavedTests,
+    currentLogos: () => logosRef.current,
+    starterLogos: STARTER_LOGOS,
+    legacySavedTestLogo: (test) => test.logo,
+    shouldSeedStarterLogos,
+    mergeLegacySavedTests,
+    buildMergedLogos: ({ diskLogos, localLogos, starterLogos, legacySavedTestLogos }) =>
+      appendMissingLogoAssets(
+        appendMissingLogoAssets(appendMissingLogoAssets(diskLogos.length ? diskLogos : localLogos, starterLogos), localLogos),
+        legacySavedTestLogos,
+      ),
+    persistMergedStorage: (mergedLegacySavedTests, mergedLogos) => {
+      setLegacySavedTests(mergedLegacySavedTests);
+      setLogos(mergedLogos);
+      logosRef.current = mergedLogos;
+      persistLogoLibrary(mergedLogos);
+      markStarterLogosSeeded();
+      persistLegacySavedTests(mergedLegacySavedTests);
+    },
+    saveLogoToDisk: (logo) => saveStoredLogo<LogoAsset>(logo),
+    loadBrowserAutosave: () => loadCurrentDraft(),
+    newerAutosave,
+    isClosedAutosave: (autosave) => autosave.documentOpen === false,
+    clearAutosaveProjectFile: (autosave) => ({
+      ...autosave,
+      activeProjectFilePath: undefined,
+      activeProjectFileRevision: undefined,
+    }),
+    autosaveProjectFileRevision: (autosave) => ({
+      filePath: autosave.activeProjectFilePath,
+      revision: autosave.activeProjectFileRevision,
+    }),
+    resolveAutosaveAgainstProjectFile,
+    restoreAutosave: ({ autosave, project, cleanFingerprint, conflict }) => {
+      restoreEditorSnapshot(autosave);
+      if (project) setActiveProject(project);
+      setActiveProjectFileState(autosave.activeProjectFilePath ?? null, autosave.activeProjectFileRevision ?? null);
+      setProjectSaveConflict(conflict);
+      updateLastProjectSaveFingerprint(cleanFingerprint);
+      setEditorDocumentOpenState(autosave.documentOpen !== false);
+    },
+    setStorageHydrated,
+    setDraftAutosaveStatus,
+    setDraftAutosaveMessage,
+  });
 
   const previewFrontMatter = useDeferredValue(frontMatter);
   const previewQuestions = useDeferredValue(questions);
@@ -9454,24 +9223,16 @@ export default function App() {
   const previewShowSolutions = useDeferredValue(effectiveShowSolutions);
   const totalMarks = questions.reduce((sum, question) => sum + questionMarks(question), 0);
   const previewTotalMarks = useMemo(() => previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0), [previewQuestions]);
-  const canUndo = historyVersion >= 0 && undoStackRef.current.length > 0;
-  const canRedo = historyVersion >= 0 && redoStackRef.current.length > 0;
   const showEditor = paneMode === "split";
   const showPreview = true;
   const showInspectorPane = showEditor && inspectorOpen;
   const darkMode = theme === "dark";
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
-  const previewFitScale = useMemo(() => {
-    if (!previewViewport.width) return 1;
-    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / currentPageFormat.widthPx;
-    return clamp(Math.min(widthScale, MAX_PREVIEW_FIT_SCALE), MIN_PREVIEW_SCALE, MAX_PREVIEW_FIT_SCALE);
-  }, [currentPageFormat.widthPx, previewViewport.width]);
-  const previewMaxZoom = useMemo(() => {
-    if (!previewViewport.width || previewFitScale <= 0) return 1;
-    const maxTotalScale = MAX_PREVIEW_FIT_SCALE;
-    return clampPreviewZoom(maxTotalScale / previewFitScale);
-  }, [previewFitScale, previewViewport.width]);
-  const previewLayoutScale = previewFitScale * previewZoomRef.current;
+  const { previewFitScale, previewLayoutScale, resetPreviewZoom } = usePreviewZoomController({
+    previewPaneRef,
+    currentPageFormat,
+    showPreview,
+  });
   const workspaceStyle = useMemo(
     () => ({
       gridTemplateColumns:
@@ -9516,156 +9277,148 @@ export default function App() {
       ),
     [documentFlow, formattingConfig, frontMatter, logos, questions, sectionHeadings],
   );
-  const hasUnsavedProjectChanges = Boolean(activeProjectFilePath && lastProjectSaveFingerprint !== currentDocumentFingerprint);
-  const activeProjectFileSummary = activeProjectFilePath ? projectFiles.find((file) => file.path === activeProjectFilePath) : undefined;
-  const activeProjectTestPath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
-  const activeProjectPathLabel = activeProjectFilePath
-    ? activeProjectTestPath
-      ? `${TEST_FILE_ROOT_LABEL}/${activeProjectTestPath}`
-      : activeProjectFilePath
-    : "";
-  const activeProjectRevisionIssue =
-    activeProjectFilePath && projectSaveConflict?.filePath === activeProjectFilePath
-      ? projectSaveConflict
-      : activeProjectFilePath && activeProjectFileRevision === null
-        ? missingProjectRevisionConflict(activeProjectFilePath)
-        : null;
-  const activeProjectSavedAt = formatShortDateTime(activeProjectFileSummary?.updatedAt);
-  const draftBackupSummary = draftBackupStatusSummary(draftAutosaveStatus, draftAutosaveMessage);
-  const currentProjectFileName = !editorDocumentOpen
-    ? "No file open"
-    : activeProjectFilePath
-      ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? activeProjectFilePath))
-      : "Untitled test";
-  const fileOperationBusy = projectFilesStatus === "saving" || projectFilesStatus === "loading";
-  const headerFileStatusMessage = fileOperationBusy
-    ? projectFilesMessage || "Working with files"
-    : !editorDocumentOpen
-      ? "Create a new Mauth document to begin"
-      : activeProjectFilePath
-        ? activeProjectRevisionIssue
-          ? "File changed outside app · reload or Save as"
-          : hasUnsavedProjectChanges
-            ? `Unsaved file changes · ${draftBackupSummary}`
-            : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
-        : `New file not saved · ${draftBackupSummary}`;
-  const headerFileStatusTitle = fileOperationBusy
-    ? [projectFilesMessage || "Working with files", activeProjectPathLabel ? `Current file: ${activeProjectPathLabel}` : ""]
-        .filter(Boolean)
-        .join("\n")
-    : !editorDocumentOpen
-      ? "No file is open. Create a new Mauth document or open one from Files."
-      : activeProjectFilePath
-        ? [
-            `File: ${currentProjectFileName}`,
-            `Path: ${activeProjectPathLabel}`,
-            activeProjectRevisionIssue
-              ? [
-                  `File save: ${activeProjectRevisionIssue.message}`,
-                  typeof activeProjectRevisionIssue.localRevision === "number"
-                    ? `Loaded revision: ${activeProjectRevisionIssue.localRevision}`
-                    : "",
-                  typeof activeProjectRevisionIssue.currentRevision === "number"
-                    ? `Disk revision: ${activeProjectRevisionIssue.currentRevision}`
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join("\n")
-              : hasUnsavedProjectChanges
-                ? "File save: unsaved changes. Press Save to write the project file."
-                : `File save: saved${activeProjectSavedAt ? ` ${activeProjectSavedAt}` : ""}`,
-            `Draft backup: ${draftBackupSummary}`,
-          ].join("\n")
-        : [
-            `File: ${currentProjectFileName}`,
-            "File save: not saved yet. Press Save or Save as to create a project file.",
-            `Draft backup: ${draftBackupSummary}`,
-          ].join("\n");
-  const headerStorageStatus: HeaderSaveStatus = fileOperationBusy
-    ? "saving"
-    : !editorDocumentOpen
-      ? "ready"
-      : activeProjectFilePath
-        ? activeProjectRevisionIssue
-          ? "conflict"
-          : hasUnsavedProjectChanges
-            ? "dirty"
-            : "saved"
-        : draftAutosaveStatus === "saved"
-          ? "draft"
-          : draftAutosaveStatus;
-  const hasUnsavedDraftChanges = Boolean(
-    editorDocumentOpen && !activeProjectFilePath && cleanUnsavedDocumentFingerprintRef.current !== currentDocumentFingerprint,
-  );
-  const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? null;
-  const activeSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
-  const activeSectionHeading = sectionHeadings.find((heading) => heading.id === activeSectionHeadingId) ?? null;
-  const editingSectionHeading = Boolean(activeSectionHeading);
-  const editingFrontMatter = activeTocItemId === SCROLL_ANCHOR_FRONT_MATTER;
-  const pageBreakQuestionIds = useMemo(() => pageBreakQuestionIdSet(questions), [questions]);
-  const activePageBreakQuestionId = pageBreakQuestionIdFromScrollAnchor(activeTocItemId);
-  const activePageBreakQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? null;
-  const editingPageBreak = Boolean(activePageBreakQuestion && questionHasPageBreak(activePageBreakQuestion));
-  const selectedEditorBlock = useMemo(() => selectedEditorBlockFromAnchor(questions, activeTocItemId), [activeTocItemId, questions]);
-  const selectionInspectorVisible =
-    showInspectorPane && !editingFrontMatter && !editingPageBreak && !editingSectionHeading && Boolean(selectedEditorBlock);
-
-  useLayoutEffect(() => {
-    frontMatterRef.current = frontMatter;
-    formattingConfigRef.current = formattingConfig;
-    questionsRef.current = questions;
-    sectionHeadingsRef.current = sectionHeadings;
-    documentFlowRef.current = documentFlow;
-    logosRef.current = logos;
-    legacySavedTestsRef.current = legacySavedTests;
-    activeProjectFilePathRef.current = activeProjectFilePath;
-    activeProjectFileRevisionRef.current = activeProjectFileRevision;
-    showSolutionsRef.current = showSolutions;
-  }, [
+  const draftChangeKey = `${editorDocumentOpen ? "open" : "closed"}|${activeProjectFilePath ?? ""}|${activeProjectFileRevision ?? ""}|${currentDocumentFingerprint}`;
+  useDraftAutosaveController<AutosavedEditorSnapshot>({
+    storageHydrated,
+    diskAutosaveAvailable: draftAutosaveStatus !== "unavailable",
+    editorDocumentOpen,
     activeProjectFilePath,
     activeProjectFileRevision,
-    documentFlow,
-    formattingConfig,
-    frontMatter,
-    legacySavedTests,
-    logos,
+    draftChangeKey,
+    createAutosaveSnapshot: currentDraftSnapshotForStorage,
+    persistLocalDraft: persistCurrentDraft,
+    saveDiskAutosave: async (snapshot) => {
+      const autosaveResponse = await saveStorageAutosave<AutosavedEditorSnapshot>(snapshot);
+      return autosaveResponse.autosave;
+    },
+    loadProjectFileSummary: async (filePath) => {
+      const project = activeProject ?? (await getDefaultProject());
+      const filesResponse = await listProjectFiles(project.id);
+      setActiveProject(project);
+      setProjectFiles(filesResponse.files);
+      return filesResponse.files.find((file) => file.path === filePath && file.kind === "file");
+    },
+    isCurrentProjectFileClean: () => lastProjectSaveFingerprintRef.current === currentEditorDocumentFingerprint(),
+    reloadActiveProjectFileFromDisk: () => {
+      void syncActiveProjectFileFromDisk();
+    },
+    setDraftAutosaveStatus,
+    setDraftAutosaveMessage,
+    setProjectSaveConflict,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+    localDraftDebounceMs: LOCAL_DRAFT_DEBOUNCE_MS,
+    diskAutosaveDebounceMs: AUTOSAVE_DEBOUNCE_MS,
+  });
+  const {
+    hasUnsavedProjectChanges,
+    activeProjectRevisionIssue,
+    currentProjectFileName,
+    fileOperationBusy,
+    headerFileStatusMessage,
+    headerFileStatusTitle,
+    headerStorageStatus,
+    hasUnsavedDraftChanges,
+  } = useProjectFileStatus({
+    editorDocumentOpen,
+    activeProjectFilePath,
+    activeProjectFileRevision,
+    projectSaveConflict,
+    projectFiles,
+    projectFilesStatus,
+    projectFilesMessage,
+    currentDocumentFingerprint,
+    lastProjectSaveFingerprint,
+    cleanUnsavedDocumentFingerprint: cleanUnsavedDocumentFingerprintRef.current,
+    draftAutosaveStatus,
+    draftAutosaveMessage,
+  });
+  const {
+    activeQuestion,
+    activeSectionHeading,
+    editingSectionHeading,
+    editingFrontMatter,
+    pageBreakQuestionIds,
+    activePageBreakQuestion,
+    editingPageBreak,
+    selectedEditorBlock,
+    selectionInspectorVisible,
+  } = useEditorSelectionController<QuestionBlock, DocumentSectionHeading, DocumentFlowItem, SelectedEditorBlock>({
     questions,
     sectionHeadings,
-    showSolutions,
-  ]);
+    documentFlow,
+    activeQuestionId,
+    setActiveQuestionId,
+    activeTocItemId,
+    setActiveTocItemId,
+    setActiveRailItemId,
+    showInspectorPane,
+    frontMatterAnchor: SCROLL_ANCHOR_FRONT_MATTER,
+    questionScrollAnchor,
+    sectionHeadingIdFromScrollAnchor,
+    pageBreakQuestionIdFromScrollAnchor,
+    selectedEditorBlockFromAnchor,
+    questionHasPageBreak,
+    existingOrFirstQuestionId,
+    normalizeDocumentFlow,
+    firstDocumentFlowAnchor,
+  });
 
-  useEffect(() => {
-    if (!questions.length) {
-      setActiveQuestionId("");
-      setActiveTocItemId(SCROLL_ANCHOR_FRONT_MATTER);
-      setActiveRailItemId(SCROLL_ANCHOR_FRONT_MATTER);
-      return;
-    }
+  const {
+    clearPendingDocumentJumps,
+    queueDocumentJump,
+    queuePreviewJump,
+    handlePreviewPointerDown,
+    handlePreviewClick,
+    jumpToTocItem,
+    jumpPreviewToTocItem,
+    selectPageBreakInRail,
+    toggleEditorAtTocItem,
+    jumpPreviewToQuestion,
+    toggleManualPane,
+    toggleInspectorPane,
+  } = useEditorNavigationController<DocumentTocItem>({
+    editorPaneRef,
+    previewPaneRef,
+    documentTocItems,
+    showEditor,
+    showPreview,
+    paneMode,
+    activeQuestionId,
+    activeTocItemId,
+    editorRevealSequence: editorRevealRequest?.sequence,
+    previewFitScale,
+    documentLayoutKey: questions,
+    previewEditClickMoveTolerancePx: PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX,
+    setPaneMode,
+    setInspectorOpen,
+    setActiveTocItemId,
+    setActiveRailItemId,
+    selectQuestionInEditor,
+    revealEditorAnchor,
+    resetPreviewZoom,
+    scrollToAnchorPosition,
+    scrollAnchorFallbacks,
+    graphChildParentScrollAnchor,
+    previewAnchorFromEventTarget,
+    questionIdFromScrollAnchor,
+    questionScrollAnchor,
+  });
 
-    if (activeSectionHeadingId) {
-      if (sectionHeadings.some((heading) => heading.id === activeSectionHeadingId)) return;
-      const fallbackAnchor = firstDocumentFlowAnchor(normalizeDocumentFlow(documentFlow, questions, sectionHeadings), questions);
-      setActiveTocItemId(fallbackAnchor);
-      setActiveRailItemId(fallbackAnchor);
-      return;
-    }
+  const { contextMenu, closeContextMenu, openContextMenu, handlePreviewContextMenu, handleEditorHeaderContextMenu } =
+    useEditorContextMenuController<DocumentTocItem>({
+      previewPaneRef,
+      contextDescriptorForAnchor,
+      selectContextAnchor,
+      contextActionsForAnchor,
+      previewAnchorFromEventTarget,
+    });
 
-    if (activePageBreakQuestionId) {
-      const fallbackQuestion = questions.find((question) => question.id === activePageBreakQuestionId) ?? questions[0];
-      const fallbackAnchor = questionScrollAnchor(fallbackQuestion.id);
-      setActiveQuestionId(fallbackQuestion.id);
-      setActiveTocItemId(fallbackAnchor);
-      return;
-    }
-
-    const nextActiveQuestionId = existingOrFirstQuestionId(questions, activeQuestionId);
-    if (nextActiveQuestionId !== activeQuestionId) {
-      const nextAnchor = questionScrollAnchor(nextActiveQuestionId);
-      setActiveQuestionId(nextActiveQuestionId);
-      setActiveTocItemId(nextAnchor);
-      setActiveRailItemId(nextAnchor);
-    }
-  }, [activePageBreakQuestionId, activeQuestionId, activeSectionHeadingId, documentFlow, questions, sectionHeadings]);
+  useLayoutEffect(() => {
+    logosRef.current = logos;
+    legacySavedTestsRef.current = legacySavedTests;
+    showSolutionsRef.current = showSolutions;
+  }, [legacySavedTests, logos, showSolutions]);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -9675,20 +9428,6 @@ export default function App() {
       // Theme still applies for the current session if browser storage is unavailable.
     }
   }, [theme]);
-
-  useLayoutEffect(() => {
-    const previewPane = previewPaneRef.current;
-    if (!previewPane || !showPreview) return;
-
-    const updatePreviewViewport = () => {
-      setPreviewViewport({ width: previewPaneContentWidth(previewPane), height: previewPaneContentHeight(previewPane) });
-    };
-
-    updatePreviewViewport();
-    const observer = new ResizeObserver(updatePreviewViewport);
-    observer.observe(previewPane);
-    return () => observer.disconnect();
-  }, [showPreview]);
 
   useLayoutEffect(() => {
     const previewPane = previewPaneRef.current;
@@ -9706,111 +9445,6 @@ export default function App() {
     showPreview,
   ]);
 
-  useEffect(() => {
-    const previewPane = previewPaneRef.current;
-    if (!previewPane || !showPreview) return;
-    let previewZoomFrameId: number | null = null;
-    let pendingPreviewScrollTarget: { scrollLeft: number; scrollTop: number } | null = null;
-
-    const schedulePreviewZoomStateSync = (nextZoom: number) => {
-      if (previewZoomStateSyncTimerRef.current) window.clearTimeout(previewZoomStateSyncTimerRef.current);
-      previewZoomStateSyncTimerRef.current = window.setTimeout(() => {
-        previewZoomStateSyncTimerRef.current = null;
-        setPreviewZoom((currentZoom) => (currentZoom === nextZoom ? currentZoom : nextZoom));
-      }, PREVIEW_ZOOM_STATE_SYNC_DELAY_MS);
-    };
-
-    const applyPreviewZoom = (nextZoom: number, point: { clientX: number; clientY: number }) => {
-      const currentZoom = previewZoomRef.current;
-      const clampedZoom = clampPreviewZoom(nextZoom, previewMaxZoom);
-      if (clampedZoom === currentZoom) return;
-      const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
-      const nextScale = previewFitScale * clampedZoom;
-      pendingPreviewScrollTarget = previewZoomScrollTarget({
-        previewPane,
-        currentScale: previewFitScale * currentZoom,
-        nextScale,
-        point,
-        currentScrollLeft: pendingPreviewScrollTarget?.scrollLeft,
-        currentScrollTop: pendingPreviewScrollTarget?.scrollTop,
-      });
-
-      previewZoomRef.current = clampedZoom;
-      if (previewRoot) {
-        applyPreviewScaleStyle(previewRoot, currentPageFormat, nextScale);
-        schedulePreviewZoomStateSync(clampedZoom);
-      } else {
-        setPreviewZoom(clampedZoom);
-      }
-
-      if (previewZoomFrameId !== null) return;
-      previewZoomFrameId = window.requestAnimationFrame(() => {
-        previewZoomFrameId = null;
-        const target = pendingPreviewScrollTarget;
-        pendingPreviewScrollTarget = null;
-        if (!target) return;
-        previewPane.scrollLeft = clamp(target.scrollLeft, 0, horizontalScrollableRange(previewPane));
-        previewPane.scrollTop = clamp(target.scrollTop, 0, scrollableRange(previewPane));
-      });
-    };
-
-    const handlePreviewWheel = (event: globalThis.WheelEvent) => {
-      const zoomRequested = event.ctrlKey || event.metaKey || event.altKey;
-      if (!zoomRequested) return;
-
-      event.preventDefault();
-      const delta = normalizedPreviewWheelDelta(event, previewPane.clientHeight);
-      applyPreviewZoom(
-        previewZoomRef.current * Math.exp(-delta * PREVIEW_WHEEL_ZOOM_SENSITIVITY),
-        previewPointFromEvent(event, previewPane),
-      );
-    };
-
-    const handleGestureStart = (event: Event) => {
-      event.preventDefault();
-      previewGestureStartZoomRef.current = previewZoomRef.current;
-    };
-
-    const handleGestureChange = (event: Event) => {
-      const gestureEvent = event as SafariGestureEvent;
-      const scale = Number(gestureEvent.scale);
-      if (!Number.isFinite(scale) || scale <= 0) return;
-      event.preventDefault();
-      applyPreviewZoom(previewGestureStartZoomRef.current * scale, previewPointFromEvent(gestureEvent, previewPane));
-    };
-
-    previewPane.addEventListener("wheel", handlePreviewWheel, { passive: false });
-    previewPane.addEventListener("gesturestart", handleGestureStart, { passive: false });
-    previewPane.addEventListener("gesturechange", handleGestureChange, { passive: false });
-
-    return () => {
-      previewPane.removeEventListener("wheel", handlePreviewWheel);
-      previewPane.removeEventListener("gesturestart", handleGestureStart);
-      previewPane.removeEventListener("gesturechange", handleGestureChange);
-      if (previewZoomFrameId !== null) window.cancelAnimationFrame(previewZoomFrameId);
-      if (previewZoomStateSyncTimerRef.current) {
-        window.clearTimeout(previewZoomStateSyncTimerRef.current);
-        previewZoomStateSyncTimerRef.current = null;
-      }
-    };
-  }, [currentPageFormat, previewFitScale, previewMaxZoom, showPreview]);
-
-  useLayoutEffect(() => {
-    const previewPane = previewPaneRef.current;
-    if (!previewPane) return;
-    const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
-    if (previewRoot) applyPreviewScaleStyle(previewRoot, currentPageFormat, previewFitScale * previewZoomRef.current);
-    previewPane.scrollLeft = clamp(previewPane.scrollLeft, 0, horizontalScrollableRange(previewPane));
-    previewPane.scrollTop = clamp(previewPane.scrollTop, 0, scrollableRange(previewPane));
-  }, [currentPageFormat, previewFitScale, previewZoom]);
-
-  useEffect(() => {
-    const nextZoom = clampPreviewZoom(previewZoomRef.current, previewMaxZoom);
-    if (nextZoom === previewZoomRef.current) return;
-    previewZoomRef.current = nextZoom;
-    setPreviewZoom(nextZoom);
-  }, [previewMaxZoom]);
-
   useLayoutEffect(() => {
     const editorPane = editorPaneRef.current;
     if (!editorPane || !showEditor) return;
@@ -9825,88 +9459,6 @@ export default function App() {
     return () => editorPane.removeEventListener("scroll", keepEditorPinnedLeft);
   }, [showEditor]);
 
-  useLayoutEffect(() => {
-    if (!pendingEditorJumpAnchorRef.current && !pendingPreviewJumpAnchorRef.current) return;
-
-    let firstFrame = 0;
-    let secondFrame = 0;
-    let retryFrame = 0;
-    const jumpPendingAnchors = () => {
-      let attemptedJump = false;
-      const editorAnchor = pendingEditorJumpAnchorRef.current;
-      const previewAnchor = pendingPreviewJumpAnchorRef.current;
-
-      if (editorAnchor && showEditor && editorPaneRef.current) {
-        attemptedJump = true;
-        if (scrollToAnchorPosition(editorPaneRef.current, { anchor: editorAnchor, progress: 0 })) {
-          pendingEditorJumpAnchorRef.current = null;
-        }
-      }
-
-      if (previewAnchor && showPreview && previewPaneRef.current) {
-        attemptedJump = true;
-        if (scrollToAnchorPosition(previewPaneRef.current, { anchor: previewAnchor, progress: 0 })) {
-          pendingPreviewJumpAnchorRef.current = null;
-        }
-      }
-
-      return attemptedJump;
-    };
-
-    firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        if (!jumpPendingAnchors()) {
-          retryFrame = window.requestAnimationFrame(() => {
-            jumpPendingAnchors();
-          });
-        }
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-      window.cancelAnimationFrame(retryFrame);
-    };
-  }, [activeQuestionId, activeTocItemId, editorRevealRequest?.sequence, showEditor, showPreview, previewFitScale, questions]);
-
-  function currentEditorSnapshot(): EditorHistorySnapshot {
-    return {
-      frontMatter: frontMatterRef.current,
-      questions: questionsRef.current,
-      sectionHeadings: sectionHeadingsRef.current,
-      documentFlow: documentFlowRef.current,
-      formattingConfig: formattingConfigRef.current,
-    };
-  }
-
-  function pushEditorHistory() {
-    undoStackRef.current = [...undoStackRef.current.slice(-(HISTORY_LIMIT - 1)), currentEditorSnapshot()];
-    redoStackRef.current = [];
-    setHistoryVersion((current) => current + 1);
-  }
-
-  function setQuestionsWithHistory(updater: QuestionBlock[] | ((current: QuestionBlock[]) => QuestionBlock[])) {
-    pushEditorHistory();
-    const previousQuestions = questionsRef.current;
-    const nextQuestions = typeof updater === "function" ? updater(previousQuestions) : updater;
-    const nextFlow = normalizedDocumentFlowFromState(previousQuestions, nextQuestions, sectionHeadingsRef.current, documentFlowRef.current);
-    questionsRef.current = nextQuestions;
-    documentFlowRef.current = nextFlow;
-    setQuestions(nextQuestions);
-    setDocumentFlow(nextFlow);
-  }
-
-  function currentEditorDocument(): EditorDocumentState {
-    return {
-      frontMatter: frontMatterRef.current,
-      questions: questionsRef.current,
-      sectionHeadings: sectionHeadingsRef.current,
-      documentFlow: documentFlowRef.current,
-      formattingConfig: formattingConfigRef.current,
-    };
-  }
-
   function currentEditorDocumentFingerprint() {
     return editorDocumentFingerprint(
       frontMatterRef.current,
@@ -9918,392 +9470,44 @@ export default function App() {
     );
   }
 
-  function editorSnapshotFingerprint(snapshot: EditorHistorySnapshot, logo?: LogoAsset | null) {
-    return editorDocumentFingerprint(
-      snapshot.frontMatter,
-      snapshot.questions,
-      snapshot.formattingConfig,
-      logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter),
-      snapshot.sectionHeadings,
-      snapshot.documentFlow,
-    );
-  }
+  const {
+    applyEditorAction,
+    applyEditorActions,
+    applyEditorDocumentAction,
+    previewEditorDocumentActions,
+    evaluateEditorDocumentActions,
+    applyEditorDocumentActions,
+  } = useEditorDocumentActionsController<QuestionBlock, FrontMatterConfig, FormattingConfig, EditorDocumentState>({
+    currentQuestions: () => questionsRef.current,
+    currentDocument: currentEditorDocument,
+    currentTitlePageTemplate: () => titlePageTemplateFromValue(frontMatterRef.current.titlePageTemplate),
+    titlePageTemplateFromValue,
+    normalizeQuestion: withNormalizedQuestionOrder,
+    normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
+    normalizeFrontMatter: (nextFrontMatter) => normalizeFrontMatter(nextFrontMatter) ?? DEFAULT_FRONT_MATTER,
+    normalizeFormattingConfig: normalizeFormattingConfig,
+    validateSolutions: (nextQuestions) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
+    validateDocument: (document) => validateSolutionCompleteness(document.frontMatter, document.questions),
+    setQuestionsWithHistory,
+    setDocumentWithHistory: setEditorDocumentWithHistory,
+  });
 
-  function savedTestFingerprint(savedTest: SavedTest) {
-    return editorSnapshotFingerprint(savedTest, savedTest.logo ?? selectedLogoForFrontMatter(logosRef.current, savedTest.frontMatter));
-  }
-
-  function autosaveSnapshotFingerprint(snapshot: AutosavedEditorSnapshot) {
-    return editorSnapshotFingerprint(snapshot, snapshot.logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter));
-  }
-
-  function savedTestAutosaveSnapshot(savedTest: SavedTest, filePath: string, revision: number | null): AutosavedEditorSnapshot {
-    return {
-      frontMatter: savedTest.frontMatter,
-      questions: savedTest.questions,
-      sectionHeadings: savedTest.sectionHeadings,
-      documentFlow: savedTest.documentFlow,
-      formattingConfig: savedTest.formattingConfig,
-      logo: savedTest.logo,
-      activeProjectFilePath: filePath,
-      activeProjectFileRevision: revision ?? undefined,
-      updatedAt: savedTest.updatedAt,
-    };
-  }
-
-  function parseSavedTestContent(content: string | null) {
-    if (!content) return null;
-    try {
-      return normalizeSavedTest(JSON.parse(content) as unknown);
-    } catch {
-      return null;
-    }
-  }
-
-  async function projectFileRevisionFingerprint(projectId: string, filePath: string, revision: number) {
-    try {
-      const versionsResponse = await listProjectFileVersions(projectId, filePath);
-      const matchingVersion = versionsResponse.versions.find((version) => version.revision === revision);
-      const savedTest = matchingVersion ? parseSavedTestContent(matchingVersion.content) : null;
-      return savedTest ? savedTestFingerprint(savedTest) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function resolveAutosaveAgainstProjectFile(snapshot: AutosavedEditorSnapshot): Promise<{
-    snapshot: AutosavedEditorSnapshot;
-    project: ProjectSummary | null;
-    cleanFingerprint: string | null;
-    conflict: ProjectSaveConflict | null;
-  }> {
-    const filePath = snapshot.activeProjectFilePath;
-    const localRevision = snapshot.activeProjectFileRevision;
-    if (!filePath || typeof localRevision !== "number") {
-      return { snapshot, project: null, cleanFingerprint: null, conflict: null };
-    }
-
-    const project = activeProject ?? (await getDefaultProject());
-    const document = await getProjectFile(project.id, filePath);
-    const savedTest = parseSavedTestContent(document.content);
-    if (!savedTest) return { snapshot, project, cleanFingerprint: null, conflict: null };
-
-    const currentFingerprint = savedTestFingerprint(savedTest);
-    if (document.revision <= localRevision) {
-      return { snapshot, project, cleanFingerprint: currentFingerprint, conflict: null };
-    }
-
-    const snapshotFingerprint = autosaveSnapshotFingerprint(snapshot);
-    const baseFingerprint = await projectFileRevisionFingerprint(project.id, filePath, localRevision);
-    if (baseFingerprint && snapshotFingerprint === baseFingerprint) {
-      return {
-        snapshot: savedTestAutosaveSnapshot(savedTest, filePath, document.revision),
-        project,
-        cleanFingerprint: currentFingerprint,
-        conflict: null,
-      };
-    }
-
-    return {
-      snapshot,
-      project,
-      cleanFingerprint: baseFingerprint,
-      conflict: {
-        filePath,
-        message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-        localRevision,
-        currentRevision: document.revision,
-      },
-    };
-  }
-
-  function setEditorDocumentWithHistory(document: {
-    frontMatter: FrontMatterConfig;
-    questions: QuestionBlock[];
-    sectionHeadings?: DocumentSectionHeading[];
-    documentFlow?: DocumentFlowItem[];
-    formattingConfig?: FormattingConfig;
-  }) {
-    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
-    const previousQuestions = questionsRef.current;
-    const nextQuestions = normalizeQuestionBlocks(document.questions);
-    const nextSectionHeadings = normalizeSectionHeadings(document.sectionHeadings ?? sectionHeadingsRef.current);
-    const nextDocumentFlow = normalizedDocumentFlowFromState(
-      previousQuestions,
-      nextQuestions,
-      nextSectionHeadings,
-      document.documentFlow ?? documentFlowRef.current,
-    );
-    pushEditorHistory();
-    setFrontMatter(document.frontMatter);
-    setQuestions(nextQuestions);
-    setSectionHeadings(nextSectionHeadings);
-    setDocumentFlow(nextDocumentFlow);
-    setFormattingConfig(nextFormattingConfig);
-    frontMatterRef.current = document.frontMatter;
-    questionsRef.current = nextQuestions;
-    sectionHeadingsRef.current = nextSectionHeadings;
-    documentFlowRef.current = nextDocumentFlow;
-    formattingConfigRef.current = nextFormattingConfig;
-  }
-
-  function normalizeEditorFrontMatter(nextFrontMatter: FrontMatterConfig) {
-    return normalizeFrontMatter(nextFrontMatter) ?? DEFAULT_FRONT_MATTER;
-  }
-
-  function normalizeEditorFormattingConfig(nextFormattingConfig?: FormattingConfig) {
-    return normalizeFormattingConfig(nextFormattingConfig);
-  }
-
-  function documentActionChangesTitlePageTemplate(action: MauthDocumentAction) {
-    const currentTemplate = titlePageTemplateFromValue(frontMatterRef.current.titlePageTemplate);
-    if (action.type === "frontMatter.update") {
-      const patch = asRecord(action.patch);
-      if (!patch || !Object.prototype.hasOwnProperty.call(patch, "titlePageTemplate")) return false;
-      return titlePageTemplateFromValue(patch.titlePageTemplate) !== currentTemplate;
-    }
-
-    if (action.type === "frontMatter.replace") {
-      const replacement = asRecord(action.frontMatter);
-      if (!replacement || !Object.prototype.hasOwnProperty.call(replacement, "titlePageTemplate")) return currentTemplate !== "standard";
-      return titlePageTemplateFromValue(replacement.titlePageTemplate) !== currentTemplate;
-    }
-
-    return false;
-  }
-
-  function templateLockedDocumentActionResult(
-    actions: readonly MauthDocumentAction[],
-    actionType: MauthDocumentAction | "batch",
-  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> | null {
-    const blockedAction = actions.find(documentActionChangesTitlePageTemplate);
-    if (!blockedAction) return null;
-
-    const document = currentEditorDocument();
-    const message = "Document template cannot be changed after creation. Create a new document from the desired template instead.";
-    return {
-      ok: false,
-      actionType: actionType === "batch" ? "batch" : actionType.type,
-      document,
-      questions: document.questions,
-      changedIds: [],
-      warnings: [{ code: "template-locked", message, targetId: "frontMatter.titlePageTemplate" }],
-      error: message,
-      appliedActionTypes: [blockedAction.type],
-    };
-  }
-
-  function editorDocumentActionOptions(): Omit<MauthDocumentActionOptions<QuestionBlock, FrontMatterConfig, FormattingConfig>, "dryRun"> {
-    return {
-      normalizeQuestion: withNormalizedQuestionOrder,
-      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
-      normalizeFrontMatter: normalizeEditorFrontMatter,
-      normalizeFormattingConfig: normalizeEditorFormattingConfig,
-      validateSolutions: (nextQuestions: QuestionBlock[]) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
-      validateDocument: (document) => validateSolutionCompleteness(document.frontMatter, document.questions),
-    };
-  }
-
-  function applyEditorAction(action: MauthAction): MauthActionResult<QuestionBlock> {
-    const result = applyMauthAction<QuestionBlock>(questionsRef.current, action, {
-      normalizeQuestion: withNormalizedQuestionOrder,
-      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
-      validateSolutions: (nextQuestions) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
-    });
-    if (result.ok && result.changedIds.length) {
-      setQuestionsWithHistory(result.questions);
-    }
-    return result;
-  }
-
-  function applyEditorDocumentAction(
-    action: MauthDocumentAction,
-  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
-    const lockedResult = templateLockedDocumentActionResult([action], action);
-    if (lockedResult) return lockedResult;
-
-    const result = applyMauthDocumentAction<QuestionBlock, FrontMatterConfig, FormattingConfig>(
-      currentEditorDocument(),
-      action,
-      editorDocumentActionOptions(),
-    );
-    if (result.ok && result.changedIds.length) {
-      setEditorDocumentWithHistory(result.document);
-    }
-    return result;
-  }
-
-  function previewEditorDocumentActions(
-    actions: MauthDocumentAction[],
-  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
-    const lockedResult = templateLockedDocumentActionResult(actions, "batch");
-    if (lockedResult) return lockedResult;
-
-    return previewMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
-      currentEditorDocument(),
-      actions,
-      editorDocumentActionOptions(),
-    );
-  }
-
-  function applyEditorDocumentActions(
-    actions: MauthDocumentAction[],
-  ): MauthDocumentActionResult<QuestionBlock, FrontMatterConfig, FormattingConfig> {
-    const lockedResult = templateLockedDocumentActionResult(actions, "batch");
-    if (lockedResult) return lockedResult;
-
-    const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
-      currentEditorDocument(),
-      actions,
-      editorDocumentActionOptions(),
-    );
-    if (result.ok && result.changedIds.length) {
-      setEditorDocumentWithHistory(result.document);
-    }
-    return result;
-  }
-
-  function applyEditorActions(actions: MauthAction[]): MauthActionResult<QuestionBlock> {
-    const result = applyMauthActions<QuestionBlock>(questionsRef.current, actions, {
-      normalizeQuestion: withNormalizedQuestionOrder,
-      normalizePart: (part) => withNormalizedPartOrder(part as EditorPart),
-      validateSolutions: (nextQuestions) => validateSolutionCompleteness(frontMatterRef.current, nextQuestions),
-    });
-    if (result.ok && result.changedIds.length) {
-      setQuestionsWithHistory(result.questions);
-    }
-    return result;
-  }
-
-  function readActionProposalActions(): MauthDocumentAction[] | null {
-    try {
-      return parseMauthDocumentActionProposal(actionProposalText);
-    } catch (error) {
-      setActionProposalResult(null);
-      setActionProposalMessage(error instanceof Error ? error.message : "Invalid action proposal JSON.");
-      return null;
-    }
-  }
-
-  function previewActionProposal() {
-    const actions = readActionProposalActions();
-    if (!actions) return;
-    const result = previewEditorDocumentActions(actions);
-    setActionProposalResult(result);
-    setActionProposalMessage(
-      result.ok && result.preview?.valid
-        ? `Dry run valid: ${result.preview.requestedActionCount} action${result.preview.requestedActionCount === 1 ? "" : "s"} checked.`
-        : result.error || result.preview?.error || "Dry run found an issue.",
-    );
-  }
-
-  function applyActionProposal() {
-    const actions = readActionProposalActions();
-    if (!actions) return;
-    const previewResult = previewEditorDocumentActions(actions);
-    setActionProposalResult(previewResult);
-    if (!previewResult.ok || !previewResult.preview?.valid) {
-      setActionProposalMessage(previewResult.error || previewResult.preview?.error || "Dry run failed. Nothing was applied.");
-      return;
-    }
-
-    const result = applyEditorDocumentActions(actions);
-    setActionProposalResult({ ...result, preview: previewResult.preview });
-    setActionProposalMessage(
-      result.ok
-        ? `Applied ${actions.length} action${actions.length === 1 ? "" : "s"}${result.changedIds.length ? `, changed ${result.changedIds.length} item${result.changedIds.length === 1 ? "" : "s"}` : ""}.`
-        : result.error || "Action proposal failed. Nothing was applied.",
-    );
-  }
-
-  function clearActionProposal() {
-    setActionProposalText("");
-    setActionProposalMessage("");
-    setActionProposalResult(null);
-  }
-
-  function restoreEditorSnapshot(snapshot: EditorHistorySnapshot) {
-    const nextActiveQuestionId = existingOrFirstQuestionId(snapshot.questions, activeQuestionId);
-    const nextSectionHeadings = normalizeSectionHeadings(snapshot.sectionHeadings);
-    const nextDocumentFlow = normalizeDocumentFlow(snapshot.documentFlow, snapshot.questions, nextSectionHeadings);
-    const snapshotLogo = "logo" in snapshot ? normalizeLogoAsset(snapshot.logo) : undefined;
-    if (snapshotLogo) {
-      setLogos((current) => {
-        const next = mergeLogoAssets(current, [snapshotLogo]);
-        if (next !== current) {
-          logosRef.current = next;
-          persistLogoLibrary(next);
-        }
-        return next;
-      });
-      writeLogoToDisk(snapshotLogo);
-    }
-    setFrontMatter(snapshot.frontMatter);
-    setQuestions(snapshot.questions);
-    setSectionHeadings(nextSectionHeadings);
-    setDocumentFlow(nextDocumentFlow);
-    setFormattingConfig(snapshot.formattingConfig);
-    frontMatterRef.current = snapshot.frontMatter;
-    questionsRef.current = snapshot.questions;
-    sectionHeadingsRef.current = nextSectionHeadings;
-    documentFlowRef.current = nextDocumentFlow;
-    formattingConfigRef.current = snapshot.formattingConfig;
-    if (nextActiveQuestionId !== activeQuestionId) {
-      const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
-      setActiveQuestionId(nextActiveQuestionId);
-      setActiveTocItemId(nextAnchor);
-      setActiveRailItemId(nextAnchor);
-    } else {
-      const activeTocSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
-      if (activeTocSectionHeadingId && !nextSectionHeadings.some((heading) => heading.id === activeTocSectionHeadingId)) {
-        const nextAnchor = firstDocumentFlowAnchor(nextDocumentFlow, snapshot.questions);
-        setActiveTocItemId(nextAnchor);
-        setActiveRailItemId(nextAnchor);
-      }
-      const activeTocQuestionId = questionIdFromScrollAnchor(activeTocItemId);
-      if (activeTocQuestionId && !snapshot.questions.some((question) => question.id === activeTocQuestionId)) {
-        const nextAnchor = nextActiveQuestionId ? questionScrollAnchor(nextActiveQuestionId) : SCROLL_ANCHOR_FRONT_MATTER;
-        setActiveTocItemId(nextAnchor);
-        setActiveRailItemId(nextAnchor);
-      }
-    }
-    setDraggedQuestionId(null);
-    setDragOverQuestion(null);
-    setDraggedPageBreakQuestionId(null);
-    setDragOverPageBreak(null);
-    setDraggedSubsection(null);
-    setDragOverSubsection(null);
-    setDraggedEditorPageBreak(null);
-    setDragOverEditorPageBreak(null);
-  }
-
-  function undoEdit() {
-    const snapshot = undoStackRef.current.at(-1);
-    if (!snapshot) return;
-    undoStackRef.current = undoStackRef.current.slice(0, -1);
-    redoStackRef.current = [...redoStackRef.current.slice(-(HISTORY_LIMIT - 1)), currentEditorSnapshot()];
-    restoreEditorSnapshot(snapshot);
-    setHistoryVersion((current) => current + 1);
-  }
-
-  function redoEdit() {
-    const snapshot = redoStackRef.current.at(-1);
-    if (!snapshot) return;
-    redoStackRef.current = redoStackRef.current.slice(0, -1);
-    undoStackRef.current = [...undoStackRef.current.slice(-(HISTORY_LIMIT - 1)), currentEditorSnapshot()];
-    restoreEditorSnapshot(snapshot);
-    setHistoryVersion((current) => current + 1);
-  }
-
-  function setSectionFlowWithHistory(nextSectionHeadings: DocumentSectionHeading[], nextDocumentFlow: DocumentFlowItem[]) {
-    const normalizedHeadings = normalizeSectionHeadings(nextSectionHeadings);
-    const normalizedFlow = normalizeDocumentFlow(nextDocumentFlow, questionsRef.current, normalizedHeadings);
-    pushEditorHistory();
-    sectionHeadingsRef.current = normalizedHeadings;
-    documentFlowRef.current = normalizedFlow;
-    setSectionHeadings(normalizedHeadings);
-    setDocumentFlow(normalizedFlow);
-  }
+  const {
+    actionProposalOpen,
+    setActionProposalOpen,
+    actionProposalText,
+    setActionProposalText,
+    actionProposalMessage,
+    actionProposalResult,
+    previewActionProposal,
+    applyActionProposal,
+    clearActionProposal,
+    clearActionProposalFeedback,
+  } = useMauthActionProposalController<QuestionBlock, FrontMatterConfig, FormattingConfig>({
+    parseActions: parseMauthDocumentActionProposal,
+    previewActions: previewEditorDocumentActions,
+    applyActions: applyEditorDocumentActions,
+  });
 
   function topLevelFlowInsertIndex(anchor: string) {
     const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
@@ -10449,388 +9653,207 @@ export default function App() {
     }
   }
 
-  function saveCurrentTest() {
-    if (!editorDocumentOpenRef.current) return;
-    void saveCurrentTestToProjectFile("");
+  function clearActiveProjectFile() {
+    clearActiveProjectFileState();
   }
 
-  function startNewTest() {
-    setNewTestDialogOpen(true);
-  }
+  const { createNewDocumentFromTemplate: createNewTestFromTemplate } = useNewDocumentController<
+    TitlePageTemplate,
+    QuestionBlock[],
+    EditorDocumentState
+  >({
+    storageHydrated,
+    editorDocumentOpen,
+    starterChangeKey: questions,
+    shouldSeedStarter: () => shouldSeedScreenshotStarter(questionsRef.current),
+    createStarterDocument: () => {
+      const nextQuestions = createScreenshotStarterQuestions();
+      const nextSectionHeadings: DocumentSectionHeading[] = [];
+      const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
+      return {
+        document: {
+          frontMatter: createScreenshotStarterFrontMatter(),
+          questions: nextQuestions,
+          sectionHeadings: nextSectionHeadings,
+          documentFlow: nextDocumentFlow,
+          formattingConfig: cloneSerializable(DEFAULT_FORMATTING_CONFIG),
+        },
+        activeQuestionId: firstQuestionId(nextQuestions),
+        anchor: firstQuestionAnchor(nextQuestions),
+        markSeeded: () => window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID),
+      };
+    },
+    createTemplateDocument: (template) => {
+      const currentLogo = selectedLogoFromLibrary(logosRef.current, frontMatterRef.current.logoId);
+      const frontMatterTemplate =
+        template === "exam"
+          ? DEFAULT_EXAM_FRONT_MATTER
+          : template === "worksheet"
+            ? DEFAULT_WORKSHEET_FRONT_MATTER
+            : template === "notes"
+              ? DEFAULT_NOTES_FRONT_MATTER
+              : DEFAULT_FRONT_MATTER;
+      const nextFrontMatter = {
+        ...cloneSerializable(frontMatterTemplate),
+        logoId: currentLogo.id,
+        schoolName: currentLogo.schoolName ?? frontMatterRef.current.schoolName,
+      };
+      const nextQuestions = template === "notes" ? [createNotesSection()] : [createQuestion()];
+      const nextSectionHeadings: DocumentSectionHeading[] = [];
+      const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
+      const nextFormattingConfig = formattingConfigForPresetId(
+        NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
+      );
+      const nextAnchor = questionScrollAnchor(nextQuestions[0].id);
+      return {
+        document: {
+          frontMatter: nextFrontMatter,
+          questions: nextQuestions,
+          sectionHeadings: nextSectionHeadings,
+          documentFlow: nextDocumentFlow,
+          formattingConfig: nextFormattingConfig,
+        },
+        activeQuestionId: nextQuestions[0].id,
+        anchor: nextAnchor,
+        cleanFingerprint: editorDocumentFingerprint(
+          nextFrontMatter,
+          nextQuestions,
+          nextFormattingConfig,
+          currentLogo,
+          nextSectionHeadings,
+          nextDocumentFlow,
+        ),
+      };
+    },
+    setDocument: setEditorDocument,
+    setDocumentOpen: setEditorDocumentOpenState,
+    setCleanUnsavedDocumentFingerprint: (fingerprint) => {
+      cleanUnsavedDocumentFingerprintRef.current = fingerprint;
+    },
+    clearActiveProjectFileState,
+    setActiveQuestionId,
+    setActiveTocItemId,
+    setActiveRailItemId,
+    pushHistory: pushEditorHistory,
+    clearTransientEditorState: clearEditorTransientState,
+    closeNewDocumentDialog: () => setNewTestDialogOpen(false),
+    closeFileManager: () => setFileManagerOpen(false),
+    queueDocumentJump,
+  });
 
-  function persistClosedEditorState() {
-    const closedSnapshot: AutosavedEditorSnapshot = {
+  const {
+    writeEditorDocumentToProjectFile,
+    writeCurrentTestProjectFile,
+    saveCurrentProjectFileBeforeOpening,
+    saveCurrentTestToProjectFile,
+  } = useProjectDocumentPersistenceController<EditorDocumentState>({
+    activeProject,
+    projectFiles,
+    activeProjectFilePath,
+    activeProjectFilePathRef,
+    activeProjectFileRevisionRef,
+    hasUnsavedProjectChanges,
+    currentProjectFileName,
+    revisionMissingErrorMessage: PROJECT_FILE_REVISION_MISSING_ERROR,
+    currentDocument: currentEditorDocument,
+    defaultProjectFileName: () =>
+      activeProjectFilePath && testPathFromProjectPath(activeProjectFilePath)
+        ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? ""))
+        : defaultSavedTestName(frontMatter),
+    serializeProjectDocument: ({ filePath, testName, document }) => {
+      const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+      const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
+      const savedTest = createSavedTestSnapshot({
+        testId: `project-file:${filePath}`,
+        name: testName,
+        frontMatter: document.frontMatter,
+        questions: document.questions,
+        sectionHeadings: document.sectionHeadings,
+        documentFlow: document.documentFlow,
+        formattingConfig: nextFormattingConfig,
+        logo: currentLogo,
+      });
+      return {
+        content: JSON.stringify(savedTest, null, 2),
+        fileType: projectFileTypeForFrontMatter(document.frontMatter),
+        fingerprint: editorDocumentFingerprint(
+          document.frontMatter,
+          document.questions,
+          nextFormattingConfig,
+          currentLogo,
+          document.sectionHeadings,
+          document.documentFlow,
+        ),
+      };
+    },
+    projectFileConflictFromError,
+    missingProjectRevisionConflict,
+    setActiveProject,
+    setProjectFiles,
+    setActiveProjectFileState,
+    setProjectSaveConflict,
+    updateLastProjectSaveFingerprint,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+    refreshProjectFiles,
+  });
+
+  const { saveCurrentTest, startNewTest, closeCurrentDocument } = useEditorCloseController<AutosavedEditorSnapshot>({
+    editorDocumentOpenRef,
+    fileOperationBusy,
+    activeProjectFilePath,
+    hasUnsavedProjectChanges,
+    hasUnsavedDraftChanges,
+    currentProjectFileName,
+    draftAutosaveStatus,
+    createClosedSnapshot: () => ({
       ...currentDraftSnapshotForStorage(),
       activeProjectFilePath: undefined,
       activeProjectFileRevision: undefined,
       documentOpen: false,
-    };
-    persistCurrentDraft(closedSnapshot);
-    if (draftAutosaveStatus !== "unavailable") {
-      void saveStorageAutosave<AutosavedEditorSnapshot>(closedSnapshot)
-        .then((autosaveResponse) => {
-          const updatedAt = autosaveResponse.autosave.updatedAt
-            ? new Date(autosaveResponse.autosave.updatedAt).toLocaleTimeString()
-            : "now";
-          setDraftAutosaveStatus("saved");
-          setDraftAutosaveMessage(`Closed workspace saved at ${updatedAt}`);
-        })
-        .catch(() => {
-          setDraftAutosaveStatus("unavailable");
-          setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
-        });
-    }
-  }
+    }),
+    persistLocalDraft: persistCurrentDraft,
+    saveDiskAutosave: (snapshot) => saveStorageAutosave<AutosavedEditorSnapshot>(snapshot).then((response) => response.autosave),
+    writeCurrentTestProjectFile,
+    saveCurrentTestToProjectFile,
+    setEditorDocumentOpenState,
+    clearActiveProjectFileState,
+    setNewTestDialogOpen,
+    setFileManagerOpen,
+    closeContextMenu,
+    setDraftAutosaveStatus,
+    setDraftAutosaveMessage,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+  });
 
-  function closeEditorDocument() {
-    setEditorDocumentOpenState(false);
-    activeProjectFilePathRef.current = null;
-    activeProjectFileRevisionRef.current = null;
-    setActiveProjectFilePath(null);
-    setActiveProjectFileRevision(null);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(null);
-    setNewTestDialogOpen(false);
-    setFileManagerOpen(false);
-    setContextMenu(null);
-    persistClosedEditorState();
-  }
+  const { openDocumentsFolder, chooseDocumentsFolder, resetDocumentsFolder } = useDocumentsFolderController({
+    activeProject,
+    fileOperationBusy,
+    saveCurrentProjectFileBeforeOpening,
+    clearActiveProjectFile,
+    setActiveProject,
+    setProjectFiles,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+    setProjectSaveConflict,
+    isProjectRevisionMissingError: (error) => error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR,
+  });
 
-  async function closeCurrentDocument() {
-    if (!editorDocumentOpenRef.current || fileOperationBusy) return;
-
-    if (activeProjectFilePath && hasUnsavedProjectChanges) {
-      const shouldSave = window.confirm(`Save changes to "${currentProjectFileName}" before closing?`);
-      if (!shouldSave) return;
-      try {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      } catch {
-        setProjectFilesStatus("error");
-        setProjectFilesMessage("Close cancelled; save failed");
-        return;
-      }
-    } else if (hasUnsavedDraftChanges) {
-      const shouldClose = window.confirm("This document has not been saved to a file. Close without saving it?");
-      if (!shouldClose) return;
-    }
-
-    closeEditorDocument();
-  }
-
-  function createNewTestFromTemplate(template: TitlePageTemplate) {
-    pushEditorHistory();
-    const currentLogo = selectedLogoFromLibrary(logos, frontMatter.logoId);
-    const frontMatterTemplate =
-      template === "exam"
-        ? DEFAULT_EXAM_FRONT_MATTER
-        : template === "worksheet"
-          ? DEFAULT_WORKSHEET_FRONT_MATTER
-          : template === "notes"
-            ? DEFAULT_NOTES_FRONT_MATTER
-            : DEFAULT_FRONT_MATTER;
-    const nextFrontMatter = {
-      ...cloneSerializable(frontMatterTemplate),
-      logoId: currentLogo.id,
-      schoolName: currentLogo.schoolName ?? frontMatter.schoolName,
-    };
-    const nextQuestions = template === "notes" ? [createNotesSection()] : [createQuestion()];
-    const nextSectionHeadings: DocumentSectionHeading[] = [];
-    const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
-    const nextFormattingConfig = formattingConfigForPresetId(
-      NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
-    );
-    const nextAnchor = questionScrollAnchor(nextQuestions[0].id);
-
-    setFrontMatter(nextFrontMatter);
-    setQuestions(nextQuestions);
-    setSectionHeadings(nextSectionHeadings);
-    setDocumentFlow(nextDocumentFlow);
-    setFormattingConfig(nextFormattingConfig);
-    setEditorDocumentOpenState(true);
-    frontMatterRef.current = nextFrontMatter;
-    questionsRef.current = nextQuestions;
-    sectionHeadingsRef.current = nextSectionHeadings;
-    documentFlowRef.current = nextDocumentFlow;
-    formattingConfigRef.current = nextFormattingConfig;
-    cleanUnsavedDocumentFingerprintRef.current = editorDocumentFingerprint(
-      nextFrontMatter,
-      nextQuestions,
-      nextFormattingConfig,
-      currentLogo,
-      nextSectionHeadings,
-      nextDocumentFlow,
-    );
-    activeProjectFilePathRef.current = null;
-    activeProjectFileRevisionRef.current = null;
-    setActiveProjectFilePath(null);
-    setActiveProjectFileRevision(null);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(null);
-    setActiveQuestionId(nextQuestions[0].id);
-    setActiveTocItemId(nextAnchor);
-    setActiveRailItemId(nextAnchor);
-    setDraggedQuestionId(null);
-    setDragOverQuestion(null);
-    setDraggedPageBreakQuestionId(null);
-    setDragOverPageBreak(null);
-    setDraggedEditorPageBreak(null);
-    setDragOverEditorPageBreak(null);
-    setDraggedSubsection(null);
-    setDragOverSubsection(null);
-    setNewTestDialogOpen(false);
-    setFileManagerOpen(false);
-    queueDocumentJump(nextAnchor, nextAnchor);
-  }
-
-  async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: EditorDocumentState) {
-    setProjectFilesStatus("saving");
-    setProjectFilesMessage("Saving");
-
-    const project = activeProject ?? (await getDefaultProject());
-    const loadedFilePath = activeProjectFilePathRef.current;
-    const loadedRevision = loadedFilePath === filePath ? activeProjectFileRevisionRef.current : undefined;
-    if (loadedFilePath === filePath && loadedRevision === null) {
-      const conflict = missingProjectRevisionConflict(filePath);
-      setProjectSaveConflict(conflict);
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Reload file before saving");
-      throw new Error(PROJECT_FILE_REVISION_MISSING_ERROR);
-    }
-
-    const existingFile =
-      loadedFilePath === filePath ? undefined : projectFiles.find((file) => file.kind === "file" && file.path === filePath);
-    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
-    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
-    const savedTest = createSavedTestSnapshot({
-      testId: `project-file:${filePath}`,
-      name: testName,
-      frontMatter: document.frontMatter,
-      questions: document.questions,
-      sectionHeadings: document.sectionHeadings,
-      documentFlow: document.documentFlow,
-      formattingConfig: nextFormattingConfig,
-      logo: currentLogo,
-    });
-
-    let savedDocument: ProjectFileDocument;
-    const baseRevision = loadedRevision ?? existingFile?.revision ?? null;
-    try {
-      savedDocument = await saveProjectFile(project.id, filePath, {
-        content: JSON.stringify(savedTest, null, 2),
-        kind: "file",
-        fileType: projectFileTypeForFrontMatter(document.frontMatter),
-        metadata: {
-          format: "saved-test-json",
-          source: "mauth-studio",
-        },
-        baseRevision,
-      });
-    } catch (error) {
-      const conflict = projectFileConflictFromError(error, filePath, baseRevision ?? null);
-      if (conflict) {
-        setProjectSaveConflict(conflict);
-        setProjectFilesStatus("error");
-        setProjectFilesMessage("File changed on disk");
-        void refreshProjectFiles();
-      }
-      throw error;
-    }
-
-    const refreshedFiles = await listProjectFiles(project.id);
-    setActiveProject(project);
-    setProjectFiles(refreshedFiles.files);
-    activeProjectFilePathRef.current = filePath;
-    activeProjectFileRevisionRef.current = savedDocument.revision;
-    setActiveProjectFilePath(filePath);
-    setActiveProjectFileRevision(savedDocument.revision);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(
-      editorDocumentFingerprint(
-        document.frontMatter,
-        document.questions,
-        nextFormattingConfig,
-        currentLogo,
-        document.sectionHeadings,
-        document.documentFlow,
-      ),
-    );
-    setProjectFilesStatus("ready");
-    setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
-  }
-
-  async function writeCurrentTestProjectFile(filePath: string, testName: string) {
-    await writeEditorDocumentToProjectFile(filePath, testName, currentEditorDocument());
-  }
-
-  async function saveCurrentEditorRecoveryCopy(project: ProjectSummary, sourcePath: string) {
-    setProjectFilesStatus("saving");
-    setProjectFilesMessage("Saving recovery copy");
-
-    const document = currentEditorDocument();
-    const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
-    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const suffix = Math.random().toString(36).slice(2, 6);
-    const recoveryName = `${safeProjectFileName(currentProjectFileName)} recovery ${timestamp}-${suffix}`;
-    const recoveryPath = projectPathForTestPath(joinTestPath("Recovery", ensureTestFileName(recoveryName)));
-    const savedTest = createSavedTestSnapshot({
-      testId: `project-file:${recoveryPath}`,
-      name: recoveryName,
-      frontMatter: document.frontMatter,
-      questions: document.questions,
-      sectionHeadings: document.sectionHeadings,
-      documentFlow: document.documentFlow,
-      formattingConfig: nextFormattingConfig,
-      logo: currentLogo,
-    });
-
-    const savedDocument = await saveProjectFile(project.id, recoveryPath, {
-      content: JSON.stringify(savedTest, null, 2),
-      kind: "file",
-      fileType: projectFileTypeForFrontMatter(document.frontMatter),
-      metadata: {
-        format: "saved-test-json",
-        source: "mauth-studio",
-        recoveryFor: sourcePath,
-        recoveryReason: "open-project-file-save-conflict",
-      },
-      baseRevision: null,
-    });
-    const refreshedFiles = await listProjectFiles(project.id);
-    setActiveProject(project);
-    setProjectFiles(refreshedFiles.files);
-    return savedDocument;
-  }
-
-  async function saveCurrentProjectFileBeforeOpening(project: ProjectSummary) {
-    if (!hasUnsavedProjectChanges || !activeProjectFilePath) return;
-
-    try {
-      await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-    } catch (error) {
-      const conflict = projectFileConflictFromError(error, activeProjectFilePath, activeProjectFileRevisionRef.current);
-      const missingRevision = error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR;
-      if (!conflict && !missingRevision) throw error;
-
-      await saveCurrentEditorRecoveryCopy(project, activeProjectFilePath);
-      setProjectSaveConflict(null);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage("Saved recovery copy before opening");
-    }
-  }
-
-  async function openDocumentsFolder(folderPath: string) {
-    const cleanPath = folderPath.trim();
-    if (!cleanPath || fileOperationBusy) return;
-
-    try {
-      const currentProject = activeProject ?? (await getDefaultProject());
-      await saveCurrentProjectFileBeforeOpening(currentProject);
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage("Opening folder");
-      const nextProject = await openDefaultProjectDocumentsFolder(cleanPath);
-      const refreshedFiles = await listProjectFiles(nextProject.id);
-      setActiveProject(nextProject);
-      setProjectFiles(refreshedFiles.files);
-      activeProjectFilePathRef.current = null;
-      activeProjectFileRevisionRef.current = null;
-      setActiveProjectFilePath(null);
-      setActiveProjectFileRevision(null);
-      setProjectSaveConflict(null);
-      updateLastProjectSaveFingerprint(null);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Opened folder ${nextProject.documentsPath ?? cleanPath}`);
-    } catch (error) {
-      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
-      setProjectFilesStatus("error");
-      setProjectFilesMessage(error instanceof Error ? error.message : "Open folder failed");
-    }
-  }
-
-  async function chooseDocumentsFolder() {
-    if (fileOperationBusy) return;
-
-    try {
-      const currentProject = activeProject ?? (await getDefaultProject());
-      await saveCurrentProjectFileBeforeOpening(currentProject);
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage("Choose a folder");
-      const result = await chooseDefaultProjectDocumentsFolder();
-      if (result.cancelled) {
-        setProjectFilesStatus("ready");
-        setProjectFilesMessage("Folder selection cancelled");
-        return;
-      }
-      const nextProject = result.project;
-      if (!nextProject) throw new Error("Folder picker did not return a project");
-      const refreshedFiles = await listProjectFiles(nextProject.id);
-      setActiveProject(nextProject);
-      setProjectFiles(refreshedFiles.files);
-      activeProjectFilePathRef.current = null;
-      activeProjectFileRevisionRef.current = null;
-      setActiveProjectFilePath(null);
-      setActiveProjectFileRevision(null);
-      setProjectSaveConflict(null);
-      updateLastProjectSaveFingerprint(null);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Opened folder ${nextProject.documentsPath ?? result.path ?? ""}`);
-    } catch (error) {
-      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
-      setProjectFilesStatus("error");
-      setProjectFilesMessage(error instanceof Error ? error.message : "Choose folder failed");
-    }
-  }
-
-  async function resetDocumentsFolder() {
-    if (fileOperationBusy) return;
-
-    try {
-      const currentProject = activeProject ?? (await getDefaultProject());
-      await saveCurrentProjectFileBeforeOpening(currentProject);
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage("Opening default folder");
-      const nextProject = await resetDefaultProjectDocumentsFolder();
-      const refreshedFiles = await listProjectFiles(nextProject.id);
-      setActiveProject(nextProject);
-      setProjectFiles(refreshedFiles.files);
-      activeProjectFilePathRef.current = null;
-      activeProjectFileRevisionRef.current = null;
-      setActiveProjectFilePath(null);
-      setActiveProjectFileRevision(null);
-      setProjectSaveConflict(null);
-      updateLastProjectSaveFingerprint(null);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage("Opened default folder");
-    } catch (error) {
-      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
-      setProjectFilesStatus("error");
-      setProjectFilesMessage(error instanceof Error ? error.message : "Default folder failed");
-    }
-  }
-
-  function agentBridgeError(
-    status: number,
-    code: string,
-    error: string,
-    extra: Record<string, unknown> = {},
-  ): MauthAgentBridgeHandlerResult {
-    return {
-      status,
-      body: { success: false, code, error, ...extra },
-    };
-  }
-
-  function agentFileState(document: EditorDocumentState): MauthAgentFileState {
+  function agentFileState(document: MauthDocumentLike<QuestionBlock, FrontMatterConfig, FormattingConfig>): MauthAgentFileState {
     const activePath = activeProjectFilePathRef.current;
     const activeRevision = activeProjectFileRevisionRef.current;
     const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
+    const normalizedFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
+    const normalizedSectionHeadings = normalizeSectionHeadings(document.sectionHeadings);
+    const normalizedDocumentFlow = normalizeDocumentFlow(document.documentFlow, document.questions, normalizedSectionHeadings);
     const documentFingerprint = editorDocumentFingerprint(
       document.frontMatter,
       document.questions,
-      document.formattingConfig,
+      normalizedFormattingConfig,
       currentLogo,
-      document.sectionHeadings,
-      document.documentFlow,
+      normalizedSectionHeadings,
+      normalizedDocumentFlow,
     );
     const dirty = Boolean(activePath && lastProjectSaveFingerprintRef.current !== documentFingerprint);
     const saveStatus: MauthAgentFileState["saveStatus"] = fileOperationBusy
@@ -10855,189 +9878,22 @@ export default function App() {
     };
   }
 
-  function buildCurrentAgentSnapshot(
-    validation: unknown = validateSolutionCompleteness(frontMatterRef.current, questionsRef.current),
-    document: EditorDocumentState = currentEditorDocument(),
-  ): MauthAgentSnapshot {
-    return buildMauthAgentSnapshot<QuestionBlock, FrontMatterConfig, FormattingConfig>({
-      document,
-      file: agentFileState(document),
-      validation,
-    });
-  }
-
-  function readAgentDocumentActions(
-    payload: Record<string, unknown>,
-  ): { ok: true; actions: MauthDocumentAction[] } | { ok: false; response: MauthAgentBridgeHandlerResult } {
-    const rawActions = payload.actions;
-    if (!Array.isArray(rawActions)) {
-      return {
-        ok: false,
-        response: agentBridgeError(400, "INVALID_REQUEST", "Payload must include actions as an array."),
-      };
-    }
-
-    const validation = validateMauthDocumentActionPayloads(rawActions);
-    if (!validation.ok) {
-      return {
-        ok: false,
-        response: agentBridgeError(400, "VALIDATION_FAILED", formatMauthActionValidationIssues(validation.issues), {
-          validationIssues: validation.issues,
-          snapshot: buildCurrentAgentSnapshot(),
-        }),
-      };
-    }
-
-    return { ok: true, actions: typedMauthDocumentActions(rawActions) };
-  }
-
-  function handleAgentSnapshot(): MauthAgentBridgeHandlerResult {
-    return {
-      status: 200,
-      body: buildCurrentAgentSnapshot() as unknown as Record<string, unknown>,
-    };
-  }
-
-  function handleAgentActionsPreview(payload: Record<string, unknown>): MauthAgentBridgeHandlerResult {
-    const parsed = readAgentDocumentActions(payload);
-    if (!parsed.ok) return parsed.response;
-
-    const result = previewEditorDocumentActions(parsed.actions);
-    if (!result.ok || result.preview?.valid === false) {
-      return agentBridgeError(400, "ACTION_FAILED", result.error || result.preview?.error || "Action preview failed.", {
-        result,
-        snapshot: buildCurrentAgentSnapshot(result.validation),
-      });
-    }
-
-    return {
-      status: 200,
-      body: {
-        success: true,
-        result,
-        snapshot: buildCurrentAgentSnapshot(result.validation, result.document as EditorDocumentState),
-      },
-    };
-  }
-
-  async function handleAgentActionsApply(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
-    const baseSnapshotId = payload.baseSnapshotId;
-    if (typeof baseSnapshotId !== "string" || !baseSnapshotId) {
-      return agentBridgeError(400, "INVALID_REQUEST", "actions.apply requires baseSnapshotId.");
-    }
-
-    const parsed = readAgentDocumentActions(payload);
-    if (!parsed.ok) return parsed.response;
-
-    const currentSnapshot = buildCurrentAgentSnapshot();
-    if (baseSnapshotId !== currentSnapshot.snapshotId) {
-      return agentBridgeError(409, "STALE_SNAPSHOT", "Current editor state no longer matches baseSnapshotId.", {
-        snapshot: currentSnapshot,
-      });
-    }
-
-    const lockedResult = templateLockedDocumentActionResult(parsed.actions, "batch");
-    if (lockedResult) {
-      return agentBridgeError(400, "ACTION_FAILED", lockedResult.error || "Action apply failed.", {
-        result: lockedResult,
-        snapshot: currentSnapshot,
-      });
-    }
-
-    const result = applyMauthDocumentActions<QuestionBlock, FrontMatterConfig, FormattingConfig>(
-      currentEditorDocument(),
-      parsed.actions,
-      editorDocumentActionOptions(),
-    );
-    if (!result.ok) {
-      return agentBridgeError(400, "ACTION_FAILED", result.error || "Action apply failed.", {
-        result,
-        snapshot: currentSnapshot,
-      });
-    }
-
-    const activeFilePath = activeProjectFilePathRef.current;
-    if (result.changedIds.length && activeFilePath) {
-      try {
-        await writeEditorDocumentToProjectFile(activeFilePath, currentProjectFileName, result.document as EditorDocumentState);
-      } catch (error) {
-        const conflict = projectFileConflictFromError(error, activeFilePath, activeProjectFileRevisionRef.current);
-        return agentBridgeError(409, "SAVE_CONFLICT", conflict?.message || "Project file save failed; live editor state was not mutated.", {
-          result,
-          snapshot: currentSnapshot,
-        });
-      }
-    }
-
-    if (result.changedIds.length) {
-      setEditorDocumentWithHistory(result.document as EditorDocumentState);
-    }
-
-    return {
-      status: 200,
-      body: {
-        success: true,
-        result,
-        snapshot: buildCurrentAgentSnapshot(result.validation, result.document as EditorDocumentState),
-      },
-    };
-  }
-
-  function handleAgentValidation(): MauthAgentBridgeHandlerResult {
-    const validation = validateSolutionCompleteness(frontMatterRef.current, questionsRef.current);
-    return {
-      status: 200,
-      body: {
-        success: true,
-        validation,
-        snapshot: buildCurrentAgentSnapshot(validation),
-      },
-    };
-  }
-
-  useMauthAgentBridge({
+  useMauthAgentBridgeController<QuestionBlock, FrontMatterConfig, FormattingConfig>({
     enabled: storageHydrated,
-    handlers: {
-      snapshot: handleAgentSnapshot,
-      preview: handleAgentActionsPreview,
-      apply: handleAgentActionsApply,
-      validation: handleAgentValidation,
+    currentDocument: currentEditorDocument,
+    fileState: agentFileState,
+    validate: () => validateSolutionCompleteness(frontMatterRef.current, questionsRef.current),
+    previewActions: previewEditorDocumentActions,
+    applyActionsWithoutCommit: evaluateEditorDocumentActions,
+    commitDocument: setEditorDocumentWithHistory,
+    activeFilePath: () => activeProjectFilePathRef.current,
+    saveAppliedDocument: (filePath, document) =>
+      writeEditorDocumentToProjectFile(filePath, currentProjectFileName, document as EditorDocumentState),
+    saveConflictMessage: (error, filePath) => {
+      const conflict = projectFileConflictFromError(error, filePath, activeProjectFileRevisionRef.current);
+      return conflict?.message || "Project file save failed; live editor state was not mutated.";
     },
   });
-
-  async function saveCurrentTestToProjectFile(folderPath = "") {
-    let saveTargetPath = activeProjectFilePath;
-    try {
-      const defaultName =
-        activeProjectFilePath && testPathFromProjectPath(activeProjectFilePath)
-          ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? ""))
-          : defaultSavedTestName(frontMatter);
-      let filePath = activeProjectFilePath;
-      let testName = defaultName;
-
-      if (!filePath) {
-        const requestedName = window.prompt("File name", defaultName);
-        if (requestedName === null) return;
-        testName = safeProjectFileName(requestedName);
-        filePath = projectPathForTestPath(joinTestPath(folderPath, ensureTestFileName(testName)));
-      }
-
-      saveTargetPath = filePath;
-      await writeCurrentTestProjectFile(filePath, testName);
-    } catch (error) {
-      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
-      const conflict = saveTargetPath ? projectFileConflictFromError(error, saveTargetPath, activeProjectFileRevisionRef.current) : null;
-      if (conflict) {
-        setProjectSaveConflict(conflict);
-        setProjectFilesStatus("error");
-        setProjectFilesMessage("File changed on disk");
-        void refreshProjectFiles();
-        return;
-      }
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Save failed");
-    }
-  }
 
   function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedTest: SavedTest, revision: number | null) {
     pushEditorHistory();
@@ -11046,31 +9902,20 @@ export default function App() {
     const nextSectionHeadings = normalizeSectionHeadings(savedTest.sectionHeadings);
     const nextDocumentFlow = normalizeDocumentFlow(savedTest.documentFlow, nextQuestions, nextSectionHeadings);
     const nextFormattingConfig = normalizeFormattingConfig(savedTest.formattingConfig);
-    setFrontMatter(nextFrontMatter);
-    setQuestions(nextQuestions);
-    setSectionHeadings(nextSectionHeadings);
-    setDocumentFlow(nextDocumentFlow);
-    setFormattingConfig(nextFormattingConfig);
+    setEditorDocument({
+      frontMatter: nextFrontMatter,
+      questions: nextQuestions,
+      sectionHeadings: nextSectionHeadings,
+      documentFlow: nextDocumentFlow,
+      formattingConfig: nextFormattingConfig,
+    });
     setEditorDocumentOpenState(true);
-    frontMatterRef.current = nextFrontMatter;
-    questionsRef.current = nextQuestions;
-    sectionHeadingsRef.current = nextSectionHeadings;
-    documentFlowRef.current = nextDocumentFlow;
-    formattingConfigRef.current = nextFormattingConfig;
     setActiveQuestionId(firstQuestionId(nextQuestions));
     setActiveTocItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
     setActiveRailItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
-    setDraggedQuestionId(null);
-    setDragOverQuestion(null);
-    setDraggedPageBreakQuestionId(null);
-    setDragOverPageBreak(null);
-    setDraggedSubsection(null);
-    setDragOverSubsection(null);
+    clearEditorTransientState();
     setActiveProject(project);
-    activeProjectFilePathRef.current = filePath;
-    activeProjectFileRevisionRef.current = revision;
-    setActiveProjectFilePath(filePath);
-    setActiveProjectFileRevision(revision);
+    setActiveProjectFileState(filePath, revision);
     setProjectSaveConflict(null);
     updateLastProjectSaveFingerprint(
       editorDocumentFingerprint(
@@ -11096,585 +9941,119 @@ export default function App() {
     }
   }
 
-  async function openProjectFile(filePath: string) {
-    try {
-      const project = activeProject ?? (await getDefaultProject());
-      const summary = projectFiles.find((file) => file.path === filePath);
-      if (summary && !isProjectTestFile(summary)) {
-        setProjectFilesMessage("Only test files can be opened");
-        return;
-      }
-      if (!summary && !filePath.endsWith(".test.json")) {
-        setProjectFilesMessage("Only test files can be opened");
-        return;
-      }
+  const { openProjectFile, syncActiveProjectFileFromDisk } = useProjectDocumentOpenController<SavedTest>({
+    activeProject,
+    projectFiles,
+    activeProjectFilePath,
+    activeProjectFilePathRef,
+    activeProjectFileRevisionRef,
+    lastProjectSaveFingerprintRef,
+    fileOperationBusy,
+    revisionMissingErrorMessage: PROJECT_FILE_REVISION_MISSING_ERROR,
+    parseSavedDocument: (content) => {
+      const parsed = content ? (JSON.parse(content) as unknown) : null;
+      return normalizeSavedTest(parsed);
+    },
+    applySavedProjectDocument,
+    saveCurrentProjectFileBeforeOpening,
+    currentEditorDocumentFingerprint,
+    projectFileConflictFromError,
+    setActiveProject,
+    setProjectFiles,
+    setProjectSaveConflict,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+    refreshProjectFiles,
+    onOpened: () => setFileManagerOpen(false),
+  });
 
-      const fileName = testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath));
-      await saveCurrentProjectFileBeforeOpening(project);
+  useActiveProjectFileSyncController({
+    storageHydrated,
+    activeProjectFilePath,
+    fileOperationBusy,
+    intervalMs: ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS,
+    syncActiveProjectFileFromDisk,
+  });
 
-      setProjectFilesStatus("loading");
-      setProjectFilesMessage(`Opening ${fileName}`);
-      const document = await getProjectFile(project.id, filePath);
-      const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
-      const savedTest = normalizeSavedTest(parsed);
-      if (!savedTest) throw new Error("Unsupported project file");
-
-      applySavedProjectDocument(project, filePath, savedTest, document.revision);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Opened ${fileName}`);
-      setFileManagerOpen(false);
-    } catch (error) {
-      if (error instanceof Error && error.message === PROJECT_FILE_REVISION_MISSING_ERROR) return;
-      const conflictTarget = activeProjectFilePath ?? filePath;
-      const conflict = projectFileConflictFromError(error, conflictTarget, activeProjectFileRevisionRef.current);
-      if (conflict) {
-        setProjectSaveConflict(conflict);
-        setProjectFilesStatus("error");
-        setProjectFilesMessage("File changed on disk");
-        void refreshProjectFiles();
-        return;
-      }
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Open failed");
-    }
-  }
-
-  async function syncActiveProjectFileFromDisk() {
-    if (fileOperationBusy) return;
-    const filePath = activeProjectFilePathRef.current;
-    if (!filePath) return;
-
-    const project = activeProject ?? (await getDefaultProject());
-    const filesResponse = await listProjectFiles(project.id);
-    setActiveProject(project);
-    setProjectFiles(filesResponse.files);
-
-    const summary = filesResponse.files.find((file) => file.path === filePath);
-    if (!summary || summary.kind !== "file") return;
-
-    const localRevision = activeProjectFileRevisionRef.current;
-    if (typeof localRevision === "number" && summary.revision <= localRevision) return;
-
-    const conflict = {
-      filePath,
-      message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-      localRevision,
-      currentRevision: summary.revision,
-    };
-
-    if (lastProjectSaveFingerprintRef.current !== currentEditorDocumentFingerprint()) {
-      setProjectSaveConflict(conflict);
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("File changed on disk");
-      return;
-    }
-
-    try {
-      const document = await getProjectFile(project.id, filePath);
-      const parsed = document.content ? (JSON.parse(document.content) as unknown) : null;
-      const savedTest = normalizeSavedTest(parsed);
-      if (!savedTest) throw new Error("Unsupported project file");
-
-      applySavedProjectDocument(project, filePath, savedTest, document.revision);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Reloaded ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))} from disk`);
-    } catch {
-      setProjectSaveConflict(conflict);
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Reload failed");
-    }
-  }
-
-  useEffect(() => {
-    if (!storageHydrated || !activeProjectFilePath) return;
-
-    let cancelled = false;
-    const runSync = () => {
-      if (cancelled || document.visibilityState === "hidden" || activeProjectFileSyncInFlightRef.current) return;
-      activeProjectFileSyncInFlightRef.current = true;
-      void syncActiveProjectFileFromDisk().finally(() => {
-        activeProjectFileSyncInFlightRef.current = false;
-      });
-    };
-
-    runSync();
-    const intervalId = window.setInterval(runSync, ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS);
-    window.addEventListener("focus", runSync);
-    document.addEventListener("visibilitychange", runSync);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", runSync);
-      document.removeEventListener("visibilitychange", runSync);
-    };
-    // syncActiveProjectFileFromDisk reads the current document/file refs; these deps only start/stop the watcher.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectFilePath, fileOperationBusy, storageHydrated]);
-
-  async function loadProjectFileVersions(filePath: string) {
-    const project = activeProject ?? (await getDefaultProject());
-    const response = await listProjectFileVersions(project.id, filePath);
-    setActiveProject(project);
-    return response.versions;
-  }
-
-  async function restoreProjectFileFromVersion(filePath: string, versionId: string) {
-    setProjectFilesStatus("saving");
-    setProjectFilesMessage("Restoring version");
-    const project = activeProject ?? (await getDefaultProject());
-    const restoredDocument = await restoreProjectFileVersion(project.id, filePath, versionId);
-    const refreshedFiles = await listProjectFiles(project.id);
-    setActiveProject(project);
-    setProjectFiles(refreshedFiles.files);
-
-    if (activeProjectFilePath === filePath) {
+  const { loadProjectFileVersions, restoreProjectFileFromVersion } = useProjectVersionsController({
+    activeProject,
+    activeProjectFilePath,
+    applyRestoredProjectDocument: (project, filePath, restoredDocument) => {
       const parsed = restoredDocument.content ? (JSON.parse(restoredDocument.content) as unknown) : null;
       const savedTest = normalizeSavedTest(parsed);
       if (!savedTest) throw new Error("Unsupported project file");
       applySavedProjectDocument(project, filePath, savedTest, restoredDocument.revision);
-    }
+    },
+    setActiveProject,
+    setProjectFiles,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+  });
 
-    setProjectFilesStatus("ready");
-    setProjectFilesMessage(`Restored ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
-  }
+  const { createProjectFolder } = useProjectFolderController({
+    activeProject,
+    projectFiles,
+    setActiveProject,
+    setProjectFiles,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+  });
 
-  async function createProjectFolder(folderPath: string) {
-    const requestedName = window.prompt("Folder name", "New folder");
-    if (requestedName === null) return;
-    const folderName = safeProjectFileName(requestedName);
-    if (!folderName) return;
-    const testPath = joinTestPath(folderPath, folderName);
-    const filePath = projectPathForTestPath(testPath);
-    if (projectFiles.some((file) => file.path.toLowerCase() === filePath.toLowerCase())) {
-      window.alert("A file or folder with that name already exists.");
-      return;
-    }
+  const { exportCurrentProjectBackup, importProjectBackupFile } = useProjectBackupController({
+    activeProject,
+    activeProjectFilePath,
+    hasUnsavedProjectChanges,
+    currentProjectFileName,
+    writeCurrentTestProjectFile,
+    saveCurrentTestToProjectFile,
+    refreshLogoLibraryFromDisk,
+    setActiveProject,
+    setProjectFiles,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+  });
 
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage("Creating folder");
-      const project = activeProject ?? (await getDefaultProject());
-      await saveProjectFile(project.id, filePath, { kind: "folder", fileType: "folder" });
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Created ${folderName}`);
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Folder create failed");
-    }
-  }
-
-  async function exportCurrentProjectBackup() {
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage("Preparing backup");
-
-      if (activeProjectFilePath && hasUnsavedProjectChanges) {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      } else if (!activeProjectFilePath) {
-        const shouldSaveDraft = window.confirm(
-          `This test is not saved as a file yet. Save it into ${TEST_FILE_ROOT_LABEL} before creating the backup?`,
-        );
-        if (shouldSaveDraft) {
-          await saveCurrentTestToProjectFile("");
-        }
-      }
-
-      const project = activeProject ?? (await getDefaultProject());
-      const backup = await downloadProjectBackup(project.id);
-      const url = window.URL.createObjectURL(backup.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = backup.fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Created backup ${backup.fileName}`);
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Backup failed");
-    }
-  }
-
-  async function importProjectBackupFile(file: File) {
-    const shouldImport = window.confirm(
-      `Import "${file.name}"? Existing files will not be overwritten; matching file names are imported with a new name.`,
-    );
-    if (!shouldImport) return;
-
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage("Importing backup");
-      const project = activeProject ?? (await getDefaultProject());
-      const result = await importProjectBackup(project.id, file);
-      const refreshedFiles = await listProjectFiles(project.id);
-      await refreshLogoLibraryFromDisk();
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(
-        `Imported ${result.importedFiles} file${result.importedFiles === 1 ? "" : "s"}, ${result.importedFolders} folder${
-          result.importedFolders === 1 ? "" : "s"
-        }, ${result.importedLogos} logo${result.importedLogos === 1 ? "" : "s"}`,
-      );
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Import failed");
-    }
-  }
-
-  async function copyProjectItem(projectId: string, sourcePath: string, targetPath: string, files: ProjectFileSummary[]) {
-    const source = files.find((file) => file.path === sourcePath);
-    if (!source) throw new Error("Missing source file");
-
-    if (source.kind === "folder") {
-      await saveProjectFile(projectId, targetPath, { kind: "folder", fileType: "folder", metadata: source.metadata });
-      const descendants = files
-        .filter((file) => file.path.startsWith(`${sourcePath}/`))
-        .sort((left, right) => {
-          if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1;
-          return left.path.localeCompare(right.path);
-        });
-      for (const descendant of descendants) {
-        const descendantTargetPath = `${targetPath}${descendant.path.slice(sourcePath.length)}`;
-        if (descendant.kind === "folder") {
-          await saveProjectFile(projectId, descendantTargetPath, {
-            kind: "folder",
-            fileType: "folder",
-            metadata: descendant.metadata,
-          });
-        } else {
-          const document = await getProjectFile(projectId, descendant.path);
-          await saveProjectFile(projectId, descendantTargetPath, {
-            content: document.content ?? "",
-            kind: "file",
-            fileType: document.fileType ?? "test",
-            metadata: document.metadata,
-          });
-        }
-      }
-      return;
-    }
-
-    const document = await getProjectFile(projectId, sourcePath);
-    await saveProjectFile(projectId, targetPath, {
-      content: document.content ?? "",
-      kind: "file",
-      fileType: document.fileType ?? "test",
-      metadata: document.metadata,
-    });
-  }
-
-  async function duplicateProjectFiles(filePaths: string[]) {
-    const sourcePaths = topLevelProjectPaths(filePaths);
-    if (!sourcePaths.length) return;
-
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage(sourcePaths.length === 1 ? "Duplicating" : `Duplicating ${sourcePaths.length} items`);
-      const project = activeProject ?? (await getDefaultProject());
-      if (
-        activeProjectFilePath &&
-        hasUnsavedProjectChanges &&
-        sourcePaths.some((sourcePath) => projectPathContains(sourcePath, activeProjectFilePath))
-      ) {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      }
-      let currentFiles = (await listProjectFiles(project.id)).files;
-      let duplicatedCount = 0;
-      let openedDuplicatePath: string | null = null;
-      let openedDuplicateFingerprint: string | null = null;
-      let openedDuplicateRevision: number | null = null;
-
-      for (const filePath of sourcePaths) {
-        const source = currentFiles.find((file) => file.path === filePath);
-        const sourceTestPath = testPathFromProjectPath(filePath);
-        if (!source || sourceTestPath === null) continue;
-        const parentPath = parentTestPath(sourceTestPath);
-        const baseName =
-          source.kind === "folder"
-            ? `${testPathBasename(sourceTestPath)} copy`
-            : `${testFileDisplayName(testPathBasename(sourceTestPath))} copy`;
-        const targetTestPath = uniqueTestPath(currentFiles, parentPath, baseName, source.kind);
-        const targetFilePath = projectPathForTestPath(targetTestPath);
-        const duplicatingActiveEditor = sourcePaths.length === 1 && source.kind === "file" && filePath === activeProjectFilePath;
-        if (duplicatingActiveEditor) {
-          const currentLogo = selectedLogoForFrontMatter(logosRef.current, frontMatter);
-          const savedTest = createSavedTestSnapshot({
-            testId: `project-file:${targetFilePath}`,
-            name: testFileDisplayName(testPathBasename(targetTestPath)),
-            frontMatter,
-            questions,
-            sectionHeadings,
-            documentFlow,
-            formattingConfig,
-            logo: currentLogo,
-          });
-          const duplicatedDocument = await saveProjectFile(project.id, targetFilePath, {
-            content: JSON.stringify(savedTest, null, 2),
-            kind: "file",
-            fileType: "test",
-            metadata: {
-              format: "saved-test-json",
-              source: "mauth-studio",
-            },
-          });
-          openedDuplicatePath = targetFilePath;
-          openedDuplicateFingerprint = editorDocumentFingerprint(
-            frontMatter,
-            questions,
-            formattingConfig,
-            currentLogo,
-            sectionHeadings,
-            documentFlow,
-          );
-          openedDuplicateRevision = duplicatedDocument.revision;
-        } else {
-          await copyProjectItem(project.id, filePath, targetFilePath, currentFiles);
-        }
-        currentFiles = (await listProjectFiles(project.id)).files;
-        duplicatedCount += 1;
-      }
-
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      if (openedDuplicatePath) {
-        activeProjectFilePathRef.current = openedDuplicatePath;
-        activeProjectFileRevisionRef.current = openedDuplicateRevision;
-        setActiveProjectFilePath(openedDuplicatePath);
-        setActiveProjectFileRevision(openedDuplicateRevision);
-        setProjectSaveConflict(null);
-        updateLastProjectSaveFingerprint(openedDuplicateFingerprint);
-      }
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(
-        openedDuplicatePath
-          ? `Duplicated and opened ${testFileDisplayName(testPathBasename(testPathFromProjectPath(openedDuplicatePath) ?? openedDuplicatePath))}`
-          : duplicatedCount === 1
-            ? "Duplicated 1 item"
-            : `Duplicated ${duplicatedCount} items`,
-      );
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Duplicate failed");
-    }
-  }
-
-  async function renameProjectFile(filePath: string) {
-    const source = projectFiles.find((file) => file.path === filePath);
-    const sourceTestPath = testPathFromProjectPath(filePath);
-    if (!source || sourceTestPath === null) return;
-    const currentName = source.kind === "folder" ? testPathBasename(sourceTestPath) : testFileDisplayName(testPathBasename(sourceTestPath));
-    const requestedName = window.prompt("Rename", currentName);
-    if (requestedName === null) return;
-    const newName = source.kind === "folder" ? safeProjectFileName(requestedName) : ensureTestFileName(requestedName);
-    if (!newName) return;
-    const targetTestPath = joinTestPath(parentTestPath(sourceTestPath), newName);
-    const targetFilePath = projectPathForTestPath(targetTestPath);
-    if (targetFilePath === filePath) return;
-    if (projectFiles.some((file) => file.path.toLowerCase() === targetFilePath.toLowerCase())) {
-      window.alert("A file or folder with that name already exists.");
-      return;
-    }
-    await moveProjectFileToPath(filePath, targetFilePath);
-  }
-
-  async function moveProjectFileToPath(filePath: string, targetFilePath: string) {
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage("Moving");
-      const project = activeProject ?? (await getDefaultProject());
-      if (activeProjectFilePath && hasUnsavedProjectChanges && projectPathContains(filePath, activeProjectFilePath)) {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      }
-      const currentFiles = await listProjectFiles(project.id);
-      const source = currentFiles.files.find((file) => file.path === filePath);
-      if (!source) return;
-      await copyProjectItem(project.id, filePath, targetFilePath, currentFiles.files);
-      await deleteProjectFile(project.id, filePath, source.revision);
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      const nextActiveFilePath = activeProjectFilePath
-        ? activeProjectFilePath === filePath
-          ? targetFilePath
-          : source.kind === "folder" && activeProjectFilePath.startsWith(`${filePath}/`)
-            ? `${targetFilePath}${activeProjectFilePath.slice(filePath.length)}`
-            : activeProjectFilePath
-        : null;
-      activeProjectFilePathRef.current = nextActiveFilePath;
-      setActiveProjectFilePath(nextActiveFilePath);
-      if (nextActiveFilePath !== activeProjectFilePath) {
-        const nextRevision = nextActiveFilePath
-          ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
-          : null;
-        activeProjectFileRevisionRef.current = nextRevision;
-        setActiveProjectFileRevision(nextRevision);
-        setProjectSaveConflict(null);
-      }
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage("Moved");
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Move failed");
-    }
-  }
-
-  async function moveProjectFiles(filePaths: string[], targetFolderPath: string) {
-    const sourcePaths = topLevelProjectPaths(filePaths);
-    if (!sourcePaths.length) return;
-    const targetFolder = normalizeTestFolderPath(targetFolderPath);
-
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage(sourcePaths.length === 1 ? "Moving" : `Moving ${sourcePaths.length} items`);
-      const project = activeProject ?? (await getDefaultProject());
-      if (
-        activeProjectFilePath &&
-        hasUnsavedProjectChanges &&
-        sourcePaths.some((sourcePath) => projectPathContains(sourcePath, activeProjectFilePath))
-      ) {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      }
-      const currentFiles = (await listProjectFiles(project.id)).files;
-      const existingPaths = new Set(currentFiles.map((file) => file.path.toLowerCase()));
-      const plannedTargets = new Set<string>();
-      const plannedMoves: Array<{ source: ProjectFileSummary; sourcePath: string; targetPath: string }> = [];
-
-      for (const filePath of sourcePaths) {
-        const source = currentFiles.find((file) => file.path === filePath);
-        const sourceTestPath = testPathFromProjectPath(filePath);
-        if (!source || sourceTestPath === null) continue;
-        if (source.kind === "folder" && (targetFolder === sourceTestPath || targetFolder.startsWith(`${sourceTestPath}/`))) {
-          window.alert("A folder cannot be moved inside itself.");
-          setProjectFilesStatus("ready");
-          setProjectFilesMessage("");
-          return;
-        }
-
-        const targetTestPath = [targetFolder, testPathBasename(sourceTestPath)].filter(Boolean).join("/");
-        const targetFilePath = projectPathForTestPath(targetTestPath);
-        const targetKey = targetFilePath.toLowerCase();
-        if (targetFilePath === filePath) continue;
-        if (existingPaths.has(targetKey) || plannedTargets.has(targetKey)) {
-          window.alert("A file or folder with that name already exists in that folder.");
-          setProjectFilesStatus("ready");
-          setProjectFilesMessage("");
-          return;
-        }
-        plannedTargets.add(targetKey);
-        plannedMoves.push({ source, sourcePath: filePath, targetPath: targetFilePath });
-      }
-
-      if (!plannedMoves.length) {
-        setProjectFilesStatus("ready");
-        setProjectFilesMessage("");
-        return;
-      }
-
-      for (const move of plannedMoves) {
-        await copyProjectItem(project.id, move.sourcePath, move.targetPath, currentFiles);
-      }
-      for (const move of plannedMoves) {
-        await deleteProjectFile(project.id, move.sourcePath, move.source.revision);
-      }
-
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      const nextActiveFilePath = activeProjectFilePath
-        ? (() => {
-            for (const move of plannedMoves) {
-              if (activeProjectFilePath === move.sourcePath) return move.targetPath;
-              if (move.source.kind === "folder" && activeProjectFilePath.startsWith(`${move.sourcePath}/`)) {
-                return `${move.targetPath}${activeProjectFilePath.slice(move.sourcePath.length)}`;
-              }
-            }
-            return activeProjectFilePath;
-          })()
-        : null;
-      activeProjectFilePathRef.current = nextActiveFilePath;
-      setActiveProjectFilePath(nextActiveFilePath);
-      if (nextActiveFilePath !== activeProjectFilePath) {
-        const nextRevision = nextActiveFilePath
-          ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
-          : null;
-        activeProjectFileRevisionRef.current = nextRevision;
-        setActiveProjectFileRevision(nextRevision);
-        setProjectSaveConflict(null);
-      }
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(plannedMoves.length === 1 ? "Moved 1 item" : `Moved ${plannedMoves.length} items`);
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Move failed");
-    }
-  }
-
-  async function removeProjectFiles(filePaths: string[]) {
-    const sourcePaths = topLevelProjectPaths(filePaths);
-    const sources = sourcePaths
-      .map((filePath) => {
-        const source = projectFiles.find((file) => file.path === filePath);
-        const sourceTestPath = testPathFromProjectPath(filePath);
-        return source && sourceTestPath !== null ? { source, sourceTestPath, filePath } : null;
-      })
-      .filter((entry): entry is { source: ProjectFileSummary; sourceTestPath: string; filePath: string } => Boolean(entry));
-    if (!sources.length) return;
-    const shouldDelete =
-      sources.length === 1
-        ? window.confirm(
-            `Delete "${
-              sources[0].source.kind === "folder"
-                ? testPathBasename(sources[0].sourceTestPath)
-                : testFileDisplayName(testPathBasename(sources[0].sourceTestPath))
-            }"?`,
-          )
-        : window.confirm(`Delete ${sources.length} selected items?`);
-    if (!shouldDelete) return;
-    try {
-      setProjectFilesStatus("saving");
-      setProjectFilesMessage("Deleting");
-      const project = activeProject ?? (await getDefaultProject());
-      const deletingActiveProjectFile = activeProjectFilePath
-        ? sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
-        : false;
-      for (const { filePath, source } of sources) {
-        await deleteProjectFile(project.id, filePath, source.revision);
-      }
-      const refreshedFiles = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(refreshedFiles.files);
-      const nextActiveFilePath =
-        activeProjectFilePath &&
-        sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
-          ? null
-          : activeProjectFilePath;
-      activeProjectFilePathRef.current = nextActiveFilePath;
-      setActiveProjectFilePath(nextActiveFilePath);
-      if (deletingActiveProjectFile) {
-        activeProjectFileRevisionRef.current = null;
-        setActiveProjectFileRevision(null);
-        setProjectSaveConflict(null);
-        updateLastProjectSaveFingerprint(null);
-      }
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(sources.length === 1 ? "Deleted 1 item" : `Deleted ${sources.length} items`);
-    } catch {
-      setProjectFilesStatus("error");
-      setProjectFilesMessage("Delete failed");
-    }
-  }
+  const { duplicateProjectFiles, renameProjectFile, moveProjectFiles, removeProjectFiles } = useProjectFileOperationsController({
+    activeProject,
+    projectFiles,
+    activeProjectFilePath,
+    hasUnsavedProjectChanges,
+    currentProjectFileName,
+    writeCurrentTestProjectFile,
+    duplicateActiveProjectFile: async (project, targetFilePath, targetTestPath) => {
+      const currentLogo = selectedLogoForFrontMatter(logosRef.current, frontMatter);
+      const savedTest = createSavedTestSnapshot({
+        testId: `project-file:${targetFilePath}`,
+        name: testFileDisplayName(testPathBasename(targetTestPath)),
+        frontMatter,
+        questions,
+        sectionHeadings,
+        documentFlow,
+        formattingConfig,
+        logo: currentLogo,
+      });
+      const duplicatedDocument = await saveProjectFile(project.id, targetFilePath, {
+        content: JSON.stringify(savedTest, null, 2),
+        kind: "file",
+        fileType: "test",
+        metadata: {
+          format: "saved-test-json",
+          source: "mauth-studio",
+        },
+      });
+      return {
+        revision: duplicatedDocument.revision,
+        fingerprint: editorDocumentFingerprint(frontMatter, questions, formattingConfig, currentLogo, sectionHeadings, documentFlow),
+      };
+    },
+    setActiveProjectFileState,
+    setActiveProject,
+    setProjectFiles,
+    setProjectFilesStatus,
+    setProjectFilesMessage,
+    setProjectSaveConflict,
+    updateLastProjectSaveFingerprint,
+  });
 
   function updateContentBlock(questionId: string, blockId: string, patch: Partial<EditorContentBlock>) {
     applyEditorAction({
@@ -11780,135 +10159,26 @@ export default function App() {
     }));
   }
 
-  function jumpToSolutionValidationIssue(anchor: string) {
-    setSolutionValidationOpen(false);
-    if (!showEditor) setPaneMode("split");
-    activateEditorAnchor(anchor);
-    revealEditorAnchor(anchor);
-    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
-  }
-
-  function focusSolutionValidationAnchor(anchor: string) {
-    if (!showEditor) setPaneMode("split");
-    activateEditorAnchor(anchor);
-    revealEditorAnchor(anchor);
-    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
-  }
-
-  function solutionValidationScope(question: QuestionBlock, parsed: ParsedScrollAnchor) {
-    if (!parsed.questionId) return null;
-
-    if (parsed.partId && parsed.subpartId) {
-      const part = question.parts.find((current) => current.id === parsed.partId);
-      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
-      if (!part || !subpart) return null;
-      return {
-        scope: {
-          kind: "subpart",
-          questionId: parsed.questionId,
-          partId: parsed.partId,
-          subpartId: parsed.subpartId,
-        } satisfies MauthContentScope,
-        contentBlocks: subpart.contentBlocks,
-      };
-    }
-
-    if (parsed.partId) {
-      const part = question.parts.find((current) => current.id === parsed.partId);
-      if (!part) return null;
-      return {
-        scope: { kind: "part", questionId: parsed.questionId, partId: parsed.partId } satisfies MauthContentScope,
-        contentBlocks: part.contentBlocks,
-      };
-    }
-
-    return {
-      scope: { kind: "question", questionId: parsed.questionId } satisfies MauthContentScope,
-      contentBlocks: question.contentBlocks,
-    };
-  }
-
-  function solutionValidationFixActions(scope: MauthContentScope, contentBlocks: EditorContentBlock[], fix: SolutionValidationFix) {
-    if (fix.kind === "add-slot") {
-      return {
-        actions: [{ type: "solutionSlot.add", scope, blocks: solutionSlotBlocks(fix.lines) } satisfies MauthAction],
-        showSolutionsAfter: true,
-      };
-    }
-
-    if (fix.kind === "add-solution") {
-      return {
-        actions: [
-          {
-            type: "module.add",
-            scope,
-            blocks: [textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution")],
-            placement: { blockId: fix.afterBlockId, position: "after" },
-          } satisfies MauthAction,
-        ],
-        showSolutionsAfter: true,
-      };
-    }
-
-    if (fix.kind === "add-student-space") {
-      return {
-        actions: [
-          {
-            type: "module.add",
-            scope,
-            blocks: [spaceBlock(fix.lines, "student")],
-            placement: { blockId: fix.beforeBlockId, position: "before" },
-          } satisfies MauthAction,
-        ],
-        showSolutionsAfter: true,
-      };
-    }
-
-    const block = contentBlocks.find((current) => current.id === fix.blockId);
-    if (block?.kind !== "space") return null;
-    return {
-      actions: [
-        {
-          type: "module.update",
-          scope,
-          blockId: fix.blockId,
-          patch: { lines: Math.max(spaceLines(block.lines), fix.lines) },
-        } satisfies MauthAction,
-      ],
-      showSolutionsAfter: false,
-    };
-  }
-
-  function applySolutionValidationFix(issue: SolutionValidationIssue) {
-    const fix = issue.fix;
-    if (!fix) {
-      jumpToSolutionValidationIssue(issue.anchor);
-      return;
-    }
-
-    const parsed = parseScrollAnchor(issue.anchor);
-    const question = parsed.questionId ? questions.find((current) => current.id === parsed.questionId) : null;
-    if (!question || !parsed.questionId) {
-      jumpToSolutionValidationIssue(issue.anchor);
-      return;
-    }
-
-    const target = solutionValidationScope(question, parsed);
-    const actionPatch = target ? solutionValidationFixActions(target.scope, target.contentBlocks, fix) : null;
-    if (!actionPatch) {
-      jumpToSolutionValidationIssue(issue.anchor);
-      return;
-    }
-
-    const result = applyEditorActions(actionPatch.actions);
-    if (!result.ok) {
-      jumpToSolutionValidationIssue(issue.anchor);
-      return;
-    }
-
-    if (actionPatch.showSolutionsAfter) setShowSolutions(true);
-    focusSolutionValidationAnchor(issue.anchor);
-  }
+  const { jumpToSolutionValidationIssue, applySolutionValidationFix } = useSolutionValidationFixController<
+    QuestionBlock,
+    EditorContentBlock
+  >({
+    questions,
+    parseAnchor: parseScrollAnchor,
+    applyActions: applyEditorActions,
+    closeValidationPanel: () => setSolutionValidationOpen(false),
+    showSolutions: () => setShowSolutions(true),
+    ensureEditorVisible: () => {
+      if (!showEditor) setPaneMode("split");
+    },
+    activateEditorAnchor,
+    revealEditorAnchor,
+    queueDocumentJump,
+    buildSolutionSlotBlocks: solutionSlotBlocks,
+    buildSolutionTextBlock: () => textBlock(DEFAULT_SOLUTION_SLOT_TEXT, "solution"),
+    buildStudentSpaceBlock: (lines) => spaceBlock(lines, "student"),
+    spaceLines,
+  });
 
   function openSignalForAnchor(anchor: string) {
     return scrollAnchorContains(anchor, editorRevealRequest?.anchor) ? editorRevealRequest?.sequence : undefined;
@@ -11918,220 +10188,6 @@ export default function App() {
     return anchor === activeTocItemId;
   }
 
-  function jumpPendingDocumentAnchors() {
-    let attemptedJump = false;
-    const editorAnchor = pendingEditorJumpAnchorRef.current;
-    const previewAnchor = pendingPreviewJumpAnchorRef.current;
-
-    if (editorAnchor && showEditor && editorPaneRef.current) {
-      attemptedJump = true;
-      if (scrollToAnchorPosition(editorPaneRef.current, { anchor: editorAnchor, progress: 0 })) {
-        pendingEditorJumpAnchorRef.current = null;
-      }
-    }
-
-    if (previewAnchor && showPreview && previewPaneRef.current) {
-      attemptedJump = true;
-      if (scrollToAnchorPosition(previewPaneRef.current, { anchor: previewAnchor, progress: 0 })) {
-        pendingPreviewJumpAnchorRef.current = null;
-      }
-    }
-
-    return attemptedJump;
-  }
-
-  function queueDocumentJump(editorAnchor: string, previewAnchor: string, options: { preservePaneMode?: boolean } = {}) {
-    pendingEditorJumpAnchorRef.current = options.preservePaneMode && !showEditor ? null : editorAnchor;
-    pendingPreviewJumpAnchorRef.current = options.preservePaneMode && !showPreview ? null : previewAnchor;
-
-    if (!options.preservePaneMode && (!showEditor || !showPreview)) {
-      setPaneMode("split");
-    }
-
-    window.requestAnimationFrame(() => {
-      if (!jumpPendingDocumentAnchors()) {
-        window.requestAnimationFrame(() => {
-          jumpPendingDocumentAnchors();
-        });
-      }
-    });
-  }
-
-  function queueEditorJump(editorAnchor: string) {
-    pendingEditorJumpAnchorRef.current = editorAnchor;
-    pendingPreviewJumpAnchorRef.current = null;
-
-    window.requestAnimationFrame(() => {
-      if (!jumpPendingDocumentAnchors()) {
-        window.requestAnimationFrame(() => {
-          jumpPendingDocumentAnchors();
-        });
-      }
-    });
-  }
-
-  function queuePreviewJump(previewAnchor: string) {
-    pendingPreviewJumpAnchorRef.current = previewAnchor;
-
-    window.requestAnimationFrame(() => {
-      if (!jumpPendingDocumentAnchors()) {
-        window.requestAnimationFrame(() => {
-          jumpPendingDocumentAnchors();
-        });
-      }
-    });
-  }
-
-  function tocItemForPreviewAnchor(anchor: string) {
-    for (const fallback of scrollAnchorFallbacks(anchor)) {
-      const item = documentTocItems.find((tocItem) => tocItem.previewAnchor === fallback || tocItem.editorAnchor === fallback);
-      if (item) return item;
-    }
-    return null;
-  }
-
-  function openEditorFromPreviewAnchor(anchor: string) {
-    if (!anchor) return;
-    const tocItem = tocItemForPreviewAnchor(anchor);
-    const graphChildParentAnchor = graphChildParentScrollAnchor(anchor);
-    const graphChildSuffix =
-      graphChildParentAnchor && anchor.startsWith(`${graphChildParentAnchor}/`) ? anchor.slice(graphChildParentAnchor.length) : "";
-    const editorAnchor =
-      graphChildSuffix && tocItem?.editorAnchor ? `${tocItem.editorAnchor}${graphChildSuffix}` : (tocItem?.editorAnchor ?? anchor);
-    const activeAnchor = graphChildSuffix ? editorAnchor : (tocItem?.id ?? editorAnchor);
-    const questionId = questionIdFromScrollAnchor(editorAnchor);
-    if (questionId) selectQuestionInEditor(questionId);
-    setActiveTocItemId(activeAnchor);
-    setActiveRailItemId(activeAnchor);
-    if (!showEditor) {
-      setPaneMode("split");
-    }
-    revealEditorAnchor(editorAnchor);
-    queueEditorJump(editorAnchor);
-  }
-
-  function handlePreviewPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (!showEditor || event.button !== 0) {
-      previewEditClickStartRef.current = null;
-      return;
-    }
-    previewEditClickStartRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      pointerId: event.pointerId,
-    };
-  }
-
-  function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
-    const start = previewEditClickStartRef.current;
-    previewEditClickStartRef.current = null;
-    if (!showEditor || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    if (!start) return;
-
-    const movement = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-    if (movement > PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX) return;
-
-    const anchor = previewAnchorFromEventTarget(event.target, previewPaneRef.current);
-    if (!anchor) return;
-    openEditorFromPreviewAnchor(anchor);
-  }
-
-  function jumpToTocItem(item: DocumentTocItem) {
-    setActiveTocItemId(item.id);
-    setActiveRailItemId(item.id);
-    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
-    if (questionId) selectQuestionInEditor(questionId);
-    revealEditorAnchor(item.editorAnchor);
-    queueDocumentJump(item.editorAnchor, item.previewAnchor);
-  }
-
-  function jumpPreviewToTocItem(item: DocumentTocItem) {
-    setActiveRailItemId(item.id);
-    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
-
-    if (showEditor) {
-      setActiveTocItemId(item.id);
-      if (questionId) selectQuestionInEditor(questionId);
-      revealEditorAnchor(item.editorAnchor);
-    }
-
-    if (!showPreview) {
-      return;
-    }
-
-    pendingPreviewJumpAnchorRef.current = item.previewAnchor;
-
-    const previewPane = previewPaneRef.current;
-    if (previewPane && scrollToAnchorPosition(previewPane, { anchor: item.previewAnchor, progress: 0 })) {
-      pendingPreviewJumpAnchorRef.current = null;
-      return;
-    }
-
-    window.requestAnimationFrame(() => {
-      const nextPreviewPane = previewPaneRef.current;
-      if (nextPreviewPane && scrollToAnchorPosition(nextPreviewPane, { anchor: item.previewAnchor, progress: 0 })) {
-        pendingPreviewJumpAnchorRef.current = null;
-      }
-    });
-  }
-
-  function selectPageBreakInRail(item: DocumentTocItem) {
-    setActiveRailItemId(item.id);
-    pendingEditorJumpAnchorRef.current = null;
-    pendingPreviewJumpAnchorRef.current = null;
-  }
-
-  function toggleEditorAtTocItem(item: DocumentTocItem) {
-    if (showEditor) {
-      setPaneMode("preview");
-      return;
-    }
-
-    jumpToTocItem(item);
-  }
-
-  function jumpPreviewToQuestion(questionId: string) {
-    const anchor = questionScrollAnchor(questionId);
-    setActiveTocItemId(anchor);
-    setActiveRailItemId(anchor);
-    selectQuestionInEditor(questionId);
-    pendingPreviewJumpAnchorRef.current = anchor;
-
-    if (!showPreview) {
-      setPaneMode("split");
-      return;
-    }
-
-    const previewPane = previewPaneRef.current;
-    if (previewPane && scrollToAnchorPosition(previewPane, { anchor, progress: 0 })) {
-      pendingPreviewJumpAnchorRef.current = null;
-      return;
-    }
-
-    window.requestAnimationFrame(() => {
-      const nextPreviewPane = previewPaneRef.current;
-      if (nextPreviewPane && scrollToAnchorPosition(nextPreviewPane, { anchor, progress: 0 })) {
-        pendingPreviewJumpAnchorRef.current = null;
-      }
-    });
-  }
-
-  function toggleManualPane() {
-    const nextPaneMode: PaneMode = paneMode === "split" ? "preview" : "split";
-    resetPreviewZoom();
-    setPaneMode(nextPaneMode);
-  }
-
-  function toggleInspectorPane() {
-    if (!showEditor) {
-      resetPreviewZoom();
-      setInspectorOpen(true);
-      setPaneMode("split");
-      return;
-    }
-
-    setInspectorOpen((current) => !current);
-  }
   function tocItemForContextAnchor(anchor: string) {
     for (const fallback of scrollAnchorFallbacks(anchor)) {
       const item = documentTocItems.find(
@@ -12515,48 +10571,6 @@ export default function App() {
     return actions;
   }
 
-  function openContextMenu(event: ReactMouseEvent<HTMLElement>, anchor: string, surface: ContextMenuSurface) {
-    event.preventDefault();
-    event.stopPropagation();
-    const item = contextDescriptorForAnchor(anchor);
-    const editorAnchor = item.editorAnchor;
-    selectContextAnchor(editorAnchor, { previewOnly: surface === "preview" });
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      actions: contextActionsForAnchor(editorAnchor),
-    });
-  }
-
-  function handlePreviewContextMenu(event: ReactMouseEvent<HTMLElement>) {
-    const anchor = previewAnchorFromEventTarget(event.target, previewPaneRef.current);
-    if (!anchor) return;
-    openContextMenu(event, anchor, "preview");
-  }
-
-  function handleEditorHeaderContextMenu(event: ReactMouseEvent<HTMLElement>, anchor: string) {
-    const header = event.target instanceof Element ? event.target.closest("[data-panel-region='header']") : null;
-    if (!header || !event.currentTarget.contains(header)) return;
-    openContextMenu(event, anchor, "editor");
-  }
-
-  function resetPreviewZoom() {
-    previewZoomRef.current = 1;
-    previewGestureStartZoomRef.current = 1;
-    if (previewZoomStateSyncTimerRef.current) {
-      window.clearTimeout(previewZoomStateSyncTimerRef.current);
-      previewZoomStateSyncTimerRef.current = null;
-    }
-    setPreviewZoom(1);
-
-    const previewPane = previewPaneRef.current;
-    if (previewPane) {
-      previewPane.scrollLeft = 0;
-      const previewRoot = previewPane.querySelector<HTMLElement>(".a4-preview-root");
-      if (previewRoot) applyPreviewScaleStyle(previewRoot, currentPageFormat, previewFitScale);
-    }
-  }
-
   function toggleTheme() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
@@ -12615,8 +10629,7 @@ export default function App() {
     const anchor = pageBreakScrollAnchor(targetQuestion.id);
     movePageBreakAfterQuestion(questionId, targetQuestion.id);
     setActiveRailItemId(anchor);
-    pendingEditorJumpAnchorRef.current = null;
-    pendingPreviewJumpAnchorRef.current = null;
+    clearPendingDocumentJumps();
   }
 
   function mauthTargetFromEditorPageBreak(target: EditorPageBreakTarget): Extract<MauthAction, { type: "pageBreak.set" }>["target"] {
@@ -13091,8 +11104,7 @@ export default function App() {
     movePageBreakAfterQuestion(sourceQuestionId, targetQuestionId);
     const anchor = pageBreakScrollAnchor(targetQuestionId);
     setActiveRailItemId(anchor);
-    pendingEditorJumpAnchorRef.current = null;
-    pendingPreviewJumpAnchorRef.current = null;
+    clearPendingDocumentJumps();
   }
 
   function handlePageBreakDragEnd() {
@@ -13631,8 +11643,7 @@ export default function App() {
     const anchor = pageBreakScrollAnchor(question.id);
     applyEditorAction({ type: "pageBreak.set", target: { kind: "question", questionId: question.id }, enabled: true });
     setActiveRailItemId(anchor);
-    pendingEditorJumpAnchorRef.current = null;
-    pendingPreviewJumpAnchorRef.current = null;
+    clearPendingDocumentJumps();
   }
 
   function removePageBreakAfterQuestion(questionId: string) {
@@ -13977,21 +11988,14 @@ export default function App() {
     return false;
   }
 
-  deleteActiveEditorSelectionRef.current = () =>
-    deleteEditorSelection(activeRailItemId.startsWith("pb:") ? activeRailItemId : activeTocItemId);
-
-  useEffect(() => {
-    function handleGlobalDelete(event: globalThis.KeyboardEvent) {
-      if (event.defaultPrevented || fileManagerOpen || !nativeKeyboardDeleteRequested(event)) return;
-      if (keyboardTargetConsumesGlobalDelete(event.target)) return;
-      if (!deleteActiveEditorSelectionRef.current()) return;
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    window.addEventListener("keydown", handleGlobalDelete);
-    return () => window.removeEventListener("keydown", handleGlobalDelete);
-  }, [fileManagerOpen]);
+  useEditorGlobalDeleteController({
+    enabled: true,
+    fileManagerOpen,
+    activeAnchor: activeRailItemId.startsWith("pb:") ? activeRailItemId : activeTocItemId,
+    deleteSelection: deleteEditorSelection,
+    isDeleteEvent: nativeKeyboardDeleteRequested,
+    targetConsumesDelete: keyboardTargetConsumesGlobalDelete,
+  });
 
   function renderQuestionContentBlock(
     question: QuestionBlock,
@@ -15487,8 +13491,7 @@ export default function App() {
           result={actionProposalResult}
           onChange={(nextValue) => {
             setActionProposalText(nextValue);
-            setActionProposalMessage("");
-            setActionProposalResult(null);
+            clearActionProposalFeedback();
           }}
           onPreview={previewActionProposal}
           onApply={applyActionProposal}
@@ -15496,7 +13499,7 @@ export default function App() {
           onClear={clearActionProposal}
         />
       ) : null}
-      <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      <ContextMenu menu={contextMenu} onClose={closeContextMenu} />
       {printPreviewMounted && editorDocumentOpen ? (
         <div className="print-preview-stage" aria-hidden="true">
           <PaginatedTestPreview

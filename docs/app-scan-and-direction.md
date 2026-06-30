@@ -1,0 +1,107 @@
+# App Scan And Direction
+
+This scan reflects the current Mauth Studio architecture after the first controller extractions from `apps/web/src/App.tsx`.
+
+## Current Health
+
+- The full quality gate passes: formatting, ESLint, Ruff, pytest, web action tests, Plotly tests, TypeScript, and Vite build.
+- The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, the likely cause is a stale API process.
+- Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
+- The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
+
+## Main Risks
+
+1. `apps/web/src/App.tsx` is still too large.
+
+   The file remains the central risk for regressions because toolbar actions, drag/drop, and rendering orchestration still meet there. The latest cleanup moved document state, file operations, autosave, bridge handling, print control, preview zoom, editor selection, editor/preview navigation, context-menu state, global delete handling, action proposal state, and solution-validation fixes into focused hooks, but the shell should keep shrinking.
+
+2. File and folder state has too many overlapping concepts.
+
+   The current model has visible project files, recent files, legacy migration, autosave, revision snapshots, and the selected external folder. Those are all valid, but the UI needs to make the active source of truth obvious. The safest direction is: one visible documents folder, explicit recents, explicit recovery, and no silent importing or copying when a teacher opens another folder.
+
+3. Native browser prompts are still used for important workflows.
+
+   `window.prompt`, `window.confirm`, and `window.alert` still appear in file operations and spacing workflows. They work, but they feel rough and are hard for agents to inspect. Replace them with app modals that return structured decisions.
+
+4. Render-heavy modules need boundaries.
+
+   `FunctionGraph.tsx`, `SelectionInspector.tsx`, and graph editors are the next largest frontend risks. Graph rendering should keep moving toward pure geometry/domain helpers plus thin React adapters.
+
+5. The app can still feel stale when the user is running an older dev process.
+
+   The code has the bridge endpoints, but if the wrong API server is still running the UI will poll old routes and behave as if features are missing. Mauth should show a visible API/build version check instead of leaving this as terminal guesswork.
+
+## Direction
+
+Mauth should stay agent-native first, with a polished human editor on top.
+
+The product should not return to a provider-backed in-house chat as the main architecture. The better model is:
+
+```text
+structured document state
+-> deterministic actions and dry runs
+-> validation and preview inspection
+-> browser verification
+-> optional AI assistant that uses those same contracts
+```
+
+An in-app assistant can come back later, but it should be a client for the same local action/bridge layer that Codex, Claude Code, and future MCP tools use. It should not become a separate hidden editing pathway.
+
+## Recommended Roadmap
+
+### 1. Stabilise The Local App
+
+- Add an app/API build version endpoint and show a clear mismatch warning in the header.
+- Add a "Restart required" or "API is stale" status when bridge routes are unavailable.
+- Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
+- Replace native prompts with structured app modals for save, close, delete, rename, restore, and folder selection.
+
+### 2. Finish The Editor Shell Split
+
+- Extract the remaining toolbar and document mutation orchestration from `App.tsx`.
+- Extract document open/close/save lifecycle into a document session controller.
+- Extract the remaining preview page segmentation and render orchestration into a preview/document-render controller.
+- Extract question/page-flow mutation orchestration into action-facing controllers.
+- Keep `App.tsx` as composition only: state providers, controllers, layout, and component wiring.
+
+### 3. Make Manual Solutions A First-Class Layer
+
+- Keep Student/Solutions mode.
+- Let teachers edit solution-only content in place.
+- Keep solution annotations on the same surfaces students use: table cells, graph features, ticks, circled choices, and drawn marks.
+- Keep AI as "draft solutions", not the source of truth.
+
+### 4. Strengthen Agent Contracts
+
+- Add more high-level actions for common teacher requests: add/replace question, add completed solution table, add graph solution annotations, run layout check, and export print sets.
+- Make validation output more teacher-readable and agent-readable.
+- Add smoke tests for every agent-facing workflow that previously caused stale or hidden-state issues.
+
+### 5. Package Later
+
+A standalone app is worth doing, but only after the storage and bridge contracts are stable.
+
+Best staged path:
+
+1. Keep the current web plus FastAPI dev setup while the authoring model is changing quickly.
+2. Add a one-command local launcher that starts web and API, checks versions, and opens the app.
+3. Package that launcher with Tauri or Electron if the local workflow is stable.
+4. Consider a true macOS-native Swift app only if Mauth needs deep Finder, print, iCloud Drive, or Apple classroom workflow integration that a web shell cannot provide.
+
+For now, Tauri/Electron around the current web app is a more pragmatic native path than rewriting the editor in Swift.
+
+## Strategic Call
+
+The next major investment should be reliability and explicit contracts, not chat UI.
+
+Mauth becomes much more useful when a teacher or agent can always answer:
+
+- Which file is open?
+- Where is it stored?
+- Is it saved?
+- What changed?
+- What validation failed?
+- What will print?
+- What action will be applied before it is committed?
+
+Once that is solid, a Codex-backed in-app assistant becomes straightforward because it can operate through the same transparent actions as every other editor surface.
