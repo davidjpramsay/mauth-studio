@@ -79,7 +79,19 @@ pnpm macos:install-launcher
 
 This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch`, checks the API/web versions, starts the needed servers, and opens Mauth Studio in the browser.
 
-If you have old manual terminals running, stop them with `Ctrl+C` first. For a deliberate clean restart, use:
+Check what Mauth servers are currently running:
+
+```bash
+pnpm dev:status
+```
+
+Stop Mauth-owned local servers:
+
+```bash
+pnpm dev:stop
+```
+
+If you have old manual terminals running, stop them with `Ctrl+C` or `pnpm dev:stop` first. For a deliberate clean restart, use:
 
 ```bash
 pnpm dev:launch:replace

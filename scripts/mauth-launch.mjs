@@ -8,11 +8,13 @@ const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/
 const args = new Set(process.argv.slice(2));
 const noOpen = args.has("--no-open");
 const replaceExisting = args.has("--replace");
+const statusOnly = args.has("--status");
+const stopOnly = args.has("--stop");
 const startedProcesses = [];
 const repoRoot = process.cwd();
 
 function usage() {
-  console.log(`Usage: pnpm dev:launch [--no-open] [--replace]
+  console.log(`Usage: pnpm dev:launch [--no-open] [--replace] [--status] [--stop]
 
 Starts the local Mauth API and web app when needed, verifies the API through
 /api/system/status, warns when an older API is already occupying the port, and
@@ -21,7 +23,9 @@ opens the web app unless --no-open is supplied.
 Options:
   --no-open   Start/check servers without opening the browser.
   --replace   Stop Mauth-owned dev servers on the configured API/web ports first,
-              then start a fresh launcher-owned session.`);
+              then start a fresh launcher-owned session.
+  --status   Print API/web health and listener ownership without starting servers.
+  --stop     Stop Mauth-owned listeners on the configured API/web ports and exit.`);
 }
 
 if (args.has("--help") || args.has("-h")) {
@@ -131,6 +135,21 @@ function printListeners(label, port, listeners, level = "warn") {
   }
 }
 
+function printPortStatus(label, port, listeners) {
+  if (!port) {
+    console.log(`warn ${label}: no port could be inferred from configured URL`);
+    return;
+  }
+  if (!listeners.length) {
+    console.log(`ok   ${label} port ${port}: no listeners`);
+    return;
+  }
+  console.log(`info ${label} port ${port}: ${listeners.length} listener${listeners.length === 1 ? "" : "s"}`);
+  for (const listener of listeners) {
+    console.log(`     ${listenerProcessSummary(listener)}`);
+  }
+}
+
 async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -142,7 +161,10 @@ async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
 
 async function stopMauthListeners(label, port) {
   const listeners = listenersForPort(port).filter((listener) => listener.isMauthOwned);
-  if (!listeners.length) return;
+  if (!listeners.length) {
+    if (stopOnly) console.log(`ok   ${label}: no Mauth-owned listeners on port ${port}`);
+    return;
+  }
   console.log(`stop ${label}: ${listeners.length} Mauth-owned listener${listeners.length === 1 ? "" : "s"} on port ${port}`);
   for (const listener of listeners) {
     try {
@@ -249,6 +271,28 @@ function failForPortConflict(label, port, listeners, detail) {
   process.exit(1);
 }
 
+async function printRuntimeStatus() {
+  printPortStatus("API", apiPort, listenersForPort(apiPort));
+  const status = await readSystemStatus();
+  if (status.ok) {
+    console.log(`ok   API status: ${status.json.apiVersion} started ${status.json.startedAt}`);
+    console.log(`ok   Documents folder: ${status.json.workspace.documentsPath}`);
+    console.log(`ok   Bridge route: ${status.json.bridge.routes.browserRegister}`);
+  } else {
+    console.log(`warn API status: ${status.status || "unreachable"} ${status.text}`);
+  }
+
+  printPortStatus("Web", webPort, listenersForPort(webPort));
+  const web = await webHealth();
+  if (web.ok && web.isMauth) {
+    console.log(`ok   Web app: ${WEB_URL}`);
+  } else if (web.ok) {
+    console.log(`warn Web app: ${WEB_URL} responds but does not look like Mauth Studio`);
+  } else {
+    console.log(`warn Web app: ${WEB_URL} unreachable (${web.text})`);
+  }
+}
+
 process.on("SIGINT", () => {
   stopStartedProcesses();
   process.exit(130);
@@ -260,6 +304,17 @@ process.on("SIGTERM", () => {
 
 const apiPort = portFromUrl(API_BASE);
 const webPort = portFromUrl(WEB_URL);
+
+if (statusOnly) {
+  await printRuntimeStatus();
+  process.exit(0);
+}
+
+if (stopOnly) {
+  await stopMauthListeners("web", webPort);
+  await stopMauthListeners("api", apiPort);
+  process.exit(0);
+}
 
 if (replaceExisting) {
   await stopMauthListeners("web", webPort);

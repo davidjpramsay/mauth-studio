@@ -189,7 +189,7 @@ await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { enco
 const installedIcon = await installAppIcon();
 await fs.writeFile(
   path.join(resourcesDir, "README.txt"),
-  `Mauth Studio\n\nRuns pnpm dev:launch from:\n${repoRoot}\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nIf older manual Mauth terminals are still running, stop them with Ctrl+C first. For a deliberate clean restart, run pnpm dev:launch:replace from the repo root.\n`,
+  `Mauth Studio\n\nRuns pnpm dev:launch from:\n${repoRoot}\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
   "utf8",
 );
 

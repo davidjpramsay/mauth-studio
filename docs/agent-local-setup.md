@@ -27,7 +27,19 @@ pnpm macos:install-launcher
 
 This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
 
-If stale manual servers are still running, stop their terminals with `Ctrl+C`. To force a clean launcher-owned restart, run:
+Check what Mauth servers are currently running:
+
+```bash
+pnpm dev:status
+```
+
+Stop Mauth-owned local servers:
+
+```bash
+pnpm dev:stop
+```
+
+If stale manual servers are still running, stop their terminals with `Ctrl+C` or `pnpm dev:stop`. To force a clean launcher-owned restart, run:
 
 ```bash
 pnpm dev:launch:replace
