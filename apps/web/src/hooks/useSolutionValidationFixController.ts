@@ -1,17 +1,7 @@
 import type { ContentBlock } from "@mauth-studio/shared";
 
 import type { MauthAction, MauthContentScope } from "@/lib/mauthActions";
-
-type SolutionValidationFix =
-  | { kind: "add-slot"; lines: number }
-  | { kind: "add-solution"; afterBlockId: string }
-  | { kind: "add-student-space"; beforeBlockId: string; lines: number }
-  | { kind: "increase-space"; blockId: string; lines: number };
-
-interface SolutionValidationIssueLike {
-  anchor: string;
-  fix?: SolutionValidationFix;
-}
+import type { SolutionValidationFix, SolutionValidationIssue } from "@/lib/solutionValidation";
 
 interface ParsedSolutionAnchor {
   questionId?: string;
@@ -167,7 +157,7 @@ export function useSolutionValidationFixController<TQuestion extends SolutionQue
     };
   }
 
-  function applySolutionValidationFix(issue: SolutionValidationIssueLike) {
+  function applySolutionValidationFix(issue: SolutionValidationIssue) {
     const fix = issue.fix;
     if (!fix) {
       jumpToSolutionValidationIssue(issue.anchor);
