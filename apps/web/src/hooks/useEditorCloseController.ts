@@ -33,6 +33,29 @@ interface UseEditorCloseControllerOptions<TAutosave> {
   dialogs: MauthDialogActions;
 }
 
+interface EditorClosePlanState {
+  editorDocumentOpen: boolean;
+  fileOperationBusy: boolean;
+  activeProjectFilePath: string | null;
+  hasUnsavedProjectChanges: boolean;
+  hasUnsavedDraftChanges: boolean;
+}
+
+type EditorClosePlan = "ignore" | "close" | "confirm-project-save" | "confirm-draft-save";
+
+export function resolveEditorClosePlan({
+  editorDocumentOpen,
+  fileOperationBusy,
+  activeProjectFilePath,
+  hasUnsavedProjectChanges,
+  hasUnsavedDraftChanges,
+}: EditorClosePlanState): EditorClosePlan {
+  if (!editorDocumentOpen || fileOperationBusy) return "ignore";
+  if (activeProjectFilePath && hasUnsavedProjectChanges) return "confirm-project-save";
+  if (!activeProjectFilePath && hasUnsavedDraftChanges) return "confirm-draft-save";
+  return "close";
+}
+
 export function useEditorCloseController<TAutosave>({
   editorDocumentOpenRef,
   fileOperationBusy,
@@ -93,9 +116,16 @@ export function useEditorCloseController<TAutosave>({
   }
 
   async function closeCurrentDocument() {
-    if (!editorDocumentOpenRef.current || fileOperationBusy) return;
+    const closePlan = resolveEditorClosePlan({
+      editorDocumentOpen: editorDocumentOpenRef.current,
+      fileOperationBusy,
+      activeProjectFilePath,
+      hasUnsavedProjectChanges,
+      hasUnsavedDraftChanges,
+    });
+    if (closePlan === "ignore") return;
 
-    if (activeProjectFilePath && hasUnsavedProjectChanges) {
+    if (closePlan === "confirm-project-save" && activeProjectFilePath) {
       const closeChoice = await dialogs.choose({
         title: "Save changes?",
         description: `Save changes to "${currentProjectFileName}" before closing?`,
@@ -114,7 +144,7 @@ export function useEditorCloseController<TAutosave>({
           return;
         }
       }
-    } else if (hasUnsavedDraftChanges) {
+    } else if (closePlan === "confirm-draft-save") {
       const closeChoice = await dialogs.choose({
         title: "Save document?",
         description: "This document has not been saved to a file.",
