@@ -11,7 +11,7 @@ interface UseProjectBackupControllerOptions {
   hasUnsavedProjectChanges: boolean;
   currentProjectFileName: string;
   writeCurrentTestProjectFile: (filePath: string, testName: string) => Promise<void>;
-  saveCurrentTestToProjectFile: (folderPath?: string) => Promise<void>;
+  saveCurrentTestToProjectFile: (folderPath?: string) => Promise<boolean>;
   refreshLogoLibraryFromDisk: () => Promise<void>;
   setActiveProject: (project: ProjectSummary) => void;
   setProjectFiles: (files: ProjectFileSummary[]) => void;
@@ -69,7 +69,12 @@ export function useProjectBackupController({
           confirmLabel: "Save and backup",
         });
         if (shouldSaveDraft) {
-          await saveCurrentTestToProjectFile("");
+          const saved = await saveCurrentTestToProjectFile("");
+          if (!saved) {
+            setProjectFilesStatus("ready");
+            setProjectFilesMessage("Backup cancelled; save was not completed");
+            return;
+          }
         }
       }
 

@@ -29,20 +29,35 @@ interface MauthAlertOptions {
   confirmLabel?: string;
 }
 
+interface MauthChoiceOption {
+  value: string;
+  label: string;
+  destructive?: boolean;
+}
+
+interface MauthChoiceOptions {
+  title: string;
+  description?: ReactNode;
+  options: MauthChoiceOption[];
+  cancelLabel?: string;
+}
+
 export interface MauthDialogActions {
   confirm: (options: MauthConfirmOptions) => Promise<boolean>;
   prompt: (options: MauthPromptOptions) => Promise<string | null>;
   alert: (options: MauthAlertOptions) => Promise<void>;
+  choose: (options: MauthChoiceOptions) => Promise<string | null>;
 }
 
 type DialogState =
   | ({ kind: "confirm" } & MauthConfirmOptions)
   | ({ kind: "prompt" } & MauthPromptOptions)
-  | ({ kind: "alert" } & MauthAlertOptions);
+  | ({ kind: "alert" } & MauthAlertOptions)
+  | ({ kind: "choice" } & MauthChoiceOptions);
 
 function cancelValueForState(state: DialogState | null) {
   if (state?.kind === "confirm") return false;
-  if (state?.kind === "prompt") return null;
+  if (state?.kind === "prompt" || state?.kind === "choice") return null;
   return undefined;
 }
 
@@ -84,6 +99,12 @@ export function useMauthDialogController(): MauthDialogActions & { dialogNode: R
   function alert(options: MauthAlertOptions) {
     return new Promise<void>((resolve) => {
       openDialog({ kind: "alert", ...options }, () => resolve());
+    });
+  }
+
+  function choose(options: MauthChoiceOptions) {
+    return new Promise<string | null>((resolve) => {
+      openDialog({ kind: "choice", ...options }, (value) => resolve(typeof value === "string" ? value : null));
     });
   }
 
@@ -145,6 +166,29 @@ export function useMauthDialogController(): MauthDialogActions & { dialogNode: R
           </>
         }
       />
+    ) : dialogState.kind === "choice" ? (
+      <MauthDialog
+        title={dialogState.title}
+        description={dialogState.description}
+        onClose={() => settle(null)}
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={() => settle(null)}>
+              {dialogState.cancelLabel ?? "Cancel"}
+            </Button>
+            {dialogState.options.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                onClick={() => settle(option.value)}
+                className={option.destructive ? "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500" : undefined}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </>
+        }
+      />
     ) : (
       <MauthDialog
         title={dialogState.title}
@@ -158,5 +202,5 @@ export function useMauthDialogController(): MauthDialogActions & { dialogNode: R
       />
     );
 
-  return { confirm, prompt, alert, dialogNode };
+  return { confirm, prompt, alert, choose, dialogNode };
 }

@@ -20,7 +20,7 @@ interface UseEditorCloseControllerOptions<TAutosave> {
   persistLocalDraft: (snapshot: TAutosave) => void;
   saveDiskAutosave: (snapshot: TAutosave) => Promise<DiskAutosaveResult>;
   writeCurrentTestProjectFile: (filePath: string, testName: string) => Promise<void>;
-  saveCurrentTestToProjectFile: (folderPath?: string) => Promise<void>;
+  saveCurrentTestToProjectFile: (folderPath?: string) => Promise<boolean>;
   setEditorDocumentOpenState: (open: boolean) => void;
   clearActiveProjectFileState: () => void;
   setNewTestDialogOpen: (open: boolean) => void;
@@ -96,27 +96,41 @@ export function useEditorCloseController<TAutosave>({
     if (!editorDocumentOpenRef.current || fileOperationBusy) return;
 
     if (activeProjectFilePath && hasUnsavedProjectChanges) {
-      const shouldSave = await dialogs.confirm({
-        title: "Save before closing",
+      const closeChoice = await dialogs.choose({
+        title: "Save changes?",
         description: `Save changes to "${currentProjectFileName}" before closing?`,
-        confirmLabel: "Save and close",
+        options: [
+          { value: "discard", label: "Don't Save", destructive: true },
+          { value: "save", label: "Save and close" },
+        ],
       });
-      if (!shouldSave) return;
-      try {
-        await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-      } catch {
-        setProjectFilesStatus("error");
-        setProjectFilesMessage("Close cancelled; save failed");
-        return;
+      if (closeChoice === null) return;
+      if (closeChoice === "save") {
+        try {
+          await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
+        } catch {
+          setProjectFilesStatus("error");
+          setProjectFilesMessage("Close cancelled; save failed");
+          return;
+        }
       }
     } else if (hasUnsavedDraftChanges) {
-      const shouldClose = await dialogs.confirm({
-        title: "Close unsaved document",
-        description: "This document has not been saved to a file. Close without saving it?",
-        confirmLabel: "Close without saving",
-        destructive: true,
+      const closeChoice = await dialogs.choose({
+        title: "Save document?",
+        description: "This document has not been saved to a file.",
+        options: [
+          { value: "discard", label: "Close without saving", destructive: true },
+          { value: "save", label: "Save and close" },
+        ],
       });
-      if (!shouldClose) return;
+      if (closeChoice === null) return;
+      if (closeChoice === "save") {
+        const saved = await saveCurrentTestToProjectFile("");
+        if (!saved) {
+          setProjectFilesMessage("Close cancelled; save was not completed");
+          return;
+        }
+      }
     }
 
     closeEditorDocument();

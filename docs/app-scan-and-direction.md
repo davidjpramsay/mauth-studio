@@ -10,7 +10,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 - `pnpm macos:install-launcher` installs a local `Mauth Studio Launcher.app` into `~/Applications`. Double-clicking it opens Terminal and runs `pnpm dev:launch` from the repo, so the desktop entry point still uses the same status checks.
 - `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
-- File, folder, backup/import, close-file, save-as, restore-version, and solution-slot line-count workflows now use Mauth-owned dialogs rather than native `window.prompt`, `window.confirm`, or `window.alert`.
+- File, folder, backup/import, close-file, save-as, restore-version, and solution-slot line-count workflows now use Mauth-owned dialogs rather than native `window.prompt`, `window.confirm`, or `window.alert`. Close-file decisions now support explicit Save, Don't Save, and Cancel paths.
 - Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
 - The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
 
@@ -26,7 +26,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 3. Document lifecycle choices are still too simple.
 
-   Native browser prompts have been replaced with shared Mauth dialogs, but the close/save flow is still mostly a confirm/cancel path. The next step is a richer document-session controller with explicit save, discard, recovery, and conflict choices.
+   Native browser prompts have been replaced with shared Mauth dialogs, and close now supports explicit save, discard, and cancel choices. The next step is a richer document-session controller with recovery and conflict choices integrated into the same lifecycle.
 
 4. Render-heavy modules need boundaries.
 
@@ -59,7 +59,7 @@ An in-app assistant can come back later, but it should be a client for the same 
 - Use `/api/system/status` as the launcher and support contract for process, folder, file, revision, autosave, and bridge diagnostics.
 - Keep the macOS launcher as a thin wrapper around `pnpm dev:launch` until the app is stable enough for a Tauri/Electron shell.
 - Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
-- Keep save, close, delete, rename, restore, folder selection, and solution-slot configuration on structured Mauth dialogs; deepen close/save into explicit save, discard, recovery, and conflict choices.
+- Keep save, close, delete, rename, restore, folder selection, and solution-slot configuration on structured Mauth dialogs; deepen the document-session controller so recovery and conflict choices use the same save/discard/cancel model.
 
 ### 2. Finish The Editor Shell Split
 

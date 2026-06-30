@@ -193,25 +193,27 @@ export function useProjectDocumentPersistenceController<TDocument>({
           confirmLabel: "Save",
           requireValue: true,
         });
-        if (requestedName === null) return;
+        if (requestedName === null) return false;
         testName = safeProjectFileName(requestedName);
         filePath = projectPathForTestPath(joinTestPath(folderPath, ensureTestFileName(testName)));
       }
 
       saveTargetPath = filePath;
       await writeCurrentTestProjectFile(filePath, testName);
+      return true;
     } catch (error) {
-      if (error instanceof Error && error.message === revisionMissingErrorMessage) return;
+      if (error instanceof Error && error.message === revisionMissingErrorMessage) return false;
       const conflict = saveTargetPath ? projectFileConflictFromError(error, saveTargetPath, activeProjectFileRevisionRef.current) : null;
       if (conflict) {
         setProjectSaveConflict(conflict);
         setProjectFilesStatus("error");
         setProjectFilesMessage("File changed on disk");
         void refreshProjectFiles();
-        return;
+        return false;
       }
       setProjectFilesStatus("error");
       setProjectFilesMessage("Save failed");
+      return false;
     }
   }
 
