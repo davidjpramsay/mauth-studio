@@ -156,6 +156,7 @@ import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuCont
 import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
 import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
 import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
+import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionValidationFixController } from "@/hooks/useSolutionValidationFixController";
 import { useSystemStatusController, type MauthWebBuildInfo, type SystemStatusState } from "@/hooks/useSystemStatusController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
@@ -10006,6 +10007,22 @@ export default function App() {
     spaceLines,
   });
 
+  const { addQuestionSolutionSlot, addPartSolutionSlot, addSubpartSolutionSlot } = useSolutionSlotController<
+    QuestionBlock,
+    EditorPart,
+    EditorSubpart,
+    EditorContentBlock
+  >({
+    questions,
+    dialogs: mauthDialogs,
+    isEnabled: () => frontMatterRef.current.titlePageTemplate !== "notes",
+    defaultLinesForMarks: (marks) => defaultSolutionSlotLinesForDocument(frontMatterRef.current, marks),
+    normalizeLines: spaceLines,
+    buildSolutionSlotBlocks: solutionSlotBlocks,
+    applyAction: applyEditorAction,
+    showSolutions: () => setShowSolutions(true),
+  });
+
   function openSignalForAnchor(anchor: string) {
     return scrollAnchorContains(anchor, editorRevealRequest?.anchor) ? editorRevealRequest?.sequence : undefined;
   }
@@ -11534,34 +11551,6 @@ export default function App() {
     }
   }
 
-  async function requestSolutionSlotLines(defaultLines: number) {
-    const requested = await mauthDialogs.prompt({
-      title: "Answer and solution space",
-      label: "Student answer lines",
-      description: "Set the number of student working lines paired with this solution slot.",
-      defaultValue: String(defaultLines),
-      confirmLabel: "Add slot",
-      requireValue: true,
-    });
-    if (requested === null) return null;
-    return Math.max(1, Math.floor(spaceLines(requested)));
-  }
-
-  async function addQuestionSolutionSlot(questionId: string) {
-    if (frontMatterRef.current.titlePageTemplate === "notes") return;
-    const question = questions.find((current) => current.id === questionId);
-    if (!question) return;
-    const defaultLines = defaultSolutionSlotLinesForDocument(
-      frontMatterRef.current,
-      question.parts.length ? questionMarks(question) : question.marks,
-    );
-    const lines = await requestSolutionSlotLines(defaultLines);
-    if (lines === null) return;
-    const blocks = solutionSlotBlocks(lines);
-    applyEditorAction({ type: "solutionSlot.add", scope: { kind: "question", questionId: question.id }, blocks });
-    setShowSolutions(true);
-  }
-
   function removeQuestionBlock(questionId: string, blockId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
@@ -11679,16 +11668,6 @@ export default function App() {
     }
   }
 
-  async function addPartSolutionSlot(questionId: string, part: EditorPart) {
-    if (frontMatterRef.current.titlePageTemplate === "notes") return;
-    const defaultLines = defaultSolutionSlotLinesForDocument(frontMatterRef.current, part.subparts?.length ? partMarks(part) : part.marks);
-    const lines = await requestSolutionSlotLines(defaultLines);
-    if (lines === null) return;
-    const blocks = solutionSlotBlocks(lines);
-    applyEditorAction({ type: "solutionSlot.add", scope: { kind: "part", questionId, partId: part.id }, blocks });
-    setShowSolutions(true);
-  }
-
   function removePartBlock(questionId: string, part: EditorPart, blockId: string) {
     applyEditorAction({ type: "module.delete", scope: { kind: "part", questionId, partId: part.id }, blockId });
   }
@@ -11731,18 +11710,6 @@ export default function App() {
       activateEditorAnchor(anchor);
       revealEditorAnchor(anchor);
     }
-  }
-
-  async function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
-    if (frontMatterRef.current.titlePageTemplate === "notes") return;
-    const lines = await requestSolutionSlotLines(defaultSolutionSlotLinesForDocument(frontMatterRef.current, subpart.marks));
-    if (lines === null) return;
-    applyEditorAction({
-      type: "solutionSlot.add",
-      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
-      blocks: solutionSlotBlocks(lines),
-    });
-    setShowSolutions(true);
   }
 
   function removeSubpartBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, blockId: string) {
