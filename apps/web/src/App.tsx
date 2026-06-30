@@ -3,7 +3,6 @@ import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent, PointerEv
 import type {
   ChoiceNumberingStyle,
   ContentBlock,
-  ContentBlockVisibility,
   DiagramAlignment,
   DiagramTextSide,
   FormattingConfig,
@@ -157,21 +156,15 @@ import {
   type AutosavedEditorSnapshot as PersistedEditorSnapshot,
   type SavedDocumentSnapshot,
 } from "@/lib/editorPersistence";
-import { contentBlockVisibilityFields, createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
+import { createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
+import { createEditorContentBlockNormalizer, spaceLines } from "@/lib/editorContentBlockNormalization";
 import { defaultSolutionSlotLines, defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
   normalizeChoiceNumberingStyle,
-  normalizeColumnCount,
   normalizeColumnsBlock,
-  normalizeDiagramAlignment,
   normalizeTableBlock,
-  normalizeTableCellAlignment,
-  normalizeTableCells,
-  normalizeTableRows,
-  normalizedTableColumnCount,
-  paddedTableRow,
   plainTableRows,
 } from "@/lib/contentBlockNormalization";
 import {
@@ -234,7 +227,6 @@ import {
   isDiagramBesideContentBlockInScope,
   isSolutionReplacementBlock,
   isSolutionTextBlock,
-  normalizeContentBlockVisibility,
   recoverMissingSolutionSurfaceTicks,
   solutionBlockVisibility as contentBlockVisibility,
   solutionModeInsertedBlockVisibility,
@@ -1468,6 +1460,13 @@ const {
   diagramTypePatch,
 });
 
+const { normalizeContentBlocks } = createEditorContentBlockNormalizer({
+  id,
+  defaultGraphConfig: DEFAULT_2D_GRAPH,
+  withGraphDefaults,
+  normalizeDiagramTextSide,
+});
+
 function orderItemKey(item?: ContainerOrderItem | null) {
   return item ? `${item.kind}:${item.id}` : "";
 }
@@ -1909,131 +1908,6 @@ function cloneSerializable<T>(value: T): T {
 function safeMarkValue(value: unknown) {
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 0;
-}
-
-function spaceLines(value: unknown) {
-  const numberValue = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 3;
-}
-
-function spaceShowsLines(value: unknown) {
-  return value !== false;
-}
-
-function normalizedBlockVisibility(record: Record<string, unknown>, blockId: string): ContentBlockVisibility | undefined {
-  const explicitVisibility = normalizeContentBlockVisibility(record.visibility);
-  if (explicitVisibility) return explicitVisibility;
-  if (record.studentOnly === true) return "student";
-  if (record.solutionOnly === true || blockId.startsWith("solution-")) return "solution";
-  return undefined;
-}
-
-function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: ContentBlockVisibility) {
-  if (visibility !== "solution") return {};
-  const markTicks = Number(record.markTicks);
-  if (!Number.isInteger(markTicks) || markTicks < 0 || markTicks > 20) return {};
-  return { markTicks };
-}
-
-function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((block): EditorContentBlock[] => {
-    const record = asRecord(block);
-    if (!record) return [];
-    const blockId = typeof record.id === "string" ? record.id : id("block");
-    const visibility = normalizedBlockVisibility(record, blockId);
-
-    if (record.kind === "text") {
-      return [
-        {
-          id: blockId,
-          kind: "text",
-          text: typeof record.text === "string" ? record.text : "",
-          ...contentBlockVisibilityFields(visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "choices") {
-      return [
-        {
-          id: blockId,
-          kind: "choices",
-          choices: normalizeChoiceItems(record.choices),
-          numberingStyle: normalizeChoiceNumberingStyle(record.numberingStyle),
-          layout: normalizeChoiceListLayout(record.layout),
-          ...contentBlockVisibilityFields(visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "table") {
-      const headers = normalizeTableCells(record.headers);
-      const rows = normalizeTableRows(record.rows, Math.max(2, headers.length || 0));
-      const columnCount = normalizedTableColumnCount(headers, rows);
-      return [
-        {
-          id: blockId,
-          kind: "table",
-          headers: paddedTableRow(headers, columnCount),
-          rows: rows.map((row) => paddedTableRow(row, columnCount)),
-          showHeader: record.showHeader !== false,
-          tableAlign: normalizeDiagramAlignment(record.tableAlign),
-          cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
-          ...contentBlockVisibilityFields(visibility),
-          ...surfaceMarkTickFields(record, visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "diagram") {
-      const graphConfig = asRecord(record.graphConfig) ? (record.graphConfig as GraphConfig) : DEFAULT_2D_GRAPH;
-      return [
-        {
-          id: blockId,
-          kind: "diagram",
-          diagramAlign: normalizeDiagramAlignment(record.diagramAlign),
-          diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
-          graphConfig: withGraphDefaults(graphConfig),
-          ...contentBlockVisibilityFields(visibility),
-          ...surfaceMarkTickFields(record, visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "columns") {
-      const columnCount = normalizeColumnCount(record.columnCount ?? (Array.isArray(record.columns) ? record.columns.length : 2));
-      const rawColumns = Array.isArray(record.columns) ? record.columns : [];
-      return [
-        {
-          id: blockId,
-          kind: "columns",
-          columnCount,
-          columns: Array.from({ length: columnCount }, (_, index) => normalizeContentBlocks(rawColumns[index])),
-          ...contentBlockVisibilityFields(visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "space") {
-      return [
-        {
-          id: blockId,
-          kind: "space",
-          lines: spaceLines(record.lines),
-          showLines: spaceShowsLines(record.showLines),
-          ...contentBlockVisibilityFields(visibility),
-        },
-      ];
-    }
-
-    if (record.kind === "pageBreak") {
-      return [{ id: blockId, kind: "pageBreak" }];
-    }
-
-    return [];
-  });
 }
 
 function normalizeEditorSubparts(value: unknown): EditorSubpart[] {
