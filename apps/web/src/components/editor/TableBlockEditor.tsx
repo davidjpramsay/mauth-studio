@@ -8,6 +8,7 @@ import {
   plainTableRows,
   type NormalizedTableBlock,
 } from "@/lib/contentBlockNormalization";
+import type { TableSolutionEntryMask } from "@/lib/tableSolutionEntries";
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
 
@@ -20,6 +21,7 @@ interface TableBlockEditorProps {
   diagramAlignments: Array<{ value: DiagramAlignment; label: string }>;
   cellAlignments: Array<{ value: TableCellAlignment; label: string }>;
   settingsMode?: "inline" | "inspector";
+  solutionEntryMask?: TableSolutionEntryMask;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
@@ -60,6 +62,7 @@ export function TableBlockEditor({
   diagramAlignments,
   cellAlignments,
   settingsMode = "inline",
+  solutionEntryMask,
   dragHandle,
   muted = false,
   active = false,
@@ -176,7 +179,10 @@ export function TableBlockEditor({
                           aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
                           value={cell}
                           onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                          className="table-editor-input"
+                          className={cn(
+                            "table-editor-input",
+                            solutionEntryMask?.[rowIndex]?.[columnIndex] && "table-editor-solution-entry",
+                          )}
                         />
                       </td>
                     ))}

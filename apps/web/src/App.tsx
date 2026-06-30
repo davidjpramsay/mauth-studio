@@ -149,6 +149,7 @@ import {
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import { browserStorageItem } from "@/lib/browserStorage";
+import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import {
   createEditorPersistence,
   type AutosavedEditorSnapshot as PersistedEditorSnapshot,
@@ -4383,6 +4384,8 @@ function ColumnsBlockEditor({
   };
 
   const renderColumnChildBlock = (columnIndex: number, child: EditorContentBlock, childIndex: number) => {
+    const columnBlocks = normalized.columns[columnIndex] ?? [];
+    const columnTableSolutionEntryMasks = child.kind === "table" ? tableSolutionEntryMasksForBlocks(columnBlocks) : undefined;
     const childNumber = childIndex + 1;
     const childLabelPrefix = `Column ${columnIndex + 1}`;
     const childAnchor = anchor ? columnChildScrollAnchor(anchor, columnIndex, child.id) : "";
@@ -4471,6 +4474,7 @@ function ColumnsBlockEditor({
           diagramAlignments={DIAGRAM_ALIGNMENTS}
           cellAlignments={TABLE_CELL_ALIGNMENTS}
           settingsMode="inspector"
+          solutionEntryMask={columnTableSolutionEntryMasks?.[child.id]}
           muted
           active={childActive}
           openSignal={childOpenSignal}
@@ -9047,6 +9051,7 @@ export default function App() {
     const blockAnchor = questionBlockScrollAnchor(question.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
+    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(question.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -9159,6 +9164,7 @@ export default function App() {
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
             settingsMode="inspector"
+            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
             dragHandle={subsectionDragHandle(blockTarget, `Drag table block ${blockIndex + 1}`)}
             active={blockActive}
             openSignal={blockOpenSignal}
@@ -9214,6 +9220,7 @@ export default function App() {
     const blockAnchor = partBlockScrollAnchor(question.id, part.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
+    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(part.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -9330,6 +9337,7 @@ export default function App() {
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
             settingsMode="inspector"
+            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
             dragHandle={subsectionDragHandle(partBlockTarget, `Drag part table ${blockIndex + 1}`)}
             muted
             active={blockActive}
@@ -9383,6 +9391,7 @@ export default function App() {
     const blockAnchor = subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id);
     const blockOpenSignal = openSignalForAnchor(blockAnchor);
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
+    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(subpart.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
     const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
@@ -9503,6 +9512,7 @@ export default function App() {
             diagramAlignments={DIAGRAM_ALIGNMENTS}
             cellAlignments={TABLE_CELL_ALIGNMENTS}
             settingsMode="inspector"
+            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
             dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart table ${blockIndex + 1}`)}
             muted
             active={blockActive}

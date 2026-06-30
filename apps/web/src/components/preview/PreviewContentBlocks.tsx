@@ -11,6 +11,7 @@ import type {
 } from "@mauth-studio/shared";
 
 import { normalizeColumnsBlock } from "@/lib/contentBlockNormalization";
+import { tableSolutionEntryMasksForSlot } from "@/lib/tableSolutionEntries";
 import { cn } from "@/lib/utils";
 
 type EditorContentBlock = ContentBlock;
@@ -233,32 +234,6 @@ function SolutionMarkedSurface({
   );
 }
 
-function tableSolutionEntryMask(studentBlock: EditorContentBlock, solutionBlock: EditorContentBlock, runtime: PreviewContentRuntime) {
-  if (studentBlock.kind !== "table" || solutionBlock.kind !== "table") return undefined;
-
-  const studentRows = runtime.plainTableRows(runtime.normalizeTableBlock(studentBlock));
-  const solutionRows = runtime.plainTableRows(runtime.normalizeTableBlock(solutionBlock));
-  return solutionRows.map((row, rowIndex) =>
-    row.map((cell, cellIndex) => {
-      const studentCell = studentRows[rowIndex]?.[cellIndex] ?? "";
-      return !studentCell.trim() && Boolean(cell.trim());
-    }),
-  );
-}
-
-function tableSolutionEntryMasksForSlot(
-  studentBlock: EditorContentBlock,
-  solutionBlocks: EditorContentBlock[],
-  runtime: PreviewContentRuntime,
-) {
-  const masks: Record<string, boolean[][]> = {};
-  for (const solutionBlock of solutionBlocks) {
-    const mask = tableSolutionEntryMask(studentBlock, solutionBlock, runtime);
-    if (mask) masks[solutionBlock.id] = mask;
-  }
-  return Object.keys(masks).length ? masks : undefined;
-}
-
 function VisibilityReplacementSlot({
   studentBlock,
   solutionBlocks,
@@ -284,7 +259,7 @@ function VisibilityReplacementSlot({
   const solutionRef = useRef<HTMLDivElement | null>(null);
   const [overflowLines, setOverflowLines] = useState(0);
   const solutionBlocksKey = solutionBlocks.map((block) => block.id).join(":");
-  const tableSolutionEntryMasks = tableSolutionEntryMasksForSlot(studentBlock, solutionBlocks, runtime);
+  const tableSolutionEntryMasks = tableSolutionEntryMasksForSlot(studentBlock, solutionBlocks);
 
   useLayoutEffect(() => {
     if (measureOnly || !showSolutions) {
