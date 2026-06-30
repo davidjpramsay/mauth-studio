@@ -27,6 +27,14 @@ pnpm macos:install-launcher
 
 This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
 
+If stale manual servers are still running, stop their terminals with `Ctrl+C`. To force a clean launcher-owned restart, run:
+
+```bash
+pnpm dev:launch:replace
+```
+
+The normal launcher reuses healthy existing Mauth servers, but it now warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions.
+
 For lower-level debugging, run the API and web app in two terminals:
 
 ```bash

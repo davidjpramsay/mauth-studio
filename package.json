@@ -7,6 +7,7 @@
     "build:web": "pnpm --dir apps/web build",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000",
     "dev:launch": "node scripts/mauth-launch.mjs",
+    "dev:launch:replace": "node scripts/mauth-launch.mjs --replace",
     "macos:install-launcher": "node scripts/install-macos-launcher.mjs",
     "agent:mcp": "node scripts/mauth-agent-mcp.mjs",
     "agent:doctor": "node scripts/mauth-agent-doctor.mjs",

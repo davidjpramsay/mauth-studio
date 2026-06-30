@@ -1,20 +1,27 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 
 const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/\/+$/, "");
 const args = new Set(process.argv.slice(2));
 const noOpen = args.has("--no-open");
+const replaceExisting = args.has("--replace");
 const startedProcesses = [];
+const repoRoot = process.cwd();
 
 function usage() {
-  console.log(`Usage: pnpm dev:launch [--no-open]
+  console.log(`Usage: pnpm dev:launch [--no-open] [--replace]
 
 Starts the local Mauth API and web app when needed, verifies the API through
 /api/system/status, warns when an older API is already occupying the port, and
-opens the web app unless --no-open is supplied.`);
+opens the web app unless --no-open is supplied.
+
+Options:
+  --no-open   Start/check servers without opening the browser.
+  --replace   Stop Mauth-owned dev servers on the configured API/web ports first,
+              then start a fresh launcher-owned session.`);
 }
 
 if (args.has("--help") || args.has("-h")) {
@@ -24,6 +31,128 @@ if (args.has("--help") || args.has("-h")) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function commandExists(command) {
+  return spawnSync("which", [command], { stdio: "ignore" }).status === 0;
+}
+
+function portFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.port) return Number(parsed.port);
+    if (parsed.protocol === "https:") return 443;
+    if (parsed.protocol === "http:") return 80;
+  } catch {
+    // Keep launch resilient when custom env URLs are malformed; the fetch step
+    // will report the actual URL failure.
+  }
+  return null;
+}
+
+function readProcessCommand(pid) {
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : "";
+}
+
+function readProcessCwd(pid) {
+  if (!commandExists("lsof")) return "";
+  const result = spawnSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], { encoding: "utf8" });
+  if (result.status !== 0) return "";
+  const cwdLine = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("n"));
+  return cwdLine ? cwdLine.slice(1) : "";
+}
+
+function parseLsofFieldOutput(output) {
+  const listeners = [];
+  let current = null;
+  for (const rawLine of output.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const field = line[0];
+    const value = line.slice(1);
+    if (field === "p") {
+      if (current) listeners.push(current);
+      current = { pid: Number(value), commandName: "", names: [] };
+    } else if (field === "c" && current) {
+      current.commandName = value;
+    } else if (field === "n" && current) {
+      current.names.push(value);
+    }
+  }
+  if (current) listeners.push(current);
+  return listeners
+    .filter((listener) => Number.isFinite(listener.pid))
+    .map((listener) => {
+      const command = readProcessCommand(listener.pid);
+      const cwd = readProcessCwd(listener.pid);
+      return {
+        ...listener,
+        command,
+        cwd,
+        isMauthOwned: isMauthOwnedProcess(command, cwd),
+      };
+    });
+}
+
+function listenersForPort(port) {
+  if (!port || !commandExists("lsof")) return [];
+  const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpcn"], { encoding: "utf8" });
+  if (result.status !== 0 && !result.stdout) return [];
+  return parseLsofFieldOutput(result.stdout);
+}
+
+function isPathInsideRepo(value) {
+  return value === repoRoot || value.startsWith(`${repoRoot}/`);
+}
+
+function isMauthOwnedProcess(command, cwd) {
+  return isPathInsideRepo(cwd) || command.includes(repoRoot);
+}
+
+function listenerProcessSummary(listener) {
+  const command = listener.command || listener.commandName || "unknown command";
+  const names = listener.names.length ? ` ${listener.names.join(", ")}` : "";
+  const owner = listener.isMauthOwned ? "Mauth" : "external";
+  return `pid ${listener.pid} (${owner}) ${command}${names}`;
+}
+
+function printListeners(label, port, listeners, level = "warn") {
+  if (!listeners.length) return;
+  const print = level === "error" ? console.error : console.log;
+  print(
+    `${level === "error" ? "fail" : "warn"} ${label} port ${port} has ${listeners.length} listener${listeners.length === 1 ? "" : "s"}:`,
+  );
+  for (const listener of listeners) {
+    print(`     ${listenerProcessSummary(listener)}`);
+  }
+}
+
+async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!listenersForPort(port).some((listener) => listener.isMauthOwned)) return;
+    await sleep(250);
+  }
+  throw new Error(`Timed out waiting for Mauth-owned listeners on port ${port} to stop.`);
+}
+
+async function stopMauthListeners(label, port) {
+  const listeners = listenersForPort(port).filter((listener) => listener.isMauthOwned);
+  if (!listeners.length) return;
+  console.log(`stop ${label}: ${listeners.length} Mauth-owned listener${listeners.length === 1 ? "" : "s"} on port ${port}`);
+  for (const listener of listeners) {
+    try {
+      process.kill(listener.pid, "SIGTERM");
+      console.log(`     sent SIGTERM to pid ${listener.pid}`);
+    } catch (error) {
+      console.log(`     could not stop pid ${listener.pid}: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+  await waitForMauthListenersToStop(port);
 }
 
 async function fetchText(url, timeoutMs = 1500) {
@@ -100,6 +229,26 @@ function stopStartedProcesses() {
   }
 }
 
+function warnAboutAmbiguousListeners(label, port) {
+  const listeners = listenersForPort(port);
+  if (listeners.length <= 1) return;
+  const listenerNames = new Set(listeners.flatMap((listener) => listener.names));
+  if (listenerNames.size <= 1) return;
+  printListeners(label, port, listeners);
+  console.log("     Multiple listener addresses can make localhost and 127.0.0.1 show different Mauth versions.");
+  console.log("     Run pnpm dev:launch --replace for a clean launcher-owned restart.");
+}
+
+function failForPortConflict(label, port, listeners, detail) {
+  printListeners(label, port, listeners, "error");
+  console.error(`     ${detail}`);
+  if (listeners.some((listener) => listener.isMauthOwned)) {
+    console.error("     Run pnpm dev:launch --replace to stop Mauth-owned dev servers and start a fresh session.");
+  }
+  stopStartedProcesses();
+  process.exit(1);
+}
+
 process.on("SIGINT", () => {
   stopStartedProcesses();
   process.exit(130);
@@ -109,10 +258,31 @@ process.on("SIGTERM", () => {
   process.exit(143);
 });
 
+const apiPort = portFromUrl(API_BASE);
+const webPort = portFromUrl(WEB_URL);
+
+if (replaceExisting) {
+  await stopMauthListeners("web", webPort);
+  await stopMauthListeners("api", apiPort);
+}
+
 const initialStatus = await readSystemStatus();
 if (initialStatus.ok) {
   console.log(`ok   API ${initialStatus.json.apiVersion} started ${initialStatus.json.startedAt}`);
 } else {
+  const apiListeners = listenersForPort(apiPort);
+  if (apiListeners.length) {
+    const health = await apiHealth();
+    if (health.ok) {
+      failForPortConflict(
+        "API",
+        apiPort,
+        apiListeners,
+        "API health responds, but /api/system/status is missing. An older Mauth API is probably still running.",
+      );
+    }
+    failForPortConflict("API", apiPort, apiListeners, `${API_BASE} is not healthy, but the API port is occupied.`);
+  }
   const health = await apiHealth();
   if (health.ok) {
     console.error("fail API health responds, but /api/system/status is missing.");
@@ -128,11 +298,17 @@ const initialWeb = await webHealth();
 if (initialWeb.ok && initialWeb.isMauth) {
   console.log(`ok   Web app at ${WEB_URL}`);
 } else if (initialWeb.ok) {
-  console.error(`fail ${WEB_URL} responds, but it does not look like Mauth Studio.`);
-  console.error("     Another process may be using the web port. Stop it or set MAUTH_WEB_URL to the correct Mauth web URL.");
-  stopStartedProcesses();
-  process.exit(1);
+  failForPortConflict(
+    "Web",
+    webPort,
+    listenersForPort(webPort),
+    `${WEB_URL} responds, but it does not look like Mauth Studio. Stop the conflicting process or set MAUTH_WEB_URL to the correct Mauth web URL.`,
+  );
 } else {
+  const webListeners = listenersForPort(webPort);
+  if (webListeners.length) {
+    failForPortConflict("Web", webPort, webListeners, `${WEB_URL} is not reachable, but the web port is occupied.`);
+  }
   startProcess("web", "pnpm", ["dev:web"]);
   await waitFor("Web app", async () => {
     const current = await webHealth();
@@ -150,6 +326,8 @@ if (!finalStatus.ok) {
 
 console.log(`ok   Documents folder: ${finalStatus.json.workspace.documentsPath}`);
 console.log(`ok   Bridge route: ${finalStatus.json.bridge.routes.browserRegister}`);
+warnAboutAmbiguousListeners("API", apiPort);
+warnAboutAmbiguousListeners("Web", webPort);
 
 if (!noOpen) {
   const openCommand = process.platform === "darwin" ? "open" : "xdg-open";
@@ -160,4 +338,7 @@ if (!noOpen) {
 if (startedProcesses.length) {
   console.log("Mauth is running. Press Ctrl+C here to stop processes started by this launcher.");
   await new Promise(() => undefined);
+} else {
+  console.log("Mauth was already running. This launcher did not start new API/web processes.");
+  console.log("Stop the original Terminal sessions when you want to shut those servers down, or rerun with --replace for a clean restart.");
 }
