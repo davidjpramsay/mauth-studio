@@ -1,6 +1,7 @@
-import { ClipboardCheck, Eye, EyeOff, FileText } from "lucide-react";
+import { ClipboardCheck, Eye, EyeOff, FileText, Layers } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { solutionModeCopy } from "@/lib/solutionModeCopy";
 import { cn } from "@/lib/utils";
 
 export function SolutionModeControls({
@@ -34,6 +35,7 @@ export function SolutionModeControls({
         ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
         : "border-amber-300/25 bg-amber-500/15 text-amber-50 hover:bg-amber-500/25 hover:text-white"
       : "border-blue-300/20 bg-slate-950/20 text-blue-100 hover:bg-blue-500/15 hover:text-white";
+  const modeCopy = solutionModeCopy({ supportsSolutionTools, effectiveShowSolutions });
 
   return (
     <>
@@ -76,6 +78,18 @@ export function SolutionModeControls({
             <span>Solutions</span>
           </Button>
         </div>
+      ) : null}
+      {editorDocumentOpen ? (
+        <span
+          title={modeCopy.layerTitle}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold",
+            effectiveShowSolutions ? "border-blue-300/25 bg-blue-500/15 text-blue-50" : "border-slate-300/20 bg-slate-950/20 text-blue-100",
+          )}
+        >
+          <Layers className="size-3.5" aria-hidden="true" />
+          <span className="hidden 2xl:inline">{modeCopy.layerLabel}</span>
+        </span>
       ) : null}
       {editorDocumentOpen && supportsSolutionTools ? (
         <Button
