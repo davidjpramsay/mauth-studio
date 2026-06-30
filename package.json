@@ -7,6 +7,7 @@
     "build:web": "pnpm --dir apps/web build",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000",
     "dev:launch": "node scripts/mauth-launch.mjs",
+    "dev:launch:desktop": "node scripts/mauth-launch.mjs --replace-ambiguous",
     "dev:launch:replace": "node scripts/mauth-launch.mjs --replace",
     "dev:status": "node scripts/mauth-launch.mjs --status",
     "dev:stop": "node scripts/mauth-launch.mjs --stop",

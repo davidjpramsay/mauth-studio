@@ -26,6 +26,13 @@ pnpm macos:install-launcher
 ```
 
 This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
+The installed app runs the desktop launcher mode:
+
+```bash
+pnpm dev:launch:desktop
+```
+
+That mode reuses healthy servers, but if it detects duplicate Mauth-owned listener addresses that could make `localhost` and `127.0.0.1` show different builds, it cleans them up before opening the browser.
 
 Check what Mauth servers are currently running:
 
@@ -45,7 +52,7 @@ If stale manual servers are still running, stop their terminals with `Ctrl+C` or
 pnpm dev:launch:replace
 ```
 
-The normal launcher reuses healthy existing Mauth servers, but it now warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions.
+The normal launcher reuses healthy existing Mauth servers, but it now warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions. The desktop launcher mode performs that ambiguous-listener cleanup automatically.
 
 For lower-level debugging, run the API and web app in two terminals:
 

@@ -6,8 +6,8 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 - The full quality gate passes: formatting, ESLint, Ruff, pytest, web action tests, Plotly tests, TypeScript, and Vite build.
 - The running API exposes `/api/system/status`, which reports the API version/start time, repo root, active documents folder, default project, git branch/commit, and browser bridge sessions. The web header now has a System status panel and marks the API as stale when this route is missing.
-- `pnpm dev:launch` starts or validates the local API/web stack through `/api/system/status`, warns if an older API is occupying port 8000, and opens the web app unless `--no-open` is supplied.
-- `pnpm macos:install-launcher` installs a local `Mauth Studio.app` into `~/Applications` with the Mauth app icon. Double-clicking it opens a clearly labelled Terminal session and runs `pnpm dev:launch` from the repo, so the desktop entry point still uses the same status checks.
+- `pnpm dev:launch` starts or validates the local API/web stack through `/api/system/status`, warns if an older API is occupying port 8000, and opens the web app unless `--no-open` is supplied. `pnpm dev:launch:desktop` uses the same path but automatically replaces ambiguous Mauth-owned listener addresses that could show stale builds.
+- `pnpm macos:install-launcher` installs a local `Mauth Studio.app` into `~/Applications` with the Mauth app icon. Double-clicking it opens a clearly labelled Terminal session and runs `pnpm dev:launch:desktop` from the repo, so the desktop entry point still uses the same status checks while cleaning up stale duplicate local listeners.
 - `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
 - File, folder, backup/import, close-file, save-as, restore-version, and solution-slot line-count workflows now use Mauth-owned dialogs rather than native `window.prompt`, `window.confirm`, or `window.alert`. Close-file decisions now support explicit Save, Don't Save, and Cancel paths.
@@ -58,7 +58,7 @@ An in-app assistant can come back later, but it should be a client for the same 
 ### 1. Stabilise The Local App
 
 - Use `/api/system/status` as the launcher and support contract for process, folder, file, revision, autosave, and bridge diagnostics.
-- Keep the macOS launcher as a thin wrapper around `pnpm dev:launch` until the app is stable enough for a Tauri/Electron shell.
+- Keep the macOS launcher as a thin wrapper around `pnpm dev:launch:desktop` until the app is stable enough for a Tauri/Electron shell.
 - Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
 - Keep save, close, delete, rename, restore, folder selection, and solution-slot configuration on structured Mauth dialogs; deepen the document-session controller so recovery and conflict choices use the same save/discard/cancel model.
 

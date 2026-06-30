@@ -16,9 +16,10 @@ const iconFileName = "mauth-studio.icns";
 function usage() {
   console.log(`Usage: pnpm macos:install-launcher [--target /path/to/Mauth Studio.app] [--repo /path/to/Mauth] [--icon /path/to/icon.png]
 
-Creates a local macOS .app entry point that opens Terminal, runs pnpm dev:launch
-from the Mauth repo, checks /api/system/status, starts the web/API servers when
-needed, and opens Mauth Studio in the browser.`);
+Creates a local macOS .app entry point that opens Terminal, runs
+pnpm dev:launch:desktop from the Mauth repo, checks /api/system/status, cleans
+up stale duplicate local listeners when needed, and opens Mauth Studio in the
+browser.`);
 }
 
 function optionValue(name, fallback) {
@@ -50,6 +51,7 @@ const contentsDir = path.join(targetApp, "Contents");
 const macosDir = path.join(contentsDir, "MacOS");
 const resourcesDir = path.join(contentsDir, "Resources");
 const executableName = "mauth-studio";
+const pnpmCommand = commandPath("pnpm") || "pnpm";
 
 function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
@@ -63,15 +65,21 @@ function appleScriptString(value) {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
+function commandPath(command) {
+  const result = spawnSync("/bin/zsh", ["-lc", `command -v ${command}`], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim().split("\n")[0] : "";
+}
+
 function launcherScript() {
   const terminalCommand = [
     "clear",
     'printf "\\\\033]0;Mauth Studio\\\\007"',
     `cd ${shellSingleQuote(repoRoot)}`,
     'echo "Starting Mauth Studio..."',
+    `echo "Using pnpm: ${pnpmCommand}"`,
     'echo "This window owns any API/web processes started by the launcher."',
     'echo "Press Ctrl+C here to stop them."',
-    "pnpm dev:launch",
+    `${shellSingleQuote(pnpmCommand)} dev:launch:desktop`,
   ].join(" && ");
 
   return `#!/bin/zsh
@@ -189,7 +197,7 @@ await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { enco
 const installedIcon = await installAppIcon();
 await fs.writeFile(
   path.join(resourcesDir, "README.txt"),
-  `Mauth Studio\n\nRuns pnpm dev:launch from:\n${repoRoot}\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
+  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nResolved pnpm command:\n${pnpmCommand}\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
   "utf8",
 );
 
@@ -198,4 +206,4 @@ console.log(targetApp);
 console.log(
   installedIcon ? "Installed app icon from Mauth brand assets." : "Installed without .icns icon because sips/iconutil was unavailable.",
 );
-console.log("Double-click it in Finder to start Mauth Studio through pnpm dev:launch.");
+console.log("Double-click it in Finder to start Mauth Studio through pnpm dev:launch:desktop.");

@@ -8,13 +8,14 @@ const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/
 const args = new Set(process.argv.slice(2));
 const noOpen = args.has("--no-open");
 const replaceExisting = args.has("--replace");
+const replaceAmbiguous = args.has("--replace-ambiguous");
 const statusOnly = args.has("--status");
 const stopOnly = args.has("--stop");
 const startedProcesses = [];
 const repoRoot = process.cwd();
 
 function usage() {
-  console.log(`Usage: pnpm dev:launch [--no-open] [--replace] [--status] [--stop]
+  console.log(`Usage: pnpm dev:launch [--no-open] [--replace] [--replace-ambiguous] [--status] [--stop]
 
 Starts the local Mauth API and web app when needed, verifies the API through
 /api/system/status, warns when an older API is already occupying the port, and
@@ -24,6 +25,9 @@ Options:
   --no-open   Start/check servers without opening the browser.
   --replace   Stop Mauth-owned dev servers on the configured API/web ports first,
               then start a fresh launcher-owned session.
+  --replace-ambiguous
+              Stop Mauth-owned dev servers only when same-port listener addresses
+              could make localhost and 127.0.0.1 show different Mauth versions.
   --status   Print API/web health and listener ownership without starting servers.
   --stop     Stop Mauth-owned listeners on the configured API/web ports and exit.`);
 }
@@ -150,6 +154,14 @@ function printPortStatus(label, port, listeners) {
   }
 }
 
+function listenerAddressSet(listeners) {
+  return new Set(listeners.flatMap((listener) => listener.names));
+}
+
+function listenersAreAmbiguous(listeners) {
+  return listeners.length > 1 && listenerAddressSet(listeners).size > 1;
+}
+
 async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -157,6 +169,14 @@ async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
     await sleep(250);
   }
   throw new Error(`Timed out waiting for Mauth-owned listeners on port ${port} to stop.`);
+}
+
+async function replaceAmbiguousMauthListeners(label, port) {
+  const listeners = listenersForPort(port);
+  if (!listenersAreAmbiguous(listeners)) return;
+  printListeners(label, port, listeners, "warn");
+  console.log("     Replacing Mauth-owned listeners to avoid stale localhost/127.0.0.1 app versions.");
+  await stopMauthListeners(label.toLowerCase(), port);
 }
 
 async function stopMauthListeners(label, port) {
@@ -253,12 +273,10 @@ function stopStartedProcesses() {
 
 function warnAboutAmbiguousListeners(label, port) {
   const listeners = listenersForPort(port);
-  if (listeners.length <= 1) return;
-  const listenerNames = new Set(listeners.flatMap((listener) => listener.names));
-  if (listenerNames.size <= 1) return;
+  if (!listenersAreAmbiguous(listeners)) return;
   printListeners(label, port, listeners);
   console.log("     Multiple listener addresses can make localhost and 127.0.0.1 show different Mauth versions.");
-  console.log("     Run pnpm dev:launch --replace for a clean launcher-owned restart.");
+  console.log("     Run pnpm dev:launch --replace, or use --replace-ambiguous for the desktop-safe cleanup mode.");
 }
 
 function failForPortConflict(label, port, listeners, detail) {
@@ -319,6 +337,9 @@ if (stopOnly) {
 if (replaceExisting) {
   await stopMauthListeners("web", webPort);
   await stopMauthListeners("api", apiPort);
+} else if (replaceAmbiguous) {
+  await replaceAmbiguousMauthListeners("Web", webPort);
+  await replaceAmbiguousMauthListeners("API", apiPort);
 }
 
 const initialStatus = await readSystemStatus();
