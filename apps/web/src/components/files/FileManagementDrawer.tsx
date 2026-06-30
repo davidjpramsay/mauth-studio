@@ -126,6 +126,8 @@ function TestFileManager({
   const [recentProjectFilePaths, setRecentProjectFilePaths] = useState<string[]>(() => readRecentProjectFilePaths());
   const backupImportInputRef = useRef<HTMLInputElement>(null);
   const documentsPath = activeProject?.documentsPath ?? activeProject?.workspacePath ?? "";
+  const isExternalDocumentsFolder =
+    Boolean(activeProject?.documentsPath && activeProject?.workspacePath) && activeProject?.documentsPath === activeProject?.workspacePath;
   const visibleEntries = useMemo(() => visibleTestFiles(files), [files]);
   const folderOptions = useMemo(() => testFolderOptions(files), [files]);
   const rawCurrentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
@@ -458,12 +460,19 @@ function TestFileManager({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
+    <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
       {documentsPath ? (
         <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/35 px-3 py-2 text-sm">
           <div className="min-w-0">
-            <div className="font-medium text-foreground">Local documents folder</div>
+            <div className="font-medium text-foreground">
+              {isExternalDocumentsFolder ? "External documents folder" : "Local documents folder"}
+            </div>
             <div className="truncate font-mono text-xs text-muted-foreground">{documentsPath}</div>
+            {isExternalDocumentsFolder ? (
+              <div className="truncate text-xs text-muted-foreground">
+                Mauth opens files already in this folder and keeps metadata in its hidden .mauth folder.
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
             <Button
@@ -546,7 +555,7 @@ function TestFileManager({
               <p className="truncate text-xs text-muted-foreground">Quick access to the last opened local files</p>
             </div>
           </div>
-          <div className="max-h-44 overflow-y-auto">
+          <div className="max-h-32 overflow-y-auto">
             {recentEntries.map(({ file, testPath }) => {
               const active = activeRelativePath === testPath;
               const name = testFileDisplayName(testPathBasename(testPath));
@@ -1000,7 +1009,7 @@ export function FileManagementDrawer({
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/35 p-4 pt-20" onMouseDown={onClose}>
       <aside
-        className="ml-auto flex max-h-[calc(100vh-6rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl"
+        className="ml-auto flex h-[calc(100vh-6rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl"
         aria-label="Files"
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -1013,7 +1022,7 @@ export function FileManagementDrawer({
             <X />
           </Button>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
           <TestFileManager
             activeProject={activeProject}
             files={projectFiles}
