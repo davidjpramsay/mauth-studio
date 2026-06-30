@@ -201,8 +201,19 @@ import {
   solutionSlotToleranceLines,
   validateSolutionCompleteness,
   type SolutionValidationRuntime,
-  type SolutionVisibilityReplacementSlotGroup,
 } from "@/lib/solutionValidation";
+import {
+  isContentBlockVisible,
+  isContentBlockVisibleInScope,
+  isDiagramBesideContentBlockInScope,
+  isSolutionReplacementBlock,
+  isSolutionTextBlock,
+  normalizeContentBlockVisibility,
+  recoverMissingSolutionSurfaceTicks,
+  solutionBlockVisibility as contentBlockVisibility,
+  visibilityReplacementSlotAt,
+  type SolutionVisibilityReplacementSlotGroup,
+} from "@/lib/solutionBlockVisibility";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
   SCROLL_ANCHOR_SELECTOR,
@@ -2192,10 +2203,6 @@ function projectFileConflictFromError(error: unknown, filePath: string, localRev
   };
 }
 
-function normalizeContentBlockVisibility(value: unknown): ContentBlockVisibility | undefined {
-  return value === "always" || value === "student" || value === "solution" ? value : undefined;
-}
-
 function normalizedBlockVisibility(record: Record<string, unknown>, blockId: string): ContentBlockVisibility | undefined {
   const explicitVisibility = normalizeContentBlockVisibility(record.visibility);
   if (explicitVisibility) return explicitVisibility;
@@ -2218,35 +2225,6 @@ function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: Con
   const markTicks = Number(record.markTicks);
   if (!Number.isInteger(markTicks) || markTicks < 0 || markTicks > 20) return {};
   return { markTicks };
-}
-
-function isSolutionOnlyBlock(block: EditorContentBlock) {
-  const explicitVisibility = normalizeContentBlockVisibility(block.visibility);
-  return (
-    explicitVisibility === "solution" || block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))
-  );
-}
-
-function solutionTextHasMarkAnnotation(block: EditorContentBlock) {
-  return block.kind === "text" && isSolutionOnlyBlock(block) && /\[\[marks:\s*\d+\s*]]/i.test(block.text);
-}
-
-function isSolutionSurfaceMissingTicks(block: EditorContentBlock) {
-  if (block.kind !== "table" && block.kind !== "diagram") return false;
-  if (!isSolutionOnlyBlock(block)) return false;
-  const markTicks = Number(block.markTicks);
-  return !Number.isInteger(markTicks);
-}
-
-function recoverMissingSolutionSurfaceTicks(blocks: EditorContentBlock[], marks: number) {
-  const markTicks = Math.max(0, Math.min(20, Math.round(safeMarkValue(marks))));
-  if (!markTicks || blocks.some(solutionTextHasMarkAnnotation)) return blocks;
-
-  const candidateIds = blocks.filter(isSolutionSurfaceMissingTicks).map((block) => block.id);
-  if (candidateIds.length !== 1) return blocks;
-
-  const [targetId] = candidateIds;
-  return blocks.map((block) => (block.id === targetId ? ({ ...block, markTicks } as EditorContentBlock) : block));
 }
 
 function normalizeContentBlocks(value: unknown): EditorContentBlock[] {
@@ -3388,119 +3366,7 @@ function partPanelSummary(blocks: EditorContentBlock[], showSolutions = true) {
 
 const TEST_SOLUTION_COLOR = "#1d4ed8";
 
-function contentBlockVisibility(block: EditorContentBlock): ContentBlockVisibility {
-  const explicitVisibility = normalizeContentBlockVisibility(block.visibility);
-  if (block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))) return "solution";
-  if (explicitVisibility === "solution") return "solution";
-  if (explicitVisibility === "student" || block.studentOnly === true) return "student";
-  return "always";
-}
-
-function isContentBlockVisible(block: EditorContentBlock, showSolutions: boolean) {
-  const visibility = contentBlockVisibility(block);
-  if (visibility === "solution") return showSolutions;
-  if (visibility === "student") return !showSolutions;
-  return true;
-}
-
-function replacementSlotContainingBlock(blocks: EditorContentBlock[], blockIndex: number) {
-  const block = blocks[blockIndex];
-  if (!block) return null;
-
-  const directSlot = visibilityReplacementSlotAt(blocks, blockIndex);
-  if (directSlot) return directSlot;
-
-  for (let cursor = blockIndex - 1; cursor >= 0; cursor -= 1) {
-    const candidate = blocks[cursor];
-    if (!candidate || candidate.kind === "pageBreak" || !isSolutionReplacementBlock(candidate)) break;
-    const slot = visibilityReplacementSlotAt(blocks, cursor);
-    if (slot && blockIndex <= slot.endIndex) return slot;
-  }
-
-  return null;
-}
-
-function isUnpairedStudentAnswerSpace(blocks: EditorContentBlock[], blockIndex: number) {
-  const block = blocks[blockIndex];
-  return Boolean(
-    block?.kind === "space" && contentBlockVisibility(block) === "student" && !replacementSlotContainingBlock(blocks, blockIndex),
-  );
-}
-
-function isContentBlockVisibleInScope(blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) {
-  const block = blocks[blockIndex];
-  if (!block) return false;
-  if (showSolutions && isUnpairedStudentAnswerSpace(blocks, blockIndex)) return true;
-  return isContentBlockVisible(block, showSolutions);
-}
-
-function isDiagramBesideContentBlockInScope(blocks: EditorContentBlock[], blockIndex: number, showSolutions: boolean) {
-  const block = blocks[blockIndex];
-  return Boolean(
-    block && (block.kind === "text" || block.kind === "space") && isContentBlockVisibleInScope(blocks, blockIndex, showSolutions),
-  );
-}
-
-function isSolutionTextBlock(block: EditorContentBlock) {
-  return block.kind === "text" && contentBlockVisibility(block) === "solution";
-}
-
 type VisibilityReplacementSlotGroup = SolutionVisibilityReplacementSlotGroup;
-
-function isStudentReplacementBlock(block: EditorContentBlock) {
-  return contentBlockVisibility(block) === "student";
-}
-
-function isSolutionReplacementBlock(block: EditorContentBlock) {
-  return contentBlockVisibility(block) === "solution";
-}
-
-function canShareReplacementSlot(studentBlock: EditorContentBlock, solutionBlock: EditorContentBlock) {
-  if (studentBlock.kind === "space") return true;
-  return studentBlock.kind === solutionBlock.kind;
-}
-
-function visibilityReplacementSlotAt(blocks: EditorContentBlock[], startIndex: number): VisibilityReplacementSlotGroup | null {
-  const block = blocks[startIndex];
-  if (!block || block.kind === "pageBreak") return null;
-
-  if (isStudentReplacementBlock(block)) {
-    const solutionBlocks: EditorContentBlock[] = [];
-    let cursor = startIndex + 1;
-    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor]) && canShareReplacementSlot(block, blocks[cursor])) {
-      solutionBlocks.push(blocks[cursor]);
-      cursor += 1;
-    }
-    if (!solutionBlocks.length) return null;
-    return {
-      studentBlock: block,
-      solutionBlocks,
-      blocks: [block, ...solutionBlocks],
-      endIndex: cursor - 1,
-    };
-  }
-
-  if (isSolutionReplacementBlock(block)) {
-    const solutionBlocks: EditorContentBlock[] = [];
-    let cursor = startIndex;
-    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor])) {
-      solutionBlocks.push(blocks[cursor]);
-      cursor += 1;
-    }
-    const studentBlock = blocks[cursor];
-    if (!studentBlock || !isStudentReplacementBlock(studentBlock)) return null;
-    const compatibleSolutionBlocks = solutionBlocks.filter((solutionBlock) => canShareReplacementSlot(studentBlock, solutionBlock));
-    if (!compatibleSolutionBlocks.length || compatibleSolutionBlocks.length !== solutionBlocks.length) return null;
-    return {
-      studentBlock,
-      solutionBlocks: compatibleSolutionBlocks,
-      blocks: [...compatibleSolutionBlocks, studentBlock],
-      endIndex: cursor,
-    };
-  }
-
-  return null;
-}
 
 function visibilityReplacementSlotAtOrderedItems(
   items: Array<OrderedQuestionItem | OrderedPartItem>,

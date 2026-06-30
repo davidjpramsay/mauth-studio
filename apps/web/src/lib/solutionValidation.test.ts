@@ -9,8 +9,8 @@ import {
   type SolutionValidationQuestionLike,
   type SolutionValidationRuntime,
   type SolutionValidationSubpartLike,
-  type SolutionVisibilityReplacementSlotGroup,
 } from "./solutionValidation.ts";
+import { solutionBlockVisibility, visibilityReplacementSlotAt } from "./solutionBlockVisibility.ts";
 
 type TestSubpart = SolutionValidationSubpartLike;
 
@@ -50,70 +50,9 @@ function question(id: string, marks: number, contentBlocks: ContentBlock[]): Tes
   };
 }
 
-function contentBlockVisibility(block: ContentBlock): ContentBlockVisibility {
-  if (block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))) return "solution";
-  if (block.visibility === "solution") return "solution";
-  if (block.visibility === "student" || block.studentOnly === true) return "student";
-  return "always";
-}
-
-function isStudentReplacementBlock(block: ContentBlock) {
-  return contentBlockVisibility(block) === "student";
-}
-
-function isSolutionReplacementBlock(block: ContentBlock) {
-  return contentBlockVisibility(block) === "solution";
-}
-
-function canShareReplacementSlot(studentBlock: ContentBlock, solutionBlock: ContentBlock) {
-  if (studentBlock.kind === "space") return true;
-  return studentBlock.kind === solutionBlock.kind;
-}
-
-function visibilityReplacementSlotAt(blocks: ContentBlock[], startIndex: number): SolutionVisibilityReplacementSlotGroup | null {
-  const block = blocks[startIndex];
-  if (!block || block.kind === "pageBreak") return null;
-
-  if (isStudentReplacementBlock(block)) {
-    const solutionBlocks: ContentBlock[] = [];
-    let cursor = startIndex + 1;
-    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor]) && canShareReplacementSlot(block, blocks[cursor])) {
-      solutionBlocks.push(blocks[cursor]);
-      cursor += 1;
-    }
-    if (!solutionBlocks.length) return null;
-    return {
-      studentBlock: block,
-      solutionBlocks,
-      blocks: [block, ...solutionBlocks],
-      endIndex: cursor - 1,
-    };
-  }
-
-  if (isSolutionReplacementBlock(block)) {
-    const solutionBlocks: ContentBlock[] = [];
-    let cursor = startIndex;
-    while (cursor < blocks.length && isSolutionReplacementBlock(blocks[cursor])) {
-      solutionBlocks.push(blocks[cursor]);
-      cursor += 1;
-    }
-    const studentBlock = blocks[cursor];
-    if (!studentBlock || !isStudentReplacementBlock(studentBlock)) return null;
-    if (solutionBlocks.some((solutionBlock) => !canShareReplacementSlot(studentBlock, solutionBlock))) return null;
-    return {
-      studentBlock,
-      solutionBlocks,
-      blocks: [...solutionBlocks, studentBlock],
-      endIndex: cursor,
-    };
-  }
-
-  return null;
-}
-
 const runtime: SolutionValidationRuntime<TestQuestion, TestPart, TestSubpart> = {
   alphaLabel: (index) => String.fromCharCode(97 + index),
-  contentBlockVisibility,
+  contentBlockVisibility: solutionBlockVisibility,
   defaultSolutionSlotLines: (marks) => Math.ceil(marks * 3 + 2),
   graphHeight: () => 260,
   normalizeChoiceItems: (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),

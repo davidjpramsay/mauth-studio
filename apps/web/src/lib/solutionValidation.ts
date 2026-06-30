@@ -1,7 +1,9 @@
 import type { ContentBlock, ContentBlockVisibility, GraphConfig } from "@mauth-studio/shared";
+import type { SolutionVisibilityReplacementSlotGroup } from "./solutionBlockVisibility.ts";
 
 type EditorContentBlock = ContentBlock;
 type TableBlock = Extract<EditorContentBlock, { kind: "table" }>;
+export type { SolutionVisibilityReplacementSlotGroup } from "./solutionBlockVisibility.ts";
 
 export interface SolutionValidationSubpartLike {
   id: string;
@@ -45,13 +47,6 @@ export interface SolutionValidationResult {
   errorCount: number;
   warningCount: number;
   issues: SolutionValidationIssue[];
-}
-
-export interface SolutionVisibilityReplacementSlotGroup {
-  studentBlock: EditorContentBlock;
-  solutionBlocks: EditorContentBlock[];
-  blocks: EditorContentBlock[];
-  endIndex: number;
 }
 
 export type SolutionOrderedQuestionItem<TPart extends SolutionValidationPartLike> =
