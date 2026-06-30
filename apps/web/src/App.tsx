@@ -138,6 +138,7 @@ import { useSolutionModeController } from "@/hooks/useSolutionModeController";
 import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
+import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
   formatProjectFileSize,
@@ -7218,6 +7219,12 @@ export default function App() {
     cleanUnsavedDocumentFingerprint: cleanUnsavedDocumentFingerprintRef.current,
     draftAutosaveStatus,
     draftAutosaveMessage,
+  });
+  useUnsavedChangesBeforeUnloadController({
+    editorDocumentOpen,
+    fileOperationBusy,
+    hasUnsavedProjectChanges,
+    hasUnsavedDraftChanges,
   });
   const {
     activeQuestion,

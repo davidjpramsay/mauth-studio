@@ -11,7 +11,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 - `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
 - File, folder, backup/import, close-file, save-as, restore-version, and solution-slot line-count workflows now use Mauth-owned dialogs rather than native `window.prompt`, `window.confirm`, or `window.alert`. Close-file decisions now support explicit Save, Don't Save, and Cancel paths.
-- Document persistence, close/open decisions, active-file sync, and file-conflict recovery/reload actions are now composed through a document-session controller rather than wired separately in `App.tsx`.
+- Document persistence, close/open decisions, active-file sync, and file-conflict recovery/reload actions are now composed through a document-session controller rather than wired separately in `App.tsx`. Browser tab/window unload is also guarded while a document has unsaved file changes, unsaved new-draft changes, or an active file operation.
 - Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
 - The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
 
