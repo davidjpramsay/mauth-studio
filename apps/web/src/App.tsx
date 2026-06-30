@@ -152,6 +152,7 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
+import { browserStorageItem, loadBrowserJson, newerAutosaveSnapshot, persistBrowserSnapshot } from "@/lib/browserStorage";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -738,11 +739,6 @@ interface SavedTest {
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function localStorageItem(key: string, legacyKey?: string) {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(key) ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
 }
 
 function loadInitialTheme(): ThemeMode {
@@ -1961,7 +1957,7 @@ function isBlankStarterQuestion(question?: QuestionBlock) {
 
 function shouldSeedScreenshotStarter(questions: QuestionBlock[]) {
   if (typeof window === "undefined") return false;
-  if (localStorageItem(STARTER_DOCUMENT_STORAGE_KEY, LEGACY_STARTER_DOCUMENT_STORAGE_KEY)) return false;
+  if (browserStorageItem(STARTER_DOCUMENT_STORAGE_KEY, LEGACY_STARTER_DOCUMENT_STORAGE_KEY)) return false;
   return questions.length === 1 && isBlankStarterQuestion(questions[0]);
 }
 
@@ -2327,16 +2323,11 @@ function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null
 }
 
 function loadCurrentDraft(): AutosavedEditorSnapshot | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const stored = localStorageItem(CURRENT_DRAFT_STORAGE_KEY, LEGACY_CURRENT_DRAFT_STORAGE_KEY);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored) as unknown;
-    return normalizeEditorSnapshot(parsed);
-  } catch {
-    return null;
-  }
+  return loadBrowserJson({
+    key: CURRENT_DRAFT_STORAGE_KEY,
+    legacyKey: LEGACY_CURRENT_DRAFT_STORAGE_KEY,
+    normalize: normalizeEditorSnapshot,
+  });
 }
 
 let initialEditorDraftCache: AutosavedEditorSnapshot | null | undefined;
@@ -2348,26 +2339,14 @@ function loadInitialEditorDraft() {
 }
 
 function persistCurrentDraft(snapshot: AutosavedEditorSnapshot) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(
-      CURRENT_DRAFT_STORAGE_KEY,
-      JSON.stringify({
-        ...snapshot,
-        updatedAt: new Date().toISOString(),
-      }),
-    );
-  } catch {
-    // Keep editing in memory if localStorage is full, usually due to embedded logos or very large diagrams.
-  }
+  persistBrowserSnapshot({ key: CURRENT_DRAFT_STORAGE_KEY, snapshot });
 }
 
 function loadLegacySavedTests(): SavedTest[] {
   if (typeof window === "undefined") return [];
 
   try {
-    const stored = localStorageItem(SAVED_TEST_STORAGE_KEY, LEGACY_SAVED_TEST_STORAGE_KEY);
+    const stored = browserStorageItem(SAVED_TEST_STORAGE_KEY, LEGACY_SAVED_TEST_STORAGE_KEY);
     if (!stored) return [];
     const parsed = JSON.parse(stored) as unknown;
     return normalizeSavedTests(parsed);
@@ -2423,13 +2402,7 @@ function mergeLegacySavedTests(primary: SavedTest[], fallback: SavedTest[]) {
 }
 
 function newerAutosave(left: AutosavedEditorSnapshot | null, right: AutosavedEditorSnapshot | null) {
-  if (!left) return right;
-  if (!right) return left;
-  const leftBlank = left.questions.length === 1 && isBlankStarterQuestion(left.questions[0]);
-  const rightBlank = right.questions.length === 1 && isBlankStarterQuestion(right.questions[0]);
-  if (leftBlank && !rightBlank) return right;
-  if (rightBlank && !leftBlank) return left;
-  return (right.updatedAt ?? "") > (left.updatedAt ?? "") ? right : left;
+  return newerAutosaveSnapshot(left, right, (autosave) => autosave.questions.length === 1 && isBlankStarterQuestion(autosave.questions[0]));
 }
 
 function persistLegacySavedTests(legacyTests: SavedTest[]) {
