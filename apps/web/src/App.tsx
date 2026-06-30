@@ -153,9 +153,9 @@ import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteCo
 import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
 import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
 import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
-import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
-import { useSolutionValidationFixController } from "@/hooks/useSolutionValidationFixController";
 import { useSolutionModeController } from "@/hooks/useSolutionModeController";
+import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
+import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import {
@@ -8429,7 +8429,6 @@ export default function App() {
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
   const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
   const [storageHydrated, setStorageHydrated] = useState(false);
-  const [solutionValidationOpen, setSolutionValidationOpen] = useState(false);
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
   const [systemStatusPanelOpen, setSystemStatusPanelOpen] = useState(false);
   const {
@@ -8724,10 +8723,6 @@ export default function App() {
   const documentTocItems = useMemo(
     () => buildDocumentToc(frontMatter, questions, sectionHeadings, documentFlow, effectiveShowSolutions),
     [documentFlow, effectiveShowSolutions, frontMatter, questions, sectionHeadings],
-  );
-  const solutionValidation = useMemo(
-    () => validateSolutionCompleteness(questions, solutionValidationRuntime(frontMatter)),
-    [frontMatter, questions],
   );
   const activePreviewAnchor = useMemo(() => {
     if (activeTocItemId.startsWith("pb:")) return undefined;
@@ -9613,14 +9608,18 @@ export default function App() {
     }));
   }
 
-  const { jumpToSolutionValidationIssue, applySolutionValidationFix } = useSolutionValidationFixController<
-    QuestionBlock,
-    EditorContentBlock
-  >({
+  const {
+    solutionValidation,
+    solutionValidationOpen,
+    setSolutionValidationOpen,
+    jumpToSolutionValidationIssue,
+    applySolutionValidationFix,
+  } = useSolutionValidationController<QuestionBlock, EditorPart, EditorSubpart, EditorContentBlock, FrontMatterConfig>({
+    frontMatter,
     questions,
+    validationRuntime: solutionValidationRuntime,
     parseAnchor: parseScrollAnchor,
     applyActions: applyEditorActions,
-    closeValidationPanel: () => setSolutionValidationOpen(false),
     showSolutions: () => setShowSolutions(true),
     ensureEditorVisible: () => {
       if (!showEditor) setPaneMode("split");
@@ -12442,7 +12441,10 @@ export default function App() {
                   effectiveShowSolutions={effectiveShowSolutions}
                   printModeLabel={printModeLabel}
                   printModeTitle={printModeTitle}
+                  solutionIssueCount={solutionValidation.issues.length}
+                  solutionErrorCount={solutionValidation.errorCount}
                   onShowSolutionsChange={setShowSolutions}
+                  onOpenSolutionValidation={() => setSolutionValidationOpen(true)}
                   onPrint={printDocument}
                 />
               </div>

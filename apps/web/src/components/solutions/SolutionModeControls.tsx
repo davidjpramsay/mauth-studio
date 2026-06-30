@@ -1,4 +1,4 @@
-import { Eye, EyeOff, FileText } from "lucide-react";
+import { ClipboardCheck, Eye, EyeOff, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,10 @@ export function SolutionModeControls({
   effectiveShowSolutions,
   printModeLabel,
   printModeTitle,
+  solutionIssueCount,
+  solutionErrorCount,
   onShowSolutionsChange,
+  onOpenSolutionValidation,
   onPrint,
 }: {
   editorDocumentOpen: boolean;
@@ -19,9 +22,19 @@ export function SolutionModeControls({
   effectiveShowSolutions: boolean;
   printModeLabel: string;
   printModeTitle: string;
+  solutionIssueCount: number;
+  solutionErrorCount: number;
   onShowSolutionsChange: (showSolutions: boolean) => void;
+  onOpenSolutionValidation: () => void;
   onPrint: () => void;
 }) {
+  const solutionCheckTone =
+    solutionIssueCount > 0
+      ? solutionErrorCount > 0
+        ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
+        : "border-amber-300/25 bg-amber-500/15 text-amber-50 hover:bg-amber-500/25 hover:text-white"
+      : "border-blue-300/20 bg-slate-950/20 text-blue-100 hover:bg-blue-500/15 hover:text-white";
+
   return (
     <>
       {editorDocumentOpen && supportsSolutionTools ? (
@@ -63,6 +76,25 @@ export function SolutionModeControls({
             <span>Solutions</span>
           </Button>
         </div>
+      ) : null}
+      {editorDocumentOpen && supportsSolutionTools ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          title={
+            solutionIssueCount
+              ? `Open solution validation: ${solutionIssueCount} issue${solutionIssueCount === 1 ? "" : "s"}`
+              : "Open solution validation: no issues found"
+          }
+          aria-label="Open solution validation"
+          onClick={onOpenSolutionValidation}
+          className={cn("h-8 gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors", solutionCheckTone)}
+        >
+          <ClipboardCheck className="size-4" aria-hidden="true" />
+          <span className="hidden xl:inline">Check</span>
+          <span>{solutionIssueCount || "OK"}</span>
+        </Button>
       ) : null}
       <button
         type="button"
