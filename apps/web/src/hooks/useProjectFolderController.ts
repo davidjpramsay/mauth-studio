@@ -1,5 +1,6 @@
 import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
+import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectFilesStatus } from "@/hooks/useProjectFilesController";
 import { getDefaultProject, listProjectFiles, saveProjectFile } from "@/lib/api";
 import { joinTestPath, projectPathForTestPath, safeProjectFileName } from "@/lib/projectFiles";
@@ -11,6 +12,7 @@ interface UseProjectFolderControllerOptions {
   setProjectFiles: (files: ProjectFileSummary[]) => void;
   setProjectFilesStatus: (status: ProjectFilesStatus) => void;
   setProjectFilesMessage: (message: string) => void;
+  dialogs: MauthDialogActions;
 }
 
 export function useProjectFolderController({
@@ -20,16 +22,26 @@ export function useProjectFolderController({
   setProjectFiles,
   setProjectFilesStatus,
   setProjectFilesMessage,
+  dialogs,
 }: UseProjectFolderControllerOptions) {
   async function createProjectFolder(folderPath: string) {
-    const requestedName = window.prompt("Folder name", "New folder");
+    const requestedName = await dialogs.prompt({
+      title: "New folder",
+      label: "Folder name",
+      defaultValue: "New folder",
+      confirmLabel: "Create folder",
+      requireValue: true,
+    });
     if (requestedName === null) return;
     const folderName = safeProjectFileName(requestedName);
     if (!folderName) return;
     const testPath = joinTestPath(folderPath, folderName);
     const filePath = projectPathForTestPath(testPath);
     if (projectFiles.some((file) => file.path.toLowerCase() === filePath.toLowerCase())) {
-      window.alert("A file or folder with that name already exists.");
+      await dialogs.alert({
+        title: "Name already exists",
+        description: "A file or folder with that name already exists.",
+      });
       return;
     }
 

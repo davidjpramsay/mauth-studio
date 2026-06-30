@@ -145,6 +145,7 @@ import {
 import { DISPLAY_MATH_BLOCK_PATTERN, MIXED_MATH_LINE_PATTERN, unescapeTextMathDelimiters } from "@/lib/mathDelimiters";
 import { useDraftAutosaveController } from "@/hooks/useDraftAutosaveController";
 import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
+import { useMauthDialogController } from "@/hooks/useMauthDialogController";
 import {
   missingProjectRevisionConflict,
   useProjectFileStatus,
@@ -2200,12 +2201,6 @@ function defaultSolutionSlotLinesForDocument(frontMatter: FrontMatterConfig, mar
   const safeMarks = safeMarkValue(marks);
   const generousExamLines = safeMarks ? Math.ceil(safeMarks * 3 + 4) : DEFAULT_SOLUTION_SLOT_LINES + 2;
   return Math.max(baseLines, Math.min(MAX_SOLUTION_SLOT_LINES, generousExamLines));
-}
-
-function requestedSolutionSlotLines(defaultLines: number) {
-  const requested = window.prompt("Student space lines for this solution slot", String(defaultLines));
-  if (requested === null) return null;
-  return Math.max(1, Math.floor(spaceLines(requested)));
 }
 
 function defaultSavedTestName(frontMatter: FrontMatterConfig) {
@@ -9034,6 +9029,7 @@ function DiagramBlockEditor({
 }
 
 export default function App() {
+  const mauthDialogs = useMauthDialogController();
   const initialEditorDraft = loadInitialEditorDraft();
   const initialEditorDocumentOpen = initialEditorDraft?.documentOpen !== false;
   const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [createQuestion()], [initialEditorDraft]);
@@ -9989,6 +9985,7 @@ export default function App() {
     setProjectFilesStatus,
     setProjectFilesMessage,
     refreshProjectFiles,
+    dialogs: mauthDialogs,
   });
 
   const { saveCurrentTest, startNewTest, closeCurrentDocument } = useEditorCloseController<AutosavedEditorSnapshot>({
@@ -10018,6 +10015,7 @@ export default function App() {
     setDraftAutosaveMessage,
     setProjectFilesStatus,
     setProjectFilesMessage,
+    dialogs: mauthDialogs,
   });
 
   const { openDocumentsFolder, chooseDocumentsFolder, resetDocumentsFolder } = useDocumentsFolderController({
@@ -10190,6 +10188,7 @@ export default function App() {
     setProjectFiles,
     setProjectFilesStatus,
     setProjectFilesMessage,
+    dialogs: mauthDialogs,
   });
 
   const { exportCurrentProjectBackup, importProjectBackupFile } = useProjectBackupController({
@@ -10204,6 +10203,7 @@ export default function App() {
     setProjectFiles,
     setProjectFilesStatus,
     setProjectFilesMessage,
+    dialogs: mauthDialogs,
   });
 
   const { duplicateProjectFiles, renameProjectFile, moveProjectFiles, removeProjectFiles } = useProjectFileOperationsController({
@@ -10246,6 +10246,7 @@ export default function App() {
     setProjectFilesMessage,
     setProjectSaveConflict,
     updateLastProjectSaveFingerprint,
+    dialogs: mauthDialogs,
   });
 
   function updateContentBlock(questionId: string, blockId: string, patch: Partial<EditorContentBlock>) {
@@ -11901,7 +11902,20 @@ export default function App() {
     }
   }
 
-  function addQuestionSolutionSlot(questionId: string) {
+  async function requestSolutionSlotLines(defaultLines: number) {
+    const requested = await mauthDialogs.prompt({
+      title: "Answer and solution space",
+      label: "Student answer lines",
+      description: "Set the number of student working lines paired with this solution slot.",
+      defaultValue: String(defaultLines),
+      confirmLabel: "Add slot",
+      requireValue: true,
+    });
+    if (requested === null) return null;
+    return Math.max(1, Math.floor(spaceLines(requested)));
+  }
+
+  async function addQuestionSolutionSlot(questionId: string) {
     if (frontMatterRef.current.titlePageTemplate === "notes") return;
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
@@ -11909,7 +11923,7 @@ export default function App() {
       frontMatterRef.current,
       question.parts.length ? questionMarks(question) : question.marks,
     );
-    const lines = requestedSolutionSlotLines(defaultLines);
+    const lines = await requestSolutionSlotLines(defaultLines);
     if (lines === null) return;
     const blocks = solutionSlotBlocks(lines);
     applyEditorAction({ type: "solutionSlot.add", scope: { kind: "question", questionId: question.id }, blocks });
@@ -12033,10 +12047,10 @@ export default function App() {
     }
   }
 
-  function addPartSolutionSlot(questionId: string, part: EditorPart) {
+  async function addPartSolutionSlot(questionId: string, part: EditorPart) {
     if (frontMatterRef.current.titlePageTemplate === "notes") return;
     const defaultLines = defaultSolutionSlotLinesForDocument(frontMatterRef.current, part.subparts?.length ? partMarks(part) : part.marks);
-    const lines = requestedSolutionSlotLines(defaultLines);
+    const lines = await requestSolutionSlotLines(defaultLines);
     if (lines === null) return;
     const blocks = solutionSlotBlocks(lines);
     applyEditorAction({ type: "solutionSlot.add", scope: { kind: "part", questionId, partId: part.id }, blocks });
@@ -12087,9 +12101,9 @@ export default function App() {
     }
   }
 
-  function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
+  async function addSubpartSolutionSlot(questionId: string, part: EditorPart, subpart: EditorSubpart) {
     if (frontMatterRef.current.titlePageTemplate === "notes") return;
-    const lines = requestedSolutionSlotLines(defaultSolutionSlotLinesForDocument(frontMatterRef.current, subpart.marks));
+    const lines = await requestSolutionSlotLines(defaultSolutionSlotLinesForDocument(frontMatterRef.current, subpart.marks));
     if (lines === null) return;
     applyEditorAction({
       type: "solutionSlot.add",
@@ -13700,6 +13714,7 @@ export default function App() {
         onListProjectFileVersions={loadProjectFileVersions}
         onRestoreProjectFileVersion={restoreProjectFileFromVersion}
       />
+      {mauthDialogs.dialogNode}
       <NewTestDialog open={newTestDialogOpen} onClose={() => setNewTestDialogOpen(false)} onCreate={createNewTestFromTemplate} />
       <SystemStatusPanel
         open={systemStatusPanelOpen}

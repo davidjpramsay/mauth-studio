@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { ProjectFileSummary, ProjectFileVersion, ProjectSummary } from "@mauth-studio/shared";
 import {
   ChevronLeft,
@@ -19,6 +19,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MauthDialog } from "@/components/ui/mauth-dialog";
 import type { ProjectFilesStatus } from "@/hooks/useProjectFilesController";
 import {
   TEST_FILE_ROOT_LABEL,
@@ -37,46 +38,6 @@ import { cn } from "@/lib/utils";
 
 const RECENT_PROJECT_FILES_KEY = "mauth.recentProjectFiles.v1";
 const RECENT_PROJECT_FILES_LIMIT = 10;
-
-function FileDrawerDialog({
-  title,
-  description,
-  children,
-  footer,
-  onClose,
-}: {
-  title: string;
-  description?: string;
-  children?: ReactNode;
-  footer: ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" onMouseDown={onClose}>
-      <section
-        className="w-full max-w-lg rounded-xl border bg-background shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="file-drawer-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header className="flex items-center justify-between gap-3 border-b p-4">
-          <div className="min-w-0">
-            <h3 id="file-drawer-dialog-title" className="truncate text-base font-semibold">
-              {title}
-            </h3>
-            {description ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p> : null}
-          </div>
-          <Button type="button" variant="ghost" size="icon" title="Close" aria-label="Close dialog" onClick={onClose}>
-            <X />
-          </Button>
-        </header>
-        {children ? <div className="p-4">{children}</div> : null}
-        <footer className="flex justify-end gap-2 border-t p-4">{footer}</footer>
-      </section>
-    </div>
-  );
-}
 
 export interface ProjectFileVersionPreviewSummary {
   kind: "test" | "raw";
@@ -915,7 +876,7 @@ function TestFileManager({
       </p>
 
       {pasteFolderDialogOpen ? (
-        <FileDrawerDialog
+        <MauthDialog
           title="Open local folder"
           description="Mauth will use the files already in this folder and keep versions and metadata in a hidden .mauth folder."
           onClose={() => setPasteFolderDialogOpen(false)}
@@ -949,11 +910,11 @@ function TestFileManager({
               autoFocus
             />
           </form>
-        </FileDrawerDialog>
+        </MauthDialog>
       ) : null}
 
       {resetFolderDialogOpen ? (
-        <FileDrawerDialog
+        <MauthDialog
           title="Open default folder"
           description="Return to the default Mauth documents folder. Your current external folder files stay where they are."
           onClose={() => setResetFolderDialogOpen(false)}
@@ -971,7 +932,7 @@ function TestFileManager({
       ) : null}
 
       {restoreVersionToConfirm && versionsTestPath ? (
-        <FileDrawerDialog
+        <MauthDialog
           title="Restore version"
           description={`Restore ${testFileDisplayName(testPathBasename(versionsTestPath))} to revision ${
             restoreVersionToConfirm.revision

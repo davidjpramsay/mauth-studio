@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { ProjectFileDocument, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
+import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { getDefaultProject, listProjectFiles, saveProjectFile } from "@/lib/api";
 import {
@@ -47,6 +48,7 @@ interface UseProjectDocumentPersistenceControllerOptions<TDocument> {
   setProjectFilesStatus: (status: ProjectFilesStatus) => void;
   setProjectFilesMessage: (message: string) => void;
   refreshProjectFiles: () => Promise<void>;
+  dialogs: MauthDialogActions;
 }
 
 export function useProjectDocumentPersistenceController<TDocument>({
@@ -71,6 +73,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
   setProjectFilesStatus,
   setProjectFilesMessage,
   refreshProjectFiles,
+  dialogs,
 }: UseProjectDocumentPersistenceControllerOptions<TDocument>) {
   async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: TDocument) {
     setProjectFilesStatus("saving");
@@ -183,7 +186,13 @@ export function useProjectDocumentPersistenceController<TDocument>({
       let testName = defaultName;
 
       if (!filePath) {
-        const requestedName = window.prompt("File name", defaultName);
+        const requestedName = await dialogs.prompt({
+          title: "Save document",
+          label: "File name",
+          defaultValue: defaultName,
+          confirmLabel: "Save",
+          requireValue: true,
+        });
         if (requestedName === null) return;
         testName = safeProjectFileName(requestedName);
         filePath = projectPathForTestPath(joinTestPath(folderPath, ensureTestFileName(testName)));

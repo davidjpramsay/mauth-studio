@@ -1,5 +1,6 @@
 import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
+import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { deleteProjectFile, getDefaultProject, getProjectFile, listProjectFiles, saveProjectFile } from "@/lib/api";
 import {
@@ -41,6 +42,7 @@ interface UseProjectFileOperationsControllerOptions {
   setProjectFilesMessage: (message: string) => void;
   setProjectSaveConflict: (conflict: ProjectSaveConflict | null) => void;
   updateLastProjectSaveFingerprint: (fingerprint: string | null) => void;
+  dialogs: MauthDialogActions;
 }
 
 async function copyProjectItem(projectId: string, sourcePath: string, targetPath: string, files: ProjectFileSummary[]) {
@@ -100,6 +102,7 @@ export function useProjectFileOperationsController({
   setProjectFilesMessage,
   setProjectSaveConflict,
   updateLastProjectSaveFingerprint,
+  dialogs,
 }: UseProjectFileOperationsControllerOptions) {
   async function currentProject() {
     const project = activeProject ?? (await getDefaultProject());
@@ -219,7 +222,13 @@ export function useProjectFileOperationsController({
     const sourceTestPath = testPathFromProjectPath(filePath);
     if (!source || sourceTestPath === null) return;
     const currentName = source.kind === "folder" ? testPathBasename(sourceTestPath) : testFileDisplayName(testPathBasename(sourceTestPath));
-    const requestedName = window.prompt("Rename", currentName);
+    const requestedName = await dialogs.prompt({
+      title: "Rename",
+      label: source.kind === "folder" ? "Folder name" : "File name",
+      defaultValue: currentName,
+      confirmLabel: "Rename",
+      requireValue: true,
+    });
     if (requestedName === null) return;
     const newName = source.kind === "folder" ? safeProjectFileName(requestedName) : ensureTestFileName(requestedName);
     if (!newName) return;
@@ -227,7 +236,10 @@ export function useProjectFileOperationsController({
     const targetFilePath = projectPathForTestPath(targetTestPath);
     if (targetFilePath === filePath) return;
     if (projectFiles.some((file) => file.path.toLowerCase() === targetFilePath.toLowerCase())) {
-      window.alert("A file or folder with that name already exists.");
+      await dialogs.alert({
+        title: "Name already exists",
+        description: "A file or folder with that name already exists.",
+      });
       return;
     }
     await moveProjectFileToPath(filePath, targetFilePath);
@@ -259,7 +271,10 @@ export function useProjectFileOperationsController({
         const sourceTestPath = testPathFromProjectPath(filePath);
         if (!source || sourceTestPath === null) continue;
         if (source.kind === "folder" && (targetFolder === sourceTestPath || targetFolder.startsWith(`${sourceTestPath}/`))) {
-          window.alert("A folder cannot be moved inside itself.");
+          await dialogs.alert({
+            title: "Cannot move folder",
+            description: "A folder cannot be moved inside itself.",
+          });
           setProjectFilesStatus("ready");
           setProjectFilesMessage("");
           return;
@@ -270,7 +285,10 @@ export function useProjectFileOperationsController({
         const targetKey = targetFilePath.toLowerCase();
         if (targetFilePath === filePath) continue;
         if (existingPaths.has(targetKey) || plannedTargets.has(targetKey)) {
-          window.alert("A file or folder with that name already exists in that folder.");
+          await dialogs.alert({
+            title: "Name already exists",
+            description: "A file or folder with that name already exists in that folder.",
+          });
           setProjectFilesStatus("ready");
           setProjectFilesMessage("");
           return;
@@ -330,16 +348,19 @@ export function useProjectFileOperationsController({
       })
       .filter((entry): entry is { source: ProjectFileSummary; sourceTestPath: string; filePath: string } => Boolean(entry));
     if (!sources.length) return;
-    const shouldDelete =
-      sources.length === 1
-        ? window.confirm(
-            `Delete "${
+    const shouldDelete = await dialogs.confirm({
+      title: sources.length === 1 ? "Delete item" : "Delete selected items",
+      description:
+        sources.length === 1
+          ? `Delete "${
               sources[0].source.kind === "folder"
                 ? testPathBasename(sources[0].sourceTestPath)
                 : testFileDisplayName(testPathBasename(sources[0].sourceTestPath))
-            }"?`,
-          )
-        : window.confirm(`Delete ${sources.length} selected items?`);
+            }"?`
+          : `Delete ${sources.length} selected items?`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
     if (!shouldDelete) return;
     try {
       setProjectFilesStatus("saving");
