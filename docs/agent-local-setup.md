@@ -13,14 +13,28 @@ uv sync
 cd ../..
 ```
 
-Run the app in two terminals:
+For normal local use, run the app through the launcher:
+
+```bash
+pnpm dev:launch
+```
+
+On macOS, install the Finder/desktop entry point:
+
+```bash
+pnpm macos:install-launcher
+```
+
+This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
+
+For lower-level debugging, run the API and web app in two terminals:
 
 ```bash
 pnpm dev:api
 pnpm dev:web
 ```
 
-Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
+Open the web URL printed by the launcher or by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
 
 Check the bridge:
 
