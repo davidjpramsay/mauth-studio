@@ -45,6 +45,9 @@ import {
   columnsColumnCountPatch,
   contentBlockDisplayVisibility,
   contentBlockMarkTicksPatch,
+  contentBlockSolutionTickHelp,
+  contentBlockSolutionTickLabel,
+  contentBlockSupportsSolutionSurfaceTicks,
   contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
@@ -1119,6 +1122,9 @@ export function SelectionInspector({
     typeof selectedBlock.block.markTicks === "number" && Number.isInteger(selectedBlock.block.markTicks)
       ? selectedBlock.block.markTicks
       : 0;
+  const selectedSupportsSolutionSurfaceTicks = contentBlockSupportsSolutionSurfaceTicks(selectedBlock.block);
+  const selectedSolutionTickLabel = contentBlockSolutionTickLabel(selectedBlock.block);
+  const selectedSolutionTickHelp = contentBlockSolutionTickHelp(selectedBlock.block);
   const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
     if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
     const nextData = { ...selectedStatsChartSpec.data, ...patch };
@@ -1172,9 +1178,9 @@ export function SelectionInspector({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-3 border-b p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Module display</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Student / Solutions</div>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-            Display
+            Shown in
             <select
               value={selectedBlockVisibility}
               aria-label={`${selectedBlock.label} display`}
@@ -1191,19 +1197,21 @@ export function SelectionInspector({
             </select>
           </label>
           {selectedBlockVisibility === "solution" ? (
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Mark ticks
-              <input
-                type="number"
-                min={0}
-                max={20}
-                step={1}
-                value={selectedMarkTicks}
-                aria-label={`${selectedBlock.label} solution mark ticks`}
-                onChange={(event) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(event.currentTarget.value))}
-                className={controlClassName}
-              />
-            </label>
+            selectedSupportsSolutionSurfaceTicks ? (
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground" title={selectedSolutionTickHelp}>
+                {selectedSolutionTickLabel}
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={selectedMarkTicks}
+                  aria-label={`${selectedBlock.label} solution surface ticks`}
+                  onChange={(event) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(event.currentTarget.value))}
+                  className={controlClassName}
+                />
+              </label>
+            ) : null
           ) : null}
         </div>
         {selectedColumnsBlock ? (

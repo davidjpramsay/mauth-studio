@@ -11,6 +11,9 @@ import {
   columnsColumnCountPatch,
   contentBlockDisplayVisibility,
   contentBlockMarkTicksPatch,
+  contentBlockSolutionTickHelp,
+  contentBlockSolutionTickLabel,
+  contentBlockSupportsSolutionSurfaceTicks,
   contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
@@ -201,6 +204,26 @@ test("module.update applies solution display and mark tick patches", () => {
   const studentTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
   assert.equal(studentTable ? contentBlockDisplayVisibility(studentTable) : undefined, "student");
   assert.equal(studentTable?.markTicks, undefined);
+});
+
+test("solution tick helpers separate text-line ticks from surface ticks", () => {
+  const solutionText: ContentBlock = { id: "solution-text", kind: "text", text: "x = 3" };
+  const legacyTickedText: ContentBlock = { ...solutionText, markTicks: 1 };
+  const solutionTable = tableBlock("solution-table");
+  const solutionDiagram = diagramBlock("solution-diagram", { type: "graph2d", functions: [], features: [] });
+  const solutionSpace = spaceBlock("solution-space", 4);
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionText), false);
+  assert.match(contentBlockSolutionTickHelp(solutionText), /\[\[marks:1\]\]/);
+  assert.equal(contentBlockSolutionTickLabel(solutionText), "Block ticks");
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(legacyTickedText), true);
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionTable), true);
+  assert.equal(contentBlockSolutionTickLabel(solutionTable), "Surface ticks");
+  assert.match(contentBlockSolutionTickHelp(solutionDiagram), /completed directly/);
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionSpace), false);
+  assert.match(contentBlockSolutionTickHelp(solutionSpace), /pair them with/);
 });
 
 test("module.update applies inspector diagram patches and preserves unrelated modules", () => {

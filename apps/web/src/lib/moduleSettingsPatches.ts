@@ -53,6 +53,26 @@ export function contentBlockMarkTicksPatch(value: unknown): Partial<ContentBlock
   return { markTicks: Math.min(20, Math.max(0, Math.round(parsed))) };
 }
 
+export function contentBlockSupportsSolutionSurfaceTicks(block: ContentBlock) {
+  if (block.kind === "text" || block.kind === "space") return block.markTicks !== undefined;
+  return true;
+}
+
+export function contentBlockSolutionTickLabel(block: ContentBlock) {
+  if (block.kind === "text" || block.kind === "space") return "Block ticks";
+  return "Surface ticks";
+}
+
+export function contentBlockSolutionTickHelp(block: ContentBlock) {
+  if (block.kind === "text") {
+    return "For worked text, put hidden ticks on the earning line with [[marks:1]].";
+  }
+  if (block.kind === "space") {
+    return "Space blocks normally do not carry solution ticks; pair them with a solution text, table, or diagram block.";
+  }
+  return "Use this for answers completed directly on this solution surface, such as a table, diagram, graph, or circled choice.";
+}
+
 export function inspectorSetShadingOptions(config: GraphConfig): Array<{ label: string; regionIndex: number | null }> {
   const data = normalizedSetDiagramData(config);
   return [
