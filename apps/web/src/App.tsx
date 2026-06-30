@@ -107,10 +107,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, type ContextMenuAction } from "@/components/ui/context-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { useActiveProjectFileSyncController } from "@/hooks/useActiveProjectFileSyncController";
 import { useActiveProjectFileStateController } from "@/hooks/useActiveProjectFileStateController";
+import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
 import { useDocumentsFolderController } from "@/hooks/useDocumentsFolderController";
-import { useEditorCloseController } from "@/hooks/useEditorCloseController";
 import { useEditorDocumentStateController } from "@/hooks/useEditorDocumentStateController";
 import { useEditorDocumentActionsController } from "@/hooks/useEditorDocumentActionsController";
 import { useInitialStorageHydrationController } from "@/hooks/useInitialStorageHydrationController";
@@ -118,8 +117,6 @@ import { useProjectBackupController } from "@/hooks/useProjectBackupController";
 import { useNewDocumentController } from "@/hooks/useNewDocumentController";
 import { useProjectAutosaveResolutionController } from "@/hooks/useProjectAutosaveResolutionController";
 import { useProjectFileOperationsController } from "@/hooks/useProjectFileOperationsController";
-import { useProjectDocumentOpenController } from "@/hooks/useProjectDocumentOpenController";
-import { useProjectDocumentPersistenceController } from "@/hooks/useProjectDocumentPersistenceController";
 import { useProjectFolderController } from "@/hooks/useProjectFolderController";
 import { useProjectVersionsController } from "@/hooks/useProjectVersionsController";
 import {
@@ -9935,16 +9932,36 @@ export default function App() {
     writeCurrentTestProjectFile,
     saveCurrentProjectFileBeforeOpening,
     saveCurrentTestToProjectFile,
-  } = useProjectDocumentPersistenceController<EditorDocumentState>({
+    saveCurrentTest,
+    startNewTest,
+    closeCurrentDocument,
+    openProjectFile,
+    syncActiveProjectFileFromDisk,
+  } = useDocumentSessionController<EditorDocumentState, SavedTest, AutosavedEditorSnapshot>({
+    storageHydrated,
     activeProject,
     projectFiles,
     activeProjectFilePath,
     activeProjectFilePathRef,
     activeProjectFileRevisionRef,
+    editorDocumentOpenRef,
+    lastProjectSaveFingerprintRef,
+    fileOperationBusy,
     hasUnsavedProjectChanges,
+    hasUnsavedDraftChanges,
     currentProjectFileName,
+    draftAutosaveStatus,
     revisionMissingErrorMessage: PROJECT_FILE_REVISION_MISSING_ERROR,
+    activeFileSyncIntervalMs: ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS,
     currentDocument: currentEditorDocument,
+    createClosedSnapshot: () => ({
+      ...currentDraftSnapshotForStorage(),
+      activeProjectFilePath: undefined,
+      activeProjectFileRevision: undefined,
+      documentOpen: false,
+    }),
+    persistLocalDraft: persistCurrentDraft,
+    saveDiskAutosave: (snapshot) => saveStorageAutosave<AutosavedEditorSnapshot>(snapshot).then((response) => response.autosave),
     defaultProjectFileName: () =>
       activeProjectFilePath && testPathFromProjectPath(activeProjectFilePath)
         ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? ""))
@@ -9975,39 +9992,21 @@ export default function App() {
         ),
       };
     },
+    parseSavedDocument: (content) => {
+      const parsed = content ? (JSON.parse(content) as unknown) : null;
+      return normalizeSavedTest(parsed);
+    },
+    applySavedProjectDocument,
+    currentEditorDocumentFingerprint,
     projectFileConflictFromError,
     missingProjectRevisionConflict,
     setActiveProject,
     setProjectFiles,
     setActiveProjectFileState,
+    clearActiveProjectFileState,
     setProjectSaveConflict,
     updateLastProjectSaveFingerprint,
-    setProjectFilesStatus,
-    setProjectFilesMessage,
-    refreshProjectFiles,
-    dialogs: mauthDialogs,
-  });
-
-  const { saveCurrentTest, startNewTest, closeCurrentDocument } = useEditorCloseController<AutosavedEditorSnapshot>({
-    editorDocumentOpenRef,
-    fileOperationBusy,
-    activeProjectFilePath,
-    hasUnsavedProjectChanges,
-    hasUnsavedDraftChanges,
-    currentProjectFileName,
-    draftAutosaveStatus,
-    createClosedSnapshot: () => ({
-      ...currentDraftSnapshotForStorage(),
-      activeProjectFilePath: undefined,
-      activeProjectFileRevision: undefined,
-      documentOpen: false,
-    }),
-    persistLocalDraft: persistCurrentDraft,
-    saveDiskAutosave: (snapshot) => saveStorageAutosave<AutosavedEditorSnapshot>(snapshot).then((response) => response.autosave),
-    writeCurrentTestProjectFile,
-    saveCurrentTestToProjectFile,
     setEditorDocumentOpenState,
-    clearActiveProjectFileState,
     setNewTestDialogOpen,
     setFileManagerOpen,
     closeContextMenu,
@@ -10015,7 +10014,9 @@ export default function App() {
     setDraftAutosaveMessage,
     setProjectFilesStatus,
     setProjectFilesMessage,
+    refreshProjectFiles,
     dialogs: mauthDialogs,
+    onOpened: () => setFileManagerOpen(false),
   });
 
   const { openDocumentsFolder, chooseDocumentsFolder, resetDocumentsFolder } = useDocumentsFolderController({
@@ -10131,40 +10132,6 @@ export default function App() {
       writeLogoToDisk(savedTest.logo);
     }
   }
-
-  const { openProjectFile, syncActiveProjectFileFromDisk } = useProjectDocumentOpenController<SavedTest>({
-    activeProject,
-    projectFiles,
-    activeProjectFilePath,
-    activeProjectFilePathRef,
-    activeProjectFileRevisionRef,
-    lastProjectSaveFingerprintRef,
-    fileOperationBusy,
-    revisionMissingErrorMessage: PROJECT_FILE_REVISION_MISSING_ERROR,
-    parseSavedDocument: (content) => {
-      const parsed = content ? (JSON.parse(content) as unknown) : null;
-      return normalizeSavedTest(parsed);
-    },
-    applySavedProjectDocument,
-    saveCurrentProjectFileBeforeOpening,
-    currentEditorDocumentFingerprint,
-    projectFileConflictFromError,
-    setActiveProject,
-    setProjectFiles,
-    setProjectSaveConflict,
-    setProjectFilesStatus,
-    setProjectFilesMessage,
-    refreshProjectFiles,
-    onOpened: () => setFileManagerOpen(false),
-  });
-
-  useActiveProjectFileSyncController({
-    storageHydrated,
-    activeProjectFilePath,
-    fileOperationBusy,
-    intervalMs: ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS,
-    syncActiveProjectFileFromDisk,
-  });
 
   const { loadProjectFileVersions, restoreProjectFileFromVersion } = useProjectVersionsController({
     activeProject,
