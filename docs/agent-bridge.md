@@ -41,6 +41,9 @@ GET  /api/agent/current/snapshot
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
+POST /api/agent/current/browser/register
+GET  /api/agent/current/browser/requests?sessionId=...
+POST /api/agent/current/browser/respond
 GET  /api/agent/current/events?after=...
 POST /api/agent/current/presence
 GET  /api/agent/current/comments
@@ -50,9 +53,12 @@ GET  /api/agent/current/suggestions
 POST /api/agent/current/suggestions
 POST /api/agent/current/suggestions/{id}/accept
 POST /api/agent/current/suggestions/{id}/reject
+GET  /api/system/status
 GET  /.well-known/mauth-agent.json
 GET  /agent-docs
 ```
+
+`/api/system/status` is the process and bridge-health check for local tools. It reports the API build/version state, active documents folder, default project, browser bridge session count, and route names. Launchers and external agents should use it before assuming the API and web app are from the same generation.
 
 ## Snapshot Shape
 

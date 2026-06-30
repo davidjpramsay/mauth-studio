@@ -2,6 +2,7 @@ import type {
   DiagramSpec,
   GeneratedTest,
   MauthAgentRequest,
+  MauthSystemStatus,
   PenroseDiagramResponse,
   ProjectFileDocument,
   ProjectFileSaveRequest,
@@ -11,7 +12,7 @@ import type {
   Question,
 } from "@mauth-studio/shared";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+export const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -181,6 +182,10 @@ export function generateTest(seed = 20) {
     marking: "default",
     seed,
   });
+}
+
+export function getSystemStatus(signal?: AbortSignal) {
+  return signal ? getJsonWithSignal<MauthSystemStatus>("/api/system/status", signal) : getJson<MauthSystemStatus>("/api/system/status");
 }
 
 // Legacy saved-test endpoints are retained for one-time migration into project files.

@@ -147,7 +147,11 @@ POST   /api/storage/projects/{project_id}/versions/{version_id}/restore?path={fi
 
 GET    /api/storage/projects/{project_id}/backup
 POST   /api/storage/projects/{project_id}/backup/import
+
+GET    /api/system/status
 ```
+
+`/api/system/status` is the read-only diagnostic contract used by the web header and future launcher. It reports the API version and start time, repo root/cwd, git branch/commit, active documents folder, metadata folder, default project, and browser bridge session count. If the web app cannot read this route but `/api/health` still responds, the user is probably running an older API process.
 
 ## Moving The Project Folder
 

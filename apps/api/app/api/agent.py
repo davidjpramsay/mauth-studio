@@ -168,6 +168,30 @@ def _active_editor_error_unlocked() -> tuple[int, dict[str, Any]] | None:
     return None
 
 
+def browser_bridge_status() -> dict[str, Any]:
+    with _lock:
+        active_sessions = _active_sessions_unlocked()
+        return {
+            "available": True,
+            "activeSessionCount": len(active_sessions),
+            "pendingRequestCount": len(_pending_requests),
+            "sessions": [
+                {
+                    "sessionId": session.session_id,
+                    "label": session.label,
+                    "connectedAt": session.connected_at.isoformat(),
+                    "lastSeen": session.last_seen.isoformat(),
+                }
+                for session in active_sessions
+            ],
+            "routes": {
+                "browserRegister": "/api/agent/current/browser/register",
+                "browserRequests": "/api/agent/current/browser/requests",
+                "browserRespond": "/api/agent/current/browser/respond",
+            },
+        }
+
+
 def _validate_review_target(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None

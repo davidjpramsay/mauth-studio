@@ -8,6 +8,7 @@ from app.api.format import router as format_router
 from app.api.math import router as math_router
 from app.api.questions import router as questions_router
 from app.api.storage import router as storage_router
+from app.api.system import router as system_router
 from app.api.tests import router as tests_router
 
 app = FastAPI(title="Mauth Studio API", version="0.1.0")
@@ -35,6 +36,7 @@ app.include_router(tests_router, prefix="/api/tests", tags=["tests"])
 app.include_router(format_router, prefix="/api/format", tags=["formatting"])
 app.include_router(diagram_router, prefix="/api/diagram", tags=["diagram"])
 app.include_router(storage_router, prefix="/api/storage", tags=["storage"])
+app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(agent_router, prefix="/api/agent/current", tags=["agent"])
 app.include_router(agent_discovery_router, tags=["agent"])
 

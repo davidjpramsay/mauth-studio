@@ -5,7 +5,8 @@ This scan reflects the current Mauth Studio architecture after the first control
 ## Current Health
 
 - The full quality gate passes: formatting, ESLint, Ruff, pytest, web action tests, Plotly tests, TypeScript, and Vite build.
-- The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, the likely cause is a stale API process.
+- The running API exposes `/api/system/status`, which reports the API version/start time, repo root, active documents folder, default project, git branch/commit, and browser bridge sessions. The web header now has a System status panel and marks the API as stale when this route is missing.
+- The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
 - Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
 - The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
 
@@ -29,7 +30,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 5. The app can still feel stale when the user is running an older dev process.
 
-   The code has the bridge endpoints, but if the wrong API server is still running the UI will poll old routes and behave as if features are missing. Mauth should show a visible API/build version check instead of leaving this as terminal guesswork.
+   The header now checks `/api/system/status` and shows stale/unavailable API state, but the next step is a launcher that refuses to reuse old API/web processes silently.
 
 ## Direction
 
@@ -51,8 +52,8 @@ An in-app assistant can come back later, but it should be a client for the same 
 
 ### 1. Stabilise The Local App
 
-- Add an app/API build version endpoint and show a clear mismatch warning in the header.
-- Add a "Restart required" or "API is stale" status when bridge routes are unavailable.
+- Use `/api/system/status` as the launcher and support contract for process, folder, file, revision, autosave, and bridge diagnostics.
+- Add a "Restart required" launcher flow when the status endpoint or expected bridge routes are unavailable.
 - Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
 - Replace native prompts with structured app modals for save, close, delete, rename, restore, and folder selection.
 
@@ -84,7 +85,7 @@ A standalone app is worth doing, but only after the storage and bridge contracts
 Best staged path:
 
 1. Keep the current web plus FastAPI dev setup while the authoring model is changing quickly.
-2. Add a one-command local launcher that starts web and API, checks versions, and opens the app.
+2. Add a one-command local launcher that starts web and API, checks `/api/system/status`, and opens the app.
 3. Package that launcher with Tauri or Electron if the local workflow is stable.
 4. Consider a true macOS-native Swift app only if Mauth needs deep Finder, print, iCloud Drive, or Apple classroom workflow integration that a web shell cannot provide.
 

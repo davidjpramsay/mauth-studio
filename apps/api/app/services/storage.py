@@ -501,6 +501,28 @@ class FileProjectStorage:
             return None
         return self._project_summary(record)
 
+    def workspace_status(self) -> dict[str, Any]:
+        default_project: dict[str, Any] | None = None
+        project_path = self._project_path(self.DEFAULT_PROJECT_ID)
+        if project_path.exists():
+            try:
+                record = self._load_project(self.DEFAULT_PROJECT_ID)
+            except (OSError, json.JSONDecodeError):
+                record = {}
+            if isinstance(record.get("id"), str) and not isinstance(record.get("deletedAt"), str):
+                default_project = self._project_summary(record)
+
+        return {
+            "usesVisibleWorkspace": self.uses_visible_workspace,
+            "isExternalDocumentsFolder": self._is_external_visible_documents_folder(self.DEFAULT_PROJECT_ID),
+            "baseWorkspacePath": str(self.base_workspace_root),
+            "workspacePath": str(self.workspace_root),
+            "documentsPath": str(self.documents_dir),
+            "metadataPath": str(self.root),
+            "defaultDocumentsPath": str(self.default_documents_dir),
+            "defaultProject": default_project,
+        }
+
     def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._migrate_default_project_to_visible_workspace()
         requested_id = payload.get("id")

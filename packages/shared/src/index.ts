@@ -740,6 +740,59 @@ export interface ProjectFileSaveRequest {
   baseRevision?: number | null;
 }
 
+export interface MauthSystemGitStatus {
+  branch?: string | null;
+  commit?: string | null;
+  dirty?: boolean;
+}
+
+export interface MauthSystemWorkspaceStatus {
+  usesVisibleWorkspace: boolean;
+  isExternalDocumentsFolder: boolean;
+  baseWorkspacePath: string;
+  workspacePath: string;
+  documentsPath: string;
+  metadataPath: string;
+  defaultDocumentsPath: string;
+  defaultProject?: ProjectSummary | null;
+}
+
+export interface MauthSystemBridgeSessionStatus {
+  sessionId: string;
+  label: string;
+  connectedAt: string;
+  lastSeen: string;
+}
+
+export interface MauthSystemBridgeStatus {
+  available: boolean;
+  activeSessionCount: number;
+  pendingRequestCount: number;
+  sessions: MauthSystemBridgeSessionStatus[];
+  routes: {
+    browserRegister: string;
+    browserRequests: string;
+    browserRespond: string;
+  };
+}
+
+export interface MauthSystemStatus {
+  status: "ok";
+  apiVersion: string;
+  startedAt: string;
+  checkedAt: string;
+  cwd: string;
+  root: string;
+  git: MauthSystemGitStatus;
+  workspace: MauthSystemWorkspaceStatus;
+  bridge: MauthSystemBridgeStatus;
+  routes: {
+    health: string;
+    systemStatus: string;
+    agentDiscovery: string;
+  };
+}
+
 export type MauthAgentBridgeErrorCode =
   | "APP_NOT_CONNECTED"
   | "MULTIPLE_ACTIVE_EDITORS"
