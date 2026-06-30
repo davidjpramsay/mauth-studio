@@ -102,6 +102,48 @@ if ! command -v osascript >/dev/null 2>&1; then
   exit 1
 fi
 
+readonly REPO_ROOT=${shellSingleQuote(repoRoot)}
+readonly PNPM_COMMAND=${shellSingleQuote(pnpmCommand)}
+
+show_error() {
+  /usr/bin/osascript \\
+    -e 'on run argv' \\
+    -e 'display dialog (item 1 of argv) buttons {"OK"} default button "OK" with icon stop with title "Mauth Studio"' \\
+    -e 'end run' \\
+    "$1" >/dev/null
+}
+
+if [[ ! -f "$REPO_ROOT/package.json" || ! -f "$REPO_ROOT/scripts/mauth-launch.mjs" ]]; then
+  show_error "The Mauth Studio project folder could not be found at:
+
+$REPO_ROOT
+
+Move it back there, or reinstall the launcher from the current repo with:
+
+pnpm macos:install-launcher --reveal"
+  exit 1
+fi
+
+if [[ "$PNPM_COMMAND" == */* ]]; then
+  if [[ ! -x "$PNPM_COMMAND" ]]; then
+    show_error "The pnpm command used by this launcher no longer exists:
+
+$PNPM_COMMAND
+
+Install pnpm again, or reinstall the launcher from the Mauth repo with:
+
+pnpm macos:install-launcher --reveal"
+    exit 1
+  fi
+elif ! command -v "$PNPM_COMMAND" >/dev/null 2>&1; then
+  show_error "The pnpm command is not available to the launcher.
+
+Install pnpm again, or reinstall the launcher from the Mauth repo with:
+
+pnpm macos:install-launcher --reveal"
+  exit 1
+fi
+
 osascript <<'APPLESCRIPT'
 tell application "Terminal"
   activate

@@ -78,6 +78,7 @@ pnpm macos:install-launcher
 ```
 
 This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch:desktop`, checks the API/web versions, starts the needed servers, and opens Mauth Studio in the browser.
+If the repo has moved or the installed `pnpm` path is stale, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session.
 
 The installed app uses the desktop-safe launcher mode:
 
