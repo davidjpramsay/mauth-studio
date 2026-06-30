@@ -152,7 +152,12 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
-import { browserStorageItem, loadBrowserJson, newerAutosaveSnapshot, persistBrowserSnapshot } from "@/lib/browserStorage";
+import { browserStorageItem } from "@/lib/browserStorage";
+import {
+  createEditorPersistence,
+  type AutosavedEditorSnapshot as PersistedEditorSnapshot,
+  type SavedDocumentSnapshot,
+} from "@/lib/editorPersistence";
 import {
   DEFAULT_SOLUTION_SLOT_LINES,
   DEFAULT_SOLUTION_SLOT_TEXT,
@@ -640,13 +645,14 @@ interface EditorHistorySnapshot {
 
 type EditorDocumentState = EditorHistorySnapshot;
 
-interface AutosavedEditorSnapshot extends EditorHistorySnapshot {
-  logo?: LogoAsset;
-  activeProjectFilePath?: string;
-  activeProjectFileRevision?: number;
-  documentOpen?: boolean;
-  updatedAt?: string;
-}
+type AutosavedEditorSnapshot = PersistedEditorSnapshot<
+  FrontMatterConfig,
+  QuestionBlock,
+  DocumentSectionHeading,
+  DocumentFlowItem,
+  FormattingConfig,
+  LogoAsset
+>;
 
 const HISTORY_LIMIT = 80;
 const PROJECT_FILE_REVISION_MISSING_ERROR = "PROJECT_FILE_REVISION_MISSING";
@@ -727,18 +733,14 @@ interface FrontMatterConfig {
   exam?: ExamTitlePageConfig;
 }
 
-interface SavedTest {
-  id: string;
-  name: string;
-  frontMatter: FrontMatterConfig;
-  questions: QuestionBlock[];
-  sectionHeadings: DocumentSectionHeading[];
-  documentFlow: DocumentFlowItem[];
-  formattingConfig: FormattingConfig;
-  logo?: LogoAsset;
-  createdAt: string;
-  updatedAt: string;
-}
+type SavedTest = SavedDocumentSnapshot<
+  FrontMatterConfig,
+  QuestionBlock,
+  DocumentSectionHeading,
+  DocumentFlowItem,
+  FormattingConfig,
+  LogoAsset
+>;
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -2286,38 +2288,33 @@ function normalizedDocumentFlowFromState(
   return normalizeDocumentFlow(reconciled, questions, sectionHeadings);
 }
 
-function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  const frontMatter = normalizeFrontMatter(record.frontMatter);
-  const questions = normalizeQuestionBlocks(record.questions);
-  const sectionHeadings = normalizeSectionHeadings(record.sectionHeadings);
-  const documentFlow = normalizeDocumentFlow(record.documentFlow, questions, sectionHeadings);
-  const formattingConfig = normalizeFormattingConfig(record.formattingConfig);
-  if (!frontMatter || !questions.length) return null;
+const editorPersistence = createEditorPersistence<
+  FrontMatterConfig,
+  QuestionBlock,
+  DocumentSectionHeading,
+  DocumentFlowItem,
+  FormattingConfig,
+  LogoAsset
+>({
+  normalizeFrontMatter,
+  normalizeQuestions: normalizeQuestionBlocks,
+  normalizeSectionHeadings,
+  normalizeDocumentFlow,
+  normalizeFormattingConfig,
+  normalizeLogoAsset,
+  cloneSerializable,
+  defaultDocumentFlow,
+  isBlankStarterQuestion,
+});
 
-  return {
-    frontMatter,
-    questions,
-    sectionHeadings,
-    documentFlow,
-    formattingConfig,
-    logo: normalizeLogoAsset(record.logo),
-    activeProjectFilePath: typeof record.activeProjectFilePath === "string" ? record.activeProjectFilePath : undefined,
-    activeProjectFileRevision:
-      typeof record.activeProjectFileRevision === "number" && Number.isInteger(record.activeProjectFileRevision)
-        ? record.activeProjectFileRevision
-        : undefined,
-    documentOpen: typeof record.documentOpen === "boolean" ? record.documentOpen : undefined,
-    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
-  };
+function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null {
+  return editorPersistence.normalizeEditorSnapshot(value);
 }
 
 function loadCurrentDraft(): AutosavedEditorSnapshot | null {
-  return loadBrowserJson({
+  return editorPersistence.loadCurrentDraft({
     key: CURRENT_DRAFT_STORAGE_KEY,
     legacyKey: LEGACY_CURRENT_DRAFT_STORAGE_KEY,
-    normalize: normalizeEditorSnapshot,
   });
 }
 
@@ -2330,91 +2327,38 @@ function loadInitialEditorDraft() {
 }
 
 function persistCurrentDraft(snapshot: AutosavedEditorSnapshot) {
-  persistBrowserSnapshot({ key: CURRENT_DRAFT_STORAGE_KEY, snapshot });
+  editorPersistence.persistCurrentDraft({ key: CURRENT_DRAFT_STORAGE_KEY, snapshot });
 }
 
 function loadLegacySavedTests(): SavedTest[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const stored = browserStorageItem(SAVED_TEST_STORAGE_KEY, LEGACY_SAVED_TEST_STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored) as unknown;
-    return normalizeSavedTests(parsed);
-  } catch {
-    return [];
-  }
+  return editorPersistence.loadLegacySavedTests({
+    key: SAVED_TEST_STORAGE_KEY,
+    legacyKey: LEGACY_SAVED_TEST_STORAGE_KEY,
+  });
 }
 
 // Legacy saved tests only exist so older browser/API saves can be migrated into project files.
 function normalizeSavedTests(value: unknown): SavedTest[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((test): SavedTest[] => {
-    const record = asRecord(test);
-    if (!record) return [];
-    const frontMatter = normalizeFrontMatter(record.frontMatter);
-    if (!frontMatter || typeof record.id !== "string" || typeof record.name !== "string") return [];
-    const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
-    const updatedAt = typeof record.updatedAt === "string" ? record.updatedAt : createdAt;
-    const questions = normalizeQuestionBlocks(record.questions);
-    const sectionHeadings = normalizeSectionHeadings(record.sectionHeadings);
-    const documentFlow = normalizeDocumentFlow(record.documentFlow, questions, sectionHeadings);
-
-    return [
-      {
-        id: record.id,
-        name: record.name,
-        frontMatter,
-        questions,
-        sectionHeadings,
-        documentFlow,
-        formattingConfig: normalizeFormattingConfig(record.formattingConfig),
-        logo: normalizeLogoAsset(record.logo),
-        createdAt,
-        updatedAt,
-      },
-    ];
-  });
+  return editorPersistence.normalizeSavedTests(value);
 }
 
 function normalizeSavedTest(value: unknown): SavedTest | null {
-  return normalizeSavedTests([value])[0] ?? null;
+  return editorPersistence.normalizeSavedTest(value);
 }
 
 function mergeLegacySavedTests(primary: SavedTest[], fallback: SavedTest[]) {
-  const byId = new Map<string, SavedTest>();
-  for (const test of fallback) byId.set(test.id, test);
-  for (const test of primary) {
-    const existing = byId.get(test.id);
-    byId.set(test.id, !existing || test.updatedAt >= existing.updatedAt ? test : existing);
-  }
-  return [...byId.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return editorPersistence.mergeLegacySavedTests(primary, fallback);
 }
 
 function newerAutosave(left: AutosavedEditorSnapshot | null, right: AutosavedEditorSnapshot | null) {
-  return newerAutosaveSnapshot(left, right, (autosave) => autosave.questions.length === 1 && isBlankStarterQuestion(autosave.questions[0]));
+  return editorPersistence.newerAutosave(left, right);
 }
 
 function persistLegacySavedTests(legacyTests: SavedTest[]) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(SAVED_TEST_STORAGE_KEY, JSON.stringify(legacyTests));
-  } catch {
-    // Large embedded logo data can exceed browser storage limits; keep the in-memory tests for this session.
-  }
-}
-
-function savedLogoSnapshot(logo?: LogoAsset | null) {
-  return logo
-    ? {
-        id: logo.id,
-        name: logo.name,
-        src: logo.src,
-        ...(typeof logo.schoolName === "string" ? { schoolName: logo.schoolName } : {}),
-      }
-    : undefined;
+  editorPersistence.persistLegacySavedTests({
+    key: SAVED_TEST_STORAGE_KEY,
+    savedDocuments: legacyTests,
+  });
 }
 
 function createSavedTestSnapshot({
@@ -2438,23 +2382,17 @@ function createSavedTestSnapshot({
   logo?: LogoAsset;
   createdAt?: string;
 }): SavedTest {
-  const now = new Date().toISOString();
-  const normalizedQuestions = normalizeQuestionBlocks(questions);
-  const normalizedHeadings = normalizeSectionHeadings(sectionHeadings);
-  const normalizedFlow = normalizeDocumentFlow(documentFlow, normalizedQuestions, normalizedHeadings);
-
-  return {
-    id: testId,
+  return editorPersistence.createSavedTestSnapshot({
+    testId,
     name,
-    frontMatter: cloneSerializable(frontMatter),
-    questions: cloneSerializable(normalizedQuestions),
-    sectionHeadings: cloneSerializable(normalizedHeadings),
-    documentFlow: cloneSerializable(normalizedFlow),
-    formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
-    logo: savedLogoSnapshot(logo),
-    createdAt: createdAt ?? now,
-    updatedAt: now,
-  };
+    frontMatter,
+    questions,
+    sectionHeadings,
+    documentFlow,
+    formattingConfig,
+    logo,
+    createdAt,
+  });
 }
 
 function editorDocumentFingerprint(
@@ -2465,15 +2403,13 @@ function editorDocumentFingerprint(
   sectionHeadings: DocumentSectionHeading[] = [],
   documentFlow: DocumentFlowItem[] = defaultDocumentFlow(questions),
 ) {
-  const normalizedQuestions = normalizeQuestionBlocks(questions);
-  const normalizedHeadings = normalizeSectionHeadings(sectionHeadings);
-  return JSON.stringify({
-    frontMatter: cloneSerializable(frontMatter),
-    questions: cloneSerializable(normalizedQuestions),
-    sectionHeadings: cloneSerializable(normalizedHeadings),
-    documentFlow: cloneSerializable(normalizeDocumentFlow(documentFlow, normalizedQuestions, normalizedHeadings)),
-    formattingConfig: cloneSerializable(normalizeFormattingConfig(formattingConfig)),
-    logo: savedLogoSnapshot(logo),
+  return editorPersistence.editorDocumentFingerprint({
+    frontMatter,
+    questions,
+    formattingConfig,
+    logo,
+    sectionHeadings,
+    documentFlow,
   });
 }
 
