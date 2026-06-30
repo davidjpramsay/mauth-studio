@@ -2,6 +2,7 @@ import type { ProjectSummary } from "@mauth-studio/shared";
 
 import type { ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { getDefaultProject, getProjectFile, listProjectFileVersions } from "@/lib/api";
+import { fileChangedProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
 interface ProjectAutosaveSnapshotLike {
   activeProjectFilePath?: string;
@@ -77,12 +78,7 @@ export function useProjectAutosaveResolutionController<TAutosave extends Project
       snapshot,
       project,
       cleanFingerprint: baseFingerprint,
-      conflict: {
-        filePath,
-        message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-        localRevision,
-        currentRevision: document.revision,
-      },
+      conflict: fileChangedProjectSaveConflict(filePath, localRevision, document.revision),
     };
   }
 

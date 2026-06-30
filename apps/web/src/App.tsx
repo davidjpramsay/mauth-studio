@@ -110,7 +110,6 @@ import { useProjectFileOperationsController } from "@/hooks/useProjectFileOperat
 import { useProjectFolderController } from "@/hooks/useProjectFolderController";
 import { useProjectVersionsController } from "@/hooks/useProjectVersionsController";
 import {
-  ApiError,
   deleteStoredLogo,
   getDefaultProject,
   getStorageAutosave,
@@ -126,7 +125,7 @@ import { parseMauthDocumentActionProposal } from "@/lib/mauthActionProposal";
 import { useDraftAutosaveController } from "@/hooks/useDraftAutosaveController";
 import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
-import { missingProjectRevisionConflict, useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
+import { useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import { usePrintController } from "@/hooks/usePrintController";
 import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
@@ -140,7 +139,8 @@ import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
-import { useProjectFilesController, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import { useProjectFilesController } from "@/hooks/useProjectFilesController";
+import { missingProjectRevisionConflict, projectFileConflictFromError } from "@/lib/projectSaveConflicts";
 import {
   isProjectTestFile,
   projectPathForTestPath,
@@ -2000,25 +2000,6 @@ function defaultSolutionSlotLinesForDocument(frontMatter: FrontMatterConfig, mar
   const safeMarks = safeMarkValue(marks);
   const generousExamLines = safeMarks ? Math.ceil(safeMarks * 3 + 4) : DEFAULT_SOLUTION_SLOT_LINES + 2;
   return Math.max(baseLines, Math.min(MAX_SOLUTION_SLOT_LINES, generousExamLines));
-}
-
-function projectFileSummaryFromApiError(error: ApiError): ProjectFileSummary | null {
-  const body = asRecord(error.detail);
-  const detail = asRecord(body?.detail) ?? body;
-  const current = asRecord(detail?.current);
-  if (!current || typeof current.path !== "string" || typeof current.revision !== "number") return null;
-  return current as unknown as ProjectFileSummary;
-}
-
-function projectFileConflictFromError(error: unknown, filePath: string, localRevision: number | null): ProjectSaveConflict | null {
-  if (!(error instanceof ApiError) || error.status !== 409) return null;
-  const current = projectFileSummaryFromApiError(error);
-  return {
-    filePath,
-    message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-    localRevision,
-    currentRevision: current?.revision,
-  };
 }
 
 function normalizedBlockVisibility(record: Record<string, unknown>, blockId: string): ContentBlockVisibility | undefined {

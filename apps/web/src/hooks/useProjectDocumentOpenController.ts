@@ -4,6 +4,7 @@ import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { getDefaultProject, getProjectFile, listProjectFiles } from "@/lib/api";
 import { isProjectTestFile, testFileDisplayName, testPathBasename, testPathFromProjectPath } from "@/lib/projectFiles";
+import { fileChangedProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
 interface UseProjectDocumentOpenControllerOptions<TSavedDocument> {
   activeProject: ProjectSummary | null;
@@ -130,12 +131,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
     const localRevision = activeProjectFileRevisionRef.current;
     if (typeof localRevision === "number" && summary.revision <= localRevision) return;
 
-    const conflict = {
-      filePath,
-      message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-      localRevision,
-      currentRevision: summary.revision,
-    };
+    const conflict = fileChangedProjectSaveConflict(filePath, localRevision, summary.revision);
 
     if (lastProjectSaveFingerprintRef.current !== currentEditorDocumentFingerprint()) {
       setProjectSaveConflict(conflict);

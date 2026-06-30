@@ -3,6 +3,7 @@ import type { ProjectFileSummary } from "@mauth-studio/shared";
 
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import { fileChangedProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
 interface AutosaveSnapshotLike {
   activeProjectFilePath?: string;
@@ -30,15 +31,6 @@ interface UseDraftAutosaveControllerOptions<TAutosave extends AutosaveSnapshotLi
   setProjectFilesMessage: (message: string) => void;
   localDraftDebounceMs: number;
   diskAutosaveDebounceMs: number;
-}
-
-function projectFileChangedConflict(filePath: string, localRevision: number, currentRevision: number | undefined): ProjectSaveConflict {
-  return {
-    filePath,
-    message: "File changed on disk. Reload it before saving, or use Save as to keep this draft as a copy.",
-    localRevision,
-    currentRevision,
-  };
 }
 
 export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLike>(options: UseDraftAutosaveControllerOptions<TAutosave>) {
@@ -104,7 +96,7 @@ export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLik
           if (activeProjectFilePath && typeof activeProjectFileRevision === "number") {
             const summary = await loadProjectFileSummary(activeProjectFilePath);
             if (summary && summary.revision > activeProjectFileRevision) {
-              const conflict = projectFileChangedConflict(activeProjectFilePath, activeProjectFileRevision, summary.revision);
+              const conflict = fileChangedProjectSaveConflict(activeProjectFilePath, activeProjectFileRevision, summary.revision);
               if (isCurrentProjectFileClean()) {
                 setDraftAutosaveStatus("ready");
                 setDraftAutosaveMessage("File changed on disk; reloading");

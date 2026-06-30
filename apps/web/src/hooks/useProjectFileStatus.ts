@@ -2,6 +2,7 @@ import type { ProjectFileSummary } from "@mauth-studio/shared";
 
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { TEST_FILE_ROOT_LABEL, testFileDisplayName, testPathBasename, testPathFromProjectPath } from "@/lib/projectFiles";
+import { missingProjectRevisionConflict } from "@/lib/projectSaveConflicts";
 
 export type DraftAutosaveStatus = "loading" | "ready" | "saving" | "saved" | "unavailable" | "error";
 export type HeaderSaveStatus = DraftAutosaveStatus | "dirty" | "draft" | "conflict";
@@ -40,14 +41,6 @@ function draftBackupStatusSummary(status: DraftAutosaveStatus, message: string) 
   if (status === "loading") return "loading draft backup";
   if (status === "error") return "draft backup error";
   return message.replace(/^Draft autosave/, "Draft backup") || "draft backup ready";
-}
-
-export function missingProjectRevisionConflict(filePath: string): ProjectSaveConflict {
-  return {
-    filePath,
-    message: "This draft was restored without a file revision. Reload the file before saving, or use Save as to keep it as a copy.",
-    localRevision: null,
-  };
 }
 
 export function useProjectFileStatus({

@@ -2,18 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import { getDefaultProject, listProjectFiles, saveProjectFile, updateProject } from "@/lib/api";
+import type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
+
+export type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
 export const LEGACY_SAVED_TESTS_MIGRATED_AT_KEY = "legacySavedTestsMigratedAt";
 export const LEGACY_SAVED_TESTS_IMPORTED_KEY = "legacySavedTestsImported";
 
 export type ProjectFilesStatus = "idle" | "loading" | "ready" | "saving" | "error";
-
-export interface ProjectSaveConflict {
-  filePath: string;
-  message: string;
-  localRevision: number | null;
-  currentRevision?: number;
-}
 
 interface LegacySavedTestLike {
   id: string;
