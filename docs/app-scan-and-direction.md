@@ -6,6 +6,8 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 - The full quality gate passes: formatting, ESLint, Ruff, pytest, web action tests, Plotly tests, TypeScript, and Vite build.
 - The running API exposes `/api/system/status`, which reports the API version/start time, repo root, active documents folder, default project, git branch/commit, and browser bridge sessions. The web header now has a System status panel and marks the API as stale when this route is missing.
+- `pnpm dev:launch` starts or validates the local API/web stack through `/api/system/status`, warns if an older API is occupying port 8000, and opens the web app unless `--no-open` is supplied.
+- `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
 - Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
 - The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
@@ -18,7 +20,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 2. File and folder state has too many overlapping concepts.
 
-   The current model has visible project files, recent files, legacy migration, autosave, revision snapshots, and the selected external folder. Those are all valid, but the UI needs to make the active source of truth obvious. The safest direction is: one visible documents folder, explicit recents, explicit recovery, and no silent importing or copying when a teacher opens another folder.
+   The current model has visible project files, recent files, legacy migration, autosave, revision snapshots, and the selected external folder. Those are all valid, but the UI needs to make the active source of truth obvious. The safest direction is: one visible documents folder, explicit recents, explicit recovery, and no silent importing or copying when a teacher opens another folder. The external-folder/autosave smoke now guards the highest-risk part of that path.
 
 3. Native browser prompts are still used for important workflows.
 
@@ -30,7 +32,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 5. The app can still feel stale when the user is running an older dev process.
 
-   The header now checks `/api/system/status` and shows stale/unavailable API state, but the next step is a launcher that refuses to reuse old API/web processes silently.
+   The header now checks `/api/system/status` and shows stale/unavailable API state. The launcher also refuses to reuse an API process that responds to `/api/health` but not `/api/system/status`.
 
 ## Direction
 
@@ -53,7 +55,7 @@ An in-app assistant can come back later, but it should be a client for the same 
 ### 1. Stabilise The Local App
 
 - Use `/api/system/status` as the launcher and support contract for process, folder, file, revision, autosave, and bridge diagnostics.
-- Add a "Restart required" launcher flow when the status endpoint or expected bridge routes are unavailable.
+- Extend the launcher into a packaged desktop/macOS entry point after the storage smoke coverage is in place.
 - Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
 - Replace native prompts with structured app modals for save, close, delete, rename, restore, and folder selection.
 
@@ -85,9 +87,8 @@ A standalone app is worth doing, but only after the storage and bridge contracts
 Best staged path:
 
 1. Keep the current web plus FastAPI dev setup while the authoring model is changing quickly.
-2. Add a one-command local launcher that starts web and API, checks `/api/system/status`, and opens the app.
-3. Package that launcher with Tauri or Electron if the local workflow is stable.
-4. Consider a true macOS-native Swift app only if Mauth needs deep Finder, print, iCloud Drive, or Apple classroom workflow integration that a web shell cannot provide.
+2. Package the launcher with Tauri or Electron if the local workflow is stable.
+3. Consider a true macOS-native Swift app only if Mauth needs deep Finder, print, iCloud Drive, or Apple classroom workflow integration that a web shell cannot provide.
 
 For now, Tauri/Electron around the current web app is a more pragmatic native path than rewriting the editor in Swift.
 
