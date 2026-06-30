@@ -161,6 +161,22 @@ export function useProjectDocumentPersistenceController<TDocument>({
     return savedDocument;
   }
 
+  async function saveActiveFileRecoveryCopy() {
+    if (!activeProjectFilePath) return false;
+
+    try {
+      const project = activeProject ?? (await getDefaultProject());
+      await saveCurrentEditorRecoveryCopy(project, activeProjectFilePath);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage("Saved recovery copy");
+      return true;
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Recovery copy failed");
+      return false;
+    }
+  }
+
   async function saveCurrentProjectFileBeforeOpening(project: ProjectSummary) {
     if (!hasUnsavedProjectChanges || !activeProjectFilePath) return;
 
@@ -221,6 +237,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     writeEditorDocumentToProjectFile,
     writeCurrentTestProjectFile,
     saveCurrentEditorRecoveryCopy,
+    saveActiveFileRecoveryCopy,
     saveCurrentProjectFileBeforeOpening,
     saveCurrentTestToProjectFile,
   };

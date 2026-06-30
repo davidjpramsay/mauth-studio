@@ -11,7 +11,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 - `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
 - File, folder, backup/import, close-file, save-as, restore-version, and solution-slot line-count workflows now use Mauth-owned dialogs rather than native `window.prompt`, `window.confirm`, or `window.alert`. Close-file decisions now support explicit Save, Don't Save, and Cancel paths.
-- Document persistence, close/open decisions, and active-file sync are now composed through a document-session controller rather than wired separately in `App.tsx`.
+- Document persistence, close/open decisions, active-file sync, and file-conflict recovery/reload actions are now composed through a document-session controller rather than wired separately in `App.tsx`.
 - Browser smoke passes for the main editor load and the Files drawer interaction. The page renders meaningful content, opens the drawer, and produces no console warnings or errors in the checked flow.
 - The app has strong tests around API storage, agent bridge endpoints, Mauth action contracts, graph domains, diagram inspection, and Plotly statistics charts.
 
@@ -27,7 +27,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 3. Document lifecycle choices are still too simple.
 
-   Native browser prompts have been replaced with shared Mauth dialogs, close now supports explicit save, discard, and cancel choices, and open/close/save/sync are composed through a document-session controller. The next step is to bring recovery and conflict choices into that same lifecycle.
+   Native browser prompts have been replaced with shared Mauth dialogs, close now supports explicit save, discard, and cancel choices, and open/close/save/sync are composed through a document-session controller. File conflicts now expose recovery-copy and reload-from-disk controls, but conflict handling can still become more unified and test-covered.
 
 4. Render-heavy modules need boundaries.
 
@@ -65,7 +65,7 @@ An in-app assistant can come back later, but it should be a client for the same 
 ### 2. Finish The Editor Shell Split
 
 - Extract the remaining toolbar and document mutation orchestration from `App.tsx`.
-- Continue moving recovery and conflict handling into the document-session controller.
+- Continue tightening recovery and conflict handling inside the document-session controller, including stronger tests for stale-file decision paths.
 - Extract the remaining preview page segmentation and render orchestration into a preview/document-render controller.
 - Extract question/page-flow mutation orchestration into action-facing controllers.
 - Keep `App.tsx` as composition only: state providers, controllers, layout, and component wiring.

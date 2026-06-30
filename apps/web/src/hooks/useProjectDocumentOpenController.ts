@@ -54,6 +54,24 @@ export function useProjectDocumentOpenController<TSavedDocument>({
   refreshProjectFiles,
   onOpened,
 }: UseProjectDocumentOpenControllerOptions<TSavedDocument>) {
+  async function reloadProjectFileFromDisk(filePath: string) {
+    const project = activeProject ?? (await getDefaultProject());
+    const fileName = projectFileDisplayName(filePath);
+    setProjectFilesStatus("loading");
+    setProjectFilesMessage(`Reloading ${fileName}`);
+
+    const [document, filesResponse] = await Promise.all([getProjectFile(project.id, filePath), listProjectFiles(project.id)]);
+    const savedDocument = parseSavedDocument(document.content);
+    if (!savedDocument) throw new Error("Unsupported project file");
+
+    setActiveProject(project);
+    setProjectFiles(filesResponse.files);
+    applySavedProjectDocument(project, filePath, savedDocument, document.revision);
+    setProjectSaveConflict(null);
+    setProjectFilesStatus("ready");
+    setProjectFilesMessage(`Reloaded ${fileName} from disk`);
+  }
+
   async function openProjectFile(filePath: string) {
     try {
       const project = activeProject ?? (await getDefaultProject());
@@ -127,13 +145,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
     }
 
     try {
-      const document = await getProjectFile(project.id, filePath);
-      const savedDocument = parseSavedDocument(document.content);
-      if (!savedDocument) throw new Error("Unsupported project file");
-
-      applySavedProjectDocument(project, filePath, savedDocument, document.revision);
-      setProjectFilesStatus("ready");
-      setProjectFilesMessage(`Reloaded ${projectFileDisplayName(filePath)} from disk`);
+      await reloadProjectFileFromDisk(filePath);
     } catch {
       setProjectSaveConflict(conflict);
       setProjectFilesStatus("error");
@@ -141,8 +153,23 @@ export function useProjectDocumentOpenController<TSavedDocument>({
     }
   }
 
+  async function reloadActiveProjectFileFromDisk() {
+    const filePath = activeProjectFilePathRef.current;
+    if (!filePath || fileOperationBusy) return false;
+
+    try {
+      await reloadProjectFileFromDisk(filePath);
+      return true;
+    } catch {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage("Reload failed");
+      return false;
+    }
+  }
+
   return {
     openProjectFile,
     syncActiveProjectFileFromDisk,
+    reloadActiveProjectFileFromDisk,
   };
 }

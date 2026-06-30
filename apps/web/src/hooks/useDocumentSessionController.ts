@@ -121,6 +121,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     writeCurrentTestProjectFile,
     saveCurrentProjectFileBeforeOpening,
     saveCurrentTestToProjectFile,
+    saveActiveFileRecoveryCopy,
   } = useProjectDocumentPersistenceController<TDocument>({
     activeProject,
     projectFiles,
@@ -171,28 +172,29 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     dialogs,
   });
 
-  const { openProjectFile, syncActiveProjectFileFromDisk } = useProjectDocumentOpenController<TSavedDocument>({
-    activeProject,
-    projectFiles,
-    activeProjectFilePath,
-    activeProjectFilePathRef,
-    activeProjectFileRevisionRef,
-    lastProjectSaveFingerprintRef,
-    fileOperationBusy,
-    revisionMissingErrorMessage,
-    parseSavedDocument,
-    applySavedProjectDocument,
-    saveCurrentProjectFileBeforeOpening,
-    currentEditorDocumentFingerprint,
-    projectFileConflictFromError,
-    setActiveProject,
-    setProjectFiles,
-    setProjectSaveConflict,
-    setProjectFilesStatus,
-    setProjectFilesMessage,
-    refreshProjectFiles,
-    onOpened,
-  });
+  const { openProjectFile, syncActiveProjectFileFromDisk, reloadActiveProjectFileFromDisk } =
+    useProjectDocumentOpenController<TSavedDocument>({
+      activeProject,
+      projectFiles,
+      activeProjectFilePath,
+      activeProjectFilePathRef,
+      activeProjectFileRevisionRef,
+      lastProjectSaveFingerprintRef,
+      fileOperationBusy,
+      revisionMissingErrorMessage,
+      parseSavedDocument,
+      applySavedProjectDocument,
+      saveCurrentProjectFileBeforeOpening,
+      currentEditorDocumentFingerprint,
+      projectFileConflictFromError,
+      setActiveProject,
+      setProjectFiles,
+      setProjectSaveConflict,
+      setProjectFilesStatus,
+      setProjectFilesMessage,
+      refreshProjectFiles,
+      onOpened,
+    });
 
   useActiveProjectFileSyncController({
     storageHydrated,
@@ -207,11 +209,13 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     writeCurrentTestProjectFile,
     saveCurrentProjectFileBeforeOpening,
     saveCurrentTestToProjectFile,
+    saveActiveFileRecoveryCopy,
     saveCurrentTest,
     startNewTest,
     closeEditorDocument,
     closeCurrentDocument,
     openProjectFile,
     syncActiveProjectFileFromDisk,
+    reloadActiveProjectFileFromDisk,
   };
 }
