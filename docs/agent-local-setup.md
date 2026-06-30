@@ -34,6 +34,18 @@ pnpm dev:launch:desktop
 
 That mode reuses healthy servers, but if it detects duplicate Mauth-owned listener addresses that could make `localhost` and `127.0.0.1` show different builds, it cleans them up before opening the browser.
 
+To reveal the installed app in Finder after installing:
+
+```bash
+pnpm macos:install-launcher --reveal
+```
+
+To also add a Desktop shortcut:
+
+```bash
+pnpm macos:install-launcher --desktop-shortcut
+```
+
 Check what Mauth servers are currently running:
 
 ```bash

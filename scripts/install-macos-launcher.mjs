@@ -14,12 +14,20 @@ const defaultIconSource = path.join(ROOT, "apps", "web", "public", "brand", "mau
 const iconFileName = "mauth-studio.icns";
 
 function usage() {
-  console.log(`Usage: pnpm macos:install-launcher [--target /path/to/Mauth Studio.app] [--repo /path/to/Mauth] [--icon /path/to/icon.png]
+  console.log(`Usage: pnpm macos:install-launcher [--target /path/to/Mauth Studio.app] [--repo /path/to/Mauth] [--icon /path/to/icon.png] [--desktop-shortcut] [--desktop-shortcut-path /path/to/Mauth Studio.app] [--reveal] [--launch]
 
 Creates a local macOS .app entry point that opens Terminal, runs
 pnpm dev:launch:desktop from the Mauth repo, checks /api/system/status, cleans
 up stale duplicate local listeners when needed, and opens Mauth Studio in the
-browser.`);
+browser.
+
+Options:
+  --desktop-shortcut
+              Add a Desktop shortcut symlink to the installed app.
+  --desktop-shortcut-path
+              Choose where the shortcut symlink is created.
+  --reveal    Reveal the installed app in Finder after installation.
+  --launch    Launch the installed app after installation.`);
 }
 
 function optionValue(name, fallback) {
@@ -47,6 +55,10 @@ const targetApp = path.resolve(optionValue("--target", defaultTarget));
 const repoRoot = path.resolve(optionValue("--repo", ROOT));
 const iconSource = path.resolve(optionValue("--icon", defaultIconSource));
 const appName = path.basename(targetApp, ".app") || "Mauth Studio";
+const createDesktopShortcut = args.includes("--desktop-shortcut") || args.includes("--desktop-shortcut-path");
+const desktopShortcutPath = path.resolve(optionValue("--desktop-shortcut-path", path.join(os.homedir(), "Desktop", `${appName}.app`)));
+const revealAfterInstall = args.includes("--reveal");
+const launchAfterInstall = args.includes("--launch");
 const contentsDir = path.join(targetApp, "Contents");
 const macosDir = path.join(contentsDir, "MacOS");
 const resourcesDir = path.join(contentsDir, "Resources");
@@ -147,6 +159,36 @@ function run(command, commandArgs) {
   }
 }
 
+async function installDesktopShortcut(target, shortcutPath) {
+  if (target === shortcutPath) return false;
+  const existing = await fs.lstat(shortcutPath).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+
+  if (existing) {
+    if (!existing.isSymbolicLink()) {
+      throw new Error(`Desktop shortcut path already exists and is not a symlink: ${shortcutPath}`);
+    }
+    await fs.rm(shortcutPath);
+  }
+
+  await fs.mkdir(path.dirname(shortcutPath), { recursive: true });
+  const relativeTarget = path.relative(path.dirname(shortcutPath), target);
+  await fs.symlink(relativeTarget || target, shortcutPath);
+  return true;
+}
+
+function openInstalledApp(argsToOpen, failureLabel) {
+  const result = spawnSync("open", argsToOpen, { encoding: "utf8" });
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    console.error(`${failureLabel}: ${stderr || "open command failed"}`);
+    return false;
+  }
+  return true;
+}
+
 async function createIconSet(sourcePng, iconsetDir) {
   const sizes = [
     { file: "icon_16x16.png", pixels: 16 },
@@ -201,9 +243,25 @@ await fs.writeFile(
   "utf8",
 );
 
+let installedDesktopShortcut = false;
+if (createDesktopShortcut) {
+  installedDesktopShortcut = await installDesktopShortcut(targetApp, desktopShortcutPath);
+}
+
 console.log(`Installed ${appName}`);
 console.log(targetApp);
 console.log(
   installedIcon ? "Installed app icon from Mauth brand assets." : "Installed without .icns icon because sips/iconutil was unavailable.",
 );
+if (installedDesktopShortcut) {
+  console.log(`Installed Desktop shortcut: ${desktopShortcutPath}`);
+}
 console.log("Double-click it in Finder to start Mauth Studio through pnpm dev:launch:desktop.");
+
+if (revealAfterInstall && openInstalledApp(["-R", targetApp], "Could not reveal installed app")) {
+  console.log("Revealed installed app in Finder.");
+}
+
+if (launchAfterInstall && openInstalledApp([targetApp], "Could not launch installed app")) {
+  console.log("Launched Mauth Studio.");
+}

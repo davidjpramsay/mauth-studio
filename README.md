@@ -77,7 +77,25 @@ On macOS, install a Finder/desktop entry point:
 pnpm macos:install-launcher
 ```
 
-This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch`, checks the API/web versions, starts the needed servers, and opens Mauth Studio in the browser.
+This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch:desktop`, checks the API/web versions, starts the needed servers, and opens Mauth Studio in the browser.
+
+The installed app uses the desktop-safe launcher mode:
+
+```bash
+pnpm dev:launch:desktop
+```
+
+To reveal the installed app in Finder after installing:
+
+```bash
+pnpm macos:install-launcher --reveal
+```
+
+To also add a Desktop shortcut:
+
+```bash
+pnpm macos:install-launcher --desktop-shortcut
+```
 
 Check what Mauth servers are currently running:
 
