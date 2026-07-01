@@ -355,11 +355,44 @@ export function createEditorDocumentNormalizer({ id, normalizeContentBlocks }: E
     return normalized.length ? normalized : defaultDocumentFlow(questions);
   }
 
+  function documentFlowFromQuestionChange(
+    previousQuestions: QuestionBlock[],
+    nextQuestions: QuestionBlock[],
+    sectionHeadings: DocumentSectionHeading[],
+    documentFlow: DocumentFlowItem[],
+  ): DocumentFlowItem[] {
+    const normalizedFlow = normalizeDocumentFlow(documentFlow, previousQuestions, sectionHeadings);
+    const headingIds = new Set(sectionHeadings.map((heading) => heading.id));
+    const nextQuestionItems = nextQuestions.map((question) => ({ kind: "question", id: question.id }) satisfies DocumentFlowItem);
+    const reconciled: DocumentFlowItem[] = [];
+    let nextQuestionIndex = 0;
+
+    normalizedFlow.forEach((item) => {
+      if (item.kind === "sectionHeading") {
+        if (headingIds.has(item.id)) reconciled.push(item);
+        return;
+      }
+      const nextQuestionItem = nextQuestionItems[nextQuestionIndex];
+      if (nextQuestionItem) {
+        reconciled.push(nextQuestionItem);
+        nextQuestionIndex += 1;
+      }
+    });
+
+    while (nextQuestionIndex < nextQuestionItems.length) {
+      reconciled.push(nextQuestionItems[nextQuestionIndex]);
+      nextQuestionIndex += 1;
+    }
+
+    return normalizeDocumentFlow(reconciled, nextQuestions, sectionHeadings);
+  }
+
   return {
     normalizeEditorSubparts,
     normalizeEditorParts,
     normalizeQuestionBlocks,
     normalizeSectionHeadings,
     normalizeDocumentFlow,
+    documentFlowFromQuestionChange,
   };
 }

@@ -955,10 +955,11 @@ const { normalizeContentBlocks } = createEditorContentBlockNormalizer({
   normalizeDiagramTextSide,
 });
 
-const { normalizeQuestionBlocks, normalizeSectionHeadings, normalizeDocumentFlow } = createEditorDocumentNormalizer({
-  id,
-  normalizeContentBlocks,
-});
+const { normalizeQuestionBlocks, normalizeSectionHeadings, normalizeDocumentFlow, documentFlowFromQuestionChange } =
+  createEditorDocumentNormalizer({
+    id,
+    normalizeContentBlocks,
+  });
 
 const {
   duplicatedContentBlock,
@@ -1296,38 +1297,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function cloneSerializable<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function normalizedDocumentFlowFromState(
-  previousQuestions: QuestionBlock[],
-  questions: QuestionBlock[],
-  sectionHeadings: DocumentSectionHeading[],
-  documentFlow: DocumentFlowItem[],
-) {
-  const normalizedFlow = normalizeDocumentFlow(documentFlow, previousQuestions, sectionHeadings);
-  const headingIds = new Set(sectionHeadings.map((heading) => heading.id));
-  const nextQuestionItems = questions.map((question) => ({ kind: "question", id: question.id }) satisfies DocumentFlowItem);
-  const reconciled: DocumentFlowItem[] = [];
-  let nextQuestionIndex = 0;
-
-  normalizedFlow.forEach((item) => {
-    if (item.kind === "sectionHeading") {
-      if (headingIds.has(item.id)) reconciled.push(item);
-      return;
-    }
-    const nextQuestionItem = nextQuestionItems[nextQuestionIndex];
-    if (nextQuestionItem) {
-      reconciled.push(nextQuestionItem);
-      nextQuestionIndex += 1;
-    }
-  });
-
-  while (nextQuestionIndex < nextQuestionItems.length) {
-    reconciled.push(nextQuestionItems[nextQuestionIndex]);
-    nextQuestionIndex += 1;
-  }
-
-  return normalizeDocumentFlow(reconciled, questions, sectionHeadings);
 }
 
 const editorPersistence = createEditorPersistence<
@@ -5315,7 +5284,7 @@ export default function App() {
     normalizeSectionHeadings,
     normalizeDocumentFlow,
     normalizeFormattingConfig,
-    documentFlowFromQuestionChange: normalizedDocumentFlowFromState,
+    documentFlowFromQuestionChange,
     getActiveQuestionId: () => activeQuestionId,
     getActiveTocItemId: () => activeTocItemId,
     existingOrFirstQuestionId,

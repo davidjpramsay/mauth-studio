@@ -184,6 +184,64 @@ test("editor document normalizer repairs headings and document flow", () => {
   );
 });
 
+test("documentFlowFromQuestionChange keeps headings while replacing question slots in order", () => {
+  const normalizer = testDocumentNormalizer();
+  const previousQuestions: QuestionBlock[] = [
+    {
+      id: "question-a",
+      section: "Algebra",
+      text: "",
+      marks: 0,
+      contentBlocks: [],
+      parts: [],
+      itemOrder: [],
+    },
+    {
+      id: "question-b",
+      section: "Algebra",
+      text: "",
+      marks: 0,
+      contentBlocks: [],
+      parts: [],
+      itemOrder: [],
+    },
+  ];
+  const nextQuestions: QuestionBlock[] = [
+    {
+      ...previousQuestions[1],
+      id: "question-b",
+    },
+    {
+      ...previousQuestions[0],
+      id: "question-c",
+    },
+    {
+      ...previousQuestions[0],
+      id: "question-d",
+    },
+  ];
+  const headings = [
+    { id: "heading-a", title: "Multiple choice" },
+    { id: "heading-b", title: "Short answer" },
+  ];
+
+  assert.deepEqual(
+    normalizer.documentFlowFromQuestionChange(previousQuestions, nextQuestions, headings, [
+      { kind: "sectionHeading", id: "heading-a" },
+      { kind: "question", id: "question-a" },
+      { kind: "sectionHeading", id: "heading-b" },
+      { kind: "question", id: "question-b" },
+    ]),
+    [
+      { kind: "sectionHeading", id: "heading-a" },
+      { kind: "question", id: "question-b" },
+      { kind: "sectionHeading", id: "heading-b" },
+      { kind: "question", id: "question-c" },
+      { kind: "question", id: "question-d" },
+    ],
+  );
+});
+
 test("partAllowedOrderItems excludes legacy page-break modules", () => {
   const items = partAllowedOrderItems(
     [textBlock("visible"), { id: "break", kind: "pageBreak" }],
