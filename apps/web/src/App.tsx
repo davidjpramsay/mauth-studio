@@ -36,7 +36,6 @@ import {
 
 import { ActionProposalPanel } from "@/components/actions/ActionProposalPanel";
 import { FormattedText, FrontMatterInlineText, InlineSummaryTitle, MixedMath, SolutionMarkTicks } from "@/components/MathText";
-import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
@@ -70,10 +69,6 @@ import {
 } from "@/components/editor/editorOptions";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
-import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
-import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
-import { FunctionGraph } from "@/components/graphs/FunctionGraph";
-import { Vector2DGraph } from "@/components/graphs/Vector2DGraph";
 import { HeaderFileControls } from "@/components/header/HeaderFileControls";
 import { DocumentNavigator, tocSummaryText } from "@/components/navigation/DocumentNavigator";
 import { DocumentNavigatorRail } from "@/components/navigation/DocumentNavigatorRail";
@@ -84,6 +79,7 @@ import {
   type PreviewContentRenderers,
   type PreviewContentRuntime,
 } from "@/components/preview/PreviewContentBlocks";
+import { PreviewDiagram } from "@/components/preview/PreviewDiagram";
 import { SolutionModeControls } from "@/components/solutions/SolutionModeControls";
 import { SolutionValidationPanel } from "@/components/solutions/SolutionValidationPanel";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
@@ -219,16 +215,9 @@ import {
   type TocItemKind,
 } from "@/lib/documentNavigation";
 import { DEFAULT_3D_GRAPH } from "@/lib/diagram3d";
-import {
-  DEFAULT_2D_GRAPH,
-  graphFeaturesFromConfig,
-  graphFunctionsFromConfig,
-  graphHeight,
-  graphWidth,
-  isSolutionOnlyGraphFeature,
-} from "@/lib/diagramGraph2d";
+import { DEFAULT_2D_GRAPH, graphFeaturesFromConfig, graphFunctionsFromConfig, graphHeight } from "@/lib/diagramGraph2d";
 import { DEFAULT_GEOMETRY_2D_GRAPH, geometry2dData, geometry2dSummary } from "@/lib/diagramGeometry2d";
-import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName, imageDiagramAlt } from "@/lib/diagramImage";
+import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName } from "@/lib/diagramImage";
 import {
   DEFAULT_PENROSE_PRESET,
   DEFAULT_PENROSE_SCALE_PERCENT,
@@ -2434,8 +2423,6 @@ function partPanelSummary(blocks: EditorContentBlock[], showSolutions = true) {
   return firstTextSource(blocks, showSolutions);
 }
 
-const TEST_SOLUTION_COLOR = "#1d4ed8";
-
 type VisibilityReplacementSlotGroup = SolutionVisibilityReplacementSlotGroup;
 
 function visibilityReplacementSlotAtOrderedItems(
@@ -2506,14 +2493,6 @@ function isOrderedDiagramBesideContentBlock(
   );
 }
 
-function graphConfigForSolutionVisibility(graphConfig: GraphConfig, showSolutions: boolean) {
-  if (showSolutions || !graphConfig.features?.some(isSolutionOnlyGraphFeature)) return graphConfig;
-  return {
-    ...graphConfig,
-    features: graphConfig.features.filter((feature) => !isSolutionOnlyGraphFeature(feature)),
-  };
-}
-
 function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
   const normalizedStyle = normalizeChoiceNumberingStyle(style);
   if (normalizedStyle === "bullet") return "•";
@@ -2521,91 +2500,6 @@ function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
   if (normalizedStyle === "upper-alpha") return `${alphaLabel(index).toUpperCase()}.`;
   if (normalizedStyle === "lower-alpha") return `${alphaLabel(index)}.`;
   return `${romanLabel(index)}.`;
-}
-
-function UploadedImageDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
-  const config = withGraphDefaults(graphConfig);
-  const data = imageDiagramData(config);
-  const widthPx = graphWidth(config);
-  const heightPx = graphHeight(config);
-
-  if (!data.src) {
-    return (
-      <div
-        className="flex items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-xs text-slate-500"
-        style={{ width: widthPx, maxWidth: "100%", height: heightPx }}
-      >
-        No image selected
-      </div>
-    );
-  }
-
-  return (
-    <img
-      className="block max-w-full bg-white object-contain"
-      src={data.src}
-      alt={imageDiagramAlt(config)}
-      style={{ width: widthPx, height: "auto", maxHeight: heightPx }}
-    />
-  );
-}
-
-function DiagramPreview({
-  graphConfig,
-  anchor,
-  measureOnly = false,
-  showSolutions = true,
-  solutionTone = false,
-  onGraphConfigChange,
-}: {
-  graphConfig?: GraphConfig | null;
-  anchor?: string;
-  measureOnly?: boolean;
-  showSolutions?: boolean;
-  solutionTone?: boolean;
-  onGraphConfigChange?: (graphConfig: GraphConfig) => void;
-}) {
-  const baseConfig = withGraphDefaults(graphConfig);
-  const hasHiddenSolutionFeatures = !showSolutions && Boolean(baseConfig.features?.some(isSolutionOnlyGraphFeature));
-  const config = graphConfigForSolutionVisibility(baseConfig, showSolutions);
-  const visibleGraphConfigChange = hasHiddenSolutionFeatures ? undefined : onGraphConfigChange;
-  const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
-  const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
-
-  if (measureOnly) {
-    return <div className="w-full overflow-hidden bg-white" style={{ height: graphHeight(config), maxWidth: graphWidth(config) }} />;
-  }
-
-  switch (config.type) {
-    case "image":
-      return <UploadedImageDiagram graphConfig={config} />;
-    case "geometricConstruction":
-    case "network":
-    case "setDiagram":
-      return <GeometricConstructionDiagram graphConfig={config} />;
-    case "statsChart":
-      return <StatsChartDiagram graphConfig={config} />;
-    case "geometry2d":
-      return <FunctionGraph graphConfig={config} previewAnchor={anchor} onGraphConfigChange={visibleGraphConfigChange} />;
-    case "vector2d":
-      return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
-    case "graph3d":
-    case "basic3d":
-      return <Basic3DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
-    case "graph2d":
-    case "2d_graph":
-    case "function":
-    default:
-      return (
-        <FunctionGraph
-          graphConfig={config}
-          previewAnchor={anchor}
-          solutionColor={solutionColor}
-          solutionFeatureColor={solutionFeatureColor}
-          onGraphConfigChange={visibleGraphConfigChange}
-        />
-      );
-  }
 }
 
 const solutionValidationRuntime = createEditorSolutionValidationRuntime({ graphHeight, withGraphDefaults });
@@ -2632,7 +2526,7 @@ const previewContentRuntime: PreviewContentRuntime = {
 };
 
 const previewContentRenderers: PreviewContentRenderers = {
-  renderDiagram: (props) => <DiagramPreview {...props} />,
+  renderDiagram: (props) => <PreviewDiagram {...props} withGraphDefaults={withGraphDefaults} />,
   renderMath: (source, options) => (
     <MixedMath
       source={source}
