@@ -73,27 +73,12 @@ function shellSingleQuote(value) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function appleScriptString(value) {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-
 function commandPath(command) {
   const result = spawnSync("/bin/zsh", ["-lc", `command -v ${command}`], { encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim().split("\n")[0] : "";
 }
 
 function launcherScript() {
-  const terminalCommand = [
-    "clear",
-    'printf "\\\\033]0;Mauth Studio\\\\007"',
-    `cd ${shellSingleQuote(repoRoot)}`,
-    'echo "Starting Mauth Studio..."',
-    `echo "Using pnpm: ${pnpmCommand}"`,
-    'echo "This window owns any API/web processes started by the launcher."',
-    'echo "Press Ctrl+C here to stop them."',
-    `${shellSingleQuote(pnpmCommand)} dev:launch:desktop`,
-  ].join(" && ");
-
   return `#!/bin/zsh
 set -euo pipefail
 
@@ -103,7 +88,7 @@ if ! command -v osascript >/dev/null 2>&1; then
 fi
 
 readonly REPO_ROOT=${shellSingleQuote(repoRoot)}
-readonly PNPM_COMMAND=${shellSingleQuote(pnpmCommand)}
+readonly STORED_PNPM_COMMAND=${shellSingleQuote(pnpmCommand)}
 
 show_error() {
   /usr/bin/osascript \\
@@ -111,6 +96,38 @@ show_error() {
     -e 'display dialog (item 1 of argv) buttons {"OK"} default button "OK" with icon stop with title "Mauth Studio"' \\
     -e 'end run' \\
     "$1" >/dev/null
+}
+
+quote_arg() {
+  printf "%q" "$1"
+}
+
+resolve_pnpm_command() {
+  if [[ -n "$STORED_PNPM_COMMAND" ]]; then
+    if [[ "$STORED_PNPM_COMMAND" == */* && -x "$STORED_PNPM_COMMAND" ]]; then
+      printf "%s" "$STORED_PNPM_COMMAND"
+      return 0
+    fi
+    if [[ "$STORED_PNPM_COMMAND" != */* ]] && command -v "$STORED_PNPM_COMMAND" >/dev/null 2>&1; then
+      command -v "$STORED_PNPM_COMMAND"
+      return 0
+    fi
+  fi
+
+  if command -v pnpm >/dev/null 2>&1; then
+    command -v pnpm
+    return 0
+  fi
+
+  local candidate
+  for candidate in "$HOME/Library/pnpm/pnpm" "/opt/homebrew/bin/pnpm" "/usr/local/bin/pnpm"; do
+    if [[ -x "$candidate" ]]; then
+      printf "%s" "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 if [[ ! -f "$REPO_ROOT/package.json" || ! -f "$REPO_ROOT/scripts/mauth-launch.mjs" ]]; then
@@ -124,18 +141,8 @@ pnpm macos:install-launcher --reveal"
   exit 1
 fi
 
-if [[ "$PNPM_COMMAND" == */* ]]; then
-  if [[ ! -x "$PNPM_COMMAND" ]]; then
-    show_error "The pnpm command used by this launcher no longer exists:
-
-$PNPM_COMMAND
-
-Install pnpm again, or reinstall the launcher from the Mauth repo with:
-
-pnpm macos:install-launcher --reveal"
-    exit 1
-  fi
-elif ! command -v "$PNPM_COMMAND" >/dev/null 2>&1; then
+readonly RESOLVED_PNPM_COMMAND="$(resolve_pnpm_command || true)"
+if [[ -z "$RESOLVED_PNPM_COMMAND" ]]; then
   show_error "The pnpm command is not available to the launcher.
 
 Install pnpm again, or reinstall the launcher from the Mauth repo with:
@@ -144,12 +151,23 @@ pnpm macos:install-launcher --reveal"
   exit 1
 fi
 
-osascript <<'APPLESCRIPT'
-tell application "Terminal"
-  activate
-  do script ${appleScriptString(terminalCommand)}
-end tell
-APPLESCRIPT
+TERMINAL_COMMAND="clear"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && printf '\\\\033]0;Mauth Studio\\\\007'"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && cd $(quote_arg "$REPO_ROOT")"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Starting Mauth Studio...'"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && printf 'Using pnpm: %s\\\\n' $(quote_arg "$RESOLVED_PNPM_COMMAND")"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'This window owns any API/web processes started by the launcher.'"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Press Ctrl+C here to stop them.'"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && $(quote_arg "$RESOLVED_PNPM_COMMAND") dev:launch:desktop"
+
+/usr/bin/osascript \\
+  -e 'on run argv' \\
+  -e 'tell application "Terminal"' \\
+  -e 'activate' \\
+  -e 'do script (item 1 of argv)' \\
+  -e 'end tell' \\
+  -e 'end run' \\
+  "$TERMINAL_COMMAND"
 `;
 }
 
@@ -281,7 +299,7 @@ await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { enco
 const installedIcon = await installAppIcon();
 await fs.writeFile(
   path.join(resourcesDir, "README.txt"),
-  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nResolved pnpm command:\n${pnpmCommand}\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
+  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nStored pnpm command:\n${pnpmCommand}\n\nAt launch time the app uses the stored pnpm command when it still exists, then falls back to pnpm on PATH and common Homebrew/Corepack locations.\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
   "utf8",
 );
 

@@ -26,7 +26,7 @@ pnpm macos:install-launcher
 ```
 
 This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
-If the repo has moved or the installed `pnpm` path is stale, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session.
+If the repo has moved, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session. If the stored `pnpm` path has moved, the app falls back to `pnpm` on `PATH` and common Homebrew/Corepack locations before asking you to reinstall.
 The installed app runs the desktop launcher mode:
 
 ```bash
