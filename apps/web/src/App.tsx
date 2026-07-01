@@ -182,6 +182,7 @@ import {
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
 import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
+import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
   DEFAULT_EXAM_FRONT_MATTER,
   DEFAULT_EXAM_TITLE_PAGE,
@@ -252,7 +253,7 @@ import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, no
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
-import { DEFAULT_PAGE_FORMAT, pageFormatFromConfig, pageStyle, type PageFormat } from "@/lib/previewPageFormat";
+import { pageFormatFromConfig, pageStyle, type PageFormat } from "@/lib/previewPageFormat";
 import { measuredLineHeightPx, solutionSlotToleranceLines, validateSolutionCompleteness } from "@/lib/solutionValidation";
 import {
   isContentBlockVisible,
@@ -303,43 +304,6 @@ const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
 const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
-const DEFAULT_FORMATTING_CONFIG: FormattingConfig = {
-  id: "high-school-mathematics-test",
-  showMarks: true,
-  marksStyle: "right-aligned",
-  questionSpacing: "large",
-  diagramPosition: "below",
-  fontSize: "12pt",
-  numbering: "numeric",
-  sectionHeaders: true,
-  page: {
-    size: "A4",
-    orientation: "portrait",
-    ...DEFAULT_PAGE_FORMAT,
-  },
-};
-const DEFAULT_WORKSHEET_FORMATTING_CONFIG: FormattingConfig = {
-  ...DEFAULT_FORMATTING_CONFIG,
-  id: "worksheet",
-  showMarks: false,
-  questionSpacing: "compact",
-  fontSize: "11pt",
-  sectionHeaders: false,
-  page: {
-    size: "A4",
-    orientation: "portrait",
-    ...DEFAULT_PAGE_FORMAT,
-    paddingXPx: 56,
-    paddingYPx: 52,
-  },
-};
-const DEFAULT_NOTES_FORMATTING_CONFIG: FormattingConfig = {
-  ...DEFAULT_WORKSHEET_FORMATTING_CONFIG,
-  id: "math-notes",
-  questionSpacing: "compact",
-  fontSize: "11pt",
-  sectionHeaders: true,
-};
 const QUESTION_GAP_PX = 32;
 const WORKSHEET_QUESTION_GAP_PX = 16;
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
@@ -503,48 +467,6 @@ function applyTheme(theme: ThemeMode) {
 
   document.documentElement.classList.toggle("dark", theme === "dark");
   document.documentElement.style.colorScheme = theme;
-}
-
-function finiteNumberOrDefault(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function normalizePageFormattingConfig(value: unknown): NonNullable<FormattingConfig["page"]> {
-  const record = asRecord(value);
-  const defaultPage = DEFAULT_FORMATTING_CONFIG.page ?? {};
-  return {
-    size: typeof record?.size === "string" ? record.size : defaultPage.size,
-    orientation: typeof record?.orientation === "string" ? record.orientation : defaultPage.orientation,
-    widthPx: finiteNumberOrDefault(record?.widthPx, defaultPage.widthPx ?? DEFAULT_PAGE_FORMAT.widthPx),
-    heightPx: finiteNumberOrDefault(record?.heightPx, defaultPage.heightPx ?? DEFAULT_PAGE_FORMAT.heightPx),
-    paddingXPx: finiteNumberOrDefault(record?.paddingXPx, defaultPage.paddingXPx ?? DEFAULT_PAGE_FORMAT.paddingXPx),
-    paddingYPx: finiteNumberOrDefault(record?.paddingYPx, defaultPage.paddingYPx ?? DEFAULT_PAGE_FORMAT.paddingYPx),
-    showPageBreaks: typeof record?.showPageBreaks === "boolean" ? record.showPageBreaks : defaultPage.showPageBreaks,
-  };
-}
-
-function normalizeFormattingConfig(value: unknown): FormattingConfig {
-  const record = asRecord(value);
-  return {
-    id: typeof record?.id === "string" ? record.id : DEFAULT_FORMATTING_CONFIG.id,
-    showMarks: typeof record?.showMarks === "boolean" ? record.showMarks : DEFAULT_FORMATTING_CONFIG.showMarks,
-    marksStyle: typeof record?.marksStyle === "string" ? record.marksStyle : DEFAULT_FORMATTING_CONFIG.marksStyle,
-    questionSpacing: typeof record?.questionSpacing === "string" ? record.questionSpacing : DEFAULT_FORMATTING_CONFIG.questionSpacing,
-    diagramPosition: typeof record?.diagramPosition === "string" ? record.diagramPosition : DEFAULT_FORMATTING_CONFIG.diagramPosition,
-    fontSize: typeof record?.fontSize === "string" ? record.fontSize : DEFAULT_FORMATTING_CONFIG.fontSize,
-    numbering: typeof record?.numbering === "string" ? record.numbering : DEFAULT_FORMATTING_CONFIG.numbering,
-    sectionHeaders: typeof record?.sectionHeaders === "boolean" ? record.sectionHeaders : DEFAULT_FORMATTING_CONFIG.sectionHeaders,
-    page: normalizePageFormattingConfig(record?.page),
-  };
-}
-
-function formattingConfigForPresetId(presetId: FormattingConfig["id"]): FormattingConfig {
-  if (presetId === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FORMATTING_CONFIG);
-  if (presetId === "math-notes") return cloneSerializable(DEFAULT_NOTES_FORMATTING_CONFIG);
-  return {
-    ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
-    id: presetId ?? DEFAULT_FORMATTING_CONFIG.id,
-  };
 }
 
 function diagramAlignmentClass(alignment?: DiagramAlignment) {
