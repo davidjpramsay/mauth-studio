@@ -182,8 +182,9 @@ import {
   type OrderedQuestionItem,
   type QuestionBlock,
 } from "@/lib/editorDocumentNormalization";
+import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
-import { defaultSolutionSlotLines, defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
+import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import {
   normalizeChoiceItems,
   normalizeChoiceListLayout,
@@ -240,12 +241,7 @@ import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, no
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
-import {
-  measuredLineHeightPx,
-  solutionSlotToleranceLines,
-  validateSolutionCompleteness,
-  type SolutionValidationRuntime,
-} from "@/lib/solutionValidation";
+import { measuredLineHeightPx, solutionSlotToleranceLines, validateSolutionCompleteness } from "@/lib/solutionValidation";
 import {
   isContentBlockVisible,
   isContentBlockVisibleInScope,
@@ -963,14 +959,6 @@ function formattingConfigForPresetId(presetId: FormattingConfig["id"]): Formatti
     ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
     id: presetId ?? DEFAULT_FORMATTING_CONFIG.id,
   };
-}
-
-function normalizedStartQuestionNumber(frontMatter: FrontMatterConfig) {
-  return Math.max(1, Math.floor(frontMatter.startQuestionNumber || 1));
-}
-
-function questionDisplayNumber(frontMatter: FrontMatterConfig, questionIndex: number) {
-  return normalizedStartQuestionNumber(frontMatter) + questionIndex;
 }
 
 function diagramAlignmentClass(alignment?: DiagramAlignment) {
@@ -2620,27 +2608,7 @@ function DiagramPreview({
   }
 }
 
-function solutionValidationRuntime(frontMatter: FrontMatterConfig): SolutionValidationRuntime<QuestionBlock, EditorPart, EditorSubpart> {
-  return {
-    alphaLabel,
-    contentBlockVisibility,
-    defaultSolutionSlotLines,
-    graphHeight,
-    normalizeChoiceItems,
-    normalizeTableBlock,
-    orderedPartItems,
-    orderedQuestionItems,
-    partScrollAnchor,
-    plainTableRows: (table) => plainTableRows(table as ReturnType<typeof normalizeTableBlock>),
-    questionDisplayNumber: (questionIndex) => questionDisplayNumber(frontMatter, questionIndex),
-    questionScrollAnchor,
-    romanLabel,
-    spaceLines,
-    subpartScrollAnchor,
-    visibilityReplacementSlotAt,
-    withGraphDefaults,
-  };
-}
+const solutionValidationRuntime = createEditorSolutionValidationRuntime({ graphHeight, withGraphDefaults });
 
 type AppPreviewContentBlocksProps = Omit<PreviewContentBlocksBaseProps, "runtime" | "renderers">;
 
