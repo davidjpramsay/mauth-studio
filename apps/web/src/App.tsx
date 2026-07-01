@@ -253,7 +253,22 @@ import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, no
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
-import { pageFormatFromConfig, pageStyle, type PageFormat } from "@/lib/previewPageFormat";
+import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
+import {
+  bookletSupplementaryPageCount,
+  buildExplicitBreakPages,
+  buildMeasuredPages,
+  examQuestionPageReservedHeight,
+  examStructurePercentageTotal,
+  examStructureRows,
+  frontMatterPageCount,
+  groupPreviewPageSegments,
+  pagesAreEqual,
+  questionSpacingPx,
+  type PreviewPage,
+  type PreviewPageSegmentEntry,
+  type PreviewQuestionSegmentGroup,
+} from "@/lib/previewPagination";
 import { measuredLineHeightPx, solutionSlotToleranceLines, validateSolutionCompleteness } from "@/lib/solutionValidation";
 import {
   isContentBlockVisible,
@@ -304,8 +319,6 @@ const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
 const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
-const QUESTION_GAP_PX = 32;
-const WORKSHEET_QUESTION_GAP_PX = 16;
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
@@ -2080,21 +2093,8 @@ interface PreviewGraphConfigChange {
   subpartId?: string;
 }
 
-interface PreviewPage {
-  segmentIndexes: number[];
-  overflow: boolean;
-}
-
-interface PreviewPageSegmentEntry {
-  segment: PreviewSegment;
-  segmentPageIndex: number;
-}
-
-interface PreviewQuestionSegmentGroup {
-  id: string;
-  question?: QuestionBlock;
-  entries: PreviewPageSegmentEntry[];
-}
+type AppPreviewPageSegmentEntry = PreviewPageSegmentEntry<PreviewSegment>;
+type AppPreviewQuestionSegmentGroup = PreviewQuestionSegmentGroup<PreviewSegment>;
 
 function cssAttributeValue(value: string) {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
@@ -2120,60 +2120,6 @@ function useStableEvent<TArgs extends unknown[], TResult>(callback: (...args: TA
   });
 
   return useCallback((...args: TArgs) => callbackRef.current(...args), []);
-}
-
-function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
-  if (left.length !== right.length) return false;
-  return left.every((page, pageIndex) => {
-    const other = right[pageIndex];
-    return page.overflow === other.overflow && page.segmentIndexes.join(",") === other.segmentIndexes.join(",");
-  });
-}
-
-function groupPreviewPageSegments(entries: PreviewPageSegmentEntry[]): PreviewQuestionSegmentGroup[] {
-  const groups: PreviewQuestionSegmentGroup[] = [];
-
-  for (const entry of entries) {
-    if (!entry.segment.question) {
-      groups.push({
-        id: entry.segment.id,
-        entries: [entry],
-      });
-      continue;
-    }
-
-    const previousGroup = groups.at(-1);
-    if (previousGroup?.question?.id === entry.segment.question.id) {
-      previousGroup.entries.push(entry);
-      continue;
-    }
-
-    groups.push({
-      id: `${entry.segment.question.id}:${entry.segmentPageIndex}`,
-      question: entry.segment.question,
-      entries: [entry],
-    });
-  }
-
-  return groups;
-}
-
-function frontMatterPageCount(frontMatter: FrontMatterConfig) {
-  if (frontMatter.titlePageTemplate === "worksheet" || frontMatter.titlePageTemplate === "notes") return 0;
-  return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
-}
-
-function examQuestionPageReservedHeight(frontMatter: FrontMatterConfig) {
-  return frontMatter.titlePageTemplate === "exam" ? 86 : 0;
-}
-
-function bookletSupplementaryPageCount(frontMatter: FrontMatterConfig, contentPageCount: number) {
-  if (frontMatter.titlePageTemplate !== "exam") return 0;
-  const exam = normalizeExamTitlePage(frontMatter.exam);
-  const basePageCount = frontMatterPageCount(frontMatter) + contentPageCount;
-  const minimumSupplementaryPages = Math.max(0, exam.supplementaryPageCount);
-  const pageCountWithMinimum = basePageCount + minimumSupplementaryPages;
-  return minimumSupplementaryPages + ((4 - (pageCountWithMinimum % 4)) % 4);
 }
 
 function partGroupPageBreakSegment(question: QuestionBlock, questionIndex: number, part: EditorPart, suffix: string): PreviewSegment {
@@ -2216,13 +2162,6 @@ function pushPartGroupSegment({
     partIndex: Math.max(0, partIndex),
     showPartLabel: segmentIndex === 0,
   });
-}
-
-function questionSpacingPx(formattingConfig?: FormattingConfig) {
-  const spacing = normalizeFormattingConfig(formattingConfig).questionSpacing;
-  if (spacing === "compact") return WORKSHEET_QUESTION_GAP_PX;
-  if (spacing === "tight") return 10;
-  return QUESTION_GAP_PX;
 }
 
 function buildPreviewSegments(
@@ -2438,96 +2377,6 @@ function previewPartBlockRowIds(partItems: OrderedPartItem[], showSolutions: boo
     if (isOrderedBlockVisible(partItems, index, showSolutions)) rowIds.push(item.id);
   }
   return rowIds;
-}
-
-function buildMeasuredPages(
-  segmentHeights: number[],
-  segments: PreviewSegment[],
-  pageFormat: PageFormat,
-  reservedPageHeight = 0,
-): PreviewPage[] {
-  if (!segmentHeights.length) return [{ segmentIndexes: [], overflow: false }];
-
-  const contentHeight = pageFormat.heightPx - pageFormat.paddingYPx * 2 - reservedPageHeight;
-  const pages: PreviewPage[] = [];
-  let currentSegmentIndexes: number[] = [];
-  let currentHeight = 0;
-  let currentOverflow = false;
-
-  const pushCurrentPage = () => {
-    pages.push({ segmentIndexes: currentSegmentIndexes, overflow: currentOverflow });
-    currentSegmentIndexes = [];
-    currentHeight = 0;
-    currentOverflow = false;
-  };
-
-  segmentHeights.forEach((measuredHeight, segmentIndex) => {
-    const segment = segments[segmentIndex];
-    if (segment?.kind === "page-break") {
-      if (currentSegmentIndexes.length) pushCurrentPage();
-      return;
-    }
-    const fullHeight = measuredHeight || 0;
-    const pageTopHeight = Math.max(0, fullHeight - (segment?.spacingTop ?? 0));
-    const effectiveHeight = currentSegmentIndexes.length ? fullHeight : pageTopHeight;
-    const proposedHeight = currentHeight + effectiveHeight;
-
-    if (currentSegmentIndexes.length && proposedHeight > contentHeight) {
-      pushCurrentPage();
-    }
-
-    const heightOnPage = currentSegmentIndexes.length ? fullHeight : pageTopHeight;
-    currentSegmentIndexes.push(segmentIndex);
-    currentHeight += heightOnPage;
-    currentOverflow = currentOverflow || currentHeight > contentHeight;
-  });
-
-  if (currentSegmentIndexes.length || !pages.length) {
-    pushCurrentPage();
-  }
-
-  return pages;
-}
-
-function buildExplicitBreakPages(segments: PreviewSegment[]): PreviewPage[] {
-  if (!segments.length) return [{ segmentIndexes: [], overflow: false }];
-
-  const pages: PreviewPage[] = [];
-  let currentSegmentIndexes: number[] = [];
-
-  const pushCurrentPage = () => {
-    pages.push({ segmentIndexes: currentSegmentIndexes, overflow: false });
-    currentSegmentIndexes = [];
-  };
-
-  segments.forEach((segment, segmentIndex) => {
-    if (segment.kind === "page-break") {
-      if (currentSegmentIndexes.length) pushCurrentPage();
-      return;
-    }
-    currentSegmentIndexes.push(segmentIndex);
-  });
-
-  if (currentSegmentIndexes.length || !pages.length) pushCurrentPage();
-  return pages;
-}
-
-function examStructureRows(frontMatter: FrontMatterConfig, totalMarks: number, questionCount: number) {
-  const exam = normalizeExamTitlePage(frontMatter.exam);
-  return exam.structureRows.map((row) =>
-    row.useCurrentDocument
-      ? {
-          ...row,
-          questionsAvailable: questionCount,
-          questionsToBeAnswered: questionCount,
-          marksAvailable: totalMarks,
-        }
-      : row,
-  );
-}
-
-function examStructurePercentageTotal(rows: ExamStructureRowConfig[]) {
-  return rows.reduce((sum, row) => sum + row.percentage, 0);
 }
 
 function ExamTextLines({ text }: { text: string }) {
@@ -3456,7 +3305,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
   const visiblePageGroups = useMemo(
     () =>
       visiblePages.map((page) => {
-        const entries: PreviewPageSegmentEntry[] = [];
+        const entries: AppPreviewPageSegmentEntry[] = [];
         page.segmentIndexes.forEach((segmentIndex, segmentPageIndex) => {
           const segment = segments[segmentIndex];
           if (segment) entries.push({ segment, segmentPageIndex });
@@ -3470,7 +3319,7 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
     [segments, visiblePages],
   );
 
-  const renderPreviewGroup = (group: PreviewQuestionSegmentGroup) => {
+  const renderPreviewGroup = (group: AppPreviewQuestionSegmentGroup) => {
     const content = group.entries.map(({ segment, segmentPageIndex }) => (
       <TestPreviewSegment
         key={segment.id}
