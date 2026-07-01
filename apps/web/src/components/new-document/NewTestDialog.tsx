@@ -1,9 +1,8 @@
 import { Columns3, FileText, Heading2, ListTree, PlusCircle, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { TitlePageTemplate } from "@/lib/frontMatterConfig";
 import type { FormattingConfig } from "@mauth-studio/shared";
-
-export type TitlePageTemplate = "standard" | "exam" | "worksheet" | "notes";
 
 export const NEW_TEST_TEMPLATES: Array<{
   id: TitlePageTemplate;
