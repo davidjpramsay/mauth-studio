@@ -3,7 +3,6 @@ import type {
   ChoiceListLayout,
   ChoiceNumberingStyle,
   ContentBlock,
-  ContentBlockVisibility,
   DiagramAlignment,
   Graph2DGeometryAngle,
   Graph2DGeometryArc,
@@ -23,9 +22,10 @@ import {
   type StatsChartOptions,
   type StatsChartType,
 } from "@mauth-studio/diagram-plotly";
-import { ArrowLeft, CopyPlus, Shuffle } from "lucide-react";
+import { ArrowLeft, Shuffle } from "lucide-react";
 
 import { defaultStatsDataForType } from "./StatsChartEditor";
+import { SolutionSurfaceControls } from "../solutions/SolutionSurfaceControls";
 import {
   CHOICE_LIST_LAYOUTS,
   CHOICE_NUMBERING_STYLES,
@@ -41,14 +41,7 @@ import {
   INSPECTOR_MAX_TABLE_ROWS,
   INSPECTOR_MIN_TABLE_COLUMNS,
   INSPECTOR_MIN_TABLE_ROWS,
-  CONTENT_BLOCK_DISPLAY_OPTIONS,
   columnsColumnCountPatch,
-  contentBlockDisplayVisibility,
-  contentBlockMarkTicksPatch,
-  contentBlockSolutionTickHelp,
-  contentBlockSolutionTickLabel,
-  contentBlockSupportsSolutionSurfaceTicks,
-  contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
   graphInspectorWidthPatch,
@@ -115,7 +108,6 @@ import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/di
 import { normalizedSetDiagramData } from "../../lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import { cn } from "../../lib/utils";
-import { canCreateSolutionSurfaceCopy } from "../../lib/editorDocumentDuplication";
 
 function inspectorNumberInputSpinnerMin(min?: number, step?: number) {
   if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
@@ -1120,15 +1112,6 @@ export function SelectionInspector({
   const selectedSetData = selectedDiagramConfig?.type === "setDiagram" ? normalizedSetDiagramData(selectedDiagramConfig) : null;
   const selectedImageData = selectedDiagramConfig?.type === "image" ? imageDiagramData(selectedDiagramConfig) : null;
   const selectedStatsChartSpec = selectedDiagramConfig?.type === "statsChart" ? normalizeStatsChartSpec(selectedDiagramConfig) : null;
-  const selectedBlockVisibility = contentBlockDisplayVisibility(selectedBlock.block);
-  const selectedMarkTicks =
-    typeof selectedBlock.block.markTicks === "number" && Number.isInteger(selectedBlock.block.markTicks)
-      ? selectedBlock.block.markTicks
-      : 0;
-  const selectedSupportsSolutionSurfaceTicks = contentBlockSupportsSolutionSurfaceTicks(selectedBlock.block);
-  const selectedSolutionTickLabel = contentBlockSolutionTickLabel(selectedBlock.block);
-  const selectedSolutionTickHelp = contentBlockSolutionTickHelp(selectedBlock.block);
-  const canCreateSolutionCopy = selectedBlockVisibility !== "solution" && canCreateSolutionSurfaceCopy(selectedBlock.block);
   const updateSelectedStatsChartData = (patch: Partial<StatsChartData>) => {
     if (!selectedDiagramConfig || !selectedStatsChartSpec) return;
     const nextData = { ...selectedStatsChartSpec.data, ...patch };
@@ -1181,61 +1164,12 @@ export function SelectionInspector({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="space-y-3 border-b p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Student / Solutions</div>
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-            Shown in
-            <select
-              value={selectedBlockVisibility}
-              aria-label={`${selectedBlock.label} display`}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, contentBlockVisibilityPatch(selectedBlock.block, event.target.value as ContentBlockVisibility))
-              }
-              className={controlClassName}
-            >
-              {CONTENT_BLOCK_DISPLAY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {onCreateSolutionCopy ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canCreateSolutionCopy}
-              title={
-                canCreateSolutionCopy
-                  ? "Create an editable solutions-only copy after this block."
-                  : "Select a student text, choice list, table, diagram, or columns block to copy into the solutions layer."
-              }
-              onClick={() => onCreateSolutionCopy(selectedBlock)}
-              className="justify-start gap-2"
-            >
-              <CopyPlus className="size-4" aria-hidden="true" />
-              Copy to solutions
-            </Button>
-          ) : null}
-          {selectedBlockVisibility === "solution" ? (
-            selectedSupportsSolutionSurfaceTicks ? (
-              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground" title={selectedSolutionTickHelp}>
-                {selectedSolutionTickLabel}
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  step={1}
-                  value={selectedMarkTicks}
-                  aria-label={`${selectedBlock.label} solution surface ticks`}
-                  onChange={(event) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(event.currentTarget.value))}
-                  className={controlClassName}
-                />
-              </label>
-            ) : null
-          ) : null}
-        </div>
+        <SolutionSurfaceControls
+          selectedBlock={selectedBlock}
+          controlClassName={controlClassName}
+          onBlockChange={onBlockChange}
+          onCreateSolutionCopy={onCreateSolutionCopy}
+        />
         {selectedColumnsBlock ? (
           <div className="space-y-3 p-3">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
