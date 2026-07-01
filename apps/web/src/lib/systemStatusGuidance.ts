@@ -24,6 +24,13 @@ export interface SystemStatusLauncherGuidance {
   folderNote: string;
 }
 
+export interface SystemStatusActiveFileInput {
+  editorDocumentOpen: boolean;
+  currentFileName?: string;
+  activeProjectPathLabel?: string;
+  activeProjectFileRevision?: number | null;
+}
+
 const HEALTHY_COMMANDS: LauncherCommand[] = [
   { label: "Check running servers", command: "pnpm dev:status" },
   { label: "Stop local Mauth servers", command: "pnpm dev:stop" },
@@ -37,6 +44,16 @@ function folderNote(workspace?: SystemStatusGuidanceWorkspace | null) {
     return `Mauth is using an external documents folder: ${workspace.documentsPath || "unknown"}.`;
   }
   return `Mauth is using the default documents folder: ${workspace.defaultDocumentsPath || workspace.documentsPath || "unknown"}.`;
+}
+
+export function systemStatusActiveFileLabel({ editorDocumentOpen, currentFileName, activeProjectPathLabel }: SystemStatusActiveFileInput) {
+  if (!editorDocumentOpen) return "No file open";
+  return activeProjectPathLabel || currentFileName || "Untitled test";
+}
+
+export function systemStatusRevisionLabel({ editorDocumentOpen, activeProjectFileRevision }: SystemStatusActiveFileInput) {
+  if (!editorDocumentOpen) return "No file open";
+  return typeof activeProjectFileRevision === "number" ? String(activeProjectFileRevision) : "No file revision";
 }
 
 export function systemStatusLauncherGuidance({ state, workspace }: SystemStatusGuidanceInput): SystemStatusLauncherGuidance {

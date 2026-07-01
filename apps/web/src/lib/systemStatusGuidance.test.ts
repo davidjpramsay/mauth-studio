@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { systemStatusLauncherGuidance } from "./systemStatusGuidance.ts";
+import { systemStatusActiveFileLabel, systemStatusLauncherGuidance, systemStatusRevisionLabel } from "./systemStatusGuidance.ts";
 
 test("ready guidance promotes the desktop launcher and server controls", () => {
   const guidance = systemStatusLauncherGuidance({
@@ -59,4 +59,28 @@ test("error and loading guidance use status checks before restart", () => {
     label: "Check running servers",
     command: "pnpm dev:status",
   });
+});
+
+test("active file status respects closed editor state", () => {
+  assert.equal(
+    systemStatusActiveFileLabel({
+      editorDocumentOpen: false,
+      currentFileName: "Old Exam",
+      activeProjectPathLabel: "Documents/Old Exam.test.json",
+    }),
+    "No file open",
+  );
+  assert.equal(systemStatusRevisionLabel({ editorDocumentOpen: false, activeProjectFileRevision: 12 }), "No file open");
+});
+
+test("active file status prefers the project path for open saved files", () => {
+  assert.equal(
+    systemStatusActiveFileLabel({
+      editorDocumentOpen: true,
+      currentFileName: "Year 10 Exam",
+      activeProjectPathLabel: "Documents/Year 10 Exam.test.json",
+    }),
+    "Documents/Year 10 Exam.test.json",
+  );
+  assert.equal(systemStatusRevisionLabel({ editorDocumentOpen: true, activeProjectFileRevision: 7 }), "7");
 });

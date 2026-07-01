@@ -5,7 +5,12 @@ import { RefreshCw, Terminal, X } from "lucide-react";
 import type { DraftAutosaveStatus, HeaderSaveStatus } from "@/hooks/useProjectFileStatus";
 import type { MauthWebBuildInfo, SystemStatusState } from "@/hooks/useSystemStatusController";
 import { Button } from "@/components/ui/button";
-import { systemStatusLauncherGuidance, type LauncherCommand } from "@/lib/systemStatusGuidance";
+import {
+  systemStatusActiveFileLabel,
+  systemStatusLauncherGuidance,
+  systemStatusRevisionLabel,
+  type LauncherCommand,
+} from "@/lib/systemStatusGuidance";
 import { cn } from "@/lib/utils";
 
 export function systemStatusTone(state: SystemStatusState) {
@@ -64,6 +69,7 @@ interface SystemStatusPanelProps {
   message: string;
   webBuild: MauthWebBuildInfo;
   activeProject: ProjectSummary | null;
+  editorDocumentOpen: boolean;
   currentFileName: string;
   activeProjectPathLabel: string;
   activeProjectFileRevision: number | null;
@@ -81,6 +87,7 @@ export function SystemStatusPanel({
   message,
   webBuild,
   activeProject,
+  editorDocumentOpen,
   currentFileName,
   activeProjectPathLabel,
   activeProjectFileRevision,
@@ -96,6 +103,8 @@ export function SystemStatusPanel({
   const bridge = status?.bridge;
   const gitSummary = [status?.git.branch, status?.git.commit, status?.git.dirty ? "dirty" : ""].filter(Boolean).join(" · ");
   const activeFolder = workspace?.documentsPath ?? activeProject?.documentsPath ?? activeProject?.workspacePath ?? "";
+  const activeFileLabel = systemStatusActiveFileLabel({ editorDocumentOpen, currentFileName, activeProjectPathLabel });
+  const revisionLabel = systemStatusRevisionLabel({ editorDocumentOpen, activeProjectFileRevision });
   const launcherGuidance = systemStatusLauncherGuidance({ state, workspace });
   const bridgeSummary = bridge
     ? `${bridge.activeSessionCount} active session${bridge.activeSessionCount === 1 ? "" : "s"} · ${bridge.pendingRequestCount} pending`
@@ -179,11 +188,8 @@ export function SystemStatusPanel({
                 }
               />
               <SystemStatusRow label="Project" value={activeProject?.name ?? workspace?.defaultProject?.name} />
-              <SystemStatusRow label="Active file" value={activeProjectPathLabel || currentFileName} />
-              <SystemStatusRow
-                label="Revision"
-                value={typeof activeProjectFileRevision === "number" ? String(activeProjectFileRevision) : "No file revision"}
-              />
+              <SystemStatusRow label="Active file" value={activeFileLabel} />
+              <SystemStatusRow label="Revision" value={revisionLabel} />
               <SystemStatusRow label="Save state" value={headerStorageStatus} />
               <SystemStatusRow label="Autosave" value={`${draftAutosaveStatus} · ${draftAutosaveMessage}`} />
             </dl>

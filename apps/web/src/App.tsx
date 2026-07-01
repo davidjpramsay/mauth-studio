@@ -9102,6 +9102,7 @@ export default function App() {
         message={systemStatusMessage}
         webBuild={webBuild}
         activeProject={activeProject}
+        editorDocumentOpen={editorDocumentOpen}
         currentFileName={currentProjectFileName}
         activeProjectPathLabel={activeProjectPathLabel}
         activeProjectFileRevision={activeProjectFileRevision}
