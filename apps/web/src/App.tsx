@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type {
   ChoiceNumberingStyle,
   DiagramAlignment,
@@ -80,6 +80,7 @@ import {
   type PreviewContentRuntime,
 } from "@/components/preview/PreviewContentBlocks";
 import { PreviewDiagram } from "@/components/preview/PreviewDiagram";
+import { A4PreviewPageFrame } from "@/components/preview/PreviewPageFrame";
 import { SolutionModeControls } from "@/components/solutions/SolutionModeControls";
 import { SolutionValidationPanel } from "@/components/solutions/SolutionValidationPanel";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
@@ -230,6 +231,7 @@ import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM, generatedSetPenroseSubstance, no
 import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA, normalizedVector2DEntries } from "@/lib/diagramVector2d";
 import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
+import { DEFAULT_PAGE_FORMAT, pageFormatFromConfig, pageStyle, type PageFormat } from "@/lib/previewPageFormat";
 import { measuredLineHeightPx, solutionSlotToleranceLines, validateSolutionCompleteness } from "@/lib/solutionValidation";
 import {
   isContentBlockVisible,
@@ -280,15 +282,6 @@ const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
 const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
-const A4_WIDTH_PX = 793.700787;
-const A4_HEIGHT_PX = 1122.519685;
-const DEFAULT_PAGE_FORMAT = {
-  widthPx: A4_WIDTH_PX,
-  heightPx: A4_HEIGHT_PX,
-  paddingXPx: 76,
-  paddingYPx: 76,
-  showPageBreaks: true,
-};
 const DEFAULT_FORMATTING_CONFIG: FormattingConfig = {
   id: "high-school-mathematics-test",
   showMarks: true,
@@ -2608,32 +2601,6 @@ interface PreviewQuestionSegmentGroup {
   entries: PreviewPageSegmentEntry[];
 }
 
-type PageFormat = typeof DEFAULT_PAGE_FORMAT;
-
-function pageFormatFromConfig(formattingConfig?: FormattingConfig): PageFormat {
-  const page = formattingConfig?.page;
-  return {
-    widthPx: page?.widthPx ?? DEFAULT_PAGE_FORMAT.widthPx,
-    heightPx: page?.heightPx ?? DEFAULT_PAGE_FORMAT.heightPx,
-    paddingXPx: page?.paddingXPx ?? DEFAULT_PAGE_FORMAT.paddingXPx,
-    paddingYPx: page?.paddingYPx ?? DEFAULT_PAGE_FORMAT.paddingYPx,
-    showPageBreaks: page?.showPageBreaks ?? DEFAULT_PAGE_FORMAT.showPageBreaks,
-  };
-}
-
-function pageStyle(pageFormat: PageFormat, scale = 1) {
-  return {
-    "--a4-page-width": `${pageFormat.widthPx}px`,
-    "--a4-page-height": `${pageFormat.heightPx}px`,
-    "--a4-page-padding-x": `${pageFormat.paddingXPx}px`,
-    "--a4-page-padding-y": `${pageFormat.paddingYPx}px`,
-    "--a4-preview-scale": String(scale),
-    "--a4-preview-page-width": `${pageFormat.widthPx * scale}px`,
-    "--a4-preview-page-height": `${pageFormat.heightPx * scale}px`,
-    "--a4-preview-page-gap": `${16 * scale}px`,
-  } as CSSProperties & Record<`--${string}`, string>;
-}
-
 function cssAttributeValue(value: string) {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -2694,10 +2661,6 @@ function groupPreviewPageSegments(entries: PreviewPageSegmentEntry[]): PreviewQu
   }
 
   return groups;
-}
-
-function A4PreviewPageFrame({ children, last = false }: { children: ReactNode; last?: boolean }) {
-  return <div className={cn("a4-page-frame", last && "a4-page-frame-last")}>{children}</div>;
 }
 
 function frontMatterPageCount(frontMatter: FrontMatterConfig) {
