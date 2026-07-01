@@ -458,7 +458,9 @@ function DiagramBesideContentBlock({
         data-preview-module-anchor={blockAnchor ? "true" : undefined}
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
-        <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+        <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+          <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+        </SolutionMarkedSurface>
       </div>
     );
   }
@@ -952,7 +954,9 @@ export function PreviewContentBlocks({
           data-preview-module-anchor={blockAnchor ? "true" : undefined}
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
-          <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+          <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+            <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+          </SolutionMarkedSurface>
         </div>,
       );
       continue;

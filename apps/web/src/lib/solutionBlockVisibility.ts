@@ -2,7 +2,7 @@ import type { ContentBlock, ContentBlockVisibility } from "@mauth-studio/shared"
 
 export type SolutionInsertionBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "space";
 
-const SOLUTION_MODE_INSERTION_BLOCK_KINDS = new Set<SolutionInsertionBlockKind>(["text", "table", "diagram", "columns"]);
+const SOLUTION_MODE_INSERTION_BLOCK_KINDS = new Set<SolutionInsertionBlockKind>(["text", "choices", "table", "diagram", "columns"]);
 
 export interface SolutionVisibilityReplacementSlotGroup<TBlock extends ContentBlock = ContentBlock> {
   studentBlock: TBlock;
@@ -46,7 +46,7 @@ export function solutionTextHasMarkAnnotation(block: ContentBlock) {
 }
 
 export function isSolutionSurfaceMissingTicks(block: ContentBlock) {
-  if (block.kind !== "table" && block.kind !== "diagram") return false;
+  if (block.kind !== "choices" && block.kind !== "table" && block.kind !== "diagram") return false;
   if (!isSolutionOnlyBlock(block)) return false;
   const markTicks = Number(block.markTicks);
   return !Number.isInteger(markTicks);

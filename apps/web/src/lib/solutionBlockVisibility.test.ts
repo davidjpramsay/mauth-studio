@@ -39,6 +39,16 @@ function diagramBlock(id: string, visibility?: ContentBlockVisibility, markTicks
   };
 }
 
+function choicesBlock(id: string, visibility?: ContentBlockVisibility, markTicks?: number): ContentBlock {
+  return {
+    id,
+    kind: "choices",
+    choices: ["A", "B", "C"],
+    ...(visibility ? { visibility } : {}),
+    ...(typeof markTicks === "number" ? { markTicks } : {}),
+  };
+}
+
 test("solutionBlockVisibility preserves explicit and legacy solution visibility", () => {
   assert.equal(solutionBlockVisibility(textBlock("solution-legacy")), "solution");
   assert.equal(solutionBlockVisibility({ ...textBlock("solution-opt-out"), solutionOnly: false }), "always");
@@ -47,13 +57,12 @@ test("solutionBlockVisibility preserves explicit and legacy solution visibility"
 });
 
 test("solutionModeInsertedBlockVisibility only makes editable solution surfaces solution-only", () => {
-  const solutionKinds = ["text", "table", "diagram", "columns"] as const;
+  const solutionKinds = ["text", "choices", "table", "diagram", "columns"] as const;
   for (const kind of solutionKinds) {
     assert.equal(solutionModeInsertedBlockVisibility(kind, true), "solution");
     assert.equal(solutionModeInsertedBlockVisibility(kind, false), undefined);
   }
 
-  assert.equal(solutionModeInsertedBlockVisibility("choices", true), undefined);
   assert.equal(solutionModeInsertedBlockVisibility("space", true), undefined);
 });
 
@@ -99,6 +108,9 @@ test("recoverMissingSolutionSurfaceTicks fills exactly one solution surface from
   const result = recoverMissingSolutionSurfaceTicks(blocks, 3);
 
   assert.equal((result[1] as Extract<ContentBlock, { kind: "table" }>).markTicks, 3);
+
+  const choiceResult = recoverMissingSolutionSurfaceTicks([choicesBlock("solution-choices", "solution")], 1);
+  assert.equal((choiceResult[0] as Extract<ContentBlock, { kind: "choices" }>).markTicks, 1);
 });
 
 test("recoverMissingSolutionSurfaceTicks does not guess when text marks or multiple surfaces exist", () => {
