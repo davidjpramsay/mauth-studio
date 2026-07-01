@@ -3684,6 +3684,7 @@ function ColumnsBlockEditor({
           active={childActive}
           openSignal={childOpenSignal}
           minHeightClassName="min-h-[74px]"
+          solutionMarkTools={isSolutionTextBlock(child)}
           onChange={(text) => updateColumnBlock(columnIndex, child.id, { text })}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
         />,
@@ -8355,6 +8356,7 @@ export default function App() {
             active={blockActive}
             openSignal={blockOpenSignal}
             minHeightClassName="min-h-[110px]"
+            solutionMarkTools={isSolutionTextBlock(block)}
             onChange={(text) => updateContentBlock(question.id, block.id, { text })}
             onRemove={() => removeQuestionBlock(question.id, block.id)}
           />
@@ -8530,6 +8532,7 @@ export default function App() {
             active={blockActive}
             openSignal={blockOpenSignal}
             minHeightClassName="min-h-[74px]"
+            solutionMarkTools={isSolutionTextBlock(block)}
             onChange={(text) => updatePartContentBlock(question.id, part.id, block.id, { text })}
             onRemove={() => removePartBlock(question.id, part, block.id)}
           />
@@ -8705,6 +8708,7 @@ export default function App() {
             active={blockActive}
             openSignal={blockOpenSignal}
             minHeightClassName="min-h-[68px]"
+            solutionMarkTools={isSolutionTextBlock(block)}
             onChange={(text) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { text })}
             onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
           />
