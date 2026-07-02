@@ -1,6 +1,6 @@
 import type { ContentBlock } from "@mauth-studio/shared";
 
-import type { ColumnBlockPath, SelectedEditorBaseBlockScope, SelectedEditorBlock } from "@/components/editor/SelectionInspector";
+import type { ColumnBlockPath, SelectedEditorBaseBlockScope, SelectedEditorBlock } from "@/lib/editorBlockSelection";
 import { studentSurfaceBlockPatch } from "@/lib/editorDocumentDuplication";
 import type { MauthAction, MauthContentScope } from "@/lib/mauthActions";
 import type { QuestionBlock } from "@/lib/editorDocumentNormalization";

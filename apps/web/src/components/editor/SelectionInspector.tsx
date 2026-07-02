@@ -107,6 +107,7 @@ import { normalizedNetworkDiagramData } from "../../lib/diagramNetwork";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/diagramPenrose";
 import { normalizedSetDiagramData } from "../../lib/diagramSet";
 import { DEFAULT_VECTOR_2D_GRAPH, vector2dLabelStyle, vector2dMetadata, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
+import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { cn } from "../../lib/utils";
 
 function inspectorNumberInputSpinnerMin(min?: number, step?: number) {
@@ -169,29 +170,6 @@ function DraftInspectorNumberInput({
       className={className}
     />
   );
-}
-
-export type SelectedEditorBaseBlockScope =
-  | { kind: "question"; questionId: string }
-  | { kind: "part"; questionId: string; partId: string }
-  | { kind: "subpart"; questionId: string; partId: string; subpartId: string };
-
-export interface ColumnBlockPathEntry {
-  columnIndex: number;
-  blockId: string;
-}
-
-export type ColumnBlockPath = ColumnBlockPathEntry[];
-
-export type SelectedEditorBlockScope =
-  | SelectedEditorBaseBlockScope
-  | { kind: "column"; rootScope: SelectedEditorBaseBlockScope; rootBlockId: string; path: ColumnBlockPath };
-
-export interface SelectedEditorBlock {
-  scope: SelectedEditorBlockScope;
-  block: ContentBlock;
-  label: string;
-  summary: string;
 }
 
 export interface SelectionInspectorProps {
