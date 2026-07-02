@@ -150,6 +150,7 @@ import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview"
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import { browserStorageItem } from "@/lib/browserStorage";
 import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
+import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
   createEditorPersistence,
   type AutosavedEditorSnapshot as PersistedEditorSnapshot,
@@ -163,7 +164,6 @@ import {
   spaceBlockSummary,
   tableBlockSummary,
   textBlockSummary,
-  tocBlockKind,
 } from "@/lib/editorBlockSummaries";
 import {
   buildDocumentToc,
@@ -4431,6 +4431,16 @@ export default function App() {
     if (activeTocItemId.startsWith("pb:")) return undefined;
     return previewAnchorForEditorAnchor(activeTocItemId, documentTocItems);
   }, [activeTocItemId, documentTocItems]);
+  const { contextDescriptorForAnchor, contextReferenceText } = useMemo(
+    () =>
+      createEditorContextDescriptorRuntime({
+        documentTocItems,
+        questions,
+        selectedEditorBlockFromAnchor,
+        summaryText: tocSummaryText,
+      }),
+    [documentTocItems, questions],
+  );
   const currentDocumentFingerprint = useMemo(
     () =>
       editorDocumentFingerprint(
@@ -5364,84 +5374,6 @@ export default function App() {
 
   function isActiveEditorAnchor(anchor: string) {
     return anchor === activeTocItemId;
-  }
-
-  function tocItemForContextAnchor(anchor: string) {
-    for (const fallback of scrollAnchorFallbacks(anchor)) {
-      const item = documentTocItems.find(
-        (tocItem) => tocItem.id === fallback || tocItem.editorAnchor === fallback || tocItem.previewAnchor === fallback,
-      );
-      if (item) return item;
-    }
-    return null;
-  }
-
-  function exactTocItemForAnchor(anchor: string) {
-    return (
-      documentTocItems.find((tocItem) => tocItem.id === anchor || tocItem.editorAnchor === anchor || tocItem.previewAnchor === anchor) ??
-      null
-    );
-  }
-
-  function fallbackContextLabel(anchor: string) {
-    const parsed = parseScrollAnchor(anchor);
-    if (parsed.kind === "frontMatter") return "Title Page";
-    if (parsed.kind === "sectionHeading") return "Section heading";
-    if (parsed.kind === "pageBreak") return "Page break";
-    if (parsed.kind === "question") return "Question";
-    if (parsed.kind === "part") return "Part";
-    if (parsed.kind === "subpart") return "Subpart";
-    if (parsed.blockId) return "Module";
-    return "Document item";
-  }
-
-  function contextDescriptorForAnchor(anchor: string) {
-    const editorAnchor = graphChildParentScrollAnchor(anchor) ?? anchor;
-    const exactItem = exactTocItemForAnchor(editorAnchor);
-    if (exactItem) return exactItem;
-
-    const selectedBlock = selectedEditorBlockFromAnchor(questions, editorAnchor);
-    if (selectedBlock) {
-      return {
-        id: editorAnchor,
-        label: selectedBlock.label,
-        summary: selectedBlock.summary,
-        kind: tocBlockKind(selectedBlock.block),
-        depth: 0,
-        editorAnchor,
-        previewAnchor: previewAnchorForEditorAnchor(editorAnchor, documentTocItems),
-      } satisfies DocumentTocItem;
-    }
-
-    const fallbackItem = tocItemForContextAnchor(editorAnchor);
-    if (fallbackItem && !editorAnchor.includes("/c:")) return fallbackItem;
-
-    const parsed = parseScrollAnchor(editorAnchor);
-    return {
-      id: editorAnchor,
-      label: fallbackContextLabel(editorAnchor),
-      kind: parsed.kind === "pageBreak" ? "pageBreak" : "text",
-      depth: 0,
-      editorAnchor,
-      previewAnchor: previewAnchorForEditorAnchor(editorAnchor, documentTocItems),
-    } satisfies DocumentTocItem;
-  }
-
-  function contextReferenceText(anchor: string) {
-    const item = contextDescriptorForAnchor(anchor);
-    const questionId = questionIdFromScrollAnchor(item.editorAnchor);
-    const questionIndex = questionId ? questions.findIndex((question) => question.id === questionId) : -1;
-    const questionLabel = questionIndex >= 0 ? `Question ${questionIndex + 1}` : "";
-    const target = questionLabel && item.kind !== "question" ? `${questionLabel} · ${item.label}` : item.label;
-    const summary = item.summary ? tocSummaryText(item.summary) : "";
-    return [
-      `Mauth target: @mauth[${item.editorAnchor}]`,
-      `Item: ${target || item.editorAnchor}`,
-      item.kind ? `Type: ${item.kind}` : "",
-      summary ? `Summary: ${summary}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
   }
 
   function selectContextAnchor(anchor: string, options: { openEditor?: boolean; openInspector?: boolean; previewOnly?: boolean } = {}) {
