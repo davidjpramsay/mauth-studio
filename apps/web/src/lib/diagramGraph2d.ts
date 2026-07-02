@@ -1,7 +1,5 @@
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 
-import { graphDisplayHeight } from "@/components/graphs/FunctionGraph";
-
 export const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
 export const GRAPH_LABELS = ["f", "g", "h", "p", "q"];
 export const DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH = 2.5;
@@ -423,7 +421,7 @@ export function graphWidth(graphConfig?: GraphConfig | null) {
 }
 
 export function graphHeight(graphConfig?: GraphConfig | null) {
-  return graphDisplayHeight(graphConfig);
+  return graphConfig?.heightPx ?? DEFAULT_2D_GRAPH.heightPx ?? 300;
 }
 
 export function lockedAspectHeight(graphConfig: GraphConfig, nextWidth: number) {

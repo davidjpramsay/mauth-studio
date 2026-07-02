@@ -3,14 +3,13 @@ import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPoi
 import type {
   ChoiceNumberingStyle,
   DiagramAlignment,
-  DiagramTextSide,
   FormattingConfig,
   GraphConfig,
   MauthAgentFileState,
   ProjectFileSummary,
   ProjectSummary,
 } from "@mauth-studio/shared";
-import { DEFAULT_STATS_CHART_SPEC, normalizeStatsChartSpec, statsChartSummary } from "@mauth-studio/diagram-plotly";
+import { statsChartSummary } from "@mauth-studio/diagram-plotly";
 import {
   ArrowDown,
   ArrowUp,
@@ -257,22 +256,20 @@ import {
   type PageBreakDropPreview,
   type QuestionDropPreview,
 } from "@/lib/documentNavigation";
-import { DEFAULT_3D_GRAPH } from "@/lib/diagram3d";
-import { DEFAULT_2D_GRAPH, graphFeaturesFromConfig, graphFunctionsFromConfig, graphHeight } from "@/lib/diagramGraph2d";
-import { DEFAULT_GEOMETRY_2D_GRAPH, geometry2dData } from "@/lib/diagramGeometry2d";
-import { DEFAULT_IMAGE_DIAGRAM, finiteGraphNumber, imageDiagramData, imageDiagramName } from "@/lib/diagramImage";
+import { DEFAULT_2D_GRAPH, graphHeight } from "@/lib/diagramGraph2d";
+import { imageDiagramData, imageDiagramName } from "@/lib/diagramImage";
 import {
-  DEFAULT_PENROSE_PRESET,
-  DEFAULT_PENROSE_SCALE_PERCENT,
-  SETS_PENROSE_PRESET,
-  penroseOptions,
-  penrosePreset,
-  penroseScalePercent,
-} from "@/lib/diagramPenrose";
-import { DEFAULT_GEOMETRIC_DATA, penroseSubstanceSource } from "@/lib/diagramPenroseSubstance";
-import { DEFAULT_SET_DATA, DEFAULT_SET_DIAGRAM } from "@/lib/diagramSet";
-import { DEFAULT_VECTOR_2D_GRAPH, DEFAULT_VECTOR_2D_METADATA } from "@/lib/diagramVector2d";
-import { DEFAULT_NETWORK_DATA } from "@/lib/diagramNetwork";
+  DEFAULT_STATS_CHART,
+  diagramAlignmentClass,
+  diagramTypePatch,
+  effectiveDiagramTextSide,
+  isPenroseDiagramType,
+  normalizeDiagramTextSide,
+  normalizeDiagramType,
+  updateGraphConfig,
+  withGraphDefaults,
+} from "@/lib/editorDiagramConfig";
+import { penroseSubstanceSource } from "@/lib/diagramPenroseSubstance";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
 import {
@@ -347,28 +344,6 @@ const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 const LOCAL_DRAFT_DEBOUNCE_MS = 250;
 const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
-const DEFAULT_GEOMETRIC_DIAGRAM: GraphConfig = {
-  type: "geometricConstruction",
-  data: DEFAULT_GEOMETRIC_DATA,
-  style: DEFAULT_PENROSE_PRESET,
-  options: { scalePercent: DEFAULT_PENROSE_SCALE_PERCENT, penrosePreset: DEFAULT_PENROSE_PRESET },
-  scalePercent: DEFAULT_PENROSE_SCALE_PERCENT,
-  penrosePreset: DEFAULT_PENROSE_PRESET,
-  functions: [],
-  features: [],
-  metadata: {},
-};
-const DEFAULT_STATS_CHART: GraphConfig = {
-  type: "statsChart",
-  data: DEFAULT_STATS_CHART_SPEC.data,
-  style: DEFAULT_STATS_CHART_SPEC.style,
-  options: DEFAULT_STATS_CHART_SPEC.options,
-  widthPx: DEFAULT_STATS_CHART_SPEC.options?.widthPx,
-  heightPx: DEFAULT_STATS_CHART_SPEC.options?.heightPx,
-  functions: [],
-  features: [],
-  metadata: {},
-};
 type ContentBlockKind = SolutionInsertionBlockKind;
 
 type SubsectionDragKind = "question-block" | "part" | "part-block" | "subpart" | "subpart-block";
@@ -483,206 +458,6 @@ function applyTheme(theme: ThemeMode) {
 
   document.documentElement.classList.toggle("dark", theme === "dark");
   document.documentElement.style.colorScheme = theme;
-}
-
-function diagramAlignmentClass(alignment?: DiagramAlignment) {
-  if (alignment === "left") return "justify-start";
-  if (alignment === "right") return "justify-end";
-  return "justify-center";
-}
-
-function normalizeDiagramTextSide(value: unknown): DiagramTextSide {
-  return value === "left" || value === "right" ? value : "none";
-}
-
-function automaticDiagramTextSide(alignment?: DiagramAlignment): DiagramTextSide {
-  if (alignment === "left") return "right";
-  if (alignment === "right") return "left";
-  return "none";
-}
-
-function effectiveDiagramTextSide(block: Extract<EditorContentBlock, { kind: "diagram" }>, hasBesideContent: boolean): DiagramTextSide {
-  if (!hasBesideContent) return "none";
-  return automaticDiagramTextSide(block.diagramAlign);
-}
-
-function normalizeDiagramType(type?: string | null) {
-  if (type === "2d_graph" || type === "function" || type === "tangent" || type === "area") return "graph2d";
-  if (type === "basic3d") return "graph3d";
-  return DIAGRAM_TYPES.some((diagramType) => diagramType.value === type) ? (type as string) : DEFAULT_2D_GRAPH.type;
-}
-
-function isPenroseDiagramType(type?: string | null) {
-  return type === "geometricConstruction" || type === "network" || type === "setDiagram";
-}
-
-function defaultPenrosePresetForType(type?: string | null) {
-  return normalizeDiagramType(type) === "setDiagram" ? SETS_PENROSE_PRESET : DEFAULT_PENROSE_PRESET;
-}
-
-function defaultPenroseDataForType(type?: string | null) {
-  const normalizedType = normalizeDiagramType(type);
-  if (normalizedType === "setDiagram") return DEFAULT_SET_DATA;
-  if (normalizedType === "network") return DEFAULT_NETWORK_DATA;
-  return DEFAULT_GEOMETRIC_DATA;
-}
-
-function defaultPenroseDiagramForType(type?: string | null): GraphConfig {
-  const normalizedType = isPenroseDiagramType(normalizeDiagramType(type)) ? normalizeDiagramType(type) : "geometricConstruction";
-  if (normalizedType === "setDiagram") return { ...DEFAULT_SET_DIAGRAM };
-  const preset = defaultPenrosePresetForType(normalizedType);
-  return {
-    ...DEFAULT_GEOMETRIC_DIAGRAM,
-    type: normalizedType,
-    data: defaultPenroseDataForType(normalizedType),
-    style: preset,
-    options: { scalePercent: DEFAULT_PENROSE_SCALE_PERCENT, penrosePreset: preset },
-    penrosePreset: preset,
-  };
-}
-
-function isImageDiagramType(type?: string | null) {
-  return normalizeDiagramType(type) === "image";
-}
-
-function diagramTypePatch(type: string, current: GraphConfig): Partial<GraphConfig> {
-  const normalizedType = normalizeDiagramType(type);
-  if (isImageDiagramType(normalizedType)) return DEFAULT_IMAGE_DIAGRAM;
-  if (isPenroseDiagramType(normalizedType)) return defaultPenroseDiagramForType(normalizedType);
-  if (normalizedType === "statsChart") return DEFAULT_STATS_CHART;
-  if (normalizedType === "geometry2d" && normalizeDiagramType(current.type) !== "geometry2d") return DEFAULT_GEOMETRY_2D_GRAPH;
-  if (
-    isImageDiagramType(current.type) ||
-    isPenroseDiagramType(normalizeDiagramType(current.type)) ||
-    normalizeDiagramType(current.type) === "statsChart"
-  ) {
-    if (normalizedType === "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
-    return normalizedType === "graph3d" ? DEFAULT_3D_GRAPH : { ...DEFAULT_2D_GRAPH, type: normalizedType };
-  }
-  if (normalizedType === "vector2d" && normalizeDiagramType(current.type) !== "vector2d") return DEFAULT_VECTOR_2D_GRAPH;
-  if (normalizedType === "graph3d" && normalizeDiagramType(current.type) !== "graph3d") return DEFAULT_3D_GRAPH;
-  if (normalizedType === "geometry2d") return DEFAULT_GEOMETRY_2D_GRAPH;
-  return { type: normalizedType };
-}
-
-function withGraphDefaults(graphConfig?: GraphConfig | null): GraphConfig {
-  const type = normalizeDiagramType(graphConfig?.type);
-  if (type === "geometry2d") {
-    return {
-      ...DEFAULT_GEOMETRY_2D_GRAPH,
-      ...(graphConfig ?? {}),
-      type,
-      data: geometry2dData(graphConfig),
-      functions: [],
-      features: [],
-      metadata: graphConfig?.metadata ?? {},
-    };
-  }
-  const functions = graphFunctionsFromConfig(graphConfig);
-  const features = graphFeaturesFromConfig(graphConfig);
-  const firstFunction = functions[0];
-  if (isPenroseDiagramType(type)) {
-    const defaults = defaultPenroseDiagramForType(type);
-    return {
-      ...defaults,
-      ...(graphConfig ?? {}),
-      type,
-      data: graphConfig?.data ?? defaults.data,
-      style: penrosePreset(graphConfig),
-      options: penroseOptions(graphConfig),
-      functions: graphConfig?.functions ?? [],
-      features: graphConfig?.features ?? [],
-      widthPx: undefined,
-      heightPx: undefined,
-      scalePercent: penroseScalePercent(graphConfig),
-      penrosePreset: penrosePreset(graphConfig),
-      metadata: graphConfig?.metadata ?? {},
-    };
-  }
-  if (type === "statsChart") {
-    const spec = normalizeStatsChartSpec(graphConfig);
-    return {
-      ...DEFAULT_STATS_CHART,
-      ...(graphConfig ?? {}),
-      type,
-      data: spec.data,
-      style: spec.style,
-      options: spec.options,
-      widthPx: spec.options?.widthPx,
-      heightPx: spec.options?.heightPx,
-      functions: [],
-      features: [],
-      metadata: graphConfig?.metadata ?? {},
-    };
-  }
-  if (type === "image") {
-    return {
-      ...DEFAULT_IMAGE_DIAGRAM,
-      ...(graphConfig ?? {}),
-      type,
-      data: imageDiagramData(graphConfig),
-      functions: [],
-      features: [],
-      widthPx: finiteGraphNumber(graphConfig?.widthPx, DEFAULT_IMAGE_DIAGRAM.widthPx),
-      heightPx: finiteGraphNumber(graphConfig?.heightPx, DEFAULT_IMAGE_DIAGRAM.heightPx),
-      metadata: graphConfig?.metadata ?? {},
-    };
-  }
-  if (type === "vector2d") {
-    return {
-      ...DEFAULT_VECTOR_2D_GRAPH,
-      ...(graphConfig ?? {}),
-      type,
-      functions: [],
-      features: [],
-      metadata: graphConfig?.metadata ?? DEFAULT_VECTOR_2D_METADATA,
-    };
-  }
-  if (type === "graph3d") {
-    return {
-      ...DEFAULT_3D_GRAPH,
-      ...(graphConfig ?? {}),
-      type,
-      functions: [],
-      features: [],
-      metadata: {
-        ...DEFAULT_3D_GRAPH.metadata,
-        ...(graphConfig?.metadata ?? {}),
-      },
-    };
-  }
-  return {
-    ...DEFAULT_2D_GRAPH,
-    ...(graphConfig ?? {}),
-    type,
-    expression: graphConfig?.expression ?? firstFunction?.expression ?? DEFAULT_2D_GRAPH.expression,
-    latex: graphConfig?.latex ?? firstFunction?.latex ?? DEFAULT_2D_GRAPH.latex,
-    functions,
-    features,
-    functionExtensionLeft: graphConfig?.functionExtensionLeft ?? graphConfig?.functionExtension ?? DEFAULT_2D_GRAPH.functionExtensionLeft,
-    functionExtensionRight:
-      graphConfig?.functionExtensionRight ?? graphConfig?.functionExtension ?? DEFAULT_2D_GRAPH.functionExtensionRight,
-    metadata: graphConfig?.metadata ?? {},
-  };
-}
-
-function updateGraphConfig(graphConfig: GraphConfig, patch: Partial<GraphConfig>): GraphConfig {
-  const next = {
-    ...withGraphDefaults(graphConfig),
-    ...patch,
-    functions: patch.functions
-      ? graphFunctionsFromConfig({ ...graphConfig, functions: patch.functions })
-      : withGraphDefaults(graphConfig).functions,
-    features: patch.features
-      ? graphFeaturesFromConfig({ ...graphConfig, features: patch.features })
-      : withGraphDefaults(graphConfig).features,
-    metadata: patch.metadata ?? graphConfig.metadata ?? {},
-  };
-  if (patch.functions) {
-    next.expression = next.functions?.[0]?.expression ?? "";
-    next.latex = next.functions?.[0]?.latex || next.functions?.[0]?.expression || "";
-  }
-  return next;
 }
 
 const {
