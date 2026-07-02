@@ -2,7 +2,6 @@ import { Fragment } from "react";
 
 import { FormattedText, FrontMatterInlineText } from "@/components/MathText";
 import { A4PreviewPageFrame } from "@/components/preview/PreviewPageFrame";
-import type { QuestionBlock } from "@/lib/editorDocumentNormalization";
 import {
   DEFAULT_EXAM_TITLE_PAGE,
   assessmentTitleText,
@@ -532,10 +531,6 @@ export function NotesHeaderPreview({
       </div>
     </header>
   );
-}
-
-export function notesSectionTitle(question: QuestionBlock, index: number) {
-  return question.text?.trim() || question.section.trim() || `Heading ${index + 1}`;
 }
 
 export function FrontMatterPreviewPages({
