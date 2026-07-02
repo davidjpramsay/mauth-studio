@@ -157,6 +157,7 @@ TERMINAL_COMMAND="$TERMINAL_COMMAND && cd $(quote_arg "$REPO_ROOT")"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Starting Mauth Studio...'"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && printf 'Using pnpm: %s\\\\n' $(quote_arg "$RESOLVED_PNPM_COMMAND")"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'This window owns any API/web processes started by the launcher.'"
+TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Desktop mode restarts stale or partial Mauth sessions before opening the browser.'"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Press Ctrl+C here to stop them.'"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && $(quote_arg "$RESOLVED_PNPM_COMMAND") dev:launch:desktop"
 
@@ -299,7 +300,7 @@ await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { enco
 const installedIcon = await installAppIcon();
 await fs.writeFile(
   path.join(resourcesDir, "README.txt"),
-  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nStored pnpm command:\n${pnpmCommand}\n\nAt launch time the app uses the stored pnpm command when it still exists, then falls back to pnpm on PATH and common Homebrew/Corepack locations.\n\nThis app is a local development launcher. Leave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
+  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nStored pnpm command:\n${pnpmCommand}\n\nAt launch time the app uses the stored pnpm command when it still exists, then falls back to pnpm on PATH and common Homebrew/Corepack locations.\n\nThis app is a local development launcher. Desktop mode restarts stale or partial Mauth-owned runtime sessions before opening the browser, including the common case where the web server is still running but the API has stopped.\n\nLeave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
   "utf8",
 );
 

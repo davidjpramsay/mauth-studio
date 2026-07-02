@@ -33,7 +33,7 @@ The installed app runs the desktop launcher mode:
 pnpm dev:launch:desktop
 ```
 
-That mode reuses healthy servers, but if it detects duplicate Mauth-owned listener addresses that could make `localhost` and `127.0.0.1` show different builds, it cleans them up before opening the browser.
+That mode reuses healthy servers, but it restarts stale or partial Mauth-owned sessions before opening the browser. It handles the common case where the web server is still running but the API has stopped, and it also cleans up duplicate listener addresses that could make `localhost` and `127.0.0.1` show different builds.
 
 To reveal the installed app in Finder after installing:
 
@@ -65,7 +65,7 @@ If stale manual servers are still running, stop their terminals with `Ctrl+C` or
 pnpm dev:launch:replace
 ```
 
-The normal launcher reuses healthy existing Mauth servers, but it now warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions. The desktop launcher mode performs that ambiguous-listener cleanup automatically.
+The normal launcher reuses healthy existing Mauth servers, but it warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions. The desktop launcher mode performs that cleanup automatically and also replaces Mauth-owned partial runtimes.
 
 For lower-level debugging, run the API and web app in two terminals:
 

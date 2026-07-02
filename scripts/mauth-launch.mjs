@@ -3,6 +3,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 
+import { desktopReplacementReasons, listenersAreAmbiguous } from "./mauth-launch-plan.mjs";
+
 const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/\/+$/, "");
 const args = new Set(process.argv.slice(2));
@@ -26,8 +28,8 @@ Options:
   --replace   Stop Mauth-owned dev servers on the configured API/web ports first,
               then start a fresh launcher-owned session.
   --replace-ambiguous
-              Stop Mauth-owned dev servers only when same-port listener addresses
-              could make localhost and 127.0.0.1 show different Mauth versions.
+              Desktop-safe mode: replace stale or partial Mauth-owned runtimes
+              and same-port listener addresses that could show different builds.
   --status   Print API/web health and listener ownership without starting servers.
   --stop     Stop Mauth-owned listeners on the configured API/web ports and exit.`);
 }
@@ -154,14 +156,6 @@ function printPortStatus(label, port, listeners) {
   }
 }
 
-function listenerAddressSet(listeners) {
-  return new Set(listeners.flatMap((listener) => listener.names));
-}
-
-function listenersAreAmbiguous(listeners) {
-  return listeners.length > 1 && listenerAddressSet(listeners).size > 1;
-}
-
 async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -177,6 +171,29 @@ async function replaceAmbiguousMauthListeners(label, port) {
   printListeners(label, port, listeners, "warn");
   console.log("     Replacing Mauth-owned listeners to avoid stale localhost/127.0.0.1 app versions.");
   await stopMauthListeners(label.toLowerCase(), port);
+}
+
+async function replaceDesktopRiskyMauthListeners() {
+  const [status, web] = await Promise.all([readSystemStatus(), webHealth()]);
+  const apiListeners = listenersForPort(apiPort);
+  const webListeners = listenersForPort(webPort);
+  const reasons = desktopReplacementReasons({
+    apiHealthy: status.ok,
+    webHealthy: web.ok && web.isMauth,
+    apiListeners,
+    webListeners,
+  });
+  if (!reasons.length) return;
+
+  console.log("warn Desktop launcher found a stale or partial Mauth runtime:");
+  for (const reason of reasons) {
+    console.log(`     ${reason}`);
+  }
+  printListeners("API", apiPort, apiListeners, "warn");
+  printListeners("Web", webPort, webListeners, "warn");
+  console.log("     Restarting Mauth-owned listeners so the browser opens against one fresh API/web pair.");
+  await stopMauthListeners("web", webPort);
+  await stopMauthListeners("api", apiPort);
 }
 
 async function stopMauthListeners(label, port) {
@@ -340,6 +357,7 @@ if (replaceExisting) {
 } else if (replaceAmbiguous) {
   await replaceAmbiguousMauthListeners("Web", webPort);
   await replaceAmbiguousMauthListeners("API", apiPort);
+  await replaceDesktopRiskyMauthListeners();
 }
 
 const initialStatus = await readSystemStatus();

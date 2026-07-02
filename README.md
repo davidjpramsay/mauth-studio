@@ -77,7 +77,7 @@ On macOS, install a Finder/desktop entry point:
 pnpm macos:install-launcher
 ```
 
-This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch:desktop`, checks the API/web versions, starts the needed servers, and opens Mauth Studio in the browser.
+This creates `~/Applications/Mauth Studio.app`. Double-clicking it opens a labelled Terminal session, runs `pnpm dev:launch:desktop`, checks the API/web versions, restarts stale or partial Mauth-owned sessions when needed, starts the needed servers, and opens Mauth Studio in the browser.
 If the repo has moved or the installed `pnpm` path is stale, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session.
 
 The installed app uses the desktop-safe launcher mode:
@@ -117,6 +117,7 @@ pnpm dev:launch:replace
 ```
 
 That stops Mauth-owned dev servers on the configured API/web ports before starting a fresh launcher-owned session. The normal launcher will warn rather than silently starting a second web server when it detects a stale same-port Mauth process.
+The desktop launcher mode also cleans up the common partial-runtime case where a Mauth web server is still running but the API has stopped, so double-clicking the app gives you one fresh API/web pair instead of a stale page.
 
 For lower-level debugging, start the API and web app in two terminals:
 
