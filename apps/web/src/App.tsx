@@ -147,7 +147,6 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
-import { browserStorageItem } from "@/lib/browserStorage";
 import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
@@ -192,7 +191,6 @@ import {
   orderItemKey,
   orderedPartItems,
   orderedQuestionItems,
-  relabelParts,
   romanLabel,
   safeMarkValue,
   withNormalizedPartOrder,
@@ -265,7 +263,6 @@ import {
 import { DEFAULT_2D_GRAPH, graphHeight } from "@/lib/diagramGraph2d";
 import { imageDiagramData, imageDiagramName } from "@/lib/diagramImage";
 import {
-  DEFAULT_STATS_CHART,
   diagramAlignmentClass,
   diagramTypePatch,
   effectiveDiagramTextSide,
@@ -275,6 +272,17 @@ import {
   updateGraphConfig,
   withGraphDefaults,
 } from "@/lib/editorDiagramConfig";
+import {
+  SCREENSHOT_STARTER_DOCUMENT_ID,
+  STARTER_DOCUMENT_STORAGE_KEY,
+  createNotesSection as createNotesSectionDocument,
+  createQuestion as createBlankQuestion,
+  createScreenshotStarterFrontMatter,
+  createScreenshotStarterQuestions,
+  isBlankStarterQuestion,
+  shouldSeedScreenshotStarter,
+  type ScreenshotStarterRuntime,
+} from "@/lib/editorStarterDocuments";
 import { penroseSubstanceSource } from "@/lib/diagramPenroseSubstance";
 import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
@@ -381,12 +389,9 @@ const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
-const STARTER_DOCUMENT_STORAGE_KEY = "mauth-studio.starter-document.v1";
 const THEME_STORAGE_KEY = "mauth-studio.theme.v1";
 const LEGACY_SAVED_TEST_STORAGE_KEY = "math-app.saved-tests.v1";
 const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
-const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
-const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 const LOCAL_DRAFT_DEBOUNCE_MS = 250;
 const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
@@ -475,6 +480,22 @@ const {
   diagramTypePatch,
 });
 
+const screenshotStarterRuntime: ScreenshotStarterRuntime = {
+  id,
+  textBlock,
+  choiceListBlock,
+  spaceBlock,
+  withGraphDefaults,
+};
+
+function createQuestion() {
+  return createBlankQuestion(id);
+}
+
+function createNotesSection() {
+  return createNotesSectionDocument(id);
+}
+
 const { normalizeContentBlocks } = createEditorContentBlockNormalizer({
   id,
   defaultGraphConfig: DEFAULT_2D_GRAPH,
@@ -510,298 +531,6 @@ const {
   id,
   cloneSerializable,
 });
-
-function createQuestion(): QuestionBlock {
-  return {
-    id: id("question"),
-    section: "Algebra",
-    text: "",
-    marks: 0,
-    contentBlocks: [],
-    parts: [],
-    itemOrder: [],
-    pageBreakAfter: false,
-  };
-}
-
-function createNotesSection(): QuestionBlock {
-  const introBlock: EditorContentBlock = {
-    id: id("text"),
-    kind: "text",
-    text: "Use this space for definitions, worked examples, diagrams, tables, columns, and reminders.",
-  };
-  return {
-    id: id("notes"),
-    section: "Introduction",
-    text: "",
-    marks: 0,
-    contentBlocks: [introBlock],
-    parts: [],
-    itemOrder: [{ kind: "block", id: introBlock.id }],
-    pageBreakAfter: false,
-  };
-}
-
-function createScreenshotStarterFrontMatter(): FrontMatterConfig {
-  return {
-    ...DEFAULT_FRONT_MATTER,
-    subjectTitle: "YEAR 12 MATHEMATICS",
-    assessmentTitle: "TEST 2",
-    showDeclaration: false,
-    showAssessmentSubtitle: false,
-    assessmentSubtitle: "",
-    showInstructions: true,
-    instructionsTitle: "Test Conditions:",
-    instructionsBody: "**All working** should be shown for full marks.",
-  };
-}
-
-function starterDiagramBlock(graphConfig: GraphConfig, diagramAlign: DiagramAlignment = "center"): EditorContentBlock {
-  return {
-    id: id("diagram"),
-    kind: "diagram",
-    diagramAlign,
-    graphConfig: withGraphDefaults(graphConfig),
-  };
-}
-
-function starterQuestion(contentBlocks: EditorContentBlock[], marks: number, section = "Calculus"): QuestionBlock {
-  return {
-    id: id("question"),
-    section,
-    marks,
-    contentBlocks,
-    parts: [],
-    itemOrder: contentBlocks.map((block) => ({ kind: "block", id: block.id })),
-    pageBreakAfter: false,
-  };
-}
-
-function starterPart(contentBlocks: EditorContentBlock[], marks: number): EditorPart {
-  return {
-    id: id("part"),
-    label: "",
-    text: "",
-    marks,
-    pageBreakBefore: false,
-    contentBlocks,
-    subparts: [],
-    itemOrder: contentBlocks.map((block) => ({ kind: "block", id: block.id })),
-  };
-}
-
-function starterPartsQuestion(intro: string, parts: EditorPart[], section = "Calculus"): QuestionBlock {
-  const introBlock = textBlock(intro);
-  const labelledParts = relabelParts(parts);
-  return {
-    id: id("question"),
-    section,
-    marks: 0,
-    contentBlocks: [introBlock],
-    parts: labelledParts,
-    itemOrder: [{ kind: "block", id: introBlock.id }, ...labelledParts.map((part) => ({ kind: "part" as const, id: part.id }))],
-    pageBreakAfter: false,
-  };
-}
-
-function shadedAreaGraphConfig(): GraphConfig {
-  return {
-    ...DEFAULT_2D_GRAPH,
-    expression: "2*x + 1",
-    latex: "2x+1",
-    functions: [
-      {
-        id: id("function"),
-        kind: "expression",
-        expression: "2*x + 1",
-        latex: "2x+1",
-        label: "f",
-        color: "#111111",
-        strokeWidth: 2,
-        strokeStyle: "solid",
-        show: true,
-        showLabel: false,
-        domainMode: "manual",
-        domainMin: -1.2,
-        domainMax: 4.15,
-        functionExtensionMode: "auto",
-        pieces: [],
-      },
-      {
-        id: id("function"),
-        kind: "expression",
-        expression: "x^2 - 3*x + 5",
-        latex: "x^2-3x+5",
-        label: "g",
-        color: "#111111",
-        strokeWidth: 2,
-        strokeStyle: "solid",
-        show: true,
-        showLabel: false,
-        domainMode: "manual",
-        domainMin: -0.95,
-        domainMax: 4.15,
-        functionExtensionMode: "auto",
-        pieces: [],
-      },
-    ],
-    features: [
-      {
-        id: id("feature"),
-        kind: "region_between_curves",
-        functionAIndex: 0,
-        functionBIndex: 1,
-        xMin: 0,
-        xMax: 1,
-        color: "#111111",
-        fillOpacity: 0.16,
-        labelMode: "none",
-        show: true,
-      },
-      {
-        id: id("feature"),
-        kind: "region_between_curves",
-        functionAIndex: 0,
-        functionBIndex: 1,
-        xMin: 1,
-        xMax: 4,
-        color: "#111111",
-        fillOpacity: 0.16,
-        labelMode: "none",
-        show: true,
-      },
-      {
-        id: id("feature"),
-        kind: "label",
-        label: "y=2x+1",
-        color: "#111111",
-        show: true,
-        x: 4.55,
-        y: 8.8,
-        labelMode: "name",
-      },
-      {
-        id: id("feature"),
-        kind: "label",
-        label: "y=x^2-3x+5",
-        color: "#111111",
-        show: true,
-        x: 3.65,
-        y: 4.0,
-        labelMode: "name",
-      },
-    ],
-    xMin: -1.5,
-    xMax: 5,
-    yMin: -1,
-    yMax: 10,
-    widthPx: 620,
-    heightPx: 390,
-    equalScale: false,
-    showGrid: false,
-    showMajorGrid: false,
-    showMinorGrid: false,
-    showGridBorder: false,
-    showAxes: true,
-    showArrows: true,
-    showAxisLabels: true,
-    showAxisNumbers: true,
-    showFunctionArrows: true,
-    axisLabelStepX: 1,
-    axisLabelStepY: 1,
-  };
-}
-
-function binomialDistributionGraphConfig(): GraphConfig {
-  return {
-    ...DEFAULT_STATS_CHART,
-    data: {
-      chartType: "binomial",
-      trials: 8,
-      probability: 0.8,
-      xLabel: "Number of successes",
-      yLabel: "Probability",
-    },
-    options: {
-      ...DEFAULT_STATS_CHART.options,
-      widthPx: 560,
-      heightPx: 340,
-      showGrid: false,
-      showFill: true,
-      fillColor: "#f5f5f5",
-      fillOpacity: 1,
-      interactive: false,
-    },
-    widthPx: 560,
-    heightPx: 340,
-  };
-}
-
-function createScreenshotStarterQuestions(): QuestionBlock[] {
-  return [
-    starterPartsQuestion("Answer the following trigonometric calculus questions.", [
-      starterPart(
-        [textBlock("Find the equation of the tangent to the curve $y=\\cos(3x)$ at the point where $x=\\frac{\\pi}{6}$."), spaceBlock(8)],
-        5,
-      ),
-      starterPart(
-        [textBlock("Differentiate with respect to $t$.\n\n$$\\frac{d}{dt}\\left(\\frac{\\sin^3 t}{t^2}\\right)$$"), spaceBlock(7)],
-        2,
-      ),
-      starterPart([textBlock("Differentiate with respect to $x$.\n\n$$\\frac{d}{dx}\\left(\\sin^2 x\\right)$$"), spaceBlock(4)], 1),
-      starterPart([textBlock("Find the indefinite integral.\n\n$$\\int \\sin x\\cos 3x-\\sin 3x\\cos x\\,dx$$"), spaceBlock(6)], 2),
-    ]),
-    starterQuestion(
-      [
-        textBlock(
-          "Find, but **do not evaluate**, an expression to calculate the total area of the shaded regions in the following diagram.",
-        ),
-        starterDiagramBlock(shadedAreaGraphConfig()),
-        spaceBlock(8),
-      ],
-      4,
-    ),
-    starterQuestion(
-      [
-        textBlock("Given a binomially distributed variable $X$ has $E(X)=1$ and $\\operatorname{Var}(X)=0.8$, find $n$ and $p$."),
-        spaceBlock(5),
-      ],
-      2,
-      "Statistics",
-    ),
-    starterQuestion(
-      [
-        textBlock("Which of the following distributions does the graph below represent?"),
-        choiceListBlock([
-          "$X \\sim \\operatorname{Bin}(8,0.2)$",
-          "$X \\sim \\operatorname{Bin}(8,0.8)$",
-          "$X \\sim \\operatorname{Bin}(8,0.5)$",
-        ]),
-        starterDiagramBlock(binomialDistributionGraphConfig(), "right"),
-        spaceBlock(3),
-      ],
-      1,
-      "Statistics",
-    ),
-  ];
-}
-
-function isBlankStarterQuestion(question?: QuestionBlock) {
-  return (
-    Boolean(question) &&
-    question?.marks === 0 &&
-    question.contentBlocks.length === 0 &&
-    question.parts.length === 0 &&
-    question.itemOrder.length === 0 &&
-    !question.pageBreakAfter
-  );
-}
-
-function shouldSeedScreenshotStarter(questions: QuestionBlock[]) {
-  if (typeof window === "undefined") return false;
-  if (browserStorageItem(STARTER_DOCUMENT_STORAGE_KEY, LEGACY_STARTER_DOCUMENT_STORAGE_KEY)) return false;
-  return questions.length === 1 && isBlankStarterQuestion(questions[0]);
-}
 
 function cloneSerializable<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -3723,7 +3452,7 @@ export default function App() {
     starterChangeKey: questions,
     shouldSeedStarter: () => shouldSeedScreenshotStarter(questionsRef.current),
     createStarterDocument: () => {
-      const nextQuestions = createScreenshotStarterQuestions();
+      const nextQuestions = createScreenshotStarterQuestions(screenshotStarterRuntime);
       const nextSectionHeadings: DocumentSectionHeading[] = [];
       const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
       return {
