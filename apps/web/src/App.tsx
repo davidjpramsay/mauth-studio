@@ -125,6 +125,7 @@ import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
 import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuController";
 import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
+import { useEditorSectionHeadingController } from "@/hooks/useEditorSectionHeadingController";
 import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
 import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
 import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
@@ -174,6 +175,7 @@ import {
   questionMarks,
   visibilityReplacementSlotAtOrderedItems,
 } from "@/lib/editorDocumentToc";
+import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import {
   buildPreviewSegments,
   contentBlocksHaveDiagram,
@@ -2457,28 +2459,6 @@ function questionHasPageBreak(question: QuestionBlock) {
   return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
 }
 
-function firstQuestionId(questions: QuestionBlock[]) {
-  return questions[0]?.id ?? "";
-}
-
-function existingOrFirstQuestionId(questions: QuestionBlock[], preferredQuestionId: string) {
-  return questions.some((question) => question.id === preferredQuestionId) ? preferredQuestionId : firstQuestionId(questions);
-}
-
-function firstQuestionAnchor(questions: QuestionBlock[]) {
-  const questionId = firstQuestionId(questions);
-  return questionId ? questionScrollAnchor(questionId) : SCROLL_ANCHOR_FRONT_MATTER;
-}
-
-function flowItemAnchor(item?: DocumentFlowItem | null) {
-  if (!item) return "";
-  return item.kind === "sectionHeading" ? sectionHeadingScrollAnchor(item.id) : questionScrollAnchor(item.id);
-}
-
-function firstDocumentFlowAnchor(documentFlow: DocumentFlowItem[], questions: QuestionBlock[]) {
-  return flowItemAnchor(documentFlow[0]) || firstQuestionAnchor(questions);
-}
-
 function DiagramBlockEditor({
   label,
   graphConfig,
@@ -3294,79 +3274,23 @@ export default function App() {
     applyActions: applyEditorDocumentActions,
   });
 
-  function topLevelFlowInsertIndex(anchor: string) {
-    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
-    const sectionHeadingId = sectionHeadingIdFromScrollAnchor(anchor);
-    if (sectionHeadingId) {
-      const headingIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
-      return headingIndex >= 0 ? headingIndex + 1 : normalizedFlow.length;
-    }
-
-    const questionId = questionIdFromScrollAnchor(anchor);
-    if (questionId) {
-      const questionIndex = normalizedFlow.findIndex((item) => item.kind === "question" && item.id === questionId);
-      return questionIndex >= 0 ? questionIndex : normalizedFlow.length;
-    }
-
-    return normalizedFlow.length;
-  }
-
-  function addSectionHeading() {
-    const heading = { id: id("section"), title: "Section heading" } satisfies DocumentSectionHeading;
-    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
-    const insertIndex = topLevelFlowInsertIndex(activeRailItemId || activeTocItemId);
-    const clampedInsertIndex = Math.max(0, Math.min(insertIndex, normalizedFlow.length));
-    const nextFlow = [
-      ...normalizedFlow.slice(0, clampedInsertIndex),
-      { kind: "sectionHeading", id: heading.id } satisfies DocumentFlowItem,
-      ...normalizedFlow.slice(clampedInsertIndex),
-    ];
-    setSectionFlowWithHistory([...sectionHeadingsRef.current, heading], nextFlow);
-    const anchor = sectionHeadingScrollAnchor(heading.id);
-    setActiveTocItemId(anchor);
-    setActiveRailItemId(anchor);
-    revealEditorAnchor(anchor);
-    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
-  }
-
-  function updateSectionHeading(sectionHeadingId: string, title: string) {
-    const existing = sectionHeadingsRef.current.find((heading) => heading.id === sectionHeadingId);
-    if (!existing || existing.title === title) return;
-    setSectionFlowWithHistory(
-      sectionHeadingsRef.current.map((heading) => (heading.id === sectionHeadingId ? { ...heading, title } : heading)),
-      documentFlowRef.current,
-    );
-  }
-
-  function removeSectionHeading(sectionHeadingId: string) {
-    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
-    const removedIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
-    const nextHeadings = sectionHeadingsRef.current.filter((heading) => heading.id !== sectionHeadingId);
-    const nextFlow = normalizedFlow.filter((item) => item.kind !== "sectionHeading" || item.id !== sectionHeadingId);
-    setSectionFlowWithHistory(nextHeadings, nextFlow);
-    const fallbackAnchor =
-      flowItemAnchor(nextFlow[Math.min(Math.max(removedIndex, 0), nextFlow.length - 1)]) || firstQuestionAnchor(questionsRef.current);
-    setActiveTocItemId(fallbackAnchor);
-    setActiveRailItemId(fallbackAnchor);
-    const fallbackQuestionId = questionIdFromScrollAnchor(fallbackAnchor);
-    if (fallbackQuestionId) setActiveQuestionId(fallbackQuestionId);
-    queueDocumentJump(fallbackAnchor, fallbackAnchor, { preservePaneMode: true });
-  }
-
-  function moveSectionHeadingByKeyboard(sectionHeadingId: string, direction: MoveDirection) {
-    const normalizedFlow = normalizeDocumentFlow(documentFlowRef.current, questionsRef.current, sectionHeadingsRef.current);
-    const sourceIndex = normalizedFlow.findIndex((item) => item.kind === "sectionHeading" && item.id === sectionHeadingId);
-    const targetIndex = sourceIndex + direction;
-    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= normalizedFlow.length) return;
-    const nextFlow = [...normalizedFlow];
-    const [item] = nextFlow.splice(sourceIndex, 1);
-    nextFlow.splice(targetIndex, 0, item);
-    setSectionFlowWithHistory(sectionHeadingsRef.current, nextFlow);
-    const anchor = sectionHeadingScrollAnchor(sectionHeadingId);
-    setActiveTocItemId(anchor);
-    setActiveRailItemId(anchor);
-    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
-  }
+  const { addSectionHeading, updateSectionHeading, removeSectionHeading, moveSectionHeadingByKeyboard } = useEditorSectionHeadingController(
+    {
+      activeRailItemId,
+      activeTocItemId,
+      questionsRef,
+      sectionHeadingsRef,
+      documentFlowRef,
+      normalizeDocumentFlow,
+      createId: id,
+      setSectionFlowWithHistory,
+      setActiveTocItemId,
+      setActiveRailItemId,
+      setActiveQuestionId,
+      revealEditorAnchor,
+      queueDocumentJump,
+    },
+  );
 
   function updateQuestion(questionId: string, patch: Partial<QuestionBlock>) {
     applyEditorAction({ type: "question.update", questionId, patch: patch as Record<string, unknown> });
