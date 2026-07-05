@@ -34,11 +34,16 @@ import {
   testPathFromProjectPath,
   visibleTestFiles,
 } from "@/lib/projectFiles";
+import {
+  nextRecentProjectFileReferences,
+  projectDocumentsPath,
+  projectUsesExternalDocumentsFolder,
+  readRecentProjectFileReferences,
+  recentProjectFileEntries,
+  writeRecentProjectFileReferences,
+} from "@/lib/projectFileRecents";
 import type { ProjectFileVersionPreviewSummary } from "@/lib/projectFileVersionPreview";
 import { cn } from "@/lib/utils";
-
-const RECENT_PROJECT_FILES_KEY = "mauth.recentProjectFiles.v1";
-const RECENT_PROJECT_FILES_LIMIT = 10;
 
 interface TestFileManagerProps {
   activeProject: ProjectSummary | null;
@@ -62,26 +67,6 @@ interface TestFileManagerProps {
   onDeleteItems: (filePaths: string[]) => void;
   onListVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
   onRestoreVersion: (filePath: string, versionId: string) => Promise<void>;
-}
-
-function readRecentProjectFilePaths() {
-  try {
-    const raw = window.localStorage.getItem(RECENT_PROJECT_FILES_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === "string").slice(0, RECENT_PROJECT_FILES_LIMIT)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeRecentProjectFilePaths(filePaths: string[]) {
-  try {
-    window.localStorage.setItem(RECENT_PROJECT_FILES_KEY, JSON.stringify(filePaths.slice(0, RECENT_PROJECT_FILES_LIMIT)));
-  } catch {
-    // Recents are convenience UI only; storage failures should not block file work.
-  }
 }
 
 function TestFileManager({
@@ -123,12 +108,12 @@ function TestFileManager({
   const [pasteFolderDraft, setPasteFolderDraft] = useState("");
   const [resetFolderDialogOpen, setResetFolderDialogOpen] = useState(false);
   const [restoreVersionToConfirm, setRestoreVersionToConfirm] = useState<ProjectFileVersion | null>(null);
-  const [recentProjectFilePaths, setRecentProjectFilePaths] = useState<string[]>(() => readRecentProjectFilePaths());
+  const [recentProjectFileReferences, setRecentProjectFileReferences] = useState(() => readRecentProjectFileReferences());
   const backupImportInputRef = useRef<HTMLInputElement>(null);
   const documentsPath = activeProject?.documentsPath ?? activeProject?.workspacePath ?? "";
-  const isExternalDocumentsFolder =
-    Boolean(activeProject?.documentsPath && activeProject?.workspacePath) && activeProject?.documentsPath === activeProject?.workspacePath;
+  const isExternalDocumentsFolder = projectUsesExternalDocumentsFolder(activeProject);
   const visibleEntries = useMemo(() => visibleTestFiles(files), [files]);
+  const visibleDocumentCount = useMemo(() => visibleEntries.filter(({ file }) => file.kind === "file").length, [visibleEntries]);
   const folderOptions = useMemo(() => testFolderOptions(files), [files]);
   const rawCurrentItems = useMemo(() => childTestFiles(files, currentFolderPath), [currentFolderPath, files]);
   const cleanFileSearchQuery = fileSearchQuery.trim().toLowerCase();
@@ -158,14 +143,8 @@ function TestFileManager({
   const selectedVersionPreview = selectedVersion ? buildVersionPreview(selectedVersion) : null;
   const activeRelativePath = activeProjectFilePath ? testPathFromProjectPath(activeProjectFilePath) : null;
   const recentEntries = useMemo(() => {
-    return recentProjectFilePaths
-      .map((filePath) => {
-        const file = files.find((candidate) => candidate.path === filePath && candidate.kind === "file");
-        const testPath = file ? testPathFromProjectPath(file.path) : null;
-        return file && testPath ? { file, testPath } : null;
-      })
-      .filter((entry): entry is { file: ProjectFileSummary; testPath: string } => Boolean(entry));
-  }, [files, recentProjectFilePaths]);
+    return recentProjectFileEntries(recentProjectFileReferences, activeProject, files);
+  }, [activeProject, files, recentProjectFileReferences]);
   const busy = status === "loading" || status === "saving";
   const breadcrumbTargets = useMemo(() => {
     const parts = currentFolderPath.split("/").filter(Boolean);
@@ -208,16 +187,22 @@ function TestFileManager({
     if (!activeProjectFilePath) return;
     const activeFile = files.find((file) => file.path === activeProjectFilePath && file.kind === "file");
     if (!activeFile) return;
-    setRecentProjectFilePaths((current) => {
-      const next = [activeProjectFilePath, ...current.filter((filePath) => filePath !== activeProjectFilePath)].slice(
-        0,
-        RECENT_PROJECT_FILES_LIMIT,
-      );
-      if (next.length === current.length && next.every((filePath, index) => filePath === current[index])) return current;
-      writeRecentProjectFilePaths(next);
+    if (!activeProject) return;
+    setRecentProjectFileReferences((current) => {
+      const currentDocumentsPath = projectDocumentsPath(activeProject);
+      const currentReference = current[0];
+      if (
+        currentReference?.filePath === activeProjectFilePath &&
+        currentReference.projectId === activeProject.id &&
+        currentReference.documentsPath === currentDocumentsPath
+      ) {
+        return current;
+      }
+      const next = nextRecentProjectFileReferences(current, activeProject, activeProjectFilePath);
+      writeRecentProjectFileReferences(next);
       return next;
     });
-  }, [activeProjectFilePath, files]);
+  }, [activeProject, activeProjectFilePath, files]);
 
   function navigateToFolder(folderPath: string) {
     setCurrentFolderPath(normalizeTestFolderPath(folderPath));
@@ -460,17 +445,26 @@ function TestFileManager({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden" tabIndex={0} onKeyDown={handleFileManagerKeyDown}>
+    <section
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1"
+      data-mauth-file-manager-scroll
+      tabIndex={0}
+      onKeyDown={handleFileManagerKeyDown}
+    >
       {documentsPath ? (
-        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/35 px-3 py-2 text-sm">
+        <div className="grid gap-3 rounded-md border bg-muted/35 px-3 py-2 text-sm lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
-            <div className="font-medium text-foreground">
-              {isExternalDocumentsFolder ? "External documents folder" : "Local documents folder"}
+            <div className="flex flex-wrap items-center gap-2 font-medium text-foreground">
+              <span>{isExternalDocumentsFolder ? "External documents folder" : "Local documents folder"}</span>
+              <span className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {visibleDocumentCount} document{visibleDocumentCount === 1 ? "" : "s"}
+              </span>
             </div>
-            <div className="truncate font-mono text-xs text-muted-foreground">{documentsPath}</div>
+            <div className="break-all font-mono text-xs text-muted-foreground">{documentsPath}</div>
             {isExternalDocumentsFolder ? (
-              <div className="truncate text-xs text-muted-foreground">
-                Mauth opens files already in this folder and keeps metadata in its hidden .mauth folder.
+              <div className="text-xs text-muted-foreground">
+                Mauth indexes files already in this folder. It does not copy other documents here; versions and metadata stay in the hidden
+                .mauth folder.
               </div>
             ) : null}
           </div>
@@ -552,7 +546,7 @@ function TestFileManager({
           <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
             <div className="min-w-0">
               <h3 className="truncate text-sm font-semibold">Recent documents</h3>
-              <p className="truncate text-xs text-muted-foreground">Quick access to the last opened local files</p>
+              <p className="truncate text-xs text-muted-foreground">Quick access to recently opened files in this documents folder</p>
             </div>
           </div>
           <div className="max-h-32 overflow-y-auto">
@@ -641,7 +635,7 @@ function TestFileManager({
       <div
         data-mauth-folder-pane={currentFolderPath}
         className={cn(
-          "min-h-0 flex-1 overflow-hidden rounded-lg border bg-background transition-colors",
+          "min-h-48 flex-[1_1_18rem] overflow-hidden rounded-lg border bg-background transition-colors",
           dropTargetClass(currentFolderPath),
         )}
         onDragOver={(event) => handleDragOverFolder(event, currentFolderPath)}
