@@ -53,6 +53,12 @@ Check what Mauth servers are currently running:
 pnpm dev:status
 ```
 
+When the app is fully stopped, this should end with `Runtime: Mauth is stopped.`. If it says the runtime is partially running or stale, use the desktop launcher mode to repair it:
+
+```bash
+pnpm dev:launch:desktop
+```
+
 Stop Mauth-owned local servers:
 
 ```bash

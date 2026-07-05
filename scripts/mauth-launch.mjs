@@ -3,7 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 
-import { desktopReplacementReasons, listenersAreAmbiguous } from "./mauth-launch-plan.mjs";
+import { desktopReplacementReasons, listenersAreAmbiguous, runtimeStatusSummary } from "./mauth-launch-plan.mjs";
 
 const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/\/+$/, "");
@@ -307,7 +307,8 @@ function failForPortConflict(label, port, listeners, detail) {
 }
 
 async function printRuntimeStatus() {
-  printPortStatus("API", apiPort, listenersForPort(apiPort));
+  const apiListeners = listenersForPort(apiPort);
+  printPortStatus("API", apiPort, apiListeners);
   const status = await readSystemStatus();
   if (status.ok) {
     console.log(`ok   API status: ${status.json.apiVersion} started ${status.json.startedAt}`);
@@ -317,7 +318,8 @@ async function printRuntimeStatus() {
     console.log(`warn API status: ${status.status || "unreachable"} ${status.text}`);
   }
 
-  printPortStatus("Web", webPort, listenersForPort(webPort));
+  const webListeners = listenersForPort(webPort);
+  printPortStatus("Web", webPort, webListeners);
   const web = await webHealth();
   if (web.ok && web.isMauth) {
     console.log(`ok   Web app: ${WEB_URL}`);
@@ -326,6 +328,16 @@ async function printRuntimeStatus() {
   } else {
     console.log(`warn Web app: ${WEB_URL} unreachable (${web.text})`);
   }
+
+  const summary = runtimeStatusSummary({
+    apiHealthy: status.ok,
+    webHealthy: web.ok && web.isMauth,
+    apiListeners,
+    webListeners,
+    webUrl: WEB_URL,
+  });
+  console.log(`${summary.level.padEnd(4)} Runtime: ${summary.message}`);
+  console.log(`     ${summary.detail}`);
 }
 
 process.on("SIGINT", () => {
