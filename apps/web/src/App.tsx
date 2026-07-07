@@ -1,11 +1,12 @@
-import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
-import { ArrowDown, ArrowUp, Copy, CopyPlus, FileText, GitBranch, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, CopyPlus, Trash2 } from "lucide-react";
 
 import { EditorContentBlockPanel } from "@/components/editor/EditorContentBlockPanel";
 import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
-import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
+import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
+import { EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import {
   EditorSubsectionContainerDropZone,
@@ -14,7 +15,6 @@ import {
 } from "@/components/editor/EditorSubsectionDragControls";
 import { EditorInspectorPane } from "@/components/editor/EditorInspectorPane";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
-import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import { CHOICE_NUMBERING_STYLES, DIAGRAM_TYPES } from "@/components/editor/editorOptions";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
@@ -25,8 +25,6 @@ import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview"
 import { AppHeader } from "@/components/shell/AppHeader";
 import { AppOverlays } from "@/components/shell/AppOverlays";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { type ContextMenuAction } from "@/components/ui/context-menu";
 import { useActiveProjectFileStateController } from "@/hooks/useActiveProjectFileStateController";
 import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
@@ -99,7 +97,7 @@ import {
 import { createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
 import { createEditorBlockSelectionRuntime, type SelectedEditorBlock } from "@/lib/editorBlockSelection";
 import { createEditorBlockSummaryRuntime } from "@/lib/editorBlockSummaries";
-import { buildDocumentToc, isOrderedBlockVisible, markLabel, questionMarks } from "@/lib/editorDocumentToc";
+import { buildDocumentToc, isOrderedBlockVisible, questionMarks } from "@/lib/editorDocumentToc";
 import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import { type PreviewGraphConfigChange } from "@/lib/editorPreviewSegments";
 import { createEditorContentBlockNormalizer, spaceLines } from "@/lib/editorContentBlockNormalization";
@@ -124,7 +122,6 @@ import {
 } from "@/lib/editorDocumentNormalization";
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
-import { solutionSlotInsertionPlan } from "@/lib/solutionSlotInsertionActions";
 import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
@@ -3883,18 +3880,6 @@ export default function App() {
     );
   }
 
-  function solutionSlotExtraActions(plan: ReturnType<typeof solutionSlotInsertionPlan>, onClick: () => void) {
-    if (!plan.showManualSolutionSlotAction) return [];
-    return [
-      {
-        label: plan.solutionSlotActionLabel,
-        tooltip: plan.solutionSlotActionTooltip,
-        icon: <FileText className="size-4" aria-hidden="true" />,
-        onClick,
-      },
-    ];
-  }
-
   function renderPartPanel(question: QuestionBlock, part: EditorPart) {
     return (
       <EditorNestedPartPanel
@@ -4113,178 +4098,37 @@ export default function App() {
                             {questions.map((question, index) => {
                               if (question.id !== activeQuestion?.id) return null;
 
-                              const hasParts = question.parts.length > 0;
-                              const questionItems = orderedQuestionItems(question);
                               const questionAnchor = questionScrollAnchor(question.id);
-                              const questionActive = isActiveEditorAnchor(questionAnchor);
                               const questionPanelLabel = isNotesTemplate
                                 ? `Heading ${index + 1}`
                                 : `Question ${questionDisplayNumber(frontMatter, index)}`;
-                              const questionSolutionInsertion = solutionSlotInsertionPlan({
-                                supportsSolutionTools,
-                                marks: question.marks,
-                                scope: "question",
-                                hasNestedItems: hasParts,
-                              });
-                              const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
                               return (
                                 <div key={question.id} className="contents">
-                                  <article
-                                    className={cn(
-                                      "relative rounded-lg border bg-card p-4 shadow-panel transition-colors",
-                                      questionActive && EDITOR_ACTIVE_PANEL_CLASS,
-                                    )}
-                                    data-scroll-anchor={questionAnchor}
-                                  >
-                                    <div
-                                      className="mb-4 flex flex-wrap items-center justify-between gap-3"
-                                      data-panel-region="header"
-                                      onContextMenu={(event) => openContextMenu(event, questionAnchor, "editor")}
-                                    >
-                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          title={`Jump preview to ${questionPanelLabel}`}
-                                          aria-label={`Jump preview to ${questionPanelLabel}`}
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            jumpPreviewToQuestion(question.id);
-                                          }}
-                                          className={cn(
-                                            "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
-                                            questionActive &&
-                                              "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-                                          )}
-                                        >
-                                          {questionPanelLabel}
-                                        </Button>
-                                        {isNotesTemplate ? (
-                                          <label className="flex h-9 min-w-[14rem] flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                            <span className="shrink-0 font-medium text-muted-foreground">Title</span>
-                                            <input
-                                              aria-label={`${questionPanelLabel} title`}
-                                              type="text"
-                                              value={question.section}
-                                              onChange={(event) => updateQuestion(question.id, { section: event.target.value })}
-                                              placeholder="Heading title"
-                                              className="h-7 min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
-                                            />
-                                          </label>
-                                        ) : null}
-                                        {!isNotesTemplate && hasParts ? (
-                                          <Badge variant="secondary" className="h-9 shrink-0 whitespace-nowrap px-3 text-sm">
-                                            {markLabel(questionMarks(question))}
-                                          </Badge>
-                                        ) : null}
-                                        {!isNotesTemplate && !hasParts ? (
-                                          <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
-                                            <span className="font-medium text-muted-foreground">Marks</span>
-                                            <input
-                                              aria-label={`${questionPanelLabel} marks`}
-                                              type="number"
-                                              min={0}
-                                              value={question.marks}
-                                              onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                                              className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
-                                            />
-                                          </label>
-                                        ) : null}
-                                      </div>
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          title={`Remove ${questionPanelLabel}`}
-                                          aria-label={`Remove ${questionPanelLabel}`}
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            removeQuestion(question.id);
-                                          }}
-                                          className="size-9 shrink-0"
-                                        >
-                                          <Trash2 />
-                                        </Button>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex flex-col gap-3">
-                                      {questionItems.map((item, itemIndex) => {
-                                        const beforeItem: ContainerOrderItem =
-                                          item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
-                                        const beforeDropZone = itemDropZone(
-                                          { kind: "question", questionId: question.id },
-                                          beforeItem,
-                                          Boolean(draggedSubsection || draggedEditorPageBreak),
-                                        );
-
-                                        return item.kind === "block" ? (
-                                          <Fragment key={item.id}>
-                                            {beforeDropZone}
-                                            {renderQuestionContentBlock(
-                                              question,
-                                              item.block,
-                                              itemIndex,
-                                              questionItems.length,
-                                              questionItems,
-                                            )}
-                                          </Fragment>
-                                        ) : (
-                                          <Fragment key={item.id}>
-                                            {beforeDropZone}
-                                            {item.part.pageBreakBefore
-                                              ? renderEditorPageBreakRow({ kind: "part", questionId: question.id, partId: item.part.id })
-                                              : null}
-                                            {renderPartPanel(question, item.part)}
-                                          </Fragment>
-                                        );
-                                      })}
-                                    </div>
-                                    {containerDropZone(
-                                      { kind: "question", questionId: question.id },
-                                      "end",
-                                      Boolean(draggedSubsection || draggedEditorPageBreak),
-                                    )}
-                                    <ContentInsertionActions
-                                      buttonLabel="Add"
-                                      solutionMode={effectiveShowSolutions}
-                                      centered
-                                      className="mt-4 pt-3"
-                                      onAddText={() => addQuestionBlock(question.id, "text")}
-                                      onAddChoices={() => addQuestionBlock(question.id, "choices")}
-                                      onAddTable={() => addQuestionBlock(question.id, "table")}
-                                      onAddDiagram={() => addQuestionBlock(question.id, "diagram")}
-                                      diagramActions={quickDiagramInsertActions((type) => addQuestionDiagramBlock(question.id, type))}
-                                      onAddColumns={() => addQuestionBlock(question.id, "columns")}
-                                      onAddSpace={() =>
-                                        questionSolutionInsertion.usesPairedSolutionSpace
-                                          ? addQuestionSolutionSlot(question.id)
-                                          : addQuestionBlock(question.id, "space")
-                                      }
-                                      spaceActionLabel={questionSolutionInsertion.spaceActionLabel}
-                                      spaceActionTooltip={questionSolutionInsertion.spaceActionTooltip}
-                                      extraActions={[
-                                        ...solutionSlotExtraActions(questionSolutionInsertion, () => addQuestionSolutionSlot(question.id)),
-                                        {
-                                          label: isNotesTemplate ? "Subheading" : "Part",
-                                          tooltip: isNotesTemplate
-                                            ? "Add a nested notes subheading"
-                                            : "Add a lettered question part, such as (a), (b), (c)",
-                                          icon: <GitBranch className="size-4" aria-hidden="true" />,
-                                          onClick: () => addPart(question.id),
-                                        },
-                                        {
-                                          label: "Page break",
-                                          tooltip: nextPartPageBreakTarget
-                                            ? "Add a page-break row before an existing part"
-                                            : "Add a part first, then insert a page-break row before it",
-                                          icon: <FileText className="size-4" aria-hidden="true" />,
-                                          disabled: !nextPartPageBreakTarget,
-                                          onClick: () => addPartPageBreak(question.id),
-                                        },
-                                      ]}
-                                    />
-                                  </article>
+                                  <EditorQuestionPanel
+                                    question={question}
+                                    label={questionPanelLabel}
+                                    active={isActiveEditorAnchor(questionAnchor)}
+                                    isNotesTemplate={isNotesTemplate}
+                                    supportsSolutionTools={supportsSolutionTools}
+                                    effectiveShowSolutions={effectiveShowSolutions}
+                                    draggedSubsectionActive={Boolean(draggedSubsection)}
+                                    draggedEditorPageBreakActive={Boolean(draggedEditorPageBreak)}
+                                    canAddPartPageBreak={Boolean(partPageBreakInsertTarget(question))}
+                                    itemDropZone={itemDropZone}
+                                    containerDropZone={containerDropZone}
+                                    renderQuestionContentBlock={renderQuestionContentBlock}
+                                    renderPartPanel={renderPartPanel}
+                                    renderEditorPageBreakRow={renderEditorPageBreakRow}
+                                    onHeaderContextMenu={(event, anchor) => openContextMenu(event, anchor, "editor")}
+                                    onJumpPreview={jumpPreviewToQuestion}
+                                    updateQuestion={updateQuestion}
+                                    removeQuestion={removeQuestion}
+                                    addQuestionBlock={addQuestionBlock}
+                                    addQuestionDiagramBlock={addQuestionDiagramBlock}
+                                    addQuestionSolutionSlot={addQuestionSolutionSlot}
+                                    addPart={addPart}
+                                    addPartPageBreak={addPartPageBreak}
+                                  />
                                 </div>
                               );
                             })}
