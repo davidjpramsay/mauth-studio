@@ -1,15 +1,6 @@
 import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import type {
-  ChoiceNumberingStyle,
-  DiagramAlignment,
-  FormattingConfig,
-  GraphConfig,
-  MauthAgentFileState,
-  ProjectFileSummary,
-  ProjectSummary,
-} from "@mauth-studio/shared";
-import { statsChartSummary } from "@mauth-studio/diagram-plotly";
+import type { ChoiceNumberingStyle, FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import {
   ArrowDown,
   ArrowUp,
@@ -35,7 +26,7 @@ import {
 import { ActionProposalPanel } from "@/components/actions/ActionProposalPanel";
 import { FrontMatterInlineText, InlineSummaryTitle, MixedMath, SolutionMarkTicks } from "@/components/MathText";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
-import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
+import { DiagramBlockEditor } from "@/components/editor/DiagramBlockEditor";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import {
@@ -43,27 +34,17 @@ import {
   EditorSubsectionDragHandle,
   EditorSubsectionItemDropZone,
 } from "@/components/editor/EditorSubsectionDragControls";
-import { FunctionGraphEditor } from "@/components/editor/FunctionGraphEditor";
-import { Geometry2DGraphEditor } from "@/components/editor/Geometry2DGraphEditor";
-import { Graph3DGraphEditor } from "@/components/editor/Graph3DGraphEditor";
-import { GeometricConstructionEditor } from "@/components/editor/GeometricConstructionEditor";
-import { ImageDiagramEditor } from "@/components/editor/ImageDiagramEditor";
-import { SetDiagramEditor } from "@/components/editor/SetDiagramEditor";
 import { SelectionInspector } from "@/components/editor/SelectionInspector";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
-import { StatsChartEditor } from "@/components/editor/StatsChartEditor";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
-import { Vector2DGraphEditor } from "@/components/editor/Vector2DGraphEditor";
-import { NetworkDiagramEditor } from "@/components/editor/NetworkDiagramEditor";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import {
   CHOICE_LIST_LAYOUTS,
   CHOICE_NUMBERING_STYLES,
   DIAGRAM_ALIGNMENTS,
   DIAGRAM_TYPES,
-  DIAGRAM_TYPE_GROUPS,
   TABLE_CELL_ALIGNMENTS,
 } from "@/components/editor/editorOptions";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
@@ -272,12 +253,10 @@ import {
   type QuestionDropPreview,
 } from "@/lib/documentNavigation";
 import { DEFAULT_2D_GRAPH, graphHeight } from "@/lib/diagramGraph2d";
-import { imageDiagramData, imageDiagramName } from "@/lib/diagramImage";
 import {
   diagramAlignmentClass,
   diagramTypePatch,
   effectiveDiagramTextSide,
-  isPenroseDiagramType,
   normalizeDiagramTextSide,
   normalizeDiagramType,
   updateGraphConfig,
@@ -294,7 +273,6 @@ import {
   shouldSeedScreenshotStarter,
   type ScreenshotStarterRuntime,
 } from "@/lib/editorStarterDocuments";
-import { penroseSubstanceSource } from "@/lib/diagramPenroseSubstance";
 import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
 import {
@@ -503,7 +481,7 @@ const { normalizeQuestionBlocks, normalizeSectionHeadings, normalizeDocumentFlow
     normalizeContentBlocks,
   });
 
-const { choiceListSummary, diagramConfigSummary, tocBlockSummary } = createEditorBlockSummaryRuntime({
+const { choiceListSummary, tocBlockSummary } = createEditorBlockSummaryRuntime({
   withGraphDefaults,
   normalizeDiagramType,
   diagramTypes: DIAGRAM_TYPES,
@@ -1383,24 +1361,6 @@ const PaginatedTestPreview = memo(function PaginatedTestPreview({
     </div>
   );
 });
-
-interface DiagramBlockEditorProps {
-  label: string;
-  graphConfig: GraphConfig;
-  alignment?: DiagramAlignment;
-  showSolutions?: boolean;
-  settingsMode?: "inline" | "inspector";
-  anchor?: string;
-  activeAnchor?: string;
-  dragHandle?: ReactNode;
-  muted?: boolean;
-  active?: boolean;
-  openSignal?: number;
-  onActivateAnchor?: (anchor: string) => void;
-  onChange: (graphConfig: GraphConfig) => void;
-  onAlignmentChange: (alignment: DiagramAlignment) => void;
-  onRemove: () => void;
-}
 
 type EditorColumnsBlock = Extract<EditorContentBlock, { kind: "columns" }>;
 type ColumnsChildBlockKind = Exclude<ContentBlockKind, "columns">;
@@ -2449,129 +2409,6 @@ function FrontMatterEditor({
 
 function questionHasPageBreak(question: QuestionBlock) {
   return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
-}
-
-function DiagramBlockEditor({
-  label,
-  graphConfig,
-  alignment = "center",
-  showSolutions = true,
-  settingsMode = "inline",
-  anchor,
-  activeAnchor,
-  dragHandle,
-  muted = false,
-  active = false,
-  openSignal,
-  onActivateAnchor,
-  onChange,
-  onAlignmentChange,
-  onRemove,
-}: DiagramBlockEditorProps) {
-  const config = withGraphDefaults(graphConfig);
-  const patchConfig = (patch: Partial<GraphConfig>) => onChange(updateGraphConfig(config, patch));
-  const renderDiagramPanel = (summary: string, bodyClassName: string, children: ReactNode) => (
-    <DiagramBlockPanel
-      label={label}
-      title={<InlineSummaryTitle label={label} summary={summary} />}
-      type={config.type ?? "graph2d"}
-      alignment={alignment}
-      diagramTypes={DIAGRAM_TYPES}
-      diagramTypeGroups={DIAGRAM_TYPE_GROUPS}
-      diagramAlignments={DIAGRAM_ALIGNMENTS}
-      settingsMode={settingsMode}
-      dragHandle={dragHandle}
-      muted={muted}
-      active={active}
-      openSignal={openSignal}
-      bodyClassName={bodyClassName}
-      onTypeChange={(type) => patchConfig(diagramTypePatch(type, config))}
-      onAlignmentChange={onAlignmentChange}
-      onRemove={onRemove}
-    >
-      {children}
-    </DiagramBlockPanel>
-  );
-  if (config.type === "image") {
-    const imageSummary = imageDiagramData(config).src ? imageDiagramName(config) : "No image selected";
-    return renderDiagramPanel(imageSummary, "p-3", <ImageDiagramEditor config={config} onChange={patchConfig} />);
-  }
-
-  if (isPenroseDiagramType(config.type)) {
-    return renderDiagramPanel(
-      diagramConfigSummary(config),
-      "p-3",
-      config.type === "network" ? (
-        <NetworkDiagramEditor
-          config={config}
-          substanceSource={penroseSubstanceSource(config)}
-          settingsMode={settingsMode}
-          onChange={patchConfig}
-        />
-      ) : config.type === "setDiagram" ? (
-        <SetDiagramEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />
-      ) : (
-        <GeometricConstructionEditor
-          config={config}
-          substanceSource={penroseSubstanceSource(config)}
-          settingsMode={settingsMode}
-          onChange={patchConfig}
-        />
-      ),
-    );
-  }
-
-  if (config.type === "geometry2d") {
-    return renderDiagramPanel(
-      diagramConfigSummary(config),
-      "graph-editor-controls p-3",
-      <Geometry2DGraphEditor
-        config={config}
-        anchor={anchor}
-        activeAnchor={activeAnchor}
-        onActivateAnchor={onActivateAnchor}
-        onChange={patchConfig}
-      />,
-    );
-  }
-
-  if (config.type === "vector2d") {
-    return renderDiagramPanel(
-      diagramConfigSummary(config),
-      "graph-editor-controls p-3",
-      <Vector2DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
-    );
-  }
-
-  if (config.type === "graph3d") {
-    return renderDiagramPanel(
-      diagramConfigSummary(config),
-      "graph-editor-controls p-3",
-      <Graph3DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
-    );
-  }
-
-  if (config.type === "statsChart") {
-    return renderDiagramPanel(
-      statsChartSummary(config),
-      "p-3",
-      <StatsChartEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
-    );
-  }
-
-  return renderDiagramPanel(
-    diagramConfigSummary(config),
-    "graph-editor-controls p-3",
-    <FunctionGraphEditor
-      config={config}
-      showSolutions={showSolutions}
-      settingsMode={settingsMode}
-      anchor={anchor}
-      activeAnchor={activeAnchor}
-      onActivateAnchor={onActivateAnchor}
-      onChange={patchConfig}
-    />,
-  );
 }
 
 export default function App() {
