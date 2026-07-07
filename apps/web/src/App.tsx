@@ -125,6 +125,7 @@ import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
 import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuController";
 import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
+import { useEditorAutosaveSnapshotController } from "@/hooks/useEditorAutosaveSnapshotController";
 import { useEditorSectionHeadingController } from "@/hooks/useEditorSectionHeadingController";
 import { useEditorSelectionController } from "@/hooks/useEditorSelectionController";
 import { useMauthActionProposalController } from "@/hooks/useMauthActionProposalController";
@@ -149,6 +150,7 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
+import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
 import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
 import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
@@ -2775,30 +2777,18 @@ export default function App() {
       updateLastProjectSaveFingerprint,
     });
 
-  const currentDraftSnapshotForStorage = useCallback(
-    (): AutosavedEditorSnapshot => ({
-      frontMatter: frontMatterRef.current,
-      questions: questionsRef.current,
-      sectionHeadings: sectionHeadingsRef.current,
-      documentFlow: documentFlowRef.current,
-      formattingConfig: formattingConfigRef.current,
-      activeProjectFilePath: activeProjectFilePathRef.current ?? undefined,
-      activeProjectFileRevision: activeProjectFileRevisionRef.current ?? undefined,
-      documentOpen: editorDocumentOpenRef.current,
-      logo: selectedLogoForFrontMatter(logosRef.current, frontMatterRef.current),
-    }),
-    [
-      activeProjectFilePathRef,
-      activeProjectFileRevisionRef,
-      documentFlowRef,
-      editorDocumentOpenRef,
-      formattingConfigRef,
-      frontMatterRef,
-      logosRef,
-      questionsRef,
-      sectionHeadingsRef,
-    ],
-  );
+  const currentDraftSnapshotForStorage = useEditorAutosaveSnapshotController({
+    frontMatterRef,
+    questionsRef,
+    sectionHeadingsRef,
+    documentFlowRef,
+    formattingConfigRef,
+    logosRef,
+    activeProjectFilePathRef,
+    activeProjectFileRevisionRef,
+    editorDocumentOpenRef,
+    selectLogo: selectedLogoForFrontMatter,
+  });
 
   useEffect(() => {
     return () => pointerSubsectionDragRef.current?.cleanup();
@@ -3020,7 +3010,12 @@ export default function App() {
       ),
     [documentFlow, formattingConfig, frontMatter, logos, questions, sectionHeadings],
   );
-  const draftChangeKey = `${editorDocumentOpen ? "open" : "closed"}|${activeProjectFilePath ?? ""}|${activeProjectFileRevision ?? ""}|${currentDocumentFingerprint}`;
+  const draftChangeKey = editorDraftChangeKey({
+    documentOpen: editorDocumentOpen,
+    activeProjectFilePath,
+    activeProjectFileRevision,
+    documentFingerprint: currentDocumentFingerprint,
+  });
   useDraftAutosaveController<AutosavedEditorSnapshot>({
     storageHydrated,
     diskAutosaveAvailable: draftAutosaveStatus !== "unavailable",
