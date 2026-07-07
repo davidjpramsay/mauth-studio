@@ -2011,7 +2011,6 @@ export default function App() {
   const { createSolutionCopyForSelectedBlock } = useSolutionSurfaceCopyController({
     questions,
     showEditor,
-    applyAction: applyEditorAction,
     applyActions: applyEditorActions,
     showSolutions: () => setShowSolutions(true),
     selectContextAnchor,
