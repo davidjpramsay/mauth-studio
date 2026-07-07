@@ -38,6 +38,7 @@ import { FrontMatterInlineText, InlineSummaryTitle, MixedMath, SolutionMarkTicks
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
+import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import { FunctionGraphEditor } from "@/components/editor/FunctionGraphEditor";
 import { Geometry2DGraphEditor } from "@/components/editor/Geometry2DGraphEditor";
 import { Graph3DGraphEditor } from "@/components/editor/Graph3DGraphEditor";
@@ -290,7 +291,7 @@ import {
   type ScreenshotStarterRuntime,
 } from "@/lib/editorStarterDocuments";
 import { penroseSubstanceSource } from "@/lib/diagramPenroseSubstance";
-import { keyboardDeleteRequested, keyboardMoveDirection, nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
+import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
 import {
   bookletSupplementaryPageCount,
@@ -6093,75 +6094,17 @@ export default function App() {
 
   function renderEditorPageBreakRow(target: EditorPageBreakTarget) {
     const moving = editorPageBreakKey(draggedEditorPageBreak) === editorPageBreakKey(target);
-    const contextLabel = isNotesTemplate
-      ? target.kind === "part"
-        ? "next subheading"
-        : "next detail"
-      : target.kind === "part"
-        ? "next part"
-        : "next subpart";
     return (
-      <div
+      <EditorPageBreakRow
         key={`page-break-row-${editorPageBreakKey(target)}`}
-        data-drag-preview
-        tabIndex={0}
-        title={`Page break. The ${contextLabel} starts on a new page. Drag or press Alt+Up/Alt+Down to move it. Delete removes it.`}
-        aria-label={`Page break. The ${contextLabel} starts on a new page.`}
-        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Delete Backspace"
-        onKeyDown={(event) => {
-          if (keyboardDeleteRequested(event)) {
-            event.preventDefault();
-            event.stopPropagation();
-            setEditorPageBreak(target, false);
-            return;
-          }
-          const direction = keyboardMoveDirection(event);
-          if (!direction) return;
-          event.preventDefault();
-          event.stopPropagation();
-          moveEditorPageBreakByKeyboard(target, direction);
-        }}
-        className={cn(
-          "flex items-center gap-2 rounded-md border border-dashed border-primary/45 bg-primary/[0.035] px-2 py-1.5 text-sm text-primary transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45",
-          moving && "scale-[0.995] opacity-70 shadow-2xl",
-        )}
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          draggable
-          title="Drag page break"
-          aria-label="Drag page break"
-          onClick={(event) => event.stopPropagation()}
-          onDragStart={(event) => handleEditorPageBreakDragStart(event, target)}
-          onDragEnd={handleEditorPageBreakDragEnd}
-          className="size-7 cursor-grab text-primary/75 active:cursor-grabbing"
-        >
-          <GripVertical className="size-4" aria-hidden="true" />
-        </Button>
-        <FileText className="size-4 shrink-0" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-tight">Page break</div>
-          <div className="truncate text-xs text-muted-foreground">
-            {contextLabel[0].toUpperCase() + contextLabel.slice(1)} starts on a new page
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          title="Remove page break"
-          aria-label="Remove page break"
-          onClick={(event) => {
-            event.stopPropagation();
-            setEditorPageBreak(target, false);
-          }}
-          className="hover:text-destructive size-7 text-muted-foreground"
-        >
-          <Trash2 className="size-4" aria-hidden="true" />
-        </Button>
-      </div>
+        target={target}
+        isNotesTemplate={isNotesTemplate}
+        moving={moving}
+        onRemove={(pageBreakTarget) => setEditorPageBreak(pageBreakTarget, false)}
+        onMoveByKeyboard={moveEditorPageBreakByKeyboard}
+        onDragStart={handleEditorPageBreakDragStart}
+        onDragEnd={handleEditorPageBreakDragEnd}
+      />
     );
   }
 
