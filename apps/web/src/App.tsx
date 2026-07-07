@@ -1,26 +1,7 @@
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
-import {
-  ArrowDown,
-  ArrowUp,
-  Copy,
-  CopyPlus,
-  FileText,
-  FolderOpen,
-  GitBranch,
-  Moon,
-  PanelRightClose,
-  PanelRightOpen,
-  PlusCircle,
-  Redo2,
-  Save,
-  Server,
-  Sun,
-  Trash2,
-  Undo2,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, CopyPlus, FileText, GitBranch, Trash2 } from "lucide-react";
 
 import { ActionProposalPanel } from "@/components/actions/ActionProposalPanel";
 import { InlineSummaryTitle } from "@/components/MathText";
@@ -50,15 +31,14 @@ import {
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
-import { HeaderFileControls } from "@/components/header/HeaderFileControls";
 import { DocumentNavigator, tocSummaryText } from "@/components/navigation/DocumentNavigator";
 import { DocumentNavigatorRail } from "@/components/navigation/DocumentNavigatorRail";
 import { NEW_TEST_TEMPLATES, NewTestDialog } from "@/components/new-document/NewTestDialog";
 import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview";
-import { SolutionModeControls } from "@/components/solutions/SolutionModeControls";
 import { SolutionValidationPanel } from "@/components/solutions/SolutionValidationPanel";
+import { AppHeader } from "@/components/shell/AppHeader";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
-import { SystemStatusPanel, systemStatusTone } from "@/components/system/SystemStatusPanel";
+import { SystemStatusPanel } from "@/components/system/SystemStatusPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, type ContextMenuAction } from "@/components/ui/context-menu";
@@ -296,10 +276,6 @@ import {
 } from "@/lib/scrollAnchors";
 import { cn } from "@/lib/utils";
 
-const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
-const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
-const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
-const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
@@ -727,22 +703,6 @@ function useStableEvent<TArgs extends unknown[], TResult>(callback: (...args: TA
   });
 
   return useCallback((...args: TArgs) => callbackRef.current(...args), []);
-}
-
-function ManualModeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 7.5v9" strokeWidth="2" />
-      <path d="M13 7.5v9" strokeWidth="2" />
-      <path d="M7 12h12" strokeWidth="2" />
-      <path d="M19 12V7.6" strokeWidth="2" />
-      <circle cx="7" cy="5.5" r="2.1" strokeWidth="2" />
-      <circle cx="7" cy="18.5" r="2.1" strokeWidth="2" />
-      <circle cx="13" cy="5.5" r="2.1" strokeWidth="2" />
-      <circle cx="13" cy="18.5" r="2.1" strokeWidth="2" />
-      <circle cx="19" cy="5.5" r="2.1" strokeWidth="2" fill="currentColor" />
-    </svg>
-  );
 }
 
 function projectFileVersionPreview(version: Parameters<typeof buildProjectFileVersionPreview>[0]) {
@@ -4564,191 +4524,40 @@ export default function App() {
   return (
     <>
       <div className="app-shell min-h-screen bg-background text-foreground">
-        <header className="app-header border-b border-blue-300/15 bg-[#030817] text-white shadow-[0_14px_32px_rgba(3,8,23,0.22)]">
-          <div className="flex min-h-16 items-center justify-between gap-4 px-5">
-            <div className="flex shrink-0 items-center gap-3">
-              <img
-                src={BRAND_LOGO_SRC}
-                alt="Mauth Studio"
-                className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
-              />
-              <div className="flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title={paneMode === "split" ? "Hide editor" : "Manual editor mode"}
-                  aria-label={paneMode === "split" ? "Hide editor" : "Manual editor mode"}
-                  aria-pressed={paneMode === "split"}
-                  onClick={toggleManualPane}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, paneMode === "split" && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  <ManualModeIcon className="size-5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title={showInspectorPane ? "Hide inspector" : "Show inspector"}
-                  aria-label={showInspectorPane ? "Hide inspector" : "Show inspector"}
-                  aria-pressed={showInspectorPane}
-                  onClick={toggleInspectorPane}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, showInspectorPane && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  {showInspectorPane ? <PanelRightClose /> : <PanelRightOpen />}
-                </Button>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 md:hidden">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="New document"
-                aria-label="New document"
-                onClick={startNewTest}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <PlusCircle />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Save current test"
-                aria-label="Save current test"
-                disabled={!editorDocumentOpen}
-                onClick={saveCurrentTest}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <Save />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Open files"
-                aria-label="Open files"
-                onClick={openFileManager}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <FolderOpen />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title={systemStatusMessage}
-                aria-label="System status"
-                onClick={() => setSystemStatusPanelOpen(true)}
-                className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
-              >
-                <Server />
-                <span
-                  className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))}
-                  aria-hidden="true"
-                />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="Close current file"
-                aria-label="Close current file"
-                disabled={!editorDocumentOpen}
-                onClick={() => void closeCurrentDocument()}
-                className={HEADER_ICON_BUTTON_CLASS}
-              >
-                <X />
-              </Button>
-            </div>
-            <div className="hidden min-w-0 flex-1 items-center justify-end gap-2 md:flex">
-              <HeaderFileControls
-                currentFileName={currentProjectFileName}
-                fileStatusMessage={headerFileStatusMessage}
-                fileStatusTitle={headerFileStatusTitle}
-                saveStatus={headerStorageStatus}
-                documentOpen={editorDocumentOpen}
-                onNewTest={startNewTest}
-                onSaveTest={saveCurrentTest}
-                onOpenFiles={openFileManager}
-                onCloseFile={() => void closeCurrentDocument()}
-              />
-              <div className={HEADER_GROUP_CLASS}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title={systemStatusMessage}
-                  aria-label="System status"
-                  onClick={() => setSystemStatusPanelOpen(true)}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
-                >
-                  <Server />
-                  <span
-                    className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))}
-                    aria-hidden="true"
-                  />
-                </Button>
-              </div>
-              <div className={HEADER_GROUP_CLASS}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-                  aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-                  aria-pressed={darkMode}
-                  onClick={toggleTheme}
-                  className={cn(HEADER_ICON_BUTTON_CLASS, darkMode && HEADER_ICON_ACTIVE_CLASS)}
-                >
-                  {darkMode ? <Sun /> : <Moon />}
-                </Button>
-              </div>
-              <div className={HEADER_GROUP_CLASS}>
-                <SolutionModeControls
-                  editorDocumentOpen={editorDocumentOpen}
-                  supportsSolutionTools={supportsSolutionTools}
-                  showSolutions={showSolutions}
-                  effectiveShowSolutions={effectiveShowSolutions}
-                  printModeLabel={printModeLabel}
-                  printModeTitle={printModeTitle}
-                  solutionIssueCount={solutionValidation.issues.length}
-                  solutionErrorCount={solutionValidation.errorCount}
-                  onShowSolutionsChange={setShowSolutions}
-                  onOpenSolutionValidation={() => setSolutionValidationOpen(true)}
-                  onPrint={printDocument}
-                />
-              </div>
-              <div className={HEADER_GROUP_CLASS}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Undo"
-                  aria-label="Undo"
-                  disabled={!editorDocumentOpen || !canUndo}
-                  onClick={undoEdit}
-                  className={HEADER_ICON_BUTTON_CLASS}
-                >
-                  <Undo2 />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Redo"
-                  aria-label="Redo"
-                  disabled={!editorDocumentOpen || !canRedo}
-                  onClick={redoEdit}
-                  className={HEADER_ICON_BUTTON_CLASS}
-                >
-                  <Redo2 />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppHeader
+          paneMode={paneMode}
+          showInspectorPane={showInspectorPane}
+          editorDocumentOpen={editorDocumentOpen}
+          currentProjectFileName={currentProjectFileName}
+          headerFileStatusMessage={headerFileStatusMessage}
+          headerFileStatusTitle={headerFileStatusTitle}
+          headerStorageStatus={headerStorageStatus}
+          systemStatusMessage={systemStatusMessage}
+          systemStatusState={systemStatusState}
+          darkMode={darkMode}
+          supportsSolutionTools={supportsSolutionTools}
+          showSolutions={showSolutions}
+          effectiveShowSolutions={effectiveShowSolutions}
+          printModeLabel={printModeLabel}
+          printModeTitle={printModeTitle}
+          solutionIssueCount={solutionValidation.issues.length}
+          solutionErrorCount={solutionValidation.errorCount}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onToggleManualPane={toggleManualPane}
+          onToggleInspectorPane={toggleInspectorPane}
+          onNewTest={startNewTest}
+          onSaveTest={saveCurrentTest}
+          onOpenFiles={openFileManager}
+          onOpenSystemStatus={() => setSystemStatusPanelOpen(true)}
+          onCloseFile={() => void closeCurrentDocument()}
+          onToggleTheme={toggleTheme}
+          onShowSolutionsChange={setShowSolutions}
+          onOpenSolutionValidation={() => setSolutionValidationOpen(true)}
+          onPrint={printDocument}
+          onUndo={undoEdit}
+          onRedo={redoEdit}
+        />
 
         <main className="app-main grid h-[calc(100vh-4rem)] min-h-0 bg-background" style={editorDocumentOpen ? appShellStyle : undefined}>
           {editorDocumentOpen ? (
