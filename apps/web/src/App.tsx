@@ -198,7 +198,6 @@ import {
   orderedPartItems,
   orderedQuestionItems,
   romanLabel,
-  safeMarkValue,
   withNormalizedPartOrder,
   withNormalizedQuestionOrder,
   type ContainerOrderItem,
@@ -213,6 +212,7 @@ import {
 } from "@/lib/editorDocumentNormalization";
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
+import { solutionSlotInsertionPlan } from "@/lib/solutionSlotInsertionActions";
 import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
@@ -6165,6 +6165,18 @@ export default function App() {
     );
   }
 
+  function solutionSlotExtraActions(plan: ReturnType<typeof solutionSlotInsertionPlan>, onClick: () => void) {
+    if (!plan.showManualSolutionSlotAction) return [];
+    return [
+      {
+        label: plan.solutionSlotActionLabel,
+        tooltip: plan.solutionSlotActionTooltip,
+        icon: <FileText className="size-4" aria-hidden="true" />,
+        onClick,
+      },
+    ];
+  }
+
   function renderSubpartPanel(question: QuestionBlock, part: EditorPart, subpart: EditorSubpart) {
     const subpartIndex = Math.max(
       0,
@@ -6181,20 +6193,17 @@ export default function App() {
     const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
     const subpartActive = isActiveEditorAnchor(subpartAnchor);
     const subpartPanelLabel = isNotesTemplate ? `Detail ${subpartIndex + 1}` : `Subpart (${subpartLabel})`;
-    const subpartUsesSolutionSpace = supportsSolutionTools && safeMarkValue(subpart.marks) > 0;
+    const subpartSolutionInsertion = solutionSlotInsertionPlan({
+      supportsSolutionTools,
+      marks: subpart.marks,
+      scope: "subpart",
+    });
     const subpartContainer: SubsectionContainerRef = {
       kind: "subpart",
       questionId: question.id,
       partId: part.id,
       subpartId: subpart.id,
     };
-    const subpartSolutionSlotAction = {
-      label: "Solution slot",
-      tooltip: "Add paired answer space and solution text",
-      icon: <FileText className="size-4" aria-hidden="true" />,
-      onClick: () => addSubpartSolutionSlot(question.id, part, subpart),
-    };
-
     return (
       <div
         key={subpart.id}
@@ -6267,17 +6276,13 @@ export default function App() {
             diagramActions={quickDiagramInsertActions((type) => addSubpartDiagramBlock(question.id, part, subpart, type))}
             onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns")}
             onAddSpace={() =>
-              subpartUsesSolutionSpace
+              subpartSolutionInsertion.usesPairedSolutionSpace
                 ? addSubpartSolutionSlot(question.id, part, subpart)
                 : addSubpartBlock(question.id, part, subpart, "space")
             }
-            spaceActionLabel={subpartUsesSolutionSpace ? "Answer + solution" : "Space"}
-            spaceActionTooltip={
-              subpartUsesSolutionSpace
-                ? "Add the default paired student answer space and solution block for this marked subpart"
-                : undefined
-            }
-            extraActions={[...(subpartUsesSolutionSpace || !supportsSolutionTools ? [] : [subpartSolutionSlotAction])]}
+            spaceActionLabel={subpartSolutionInsertion.spaceActionLabel}
+            spaceActionTooltip={subpartSolutionInsertion.spaceActionTooltip}
+            extraActions={[...solutionSlotExtraActions(subpartSolutionInsertion, () => addSubpartSolutionSlot(question.id, part, subpart))]}
           />
         </CollapsiblePanel>
       </div>
@@ -6297,7 +6302,12 @@ export default function App() {
     const partOpenSignal = openSignalForAnchor(partAnchor);
     const partActive = isActiveEditorAnchor(partAnchor);
     const partPanelLabel = isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`;
-    const partUsesSolutionSpace = supportsSolutionTools && !subparts.length && safeMarkValue(part.marks) > 0;
+    const partSolutionInsertion = solutionSlotInsertionPlan({
+      supportsSolutionTools,
+      marks: part.marks,
+      scope: "part",
+      hasNestedItems: Boolean(subparts.length),
+    });
     const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
     const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
     const partInsertAction = {
@@ -6317,13 +6327,6 @@ export default function App() {
       disabled: !nextSubpartPageBreakTarget,
       onClick: () => addSubpartPageBreak(question.id, part),
     };
-    const partSolutionSlotAction = {
-      label: "Solution slot",
-      tooltip: "Add paired answer space and solution text",
-      icon: <FileText className="size-4" aria-hidden="true" />,
-      onClick: () => addPartSolutionSlot(question.id, part),
-    };
-
     return (
       <div key={part.id} data-scroll-anchor={partAnchor}>
         <div
@@ -6423,13 +6426,15 @@ export default function App() {
               onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
               diagramActions={quickDiagramInsertActions((type) => addPartDiagramBlock(question.id, part, type))}
               onAddColumns={() => addPartBlock(question.id, part, "columns")}
-              onAddSpace={() => (partUsesSolutionSpace ? addPartSolutionSlot(question.id, part) : addPartBlock(question.id, part, "space"))}
-              spaceActionLabel={partUsesSolutionSpace ? "Answer + solution" : "Space"}
-              spaceActionTooltip={
-                partUsesSolutionSpace ? "Add the default paired student answer space and solution block for this marked part" : undefined
+              onAddSpace={() =>
+                partSolutionInsertion.usesPairedSolutionSpace
+                  ? addPartSolutionSlot(question.id, part)
+                  : addPartBlock(question.id, part, "space")
               }
+              spaceActionLabel={partSolutionInsertion.spaceActionLabel}
+              spaceActionTooltip={partSolutionInsertion.spaceActionTooltip}
               extraActions={[
-                ...(partUsesSolutionSpace || !supportsSolutionTools ? [] : [partSolutionSlotAction]),
+                ...solutionSlotExtraActions(partSolutionInsertion, () => addPartSolutionSlot(question.id, part)),
                 partInsertAction,
                 partPageBreakInsertAction,
               ]}
@@ -6773,15 +6778,13 @@ export default function App() {
                               const questionPanelLabel = isNotesTemplate
                                 ? `Heading ${index + 1}`
                                 : `Question ${questionDisplayNumber(frontMatter, index)}`;
-                              const questionUsesSolutionSpace = supportsSolutionTools && !hasParts && safeMarkValue(question.marks) > 0;
+                              const questionSolutionInsertion = solutionSlotInsertionPlan({
+                                supportsSolutionTools,
+                                marks: question.marks,
+                                scope: "question",
+                                hasNestedItems: hasParts,
+                              });
                               const nextPartPageBreakTarget = partPageBreakInsertTarget(question);
-                              const questionSolutionSlotAction = {
-                                label: "Solution slot",
-                                tooltip: "Add paired answer space and solution text",
-                                icon: <FileText className="size-4" aria-hidden="true" />,
-                                onClick: () => addQuestionSolutionSlot(question.id),
-                              };
-
                               return (
                                 <div key={question.id} className="contents">
                                   <article
@@ -6912,18 +6915,14 @@ export default function App() {
                                       diagramActions={quickDiagramInsertActions((type) => addQuestionDiagramBlock(question.id, type))}
                                       onAddColumns={() => addQuestionBlock(question.id, "columns")}
                                       onAddSpace={() =>
-                                        questionUsesSolutionSpace
+                                        questionSolutionInsertion.usesPairedSolutionSpace
                                           ? addQuestionSolutionSlot(question.id)
                                           : addQuestionBlock(question.id, "space")
                                       }
-                                      spaceActionLabel={questionUsesSolutionSpace ? "Answer + solution" : "Space"}
-                                      spaceActionTooltip={
-                                        questionUsesSolutionSpace
-                                          ? "Add the default paired student answer space and solution block for this marked question"
-                                          : undefined
-                                      }
+                                      spaceActionLabel={questionSolutionInsertion.spaceActionLabel}
+                                      spaceActionTooltip={questionSolutionInsertion.spaceActionTooltip}
                                       extraActions={[
-                                        ...(questionUsesSolutionSpace || !supportsSolutionTools ? [] : [questionSolutionSlotAction]),
+                                        ...solutionSlotExtraActions(questionSolutionInsertion, () => addQuestionSolutionSlot(question.id)),
                                         {
                                           label: isNotesTemplate ? "Subheading" : "Part",
                                           tooltip: isNotesTemplate
