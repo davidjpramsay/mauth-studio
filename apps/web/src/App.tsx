@@ -134,6 +134,7 @@ import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionSurfaceCopyController } from "@/hooks/useSolutionSurfaceCopyController";
 import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
+import { useThemeController } from "@/hooks/useThemeController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
 import { useProjectFilesController } from "@/hooks/useProjectFilesController";
 import { missingProjectRevisionConflict, projectFileConflictFromError } from "@/lib/projectSaveConflicts";
@@ -391,7 +392,6 @@ const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
 const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
 const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
-const THEME_STORAGE_KEY = "mauth-studio.theme.v1";
 const LEGACY_SAVED_TEST_STORAGE_KEY = "math-app.saved-tests.v1";
 const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const AUTOSAVE_DEBOUNCE_MS = 900;
@@ -413,7 +413,6 @@ interface PointerSubsectionDragSession {
 }
 
 type PaneMode = "split" | "preview";
-type ThemeMode = "light" | "dark";
 
 interface EditorHistorySnapshot {
   frontMatter: FrontMatterConfig;
@@ -448,21 +447,6 @@ type SavedTest = SavedDocumentSnapshot<
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function loadInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") return "light";
-
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function applyTheme(theme: ThemeMode) {
-  if (typeof document === "undefined") return;
-
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  document.documentElement.style.colorScheme = theme;
 }
 
 const {
@@ -2767,7 +2751,7 @@ export default function App() {
   });
   const [lastProjectSaveFingerprint, setLastProjectSaveFingerprint] = useState<string | null>(null);
   const lastProjectSaveFingerprintRef = useRef<string | null>(null);
-  const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
+  const { darkMode, toggleTheme } = useThemeController();
   const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
   const [editorRevealRequest, setEditorRevealRequest] = useState<{ anchor: string; sequence: number } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -2973,7 +2957,6 @@ export default function App() {
   const showEditor = paneMode === "split";
   const showPreview = true;
   const showInspectorPane = showEditor && inspectorOpen;
-  const darkMode = theme === "dark";
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const { previewFitScale, previewLayoutScale, resetPreviewZoom } = usePreviewZoomController({
     previewPaneRef,
@@ -3184,15 +3167,6 @@ export default function App() {
     logosRef.current = logos;
     legacySavedTestsRef.current = legacySavedTests;
   }, [legacySavedTests, logos]);
-
-  useLayoutEffect(() => {
-    applyTheme(theme);
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Theme still applies for the current session if browser storage is unavailable.
-    }
-  }, [theme]);
 
   useLayoutEffect(() => {
     const previewPane = previewPaneRef.current;
@@ -4217,10 +4191,6 @@ export default function App() {
       });
     }
     return actions;
-  }
-
-  function toggleTheme() {
-    setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
   function reorderQuestion(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
