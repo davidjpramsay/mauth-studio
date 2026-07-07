@@ -149,6 +149,7 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
+import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
 import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
@@ -3555,27 +3556,18 @@ export default function App() {
       normalizedSectionHeadings,
       normalizedDocumentFlow,
     );
-    const dirty = Boolean(activePath && lastProjectSaveFingerprintRef.current !== documentFingerprint);
-    const saveStatus: MauthAgentFileState["saveStatus"] = fileOperationBusy
-      ? "loading"
-      : activeProjectRevisionIssue
-        ? "conflict"
-        : activePath
-          ? dirty
-            ? "dirty"
-            : "saved"
-          : "draft";
-
-    return {
+    return buildMauthAgentFileState({
       projectId: activeProject?.id ?? null,
       projectName: activeProject?.name ?? null,
       activePath,
       activeRevision,
-      dirty,
-      saveStatus,
+      documentFingerprint,
+      lastProjectSaveFingerprint: lastProjectSaveFingerprintRef.current,
+      fileOperationBusy,
+      hasRevisionIssue: Boolean(activeProjectRevisionIssue),
       autosaveStatus: draftAutosaveStatus,
       autosaveMessage: draftAutosaveMessage,
-    };
+    });
   }
 
   useMauthAgentBridgeController<QuestionBlock, FrontMatterConfig, FormattingConfig>({
