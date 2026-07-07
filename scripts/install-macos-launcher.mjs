@@ -7,6 +7,13 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import {
+  launcherMissingPnpmMessage,
+  launcherMissingRepoMessage,
+  launcherReadmeText,
+  launcherTerminalIntroLines,
+} from "./install-macos-launcher-copy.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const defaultTarget = path.join(os.homedir(), "Applications", "Mauth Studio.app");
@@ -79,6 +86,10 @@ function commandPath(command) {
 }
 
 function launcherScript() {
+  const terminalIntroCommands = launcherTerminalIntroLines()
+    .map((line) => `TERMINAL_COMMAND="$TERMINAL_COMMAND && echo ${shellSingleQuote(line)}"`)
+    .join("\n");
+
   return `#!/bin/zsh
 set -euo pipefail
 
@@ -89,6 +100,8 @@ fi
 
 readonly REPO_ROOT=${shellSingleQuote(repoRoot)}
 readonly STORED_PNPM_COMMAND=${shellSingleQuote(pnpmCommand)}
+readonly MISSING_REPO_MESSAGE=${shellSingleQuote(launcherMissingRepoMessage({ repoRoot }))}
+readonly MISSING_PNPM_MESSAGE=${shellSingleQuote(launcherMissingPnpmMessage())}
 
 show_error() {
   /usr/bin/osascript \\
@@ -131,34 +144,21 @@ resolve_pnpm_command() {
 }
 
 if [[ ! -f "$REPO_ROOT/package.json" || ! -f "$REPO_ROOT/scripts/mauth-launch.mjs" ]]; then
-  show_error "The Mauth Studio project folder could not be found at:
-
-$REPO_ROOT
-
-Move it back there, or reinstall the launcher from the current repo with:
-
-pnpm macos:install-launcher --reveal"
+  show_error "$MISSING_REPO_MESSAGE"
   exit 1
 fi
 
 readonly RESOLVED_PNPM_COMMAND="$(resolve_pnpm_command || true)"
 if [[ -z "$RESOLVED_PNPM_COMMAND" ]]; then
-  show_error "The pnpm command is not available to the launcher.
-
-Install pnpm again, or reinstall the launcher from the Mauth repo with:
-
-pnpm macos:install-launcher --reveal"
+  show_error "$MISSING_PNPM_MESSAGE"
   exit 1
 fi
 
 TERMINAL_COMMAND="clear"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && printf '\\\\033]0;Mauth Studio\\\\007'"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && cd $(quote_arg "$REPO_ROOT")"
-TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Starting Mauth Studio...'"
+${terminalIntroCommands}
 TERMINAL_COMMAND="$TERMINAL_COMMAND && printf 'Using pnpm: %s\\\\n' $(quote_arg "$RESOLVED_PNPM_COMMAND")"
-TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'This window owns any API/web processes started by the launcher.'"
-TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Desktop mode restarts stale or partial Mauth sessions before opening the browser.'"
-TERMINAL_COMMAND="$TERMINAL_COMMAND && echo 'Press Ctrl+C here to stop them.'"
 TERMINAL_COMMAND="$TERMINAL_COMMAND && $(quote_arg "$RESOLVED_PNPM_COMMAND") dev:launch:desktop"
 
 /usr/bin/osascript \\
@@ -298,11 +298,7 @@ await fs.mkdir(resourcesDir, { recursive: true });
 await fs.writeFile(path.join(contentsDir, "Info.plist"), infoPlist(), "utf8");
 await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { encoding: "utf8", mode: 0o755 });
 const installedIcon = await installAppIcon();
-await fs.writeFile(
-  path.join(resourcesDir, "README.txt"),
-  `Mauth Studio\n\nRuns pnpm dev:launch:desktop from:\n${repoRoot}\n\nStored pnpm command:\n${pnpmCommand}\n\nAt launch time the app uses the stored pnpm command when it still exists, then falls back to pnpm on PATH and common Homebrew/Corepack locations.\n\nThis app is a local development launcher. Desktop mode restarts stale or partial Mauth-owned runtime sessions before opening the browser, including the common case where the web server is still running but the API has stopped.\n\nLeave the Terminal window open while using Mauth Studio. Press Ctrl+C in that Terminal window to stop any API/web processes started by the launcher.\n\nFrom the repo root, run pnpm dev:status to inspect local Mauth servers, pnpm dev:stop to stop Mauth-owned local servers, or pnpm dev:launch:replace for a deliberate clean restart.\n`,
-  "utf8",
-);
+await fs.writeFile(path.join(resourcesDir, "README.txt"), launcherReadmeText({ repoRoot, pnpmCommand }), "utf8");
 
 let installedDesktopShortcut = false;
 if (createDesktopShortcut) {
