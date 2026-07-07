@@ -50,6 +50,7 @@ import {
 } from "@/components/editor/editorOptions";
 import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
+import { ExamCoverEditor, ExamInstructionsEditor, ExamTimeMaterialsEditor } from "@/components/front-matter/ExamDetailsEditors";
 import { ExamStructureEditor } from "@/components/front-matter/ExamStructureEditor";
 import { HeaderFileControls } from "@/components/header/HeaderFileControls";
 import { DocumentNavigator, tocSummaryText } from "@/components/navigation/DocumentNavigator";
@@ -1692,159 +1693,8 @@ function FrontMatterEditor({
 
       {titlePageTemplate === "exam" ? (
         <>
-          <CollapsiblePanel
-            title={<InlineSummaryTitle label="Exam cover" summary={`${exam.examHeading} · ${exam.sectionHeader}`} />}
-            defaultOpen={false}
-            className="bg-muted/20"
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Exam heading
-                <input
-                  value={exam.examHeading}
-                  onChange={(event) => updateExam({ examHeading: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Booklet title
-                <input
-                  value={exam.bookletTitle}
-                  onChange={(event) => updateExam({ bookletTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Running header course
-                <input
-                  value={exam.courseHeader}
-                  onChange={(event) => updateExam({ courseHeader: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Running header section
-                <input
-                  value={exam.sectionHeader}
-                  onChange={(event) => updateExam({ sectionHeader: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Student name label
-                <input
-                  value={exam.studentNumberLabel}
-                  onChange={(event) => updateExam({ studentNumberLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-            </div>
-          </CollapsiblePanel>
-
-          <CollapsiblePanel
-            title={<InlineSummaryTitle label="Exam time and materials" summary={`${exam.workingTimeLabel} ${exam.workingTime}`} />}
-            defaultOpen={false}
-            className="bg-muted/20"
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Time section title
-                <input
-                  value={exam.timeTitle}
-                  onChange={(event) => updateExam({ timeTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Reading time label
-                <input
-                  value={exam.readingTimeLabel}
-                  onChange={(event) => updateExam({ readingTimeLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Reading time
-                <input
-                  value={exam.readingTime}
-                  onChange={(event) => updateExam({ readingTime: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Working time label
-                <input
-                  value={exam.workingTimeLabel}
-                  onChange={(event) => updateExam({ workingTimeLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Working time
-                <input
-                  value={exam.workingTime}
-                  onChange={(event) => updateExam({ workingTime: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Additional booklets label
-                <Textarea
-                  value={exam.additionalBookletsLabel}
-                  onChange={(event) => updateExam({ additionalBookletsLabel: event.target.value })}
-                  className="min-h-16 text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Materials title
-                <input
-                  value={exam.materialsTitle}
-                  onChange={(event) => updateExam({ materialsTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Supervisor materials heading
-                <input
-                  value={exam.supervisorMaterialsTitle}
-                  onChange={(event) => updateExam({ supervisorMaterialsTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Supervisor materials
-                <Textarea
-                  value={exam.supervisorMaterials}
-                  onChange={(event) => updateExam({ supervisorMaterials: event.target.value })}
-                  className="min-h-20 text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Standard items
-                <Textarea
-                  value={exam.standardItems}
-                  onChange={(event) => updateExam({ standardItems: event.target.value })}
-                  className="min-h-24 text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Special items
-                <Textarea
-                  value={exam.specialItems}
-                  onChange={(event) => updateExam({ specialItems: event.target.value })}
-                  className="min-h-24 text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Important note
-                <Textarea
-                  value={exam.importantNoteBody}
-                  onChange={(event) => updateExam({ importantNoteBody: event.target.value })}
-                  className="min-h-24 text-sm"
-                />
-              </label>
-            </div>
-          </CollapsiblePanel>
+          <ExamCoverEditor exam={exam} onUpdateExam={updateExam} />
+          <ExamTimeMaterialsEditor exam={exam} onUpdateExam={updateExam} />
 
           <ExamStructureEditor
             exam={exam}
@@ -1857,73 +1707,7 @@ function FrontMatterEditor({
             onUpdateRowNumber={updateExamRowNumber}
           />
 
-          <CollapsiblePanel
-            title={<InlineSummaryTitle label="Exam instructions" summary={exam.instructionsTitle} />}
-            defaultOpen={false}
-            className="bg-muted/20"
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Instructions heading
-                <input
-                  value={exam.instructionsTitle}
-                  onChange={(event) => updateExam({ instructionsTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
-                Numbered instructions
-                <Textarea
-                  value={exam.instructionsBody}
-                  onChange={(event) => updateExam({ instructionsBody: event.target.value })}
-                  className="min-h-52 text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Continued footer text
-                <input
-                  value={exam.footerText}
-                  onChange={(event) => updateExam({ footerText: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Last question footer text
-                <input
-                  value={exam.endOfQuestionsFooterText}
-                  onChange={(event) => updateExam({ endOfQuestionsFooterText: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Supplementary page title
-                <input
-                  value={exam.supplementaryPageTitle}
-                  onChange={(event) => updateExam({ supplementaryPageTitle: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Supplementary question label
-                <input
-                  value={exam.supplementaryQuestionNumberLabel}
-                  onChange={(event) => updateExam({ supplementaryQuestionNumberLabel: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Minimum supplementary pages
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={exam.supplementaryPageCount}
-                  onChange={(event) => updateExam({ supplementaryPageCount: nonNegativeNumberOrDefault(Number(event.target.value), 0) })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-            </div>
-          </CollapsiblePanel>
+          <ExamInstructionsEditor exam={exam} onUpdateExam={updateExam} />
         </>
       ) : null}
 
