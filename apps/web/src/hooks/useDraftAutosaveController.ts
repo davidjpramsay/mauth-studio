@@ -3,7 +3,7 @@ import type { ProjectFileSummary } from "@mauth-studio/shared";
 
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
-import { fileChangedProjectSaveConflict } from "@/lib/projectSaveConflicts";
+import { draftAutosaveSavedMessage, draftAutosaveStartMessage, resolveDraftAutosaveRevisionPlan } from "@/lib/draftAutosaveLifecycle";
 
 interface AutosaveSnapshotLike {
   activeProjectFilePath?: string;
@@ -70,9 +70,7 @@ export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLik
     const { setDraftAutosaveStatus, setDraftAutosaveMessage, activeProjectFilePath, editorDocumentOpen, diskAutosaveDebounceMs } =
       optionsRef.current;
     setDraftAutosaveStatus("saving");
-    setDraftAutosaveMessage(
-      activeProjectFilePath ? "Autosaving file draft" : editorDocumentOpen ? "Autosaving draft" : "Saving closed workspace state",
-    );
+    setDraftAutosaveMessage(draftAutosaveStartMessage({ activeProjectFilePath, editorDocumentOpen }));
 
     const timeoutId = window.setTimeout(() => {
       async function saveDraftIfProjectRevisionIsCurrent() {
@@ -95,19 +93,24 @@ export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLik
         try {
           if (activeProjectFilePath && typeof activeProjectFileRevision === "number") {
             const summary = await loadProjectFileSummary(activeProjectFilePath);
-            if (summary && summary.revision > activeProjectFileRevision) {
-              const conflict = fileChangedProjectSaveConflict(activeProjectFilePath, activeProjectFileRevision, summary.revision);
-              if (isCurrentProjectFileClean()) {
-                setDraftAutosaveStatus("ready");
-                setDraftAutosaveMessage("File changed on disk; reloading");
-                reloadActiveProjectFileFromDisk();
-                return;
-              }
-              setProjectSaveConflict(conflict);
-              setProjectFilesStatus("error");
-              setProjectFilesMessage("File changed on disk");
-              setDraftAutosaveStatus("ready");
-              setDraftAutosaveMessage("Draft not autosaved; file changed on disk");
+            const revisionPlan = resolveDraftAutosaveRevisionPlan({
+              activeProjectFilePath,
+              activeProjectFileRevision,
+              remoteRevision: summary?.revision,
+              currentProjectFileClean: isCurrentProjectFileClean(),
+            });
+            if (revisionPlan.kind === "reload-clean-file") {
+              setDraftAutosaveStatus(revisionPlan.draftStatus);
+              setDraftAutosaveMessage(revisionPlan.draftMessage);
+              reloadActiveProjectFileFromDisk();
+              return;
+            }
+            if (revisionPlan.kind === "block-dirty-file") {
+              setProjectSaveConflict(revisionPlan.conflict);
+              setProjectFilesStatus(revisionPlan.projectFilesStatus);
+              setProjectFilesMessage(revisionPlan.projectFilesMessage);
+              setDraftAutosaveStatus(revisionPlan.draftStatus);
+              setDraftAutosaveMessage(revisionPlan.draftMessage);
               return;
             }
           }
@@ -115,8 +118,7 @@ export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLik
           const autosaveResponse = await saveDiskAutosave(autosaveSnapshot);
           if (autosaveSequenceRef.current !== autosaveSequence) return;
           setDraftAutosaveStatus("saved");
-          const updatedAt = autosaveResponse.updatedAt ? new Date(autosaveResponse.updatedAt).toLocaleTimeString() : "now";
-          setDraftAutosaveMessage(`Autosaved draft at ${updatedAt}`);
+          setDraftAutosaveMessage(draftAutosaveSavedMessage(autosaveResponse.updatedAt));
         } catch {
           if (autosaveSequenceRef.current !== autosaveSequence) return;
           setDraftAutosaveStatus("unavailable");
