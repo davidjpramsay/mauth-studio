@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { MauthSystemStatus, ProjectSummary } from "@mauth-studio/shared";
-import { RefreshCw, Terminal, X } from "lucide-react";
+import { Check, Copy, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { DraftAutosaveStatus, HeaderSaveStatus } from "@/hooks/useProjectFileStatus";
 import type { MauthWebBuildInfo, SystemStatusState } from "@/hooks/useSystemStatusController";
@@ -50,13 +50,37 @@ function SystemStatusRow({ label, value }: { label: string; value?: ReactNode })
 }
 
 function LauncherCommandRow({ command }: { command: LauncherCommand }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard?.writeText(command.command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   return (
     <div className="grid gap-1 border-b border-slate-200/70 py-2 last:border-b-0 md:grid-cols-[10rem_minmax(0,1fr)]">
       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{command.label}</dt>
-      <dd className="min-w-0">
-        <code className="block select-all rounded-md bg-slate-950 px-2 py-1.5 font-mono text-xs leading-5 text-slate-50">
+      <dd className="flex min-w-0 items-center gap-2">
+        <code className="min-w-0 flex-1 select-all rounded-md bg-slate-950 px-2 py-1.5 font-mono text-xs leading-5 text-slate-50">
           {command.command}
         </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          title={`Copy ${command.label.toLowerCase()} command`}
+          aria-label={`Copy ${command.label.toLowerCase()} command`}
+          onClick={() => void copyCommand()}
+        >
+          {copied ? <Check className="size-4 text-emerald-600" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+        </Button>
       </dd>
     </div>
   );
