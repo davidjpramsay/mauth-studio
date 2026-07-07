@@ -1,12 +1,10 @@
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, FileText, GitBranch, Trash2 } from "lucide-react";
 
 import { InlineSummaryTitle } from "@/components/MathText";
-import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
-import { ColumnsBlockEditor } from "@/components/editor/ColumnsBlockEditor";
-import { DiagramBlockEditor } from "@/components/editor/DiagramBlockEditor";
+import { EditorContentBlockPanel } from "@/components/editor/EditorContentBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import {
@@ -15,18 +13,9 @@ import {
   EditorSubsectionItemDropZone,
 } from "@/components/editor/EditorSubsectionDragControls";
 import { EditorInspectorPane } from "@/components/editor/EditorInspectorPane";
-import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
-import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
-import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
-import {
-  CHOICE_LIST_LAYOUTS,
-  CHOICE_NUMBERING_STYLES,
-  DIAGRAM_ALIGNMENTS,
-  DIAGRAM_TYPES,
-  TABLE_CELL_ALIGNMENTS,
-} from "@/components/editor/editorOptions";
+import { CHOICE_NUMBERING_STYLES, DIAGRAM_TYPES } from "@/components/editor/editorOptions";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
 import { DocumentNavigator, tocSummaryText } from "@/components/navigation/DocumentNavigator";
@@ -109,13 +98,7 @@ import {
 } from "@/lib/editorPersistence";
 import { createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
 import { createEditorBlockSelectionRuntime, type SelectedEditorBlock } from "@/lib/editorBlockSelection";
-import {
-  columnsBlockSummary,
-  createEditorBlockSummaryRuntime,
-  spaceBlockSummary,
-  tableBlockSummary,
-  textBlockSummary,
-} from "@/lib/editorBlockSummaries";
+import { createEditorBlockSummaryRuntime } from "@/lib/editorBlockSummaries";
 import { buildDocumentToc, isOrderedBlockVisible, markLabel, partMarks, partPanelSummary, questionMarks } from "@/lib/editorDocumentToc";
 import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import { type PreviewGraphConfigChange } from "@/lib/editorPreviewSegments";
@@ -200,7 +183,7 @@ import {
 import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig } from "@/lib/previewPageFormat";
 import { validateSolutionCompleteness } from "@/lib/solutionValidation";
-import { isContentBlockVisibleInScope, isSolutionTextBlock, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
+import { isContentBlockVisibleInScope, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
 import {
   EDITOR_PAGE_BREAK_DRAG_MIME,
   EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX,
@@ -379,7 +362,7 @@ const { normalizeQuestionBlocks, normalizeSectionHeadings, normalizeDocumentFlow
     normalizeContentBlocks,
   });
 
-const { choiceListSummary, tocBlockSummary } = createEditorBlockSummaryRuntime({
+const { tocBlockSummary } = createEditorBlockSummaryRuntime({
   withGraphDefaults,
   normalizeDiagramType,
   diagramTypes: DIAGRAM_TYPES,
@@ -3720,7 +3703,6 @@ export default function App() {
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(question.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
@@ -3734,136 +3716,30 @@ export default function App() {
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, blockTarget),
     };
 
-    if (block.kind === "space") {
-      const spacePanelLabel = isNotesTemplate ? `Blank space ${blockIndex + 1}` : `Answer space ${blockIndex + 1}`;
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <SpaceBlockEditor
-            label={spacePanelLabel}
-            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
-            lines={block.lines}
-            showLines={block.showLines ?? true}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(blockTarget, `Drag ${spacePanelLabel}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "diagram") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <DiagramBlockEditor
-            label={`Diagram block ${blockIndex + 1}`}
-            graphConfig={block.graphConfig}
-            alignment={block.diagramAlign}
-            showSolutions={effectiveShowSolutions}
-            settingsMode="inspector"
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            onActivateAnchor={activateEditorAnchor}
-            dragHandle={subsectionDragHandle(blockTarget, `Drag diagram block ${blockIndex + 1}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(graphConfig) => updateContentBlock(question.id, block.id, { graphConfig })}
-            onAlignmentChange={(diagramAlign) => updateContentBlock(question.id, block.id, { diagramAlign })}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "columns") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ColumnsBlockEditor
-            label={`Columns block ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Columns block ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
-            block={block}
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            showSolutions={effectiveShowSolutions}
-            spaceLabelPrefix={isNotesTemplate ? "Blank space" : "Answer space"}
-            dragHandle={subsectionDragHandle(blockTarget, `Drag columns block ${blockIndex + 1}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            openSignalForAnchor={openSignalForAnchor}
-            contentBlockForKind={contentBlockForKind}
-            diagramBlockForType={diagramBlockForType}
-            onActivateAnchor={activateEditorAnchor}
-            onContextMenuAnchor={handleEditorHeaderContextMenu}
-            onChange={(patch) => updateContentBlock(question.id, block.id, patch as Partial<EditorContentBlock>)}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "choices") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ChoiceListBlockEditor
-            label={`Choice list ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
-            block={block}
-            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
-            layoutOptions={CHOICE_LIST_LAYOUTS}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(blockTarget, `Drag choice list ${blockIndex + 1}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "table") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TableBlockEditor
-            label={`Table block ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Table block ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
-            block={block}
-            diagramAlignments={DIAGRAM_ALIGNMENTS}
-            cellAlignments={TABLE_CELL_ALIGNMENTS}
-            settingsMode="inspector"
-            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-            dragHandle={subsectionDragHandle(blockTarget, `Drag table block ${blockIndex + 1}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "text") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TextBlockEditor
-            label={`Text block ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Text block ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
-            text={block.text ?? ""}
-            dragHandle={subsectionDragHandle(blockTarget, `Drag text block ${blockIndex + 1}`)}
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            minHeightClassName="min-h-[110px]"
-            solutionMarkTools={isSolutionTextBlock(block)}
-            onChange={(text) => updateContentBlock(question.id, block.id, { text })}
-            onRemove={() => removeQuestionBlock(question.id, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    return null;
+    return (
+      <div key={block.id} {...wrapperProps}>
+        <EditorContentBlockPanel
+          block={block}
+          blockIndex={blockIndex}
+          context="question"
+          isNotesTemplate={isNotesTemplate}
+          showSolutions={effectiveShowSolutions}
+          anchor={blockAnchor}
+          activeAnchor={activeTocItemId}
+          active={blockActive}
+          openSignal={blockOpenSignal}
+          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
+          dragHandleForLabel={(label) => subsectionDragHandle(blockTarget, label)}
+          openSignalForAnchor={openSignalForAnchor}
+          contentBlockForKind={contentBlockForKind}
+          diagramBlockForType={diagramBlockForType}
+          onActivateAnchor={activateEditorAnchor}
+          onContextMenuAnchor={handleEditorHeaderContextMenu}
+          onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
+          onRemove={() => removeQuestionBlock(question.id, block.id)}
+        />
+      </div>
+    );
   }
 
   function renderPartContentBlock(
@@ -3892,7 +3768,6 @@ export default function App() {
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(part.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
@@ -3906,142 +3781,30 @@ export default function App() {
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, partBlockTarget),
     };
 
-    if (block.kind === "space") {
-      const spacePanelLabel = isNotesTemplate ? `Subheading blank space ${blockIndex + 1}` : `Part answer space ${blockIndex + 1}`;
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <SpaceBlockEditor
-            label={spacePanelLabel}
-            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
-            lines={block.lines}
-            showLines={block.showLines ?? true}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag ${spacePanelLabel}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "diagram") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <DiagramBlockEditor
-            label={`Part diagram ${blockIndex + 1}`}
-            graphConfig={block.graphConfig}
-            alignment={block.diagramAlign}
-            showSolutions={effectiveShowSolutions}
-            settingsMode="inspector"
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            onActivateAnchor={activateEditorAnchor}
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part diagram ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(graphConfig) => updatePartContentBlock(question.id, part.id, block.id, { graphConfig })}
-            onAlignmentChange={(diagramAlign) => updatePartContentBlock(question.id, part.id, block.id, { diagramAlign })}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "columns") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ColumnsBlockEditor
-            label={`Part columns ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Part columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
-            block={block}
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            showSolutions={effectiveShowSolutions}
-            spaceLabelPrefix={isNotesTemplate ? "Subheading blank space" : "Answer space"}
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part columns ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            openSignalForAnchor={openSignalForAnchor}
-            contentBlockForKind={contentBlockForKind}
-            diagramBlockForType={diagramBlockForType}
-            onActivateAnchor={activateEditorAnchor}
-            onContextMenuAnchor={handleEditorHeaderContextMenu}
-            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch as Partial<EditorContentBlock>)}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "choices") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ChoiceListBlockEditor
-            label={`Part choice list ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Part choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
-            block={block}
-            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
-            layoutOptions={CHOICE_LIST_LAYOUTS}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part choice list ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "table") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TableBlockEditor
-            label={`Part table ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Part table ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
-            block={block}
-            diagramAlignments={DIAGRAM_ALIGNMENTS}
-            cellAlignments={TABLE_CELL_ALIGNMENTS}
-            settingsMode="inspector"
-            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part table ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "text") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TextBlockEditor
-            label={`Part text ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Part text ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
-            text={block.text ?? ""}
-            dragHandle={subsectionDragHandle(partBlockTarget, `Drag part text ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            minHeightClassName="min-h-[74px]"
-            solutionMarkTools={isSolutionTextBlock(block)}
-            onChange={(text) => updatePartContentBlock(question.id, part.id, block.id, { text })}
-            onRemove={() => removePartBlock(question.id, part, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    return null;
+    return (
+      <div key={block.id} {...wrapperProps}>
+        <EditorContentBlockPanel
+          block={block}
+          blockIndex={blockIndex}
+          context="part"
+          isNotesTemplate={isNotesTemplate}
+          showSolutions={effectiveShowSolutions}
+          anchor={blockAnchor}
+          activeAnchor={activeTocItemId}
+          active={blockActive}
+          openSignal={blockOpenSignal}
+          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
+          dragHandleForLabel={(label) => subsectionDragHandle(partBlockTarget, label)}
+          openSignalForAnchor={openSignalForAnchor}
+          contentBlockForKind={contentBlockForKind}
+          diagramBlockForType={diagramBlockForType}
+          onActivateAnchor={activateEditorAnchor}
+          onContextMenuAnchor={handleEditorHeaderContextMenu}
+          onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
+          onRemove={() => removePartBlock(question.id, part, block.id)}
+        />
+      </div>
+    );
   }
 
   function renderSubpartContentBlock(
@@ -4066,7 +3829,6 @@ export default function App() {
     const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
     const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(subpart.contentBlocks) : undefined;
     const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const withInsertAfter = (node: ReactNode) => node;
     const wrapperProps = {
       "data-drag-preview": true,
       "data-scroll-anchor": blockAnchor,
@@ -4080,146 +3842,30 @@ export default function App() {
       onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, subpartBlockTarget),
     };
 
-    if (block.kind === "space") {
-      const spacePanelLabel = isNotesTemplate ? `Detail blank space ${blockIndex + 1}` : `Subpart answer space ${blockIndex + 1}`;
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <SpaceBlockEditor
-            label={spacePanelLabel}
-            title={<InlineSummaryTitle label={spacePanelLabel} summary={spaceBlockSummary(block.lines)} />}
-            lines={block.lines}
-            showLines={block.showLines ?? true}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag ${spacePanelLabel}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) =>
-              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
-            }
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "diagram") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <DiagramBlockEditor
-            label={`Subpart diagram ${blockIndex + 1}`}
-            graphConfig={block.graphConfig}
-            alignment={block.diagramAlign}
-            showSolutions={effectiveShowSolutions}
-            settingsMode="inspector"
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            onActivateAnchor={activateEditorAnchor}
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart diagram ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(graphConfig) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { graphConfig })}
-            onAlignmentChange={(diagramAlign) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { diagramAlign })}
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "columns") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ColumnsBlockEditor
-            label={`Subpart columns ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Subpart columns ${blockIndex + 1}`} summary={columnsBlockSummary(block)} />}
-            block={block}
-            anchor={blockAnchor}
-            activeAnchor={activeTocItemId}
-            showSolutions={effectiveShowSolutions}
-            spaceLabelPrefix={isNotesTemplate ? "Detail blank space" : "Answer space"}
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart columns ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            openSignalForAnchor={openSignalForAnchor}
-            contentBlockForKind={contentBlockForKind}
-            diagramBlockForType={diagramBlockForType}
-            onActivateAnchor={activateEditorAnchor}
-            onContextMenuAnchor={handleEditorHeaderContextMenu}
-            onChange={(patch) =>
-              updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch as Partial<EditorContentBlock>)
-            }
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "choices") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <ChoiceListBlockEditor
-            label={`Subpart choice list ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Subpart choice list ${blockIndex + 1}`} summary={choiceListSummary(block)} />}
-            block={block}
-            numberingStyleOptions={CHOICE_NUMBERING_STYLES}
-            layoutOptions={CHOICE_LIST_LAYOUTS}
-            settingsMode="inspector"
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart choice list ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "table") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TableBlockEditor
-            label={`Subpart table ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Subpart table ${blockIndex + 1}`} summary={tableBlockSummary(block)} />}
-            block={block}
-            diagramAlignments={DIAGRAM_ALIGNMENTS}
-            cellAlignments={TABLE_CELL_ALIGNMENTS}
-            settingsMode="inspector"
-            solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart table ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    if (block.kind === "text") {
-      return withInsertAfter(
-        <div key={block.id} {...wrapperProps}>
-          <TextBlockEditor
-            label={`Subpart text ${blockIndex + 1}`}
-            title={<InlineSummaryTitle label={`Subpart text ${blockIndex + 1}`} summary={textBlockSummary(block.text ?? "")} />}
-            text={block.text ?? ""}
-            dragHandle={subsectionDragHandle(subpartBlockTarget, `Drag subpart text ${blockIndex + 1}`)}
-            muted
-            active={blockActive}
-            openSignal={blockOpenSignal}
-            minHeightClassName="min-h-[68px]"
-            solutionMarkTools={isSolutionTextBlock(block)}
-            onChange={(text) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, { text })}
-            onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-          />
-        </div>,
-      );
-    }
-
-    return null;
+    return (
+      <div key={block.id} {...wrapperProps}>
+        <EditorContentBlockPanel
+          block={block}
+          blockIndex={blockIndex}
+          context="subpart"
+          isNotesTemplate={isNotesTemplate}
+          showSolutions={effectiveShowSolutions}
+          anchor={blockAnchor}
+          activeAnchor={activeTocItemId}
+          active={blockActive}
+          openSignal={blockOpenSignal}
+          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
+          dragHandleForLabel={(label) => subsectionDragHandle(subpartBlockTarget, label)}
+          openSignalForAnchor={openSignalForAnchor}
+          contentBlockForKind={contentBlockForKind}
+          diagramBlockForType={diagramBlockForType}
+          onActivateAnchor={activateEditorAnchor}
+          onContextMenuAnchor={handleEditorHeaderContextMenu}
+          onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
+          onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
+        />
+      </div>
+    );
   }
 
   function renderEditorPageBreakRow(target: EditorPageBreakTarget) {
