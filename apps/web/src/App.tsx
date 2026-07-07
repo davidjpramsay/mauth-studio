@@ -3,7 +3,6 @@ import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPoi
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, FileText, GitBranch, Trash2 } from "lucide-react";
 
-import { ActionProposalPanel } from "@/components/actions/ActionProposalPanel";
 import { InlineSummaryTitle } from "@/components/MathText";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { ColumnsBlockEditor } from "@/components/editor/ColumnsBlockEditor";
@@ -15,7 +14,7 @@ import {
   EditorSubsectionDragHandle,
   EditorSubsectionItemDropZone,
 } from "@/components/editor/EditorSubsectionDragControls";
-import { SelectionInspector } from "@/components/editor/SelectionInspector";
+import { EditorInspectorPane } from "@/components/editor/EditorInspectorPane";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
@@ -28,20 +27,18 @@ import {
   DIAGRAM_TYPES,
   TABLE_CELL_ALIGNMENTS,
 } from "@/components/editor/editorOptions";
-import { FileManagementDrawer } from "@/components/files/FileManagementDrawer";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
 import { DocumentNavigator, tocSummaryText } from "@/components/navigation/DocumentNavigator";
 import { DocumentNavigatorRail } from "@/components/navigation/DocumentNavigatorRail";
-import { NEW_TEST_TEMPLATES, NewTestDialog } from "@/components/new-document/NewTestDialog";
+import { NEW_TEST_TEMPLATES } from "@/components/new-document/NewTestDialog";
 import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview";
-import { SolutionValidationPanel } from "@/components/solutions/SolutionValidationPanel";
 import { AppHeader } from "@/components/shell/AppHeader";
+import { AppOverlays } from "@/components/shell/AppOverlays";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
-import { SystemStatusPanel } from "@/components/system/SystemStatusPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ContextMenu, type ContextMenuAction } from "@/components/ui/context-menu";
+import { type ContextMenuAction } from "@/components/ui/context-menu";
 import { useActiveProjectFileStateController } from "@/hooks/useActiveProjectFileStateController";
 import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
 import { useDocumentsFolderController } from "@/hooks/useDocumentsFolderController";
@@ -4878,31 +4875,19 @@ export default function App() {
                   </section>
                 ) : null}
 
-                {showInspectorPane ? (
-                  selectionInspectorVisible ? (
-                    <SelectionInspector
-                      selectedBlock={selectedEditorBlock}
-                      activeAnchor={activeTocItemId}
-                      onActivateAnchor={activateEditorAnchor}
-                      onBlockChange={updateSelectedBlock}
-                      onCreateSolutionCopy={createSolutionCopyForSelectedBlock}
-                      createTextBlock={textBlock}
-                      diagramTypePatch={diagramTypePatch}
-                      updateGraphConfig={updateGraphConfig}
-                      withGraphDefaults={withGraphDefaults}
-                    />
-                  ) : (
-                    <aside
-                      data-inspector-placement="inline"
-                      className="selection-inspector-pane flex min-h-0 min-w-0 flex-col overflow-hidden border-b bg-card/95 lg:border-b-0 lg:border-r"
-                    >
-                      <div className="shrink-0 border-b p-3">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inspector</div>
-                        <div className="mt-1 truncate text-sm font-semibold">No module selected</div>
-                      </div>
-                    </aside>
-                  )
-                ) : null}
+                <EditorInspectorPane
+                  open={showInspectorPane}
+                  visible={selectionInspectorVisible}
+                  selectedBlock={selectedEditorBlock}
+                  activeAnchor={activeTocItemId}
+                  onActivateAnchor={activateEditorAnchor}
+                  onBlockChange={updateSelectedBlock}
+                  onCreateSolutionCopy={createSolutionCopyForSelectedBlock}
+                  createTextBlock={textBlock}
+                  diagramTypePatch={diagramTypePatch}
+                  updateGraphConfig={updateGraphConfig}
+                  withGraphDefaults={withGraphDefaults}
+                />
 
                 {showPreview ? (
                   <section
@@ -4937,90 +4922,94 @@ export default function App() {
           )}
         </main>
       </div>
-      <FileManagementDrawer
-        open={fileManagerOpen}
-        activeProject={activeProject}
-        projectFiles={projectFiles}
-        projectFilesStatus={projectFilesStatus}
-        projectFilesMessage={projectFilesMessage}
-        activeProjectFilePath={activeProjectFilePath}
-        buildVersionPreview={projectFileVersionPreview}
-        onClose={() => setFileManagerOpen(false)}
-        onNewTest={startNewTest}
-        onOpenProjectFile={(filePath) => void openProjectFile(filePath)}
-        onCreateProjectFolder={(folderPath) => void createProjectFolder(folderPath)}
-        onExportProjectBackup={() => void exportCurrentProjectBackup()}
-        onImportProjectBackup={(file) => void importProjectBackupFile(file)}
-        onChooseDocumentsFolder={() => void chooseDocumentsFolder()}
-        onOpenDocumentsFolder={(folderPath) => void openDocumentsFolder(folderPath)}
-        onResetDocumentsFolder={() => void resetDocumentsFolder()}
-        onRefreshProjectFiles={() => void refreshProjectFiles()}
-        onRenameProjectFile={(filePath) => void renameProjectFile(filePath)}
-        onDuplicateProjectFiles={(filePaths) => void duplicateProjectFiles(filePaths)}
-        onMoveProjectFiles={(filePaths, targetFolderPath) => void moveProjectFiles(filePaths, targetFolderPath)}
-        onDeleteProjectFiles={(filePaths) => void removeProjectFiles(filePaths)}
-        onListProjectFileVersions={loadProjectFileVersions}
-        onRestoreProjectFileVersion={restoreProjectFileFromVersion}
-      />
-      {mauthDialogs.dialogNode}
-      <NewTestDialog open={newTestDialogOpen} onClose={() => setNewTestDialogOpen(false)} onCreate={createNewTestFromTemplate} />
-      <SystemStatusPanel
-        open={systemStatusPanelOpen}
-        status={systemStatus}
-        state={systemStatusState}
-        message={systemStatusMessage}
-        webBuild={webBuild}
-        activeProject={activeProject}
-        editorDocumentOpen={editorDocumentOpen}
-        currentFileName={currentProjectFileName}
-        activeProjectPathLabel={activeProjectPathLabel}
-        activeProjectFileRevision={activeProjectFileRevision}
-        headerStorageStatus={headerStorageStatus}
-        draftAutosaveStatus={draftAutosaveStatus}
-        draftAutosaveMessage={draftAutosaveMessage}
-        onRefresh={() => void refreshSystemStatus()}
-        onClose={() => setSystemStatusPanelOpen(false)}
-      />
-      {solutionValidationOpen ? (
-        <SolutionValidationPanel
-          result={solutionValidation}
-          onClose={() => setSolutionValidationOpen(false)}
-          onJump={jumpToSolutionValidationIssue}
-          onFix={applySolutionValidationFix}
-        />
-      ) : null}
-      {actionProposalOpen ? (
-        <ActionProposalPanel
-          value={actionProposalText}
-          message={actionProposalMessage}
-          result={actionProposalResult}
-          onChange={(nextValue) => {
+      <AppOverlays
+        fileManagement={{
+          open: fileManagerOpen,
+          activeProject,
+          projectFiles,
+          projectFilesStatus,
+          projectFilesMessage,
+          activeProjectFilePath,
+          buildVersionPreview: projectFileVersionPreview,
+          onClose: () => setFileManagerOpen(false),
+          onNewTest: startNewTest,
+          onOpenProjectFile: (filePath) => void openProjectFile(filePath),
+          onCreateProjectFolder: (folderPath) => void createProjectFolder(folderPath),
+          onExportProjectBackup: () => void exportCurrentProjectBackup(),
+          onImportProjectBackup: (file) => void importProjectBackupFile(file),
+          onChooseDocumentsFolder: () => void chooseDocumentsFolder(),
+          onOpenDocumentsFolder: (folderPath) => void openDocumentsFolder(folderPath),
+          onResetDocumentsFolder: () => void resetDocumentsFolder(),
+          onRefreshProjectFiles: () => void refreshProjectFiles(),
+          onRenameProjectFile: (filePath) => void renameProjectFile(filePath),
+          onDuplicateProjectFiles: (filePaths) => void duplicateProjectFiles(filePaths),
+          onMoveProjectFiles: (filePaths, targetFolderPath) => void moveProjectFiles(filePaths, targetFolderPath),
+          onDeleteProjectFiles: (filePaths) => void removeProjectFiles(filePaths),
+          onListProjectFileVersions: loadProjectFileVersions,
+          onRestoreProjectFileVersion: restoreProjectFileFromVersion,
+        }}
+        dialogNode={mauthDialogs.dialogNode}
+        newTestDialog={{
+          open: newTestDialogOpen,
+          onClose: () => setNewTestDialogOpen(false),
+          onCreate: createNewTestFromTemplate,
+        }}
+        systemStatusPanel={{
+          open: systemStatusPanelOpen,
+          status: systemStatus,
+          state: systemStatusState,
+          message: systemStatusMessage,
+          webBuild,
+          activeProject,
+          editorDocumentOpen,
+          currentFileName: currentProjectFileName,
+          activeProjectPathLabel,
+          activeProjectFileRevision,
+          headerStorageStatus,
+          draftAutosaveStatus,
+          draftAutosaveMessage,
+          onRefresh: () => void refreshSystemStatus(),
+          onClose: () => setSystemStatusPanelOpen(false),
+        }}
+        solutionValidationPanel={{
+          open: solutionValidationOpen,
+          result: solutionValidation,
+          onClose: () => setSolutionValidationOpen(false),
+          onJump: jumpToSolutionValidationIssue,
+          onFix: applySolutionValidationFix,
+        }}
+        actionProposalPanel={{
+          open: actionProposalOpen,
+          value: actionProposalText,
+          message: actionProposalMessage,
+          result: actionProposalResult,
+          onChange: (nextValue) => {
             setActionProposalText(nextValue);
             clearActionProposalFeedback();
-          }}
-          onPreview={previewActionProposal}
-          onApply={applyActionProposal}
-          onClose={() => setActionProposalOpen(false)}
-          onClear={clearActionProposal}
-        />
-      ) : null}
-      <ContextMenu menu={contextMenu} onClose={closeContextMenu} />
-      {printPreviewMounted && editorDocumentOpen ? (
-        <div className="print-preview-stage" aria-hidden="true">
-          <PaginatedTestPreview
-            frontMatter={frontMatter}
-            logos={logos}
-            totalMarks={totalMarks}
-            questions={questions}
-            sectionHeadings={sectionHeadings}
-            documentFlow={documentFlow}
-            normalizeDocumentFlow={normalizeDocumentFlow}
-            formattingConfig={formattingConfig}
-            scale={1}
-            showSolutions={effectiveShowSolutions}
-          />
-        </div>
-      ) : null}
+          },
+          onPreview: previewActionProposal,
+          onApply: applyActionProposal,
+          onClose: () => setActionProposalOpen(false),
+          onClear: clearActionProposal,
+        }}
+        contextMenu={{ menu: contextMenu, onClose: closeContextMenu }}
+        printPreview={
+          printPreviewMounted && editorDocumentOpen
+            ? {
+                frontMatter,
+                logos,
+                totalMarks,
+                questions,
+                sectionHeadings,
+                documentFlow,
+                normalizeDocumentFlow,
+                formattingConfig,
+                scale: 1,
+                showSolutions: effectiveShowSolutions,
+              }
+            : null
+        }
+      />
     </>
   );
 }
