@@ -18,7 +18,6 @@ import {
   FileText,
   FolderOpen,
   GitBranch,
-  GripVertical,
   ImagePlus,
   Moon,
   PanelRightClose,
@@ -39,6 +38,11 @@ import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
 import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
+import {
+  EditorSubsectionContainerDropZone,
+  EditorSubsectionDragHandle,
+  EditorSubsectionItemDropZone,
+} from "@/components/editor/EditorSubsectionDragControls";
 import { FunctionGraphEditor } from "@/components/editor/FunctionGraphEditor";
 import { Geometry2DGraphEditor } from "@/components/editor/Geometry2DGraphEditor";
 import { Graph3DGraphEditor } from "@/components/editor/Graph3DGraphEditor";
@@ -339,7 +343,6 @@ import {
   parseSubsectionDrag,
   serializeEditorPageBreakDrag,
   serializeSubsectionDrag,
-  subsectionContainerDataAttributes,
   subsectionContainerFromDataset,
   subsectionDropIntent,
   subsectionDropPreviewTargetKey,
@@ -356,6 +359,7 @@ import {
   type SubsectionDropIntent,
   type SubsectionDropPreview,
 } from "@/lib/editorSubsectionDrag";
+import { editorSubsectionDragClassName, editorSubsectionDropZoneLabel } from "@/lib/editorSubsectionDragControls";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
   SCROLL_ANCHOR_SELECTOR,
@@ -5118,12 +5122,10 @@ export default function App() {
         : dragOverEditorPageBreak?.targetKey === editorPageBreakTargetKey(target)
           ? dragOverEditorPageBreak.placement
           : null;
-    return cn(
-      "relative",
-      draggedSubsection && subsectionKey(draggedSubsection) === subsectionKey(target) && "scale-[0.995] opacity-70 shadow-2xl",
-      dropPlacement === "inside" &&
-        "bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background shadow-[0_0_0_4px_hsl(var(--primary)/0.10)]",
-    );
+    return editorSubsectionDragClassName({
+      isDragging: Boolean(draggedSubsection && subsectionKey(draggedSubsection) === subsectionKey(target)),
+      dropPlacement,
+    });
   }
 
   function containerDropZone(container: SubsectionContainerRef, placement: "start" | "end", visible = true) {
@@ -5142,23 +5144,22 @@ export default function App() {
     );
     const canDrop = subsectionCanDrop || pageBreakCanDrop;
     if (!canDrop) return null;
-    const label = pageBreakCanDrop && !subsectionCanDrop ? "Drop page break here" : containerDropZoneLabel(container, placement);
+    const label = editorSubsectionDropZoneLabel({
+      pageBreakCanDrop,
+      subsectionCanDrop,
+      fallbackLabel: containerDropZoneLabel(container, placement),
+    });
     return (
-      <div
+      <EditorSubsectionContainerDropZone
         key={targetKey}
-        data-subsection-container-drop="true"
-        data-subsection-container-placement={placement}
-        {...subsectionContainerDataAttributes(container)}
+        container={container}
+        placement={placement}
+        active={active}
+        label={label}
         onDragOver={(event) => handleContainerDropZoneDragOver(event, container, placement)}
         onDragLeave={(event) => handleContainerDropZoneDragLeave(event, container, placement)}
         onDrop={(event) => handleContainerDropZoneDrop(event, container, placement)}
-        className={cn(
-          "relative my-1 h-2 rounded-md border border-dashed border-transparent bg-transparent text-muted-foreground transition-all",
-          active && "my-3 h-11 border-primary bg-primary/10 text-primary shadow-inner",
-        )}
-      >
-        {active ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold">{label}</div> : null}
-      </div>
+      />
     );
   }
 
@@ -5178,50 +5179,34 @@ export default function App() {
     );
     const canDrop = subsectionCanDrop || pageBreakCanDrop;
     if (!canDrop) return null;
-    const label = pageBreakCanDrop && !subsectionCanDrop ? "Drop page break here" : itemDropZoneLabel(beforeItem);
+    const label = editorSubsectionDropZoneLabel({
+      pageBreakCanDrop,
+      subsectionCanDrop,
+      fallbackLabel: itemDropZoneLabel(beforeItem),
+    });
     return (
-      <div
+      <EditorSubsectionItemDropZone
         key={targetKey}
-        data-subsection-item-drop="true"
-        data-subsection-before-item-kind={beforeItem.kind}
-        data-subsection-before-item-id={beforeItem.id}
-        {...subsectionContainerDataAttributes(container)}
+        container={container}
+        beforeItem={beforeItem}
+        active={active}
+        label={label}
         onDragOver={(event) => handleItemDropZoneDragOver(event, container, beforeItem)}
         onDragLeave={(event) => handleItemDropZoneDragLeave(event, container, beforeItem)}
         onDrop={(event) => handleItemDropZoneDrop(event, container, beforeItem)}
-        className={cn(
-          "relative my-0.5 h-2 rounded-md border border-dashed border-transparent bg-transparent text-muted-foreground transition-all",
-          active && "my-2 h-12 border-primary bg-primary/10 text-primary shadow-inner",
-        )}
-      >
-        {active ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold">{label}</div> : null}
-      </div>
+      />
     );
   }
 
   function subsectionDragHandle(target: SubsectionDragTarget, label: string) {
     return (
-      <div
-        role="button"
-        tabIndex={0}
-        draggable
-        data-subsection-drag-handle="true"
-        title={label}
-        aria-label={label}
-        onClick={(event) => event.stopPropagation()}
+      <EditorSubsectionDragHandle
+        target={target}
+        label={label}
         onPointerDown={(event) => handleSubsectionPointerDown(event, target)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-        }}
         onDragStart={(event) => handleSubsectionDragStart(event, target)}
         onDragEnd={handleSubsectionDragEnd}
-        className="inline-flex size-8 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
-      >
-        <GripVertical className="pointer-events-none size-4" aria-hidden="true" />
-      </div>
+      />
     );
   }
 
