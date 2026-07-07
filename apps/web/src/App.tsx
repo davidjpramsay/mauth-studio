@@ -1,11 +1,11 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, Trash2 } from "lucide-react";
 
-import { EditorContentBlockPanel } from "@/components/editor/EditorContentBlockPanel";
 import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
 import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
+import { EditorScopedContentBlockPanel } from "@/components/editor/EditorScopedContentBlockPanel";
 import { EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import {
@@ -87,7 +87,6 @@ import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview"
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
 import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
-import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
   createEditorPersistence,
@@ -211,7 +210,6 @@ import {
   subsectionKey,
   subsectionOrderItem,
   subsectionSourceContainer,
-  subsectionTargetDataAttributes,
   subsectionTargetFromDataset,
   type EditorPageBreakDropPreview,
   type EditorPageBreakTarget,
@@ -3688,53 +3686,34 @@ export default function App() {
   ) {
     if (!isOrderedBlockVisible(questionItems, itemIndex, effectiveShowSolutions)) return null;
 
-    const blockIndex = Math.max(
-      0,
-      question.contentBlocks.filter((current) => current.kind !== "pageBreak").findIndex((current) => current.id === block.id),
-    );
     const blockTarget: SubsectionDragTarget = { kind: "question-block", questionId: question.id, id: block.id };
-    const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(blockTarget));
     const blockAnchor = questionBlockScrollAnchor(question.id, block.id);
-    const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
-    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(question.contentBlocks) : undefined;
-    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const wrapperProps = {
-      "data-drag-preview": true,
-      "data-scroll-anchor": blockAnchor,
-      ...subsectionTargetDataAttributes(blockTarget),
-      className: wrapperClassName,
-      onPointerDownCapture: activateBlockAnchor,
-      onFocusCapture: activateBlockAnchor,
-      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
-      onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, blockTarget),
-      onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, blockTarget),
-      onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, blockTarget),
-    };
 
     return (
-      <div key={block.id} {...wrapperProps}>
-        <EditorContentBlockPanel
-          block={block}
-          blockIndex={blockIndex}
-          context="question"
-          isNotesTemplate={isNotesTemplate}
-          showSolutions={effectiveShowSolutions}
-          anchor={blockAnchor}
-          activeAnchor={activeTocItemId}
-          active={blockActive}
-          openSignal={blockOpenSignal}
-          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-          dragHandleForLabel={(label) => subsectionDragHandle(blockTarget, label)}
-          openSignalForAnchor={openSignalForAnchor}
-          contentBlockForKind={contentBlockForKind}
-          diagramBlockForType={diagramBlockForType}
-          onActivateAnchor={activateEditorAnchor}
-          onContextMenuAnchor={handleEditorHeaderContextMenu}
-          onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
-          onRemove={() => removeQuestionBlock(question.id, block.id)}
-        />
-      </div>
+      <EditorScopedContentBlockPanel
+        key={block.id}
+        block={block}
+        scopeBlocks={question.contentBlocks}
+        context="question"
+        target={blockTarget}
+        anchor={blockAnchor}
+        isNotesTemplate={isNotesTemplate}
+        showSolutions={effectiveShowSolutions}
+        activeAnchor={activeTocItemId}
+        openSignal={openSignalForAnchor(blockAnchor)}
+        dragClasses={subsectionDragClasses}
+        dragHandle={subsectionDragHandle}
+        openSignalForAnchor={openSignalForAnchor}
+        contentBlockForKind={contentBlockForKind}
+        diagramBlockForType={diagramBlockForType}
+        onActivateAnchor={activateEditorAnchor}
+        onContextMenuAnchor={handleEditorHeaderContextMenu}
+        onDragOver={handleSubsectionDragOver}
+        onDragLeave={handleSubsectionDragLeave}
+        onDrop={handleSubsectionDrop}
+        onChange={(patch) => updateContentBlock(question.id, block.id, patch)}
+        onRemove={() => removeQuestionBlock(question.id, block.id)}
+      />
     );
   }
 
@@ -3748,58 +3727,39 @@ export default function App() {
   ) {
     if (!isOrderedBlockVisible(partItems, itemIndex, effectiveShowSolutions)) return null;
 
-    const blockIndex = Math.max(
-      0,
-      part.contentBlocks.filter((current) => current.kind !== "pageBreak").findIndex((current) => current.id === block.id),
-    );
     const partBlockTarget: SubsectionDragTarget = {
       kind: "part-block",
       questionId: question.id,
       partId: part.id,
       id: block.id,
     };
-    const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(partBlockTarget));
     const blockAnchor = partBlockScrollAnchor(question.id, part.id, block.id);
-    const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
-    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(part.contentBlocks) : undefined;
-    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const wrapperProps = {
-      "data-drag-preview": true,
-      "data-scroll-anchor": blockAnchor,
-      ...subsectionTargetDataAttributes(partBlockTarget),
-      className: wrapperClassName,
-      onPointerDownCapture: activateBlockAnchor,
-      onFocusCapture: activateBlockAnchor,
-      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
-      onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, partBlockTarget),
-      onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, partBlockTarget),
-      onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, partBlockTarget),
-    };
 
     return (
-      <div key={block.id} {...wrapperProps}>
-        <EditorContentBlockPanel
-          block={block}
-          blockIndex={blockIndex}
-          context="part"
-          isNotesTemplate={isNotesTemplate}
-          showSolutions={effectiveShowSolutions}
-          anchor={blockAnchor}
-          activeAnchor={activeTocItemId}
-          active={blockActive}
-          openSignal={blockOpenSignal}
-          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-          dragHandleForLabel={(label) => subsectionDragHandle(partBlockTarget, label)}
-          openSignalForAnchor={openSignalForAnchor}
-          contentBlockForKind={contentBlockForKind}
-          diagramBlockForType={diagramBlockForType}
-          onActivateAnchor={activateEditorAnchor}
-          onContextMenuAnchor={handleEditorHeaderContextMenu}
-          onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
-          onRemove={() => removePartBlock(question.id, part, block.id)}
-        />
-      </div>
+      <EditorScopedContentBlockPanel
+        key={block.id}
+        block={block}
+        scopeBlocks={part.contentBlocks}
+        context="part"
+        target={partBlockTarget}
+        anchor={blockAnchor}
+        isNotesTemplate={isNotesTemplate}
+        showSolutions={effectiveShowSolutions}
+        activeAnchor={activeTocItemId}
+        openSignal={openSignalForAnchor(blockAnchor)}
+        dragClasses={subsectionDragClasses}
+        dragHandle={subsectionDragHandle}
+        openSignalForAnchor={openSignalForAnchor}
+        contentBlockForKind={contentBlockForKind}
+        diagramBlockForType={diagramBlockForType}
+        onActivateAnchor={activateEditorAnchor}
+        onContextMenuAnchor={handleEditorHeaderContextMenu}
+        onDragOver={handleSubsectionDragOver}
+        onDragLeave={handleSubsectionDragLeave}
+        onDrop={handleSubsectionDrop}
+        onChange={(patch) => updatePartContentBlock(question.id, part.id, block.id, patch)}
+        onRemove={() => removePartBlock(question.id, part, block.id)}
+      />
     );
   }
 
@@ -3819,48 +3779,33 @@ export default function App() {
       subpartId: subpart.id,
       id: block.id,
     };
-    const wrapperClassName = cn("rounded-md transition-all", subsectionDragClasses(subpartBlockTarget));
     const blockAnchor = subpartBlockScrollAnchor(question.id, part.id, subpart.id, block.id);
-    const blockOpenSignal = openSignalForAnchor(blockAnchor);
-    const blockActive = scrollAnchorContains(blockAnchor, activeTocItemId);
-    const tableSolutionEntryMasks = block.kind === "table" ? tableSolutionEntryMasksForBlocks(subpart.contentBlocks) : undefined;
-    const activateBlockAnchor = () => activateEditorAnchor(blockAnchor);
-    const wrapperProps = {
-      "data-drag-preview": true,
-      "data-scroll-anchor": blockAnchor,
-      ...subsectionTargetDataAttributes(subpartBlockTarget),
-      className: wrapperClassName,
-      onPointerDownCapture: activateBlockAnchor,
-      onFocusCapture: activateBlockAnchor,
-      onContextMenu: (event: ReactMouseEvent<HTMLElement>) => handleEditorHeaderContextMenu(event, blockAnchor),
-      onDragOver: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragOver(event, subpartBlockTarget),
-      onDragLeave: (event: DragEvent<HTMLDivElement>) => handleSubsectionDragLeave(event, subpartBlockTarget),
-      onDrop: (event: DragEvent<HTMLDivElement>) => handleSubsectionDrop(event, subpartBlockTarget),
-    };
 
     return (
-      <div key={block.id} {...wrapperProps}>
-        <EditorContentBlockPanel
-          block={block}
-          blockIndex={blockIndex}
-          context="subpart"
-          isNotesTemplate={isNotesTemplate}
-          showSolutions={effectiveShowSolutions}
-          anchor={blockAnchor}
-          activeAnchor={activeTocItemId}
-          active={blockActive}
-          openSignal={blockOpenSignal}
-          solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-          dragHandleForLabel={(label) => subsectionDragHandle(subpartBlockTarget, label)}
-          openSignalForAnchor={openSignalForAnchor}
-          contentBlockForKind={contentBlockForKind}
-          diagramBlockForType={diagramBlockForType}
-          onActivateAnchor={activateEditorAnchor}
-          onContextMenuAnchor={handleEditorHeaderContextMenu}
-          onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
-          onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
-        />
-      </div>
+      <EditorScopedContentBlockPanel
+        key={block.id}
+        block={block}
+        scopeBlocks={subpart.contentBlocks}
+        context="subpart"
+        target={subpartBlockTarget}
+        anchor={blockAnchor}
+        isNotesTemplate={isNotesTemplate}
+        showSolutions={effectiveShowSolutions}
+        activeAnchor={activeTocItemId}
+        openSignal={openSignalForAnchor(blockAnchor)}
+        dragClasses={subsectionDragClasses}
+        dragHandle={subsectionDragHandle}
+        openSignalForAnchor={openSignalForAnchor}
+        contentBlockForKind={contentBlockForKind}
+        diagramBlockForType={diagramBlockForType}
+        onActivateAnchor={activateEditorAnchor}
+        onContextMenuAnchor={handleEditorHeaderContextMenu}
+        onDragOver={handleSubsectionDragOver}
+        onDragLeave={handleSubsectionDragLeave}
+        onDrop={handleSubsectionDrop}
+        onChange={(patch) => updateSubpartContentBlock(question.id, part.id, subpart.id, block.id, patch)}
+        onRemove={() => removeSubpartBlock(question.id, part, subpart, block.id)}
+      />
     );
   }
 
