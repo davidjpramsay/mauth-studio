@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { insertionActionLabel, insertionActionTooltip } from "@/lib/editorInsertionActions";
 import { cn } from "@/lib/utils";
 
 export const EDITOR_ACTIVE_PANEL_CLASS = "border-primary/70 bg-primary/[0.03] shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]";
@@ -165,9 +166,8 @@ export function ContentInsertionActions({
   const [open, setOpen] = useState(false);
   const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null);
   const actionVerb = buttonLabel;
-  const solutionLabel = (label: string) => (solutionMode ? `Solution ${label.toLowerCase()}` : label);
-  const solutionTooltip = (label: string, fallback: string) =>
-    solutionMode ? `${actionVerb} a solution-only ${label.toLowerCase()} here` : fallback;
+  const solutionLabel = (label: string) => insertionActionLabel(label, solutionMode);
+  const solutionTooltip = (label: string, fallback: string) => insertionActionTooltip({ actionVerb, label, fallback, solutionMode });
   const actions: InsertionAction[] = [
     onAddText
       ? {
@@ -179,8 +179,8 @@ export function ContentInsertionActions({
       : null,
     onAddChoices
       ? {
-          label: "Choice list",
-          tooltip: `${actionVerb} answer choices such as i, ii, iii`,
+          label: solutionLabel("Choice list"),
+          tooltip: solutionTooltip("choice list", `${actionVerb} answer choices such as i, ii, iii`),
           icon: <ListOrdered className="size-4" aria-hidden="true" />,
           onClick: onAddChoices,
         }
