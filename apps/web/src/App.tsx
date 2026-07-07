@@ -3,9 +3,9 @@ import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPoi
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, FileText, GitBranch, Trash2 } from "lucide-react";
 
-import { InlineSummaryTitle } from "@/components/MathText";
 import { EditorContentBlockPanel } from "@/components/editor/EditorContentBlockPanel";
-import { CollapsiblePanel, ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS, RemoveActionButton } from "@/components/editor/EditorPanels";
+import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
+import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
 import { EditorPageBreakRow } from "@/components/editor/EditorPageBreakRow";
 import {
   EditorSubsectionContainerDropZone,
@@ -99,12 +99,11 @@ import {
 import { createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
 import { createEditorBlockSelectionRuntime, type SelectedEditorBlock } from "@/lib/editorBlockSelection";
 import { createEditorBlockSummaryRuntime } from "@/lib/editorBlockSummaries";
-import { buildDocumentToc, isOrderedBlockVisible, markLabel, partMarks, partPanelSummary, questionMarks } from "@/lib/editorDocumentToc";
+import { buildDocumentToc, isOrderedBlockVisible, markLabel, questionMarks } from "@/lib/editorDocumentToc";
 import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import { type PreviewGraphConfigChange } from "@/lib/editorPreviewSegments";
 import { createEditorContentBlockNormalizer, spaceLines } from "@/lib/editorContentBlockNormalization";
 import {
-  alphaLabel,
   createEditorDocumentNormalizer,
   defaultDocumentFlow,
   orderItemKey,
@@ -3896,271 +3895,46 @@ export default function App() {
     ];
   }
 
-  function renderSubpartPanel(question: QuestionBlock, part: EditorPart, subpart: EditorSubpart) {
-    const subpartIndex = Math.max(
-      0,
-      (part.subparts ?? []).findIndex((current) => current.id === subpart.id),
-    );
-    const subpartLabel = romanLabel(subpartIndex);
-    const subpartTarget: SubsectionDragTarget = {
-      kind: "subpart",
-      questionId: question.id,
-      partId: part.id,
-      id: subpart.id,
-    };
-    const subpartAnchor = subpartScrollAnchor(question.id, part.id, subpart.id);
-    const subpartOpenSignal = openSignalForAnchor(subpartAnchor);
-    const subpartActive = isActiveEditorAnchor(subpartAnchor);
-    const subpartPanelLabel = isNotesTemplate ? `Detail ${subpartIndex + 1}` : `Subpart (${subpartLabel})`;
-    const subpartSolutionInsertion = solutionSlotInsertionPlan({
-      supportsSolutionTools,
-      marks: subpart.marks,
-      scope: "subpart",
-    });
-    const subpartContainer: SubsectionContainerRef = {
-      kind: "subpart",
-      questionId: question.id,
-      partId: part.id,
-      subpartId: subpart.id,
-    };
-    return (
-      <div
-        key={subpart.id}
-        data-drag-preview
-        data-scroll-anchor={subpartAnchor}
-        {...subsectionTargetDataAttributes(subpartTarget)}
-        className={cn("rounded-md transition-all", subsectionDragClasses(subpartTarget))}
-        onDragOver={(event) => {
-          if (handleEditorPageBreakDragOver(event, subpartTarget)) return;
-          handleSubsectionDragOver(event, subpartTarget);
-        }}
-        onDragLeave={(event) => {
-          handleEditorPageBreakDragLeave(event, subpartTarget);
-          handleSubsectionDragLeave(event, subpartTarget);
-        }}
-        onDrop={(event) => {
-          if (handleEditorPageBreakDrop(event, subpartTarget)) return;
-          handleSubsectionDrop(event, subpartTarget);
-        }}
-      >
-        <CollapsiblePanel
-          title={<InlineSummaryTitle label={subpartPanelLabel} summary={partPanelSummary(subpart.contentBlocks)} />}
-          leading={subsectionDragHandle(subpartTarget, `Drag ${subpartPanelLabel}`)}
-          onHeaderContextMenu={(event) => openContextMenu(event, subpartAnchor, "editor")}
-          actions={
-            <>
-              {!isNotesTemplate ? (
-                <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                  Marks
-                  <input
-                    type="number"
-                    min={0}
-                    value={subpart.marks}
-                    onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
-                    className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                  />
-                </label>
-              ) : null}
-              <RemoveActionButton label={`Remove ${subpartPanelLabel}`} onRemove={() => removeSubpart(question.id, part, subpart.id)} />
-            </>
-          }
-          className="bg-muted/20"
-          bodyClassName="p-3"
-          defaultOpen={false}
-          active={subpartActive}
-          openSignal={subpartOpenSignal}
-        >
-          <div className="flex flex-col gap-3">
-            {subpart.contentBlocks.map((block, blockIndex) => {
-              if (block.kind === "pageBreak") return null;
-              const beforeItem: ContainerOrderItem = { kind: "block", id: block.id };
-              return (
-                <Fragment key={block.id}>
-                  {itemDropZone(subpartContainer, beforeItem, Boolean(draggedSubsection))}
-                  {renderSubpartContentBlock(question, part, subpart, block, blockIndex)}
-                </Fragment>
-              );
-            })}
-          </div>
-          {containerDropZone(subpartContainer, "end", Boolean(draggedSubsection))}
-          <ContentInsertionActions
-            buttonLabel="Add"
-            solutionMode={effectiveShowSolutions}
-            centered
-            className="mt-3 pt-3"
-            onAddText={() => addSubpartBlock(question.id, part, subpart, "text")}
-            onAddChoices={() => addSubpartBlock(question.id, part, subpart, "choices")}
-            onAddTable={() => addSubpartBlock(question.id, part, subpart, "table")}
-            onAddDiagram={() => addSubpartBlock(question.id, part, subpart, "diagram")}
-            diagramActions={quickDiagramInsertActions((type) => addSubpartDiagramBlock(question.id, part, subpart, type))}
-            onAddColumns={() => addSubpartBlock(question.id, part, subpart, "columns")}
-            onAddSpace={() =>
-              subpartSolutionInsertion.usesPairedSolutionSpace
-                ? addSubpartSolutionSlot(question.id, part, subpart)
-                : addSubpartBlock(question.id, part, subpart, "space")
-            }
-            spaceActionLabel={subpartSolutionInsertion.spaceActionLabel}
-            spaceActionTooltip={subpartSolutionInsertion.spaceActionTooltip}
-            extraActions={[...solutionSlotExtraActions(subpartSolutionInsertion, () => addSubpartSolutionSlot(question.id, part, subpart))]}
-          />
-        </CollapsiblePanel>
-      </div>
-    );
-  }
-
   function renderPartPanel(question: QuestionBlock, part: EditorPart) {
-    const subparts = part.subparts ?? [];
-    const partItems = orderedPartItems(part);
-    const partIndex = Math.max(
-      0,
-      question.parts.findIndex((current) => current.id === part.id),
-    );
-    const partTarget: SubsectionDragTarget = { kind: "part", questionId: question.id, id: part.id };
-    const partLabel = alphaLabel(partIndex);
-    const partAnchor = partScrollAnchor(question.id, part.id);
-    const partOpenSignal = openSignalForAnchor(partAnchor);
-    const partActive = isActiveEditorAnchor(partAnchor);
-    const partPanelLabel = isNotesTemplate ? `Subheading ${partIndex + 1}` : `Part (${partLabel})`;
-    const partSolutionInsertion = solutionSlotInsertionPlan({
-      supportsSolutionTools,
-      marks: part.marks,
-      scope: "part",
-      hasNestedItems: Boolean(subparts.length),
-    });
-    const partContainer: SubsectionContainerRef = { kind: "part", questionId: question.id, partId: part.id };
-    const nextSubpartPageBreakTarget = subpartPageBreakInsertTarget(question.id, part);
-    const partInsertAction = {
-      label: isNotesTemplate ? "Detail" : "Subpart",
-      tooltip: isNotesTemplate
-        ? "Add a nested detail section inside this subheading"
-        : "Add a roman-numbered item, such as (i), inside this part",
-      icon: <GitBranch className="size-4" aria-hidden="true" />,
-      onClick: () => addSubpart(question.id, part),
-    };
-    const partPageBreakInsertAction = {
-      label: "Page break",
-      tooltip: nextSubpartPageBreakTarget
-        ? "Add a page-break row before an existing subpart"
-        : "Add a subpart first, then insert a page-break row before it",
-      icon: <FileText className="size-4" aria-hidden="true" />,
-      disabled: !nextSubpartPageBreakTarget,
-      onClick: () => addSubpartPageBreak(question.id, part),
-    };
     return (
-      <div key={part.id} data-scroll-anchor={partAnchor}>
-        <div
-          data-drag-preview
-          {...subsectionTargetDataAttributes(partTarget)}
-          className={cn("rounded-md transition-all", subsectionDragClasses(partTarget))}
-          onDragOver={(event) => {
-            if (handleEditorPageBreakDragOver(event, partTarget)) return;
-            handleSubsectionDragOver(event, partTarget);
-          }}
-          onDragLeave={(event) => {
-            handleEditorPageBreakDragLeave(event, partTarget);
-            handleSubsectionDragLeave(event, partTarget);
-          }}
-          onDrop={(event) => {
-            if (handleEditorPageBreakDrop(event, partTarget)) return;
-            handleSubsectionDrop(event, partTarget);
-          }}
-        >
-          <CollapsiblePanel
-            title={<InlineSummaryTitle label={partPanelLabel} summary={partPanelSummary(part.contentBlocks)} />}
-            leading={subsectionDragHandle(partTarget, `Drag ${partPanelLabel}`)}
-            onHeaderContextMenu={(event) => openContextMenu(event, partAnchor, "editor")}
-            actions={
-              <>
-                {!isNotesTemplate && subparts.length ? (
-                  <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                    Marks
-                    <div className="flex h-8 w-20 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
-                      {markLabel(partMarks(part))}
-                    </div>
-                  </div>
-                ) : null}
-                {!isNotesTemplate && !subparts.length ? (
-                  <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
-                    Marks
-                    <input
-                      type="number"
-                      min={0}
-                      value={part.marks}
-                      onChange={(event) => updatePart(question.id, part.id, { marks: Number(event.target.value) })}
-                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    />
-                  </label>
-                ) : null}
-                <RemoveActionButton label={`Remove ${partPanelLabel}`} onRemove={() => removePart(question.id, part.id)} />
-              </>
-            }
-            className="bg-background"
-            bodyClassName="p-3"
-            defaultOpen={false}
-            active={partActive}
-            openSignal={partOpenSignal}
-          >
-            <div className="flex flex-col gap-3">
-              {partItems.map((item, partItemIndex) => {
-                const beforeItem: ContainerOrderItem =
-                  item.kind === "block" ? { kind: "block", id: item.id } : { kind: "subpart", id: item.id };
-                const beforeDropZone = itemDropZone(partContainer, beforeItem, Boolean(draggedSubsection || draggedEditorPageBreak));
-
-                if (item.kind === "block") {
-                  return (
-                    <Fragment key={item.id}>
-                      {beforeDropZone}
-                      {renderPartContentBlock(question, part, item.block, partItemIndex, partItems.length, partItems)}
-                    </Fragment>
-                  );
-                }
-
-                return (
-                  <Fragment key={item.id}>
-                    {beforeDropZone}
-                    <div className="ml-6 space-y-2 border-l-2 border-blue-200 pl-4">
-                      {item.subpart.pageBreakBefore
-                        ? renderEditorPageBreakRow({
-                            kind: "subpart",
-                            questionId: question.id,
-                            partId: part.id,
-                            subpartId: item.subpart.id,
-                          })
-                        : null}
-                      {renderSubpartPanel(question, part, item.subpart)}
-                    </div>
-                  </Fragment>
-                );
-              })}
-            </div>
-            {containerDropZone(partContainer, "end", Boolean(draggedSubsection || draggedEditorPageBreak))}
-            <ContentInsertionActions
-              buttonLabel="Add"
-              solutionMode={effectiveShowSolutions}
-              centered
-              className="mt-3 pt-3"
-              onAddText={() => addPartBlock(question.id, part, "text")}
-              onAddChoices={() => addPartBlock(question.id, part, "choices")}
-              onAddTable={() => addPartBlock(question.id, part, "table")}
-              onAddDiagram={() => addPartBlock(question.id, part, "diagram")}
-              diagramActions={quickDiagramInsertActions((type) => addPartDiagramBlock(question.id, part, type))}
-              onAddColumns={() => addPartBlock(question.id, part, "columns")}
-              onAddSpace={() =>
-                partSolutionInsertion.usesPairedSolutionSpace
-                  ? addPartSolutionSlot(question.id, part)
-                  : addPartBlock(question.id, part, "space")
-              }
-              spaceActionLabel={partSolutionInsertion.spaceActionLabel}
-              spaceActionTooltip={partSolutionInsertion.spaceActionTooltip}
-              extraActions={[
-                ...solutionSlotExtraActions(partSolutionInsertion, () => addPartSolutionSlot(question.id, part)),
-                partInsertAction,
-                partPageBreakInsertAction,
-              ]}
-            />
-          </CollapsiblePanel>
-        </div>
-      </div>
+      <EditorNestedPartPanel
+        key={part.id}
+        question={question}
+        part={part}
+        isNotesTemplate={isNotesTemplate}
+        supportsSolutionTools={supportsSolutionTools}
+        effectiveShowSolutions={effectiveShowSolutions}
+        draggedSubsectionActive={Boolean(draggedSubsection)}
+        draggedEditorPageBreakActive={Boolean(draggedEditorPageBreak)}
+        openSignalForAnchor={openSignalForAnchor}
+        isActiveEditorAnchor={isActiveEditorAnchor}
+        onHeaderContextMenu={(event, anchor) => openContextMenu(event, anchor, "editor")}
+        dragClasses={subsectionDragClasses}
+        dragHandle={subsectionDragHandle}
+        itemDropZone={itemDropZone}
+        containerDropZone={containerDropZone}
+        renderPartContentBlock={renderPartContentBlock}
+        renderSubpartContentBlock={renderSubpartContentBlock}
+        renderEditorPageBreakRow={renderEditorPageBreakRow}
+        onEditorPageBreakDragOver={handleEditorPageBreakDragOver}
+        onEditorPageBreakDragLeave={handleEditorPageBreakDragLeave}
+        onEditorPageBreakDrop={handleEditorPageBreakDrop}
+        onSubsectionDragOver={handleSubsectionDragOver}
+        onSubsectionDragLeave={handleSubsectionDragLeave}
+        onSubsectionDrop={handleSubsectionDrop}
+        updatePart={updatePart}
+        updateSubpart={updateSubpart}
+        removePart={removePart}
+        removeSubpart={removeSubpart}
+        addPartBlock={addPartBlock}
+        addPartDiagramBlock={addPartDiagramBlock}
+        addPartSolutionSlot={addPartSolutionSlot}
+        addSubpart={addSubpart}
+        addSubpartPageBreak={addSubpartPageBreak}
+        addSubpartBlock={addSubpartBlock}
+        addSubpartDiagramBlock={addSubpartDiagramBlock}
+        addSubpartSolutionSlot={addSubpartSolutionSlot}
+      />
     );
   }
 
