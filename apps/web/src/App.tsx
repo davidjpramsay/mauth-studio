@@ -85,6 +85,7 @@ import {
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
+import { scrollToAnchorPosition, syncPreviewSelection } from "@/lib/editorDomNavigation";
 import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
 import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
@@ -179,6 +180,7 @@ import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig } from "@/lib/previewPageFormat";
 import { validateSolutionCompleteness } from "@/lib/solutionValidation";
 import { isContentBlockVisibleInScope, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
+import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import {
   EDITOR_PAGE_BREAK_DRAG_MIME,
   EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX,
@@ -221,9 +223,6 @@ import {
 import { editorSubsectionDragClassName, editorSubsectionDropZoneLabel } from "@/lib/editorSubsectionDragControls";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
-  SCROLL_ANCHOR_SELECTOR,
-  SCROLL_ANCHOR_TOP_OFFSET_PX,
-  clamp,
   columnBlockParentScrollAnchor,
   columnPathScrollAnchor,
   graphChildParentScrollAnchor,
@@ -239,14 +238,11 @@ import {
   questionScrollAnchor,
   scrollAnchorContains,
   scrollAnchorFallbacks,
-  scrollAnchorValue,
-  scrollableRange,
   sectionHeadingIdFromScrollAnchor,
   sectionHeadingScrollAnchor,
   subpartBlockScrollAnchor,
   subpartScrollAnchor,
   type ParsedScrollAnchor,
-  type ScrollAnchorPosition,
 } from "@/lib/scrollAnchors";
 import { cn } from "@/lib/utils";
 
@@ -515,50 +511,6 @@ function keyboardTargetConsumesGlobalDelete(target: EventTarget | null) {
   );
 }
 
-function visibleScrollAnchors(container: HTMLElement) {
-  return Array.from(container.querySelectorAll<HTMLElement>(SCROLL_ANCHOR_SELECTOR))
-    .filter((element) => {
-      if (element.closest(".a4-measure")) return false;
-      if (!element.getClientRects().length) return false;
-      const style = window.getComputedStyle(element);
-      return style.display !== "none" && style.visibility !== "hidden";
-    })
-    .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
-}
-
-function scrollToAnchorPosition(container: HTMLElement, position: ScrollAnchorPosition) {
-  const anchors = visibleScrollAnchors(container);
-  if (!anchors.length) return false;
-
-  let matchedIndex = -1;
-  let matchedAnchor = "";
-  for (const fallback of scrollAnchorFallbacks(position.anchor)) {
-    const index = anchors.findIndex((anchor) => scrollAnchorValue(anchor) === fallback);
-    if (index >= 0) {
-      matchedIndex = index;
-      matchedAnchor = fallback;
-      break;
-    }
-  }
-
-  if (matchedIndex < 0) return false;
-
-  const currentAnchor = anchors[matchedIndex];
-  const currentTop = currentAnchor.getBoundingClientRect().top;
-  const nextTop =
-    anchors[matchedIndex + 1]?.getBoundingClientRect().top ?? currentTop + Math.max(currentAnchor.getBoundingClientRect().height, 1);
-  const progress = matchedAnchor === position.anchor ? position.progress : 0;
-  const targetTop = currentTop + (nextTop - currentTop) * progress;
-  const paneTop = container.getBoundingClientRect().top + SCROLL_ANCHOR_TOP_OFFSET_PX;
-  const nextScrollTop = clamp(container.scrollTop + targetTop - paneTop, 0, scrollableRange(container));
-
-  if (Math.abs(container.scrollTop - nextScrollTop) > 0.5) {
-    container.scrollTop = nextScrollTop;
-  }
-
-  return true;
-}
-
 function subsectionTargetElementFromPoint(clientX: number, clientY: number) {
   const element = document.elementFromPoint(clientX, clientY);
   if (!(element instanceof Element)) return null;
@@ -652,22 +604,6 @@ function subsectionDropPreviewForPointer(
 }
 
 const solutionValidationRuntime = createEditorSolutionValidationRuntime({ graphHeight, withGraphDefaults });
-
-function cssAttributeValue(value: string) {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function syncPreviewSelection(previewPane: HTMLElement, activeAnchor?: string) {
-  previewPane
-    .querySelectorAll<HTMLElement>('[data-preview-selected="true"]')
-    .forEach((element) => element.removeAttribute("data-preview-selected"));
-
-  if (!activeAnchor) return;
-  previewPane
-    .querySelectorAll<HTMLElement>(`[data-scroll-anchor="${cssAttributeValue(activeAnchor)}"]`)
-    .forEach((element) => element.setAttribute("data-preview-selected", "true"));
-}
 
 function useStableEvent<TArgs extends unknown[], TResult>(callback: (...args: TArgs) => TResult) {
   const callbackRef = useRef(callback);
@@ -2286,6 +2222,15 @@ export default function App() {
         label: "Duplicate",
         icon: <CopyPlus className="size-4" aria-hidden="true" />,
         onSelect: () => duplicateAnchorTarget(item.editorAnchor),
+      });
+    }
+    const solutionCopySelection = supportsSolutionTools ? selectedEditorBlockFromAnchor(questions, item.editorAnchor) : null;
+    if (solutionCopySelection && solutionSurfaceControlState(solutionCopySelection.block).canCreateSolutionCopy) {
+      actions.push({
+        id: "copy-to-solutions",
+        label: "Copy to solutions",
+        icon: <CopyPlus className="size-4" aria-hidden="true" />,
+        onSelect: () => createSolutionCopyForSelectedBlock(solutionCopySelection),
       });
     }
     if (canDeleteAnchorTarget(item.editorAnchor)) {
