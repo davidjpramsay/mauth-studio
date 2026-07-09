@@ -7,14 +7,18 @@ import {
   LEGACY_STARTER_DOCUMENT_STORAGE_KEY,
   SCREENSHOT_STARTER_DOCUMENT_ID,
   STARTER_DOCUMENT_STORAGE_KEY,
+  createScreenshotStarterDocumentPlan,
   createNotesSection,
   createQuestion,
   createScreenshotStarterFrontMatter,
   createScreenshotStarterQuestions,
+  createTemplateEditorDocumentPlan,
+  frontMatterForTemplate,
   isBlankStarterQuestion,
   shouldSeedScreenshotStarter,
   type ScreenshotStarterRuntime,
 } from "./editorStarterDocuments.ts";
+import { STARTER_LOGOS, type LogoAsset } from "./logoLibrary.ts";
 
 function createIdFactory() {
   const counters = new Map<string, number>();
@@ -151,4 +155,94 @@ test("createScreenshotStarterQuestions creates the expected starter assessment s
     distributionQuestion?.contentBlocks.some((block) => block.kind === "diagram"),
     true,
   );
+});
+
+test("createScreenshotStarterDocumentPlan creates a complete starter document plan", () => {
+  const plan = createScreenshotStarterDocumentPlan(createRuntime());
+
+  assert.equal(plan.document.frontMatter.assessmentTitle, "TEST 2");
+  assert.equal(plan.document.questions.length, 4);
+  assert.deepEqual(plan.document.sectionHeadings, []);
+  assert.deepEqual(
+    plan.document.documentFlow,
+    plan.document.questions.map((question) => ({ kind: "question", id: question.id })),
+  );
+  assert.equal(plan.document.formattingConfig.id, "high-school-mathematics-test");
+  assert.equal(plan.activeQuestionId, plan.document.questions[0]?.id);
+  assert.equal(plan.anchor, `q:${plan.activeQuestionId}`);
+});
+
+test("frontMatterForTemplate returns cloned template front matter", () => {
+  const examFrontMatter = frontMatterForTemplate("exam");
+  const freshExamFrontMatter = frontMatterForTemplate("exam");
+  examFrontMatter.assessmentTitle = "Changed";
+
+  assert.equal(examFrontMatter.titlePageTemplate, "exam");
+  assert.equal(frontMatterForTemplate("worksheet").titlePageTemplate, "worksheet");
+  assert.equal(frontMatterForTemplate("notes").titlePageTemplate, "notes");
+  assert.equal(frontMatterForTemplate("standard").titlePageTemplate, "standard");
+  assert.notEqual(freshExamFrontMatter.assessmentTitle, "Changed");
+});
+
+test("createTemplateEditorDocumentPlan preserves logo context and records a clean fingerprint", () => {
+  const logos: LogoAsset[] = [
+    {
+      id: "custom-logo",
+      name: "Custom School",
+      src: "/custom.svg",
+      schoolName: "CUSTOM SCHOOL",
+    },
+  ];
+  const fingerprintCalls: Array<{
+    template: string;
+    questionCount: number;
+    formattingId: string;
+    logoId: string | undefined;
+    flowCount: number;
+  }> = [];
+
+  const plan = createTemplateEditorDocumentPlan({
+    template: "notes",
+    formatPresetId: "math-notes",
+    id: createIdFactory(),
+    logos,
+    currentFrontMatter: { ...createScreenshotStarterFrontMatter(), logoId: "custom-logo", schoolName: "Old School" },
+    editorDocumentFingerprint: (frontMatter, questions, formattingConfig, logo, _sectionHeadings, documentFlow) => {
+      fingerprintCalls.push({
+        template: frontMatter.titlePageTemplate,
+        questionCount: questions.length,
+        formattingId: formattingConfig.id,
+        logoId: logo?.id,
+        flowCount: documentFlow?.length ?? 0,
+      });
+      return "clean-fingerprint";
+    },
+  });
+
+  assert.equal(plan.document.frontMatter.titlePageTemplate, "notes");
+  assert.equal(plan.document.frontMatter.logoId, "custom-logo");
+  assert.equal(plan.document.frontMatter.schoolName, "CUSTOM SCHOOL");
+  assert.equal(plan.document.questions[0]?.section, "Introduction");
+  assert.equal(plan.document.formattingConfig.id, "math-notes");
+  assert.equal(plan.cleanFingerprint, "clean-fingerprint");
+  assert.equal(plan.anchor, `q:${plan.activeQuestionId}`);
+  assert.deepEqual(fingerprintCalls, [
+    {
+      template: "notes",
+      questionCount: 1,
+      formattingId: "math-notes",
+      logoId: "custom-logo",
+      flowCount: 1,
+    },
+  ]);
+
+  const standardPlan = createTemplateEditorDocumentPlan({
+    template: "standard",
+    id: createIdFactory(),
+    logos: STARTER_LOGOS,
+    currentFrontMatter: { ...createScreenshotStarterFrontMatter(), logoId: "missing-logo", schoolName: "Fallback" },
+    editorDocumentFingerprint: () => "standard-fingerprint",
+  });
+  assert.equal(standardPlan.document.questions[0]?.section, "Algebra");
+  assert.equal(standardPlan.document.formattingConfig.id, "high-school-mathematics-test");
 });

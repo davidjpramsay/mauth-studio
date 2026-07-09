@@ -113,12 +113,11 @@ import {
 } from "@/lib/editorAnchorActions";
 import { createEditorBlockContextRuntime } from "@/lib/editorBlockContexts";
 import { buildDocumentToc, isOrderedBlockVisible, questionMarks } from "@/lib/editorDocumentToc";
-import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
+import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import { type PreviewGraphConfigChange } from "@/lib/editorPreviewSegments";
 import { createEditorContentBlockNormalizer, spaceLines } from "@/lib/editorContentBlockNormalization";
 import {
   createEditorDocumentNormalizer,
-  defaultDocumentFlow,
   orderItemKey,
   withNormalizedPartOrder,
   withNormalizedQuestionOrder,
@@ -153,12 +152,9 @@ import {
   questionHasPageBreak,
 } from "@/lib/editorQuestionLifecycle";
 import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
-import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
+import { DEFAULT_FORMATTING_CONFIG, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
-  DEFAULT_EXAM_FRONT_MATTER,
   DEFAULT_FRONT_MATTER,
-  DEFAULT_NOTES_FRONT_MATTER,
-  DEFAULT_WORKSHEET_FRONT_MATTER,
   normalizeFrontMatter,
   titlePageTemplateFromValue,
   type FrontMatterConfig,
@@ -198,10 +194,10 @@ import {
 import {
   SCREENSHOT_STARTER_DOCUMENT_ID,
   STARTER_DOCUMENT_STORAGE_KEY,
+  createScreenshotStarterDocumentPlan,
+  createTemplateEditorDocumentPlan,
   createNotesSection as createNotesSectionDocument,
   createQuestion as createBlankQuestion,
-  createScreenshotStarterFrontMatter,
-  createScreenshotStarterQuestions,
   shouldSeedScreenshotStarter,
   type ScreenshotStarterRuntime,
 } from "@/lib/editorStarterDocuments";
@@ -1306,63 +1302,21 @@ export default function App() {
     starterChangeKey: questions,
     shouldSeedStarter: () => shouldSeedScreenshotStarter(questionsRef.current),
     createStarterDocument: () => {
-      const nextQuestions = createScreenshotStarterQuestions(screenshotStarterRuntime);
-      const nextSectionHeadings: DocumentSectionHeading[] = [];
-      const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
+      const starterDocument = createScreenshotStarterDocumentPlan(screenshotStarterRuntime);
       return {
-        document: {
-          frontMatter: createScreenshotStarterFrontMatter(),
-          questions: nextQuestions,
-          sectionHeadings: nextSectionHeadings,
-          documentFlow: nextDocumentFlow,
-          formattingConfig: cloneSerializable(DEFAULT_FORMATTING_CONFIG),
-        },
-        activeQuestionId: firstQuestionId(nextQuestions),
-        anchor: firstQuestionAnchor(nextQuestions),
+        ...starterDocument,
         markSeeded: () => window.localStorage.setItem(STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID),
       };
     },
     createTemplateDocument: (template) => {
-      const currentLogo = selectedLogoFromLibrary(logosRef.current, frontMatterRef.current.logoId);
-      const frontMatterTemplate =
-        template === "exam"
-          ? DEFAULT_EXAM_FRONT_MATTER
-          : template === "worksheet"
-            ? DEFAULT_WORKSHEET_FRONT_MATTER
-            : template === "notes"
-              ? DEFAULT_NOTES_FRONT_MATTER
-              : DEFAULT_FRONT_MATTER;
-      const nextFrontMatter = {
-        ...cloneSerializable(frontMatterTemplate),
-        logoId: currentLogo.id,
-        schoolName: currentLogo.schoolName ?? frontMatterRef.current.schoolName,
-      };
-      const nextQuestions = template === "notes" ? [createNotesSection()] : [createQuestion()];
-      const nextSectionHeadings: DocumentSectionHeading[] = [];
-      const nextDocumentFlow = defaultDocumentFlow(nextQuestions);
-      const nextFormattingConfig = formattingConfigForPresetId(
-        NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id,
-      );
-      const nextAnchor = questionScrollAnchor(nextQuestions[0].id);
-      return {
-        document: {
-          frontMatter: nextFrontMatter,
-          questions: nextQuestions,
-          sectionHeadings: nextSectionHeadings,
-          documentFlow: nextDocumentFlow,
-          formattingConfig: nextFormattingConfig,
-        },
-        activeQuestionId: nextQuestions[0].id,
-        anchor: nextAnchor,
-        cleanFingerprint: editorDocumentFingerprint(
-          nextFrontMatter,
-          nextQuestions,
-          nextFormattingConfig,
-          currentLogo,
-          nextSectionHeadings,
-          nextDocumentFlow,
-        ),
-      };
+      return createTemplateEditorDocumentPlan({
+        template,
+        formatPresetId: NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId,
+        id,
+        logos: logosRef.current,
+        currentFrontMatter: frontMatterRef.current,
+        editorDocumentFingerprint,
+      });
     },
     setDocument: setEditorDocument,
     setDocumentOpen: setEditorDocumentOpenState,

@@ -1,10 +1,28 @@
-import type { ContentBlock, DiagramAlignment, GraphConfig } from "@mauth-studio/shared";
+import type { ContentBlock, DiagramAlignment, FormattingConfig, GraphConfig } from "@mauth-studio/shared";
 
 import { browserStorageItem, type BrowserStorageLike } from "./browserStorage.ts";
 import { DEFAULT_STATS_CHART } from "./editorDiagramConfig.ts";
 import { DEFAULT_2D_GRAPH } from "./diagramGraph2d.ts";
-import { relabelParts, type EditorContentBlock, type EditorPart, type QuestionBlock } from "./editorDocumentNormalization.ts";
-import { DEFAULT_FRONT_MATTER, type FrontMatterConfig } from "./frontMatterConfig.ts";
+import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId } from "./editorFormattingConfig.ts";
+import {
+  defaultDocumentFlow,
+  relabelParts,
+  type DocumentFlowItem,
+  type DocumentSectionHeading,
+  type EditorContentBlock,
+  type EditorPart,
+  type QuestionBlock,
+} from "./editorDocumentNormalization.ts";
+import {
+  DEFAULT_EXAM_FRONT_MATTER,
+  DEFAULT_FRONT_MATTER,
+  DEFAULT_NOTES_FRONT_MATTER,
+  DEFAULT_WORKSHEET_FRONT_MATTER,
+  type FrontMatterConfig,
+  type TitlePageTemplate,
+} from "./frontMatterConfig.ts";
+import { selectedLogoFromLibrary, type LogoAsset } from "./logoLibrary.ts";
+import { questionScrollAnchor } from "./scrollAnchors.ts";
 
 export const STARTER_DOCUMENT_STORAGE_KEY = "mauth-studio.starter-document.v1";
 export const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
@@ -16,6 +34,41 @@ export interface ScreenshotStarterRuntime {
   choiceListBlock: (choices?: string[]) => ContentBlock;
   spaceBlock: (lines?: number) => Extract<ContentBlock, { kind: "space" }>;
   withGraphDefaults: (graphConfig?: GraphConfig | null) => GraphConfig;
+}
+
+export interface StarterEditorDocument {
+  frontMatter: FrontMatterConfig;
+  questions: QuestionBlock[];
+  sectionHeadings: DocumentSectionHeading[];
+  documentFlow: DocumentFlowItem[];
+  formattingConfig: FormattingConfig;
+}
+
+export interface StarterEditorDocumentPlan {
+  document: StarterEditorDocument;
+  activeQuestionId: string;
+  anchor: string;
+  cleanFingerprint?: string | null;
+}
+
+export interface CreateTemplateEditorDocumentPlanOptions {
+  template: TitlePageTemplate;
+  formatPresetId?: FormattingConfig["id"];
+  id: (prefix: string) => string;
+  logos: LogoAsset[];
+  currentFrontMatter: FrontMatterConfig;
+  editorDocumentFingerprint: (
+    frontMatter: FrontMatterConfig,
+    questions: QuestionBlock[],
+    formattingConfig: FormattingConfig,
+    logo?: LogoAsset | null,
+    sectionHeadings?: DocumentSectionHeading[],
+    documentFlow?: DocumentFlowItem[],
+  ) => string;
+}
+
+function cloneSerializable<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export function createQuestion(id: (prefix: string) => string): QuestionBlock {
@@ -319,6 +372,70 @@ export function createScreenshotStarterQuestions(runtime: ScreenshotStarterRunti
       "Statistics",
     ),
   ];
+}
+
+function firstQuestionPlanAnchor(questions: QuestionBlock[]) {
+  const activeQuestionId = questions[0]?.id ?? "";
+  return {
+    activeQuestionId,
+    anchor: activeQuestionId ? questionScrollAnchor(activeQuestionId) : "",
+  };
+}
+
+export function createScreenshotStarterDocumentPlan(runtime: ScreenshotStarterRuntime): StarterEditorDocumentPlan {
+  const questions = createScreenshotStarterQuestions(runtime);
+  const sectionHeadings: DocumentSectionHeading[] = [];
+  const documentFlow = defaultDocumentFlow(questions);
+
+  return {
+    document: {
+      frontMatter: createScreenshotStarterFrontMatter(),
+      questions,
+      sectionHeadings,
+      documentFlow,
+      formattingConfig: formattingConfigForPresetId(DEFAULT_FORMATTING_CONFIG.id),
+    },
+    ...firstQuestionPlanAnchor(questions),
+  };
+}
+
+export function frontMatterForTemplate(template: TitlePageTemplate) {
+  if (template === "exam") return cloneSerializable(DEFAULT_EXAM_FRONT_MATTER);
+  if (template === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FRONT_MATTER);
+  if (template === "notes") return cloneSerializable(DEFAULT_NOTES_FRONT_MATTER);
+  return cloneSerializable(DEFAULT_FRONT_MATTER);
+}
+
+export function createTemplateEditorDocumentPlan({
+  template,
+  formatPresetId,
+  id,
+  logos,
+  currentFrontMatter,
+  editorDocumentFingerprint,
+}: CreateTemplateEditorDocumentPlanOptions): StarterEditorDocumentPlan {
+  const currentLogo = selectedLogoFromLibrary(logos, currentFrontMatter.logoId);
+  const nextFrontMatter = {
+    ...frontMatterForTemplate(template),
+    logoId: currentLogo.id,
+    schoolName: currentLogo.schoolName ?? currentFrontMatter.schoolName,
+  };
+  const questions = template === "notes" ? [createNotesSection(id)] : [createQuestion(id)];
+  const sectionHeadings: DocumentSectionHeading[] = [];
+  const documentFlow = defaultDocumentFlow(questions);
+  const formattingConfig = formattingConfigForPresetId(formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id);
+
+  return {
+    document: {
+      frontMatter: nextFrontMatter,
+      questions,
+      sectionHeadings,
+      documentFlow,
+      formattingConfig,
+    },
+    ...firstQuestionPlanAnchor(questions),
+    cleanFingerprint: editorDocumentFingerprint(nextFrontMatter, questions, formattingConfig, currentLogo, sectionHeadings, documentFlow),
+  };
 }
 
 export function isBlankStarterQuestion(question?: QuestionBlock) {
