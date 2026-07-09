@@ -111,6 +111,7 @@ import {
   canMoveAnchorTarget as canMoveEditorAnchorTarget,
   subsectionTargetFromParsed,
 } from "@/lib/editorAnchorActions";
+import { createEditorBlockContextRuntime } from "@/lib/editorBlockContexts";
 import { buildDocumentToc, isOrderedBlockVisible, questionMarks } from "@/lib/editorDocumentToc";
 import { existingOrFirstQuestionId, firstDocumentFlowAnchor, firstQuestionAnchor, firstQuestionId } from "@/lib/editorSectionHeadings";
 import { type PreviewGraphConfigChange } from "@/lib/editorPreviewSegments";
@@ -370,7 +371,6 @@ const {
   duplicatedSubpart,
   duplicatedPart,
   duplicatedQuestion,
-  columnBlockAtPath,
   duplicateColumnBlockAtPath,
   solutionSurfaceContentBlock,
   solutionSurfaceColumnBlockCopyAtPath,
@@ -932,6 +932,7 @@ export default function App() {
       }),
     [documentTocItems, questions],
   );
+  const { blockContextFromParsed, columnBlockContextFromParsed } = useMemo(() => createEditorBlockContextRuntime(questions), [questions]);
   const currentDocumentFingerprint = useMemo(
     () =>
       editorDocumentFingerprint(
@@ -1782,67 +1783,6 @@ export default function App() {
     } else {
       queueDocumentJump(editorAnchor, previewAnchor, { preservePaneMode: !options.openEditor });
     }
-  }
-
-  function rootBlockContextFromParsed(parsed: ParsedScrollAnchor) {
-    const blockId = parsed.kind === "columnBlock" ? parsed.rootBlockId : parsed.blockId;
-    if (!parsed.questionId || !blockId) return null;
-    const question = questions.find((current) => current.id === parsed.questionId);
-    if (!question) return null;
-
-    if (parsed.partId && parsed.subpartId) {
-      const part = question.parts.find((current) => current.id === parsed.partId);
-      const subpart = part?.subparts.find((current) => current.id === parsed.subpartId);
-      const block = subpart?.contentBlocks.find((current) => current.id === blockId);
-      return {
-        block,
-        scope: {
-          kind: "subpart",
-          questionId: parsed.questionId,
-          partId: parsed.partId,
-          subpartId: parsed.subpartId,
-        } satisfies MauthContentScope,
-        anchorForBlock: (nextBlockId: string) =>
-          subpartBlockScrollAnchor(parsed.questionId ?? "", parsed.partId ?? "", parsed.subpartId ?? "", nextBlockId),
-      };
-    }
-
-    if (parsed.partId) {
-      const part = question.parts.find((current) => current.id === parsed.partId);
-      const block = part?.contentBlocks.find((current) => current.id === blockId);
-      return {
-        block,
-        scope: { kind: "part", questionId: parsed.questionId, partId: parsed.partId } satisfies MauthContentScope,
-        anchorForBlock: (nextBlockId: string) => partBlockScrollAnchor(parsed.questionId ?? "", parsed.partId ?? "", nextBlockId),
-      };
-    }
-
-    const block = question.contentBlocks.find((current) => current.id === blockId);
-    return {
-      block,
-      scope: { kind: "question", questionId: parsed.questionId } satisfies MauthContentScope,
-      anchorForBlock: (nextBlockId: string) => questionBlockScrollAnchor(parsed.questionId ?? "", nextBlockId),
-    };
-  }
-
-  function blockContextFromParsed(parsed: ParsedScrollAnchor) {
-    if (!parsed.questionId || !parsed.blockId) return null;
-    if (parsed.kind !== "questionBlock" && parsed.kind !== "partBlock" && parsed.kind !== "subpartBlock") return null;
-    return rootBlockContextFromParsed(parsed);
-  }
-
-  function columnBlockContextFromParsed(parsed: ParsedScrollAnchor) {
-    if (parsed.kind !== "columnBlock" || !parsed.columnPath?.length) return null;
-    const rootContext = rootBlockContextFromParsed(parsed);
-    if (!rootContext?.block || rootContext.block.kind !== "columns") return null;
-    const block = columnBlockAtPath(rootContext.block, parsed.columnPath);
-    if (!block) return null;
-    return {
-      ...rootContext,
-      block,
-      rootBlock: rootContext.block,
-      rootAnchor: rootContext.anchorForBlock(rootContext.block.id),
-    };
   }
 
   function duplicateColumnBlockTarget(parsed: ParsedScrollAnchor) {
