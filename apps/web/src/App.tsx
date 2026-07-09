@@ -116,7 +116,6 @@ import {
   orderItemKey,
   orderedPartItems,
   orderedQuestionItems,
-  romanLabel,
   withNormalizedPartOrder,
   withNormalizedQuestionOrder,
   type ContainerOrderItem,
@@ -131,6 +130,15 @@ import {
 } from "@/lib/editorDocumentNormalization";
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
+import {
+  createBlankEditorPart,
+  createBlankEditorSubpart,
+  createQuestionForTemplate,
+  fallbackQuestionForDelete,
+  nextActiveQuestionAfterDelete,
+  questionAddActionsForTemplate,
+  questionHasPageBreak,
+} from "@/lib/editorQuestionLifecycle";
 import { defaultSolutionSlotLinesForDocument } from "@/lib/solutionSlotDefaults";
 import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
@@ -494,10 +502,6 @@ function projectFileVersionPreview(version: Parameters<typeof buildProjectFileVe
     parseSavedTest: normalizeSavedTest,
     questionMarks,
   });
-}
-
-function questionHasPageBreak(question: QuestionBlock) {
-  return question.pageBreakAfter || question.contentBlocks.some((block) => block.kind === "pageBreak");
 }
 
 export default function App() {
@@ -3025,15 +3029,12 @@ export default function App() {
   }
 
   function addQuestion() {
-    const question = frontMatterRef.current.titlePageTemplate === "notes" ? createNotesSection() : createQuestion();
+    const question = createQuestionForTemplate(frontMatterRef.current, {
+      createQuestion,
+      createNotesSection,
+    });
     const anchor = questionScrollAnchor(question.id);
-    const actions: MauthAction[] =
-      frontMatterRef.current.titlePageTemplate === "exam" && questions.length
-        ? [
-            { type: "question.update", questionId: questions[questions.length - 1].id, patch: { pageBreakAfter: true } },
-            { type: "question.add", question },
-          ]
-        : [{ type: "question.add", question }];
+    const actions = questionAddActionsForTemplate({ template: frontMatterRef.current, questions, question });
     const result = applyEditorActions(actions);
     if (!result.ok) return;
     selectQuestionInEditor(question.id);
@@ -3072,15 +3073,20 @@ export default function App() {
 
   function removeQuestion(questionId: string) {
     const removedIndex = questions.findIndex((question) => question.id === questionId);
-    const fallbackQuestion =
-      questions.length <= 1 ? (frontMatterRef.current.titlePageTemplate === "notes" ? createNotesSection() : createQuestion()) : undefined;
+    const fallbackQuestion = fallbackQuestionForDelete({
+      template: frontMatterRef.current,
+      questions,
+      runtime: { createQuestion, createNotesSection },
+    });
     const result = applyEditorAction({ type: "question.delete", questionId, fallbackQuestion });
     if (!result.ok) return;
     const nextQuestions = result.questions;
-    const nextActiveQuestion =
-      questionId === activeQuestionId
-        ? (nextQuestions[Math.min(Math.max(removedIndex, 0), nextQuestions.length - 1)] ?? nextQuestions[0])
-        : (nextQuestions.find((question) => question.id === activeQuestionId) ?? nextQuestions[0]);
+    const nextActiveQuestion = nextActiveQuestionAfterDelete({
+      nextQuestions,
+      removedQuestionId: questionId,
+      removedIndex,
+      activeQuestionId,
+    });
     if (nextActiveQuestion) {
       const anchor = questionScrollAnchor(nextActiveQuestion.id);
       setActiveQuestionId(nextActiveQuestion.id);
@@ -3119,23 +3125,10 @@ export default function App() {
     applyEditorAction({ type: "module.delete", scope: { kind: "question", questionId: question.id }, blockId });
   }
 
-  function createPart(): EditorPart {
-    return {
-      id: id("part"),
-      label: "",
-      text: "",
-      marks: 0,
-      pageBreakBefore: false,
-      contentBlocks: [],
-      subparts: [],
-      itemOrder: [],
-    };
-  }
-
   function addPart(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const part = createPart();
+    const part = createBlankEditorPart(id);
     applyEditorAction({ type: "part.add", questionId: question.id, part });
   }
 
@@ -3182,20 +3175,9 @@ export default function App() {
     applyEditorAction({ type: "part.delete", questionId: question.id, partId });
   }
 
-  function createSubpart(subpartIndex: number): EditorSubpart {
-    return {
-      id: id("subpart"),
-      label: romanLabel(subpartIndex),
-      text: "",
-      marks: 0,
-      pageBreakBefore: false,
-      contentBlocks: [],
-    };
-  }
-
   function addSubpart(questionId: string, part: EditorPart) {
     const subparts = part.subparts ?? [];
-    const subpart = createSubpart(subparts.length);
+    const subpart = createBlankEditorSubpart(id, subparts.length);
     applyEditorAction({ type: "subpart.add", questionId, partId: part.id, subpart });
   }
 
