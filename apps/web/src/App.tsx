@@ -90,10 +90,12 @@ import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
 import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
-  createEditorPersistence,
-  type AutosavedEditorSnapshot as PersistedEditorSnapshot,
-  type SavedDocumentSnapshot,
-} from "@/lib/editorPersistence";
+  PROJECT_FILE_REVISION_MISSING_ERROR,
+  cloneSerializable,
+  createEditorAppPersistence,
+  type AutosavedEditorSnapshot,
+  type SavedTest,
+} from "@/lib/editorAppPersistence";
 import { createEditorContentBlockFactory } from "@/lib/editorContentBlocks";
 import { createEditorBlockSelectionRuntime, type SelectedEditorBlock } from "@/lib/editorBlockSelection";
 import { createEditorBlockSummaryRuntime } from "@/lib/editorBlockSummaries";
@@ -172,7 +174,6 @@ import {
   createQuestion as createBlankQuestion,
   createScreenshotStarterFrontMatter,
   createScreenshotStarterQuestions,
-  isBlankStarterQuestion,
   shouldSeedScreenshotStarter,
   type ScreenshotStarterRuntime,
 } from "@/lib/editorStarterDocuments";
@@ -247,10 +248,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX = 6;
-const SAVED_TEST_STORAGE_KEY = "mauth-studio.saved-tests.v1";
-const CURRENT_DRAFT_STORAGE_KEY = "mauth-studio.current-draft.v1";
-const LEGACY_SAVED_TEST_STORAGE_KEY = "math-app.saved-tests.v1";
-const LEGACY_CURRENT_DRAFT_STORAGE_KEY = "math-app.current-draft.v1";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 const LOCAL_DRAFT_DEBOUNCE_MS = 250;
 const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
@@ -281,26 +278,7 @@ interface EditorHistorySnapshot {
 
 type EditorDocumentState = EditorHistorySnapshot;
 
-type AutosavedEditorSnapshot = PersistedEditorSnapshot<
-  FrontMatterConfig,
-  QuestionBlock,
-  DocumentSectionHeading,
-  DocumentFlowItem,
-  FormattingConfig,
-  LogoAsset
->;
-
 const HISTORY_LIMIT = 80;
-const PROJECT_FILE_REVISION_MISSING_ERROR = "PROJECT_FILE_REVISION_MISSING";
-
-type SavedTest = SavedDocumentSnapshot<
-  FrontMatterConfig,
-  QuestionBlock,
-  DocumentSectionHeading,
-  DocumentFlowItem,
-  FormattingConfig,
-  LogoAsset
->;
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -375,134 +353,24 @@ const {
   cloneSerializable,
 });
 
-function cloneSerializable<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-const editorPersistence = createEditorPersistence<
-  FrontMatterConfig,
-  QuestionBlock,
-  DocumentSectionHeading,
-  DocumentFlowItem,
-  FormattingConfig,
-  LogoAsset
->({
-  normalizeFrontMatter,
-  normalizeQuestions: normalizeQuestionBlocks,
+const {
+  normalizeEditorSnapshot,
+  loadCurrentDraft,
+  loadInitialEditorDraft,
+  persistCurrentDraft,
+  loadLegacySavedTests,
+  normalizeSavedTests,
+  normalizeSavedTest,
+  mergeLegacySavedTests,
+  newerAutosave,
+  persistLegacySavedTests,
+  createSavedTestSnapshot,
+  editorDocumentFingerprint,
+} = createEditorAppPersistence({
+  normalizeQuestionBlocks,
   normalizeSectionHeadings,
   normalizeDocumentFlow,
-  normalizeFormattingConfig,
-  normalizeLogoAsset,
-  cloneSerializable,
-  defaultDocumentFlow,
-  isBlankStarterQuestion,
 });
-
-function normalizeEditorSnapshot(value: unknown): AutosavedEditorSnapshot | null {
-  return editorPersistence.normalizeEditorSnapshot(value);
-}
-
-function loadCurrentDraft(): AutosavedEditorSnapshot | null {
-  return editorPersistence.loadCurrentDraft({
-    key: CURRENT_DRAFT_STORAGE_KEY,
-    legacyKey: LEGACY_CURRENT_DRAFT_STORAGE_KEY,
-  });
-}
-
-let initialEditorDraftCache: AutosavedEditorSnapshot | null | undefined;
-
-function loadInitialEditorDraft() {
-  if (initialEditorDraftCache !== undefined) return initialEditorDraftCache;
-  initialEditorDraftCache = loadCurrentDraft();
-  return initialEditorDraftCache;
-}
-
-function persistCurrentDraft(snapshot: AutosavedEditorSnapshot) {
-  editorPersistence.persistCurrentDraft({ key: CURRENT_DRAFT_STORAGE_KEY, snapshot });
-}
-
-function loadLegacySavedTests(): SavedTest[] {
-  return editorPersistence.loadLegacySavedTests({
-    key: SAVED_TEST_STORAGE_KEY,
-    legacyKey: LEGACY_SAVED_TEST_STORAGE_KEY,
-  });
-}
-
-// Legacy saved tests only exist so older browser/API saves can be migrated into project files.
-function normalizeSavedTests(value: unknown): SavedTest[] {
-  return editorPersistence.normalizeSavedTests(value);
-}
-
-function normalizeSavedTest(value: unknown): SavedTest | null {
-  return editorPersistence.normalizeSavedTest(value);
-}
-
-function mergeLegacySavedTests(primary: SavedTest[], fallback: SavedTest[]) {
-  return editorPersistence.mergeLegacySavedTests(primary, fallback);
-}
-
-function newerAutosave(left: AutosavedEditorSnapshot | null, right: AutosavedEditorSnapshot | null) {
-  return editorPersistence.newerAutosave(left, right);
-}
-
-function persistLegacySavedTests(legacyTests: SavedTest[]) {
-  editorPersistence.persistLegacySavedTests({
-    key: SAVED_TEST_STORAGE_KEY,
-    savedDocuments: legacyTests,
-  });
-}
-
-function createSavedTestSnapshot({
-  testId,
-  name,
-  frontMatter,
-  questions,
-  sectionHeadings,
-  documentFlow,
-  formattingConfig,
-  logo,
-  createdAt,
-}: {
-  testId: string;
-  name: string;
-  frontMatter: FrontMatterConfig;
-  questions: QuestionBlock[];
-  sectionHeadings?: DocumentSectionHeading[];
-  documentFlow?: DocumentFlowItem[];
-  formattingConfig: FormattingConfig;
-  logo?: LogoAsset;
-  createdAt?: string;
-}): SavedTest {
-  return editorPersistence.createSavedTestSnapshot({
-    testId,
-    name,
-    frontMatter,
-    questions,
-    sectionHeadings,
-    documentFlow,
-    formattingConfig,
-    logo,
-    createdAt,
-  });
-}
-
-function editorDocumentFingerprint(
-  frontMatter: FrontMatterConfig,
-  questions: QuestionBlock[],
-  formattingConfig: FormattingConfig,
-  logo?: LogoAsset | null,
-  sectionHeadings: DocumentSectionHeading[] = [],
-  documentFlow: DocumentFlowItem[] = defaultDocumentFlow(questions),
-) {
-  return editorPersistence.editorDocumentFingerprint({
-    frontMatter,
-    questions,
-    formattingConfig,
-    logo,
-    sectionHeadings,
-    documentFlow,
-  });
-}
 
 function keyboardTargetConsumesGlobalDelete(target: EventTarget | null) {
   return (
