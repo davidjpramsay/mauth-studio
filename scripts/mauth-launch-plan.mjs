@@ -41,7 +41,7 @@ export function runtimeStatusSummary({ apiHealthy, webHealthy, apiListeners, web
     return {
       level: "ok",
       message: `Mauth is ready${webUrl ? ` at ${webUrl}` : ""}.`,
-      detail: "Use the open browser tab, or stop the launcher Terminal with Ctrl+C when finished.",
+      detail: "Use the open browser tab. Stop with pnpm dev:stop, the launcher Terminal Ctrl+C, or Mauth Studio Stop.command.",
     };
   }
 

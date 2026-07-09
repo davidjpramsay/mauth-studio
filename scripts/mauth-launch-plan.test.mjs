@@ -99,7 +99,7 @@ test("runtime status reports a ready API and web pair", () => {
     {
       level: "ok",
       message: "Mauth is ready at http://127.0.0.1:5173.",
-      detail: "Use the open browser tab, or stop the launcher Terminal with Ctrl+C when finished.",
+      detail: "Use the open browser tab. Stop with pnpm dev:stop, the launcher Terminal Ctrl+C, or Mauth Studio Stop.command.",
     },
   );
 });

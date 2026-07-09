@@ -8,10 +8,12 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
+  launcherControlCommandScript,
   launcherMissingPnpmMessage,
   launcherMissingRepoMessage,
   launcherReadmeText,
   launcherTerminalIntroLines,
+  shellSingleQuote,
 } from "./install-macos-launcher-copy.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,6 +64,11 @@ const targetApp = path.resolve(optionValue("--target", defaultTarget));
 const repoRoot = path.resolve(optionValue("--repo", ROOT));
 const iconSource = path.resolve(optionValue("--icon", defaultIconSource));
 const appName = path.basename(targetApp, ".app") || "Mauth Studio";
+const companionCommandDirectory = path.dirname(targetApp);
+const statusCommandPath = path.join(companionCommandDirectory, `${appName} Status.command`);
+const stopCommandPath = path.join(companionCommandDirectory, `${appName} Stop.command`);
+const statusCommandName = path.basename(statusCommandPath);
+const stopCommandName = path.basename(stopCommandPath);
 const createDesktopShortcut = args.includes("--desktop-shortcut") || args.includes("--desktop-shortcut-path");
 const desktopShortcutPath = path.resolve(optionValue("--desktop-shortcut-path", path.join(os.homedir(), "Desktop", `${appName}.app`)));
 const revealAfterInstall = args.includes("--reveal");
@@ -76,17 +83,13 @@ function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
-function shellSingleQuote(value) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function commandPath(command) {
   const result = spawnSync("/bin/zsh", ["-lc", `command -v ${command}`], { encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim().split("\n")[0] : "";
 }
 
 function launcherScript() {
-  const terminalIntroCommands = launcherTerminalIntroLines()
+  const terminalIntroCommands = launcherTerminalIntroLines({ stopCommandName })
     .map((line) => `TERMINAL_COMMAND="$TERMINAL_COMMAND && echo ${shellSingleQuote(line)}"`)
     .join("\n");
 
@@ -240,6 +243,20 @@ async function installDesktopShortcut(target, shortcutPath) {
   return true;
 }
 
+async function installCompanionCommand(filePath, title, pnpmScript) {
+  await fs.writeFile(
+    filePath,
+    launcherControlCommandScript({
+      repoRoot,
+      pnpmCommand,
+      pnpmScript,
+      title,
+    }),
+    "utf8",
+  );
+  await fs.chmod(filePath, 0o755);
+}
+
 function openInstalledApp(argsToOpen, failureLabel) {
   const result = spawnSync("open", argsToOpen, { encoding: "utf8" });
   if (result.status !== 0) {
@@ -298,7 +315,19 @@ await fs.mkdir(resourcesDir, { recursive: true });
 await fs.writeFile(path.join(contentsDir, "Info.plist"), infoPlist(), "utf8");
 await fs.writeFile(path.join(macosDir, executableName), launcherScript(), { encoding: "utf8", mode: 0o755 });
 const installedIcon = await installAppIcon();
-await fs.writeFile(path.join(resourcesDir, "README.txt"), launcherReadmeText({ repoRoot, pnpmCommand }), "utf8");
+await installCompanionCommand(statusCommandPath, `${appName} Status`, "dev:status");
+await installCompanionCommand(stopCommandPath, `${appName} Stop`, "dev:stop");
+await fs.writeFile(
+  path.join(resourcesDir, "README.txt"),
+  launcherReadmeText({
+    repoRoot,
+    pnpmCommand,
+    companionCommandDirectory,
+    statusCommandName,
+    stopCommandName,
+  }),
+  "utf8",
+);
 
 let installedDesktopShortcut = false;
 if (createDesktopShortcut) {
@@ -313,6 +342,8 @@ console.log(
 if (installedDesktopShortcut) {
   console.log(`Installed Desktop shortcut: ${desktopShortcutPath}`);
 }
+console.log(`Installed Status command: ${statusCommandPath}`);
+console.log(`Installed Stop command: ${stopCommandPath}`);
 console.log("Double-click it in Finder to start Mauth Studio through pnpm dev:launch:desktop.");
 
 if (revealAfterInstall && openInstalledApp(["-R", targetApp], "Could not reveal installed app")) {

@@ -26,6 +26,11 @@ pnpm macos:install-launcher
 ```
 
 This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
+It also installs two companion commands beside the app:
+
+- `~/Applications/Mauth Studio Status.command` checks whether the local API/web servers are ready, stopped, stale, or conflicting.
+- `~/Applications/Mauth Studio Stop.command` stops Mauth-owned local API/web servers without needing to remember a terminal command.
+
 If the repo has moved, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session. If the stored `pnpm` path has moved, the app falls back to `pnpm` on `PATH` and common Homebrew/Corepack locations before asking you to reinstall.
 The installed app runs the desktop launcher mode:
 
@@ -64,6 +69,8 @@ Stop Mauth-owned local servers:
 ```bash
 pnpm dev:stop
 ```
+
+Or double-click `~/Applications/Mauth Studio Stop.command` after installing the macOS launcher.
 
 If stale manual servers are still running, stop their terminals with `Ctrl+C` or `pnpm dev:stop`. To force a clean launcher-owned restart, run:
 
