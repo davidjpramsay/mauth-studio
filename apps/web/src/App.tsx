@@ -1,7 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary } from "@mauth-studio/shared";
-import { ArrowDown, ArrowUp, Copy, CopyPlus, Trash2 } from "lucide-react";
 
 import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
 import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
@@ -25,7 +24,6 @@ import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview"
 import { AppHeader } from "@/components/shell/AppHeader";
 import { AppOverlays } from "@/components/shell/AppOverlays";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
-import { type ContextMenuAction } from "@/components/ui/context-menu";
 import { useActiveProjectFileStateController } from "@/hooks/useActiveProjectFileStateController";
 import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
 import { useDocumentsFolderController } from "@/hooks/useDocumentsFolderController";
@@ -58,6 +56,7 @@ import { useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProje
 import { usePrintController } from "@/hooks/usePrintController";
 import { usePreviewZoomController } from "@/hooks/usePreviewZoomController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
+import { useEditorContextActionsController } from "@/hooks/useEditorContextActionsController";
 import { useEditorContextMenuController } from "@/hooks/useEditorContextMenuController";
 import { useEditorGlobalDeleteController } from "@/hooks/useEditorGlobalDeleteController";
 import { useEditorAutosaveSnapshotController } from "@/hooks/useEditorAutosaveSnapshotController";
@@ -182,7 +181,6 @@ import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { pageFormatFromConfig } from "@/lib/previewPageFormat";
 import { validateSolutionCompleteness } from "@/lib/solutionValidation";
 import { isContentBlockVisibleInScope, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
-import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import {
   EDITOR_PAGE_BREAK_DRAG_MIME,
   EDITOR_PAGE_BREAK_DRAG_TEXT_PREFIX,
@@ -1076,15 +1074,6 @@ export default function App() {
     questionScrollAnchor,
   });
 
-  const { contextMenu, closeContextMenu, openContextMenu, handlePreviewContextMenu, handleEditorHeaderContextMenu } =
-    useEditorContextMenuController<DocumentTocItem>({
-      previewPaneRef,
-      contextDescriptorForAnchor,
-      selectContextAnchor,
-      contextActionsForAnchor,
-      previewAnchorFromEventTarget,
-    });
-
   useLayoutEffect(() => {
     logosRef.current = logos;
     legacySavedTestsRef.current = legacySavedTests;
@@ -1152,6 +1141,40 @@ export default function App() {
     setQuestionsWithHistory,
     setDocumentWithHistory: setEditorDocumentWithHistory,
   });
+
+  const { createSolutionCopyForSelectedBlock } = useSolutionSurfaceCopyController({
+    questions,
+    showEditor,
+    applyActions: applyEditorActions,
+    showSolutions: () => setShowSolutions(true),
+    selectContextAnchor,
+    solutionSurfaceContentBlock,
+    solutionSurfaceColumnBlockCopyAtPath,
+  });
+
+  const { contextActionsForAnchor } = useEditorContextActionsController({
+    questions,
+    supportsSolutionTools,
+    contextDescriptorForAnchor,
+    contextReferenceText,
+    canMoveAnchorTarget,
+    moveAnchorTarget,
+    canDuplicateAnchorTarget,
+    duplicateAnchorTarget,
+    canDeleteAnchorTarget,
+    deleteEditorSelection,
+    selectedEditorBlockFromAnchor,
+    createSolutionCopyForSelectedBlock,
+  });
+
+  const { contextMenu, closeContextMenu, openContextMenu, handlePreviewContextMenu, handleEditorHeaderContextMenu } =
+    useEditorContextMenuController<DocumentTocItem>({
+      previewPaneRef,
+      contextDescriptorForAnchor,
+      selectContextAnchor,
+      contextActionsForAnchor,
+      previewAnchorFromEventTarget,
+    });
 
   const {
     actionProposalOpen,
@@ -1788,21 +1811,6 @@ export default function App() {
     }
   }
 
-  const { createSolutionCopyForSelectedBlock } = useSolutionSurfaceCopyController({
-    questions,
-    showEditor,
-    applyActions: applyEditorActions,
-    showSolutions: () => setShowSolutions(true),
-    selectContextAnchor,
-    solutionSurfaceContentBlock,
-    solutionSurfaceColumnBlockCopyAtPath,
-  });
-
-  function copyAnchorReference(anchor: string) {
-    const reference = contextReferenceText(anchor);
-    void navigator.clipboard?.writeText(reference).catch(() => undefined);
-  }
-
   function rootBlockContextFromParsed(parsed: ParsedScrollAnchor) {
     const blockId = parsed.kind === "columnBlock" ? parsed.rootBlockId : parsed.blockId;
     if (!parsed.questionId || !blockId) return null;
@@ -2032,61 +2040,6 @@ export default function App() {
     return (
       parsed.kind === "question" || parsed.kind === "part" || parsed.kind === "subpart" || Boolean(blockContextFromParsed(parsed)?.block)
     );
-  }
-
-  function contextActionsForAnchor(anchor: string): ContextMenuAction[] {
-    const item = contextDescriptorForAnchor(anchor);
-    const actions: ContextMenuAction[] = [
-      {
-        id: "copy-reference",
-        label: "Copy agent reference",
-        icon: <Copy className="size-4" aria-hidden="true" />,
-        onSelect: () => copyAnchorReference(item.editorAnchor),
-      },
-    ];
-    if (canMoveAnchorTarget(item.editorAnchor, -1)) {
-      actions.push({
-        id: "move-up",
-        label: "Move up",
-        icon: <ArrowUp className="size-4" aria-hidden="true" />,
-        onSelect: () => moveAnchorTarget(item.editorAnchor, -1),
-      });
-    }
-    if (canMoveAnchorTarget(item.editorAnchor, 1)) {
-      actions.push({
-        id: "move-down",
-        label: "Move down",
-        icon: <ArrowDown className="size-4" aria-hidden="true" />,
-        onSelect: () => moveAnchorTarget(item.editorAnchor, 1),
-      });
-    }
-    if (canDuplicateAnchorTarget(item.editorAnchor)) {
-      actions.push({
-        id: "duplicate",
-        label: "Duplicate",
-        icon: <CopyPlus className="size-4" aria-hidden="true" />,
-        onSelect: () => duplicateAnchorTarget(item.editorAnchor),
-      });
-    }
-    const solutionCopySelection = supportsSolutionTools ? selectedEditorBlockFromAnchor(questions, item.editorAnchor) : null;
-    if (solutionCopySelection && solutionSurfaceControlState(solutionCopySelection.block).canCreateSolutionCopy) {
-      actions.push({
-        id: "copy-to-solutions",
-        label: "Copy to solutions",
-        icon: <CopyPlus className="size-4" aria-hidden="true" />,
-        onSelect: () => createSolutionCopyForSelectedBlock(solutionCopySelection),
-      });
-    }
-    if (canDeleteAnchorTarget(item.editorAnchor)) {
-      actions.push({
-        id: "delete",
-        label: "Delete",
-        icon: <Trash2 className="size-4" aria-hidden="true" />,
-        destructive: true,
-        onSelect: () => deleteEditorSelection(item.editorAnchor),
-      });
-    }
-    return actions;
   }
 
   function reorderQuestion(draggedId: string, targetId: string, placement: Exclude<DropPlacement, "inside">) {
