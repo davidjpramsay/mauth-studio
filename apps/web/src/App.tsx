@@ -85,7 +85,12 @@ import {
   uniqueTestPath,
 } from "@/lib/projectFiles";
 import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview";
-import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
+import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
+import {
+  defaultProjectFileNameForDocument,
+  parseProjectSavedDocument,
+  serializeProjectDocumentSnapshot,
+} from "@/lib/projectDocumentSerialization";
 import { scrollToAnchorPosition, syncPreviewSelection } from "@/lib/editorDomNavigation";
 import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
@@ -1427,40 +1432,16 @@ export default function App() {
     }),
     persistLocalDraft: persistCurrentDraft,
     saveDiskAutosave: (snapshot) => saveStorageAutosave<AutosavedEditorSnapshot>(snapshot).then((response) => response.autosave),
-    defaultProjectFileName: () =>
-      activeProjectFilePath && testPathFromProjectPath(activeProjectFilePath)
-        ? testFileDisplayName(testPathBasename(testPathFromProjectPath(activeProjectFilePath) ?? ""))
-        : defaultSavedTestName(frontMatter),
-    serializeProjectDocument: ({ filePath, testName, document }) => {
-      const nextFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
-      const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
-      const savedTest = createSavedTestSnapshot({
-        testId: `project-file:${filePath}`,
-        name: testName,
-        frontMatter: document.frontMatter,
-        questions: document.questions,
-        sectionHeadings: document.sectionHeadings,
-        documentFlow: document.documentFlow,
-        formattingConfig: nextFormattingConfig,
-        logo: currentLogo,
-      });
-      return {
-        content: JSON.stringify(savedTest, null, 2),
-        fileType: projectFileTypeForFrontMatter(document.frontMatter),
-        fingerprint: editorDocumentFingerprint(
-          document.frontMatter,
-          document.questions,
-          nextFormattingConfig,
-          currentLogo,
-          document.sectionHeadings,
-          document.documentFlow,
-        ),
-      };
-    },
-    parseSavedDocument: (content) => {
-      const parsed = content ? (JSON.parse(content) as unknown) : null;
-      return normalizeSavedTest(parsed);
-    },
+    defaultProjectFileName: () => defaultProjectFileNameForDocument(activeProjectFilePath, frontMatter),
+    serializeProjectDocument: ({ filePath, testName, document }) =>
+      serializeProjectDocumentSnapshot({
+        filePath,
+        testName,
+        document,
+        logos: logosRef.current,
+        runtime: { createSavedTestSnapshot, editorDocumentFingerprint },
+      }),
+    parseSavedDocument: (content) => parseProjectSavedDocument(content, normalizeSavedTest),
     applySavedProjectDocument,
     currentEditorDocumentFingerprint,
     projectFileConflictFromError,
