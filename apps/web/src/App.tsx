@@ -114,8 +114,6 @@ import {
   createEditorDocumentNormalizer,
   defaultDocumentFlow,
   orderItemKey,
-  orderedPartItems,
-  orderedQuestionItems,
   withNormalizedPartOrder,
   withNormalizedQuestionOrder,
   type ContainerOrderItem,
@@ -131,6 +129,14 @@ import {
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
 import { moduleDeletionAction, moduleInsertionPlan } from "@/lib/editorModuleLifecycle";
+import {
+  editorPageBreakTargetHasBreak,
+  mauthTargetFromEditorPageBreak,
+  orderedPartPageBreakTargets,
+  orderedSubpartPageBreakTargets,
+  partPageBreakInsertTarget,
+  subpartPageBreakInsertTarget,
+} from "@/lib/editorPageBreakLifecycle";
 import {
   createBlankEditorPart,
   createBlankEditorSubpart,
@@ -2061,27 +2067,12 @@ export default function App() {
     clearPendingDocumentJumps();
   }
 
-  function mauthTargetFromEditorPageBreak(target: EditorPageBreakTarget): Extract<MauthAction, { type: "pageBreak.set" }>["target"] {
-    if (target.kind === "part") {
-      return { kind: "part", questionId: target.questionId, partId: target.partId };
-    }
-    return { kind: "subpart", questionId: target.questionId, partId: target.partId, subpartId: target.subpartId };
-  }
-
   function setEditorPageBreak(target: EditorPageBreakTarget, enabled: boolean) {
     applyEditorAction({ type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(target), enabled });
   }
 
   function editorPageBreakDestinationHasBreak(target: EditorPageBreakTarget) {
-    const question = questionsRef.current.find((current) => current.id === target.questionId);
-    if (!question) return false;
-    if (target.kind === "part") {
-      return question.parts.find((part) => part.id === target.partId)?.pageBreakBefore === true;
-    }
-    return (
-      question.parts.find((part) => part.id === target.partId)?.subparts.find((subpart) => subpart.id === target.subpartId)
-        ?.pageBreakBefore === true
-    );
+    return editorPageBreakTargetHasBreak(questionsRef.current, target);
   }
 
   function editorPageBreakCanMoveTo(source: EditorPageBreakTarget, destination: EditorPageBreakTarget | null | undefined) {
@@ -2097,18 +2088,6 @@ export default function App() {
       { type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(source), enabled: false },
       { type: "pageBreak.set", target: mauthTargetFromEditorPageBreak(destination), enabled: true },
     ]);
-  }
-
-  function orderedPartTargets(question: QuestionBlock): Extract<EditorPageBreakTarget, { kind: "part" }>[] {
-    return orderedQuestionItems(question)
-      .filter((item): item is Extract<OrderedQuestionItem, { kind: "part" }> => item.kind === "part")
-      .map((item) => ({ kind: "part" as const, questionId: question.id, partId: item.part.id }));
-  }
-
-  function orderedSubpartTargets(questionId: string, part: EditorPart): Extract<EditorPageBreakTarget, { kind: "subpart" }>[] {
-    return orderedPartItems(part)
-      .filter((item): item is Extract<OrderedPartItem, { kind: "subpart" }> => item.kind === "subpart")
-      .map((item) => ({ kind: "subpart" as const, questionId, partId: part.id, subpartId: item.subpart.id }));
   }
 
   function editorPageBreakDestinationAfter(
@@ -2131,7 +2110,7 @@ export default function App() {
       if (!question) return null;
       return (
         editorPageBreakDestinationAfter(
-          orderedPartTargets(question),
+          orderedPartPageBreakTargets(question),
           { kind: "part", questionId: target.questionId, partId: target.id },
           placement,
         ) ?? null
@@ -2148,7 +2127,7 @@ export default function App() {
       if (!part) return null;
       return (
         editorPageBreakDestinationAfter(
-          orderedSubpartTargets(target.questionId, part),
+          orderedSubpartPageBreakTargets(target.questionId, part),
           { kind: "subpart", questionId: target.questionId, partId: target.partId, subpartId: target.id },
           placement,
         ) ?? null
@@ -2191,10 +2170,10 @@ export default function App() {
     if (!question) return;
     const targets =
       target.kind === "part"
-        ? orderedPartTargets(question)
+        ? orderedPartPageBreakTargets(question)
         : (() => {
             const part = question.parts.find((current) => current.id === target.partId);
-            return part ? orderedSubpartTargets(question.id, part) : [];
+            return part ? orderedSubpartPageBreakTargets(question.id, part) : [];
           })();
     const sourceIndex = targets.findIndex((current) => editorPageBreakKey(current) === editorPageBreakKey(target));
     const destination = sourceIndex >= 0 ? targets[sourceIndex + direction] : undefined;
@@ -3130,38 +3109,14 @@ export default function App() {
     applyEditorAction({ type: "part.add", questionId: question.id, part });
   }
 
-  function firstInsertableEditorPageBreakTarget(targets: EditorPageBreakTarget[], preferredAfterIndex = -1) {
-    const afterPreferred = preferredAfterIndex >= 0 ? targets.slice(preferredAfterIndex + 1) : [];
-    return (
-      afterPreferred.find((target) => !editorPageBreakDestinationHasBreak(target)) ??
-      targets.find((target) => !editorPageBreakDestinationHasBreak(target))
-    );
-  }
-
-  function partPageBreakInsertTarget(question: QuestionBlock) {
-    const targets = orderedPartTargets(question);
-    const active = parseScrollAnchor(activeTocItemId);
-    const preferredAfterIndex =
-      active.questionId === question.id && active.partId ? targets.findIndex((target) => target.partId === active.partId) : -1;
-    const target = firstInsertableEditorPageBreakTarget(targets, preferredAfterIndex);
-    return target?.kind === "part" ? target : null;
-  }
-
-  function subpartPageBreakInsertTarget(questionId: string, part: EditorPart) {
-    const targets = orderedSubpartTargets(questionId, part);
-    const active = parseScrollAnchor(activeTocItemId);
-    const preferredAfterIndex =
-      active.questionId === questionId && active.partId === part.id && active.subpartId
-        ? targets.findIndex((target) => target.subpartId === active.subpartId)
-        : -1;
-    const target = firstInsertableEditorPageBreakTarget(targets, preferredAfterIndex);
-    return target?.kind === "subpart" ? target : null;
-  }
-
   function addPartPageBreak(questionId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const target = partPageBreakInsertTarget(question);
+    const target = partPageBreakInsertTarget({
+      question,
+      activeAnchor: activeTocItemId,
+      hasBreak: editorPageBreakDestinationHasBreak,
+    });
     if (!target) return;
     setEditorPageBreak(target, true);
     revealEditorAnchor(partScrollAnchor(question.id, target.partId));
@@ -3180,7 +3135,12 @@ export default function App() {
   }
 
   function addSubpartPageBreak(questionId: string, part: EditorPart) {
-    const target = subpartPageBreakInsertTarget(questionId, part);
+    const target = subpartPageBreakInsertTarget({
+      questionId,
+      part,
+      activeAnchor: activeTocItemId,
+      hasBreak: editorPageBreakDestinationHasBreak,
+    });
     if (!target) return;
     setEditorPageBreak(target, true);
     revealEditorAnchor(subpartScrollAnchor(questionId, part.id, target.subpartId));
@@ -3704,7 +3664,13 @@ export default function App() {
                                     effectiveShowSolutions={effectiveShowSolutions}
                                     draggedSubsectionActive={Boolean(draggedSubsection)}
                                     draggedEditorPageBreakActive={Boolean(draggedEditorPageBreak)}
-                                    canAddPartPageBreak={Boolean(partPageBreakInsertTarget(question))}
+                                    canAddPartPageBreak={Boolean(
+                                      partPageBreakInsertTarget({
+                                        question,
+                                        activeAnchor: activeTocItemId,
+                                        hasBreak: editorPageBreakDestinationHasBreak,
+                                      }),
+                                    )}
                                     itemDropZone={itemDropZone}
                                     containerDropZone={containerDropZone}
                                     renderQuestionContentBlock={renderQuestionContentBlock}
