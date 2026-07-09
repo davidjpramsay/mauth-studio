@@ -16,6 +16,10 @@ export interface ProjectSerializableDocument {
   formattingConfig: FormattingConfig;
 }
 
+export interface ProjectFingerprintDocument extends ProjectSerializableDocument {
+  logo?: LogoAsset | null;
+}
+
 export interface SerializedProjectDocumentSnapshot {
   content: string;
   fileType: ReturnType<typeof projectFileTypeForFrontMatter>;
@@ -69,18 +73,48 @@ export function serializeProjectDocumentSnapshot({
   return {
     content: JSON.stringify(savedTest, null, 2),
     fileType: projectFileTypeForFrontMatter(document.frontMatter),
-    fingerprint: runtime.editorDocumentFingerprint(
-      document.frontMatter,
-      document.questions,
-      nextFormattingConfig,
-      currentLogo,
-      document.sectionHeadings,
-      document.documentFlow,
-    ),
+    fingerprint: fingerprintProjectDocument({
+      document: { ...document, formattingConfig: nextFormattingConfig, logo: currentLogo },
+      logos,
+      runtime,
+    }),
   };
+}
+
+export function fingerprintProjectDocument({
+  document,
+  logos,
+  runtime,
+}: {
+  document: ProjectFingerprintDocument;
+  logos: LogoAsset[];
+  runtime: Pick<ProjectDocumentSerializationRuntime, "editorDocumentFingerprint">;
+}) {
+  const currentLogo = document.logo ?? selectedLogoForFrontMatter(logos, document.frontMatter);
+  return runtime.editorDocumentFingerprint(
+    document.frontMatter,
+    document.questions,
+    document.formattingConfig,
+    currentLogo,
+    document.sectionHeadings,
+    document.documentFlow,
+  );
 }
 
 export function parseProjectSavedDocument(content: string | null | undefined, normalizeSavedTest: (value: unknown) => SavedTest | null) {
   const parsed = content ? (JSON.parse(content) as unknown) : null;
   return normalizeSavedTest(parsed);
+}
+
+export function parseProjectSavedDocumentSafely(
+  content: string | null | undefined,
+  normalizeSavedTest: (value: unknown) => SavedTest | null,
+) {
+  if (!content) return null;
+
+  try {
+    return parseProjectSavedDocument(content, normalizeSavedTest);
+  } catch {
+    return null;
+  }
 }

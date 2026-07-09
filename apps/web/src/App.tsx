@@ -88,7 +88,9 @@ import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview"
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
   defaultProjectFileNameForDocument,
+  fingerprintProjectDocument,
   parseProjectSavedDocument,
+  parseProjectSavedDocumentSafely,
   serializeProjectDocumentSnapshot,
 } from "@/lib/projectDocumentSerialization";
 import { scrollToAnchorPosition, syncPreviewSelection } from "@/lib/editorDomNavigation";
@@ -768,32 +770,19 @@ export default function App() {
 
   const { resolveAutosaveAgainstProjectFile } = useProjectAutosaveResolutionController<AutosavedEditorSnapshot, SavedTest>({
     activeProject,
-    parseSavedDocument: (content) => {
-      if (!content) return null;
-      try {
-        return normalizeSavedTest(JSON.parse(content) as unknown);
-      } catch {
-        return null;
-      }
-    },
+    parseSavedDocument: (content) => parseProjectSavedDocumentSafely(content, normalizeSavedTest),
     savedDocumentFingerprint: (savedTest) =>
-      editorDocumentFingerprint(
-        savedTest.frontMatter,
-        savedTest.questions,
-        savedTest.formattingConfig,
-        savedTest.logo ?? selectedLogoForFrontMatter(logosRef.current, savedTest.frontMatter),
-        savedTest.sectionHeadings,
-        savedTest.documentFlow,
-      ),
+      fingerprintProjectDocument({
+        document: savedTest,
+        logos: logosRef.current,
+        runtime: { editorDocumentFingerprint },
+      }),
     autosaveSnapshotFingerprint: (snapshot) =>
-      editorDocumentFingerprint(
-        snapshot.frontMatter,
-        snapshot.questions,
-        snapshot.formattingConfig,
-        snapshot.logo ?? selectedLogoForFrontMatter(logosRef.current, snapshot.frontMatter),
-        snapshot.sectionHeadings,
-        snapshot.documentFlow,
-      ),
+      fingerprintProjectDocument({
+        document: snapshot,
+        logos: logosRef.current,
+        runtime: { editorDocumentFingerprint },
+      }),
     savedDocumentToAutosaveSnapshot: (savedTest, filePath, revision) => ({
       frontMatter: savedTest.frontMatter,
       questions: savedTest.questions,
@@ -1525,8 +1514,7 @@ export default function App() {
     activeProject,
     activeProjectFilePath,
     applyRestoredProjectDocument: (project, filePath, restoredDocument) => {
-      const parsed = restoredDocument.content ? (JSON.parse(restoredDocument.content) as unknown) : null;
-      const savedTest = normalizeSavedTest(parsed);
+      const savedTest = parseProjectSavedDocument(restoredDocument.content, normalizeSavedTest);
       if (!savedTest) throw new Error("Unsupported project file");
       applySavedProjectDocument(project, filePath, savedTest, restoredDocument.revision);
     },

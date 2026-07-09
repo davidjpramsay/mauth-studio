@@ -10,7 +10,9 @@ import { DEFAULT_FRONT_MATTER, type FrontMatterConfig } from "./frontMatterConfi
 import type { LogoAsset } from "./logoLibrary.ts";
 import {
   defaultProjectFileNameForDocument,
+  fingerprintProjectDocument,
   parseProjectSavedDocument,
+  parseProjectSavedDocumentSafely,
   serializeProjectDocumentSnapshot,
 } from "./projectDocumentSerialization.ts";
 
@@ -154,3 +156,89 @@ test("parseProjectSavedDocument passes null for empty content", () => {
 
   assert.equal(parsed, null);
 });
+
+test("parseProjectSavedDocumentSafely returns null for empty and invalid content", () => {
+  assert.equal(
+    parseProjectSavedDocumentSafely("", () => savedTestFromOptions(baseSavedOptions())),
+    null,
+  );
+  assert.equal(
+    parseProjectSavedDocumentSafely("{", () => savedTestFromOptions(baseSavedOptions())),
+    null,
+  );
+});
+
+test("parseProjectSavedDocumentSafely returns normalized saved documents", () => {
+  const parsed = parseProjectSavedDocumentSafely('{"id":"saved"}', (value) => ({ id: (value as { id: string }).id }) as SavedTest);
+
+  assert.equal(parsed?.id, "saved");
+});
+
+test("fingerprintProjectDocument uses an explicit saved logo before the active library logo", () => {
+  const explicitLogo: LogoAsset = { id: "saved-logo", name: "Saved", src: "/saved.svg" };
+  const libraryLogo: LogoAsset = { id: "library-logo", name: "Library", src: "/library.svg" };
+  const frontMatter: FrontMatterConfig = { ...DEFAULT_FRONT_MATTER, logoId: "library-logo" };
+  const questions = [question("q1")];
+  const sectionHeadings: DocumentSectionHeading[] = [{ id: "h1", title: "Section A" }];
+  const documentFlow: DocumentFlowItem[] = [
+    { kind: "sectionHeading", id: "h1" },
+    { kind: "question", id: "q1" },
+  ];
+
+  let receivedLogo: LogoAsset | null | undefined;
+  const fingerprint = fingerprintProjectDocument({
+    document: {
+      frontMatter,
+      questions,
+      sectionHeadings,
+      documentFlow,
+      formattingConfig: DEFAULT_FORMATTING_CONFIG,
+      logo: explicitLogo,
+    },
+    logos: [libraryLogo],
+    runtime: {
+      editorDocumentFingerprint: (_frontMatter, _questions, _formattingConfig, logo) => {
+        receivedLogo = logo;
+        return "fingerprint";
+      },
+    },
+  });
+
+  assert.equal(fingerprint, "fingerprint");
+  assert.deepEqual(receivedLogo, explicitLogo);
+});
+
+test("fingerprintProjectDocument falls back to the selected logo for document front matter", () => {
+  const libraryLogo: LogoAsset = { id: "library-logo", name: "Library", src: "/library.svg" };
+  const frontMatter: FrontMatterConfig = { ...DEFAULT_FRONT_MATTER, logoId: "library-logo" };
+  let receivedLogo: LogoAsset | null | undefined;
+
+  fingerprintProjectDocument({
+    document: {
+      frontMatter,
+      questions: [question("q1")],
+      sectionHeadings: [],
+      documentFlow: [{ kind: "question", id: "q1" }],
+      formattingConfig: DEFAULT_FORMATTING_CONFIG,
+    },
+    logos: [libraryLogo],
+    runtime: {
+      editorDocumentFingerprint: (_frontMatter, _questions, _formattingConfig, logo) => {
+        receivedLogo = logo;
+        return "fingerprint";
+      },
+    },
+  });
+
+  assert.deepEqual(receivedLogo, libraryLogo);
+});
+
+function baseSavedOptions(): CreateSavedTestSnapshotOptions {
+  return {
+    testId: "saved-test",
+    name: "Saved Test",
+    frontMatter: DEFAULT_FRONT_MATTER,
+    questions: [question("q1")],
+    formattingConfig: DEFAULT_FORMATTING_CONFIG,
+  };
+}
