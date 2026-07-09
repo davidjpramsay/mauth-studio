@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
-import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary } from "@mauth-studio/shared";
+import type { FormattingConfig, ProjectFileSummary } from "@mauth-studio/shared";
 
 import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
 import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
@@ -47,9 +47,10 @@ import {
   saveStorageAutosave,
   saveStoredLogo,
 } from "@/lib/api";
-import { type MauthAction, type MauthContentScope, type MauthDocumentLike } from "@/lib/mauthActions";
+import { type MauthAction, type MauthContentScope } from "@/lib/mauthActions";
 import { parseMauthDocumentActionProposal } from "@/lib/mauthActionProposal";
 import { useDraftAutosaveController } from "@/hooks/useDraftAutosaveController";
+import { useMauthAgentFileStateController } from "@/hooks/useMauthAgentFileStateController";
 import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
 import { useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
@@ -87,7 +88,6 @@ import { buildProjectFileVersionPreview } from "@/lib/projectFileVersionPreview"
 import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFrontMatter } from "@/lib/documentFileNaming";
 import { scrollToAnchorPosition, syncPreviewSelection } from "@/lib/editorDomNavigation";
 import { editorDraftChangeKey } from "@/lib/editorSessionSnapshots";
-import { buildMauthAgentFileState } from "@/lib/mauthAgentFileState";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import {
   PROJECT_FILE_REVISION_MISSING_ERROR,
@@ -1506,34 +1506,22 @@ export default function App() {
     reloadFromDisk: reloadActiveProjectFileFromDisk,
   });
 
-  function agentFileState(document: MauthDocumentLike<QuestionBlock, FrontMatterConfig, FormattingConfig>): MauthAgentFileState {
-    const activePath = activeProjectFilePathRef.current;
-    const activeRevision = activeProjectFileRevisionRef.current;
-    const currentLogo = selectedLogoForFrontMatter(logosRef.current, document.frontMatter);
-    const normalizedFormattingConfig = normalizeFormattingConfig(document.formattingConfig);
-    const normalizedSectionHeadings = normalizeSectionHeadings(document.sectionHeadings);
-    const normalizedDocumentFlow = normalizeDocumentFlow(document.documentFlow, document.questions, normalizedSectionHeadings);
-    const documentFingerprint = editorDocumentFingerprint(
-      document.frontMatter,
-      document.questions,
-      normalizedFormattingConfig,
-      currentLogo,
-      normalizedSectionHeadings,
-      normalizedDocumentFlow,
-    );
-    return buildMauthAgentFileState({
-      projectId: activeProject?.id ?? null,
-      projectName: activeProject?.name ?? null,
-      activePath,
-      activeRevision,
-      documentFingerprint,
-      lastProjectSaveFingerprint: lastProjectSaveFingerprintRef.current,
-      fileOperationBusy,
-      hasRevisionIssue: Boolean(activeProjectRevisionIssue),
-      autosaveStatus: draftAutosaveStatus,
-      autosaveMessage: draftAutosaveMessage,
-    });
-  }
+  const { agentFileState } = useMauthAgentFileStateController<QuestionBlock, FrontMatterConfig, FormattingConfig, LogoAsset>({
+    activeProject,
+    activeProjectFilePathRef,
+    activeProjectFileRevisionRef,
+    lastProjectSaveFingerprintRef,
+    logosRef,
+    fileOperationBusy,
+    hasRevisionIssue: Boolean(activeProjectRevisionIssue),
+    autosaveStatus: draftAutosaveStatus,
+    autosaveMessage: draftAutosaveMessage,
+    normalizeFormattingConfig,
+    normalizeSectionHeadings,
+    normalizeDocumentFlow,
+    selectedLogoForFrontMatter,
+    editorDocumentFingerprint,
+  });
 
   useMauthAgentBridgeController<QuestionBlock, FrontMatterConfig, FormattingConfig>({
     enabled: storageHydrated,
