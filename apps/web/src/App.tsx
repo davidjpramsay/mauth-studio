@@ -130,6 +130,7 @@ import {
 } from "@/lib/editorDocumentNormalization";
 import { createEditorSolutionValidationRuntime, questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { createEditorDocumentDuplicator } from "@/lib/editorDocumentDuplication";
+import { moduleDeletionAction, moduleInsertionPlan } from "@/lib/editorModuleLifecycle";
 import {
   createBlankEditorPart,
   createBlankEditorSubpart,
@@ -3095,34 +3096,31 @@ export default function App() {
     }
   }
 
+  function insertEditorModule(scope: MauthContentScope, block: EditorContentBlock) {
+    const plan = moduleInsertionPlan(scope, block);
+    const result = applyEditorAction(plan.action);
+    if (result.ok) {
+      activateEditorAnchor(plan.anchor);
+      revealEditorAnchor(plan.anchor);
+    }
+  }
+
   function addQuestionBlock(questionId: string, kind: ContentBlockKind, visibility = solutionInsertedBlockVisibilityForKind(kind)) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const block = contentBlockForKind(kind, visibility);
-    const result = applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
-    if (result.ok) {
-      const anchor = questionBlockScrollAnchor(question.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "question", questionId: question.id }, contentBlockForKind(kind, visibility));
   }
 
   function addQuestionDiagramBlock(questionId: string, type: string, visibility = solutionInsertedBlockVisibilityForKind("diagram")) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    const block = diagramBlockForType(type, visibility);
-    const result = applyEditorAction({ type: "module.add", scope: { kind: "question", questionId: question.id }, blocks: [block] });
-    if (result.ok) {
-      const anchor = questionBlockScrollAnchor(question.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "question", questionId: question.id }, diagramBlockForType(type, visibility));
   }
 
   function removeQuestionBlock(questionId: string, blockId: string) {
     const question = questions.find((current) => current.id === questionId);
     if (!question) return;
-    applyEditorAction({ type: "module.delete", scope: { kind: "question", questionId: question.id }, blockId });
+    applyEditorAction(moduleDeletionAction({ kind: "question", questionId: question.id }, blockId));
   }
 
   function addPart(questionId: string) {
@@ -3198,13 +3196,7 @@ export default function App() {
     kind: ContentBlockKind,
     visibility = solutionInsertedBlockVisibilityForKind(kind),
   ) {
-    const block = contentBlockForKind(kind, visibility);
-    const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
-    if (result.ok) {
-      const anchor = partBlockScrollAnchor(questionId, part.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "part", questionId, partId: part.id }, contentBlockForKind(kind, visibility));
   }
 
   function addPartDiagramBlock(
@@ -3213,17 +3205,11 @@ export default function App() {
     type: string,
     visibility = solutionInsertedBlockVisibilityForKind("diagram"),
   ) {
-    const block = diagramBlockForType(type, visibility);
-    const result = applyEditorAction({ type: "module.add", scope: { kind: "part", questionId, partId: part.id }, blocks: [block] });
-    if (result.ok) {
-      const anchor = partBlockScrollAnchor(questionId, part.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "part", questionId, partId: part.id }, diagramBlockForType(type, visibility));
   }
 
   function removePartBlock(questionId: string, part: EditorPart, blockId: string) {
-    applyEditorAction({ type: "module.delete", scope: { kind: "part", questionId, partId: part.id }, blockId });
+    applyEditorAction(moduleDeletionAction({ kind: "part", questionId, partId: part.id }, blockId));
   }
 
   function addSubpartBlock(
@@ -3233,17 +3219,7 @@ export default function App() {
     kind: ContentBlockKind,
     visibility = solutionInsertedBlockVisibilityForKind(kind),
   ) {
-    const block = contentBlockForKind(kind, visibility);
-    const result = applyEditorAction({
-      type: "module.add",
-      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
-      blocks: [block],
-    });
-    if (result.ok) {
-      const anchor = subpartBlockScrollAnchor(questionId, part.id, subpart.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, contentBlockForKind(kind, visibility));
   }
 
   function addSubpartDiagramBlock(
@@ -3253,21 +3229,11 @@ export default function App() {
     type: string,
     visibility = solutionInsertedBlockVisibilityForKind("diagram"),
   ) {
-    const block = diagramBlockForType(type, visibility);
-    const result = applyEditorAction({
-      type: "module.add",
-      scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id },
-      blocks: [block],
-    });
-    if (result.ok) {
-      const anchor = subpartBlockScrollAnchor(questionId, part.id, subpart.id, block.id);
-      activateEditorAnchor(anchor);
-      revealEditorAnchor(anchor);
-    }
+    insertEditorModule({ kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, diagramBlockForType(type, visibility));
   }
 
   function removeSubpartBlock(questionId: string, part: EditorPart, subpart: EditorSubpart, blockId: string) {
-    applyEditorAction({ type: "module.delete", scope: { kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, blockId });
+    applyEditorAction(moduleDeletionAction({ kind: "subpart", questionId, partId: part.id, subpartId: subpart.id }, blockId));
   }
 
   function deleteEditorSelection(anchor: string) {
