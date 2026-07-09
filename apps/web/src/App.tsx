@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
-import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
+import type { FormattingConfig, MauthAgentFileState, ProjectFileSummary } from "@mauth-studio/shared";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, Trash2 } from "lucide-react";
 
 import { EditorNestedPartPanel } from "@/components/editor/EditorNestedPartPanel";
@@ -69,6 +69,7 @@ import { useSolutionModeController } from "@/hooks/useSolutionModeController";
 import { useSolutionSlotController } from "@/hooks/useSolutionSlotController";
 import { useSolutionSurfaceCopyController } from "@/hooks/useSolutionSurfaceCopyController";
 import { useSolutionValidationController } from "@/hooks/useSolutionValidationController";
+import { useSavedProjectDocumentApplier } from "@/hooks/useSavedProjectDocumentApplier";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useThemeController } from "@/hooks/useThemeController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
@@ -1345,6 +1346,27 @@ export default function App() {
     queueDocumentJump,
   });
 
+  const { applySavedProjectDocument } = useSavedProjectDocumentApplier({
+    logosRef,
+    normalizeQuestionBlocks,
+    normalizeSectionHeadings,
+    normalizeDocumentFlow,
+    editorDocumentFingerprint,
+    pushEditorHistory,
+    setEditorDocument,
+    setEditorDocumentOpenState,
+    setActiveQuestionId,
+    setActiveTocItemId,
+    setActiveRailItemId,
+    clearEditorTransientState,
+    setActiveProject,
+    setActiveProjectFileState,
+    setProjectSaveConflict,
+    updateLastProjectSaveFingerprint,
+    setLogos,
+    writeLogoToDisk,
+  });
+
   const {
     writeEditorDocumentToProjectFile,
     writeCurrentTestProjectFile,
@@ -1506,52 +1528,6 @@ export default function App() {
       return conflict?.message || "Project file save failed; live editor state was not mutated.";
     },
   });
-
-  function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedTest: SavedTest, revision: number | null) {
-    pushEditorHistory();
-    const nextFrontMatter = cloneSerializable(savedTest.frontMatter);
-    const nextQuestions = normalizeQuestionBlocks(savedTest.questions);
-    const nextSectionHeadings = normalizeSectionHeadings(savedTest.sectionHeadings);
-    const nextDocumentFlow = normalizeDocumentFlow(savedTest.documentFlow, nextQuestions, nextSectionHeadings);
-    const nextFormattingConfig = normalizeFormattingConfig(savedTest.formattingConfig);
-    setEditorDocument({
-      frontMatter: nextFrontMatter,
-      questions: nextQuestions,
-      sectionHeadings: nextSectionHeadings,
-      documentFlow: nextDocumentFlow,
-      formattingConfig: nextFormattingConfig,
-    });
-    setEditorDocumentOpenState(true);
-    setActiveQuestionId(firstQuestionId(nextQuestions));
-    setActiveTocItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
-    setActiveRailItemId(firstDocumentFlowAnchor(nextDocumentFlow, nextQuestions));
-    clearEditorTransientState();
-    setActiveProject(project);
-    setActiveProjectFileState(filePath, revision);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(
-      editorDocumentFingerprint(
-        nextFrontMatter,
-        nextQuestions,
-        nextFormattingConfig,
-        savedTest.logo ?? selectedLogoFromLibrary(logosRef.current, nextFrontMatter.logoId),
-        nextSectionHeadings,
-        nextDocumentFlow,
-      ),
-    );
-
-    if (savedTest.logo) {
-      setLogos((current) => {
-        const next = mergeLogoAssets(current, [savedTest.logo]);
-        if (next !== current) {
-          logosRef.current = next;
-          persistLogoLibrary(next);
-        }
-        return next;
-      });
-      writeLogoToDisk(savedTest.logo);
-    }
-  }
 
   const { loadProjectFileVersions, restoreProjectFileFromVersion } = useProjectVersionsController({
     activeProject,
