@@ -12,7 +12,7 @@ Do not put marking or formatting decisions inside question generator logic.
 
 Product direction: build for Codex/Claude-style external agent authoring first. Human UI should remain usable and clear, but new features, schemas, editor actions, validation, and docs should assume an AI agent will often create, inspect, and edit the document through a structured local agent bridge, Mauth actions, and browser verification. Prefer explicit document state, deterministic validators, reversible actions, stable labels, and small focused controls over UI-only behaviour that an agent cannot reason about or reproduce.
 
-The old provider-backed chat panel is not the product path. Treat this file plus `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
+The old provider-backed chat panel is not the product path. Treat this file plus `docs/current-state.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
 
 ## Commands
 
@@ -27,7 +27,20 @@ uv sync
 cd ../..
 ```
 
-Run locally from the project root, using two terminals:
+For normal local use, start the launcher from the project root:
+
+```bash
+pnpm dev:launch:desktop
+```
+
+On macOS, `pnpm macos:install-launcher` installs `~/Applications/Mauth Studio.app`, which runs the same desktop launcher mode. Check or stop the runtime with:
+
+```bash
+pnpm dev:status
+pnpm dev:stop
+```
+
+For lower-level debugging, run locally from the project root using two terminals:
 
 ```bash
 pnpm dev:api

@@ -21,7 +21,7 @@ This is still a local-first workflow. The app does not need hosted collaboration
 
 ## Authoring Loop
 
-Agents should use this loop for document authoring once the bridge exists:
+Agents should use this loop for document authoring:
 
 1. Read the current Mauth snapshot.
 2. Build a structured Mauth action batch.
@@ -30,7 +30,7 @@ Agents should use this loop for document authoring once the bridge exists:
 5. Apply the same batch with the current revision and an idempotency key.
 6. Verify the rendered result in the browser.
 
-Until the bridge exists, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
+If the bridge is unavailable in a given runtime, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
 
 ## Local Endpoints
 

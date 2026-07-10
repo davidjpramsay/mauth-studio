@@ -521,16 +521,15 @@ Please help me use two separate chats/work streams where practical:
 - Mauth Authoring: create, inspect, convert, and polish assessments through the running app.
 
 1. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder, or help me fork it first if I want my own public copy.
-2. Read AGENTS.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
+2. Read AGENTS.md, docs/current-state.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
 3. From the repo root, install what Mauth needs:
    pnpm install
    cd apps/api
    uv sync
    cd ../..
 4. Start the local app:
-   pnpm dev:api
-   pnpm dev:web
-5. Open the web URL printed by pnpm dev:web in the browser. It is usually http://localhost:5173, but Vite may choose another port if 5173 is busy.
+   pnpm dev:launch:desktop
+5. Open the web URL printed by the launcher if it does not open automatically. It is usually http://localhost:5173, but Vite may choose another port if 5173 is busy.
    If it uses the usual URL, run:
    pnpm agent:doctor
    pnpm smoke:agent-bridge
@@ -558,6 +557,9 @@ Do not edit ~/Documents/Mauth/Documents, ~/Documents/Mauth/.mauth, or legacy sto
           </div>
           <div class="links">
             <a href="https://github.com/davidjpramsay/mauth-studio#readme">README.md <span>overview</span></a>
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/current-state.md"
+              >current-state.md <span>handoff</span></a
+            >
             <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/agent-local-setup.md"
               >agent-local-setup.md <span>local workflow</span></a
             >

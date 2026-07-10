@@ -16,7 +16,7 @@ The app should be excellent for:
 - Make `workspace/` the standard location for local generated artifacts.
 - Keep the right-click menu small: copy agent reference, move, duplicate, delete.
 - Preserve structured Mauth actions as the deterministic edit contract.
-- Build the local agent bridge around snapshot, action preview/apply, validation, presence, events, comments, and suggestions.
+- Harden the local agent bridge around snapshot, action preview/apply, validation, presence, events, comments, and suggestions.
 - Add better document export/import and Mauthdown round-trip support.
 - Improve diagram primitives and geometry authoring without relying on model-authored low-level renderer payloads.
 - Add browser-visible validation/reporting surfaces that external agents can inspect without hidden React state.
@@ -33,16 +33,18 @@ The app should be excellent for:
 
 ## Local Agent Bridge TODO
 
-- Define shared TypeScript types for agent snapshots, preview/apply requests, mutation results, comments, suggestions, presence, and events.
-- Add a read-only snapshot builder for the active document with stable question, part, subpart, module, diagram, file, revision, and validation summaries.
-- Expose a preview endpoint that calls the existing document action dry-run path and returns preview summary plus validation issues.
-- Expose an apply endpoint that requires revision/idempotency protection and commits through editor history/autosave.
-- Return `409 STALE_REVISION` with a fresh snapshot when the active file/document changed.
-- Add a validation endpoint that surfaces structural, solution, diagram, and layout checks in a compact agent-readable shape.
-- Add local comments and suggestions as review state separate from committed document edits.
-- Add presence/events so the app can show what an external agent is doing without exposing prompt internals.
-- Add `/.well-known/mauth-agent.json` and `/agent-docs` discovery docs once the first bridge slice is usable.
-- Add bridge-specific tests and smoke checks before recommending it as the normal authoring path.
+The first bridge slice exists and is the intended agent-facing editing path. Keep improving it rather than creating another mutation channel.
+
+- Keep shared TypeScript/API contracts aligned for agent snapshots, preview/apply requests, mutation results, comments, suggestions, presence, and events.
+- Keep the active-document snapshot compact and stable with question, part, subpart, module, diagram, file, revision, and validation summaries.
+- Keep preview endpoints wired to the existing document action dry-run path and returning preview summary plus validation issues.
+- Keep apply endpoints revision/idempotency protected and committed through editor history/autosave.
+- Return stale-state conflicts with enough fresh snapshot/file information for an agent to rebuild its batch safely.
+- Expand validation output for structural, solution, diagram, and layout checks in a compact agent-readable shape.
+- Keep local comments and suggestions as review state separate from committed document edits.
+- Expand presence/events so the app can show what an external agent is doing without exposing prompt internals.
+- Keep `/.well-known/mauth-agent.json` and `/agent-docs` discovery docs current with the implemented bridge.
+- Add bridge-specific tests and smoke checks for every new agent-facing workflow.
 
 ## Reliability Gates
 

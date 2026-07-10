@@ -1,6 +1,6 @@
 # App Scan And Direction
 
-This scan reflects the current Mauth Studio architecture after the first controller extractions from `apps/web/src/App.tsx`.
+This scan reflects the current Mauth Studio architecture after the launcher, storage, bridge, document-session, solution-layer, and `App.tsx` extraction work to date. For a concise handoff, read `docs/current-state.md` first.
 
 ## Current Health
 
@@ -19,7 +19,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 1. `apps/web/src/App.tsx` is still too large.
 
-   The file remains the central risk for regressions because toolbar actions, drag/drop, and rendering orchestration still meet there. The latest cleanup moved document state, document-session orchestration, file operations, autosave, bridge handling, print control, preview zoom, editor selection, editor/preview navigation, context-menu state, global delete handling, action proposal state, and solution-validation fixes into focused hooks, but the shell should keep shrinking.
+   The file remains the central risk for regressions because toolbar actions, drag/drop, and rendering orchestration still meet there. The latest cleanup moved document state, document-session orchestration, file operations, autosave, bridge handling, print control, preview zoom, editor selection, editor/preview navigation, context-menu state, global delete handling, action proposal state, solution-validation fixes, block-context lookup, and new-document plan building into focused hooks/helpers, but the shell should keep shrinking.
 
 2. File and folder state has too many overlapping concepts.
 
@@ -27,7 +27,7 @@ This scan reflects the current Mauth Studio architecture after the first control
 
 3. Document lifecycle choices are still too simple.
 
-   Native browser prompts have been replaced with shared Mauth dialogs, close now supports explicit save, discard, and cancel choices, and open/close/save/sync are composed through a document-session controller. File conflicts now expose recovery-copy and reload-from-disk controls, but conflict handling can still become more unified and test-covered.
+   Native browser prompts have been replaced with shared Mauth dialogs, close now supports explicit save, discard, and cancel choices, and open/close/save/sync are composed through a document-session controller. File conflicts now expose recovery-copy and reload-from-disk controls, but conflict handling can still become more unified, visible, and test-covered.
 
 4. Render-heavy modules need boundaries.
 
@@ -61,6 +61,7 @@ An in-app assistant can come back later, but it should be a client for the same 
 - Keep the macOS launcher as a thin wrapper around `pnpm dev:launch:desktop` until the app is stable enough for a Tauri/Electron shell.
 - Keep external folder opening read-only until the user explicitly creates, saves, duplicates, imports, or moves files.
 - Keep save, close, delete, rename, restore, folder selection, and solution-slot configuration on structured Mauth dialogs; deepen the document-session controller so recovery and conflict choices use the same save/discard/cancel model.
+- Keep `docs/current-state.md` current whenever runtime, storage, bridge, or document lifecycle behaviour changes in a way a new agent would need to know.
 
 ### 2. Finish The Editor Shell Split
 

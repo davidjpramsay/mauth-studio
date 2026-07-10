@@ -1,15 +1,14 @@
 # Mauth Local Agent Bridge
 
-Mauth exposes a local bridge for Codex, Claude Code, and MCP clients. V1 requires the FastAPI app, the web app, and one active browser editor tab.
+Mauth exposes a local bridge for Codex, Claude Code, and MCP clients. V1 requires the FastAPI app, the web app, and one active browser editor tab. For current handoff context, read `docs/current-state.md`.
 
 ## Start
 
 ```bash
-pnpm dev:api
-pnpm dev:web
+pnpm dev:launch:desktop
 ```
 
-Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`).
+Open the web URL printed by the launcher if it does not open automatically. For lower-level debugging, `pnpm dev:api` and `pnpm dev:web` can still be run in separate terminals.
 
 Run:
 

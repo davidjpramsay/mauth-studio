@@ -26,7 +26,7 @@ Recommended setup:
 - Printable maths tests, exams, and worksheets.
 - Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
 - MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
-- Visible local document files in `~/Documents/Mauth`, plus autosave drafts, logo assets, and version snapshots.
+- Visible local document files in `~/Documents/Mauth/Documents`, plus `.mauth` autosave drafts, logo assets, metadata, and version snapshots.
 - Agent-readable snapshots, deterministic actions, validation, comments, suggestions, presence, and events.
 
 ## Agent-Native Workflow
@@ -145,7 +145,7 @@ Claude/Codex MCP clients can use:
 pnpm agent:mcp
 ```
 
-See `docs/agent-local-setup.md`, `docs/agent-bridge.md`, and `docs/index.html`.
+See `docs/current-state.md`, `docs/agent-local-setup.md`, `docs/agent-bridge.md`, and `docs/index.html`.
 
 ## Repo Map
 
@@ -168,7 +168,7 @@ Use Mauth through the repo, local app APIs, MCP tools, and browser verification.
 - Use the `Development` work stream for app code, schemas, tests, docs, CI, and repo maintenance.
 - Use the `Authoring` work stream for creating, inspecting, converting, or polishing assessments.
 - Keep these as separate chats where practical so code changes and assessment authoring do not get mixed together.
-- Read `AGENTS.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
+- Read `AGENTS.md`, `docs/current-state.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
 - Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
 
 Comments and suggestions are review state only. They do not mutate the document until an explicit action batch is previewed and applied.
@@ -201,7 +201,7 @@ Mauthdown is the editable source format for tests, exams, and worksheets. It is 
 
 ## Storage
 
-Project files, autosave, reusable logos, and versions are written through the FastAPI app under `storage/`. Browser storage is only a fallback cache. Do not commit `storage/`, `workspace/` artifacts, local `.env` files, build output, or dependency folders.
+Project files are visible teacher files under `~/Documents/Mauth/Documents` by default. Autosave, reusable logos, version snapshots, backups, and project metadata live beside them under `~/Documents/Mauth/.mauth`. Browser storage is only a fallback cache. Legacy repo-local `storage/` data is migration input or test data, not the normal save location. Do not commit `storage/`, `workspace/` artifacts, local `.env` files, build output, or dependency folders. See `docs/storage.md`.
 
 ## Print
 

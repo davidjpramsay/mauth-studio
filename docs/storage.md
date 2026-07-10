@@ -52,7 +52,7 @@ A legacy saved-test file includes:
 
 `formattingConfig` stores the document styling preset and page settings, including the high-school mathematics test layout, A4 dimensions, margins, mark display options, and page-break visibility. Older files without this field are normalised to the current default formatting config when opened.
 
-Logos are managed as a reusable library, independent of saved tests. A test chooses a logo through `frontMatter.logoId`; it should not create a one-off logo id just because the test was saved. Logo metadata is stored in `storage/assets/logos/*.json`, and uploaded logo image bytes are stored under `storage/assets/logos/files/`. The optional `logo` field in a saved test is a portability fallback copy of the selected library logo, so a custom logo can be recovered if the shared logo library is missing.
+Logos are managed as a reusable library, independent of saved tests. A test chooses a logo through `frontMatter.logoId`; it should not create a one-off logo id just because the test was saved. Logo metadata is stored under `.mauth/assets/logos/`, and uploaded logo image bytes are stored under `.mauth/assets/logos/files/` in the active documents workspace. Older repo-local storage roots may still contain `storage/assets/logos/` records as migration input. The optional `logo` field in a saved test is a portability fallback copy of the selected library logo, so a custom logo can be recovered if the shared logo library is missing.
 
 The school name belongs with the logo. Selecting a logo applies that logo's saved school name, and the editor's Update Logo action saves logo-name/school-name changes back to the reusable logo entry. The app seeds the starter logo list once for new or migrated browsers, but after that every logo is editable and removable. There are no permanent built-in logos. The editor keeps at least one logo in the library so the title page always has a valid selectable logo.
 
@@ -151,7 +151,7 @@ POST   /api/storage/projects/{project_id}/backup/import
 GET    /api/system/status
 ```
 
-`/api/system/status` is the read-only diagnostic contract used by the web header and future launcher. It reports the API version and start time, repo root/cwd, git branch/commit, active documents folder, metadata folder, default project, and browser bridge session count. If the web app cannot read this route but `/api/health` still responds, the user is probably running an older API process.
+`/api/system/status` is the read-only diagnostic contract used by the web header and launcher. It reports the API version and start time, repo root/cwd, git branch/commit, active documents folder, metadata folder, default project, and browser bridge session count. If the web app cannot read this route but `/api/health` still responds, the user is probably running an older API process.
 
 ## Moving The Project Folder
 

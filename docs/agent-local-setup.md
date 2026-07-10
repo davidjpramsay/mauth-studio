@@ -2,6 +2,8 @@
 
 This is the intended Codex/Claude Code workflow for Mauth authoring.
 
+For current project state and next-work context, read `docs/current-state.md` before starting a new model/session.
+
 ## Local Project Folder
 
 Clone or pull the repo into a normal local project folder. From the repo root:

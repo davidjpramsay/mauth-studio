@@ -9,6 +9,7 @@ Use the same operating contract as Codex:
 
 Key docs:
 
+- `docs/current-state.md`
 - `docs/agent-local-setup.md`
 - `docs/agent-bridge.md`
 - `docs/local-ai-workflow.md`

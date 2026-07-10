@@ -7,10 +7,11 @@ Use this guide when an external or local agent is helping author, inspect, conve
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/agent-bridge.md`
-3. `docs/mauth-actions.md`
-4. `docs/ai-brains.md`
-5. `README.md`
+2. `docs/current-state.md`
+3. `docs/agent-bridge.md`
+4. `docs/mauth-actions.md`
+5. `docs/ai-brains.md`
+6. `README.md`
 
 These files define the contract for document edits, diagram rules, validation, file operations, and generated-artifact hygiene.
 
