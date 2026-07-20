@@ -9,6 +9,7 @@ import {
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { StatsChartSeriesEditor } from "./StatsChartSeriesEditor";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
@@ -93,11 +94,12 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
 
 type StatsChartEditorProps = {
   config: GraphConfig;
+  showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function StatsChartEditor({ config, settingsMode = "inline", onChange }: StatsChartEditorProps) {
+export function StatsChartEditor({ config, showSolutions = false, settingsMode = "inline", onChange }: StatsChartEditorProps) {
   const spec = normalizeStatsChartSpec(config);
   const data = spec.data;
   const options = spec.options ?? {};
@@ -123,7 +125,8 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
   const xValues = data.xValues?.length ? data.xValues : [2, 4, 5, 6, 7];
   const probabilities = data.probabilities?.length ? data.probabilities : [0.1, 0.25, 0.3, 0.15, 0.2];
   const range = data.range ?? [-3, 3];
-  const histogramDataMode = data.dataMode ?? "raw";
+  const histogramDataMode = data.dataMode === "manualProbabilities" ? "manualProbabilities" : "raw";
+  const isManualProbabilityMode = histogramDataMode === "manualProbabilities";
   const histogramBarType = data.barType ?? "continuous";
   const histogramYAxisMode = data.yAxisMode ?? "frequency";
   const histogramYLabelOrientation = data.yLabelOrientation ?? "vertical";
@@ -165,7 +168,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={240}
-              step={20}
+              step={1}
               value={numberInputValue(options.widthPx)}
               onChange={(event) => updateOptions({ widthPx: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -176,7 +179,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={180}
-              step={20}
+              step={1}
               value={numberInputValue(options.heightPx)}
               onChange={(event) => updateOptions({ heightPx: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -186,42 +189,53 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
       ) : null}
 
       {data.chartType === "histogram" ? (
-        <section className={cn("grid grid-cols-1 gap-3 md:grid-cols-4", showInlineSettings && "border-t pt-3")}>
+        <section
+          className={cn(
+            "grid grid-cols-1 gap-3",
+            isManualProbabilityMode ? "md:grid-cols-2" : "md:grid-cols-4",
+            showInlineSettings && "border-t pt-3",
+          )}
+        >
           <label className="flex flex-col gap-2 text-xs font-medium">
-            Data mode
+            Bar data
             <select
               value={histogramDataMode}
               onChange={(event) => updateHistogramDataMode(event.target.value as StatsChartData["dataMode"])}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             >
-              <option value="raw">Raw data</option>
-              <option value="manualProbabilities">Manual probabilities</option>
+              <option value="raw">Count raw observations</option>
+              <option value="manualProbabilities">Enter probabilities</option>
             </select>
+            <span className="text-[11px] font-normal leading-snug text-muted-foreground">
+              {isManualProbabilityMode ? "Use matching x-values and probabilities." : "Repeated values are counted as frequencies."}
+            </span>
           </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Bar type
-            <select
-              value={histogramDataMode === "manualProbabilities" ? "discrete" : histogramBarType}
-              disabled={histogramDataMode === "manualProbabilities"}
-              onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
-            >
-              <option value="continuous">Continuous bins</option>
-              <option value="discrete">Discrete values</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Y-axis
-            <select
-              value={histogramYAxisMode}
-              disabled={histogramDataMode === "manualProbabilities"}
-              onChange={(event) => updateHistogramYAxisMode(event.target.value as StatsChartData["yAxisMode"])}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:opacity-60"
-            >
-              <option value="frequency">Frequency</option>
-              <option value="relativeFrequency">Relative frequency</option>
-            </select>
-          </label>
+          {!isManualProbabilityMode ? (
+            <>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Bar type
+                <select
+                  value={histogramBarType}
+                  onChange={(event) => updateData({ barType: event.target.value as StatsChartData["barType"] })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="continuous">Histogram bins (no gaps)</option>
+                  <option value="discrete">Column graph (gaps)</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-medium">
+                Y-axis
+                <select
+                  value={histogramYAxisMode}
+                  onChange={(event) => updateHistogramYAxisMode(event.target.value as StatsChartData["yAxisMode"])}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                >
+                  <option value="frequency">Frequency</option>
+                  <option value="relativeFrequency">Relative frequency</option>
+                </select>
+              </label>
+            </>
+          ) : null}
           <label className="flex flex-col gap-2 text-xs font-medium">
             Y label
             <select
@@ -297,7 +311,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={0}
               max={1}
-              step={0.05}
+              step={1}
               value={numberInputValue(typeof options.fillOpacity === "number" ? options.fillOpacity : 1)}
               disabled={options.showFill === false}
               onChange={(event) => {
@@ -319,7 +333,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Mean
             <input
               type="number"
-              step={0.1}
+              step={1}
               value={numberInputValue(data.mean)}
               onChange={(event) => updateData({ mean: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -330,7 +344,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             <input
               type="number"
               min={0.01}
-              step={0.1}
+              step={1}
               value={numberInputValue(data.stdDev)}
               onChange={(event) => updateData({ stdDev: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -340,7 +354,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Range min
             <input
               type="number"
-              step={0.5}
+              step={1}
               value={numberInputValue(range[0])}
               onChange={(event) => updateData({ range: [optionalNumber(event.target.value) ?? range[0], range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -350,7 +364,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
             Range max
             <input
               type="number"
-              step={0.5}
+              step={1}
               value={numberInputValue(range[1])}
               onChange={(event) => updateData({ range: [range[0], optionalNumber(event.target.value) ?? range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -376,7 +390,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={0}
               max={1}
-              step={0.05}
+              step={1}
               value={numberInputValue(data.probability)}
               onChange={(event) => updateData({ probability: optionalNumber(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -432,7 +446,7 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
                 <input
                   type="number"
                   min={0}
-                  step={0.5}
+                  step={1}
                   value={numberInputValue(data.binSize)}
                   onChange={(event) => updateData({ binSize: optionalNumber(event.target.value) })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -453,6 +467,13 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
           ) : null}
         </section>
       )}
+
+      <StatsChartSeriesEditor
+        config={config}
+        data={data}
+        showSolutions={showSolutions}
+        onChange={(nextData) => onChange({ data: nextData })}
+      />
     </div>
   );
 }

@@ -9,6 +9,12 @@ import { DEFAULT_VECTOR_2D_GRAPH } from "../../lib/diagramVector2d.ts";
 import { applyMauthAction, type MauthQuestionLike } from "../../lib/mauthActions.ts";
 import {
   columnsColumnCountPatch,
+  contentBlockDisplayVisibility,
+  contentBlockMarkTicksPatch,
+  contentBlockSolutionTickHelp,
+  contentBlockSolutionTickLabel,
+  contentBlockSupportsSolutionSurfaceTicks,
+  contentBlockVisibilityPatch,
   graph3dResetViewPatch,
   graph3dViewPatch,
   graphInspectorWidthPatch,
@@ -21,6 +27,7 @@ import {
   penroseScalePatch,
   setDiagramCountLabelsPatch,
   setDiagramNotationPatch,
+  setDiagramSetCountPatch,
   setDiagramShadingPatch,
   tableColumnCountPatch,
   tableRowsCountPatch,
@@ -169,6 +176,58 @@ test("module.update applies inspector layout patches to selected nested modules"
   assert.equal(findContentBlock(questions[0].contentBlocks, "outside")?.kind, "text");
 });
 
+test("module.update applies solution display and mark tick patches", () => {
+  const initialTable = tableBlock("solution-table-1");
+  let questions = [question("q1", [initialTable])];
+
+  assert.equal(contentBlockDisplayVisibility(initialTable), "solution");
+
+  questions = updateQuestionModule(questions, "solution-table-1", contentBlockVisibilityPatch(initialTable, "always"));
+  const visibleTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(visibleTable?.kind, "table");
+  if (!visibleTable) throw new Error("Expected table block.");
+  assert.equal(contentBlockDisplayVisibility(visibleTable), "always");
+  assert.equal(visibleTable.solutionOnly, false);
+  assert.equal(visibleTable.studentOnly, false);
+
+  questions = updateQuestionModule(questions, "solution-table-1", {
+    ...contentBlockVisibilityPatch(visibleTable, "solution"),
+    ...contentBlockMarkTicksPatch(2),
+  });
+  const solutionTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(solutionTable?.kind, "table");
+  assert.equal(solutionTable ? contentBlockDisplayVisibility(solutionTable) : undefined, "solution");
+  assert.equal(solutionTable?.markTicks, 2);
+
+  if (!solutionTable) throw new Error("Expected solution table block.");
+  questions = updateQuestionModule(questions, "solution-table-1", contentBlockVisibilityPatch(solutionTable, "student"));
+  const studentTable = findContentBlock(questions[0].contentBlocks, "solution-table-1");
+  assert.equal(studentTable ? contentBlockDisplayVisibility(studentTable) : undefined, "student");
+  assert.equal(studentTable?.markTicks, undefined);
+});
+
+test("solution tick helpers separate text-line ticks from surface ticks", () => {
+  const solutionText: ContentBlock = { id: "solution-text", kind: "text", text: "x = 3" };
+  const legacyTickedText: ContentBlock = { ...solutionText, markTicks: 1 };
+  const solutionTable = tableBlock("solution-table");
+  const solutionDiagram = diagramBlock("solution-diagram", { type: "graph2d", functions: [], features: [] });
+  const solutionSpace = spaceBlock("solution-space", 4);
+  const solutionColumns: ContentBlock = { id: "solution-columns", kind: "columns", columnCount: 2, columns: [[], []] };
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionText), false);
+  assert.match(contentBlockSolutionTickHelp(solutionText), /\[\[marks:1\]\]/);
+  assert.equal(contentBlockSolutionTickLabel(solutionText), "Block ticks");
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(legacyTickedText), true);
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionTable), true);
+  assert.equal(contentBlockSolutionTickLabel(solutionTable), "Surface ticks");
+  assert.match(contentBlockSolutionTickHelp(solutionDiagram), /completed directly/);
+
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionSpace), false);
+  assert.match(contentBlockSolutionTickHelp(solutionSpace), /pair them with/);
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionColumns), false);
+});
+
 test("module.update applies inspector diagram patches and preserves unrelated modules", () => {
   let geometryConfig = penroseConfig();
   let networkConfig = penroseConfig({
@@ -290,6 +349,7 @@ test("module.update applies inspector diagram patches and preserves unrelated mo
     mimeType: "",
     naturalWidth: 800,
     naturalHeight: 600,
+    annotations: [],
   });
   assert.equal(findContentBlock(questions[0].contentBlocks, "untouched")?.kind, "text");
 });
@@ -378,6 +438,41 @@ test("set diagram helper patches update labels, totals, and shading", () => {
     shadedData.regions.map((region) => region.shaded),
     [false, false, true, false],
   );
+
+  const threeSet = setDiagramSetCountPatch(config, 3);
+  const threeSetData = threeSet.data as {
+    setCount: number;
+    sets: Array<{ name: string; label: string }>;
+    regions: Array<{ name: string }>;
+  };
+  assert.equal(threeSetData.setCount, 3);
+  assert.deepEqual(
+    threeSetData.sets.map((set) => set.name),
+    ["P", "Q", "C"],
+  );
+  assert.deepEqual(
+    threeSetData.regions.map((region) => region.name),
+    ["onlyA", "onlyB", "onlyC", "onlyAB", "onlyAC", "onlyBC", "intersection", "outside"],
+  );
+
+  const threeSetNotation = setDiagramNotationPatch({
+    ...config,
+    data: threeSetData,
+  });
+  const threeSetNotationData = threeSetNotation.data as { regions: Array<{ label: string }> };
+  assert.deepEqual(
+    threeSetNotationData.regions.map((region) => region.label),
+    [
+      "P \\cap Q' \\cap C'",
+      "P' \\cap Q \\cap C'",
+      "P' \\cap Q' \\cap C",
+      "P \\cap Q \\cap C'",
+      "P \\cap Q' \\cap C",
+      "P' \\cap Q \\cap C",
+      "P \\cap Q \\cap C",
+      "(P \\cup Q \\cup C)'",
+    ],
+  );
 });
 
 test("image patch preserves image metadata and clears rendered graph content", () => {
@@ -405,6 +500,7 @@ test("image patch preserves image metadata and clears rendered graph content", (
     mimeType: "image/png",
     naturalWidth: 800,
     naturalHeight: 600,
+    annotations: [],
   });
   assert.deepEqual(patch.functions, []);
   assert.deepEqual(patch.features, []);

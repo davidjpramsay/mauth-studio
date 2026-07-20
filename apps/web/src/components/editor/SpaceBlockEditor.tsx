@@ -7,12 +7,13 @@ interface SpaceBlockEditorProps {
   label: string;
   title: ReactNode;
   lines: number;
+  showLines?: boolean;
   settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
-  onChange: (lines: number) => void;
+  onChange: (patch: { lines?: number; showLines?: boolean }) => void;
   onRemove: () => void;
 }
 
@@ -25,6 +26,7 @@ export function SpaceBlockEditor({
   label,
   title,
   lines,
+  showLines = true,
   settingsMode = "inline",
   dragHandle,
   muted = false,
@@ -56,9 +58,18 @@ export function SpaceBlockEditor({
               min={0}
               step={1}
               value={normalizedLines}
-              onChange={(event) => onChange(normalizeSpaceLines(event.target.value))}
+              onChange={(event) => onChange({ lines: normalizeSpaceLines(event.target.value) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
+          </label>
+          <label className="flex items-center gap-2 self-end text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={showLines}
+              onChange={(event) => onChange({ showLines: event.target.checked })}
+              className="size-4 rounded border-input"
+            />
+            Show ruled lines
           </label>
         </div>
       ) : null}

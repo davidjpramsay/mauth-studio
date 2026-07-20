@@ -83,6 +83,78 @@ test("inspectMauthDiagram accepts a logarithm function domain inside its natural
   );
 });
 
+test("inspectMauthDiagram warns when a logarithm uses a rounded manual guard domain near an asymptote", () => {
+  const inspection = inspectMauthDiagram(
+    graph2d({
+      kind: "expression",
+      expression: "log(x+1)/log(10)",
+      domainMode: "manual",
+      domainMin: -0.96,
+      domainMax: 10,
+      show: true,
+    }),
+    "The graph is the graph of $y=\\log_{10}x$ shifted left by 1 unit.",
+  );
+
+  const warning = inspection.warnings.find((item) => item.code === "graph2d-natural-domain-manual-offset");
+  assert.ok(warning);
+  assert.equal(warning.path, "graphConfig.functions[0].domainMode");
+  assert.match(warning.message, /domainMode: "auto"/);
+  assert.equal(isAgentDiagramInspectionWarningBlocking(warning), false);
+});
+
+test("inspectMauthDiagram accepts auto-domain logarithms when the view crosses the natural boundary", () => {
+  const inspection = inspectMauthDiagram(
+    graph2d({
+      kind: "expression",
+      expression: "log10(x+1)",
+      domainMode: "auto",
+      show: true,
+    }),
+    "The graph is the graph of $y=\\log_{10}x$ shifted left by 1 unit.",
+  );
+
+  assert.equal(
+    inspection.warnings.some((item) => item.code === "graph2d-natural-domain-crossed"),
+    false,
+  );
+});
+
+test("inspectMauthDiagram warns when a natural vertical asymptote is manually spanned", () => {
+  const inspection = inspectMauthDiagram(
+    {
+      ...graph2d({
+        kind: "expression",
+        expression: "log10(x+1)",
+        domainMode: "auto",
+        show: true,
+      }),
+      xMin: -3,
+      xMax: 5,
+      yMin: -6,
+      yMax: 3,
+      features: [
+        {
+          kind: "line_segment",
+          x1: -1,
+          y1: -4,
+          x2: -1,
+          y2: 2,
+          strokeStyle: "dashed",
+          show: true,
+        },
+      ],
+    },
+    "The graph has a vertical asymptote at x = -1.",
+  );
+
+  const warning = inspection.warnings.find((item) => item.code === "graph2d-natural-asymptote-span-manual");
+  assert.ok(warning);
+  assert.equal(warning.path, "graphConfig.features[0].span");
+  assert.match(warning.message, /span: "grid"/);
+  assert.equal(isAgentDiagramInspectionWarningBlocking(warning), false);
+});
+
 test("inspectMauthDiagram warns when copied graph2d enables minor grid without source evidence", () => {
   const inspection = inspectMauthDiagram(
     {

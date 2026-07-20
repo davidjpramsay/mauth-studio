@@ -2,7 +2,18 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+
+def _resource_root() -> Path:
+    configured = os.environ.get("MAUTH_RESOURCE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    bundled_root = getattr(sys, "_MEIPASS", None)
+    if bundled_root:
+        return Path(bundled_root).resolve()
+    return Path(__file__).resolve().parents[3]
+
+
+ROOT = _resource_root()
 CONFIG_ROOT = ROOT / "configs"
 
 

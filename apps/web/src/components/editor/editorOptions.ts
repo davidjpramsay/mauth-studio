@@ -8,9 +8,9 @@ export const DIAGRAM_TYPES: Array<{ value: string; label: string }> = [
   { value: "vector2d", label: "2D vector graph" },
   { value: "graph3d", label: "3D graph" },
   { value: "image", label: "Image" },
-  { value: "geometricConstruction", label: "Geometric construction" },
+  { value: "geometricConstruction", label: "Geometric" },
   { value: "network", label: "Network" },
-  { value: "setDiagram", label: "Set diagram" },
+  { value: "setDiagram", label: "Venn diagram" },
   { value: "statsChart", label: "Statistics chart" },
 ];
 

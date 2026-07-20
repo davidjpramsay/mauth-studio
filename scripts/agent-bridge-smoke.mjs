@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
-const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+import { agentAuthorizationHeaders, resolveMauthRuntime } from "./mauth-runtime.mjs";
+
+const runtime = resolveMauthRuntime();
+const API_BASE = runtime.apiUrl;
+const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
 const args = new Set(process.argv.slice(2));
 const mutateContent = args.has("--mutate-content");
 const reviewState = args.has("--review");
@@ -25,7 +29,10 @@ if (args.has("--help") || args.has("-h")) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, options);
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { ...AGENT_HEADERS, ...options.headers },
+  });
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
   return { response, body };

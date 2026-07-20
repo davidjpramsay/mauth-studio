@@ -7,6 +7,7 @@ import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
+const AXIS_3D_LABEL_OFFSET_MULTIPLIER = 1.3;
 const LABEL_ATTRIBUTES = graphLabelAttributes();
 const DEFAULT_3D_VIEW_STATE = {
   az: 1,
@@ -24,6 +25,7 @@ type Graph3DPointEntry = {
   color?: string;
 };
 type Graph3DSegmentEntry = {
+  id: string;
   from: string;
   to: string;
   label?: string;
@@ -32,6 +34,7 @@ type Graph3DSegmentEntry = {
   show: boolean;
 };
 type Graph3DDimensionEntry = {
+  id: string;
   from: Point3DCoords;
   to: Point3DCoords;
   label?: string;
@@ -41,6 +44,7 @@ type Graph3DDimensionEntry = {
   show: boolean;
 };
 type Graph3DFaceEntry = {
+  id: string;
   coords: Point3DCoords[];
   label?: string;
   fillColor?: string;
@@ -53,6 +57,7 @@ type Graph3DFaceEntry = {
 type Graph3DSolidKind = "circle" | "cone" | "cylinder" | "sphere" | "spherecap" | "sphericalcap";
 type Graph3DRenderStyle = "surface" | "wireframe" | "outline";
 type Graph3DSolidEntry = {
+  id: string;
   kind: Graph3DSolidKind;
   center?: Point3DCoords;
   baseCenter?: Point3DCoords;
@@ -261,7 +266,7 @@ function pointCoordsFromValue(value: unknown, pointMap: Map<string, Graph3DPoint
 function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: Set<string>): Graph3DSegmentEntry[] {
   const data = graph3dData(graphConfig);
   const rawSegments = Array.isArray(data.segments) ? data.segments : Array.isArray(data.edges) ? data.edges : [];
-  return rawSegments.flatMap((rawSegment): Graph3DSegmentEntry[] => {
+  return rawSegments.flatMap((rawSegment, index): Graph3DSegmentEntry[] => {
     const segment = asRecord(rawSegment);
     if (!segment) return [];
     const pointPair = Array.isArray(segment.points) ? segment.points : undefined;
@@ -270,6 +275,7 @@ function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: 
     if (!from || !to || !pointIds.has(from) || !pointIds.has(to)) return [];
     return [
       {
+        id: stringValue(segment.id, `segment-${from}-${to}-${index + 1}`),
         from,
         to,
         label: typeof segment.label === "string" ? segment.label : undefined,
@@ -284,7 +290,7 @@ function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: 
 function graph3dDimensions(graphConfig: GraphConfig | null | undefined, pointMap: Map<string, Graph3DPointEntry>): Graph3DDimensionEntry[] {
   const data = graph3dData(graphConfig);
   const rawDimensions = Array.isArray(data.dimensions) ? data.dimensions : Array.isArray(data.dimensionLines) ? data.dimensionLines : [];
-  return rawDimensions.flatMap((rawDimension): Graph3DDimensionEntry[] => {
+  return rawDimensions.flatMap((rawDimension, index): Graph3DDimensionEntry[] => {
     const dimension = asRecord(rawDimension);
     if (!dimension) return [];
     const pointPair = Array.isArray(dimension.points) ? dimension.points : undefined;
@@ -293,6 +299,7 @@ function graph3dDimensions(graphConfig: GraphConfig | null | undefined, pointMap
     if (!from || !to) return [];
     return [
       {
+        id: stringValue(dimension.id, `dimension-${index + 1}`),
         from,
         to,
         label: typeof dimension.label === "string" ? dimension.label : undefined,
@@ -308,7 +315,7 @@ function graph3dDimensions(graphConfig: GraphConfig | null | undefined, pointMap
 function graph3dFaces(graphConfig: GraphConfig | null | undefined, pointMap: Map<string, Graph3DPointEntry>): Graph3DFaceEntry[] {
   const data = graph3dData(graphConfig);
   const rawFaces = Array.isArray(data.faces) ? data.faces : [];
-  return rawFaces.flatMap((rawFace): Graph3DFaceEntry[] => {
+  return rawFaces.flatMap((rawFace, index): Graph3DFaceEntry[] => {
     const face = asRecord(rawFace);
     if (!face) return [];
     const pointRefs = Array.isArray(face.points) ? face.points : Array.isArray(face.vertices) ? face.vertices : [];
@@ -319,6 +326,7 @@ function graph3dFaces(graphConfig: GraphConfig | null | undefined, pointMap: Map
     if (coords.length < 3) return [];
     return [
       {
+        id: stringValue(face.id, `face-${index + 1}`),
         coords,
         label: typeof face.label === "string" ? face.label : undefined,
         fillColor: colorValue(face.fillColor, colorValue(face.color, "#93c5fd")),
@@ -335,7 +343,7 @@ function graph3dFaces(graphConfig: GraphConfig | null | undefined, pointMap: Map
 function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Map<string, Graph3DPointEntry>): Graph3DSolidEntry[] {
   const data = graph3dData(graphConfig);
   const rawSolids = Array.isArray(data.solids) ? data.solids : Array.isArray(data.surfaces) ? data.surfaces : [];
-  return rawSolids.flatMap((rawSolid): Graph3DSolidEntry[] => {
+  return rawSolids.flatMap((rawSolid, index): Graph3DSolidEntry[] => {
     const solid = asRecord(rawSolid);
     if (!solid) return [];
     const kind = stringValue(solid.kind, stringValue(solid.type)).toLowerCase();
@@ -359,6 +367,7 @@ function graph3dSolids(graphConfig: GraphConfig | null | undefined, pointMap: Ma
     if (kind === "cylinder" && (!baseCenter || !topCenter)) return [];
     return [
       {
+        id: stringValue(solid.id, `solid-${index + 1}`),
         kind,
         center: center ?? undefined,
         baseCenter: baseCenter ?? undefined,
@@ -558,15 +567,15 @@ function labelDataAttributes(attributes: Record<string, string | undefined> = {}
     .join(" ");
 }
 
-function render3DLatexLabel(label: string, attributes: Record<string, string | undefined> = {}) {
+function render3DLatexLabel(label: string, attributes: Record<string, string | undefined> = {}, color = "#0f172a") {
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
   const latex = labelLatexSource(label);
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": latex, ...attributes });
   try {
     const html = renderMathJaxSvg(latex, false);
-    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${html}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${escapeHtml(color)};${interactionCss}">${html}</span>`;
   } catch {
-    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:#0f172a;${interactionCss}">${escapeHtml(label)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${escapeHtml(color)};${interactionCss}">${escapeHtml(label)}</span>`;
   }
 }
 
@@ -665,7 +674,14 @@ function renderGraph3DFace(
       );
       view.create(
         "text3d",
-        [labelPoint, render3DLatexLabel(face.label, { "data-mauth-label-role": "graph3d-face-label" })],
+        [
+          labelPoint,
+          render3DLatexLabel(
+            face.label,
+            { "data-mauth-label-role": "graph3d-face-label", "data-mauth-graph3d-element-id": face.id },
+            face.strokeColor ?? face.fillColor ?? "#0f172a",
+          ),
+        ],
         LATEX_3D_LABEL_ATTRIBUTES,
       );
     }
@@ -708,7 +724,11 @@ function renderGraph3DDimension(
       "text3d",
       [
         graph3dLabelPoint(midpoint, labelContext, labelOffset * 1.6, avoidCoords),
-        render3DLatexLabel(dimension.label, { "data-mauth-label-role": "graph3d-dimension-label" }),
+        render3DLatexLabel(
+          dimension.label,
+          { "data-mauth-label-role": "graph3d-dimension-label", "data-mauth-graph3d-element-id": dimension.id },
+          color,
+        ),
       ],
       LATEX_3D_LABEL_ATTRIBUTES,
     );
@@ -1016,7 +1036,7 @@ export function Basic3DGraph({
         0.18,
         Math.max(ranges[0][1] - ranges[0][0], ranges[1][1] - ranges[1][0], ranges[2][1] - ranges[2][0]) * 0.035,
       );
-      const axisLabelOffset = labelOffset * 3;
+      const axisLabelOffset = labelOffset * AXIS_3D_LABEL_OFFSET_MULTIPLIER;
       const labelContext = graph3dLabelContext(ranges, persistedViewState);
       const pointCoords = points.map((point) => point.coords);
       const axisLabelCoords: Point3DCoords[] = [
@@ -1051,11 +1071,16 @@ export function Basic3DGraph({
               "text3d",
               [
                 graph3dLabelPoint(midpoint, labelContext, labelOffset * 2.2, commonLabelAvoidCoords),
-                render3DLatexLabel(segment.label, {
-                  "data-mauth-label-role": "graph3d-segment-label",
-                  "data-mauth-segment-from": segment.from,
-                  "data-mauth-segment-to": segment.to,
-                }),
+                render3DLatexLabel(
+                  segment.label,
+                  {
+                    "data-mauth-label-role": "graph3d-segment-label",
+                    "data-mauth-graph3d-element-id": segment.id,
+                    "data-mauth-segment-from": segment.from,
+                    "data-mauth-segment-to": segment.to,
+                  },
+                  segment.color ?? "#0f172a",
+                ),
               ],
               LATEX_3D_LABEL_ATTRIBUTES,
             );
@@ -1080,7 +1105,11 @@ export function Basic3DGraph({
               "text3d",
               [
                 graph3dLabelPoint(point.coords, labelContext, labelOffset * 1.35, otherPointCoords),
-                render3DLatexLabel(point.label, { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id }),
+                render3DLatexLabel(
+                  point.label,
+                  { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id },
+                  point.color ?? "#0f172a",
+                ),
               ],
               LATEX_3D_LABEL_ATTRIBUTES,
             );

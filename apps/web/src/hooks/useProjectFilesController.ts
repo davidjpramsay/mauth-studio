@@ -2,29 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import { getDefaultProject, listProjectFiles, saveProjectFile, updateProject } from "@/lib/api";
+import {
+  LEGACY_SAVED_TESTS_IMPORTED_KEY,
+  LEGACY_SAVED_TESTS_MIGRATED_AT_KEY,
+  type LegacySavedTestImport,
+  type LegacySavedTestLike,
+  planLegacySavedTestMigration,
+} from "@/lib/projectLegacyMigration";
+import type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
+import { projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 
-export const LEGACY_SAVED_TESTS_MIGRATED_AT_KEY = "legacySavedTestsMigratedAt";
-export const LEGACY_SAVED_TESTS_IMPORTED_KEY = "legacySavedTestsImported";
+export type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
 export type ProjectFilesStatus = "idle" | "loading" | "ready" | "saving" | "error";
-
-export interface ProjectSaveConflict {
-  filePath: string;
-  message: string;
-  localRevision: number | null;
-  currentRevision?: number;
-}
-
-interface LegacySavedTestLike {
-  id: string;
-  name: string;
-}
-
-interface LegacySavedTestImport {
-  path: string;
-  content: string;
-  metadata?: Record<string, unknown>;
-}
 
 interface UseProjectFilesControllerOptions<TLegacySavedTest extends LegacySavedTestLike> {
   initialActiveProjectFilePath?: string | null;
@@ -59,42 +49,32 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
     try {
       let project = await getDefaultProject();
       let filesResponse = await listProjectFiles(project.id);
-      const migrationDone = typeof project.metadata?.[LEGACY_SAVED_TESTS_MIGRATED_AT_KEY] === "string";
+      const migrationPlan = planLegacySavedTestMigration(project, legacySavedTests, filesResponse.files, buildLegacySavedTestImport);
 
-      if (!migrationDone) {
-        let projectFilesForImport = filesResponse.files;
-        let importedCount = 0;
-        for (const savedTest of legacySavedTests) {
-          const alreadyImported = projectFilesForImport.some(
-            (file) => file.kind === "file" && file.metadata?.legacySavedTestId === savedTest.id,
-          );
-          if (alreadyImported) continue;
-
-          const legacyImport = buildLegacySavedTestImport(savedTest, projectFilesForImport);
-          const savedFile = await saveProjectFile(project.id, legacyImport.path, {
+      if (migrationPlan.shouldMarkMigrated) {
+        for (const legacyImport of migrationPlan.imports) {
+          await saveProjectFile(project.id, legacyImport.path, {
             content: legacyImport.content,
             kind: "file",
             fileType: "test",
             metadata: {
               format: "saved-test-json",
               source: "legacy-saved-tests-migration",
-              legacySavedTestId: savedTest.id,
+              legacySavedTestId: legacyImport.savedTest.id,
               ...legacyImport.metadata,
             },
           });
-          projectFilesForImport = [...projectFilesForImport, savedFile];
-          importedCount += 1;
         }
 
         project = await updateProject(project.id, {
           metadata: {
             ...project.metadata,
             [LEGACY_SAVED_TESTS_MIGRATED_AT_KEY]: new Date().toISOString(),
-            [LEGACY_SAVED_TESTS_IMPORTED_KEY]: importedCount,
+            [LEGACY_SAVED_TESTS_IMPORTED_KEY]: migrationPlan.imports.length,
           },
         });
         filesResponse = await listProjectFiles(project.id);
-        setProjectFilesMessage(importedCount ? `Imported ${importedCount} existing tests` : "");
+        setProjectFilesMessage(migrationPlan.imports.length ? `Imported ${migrationPlan.imports.length} existing tests` : "");
       } else {
         setProjectFilesMessage("");
       }
@@ -102,9 +82,9 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
       setActiveProject(project);
       setProjectFiles(filesResponse.files);
       setProjectFilesStatus("ready");
-    } catch {
+    } catch (error) {
       setProjectFilesStatus("error");
-      setProjectFilesMessage("Files unavailable");
+      setProjectFilesMessage(projectFilesUnavailableMessage(error));
     }
   }, [buildLegacySavedTestImport, legacySavedTests]);
 

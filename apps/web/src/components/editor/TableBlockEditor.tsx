@@ -1,13 +1,11 @@
 import type { ReactNode } from "react";
 import type { ContentBlock, DiagramAlignment, TableCellAlignment } from "@mauth-studio/shared";
+import { PencilLine } from "lucide-react";
 
-import {
-  normalizeTableBlock,
-  paddedTableRow,
-  plainTablePatch,
-  plainTableRows,
-  type NormalizedTableBlock,
-} from "@/lib/contentBlockNormalization";
+import { Button } from "@/components/ui/button";
+import { paddedTableRow, plainTablePatch, plainTableRows } from "@/lib/contentBlockNormalization";
+import { sharedTableSolutionPresentation, tableSolutionEntryPatch, type TableSolutionEntryMask } from "@/lib/tableSolutionEntries";
+import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
 
@@ -20,11 +18,14 @@ interface TableBlockEditorProps {
   diagramAlignments: Array<{ value: DiagramAlignment; label: string }>;
   cellAlignments: Array<{ value: TableCellAlignment; label: string }>;
   settingsMode?: "inline" | "inspector";
+  showSolutions?: boolean;
+  solutionEntryMask?: TableSolutionEntryMask;
   dragHandle?: ReactNode;
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
   onChange: (patch: Partial<TableBlock>) => void;
+  onCompleteInSolutions?: () => void;
   onRemove: () => void;
 }
 
@@ -47,8 +48,8 @@ function tableEditorContentLength(value: string) {
   return Array.from(readableSource).length;
 }
 
-function tableEditorColumnWidthCh(table: NormalizedTableBlock, columnIndex: number) {
-  const values = plainTableRows(table).map((row) => row[columnIndex] ?? "");
+function tableEditorColumnWidthCh(rows: string[][], columnIndex: number) {
+  const values = rows.map((row) => row[columnIndex] ?? "");
   const longestValue = Math.max(1, ...values.map(tableEditorContentLength));
   return Math.min(42, Math.max(6, longestValue + 3));
 }
@@ -60,35 +61,66 @@ export function TableBlockEditor({
   diagramAlignments,
   cellAlignments,
   settingsMode = "inline",
+  showSolutions = false,
+  solutionEntryMask,
   dragHandle,
   muted = false,
   active = false,
   openSignal,
   onChange,
+  onCompleteInSolutions,
   onRemove,
 }: TableBlockEditorProps) {
-  const table = normalizeTableBlock(block);
-  const tableRows = plainTableRows(table);
+  const sharedSolutionPresentation = sharedTableSolutionPresentation(block, showSolutions);
+  const table = sharedSolutionPresentation.table;
+  const baseTableRows = plainTableRows(table);
+  const tableRows = sharedSolutionPresentation.rows;
   const columnCount = Math.max(1, ...tableRows.map((row) => row.length));
-  const columnWidths = Array.from({ length: columnCount }, (_, columnIndex) => tableEditorColumnWidthCh(table, columnIndex));
+  const columnWidths = Array.from({ length: columnCount }, (_, columnIndex) => tableEditorColumnWidthCh(tableRows, columnIndex));
   const patchTable = (patch: Partial<TableBlock>) => onChange({ ...patch });
-  const updateRows = (rows: string[][]) => patchTable(plainTablePatch(rows));
-  const updateCell = (rowIndex: number, columnIndex: number, value: string) =>
+  const updateRows = (rows: string[][]) => {
+    if (!table.showHeader) {
+      patchTable({ ...plainTablePatch(rows), headers: table.headers, showHeader: false });
+      return;
+    }
+    const nextHeaders = paddedTableRow(rows[0] ?? table.headers, columnCount);
+    const nextBodyRows = rows.slice(1);
+    patchTable({
+      headers: nextHeaders,
+      rows: nextBodyRows.length ? nextBodyRows : [Array.from({ length: columnCount }, () => "")],
+      showHeader: true,
+    });
+  };
+  const showInlineSettings = settingsMode === "inline";
+  const solutionSurfaceState = solutionSurfaceControlState(block);
+  const sharedSolutionMode = showSolutions && solutionSurfaceState.visibility === "always";
+  const headerRowCount = table.showHeader ? 1 : 0;
+  const isSharedSolutionCell = (rowIndex: number, columnIndex: number) => {
+    const bodyRowIndex = rowIndex - headerRowCount;
+    return sharedSolutionMode && bodyRowIndex >= 0 && !(table.rows[bodyRowIndex]?.[columnIndex] ?? "").trim();
+  };
+  const updateCell = (rowIndex: number, columnIndex: number, value: string) => {
+    const bodyRowIndex = rowIndex - headerRowCount;
+    if (isSharedSolutionCell(rowIndex, columnIndex)) {
+      patchTable(tableSolutionEntryPatch(block, bodyRowIndex, columnIndex, value));
+      return;
+    }
+    if (sharedSolutionMode) return;
     updateRows(
       tableRows.map((row, currentRowIndex) =>
         currentRowIndex === rowIndex ? row.map((cell, currentColumnIndex) => (currentColumnIndex === columnIndex ? value : cell)) : row,
       ),
     );
-  const showInlineSettings = settingsMode === "inline";
+  };
   const resizeColumns = (nextColumnCountValue: number) => {
     const nextColumnCount = clampedTableDimension(nextColumnCountValue, MIN_TABLE_COLUMNS, MAX_TABLE_COLUMNS);
-    updateRows(tableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
+    updateRows(baseTableRows.map((row) => paddedTableRow(row, nextColumnCount).slice(0, nextColumnCount)));
   };
   const resizeRows = (nextRowCountValue: number) => {
     const nextRowCount = clampedTableDimension(nextRowCountValue, MIN_TABLE_ROWS, MAX_TABLE_ROWS);
     updateRows(
       Array.from({ length: nextRowCount }, (_, rowIndex) =>
-        paddedTableRow(tableRows[rowIndex] ?? Array.from({ length: columnCount }, () => ""), columnCount),
+        paddedTableRow(baseTableRows[rowIndex] ?? Array.from({ length: columnCount }, () => ""), columnCount),
       ),
     );
   };
@@ -97,7 +129,27 @@ export function TableBlockEditor({
     <CollapsiblePanel
       title={title}
       leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
+      actions={
+        <>
+          {onCompleteInSolutions && solutionSurfaceState.canCreateSolutionCopy ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title={solutionSurfaceState.copyTitle}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCompleteInSolutions();
+              }}
+              className="h-8 gap-2"
+            >
+              <PencilLine className="size-4" aria-hidden="true" />
+              Complete in solutions
+            </Button>
+          ) : null}
+          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+        </>
+      }
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName="p-3"
       active={active}
@@ -176,7 +228,16 @@ export function TableBlockEditor({
                           aria-label={`Table cell row ${rowIndex + 1} column ${columnIndex + 1}`}
                           value={cell}
                           onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                          className="table-editor-input"
+                          readOnly={sharedSolutionMode && !isSharedSolutionCell(rowIndex, columnIndex)}
+                          data-solution-entry={isSharedSolutionCell(rowIndex, columnIndex) ? "true" : undefined}
+                          className={cn(
+                            "table-editor-input",
+                            (solutionEntryMask?.[rowIndex]?.[columnIndex] ||
+                              sharedSolutionPresentation.solutionEntryMask[rowIndex]?.[columnIndex]) &&
+                              "table-editor-solution-entry",
+                            isSharedSolutionCell(rowIndex, columnIndex) && "table-editor-solution-target",
+                            sharedSolutionMode && !isSharedSolutionCell(rowIndex, columnIndex) && "cursor-default bg-muted/25",
+                          )}
                         />
                       </td>
                     ))}

@@ -3,6 +3,7 @@ import type { Graph2DGeometryData, Graph2DGeometryDecoration, GraphConfig } from
 import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   createGeometry2DArc,
   createGeometry2DAngle,
@@ -12,6 +13,9 @@ import {
   geometry2dChildAnchor,
   geometry2dData,
   geometry2dPatch,
+  geometry2dPrimitiveForAuthoringLayer,
+  isSolutionOnlyGeometry2DPrimitive,
+  type Geometry2DPrimitive,
 } from "@/lib/diagramGeometry2d";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +23,7 @@ interface Geometry2DGraphEditorProps {
   config: GraphConfig;
   anchor?: string;
   activeAnchor?: string;
+  showSolutions?: boolean;
   onActivateAnchor?: (anchor: string) => void;
   onChange: (patch: Partial<GraphConfig>) => void;
 }
@@ -45,6 +50,7 @@ function GeometryItemButton({
   active,
   label,
   summary,
+  solutionOnly,
   anchor,
   onActivate,
   onRemove,
@@ -52,6 +58,7 @@ function GeometryItemButton({
   active: boolean;
   label: string;
   summary?: string;
+  solutionOnly?: boolean;
   anchor: string;
   onActivate?: (anchor: string) => void;
   onRemove: () => void;
@@ -65,7 +72,10 @@ function GeometryItemButton({
       )}
     >
       <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onActivate?.(anchor)}>
-        <span className="block truncate font-medium">{label}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="block min-w-0 flex-1 truncate font-medium">{label}</span>
+          {solutionOnly ? <Badge variant="outline">Solution</Badge> : null}
+        </span>
         {summary ? <span className="block truncate text-xs text-muted-foreground">{summary}</span> : null}
       </button>
       <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label={`Remove ${label}`} onClick={onRemove}>
@@ -104,7 +114,14 @@ function GeometrySection({
   );
 }
 
-export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivateAnchor, onChange }: Geometry2DGraphEditorProps) {
+export function Geometry2DGraphEditor({
+  config,
+  anchor,
+  activeAnchor,
+  showSolutions = true,
+  onActivateAnchor,
+  onChange,
+}: Geometry2DGraphEditorProps) {
   const data = geometry2dData(config);
   const points = data.points ?? [];
   const segments = data.segments ?? [];
@@ -113,15 +130,18 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
   const decorations = data.decorations ?? [];
 
   const setData = (nextData: Graph2DGeometryData) => patchGeometryData(config, onChange, nextData);
+  const forAuthoringLayer = <TPrimitive extends Geometry2DPrimitive>(primitive: TPrimitive) =>
+    geometry2dPrimitiveForAuthoringLayer(primitive, showSolutions);
 
   return (
     <div className="space-y-4">
       <GeometrySection
         title="Points"
         addLabel="Add point"
-        onAdd={() => setData({ ...data, points: [...points, createGeometry2DPoint(points.length)] })}
+        onAdd={() => setData({ ...data, points: [...points, forAuthoringLayer(createGeometry2DPoint(points.length))] })}
       >
         {points.map((point, index) => {
+          if (!showSolutions && isSolutionOnlyGeometry2DPrimitive(point)) return null;
           const itemAnchor = geometry2dChildAnchor(anchor, "points", index);
           return (
             <GeometryItemButton
@@ -129,6 +149,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
               active={itemActive(activeAnchor, itemAnchor)}
               label={`Point ${index + 1}: ${point.label || point.id || "unnamed"}`}
               summary={`(${point.x}, ${point.y})`}
+              solutionOnly={isSolutionOnlyGeometry2DPrimitive(point)}
               anchor={itemAnchor}
               onActivate={onActivateAnchor}
               onRemove={() => setData({ ...data, points: removeItem(points, index) })}
@@ -140,9 +161,10 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
       <GeometrySection
         title="Segments"
         addLabel="Add segment"
-        onAdd={() => setData({ ...data, segments: [...segments, createGeometry2DSegment(points)] })}
+        onAdd={() => setData({ ...data, segments: [...segments, forAuthoringLayer(createGeometry2DSegment(points))] })}
       >
         {segments.map((segment, index) => {
+          if (!showSolutions && isSolutionOnlyGeometry2DPrimitive(segment)) return null;
           const itemAnchor = geometry2dChildAnchor(anchor, "segments", index);
           return (
             <GeometryItemButton
@@ -150,6 +172,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
               active={itemActive(activeAnchor, itemAnchor)}
               label={`Segment ${index + 1}: ${segment.id || "unnamed"}`}
               summary={`${segment.from} to ${segment.to}${segment.strokeStyle === "dashed" ? ", dashed" : ""}`}
+              solutionOnly={isSolutionOnlyGeometry2DPrimitive(segment)}
               anchor={itemAnchor}
               onActivate={onActivateAnchor}
               onRemove={() => setData({ ...data, segments: removeItem(segments, index) })}
@@ -158,8 +181,13 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
         })}
       </GeometrySection>
 
-      <GeometrySection title="Arcs" addLabel="Add arc" onAdd={() => setData({ ...data, arcs: [...arcs, createGeometry2DArc(points)] })}>
+      <GeometrySection
+        title="Arcs"
+        addLabel="Add arc"
+        onAdd={() => setData({ ...data, arcs: [...arcs, forAuthoringLayer(createGeometry2DArc(points))] })}
+      >
         {arcs.map((arc, index) => {
+          if (!showSolutions && isSolutionOnlyGeometry2DPrimitive(arc)) return null;
           const itemAnchor = geometry2dChildAnchor(anchor, "arcs", index);
           return (
             <GeometryItemButton
@@ -167,6 +195,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
               active={itemActive(activeAnchor, itemAnchor)}
               label={`Arc ${index + 1}: ${arc.id || "unnamed"}`}
               summary={`${arc.center}: ${arc.from} to ${arc.to}`}
+              solutionOnly={isSolutionOnlyGeometry2DPrimitive(arc)}
               anchor={itemAnchor}
               onActivate={onActivateAnchor}
               onRemove={() => setData({ ...data, arcs: removeItem(arcs, index) })}
@@ -178,9 +207,10 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
       <GeometrySection
         title="Angles"
         addLabel="Add angle"
-        onAdd={() => setData({ ...data, angles: [...angles, createGeometry2DAngle(points)] })}
+        onAdd={() => setData({ ...data, angles: [...angles, forAuthoringLayer(createGeometry2DAngle(points))] })}
       >
         {angles.map((angle, index) => {
+          if (!showSolutions && isSolutionOnlyGeometry2DPrimitive(angle)) return null;
           const itemAnchor = geometry2dChildAnchor(anchor, "angles", index);
           return (
             <GeometryItemButton
@@ -188,6 +218,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
               active={itemActive(activeAnchor, itemAnchor)}
               label={`Angle ${index + 1}: ${angle.id || "unnamed"}`}
               summary={angle.points.join("-")}
+              solutionOnly={isSolutionOnlyGeometry2DPrimitive(angle)}
               anchor={itemAnchor}
               onActivate={onActivateAnchor}
               onRemove={() => setData({ ...data, angles: removeItem(angles, index) })}
@@ -209,7 +240,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
                 onClick={() =>
                   setData({
                     ...data,
-                    decorations: [...decorations, createGeometry2DDecoration(kind, data)],
+                    decorations: [...decorations, forAuthoringLayer(createGeometry2DDecoration(kind, data))],
                   })
                 }
               >
@@ -221,6 +252,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
         }
       >
         {decorations.map((decoration, index) => {
+          if (!showSolutions && isSolutionOnlyGeometry2DPrimitive(decoration)) return null;
           const itemAnchor = geometry2dChildAnchor(anchor, "decorations", index);
           const target =
             decoration.kind === "equalLength"
@@ -234,6 +266,7 @@ export function Geometry2DGraphEditor({ config, anchor, activeAnchor, onActivate
               active={itemActive(activeAnchor, itemAnchor)}
               label={`Marker ${index + 1}: ${decoration.kind}`}
               summary={target}
+              solutionOnly={isSolutionOnlyGeometry2DPrimitive(decoration)}
               anchor={itemAnchor}
               onActivate={onActivateAnchor}
               onRemove={() => setData({ ...data, decorations: removeItem(decorations, index) })}

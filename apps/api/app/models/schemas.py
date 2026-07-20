@@ -155,8 +155,10 @@ class ContentBlock(BaseModel):
     choices: list[str] = Field(default_factory=list)
     numberingStyle: Literal["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"] | None = "roman"
     layout: Literal["vertical", "two-column", "inline"] | None = "vertical"
+    solutionAnswerIndex: int | None = None
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
+    solutionEntries: list[list[str]] = Field(default_factory=list)
     showHeader: bool | None = True
     tableAlign: Literal["left", "center", "right"] | None = "center"
     cellAlignment: Literal["left", "center", "right"] | None = "center"
@@ -287,6 +289,8 @@ class AutosaveRequest(BaseModel):
 
     frontMatter: dict[str, Any] = Field(default_factory=dict)
     questions: list[dict[str, Any]] = Field(default_factory=list)
+    sectionHeadings: list[dict[str, Any]] = Field(default_factory=list)
+    documentFlow: list[dict[str, Any]] = Field(default_factory=list)
     formattingConfig: dict[str, Any] = Field(default_factory=dict)
     logo: dict[str, Any] | None = None
     activeProjectFilePath: str | None = None
@@ -311,6 +315,10 @@ class ProjectRequest(BaseModel):
     name: str = "Untitled project"
     description: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectWorkspaceRequest(BaseModel):
+    path: str
 
 
 class ProjectFileRequest(BaseModel):

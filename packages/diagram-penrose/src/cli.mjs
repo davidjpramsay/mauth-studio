@@ -9,11 +9,15 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-try {
-  const input = JSON.parse(await readStdin());
-  const output = await renderGeometricConstructionDiagram(input);
-  stdout.write(`${JSON.stringify(output)}\n`);
-} catch (error) {
-  stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+async function main() {
+  try {
+    const input = JSON.parse(await readStdin());
+    const output = await renderGeometricConstructionDiagram(input);
+    stdout.write(`${JSON.stringify(output)}\n`);
+  } catch (error) {
+    stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
 }
+
+void main();

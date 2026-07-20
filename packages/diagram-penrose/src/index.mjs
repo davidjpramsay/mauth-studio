@@ -31,7 +31,7 @@ if (canvasPrototype) {
 }
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = resolve(MODULE_DIR, "..");
+const PACKAGE_ROOT = process.env.MAUTH_PENROSE_ROOT ? resolve(process.env.MAUTH_PENROSE_ROOT) : resolve(MODULE_DIR, "..");
 const DOMAIN_PATH = resolve(PACKAGE_ROOT, "domain", "geometry.domain");
 const STYLE_PATH = resolve(PACKAGE_ROOT, "style", "school.style");
 const SETS_DOMAIN_PATH = resolve(PACKAGE_ROOT, "domain", "sets.domain");
@@ -150,15 +150,18 @@ export function specToSubstance(spec) {
     if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideNetworkPoints) {
       lines.push(`HidePoint(${point.name})`);
     }
+    if (point.solutionOnly === true) lines.push(`SolutionPoint(${point.name})`);
   });
   const namedSegments = namedSegmentEntries(spec);
   if (namedSegments.length) lines.push(`NamedSegment ${namedSegments.map((segment) => segment.name).join(", ")}`);
   const lengthLabels = lengthLabelEntries(spec);
-  const segmentLabels = segmentLabelEntries(spec);
+  const segmentLabels = segmentLabelEntries(spec).filter((entry) => entry.a !== entry.b);
+  const selfLoopLabels = selfLoopLabelEntries(spec);
   const angleLabels = angleLabelEntries(spec);
   const labelDeclarations = [
     ...lengthLabels.map((_, index) => `sideLabel${index + 1}`),
     ...segmentLabels.map((_, index) => `segmentLabel${index + 1}`),
+    ...selfLoopLabels.map((_, index) => `selfLoopLabel${index + 1}`),
     ...angleLabels.map((_, index) => `angleLabel${index + 1}`),
   ];
   if (labelDeclarations.length) lines.push(`LengthLabel ${labelDeclarations.join(", ")}`);
@@ -192,23 +195,31 @@ export function specToSubstance(spec) {
     if (relation?.type === "segment") {
       const names = relation.points ?? relation.between ?? [];
       if (typeof relation.name === "string" && names.length === 2) {
-        lines.push(
-          `Segment(${assertIdentifier(relation.name, "Segment name")}, ${assertIdentifier(names[0], "Segment start point")}, ${assertIdentifier(
-            names[1],
-            "Segment end point",
-          )})`,
-        );
+        const segmentName = assertIdentifier(relation.name, "Segment name");
+        const start = assertIdentifier(names[0], "Segment start point");
+        const end = assertIdentifier(names[1], "Segment end point");
+        if (start === end) {
+          lines.push(`SelfLoop(${segmentName}, ${start})`);
+          if (relation.solutionOnly === true) lines.push(`SolutionSelfLoop(${segmentName})`);
+        } else {
+          lines.push(`Segment(${segmentName}, ${start}, ${end})`);
+          if (relation.solutionOnly === true) lines.push(`SolutionSegment(${segmentName})`);
+        }
       }
     }
     if (relation?.type === "vectorSegment") {
       const names = relation.points ?? relation.between ?? [];
       if (typeof relation.name === "string" && names.length === 2) {
-        lines.push(
-          `VectorSegment(${assertIdentifier(relation.name, "Segment name")}, ${assertIdentifier(
-            names[0],
-            "Segment start point",
-          )}, ${assertIdentifier(names[1], "Segment end point")})`,
-        );
+        const segmentName = assertIdentifier(relation.name, "Segment name");
+        const start = assertIdentifier(names[0], "Segment start point");
+        const end = assertIdentifier(names[1], "Segment end point");
+        if (start === end) {
+          lines.push(`VectorSelfLoop(${segmentName}, ${start})`);
+          if (relation.solutionOnly === true) lines.push(`SolutionVectorSelfLoop(${segmentName})`);
+        } else {
+          lines.push(`VectorSegment(${segmentName}, ${start}, ${end})`);
+          if (relation.solutionOnly === true) lines.push(`SolutionVectorSegment(${segmentName})`);
+        }
       }
     }
     if (relation?.type === "angleMark") {
@@ -228,6 +239,13 @@ export function specToSubstance(spec) {
     const labelName = `segmentLabel${index + 1}`;
     lines.push(labelStatement(labelName, entry.value));
     lines.push(`LabelsSegment(${labelName}, ${entry.a}, ${entry.b})`);
+    if (entry.solutionOnly) lines.push(`SolutionLengthLabel(${labelName})`);
+  });
+  selfLoopLabels.forEach((entry, index) => {
+    const labelName = `selfLoopLabel${index + 1}`;
+    lines.push(labelStatement(labelName, entry.value));
+    lines.push(`LabelsSelfLoop(${labelName}, ${entry.a})`);
+    if (entry.solutionOnly) lines.push(`SolutionLengthLabel(${labelName})`);
   });
   angleLabels.forEach((entry, index) => {
     const labelName = `angleLabel${index + 1}`;
@@ -240,30 +258,52 @@ export function specToSubstance(spec) {
 
 function defaultSetEntries(spec) {
   const data = spec?.data ?? {};
+  const explicitCount = Number(data.setCount ?? data.setsCount ?? data.vennSetCount);
+  const rawSets = Array.isArray(data.sets) && data.sets.length ? data.sets : data.objects;
+  const rawRegions = Array.isArray(data.regions) ? data.regions : [];
+  const setCount =
+    explicitCount >= 3 ||
+    (Array.isArray(rawSets) && rawSets.filter((entry) => !entry?.type || entry.type === "set").length >= 3) ||
+    rawRegions.length >= 8
+      ? 3
+      : 2;
   const sets = Array.isArray(data.sets) && data.sets.length ? data.sets : data.objects;
   const setEntries = (Array.isArray(sets) ? sets : [])
     .filter((entry) => !entry?.type || entry.type === "set")
-    .slice(0, 2)
+    .slice(0, setCount)
     .map((entry, index) => ({
-      name: assertIdentifier(entry?.name ?? (index === 0 ? "A" : "B"), "Set name"),
-      label: entry?.label ?? (index === 0 ? "A" : "B"),
+      name: assertIdentifier(entry?.name ?? ["A", "B", "C"][index], "Set name"),
+      label: entry?.label ?? ["A", "B", "C"][index],
     }));
 
-  while (setEntries.length < 2) {
+  while (setEntries.length < setCount) {
     const index = setEntries.length;
-    setEntries.push({ name: index === 0 ? "A" : "B", label: index === 0 ? "A" : "B" });
+    setEntries.push({ name: ["A", "B", "C"][index], label: ["A", "B", "C"][index] });
   }
 
   const universe = data.universe && typeof data.universe === "object" ? data.universe : {};
-  const regionDefaults = [
-    { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}'`, predicate: "LabelsLeftOnly" },
-    { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name}`, predicate: "LabelsIntersection" },
-    { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}`, predicate: "LabelsRightOnly" },
-    { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name})'`, predicate: "LabelsOutside" },
-  ];
-  const regions = Array.isArray(data.regions) && data.regions.length ? data.regions : regionDefaults;
+  const regionDefaults =
+    setCount === 3
+      ? [
+          { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}'` },
+          { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}'` },
+          { name: "onlyC", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}` },
+          { name: "onlyAB", label: `${setEntries[0].name} \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}'` },
+          { name: "onlyAC", label: `${setEntries[0].name} \\cap ${setEntries[1].name}' \\cap ${setEntries[2].name}` },
+          { name: "onlyBC", label: `${setEntries[0].name}' \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}` },
+          { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name} \\cap ${setEntries[2].name}` },
+          { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name} \\cup ${setEntries[2].name})'` },
+        ]
+      : [
+          { name: "onlyA", label: `${setEntries[0].name} \\cap ${setEntries[1].name}'`, predicate: "LabelsLeftOnly" },
+          { name: "intersection", label: `${setEntries[0].name} \\cap ${setEntries[1].name}`, predicate: "LabelsIntersection" },
+          { name: "onlyB", label: `${setEntries[0].name}' \\cap ${setEntries[1].name}`, predicate: "LabelsRightOnly" },
+          { name: "outside", label: `(${setEntries[0].name} \\cup ${setEntries[1].name})'`, predicate: "LabelsOutside" },
+        ];
+  const regions = rawRegions.length ? rawRegions : regionDefaults;
 
   return {
+    setCount,
     universe: {
       name: assertIdentifier(universe.name ?? "U", "Universe name"),
       label: universe.label ?? "U",
@@ -283,6 +323,7 @@ function defaultSetEntries(spec) {
         name: assertIdentifier(source.name ?? fallback.name, "Region label name"),
         label: source.label ?? source.value ?? fallback.label,
         shaded: source.shaded === true || source.shade === true,
+        solutionOnly: source.solutionOnly === true,
       };
     }),
   };
@@ -421,6 +462,16 @@ const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
   intersection: { x: 210, y: 150 },
   onlyB: { x: 276, y: 150 },
 };
+const THREE_SET_REGION_LABEL_POSITIONS = {
+  onlyA: { x: 132, y: 128 },
+  onlyB: { x: 288, y: 128 },
+  onlyC: { x: 210, y: 226 },
+  onlyAB: { x: 210, y: 102 },
+  onlyAC: { x: 176, y: 170 },
+  onlyBC: { x: 244, y: 170 },
+  intersection: { x: 210, y: 148 },
+  outside: { x: 342, y: 252 },
+};
 
 function setDiagramArcSagitta(radius, halfHeight) {
   return radius - Math.sqrt(Math.max(0, radius * radius - halfHeight * halfHeight));
@@ -441,7 +492,28 @@ function setDiagramTextScale(scalePercent) {
 function setSvgText(text, x, y, options = {}) {
   const fontSize = formatSvgNumber((options.fontSize ?? 13.333) * (options.textScale ?? 1));
   const weight = options.weight ? ` font-weight="${options.weight}"` : "";
-  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="#111827">${escapeHtml(text)}</text>`;
+  const color = options.color ?? "#111827";
+  const solutionAttributes = options.solutionOnly
+    ? ` data-mauth-penrose-kind="region" data-mauth-penrose-id="${escapeHtml(options.id ?? "")}" data-solution-only="true"`
+    : "";
+  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="${color}"${solutionAttributes}>${escapeHtml(text)}</text>`;
+}
+
+const PENROSE_SOLUTION_COLOR = "#1d4ed8";
+const PENROSE_SHARED_SHADE = "rgba(15, 23, 42, 0.24)";
+const PENROSE_SOLUTION_SHADE = "rgba(29, 78, 216, 0.3)";
+
+function setRegionTextOptions(region, textScale) {
+  return {
+    textScale,
+    id: region?.name,
+    solutionOnly: region?.solutionOnly === true,
+    color: region?.solutionOnly === true ? PENROSE_SOLUTION_COLOR : "#111827",
+  };
+}
+
+function setRegionShadeColor(region) {
+  return region?.solutionOnly === true ? PENROSE_SOLUTION_SHADE : PENROSE_SHARED_SHADE;
 }
 
 function setCountBadge(text, x, y, type = "box", options = {}) {
@@ -464,8 +536,156 @@ function setCountBadge(text, x, y, type = "box", options = {}) {
   return `<g data-role="set-count-badge" data-badge-kind="box"><rect x="${x - width / 2}" y="${y - height / 2}" width="${width}" height="${height}" fill="#ffffff" stroke="#111827" stroke-width="2.1"/><text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
 }
 
+function renderThreeSetDiagramSvg(spec, substance) {
+  const { universe, sets, regions } = setDiagramSourceEntries(spec, substance);
+  const [leftSet, rightSet, lowerSet] = sets;
+  const [onlyA, onlyB, onlyC, onlyAB, onlyAC, onlyBC, intersection, outside] = regions;
+  const regionLabels = {
+    onlyA: setRegionText(onlyA?.label, `${leftSet.name} ∩ ${rightSet.name}′ ∩ ${lowerSet.name}′`),
+    onlyB: setRegionText(onlyB?.label, `${leftSet.name}′ ∩ ${rightSet.name} ∩ ${lowerSet.name}′`),
+    onlyC: setRegionText(onlyC?.label, `${leftSet.name}′ ∩ ${rightSet.name}′ ∩ ${lowerSet.name}`),
+    onlyAB: setRegionText(onlyAB?.label, `${leftSet.name} ∩ ${rightSet.name} ∩ ${lowerSet.name}′`),
+    onlyAC: setRegionText(onlyAC?.label, `${leftSet.name} ∩ ${rightSet.name}′ ∩ ${lowerSet.name}`),
+    onlyBC: setRegionText(onlyBC?.label, `${leftSet.name}′ ∩ ${rightSet.name} ∩ ${lowerSet.name}`),
+    intersection: setRegionText(intersection?.label, `${leftSet.name} ∩ ${rightSet.name} ∩ ${lowerSet.name}`),
+    outside: setRegionText(outside?.label, `(${leftSet.name} ∪ ${rightSet.name} ∪ ${lowerSet.name})′`),
+  };
+  const shaded = {
+    onlyA: onlyA?.shaded === true,
+    onlyB: onlyB?.shaded === true,
+    onlyC: onlyC?.shaded === true,
+    onlyAB: onlyAB?.shaded === true,
+    onlyAC: onlyAC?.shaded === true,
+    onlyBC: onlyBC?.shaded === true,
+    intersection: intersection?.shaded === true,
+    outside: outside?.shaded === true,
+  };
+  const width = DEFAULT_CANVAS_WIDTH;
+  const height = DEFAULT_CANVAS_HEIGHT;
+  const rect = { x: 26, y: 26, width: 368, height: 248 };
+  const left = { cx: 166, cy: 130, r: 78 };
+  const right = { cx: 254, cy: 130, r: 78 };
+  const lower = { cx: 210, cy: 188, r: 78 };
+  const scalePercent = Number(spec?.options?.scalePercent ?? 100);
+  const textScale = setDiagramTextScale(scalePercent);
+  const idPrefix = `set-${Math.random().toString(36).slice(2)}`;
+  const circleDef = (circle) => `<circle cx="${circle.cx}" cy="${circle.cy}" r="${circle.r}"/>`;
+  const notMask = (id, circle) =>
+    `<mask id="${idPrefix}-${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#ffffff"/>${circleDef(circle).replace("/>", ' fill="#000000"/>')}</mask>`;
+  const shading = [
+    shaded.outside
+      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${setRegionShadeColor(outside)}" mask="url(#${idPrefix}-outside)"/>`
+      : "",
+    shaded.onlyA ? `<rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyA)}" mask="url(#${idPrefix}-only-a)"/>` : "",
+    shaded.onlyB ? `<rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyB)}" mask="url(#${idPrefix}-only-b)"/>` : "",
+    shaded.onlyC ? `<rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyC)}" mask="url(#${idPrefix}-only-c)"/>` : "",
+    shaded.onlyAB
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-right-circle)"><rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyAB)}" mask="url(#${idPrefix}-not-lower)"/></g></g>`
+      : "",
+    shaded.onlyAC
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-lower-circle)"><rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyAC)}" mask="url(#${idPrefix}-not-right)"/></g></g>`
+      : "",
+    shaded.onlyBC
+      ? `<g clip-path="url(#${idPrefix}-right-circle)"><g clip-path="url(#${idPrefix}-lower-circle)"><rect width="${width}" height="${height}" fill="${setRegionShadeColor(onlyBC)}" mask="url(#${idPrefix}-not-left)"/></g></g>`
+      : "",
+    shaded.intersection
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><g clip-path="url(#${idPrefix}-right-circle)"><circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="${setRegionShadeColor(intersection)}"/></g></g>`
+      : "",
+  ].join("");
+
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <clipPath id="${idPrefix}-left-circle">${circleDef(left)}</clipPath>
+    <clipPath id="${idPrefix}-right-circle">${circleDef(right)}</clipPath>
+    <clipPath id="${idPrefix}-lower-circle">${circleDef(lower)}</clipPath>
+    ${notMask("not-left", left)}
+    ${notMask("not-right", right)}
+    ${notMask("not-lower", lower)}
+    <mask id="${idPrefix}-outside" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-a" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#ffffff"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-b" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#000000"/>
+    </mask>
+    <mask id="${idPrefix}-only-c" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="#000000"/>
+      <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="#ffffff"/>
+      <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="#000000"/>
+      <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="#000000"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  ${shading}
+  <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
+  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
+  ${setSvgText(normalizeSetLabel(leftSet.label), 112, 66, { textScale })}
+  ${setSvgText(normalizeSetLabel(rightSet.label), 308, 66, { textScale })}
+  ${setSvgText(normalizeSetLabel(lowerSet.label), 210, 266, { textScale })}
+  ${Object.entries(regionLabels)
+    .map(([key, label]) =>
+      setSvgText(
+        label,
+        THREE_SET_REGION_LABEL_POSITIONS[key].x,
+        THREE_SET_REGION_LABEL_POSITIONS[key].y,
+        setRegionTextOptions(
+          {
+            onlyA,
+            onlyB,
+            onlyC,
+            onlyAB,
+            onlyAC,
+            onlyBC,
+            intersection,
+            outside,
+          }[key],
+          textScale,
+        ),
+      ),
+    )
+    .join("\n  ")}
+  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale })}
+  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale })}
+  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale })}
+  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale })}
+</svg>`;
+
+  return {
+    svg,
+    metadata: {
+      width,
+      height,
+      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `0 0 ${width} ${height}`,
+      scalePercent,
+      preset: "sets",
+      presetLabel: "Sets",
+      domainSource: "",
+      substance: substance ?? specToSetSubstance(spec),
+      styleSource: "custom-set-svg",
+      style: spec?.style ?? "sets",
+    },
+  };
+}
+
 function renderSetDiagramSvg(spec, substance) {
   const { universe, sets, regions } = setDiagramSourceEntries(spec, substance);
+  if ((sets?.length ?? 0) >= 3) return renderThreeSetDiagramSvg(spec, substance);
   const [leftSet, rightSet] = sets;
   const regionLabels = {
     onlyA: setRegionText(regions[0]?.label, `${leftSet.name} ∩ ${rightSet.name}′`),
@@ -497,20 +717,19 @@ function renderSetDiagramSvg(spec, substance) {
         intersection: { x: 210, y: 150 },
         onlyB: { x: 294, y: 150 },
       };
-  const shadeColor = "rgba(15, 23, 42, 0.24)";
   const idPrefix = `set-${Math.random().toString(36).slice(2)}`;
   const shading = [
     shaded.outside
-      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${shadeColor}" mask="url(#${idPrefix}-outside)"/>`
+      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${setRegionShadeColor(regions[3])}" mask="url(#${idPrefix}-outside)"/>`
       : "",
     shaded.onlyA
-      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${shadeColor}" mask="url(#${idPrefix}-left-only)"/>`
+      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${setRegionShadeColor(regions[0])}" mask="url(#${idPrefix}-left-only)"/>`
       : "",
     shaded.intersection
-      ? `<g clip-path="url(#${idPrefix}-left-circle)"><circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="${shadeColor}"/></g>`
+      ? `<g clip-path="url(#${idPrefix}-left-circle)"><circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="${setRegionShadeColor(regions[1])}"/></g>`
       : "",
     shaded.onlyB
-      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${shadeColor}" mask="url(#${idPrefix}-right-only)"/>`
+      ? `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${setRegionShadeColor(regions[2])}" mask="url(#${idPrefix}-right-only)"/>`
       : "",
   ].join("");
 
@@ -541,10 +760,10 @@ function renderSetDiagramSvg(spec, substance) {
   ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
   ${setSvgText(normalizeSetLabel(leftSet.label), 116, 58, { textScale })}
   ${setSvgText(normalizeSetLabel(rightSet.label), 304, 58, { textScale })}
-  ${setSvgText(regionLabels.onlyA, regionLabelPositions.onlyA.x, regionLabelPositions.onlyA.y, { textScale })}
-  ${setSvgText(regionLabels.intersection, regionLabelPositions.intersection.x, regionLabelPositions.intersection.y, { textScale })}
-  ${setSvgText(regionLabels.onlyB, regionLabelPositions.onlyB.x, regionLabelPositions.onlyB.y, { textScale })}
-  ${setSvgText(regionLabels.outside, 342, 250, { textScale })}
+  ${setSvgText(regionLabels.onlyA, regionLabelPositions.onlyA.x, regionLabelPositions.onlyA.y, setRegionTextOptions(regions[0], textScale))}
+  ${setSvgText(regionLabels.intersection, regionLabelPositions.intersection.x, regionLabelPositions.intersection.y, setRegionTextOptions(regions[1], textScale))}
+  ${setSvgText(regionLabels.onlyB, regionLabelPositions.onlyB.x, regionLabelPositions.onlyB.y, setRegionTextOptions(regions[2], textScale))}
+  ${setSvgText(regionLabels.outside, 342, 250, setRegionTextOptions(regions[3], textScale))}
   ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale })}
   ${setCountBadge(leftSet.countLabel, left.cx, left.cy, "left-tab", { textScale, radius: left.r })}
   ${setCountBadge(rightSet.countLabel, right.cx, right.cy, "right-tab", { textScale, radius: right.r })}
@@ -571,6 +790,18 @@ function renderSetDiagramSvg(spec, substance) {
 
 function specToSetSubstance(spec) {
   const { universe, sets, regions } = defaultSetEntries(spec);
+  if (sets.length >= 3) {
+    const lines = [
+      `Universe ${universe.name}`,
+      `Set ${sets.map((set) => set.name).join(", ")}`,
+      `RegionLabel ${regions.map((region) => region.name).join(", ")}`,
+      labelStatement(universe.name, universe.label),
+      ...sets.map((set) => labelStatement(set.name, set.label)),
+      ...regions.map((region) => labelStatement(region.name, region.label)),
+    ];
+    return `${lines.join("\n")}\n`;
+  }
+
   const [leftSet, rightSet] = sets;
   const lines = [
     `Universe ${universe.name}`,
@@ -693,6 +924,27 @@ function segmentLabelEntries(spec) {
       a: assertIdentifier(names[0], "Segment label start point"),
       b: assertIdentifier(names[1], "Segment label end point"),
       value,
+      solutionOnly: relation.solutionOnly === true,
+    });
+  }
+  return entries;
+}
+
+function selfLoopLabelEntries(spec) {
+  const entries = [];
+  for (const relation of spec?.data?.relationships ?? []) {
+    if (relation?.type !== "segment" && relation?.type !== "vectorSegment") continue;
+    const value = relation.label ?? relation.value;
+    if (String(value ?? "").trim().length === 0) continue;
+    const names = relation.points ?? relation.between ?? [];
+    if (!Array.isArray(names) || names.length !== 2) continue;
+    const start = assertIdentifier(names[0], "Self-loop label point");
+    const end = assertIdentifier(names[1], "Self-loop label point");
+    if (start !== end) continue;
+    entries.push({
+      a: start,
+      value,
+      solutionOnly: relation.solutionOnly === true,
     });
   }
   return entries;
@@ -848,10 +1100,16 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
       continue;
     }
 
-    const namedSegmentMatch = line.match(/^(Segment|VectorSegment)\(([^)]+)\)$/);
+    const namedSegmentMatch = line.match(/^(Segment|VectorSegment|SelfLoop|VectorSelfLoop)\(([^)]+)\)$/);
     if (namedSegmentMatch) {
       const args = substanceArgs(namedSegmentMatch[2]);
-      if (args.length === 3) {
+      if ((namedSegmentMatch[1] === "SelfLoop" || namedSegmentMatch[1] === "VectorSelfLoop") && args.length === 2) {
+        const segmentName = assertIdentifier(args[0], "Segment name");
+        const point = assertIdentifier(args[1], "Self-loop point");
+        namedSegments.add(segmentName);
+        namedSegmentEndpoints.set(segmentName, [point, point]);
+        objectNames.add(point);
+      } else if (args.length === 3) {
         const segmentName = assertIdentifier(args[0], "Segment name");
         const start = assertIdentifier(args[1], "Segment start point");
         const end = assertIdentifier(args[2], "Segment end point");
@@ -867,7 +1125,7 @@ function substanceWithImplicitInvisibleLabels(substance, preset = "geometry", sp
       continue;
     }
 
-    const labelConsumerMatch = line.match(/^(LabelsSegment|LabelsAngle|LabelsCircle|LabelsLine)\(([^)]+)\)$/);
+    const labelConsumerMatch = line.match(/^(LabelsSegment|LabelsSelfLoop|LabelsAngle|LabelsCircle|LabelsLine)\(([^)]+)\)$/);
     if (labelConsumerMatch) {
       const args = substanceArgs(labelConsumerMatch[2]);
       if (
@@ -1090,6 +1348,33 @@ function parseSubstanceDiagramSpec(substance) {
         between: [start, end],
         value: labels.get(label) ?? "",
       });
+      continue;
+    }
+
+    const selfLoopLabelMatch = line.match(/^LabelsSelfLoop\(([^)]+)\)$/);
+    if (selfLoopLabelMatch) {
+      const [labelName, pointName] = substanceArgs(selfLoopLabelMatch[1]);
+      if (!labelName || !pointName) continue;
+      const label = assertIdentifier(labelName, "Length label");
+      const point = assertIdentifier(pointName, "Self-loop label point");
+      points.set(point, points.get(point) ?? { type: "point", name: point });
+      relationships.push({
+        type: "labelLength",
+        name: label,
+        between: [point, point],
+        value: labels.get(label) ?? "",
+      });
+      continue;
+    }
+
+    const selfLoopMatch = line.match(/^(SelfLoop|VectorSelfLoop)\(([^)]+)\)$/);
+    if (selfLoopMatch) {
+      const [segmentName, pointName] = substanceArgs(selfLoopMatch[2]);
+      if (!segmentName || !pointName) continue;
+      const point = assertIdentifier(pointName, "Self-loop point");
+      points.set(point, points.get(point) ?? { type: "point", name: point });
+      namedSegments.set(assertIdentifier(segmentName, "Segment name"), [point, point]);
+      relationships.push({ type: selfLoopMatch[1] === "VectorSelfLoop" ? "vectorSegment" : "segment", points: [point, point] });
       continue;
     }
 

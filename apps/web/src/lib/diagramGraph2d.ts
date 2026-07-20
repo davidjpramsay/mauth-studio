@@ -1,7 +1,5 @@
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 
-import { graphDisplayHeight } from "@/components/graphs/FunctionGraph";
-
 export const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
 export const GRAPH_LABELS = ["f", "g", "h", "p", "q"];
 export const DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH = 2.5;
@@ -21,9 +19,9 @@ export const DEFAULT_2D_GRAPH: GraphConfig = {
       kind: "expression",
       domainMode: "auto",
       functionExtensionMode: "auto",
-      functionExtension: 0.25,
-      functionExtensionLeft: 0.25,
-      functionExtensionRight: 0.25,
+      functionExtension: 0,
+      functionExtensionLeft: 0,
+      functionExtensionRight: 0,
       pieces: [],
     },
   ],
@@ -59,10 +57,10 @@ export const DEFAULT_2D_GRAPH: GraphConfig = {
   gridMinorColor: "#dddddd",
   axisExtensionMode: "auto",
   functionExtensionMode: "auto",
-  axisExtension: 0.5,
-  functionExtension: 0.25,
-  functionExtensionLeft: 0.25,
-  functionExtensionRight: 0.25,
+  axisExtension: 0,
+  functionExtension: 0,
+  functionExtensionLeft: 0,
+  functionExtensionRight: 0,
   metadata: {},
 };
 
@@ -147,11 +145,16 @@ export function createGraphFunction(index: number, expression = "x"): GraphFunct
     show: true,
     domainMode: "auto",
     functionExtensionMode: "auto",
-    functionExtension: 0.25,
-    functionExtensionLeft: 0.25,
-    functionExtensionRight: 0.25,
+    functionExtension: 0,
+    functionExtensionLeft: 0,
+    functionExtensionRight: 0,
     pieces: [],
   };
+}
+
+export function createAuthoredGraphFunction(index: number, showSolutions: boolean, expression = "x"): GraphFunction {
+  const graphFunction = createGraphFunction(index, expression);
+  return showSolutions ? { ...graphFunction, solutionOnly: true } : graphFunction;
 }
 
 export function createGraphPiece(expression = "x", xMin?: number, xMax?: number): GraphFunctionPiece {
@@ -167,6 +170,16 @@ export function createGraphPiece(expression = "x", xMin?: number, xMax?: number)
 
 export function isRegionFeatureKind(kind?: GraphFeature["kind"]) {
   return kind === "region_between_curves" || kind === "region_curve_axis";
+}
+
+export function isStrokeStyledFeatureKind(kind?: GraphFeature["kind"]) {
+  return (
+    kind === "line_segment" ||
+    kind === "angle_marker" ||
+    kind === "tangent" ||
+    kind === "region_clipped_by_curve" ||
+    isRegionFeatureKind(kind)
+  );
 }
 
 function normalFeatureKind(kind?: GraphFeature["kind"]): GraphFeatureKind {
@@ -262,6 +275,16 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
     labelX: undefined,
     labelY: undefined,
   };
+}
+
+export function createAuthoredGraphFeature(
+  kind: GraphFeatureKind,
+  index: number,
+  graphConfig: GraphConfig | null | undefined,
+  solutionsMode: boolean,
+): GraphFeature {
+  const feature = createGraphFeature(kind, index, graphConfig);
+  return solutionsMode ? { ...feature, solutionOnly: true } : feature;
 }
 
 export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): GraphFeature[] {
@@ -413,7 +436,7 @@ export function graphWidth(graphConfig?: GraphConfig | null) {
 }
 
 export function graphHeight(graphConfig?: GraphConfig | null) {
-  return graphDisplayHeight(graphConfig);
+  return graphConfig?.heightPx ?? DEFAULT_2D_GRAPH.heightPx ?? 300;
 }
 
 export function lockedAspectHeight(graphConfig: GraphConfig, nextWidth: number) {
@@ -427,4 +450,31 @@ export function lockedAspectHeight(graphConfig: GraphConfig, nextWidth: number) 
 
 export function isSolutionOnlyGraphFeature(feature: GraphFeature) {
   return feature.solutionOnly === true;
+}
+
+export function isSolutionOnlyGraphFunction(graphFunction: GraphFunction) {
+  return graphFunction.solutionOnly === true;
+}
+
+export function graphFunctionIndexById(functions: readonly GraphFunction[], idValue: string) {
+  return functions.findIndex((graphFunction) => graphFunction.id === idValue);
+}
+
+export function graphFunctionAt(functions: readonly GraphFunction[], index: number) {
+  return Number.isInteger(index) && index >= 0 ? functions[index] : undefined;
+}
+
+export function updateGraphFunction(
+  functions: readonly GraphFunction[],
+  index: number,
+  patch: Partial<GraphFunction>,
+): GraphFunction[] | null {
+  if (!graphFunctionAt(functions, index)) return null;
+  return functions.map((graphFunction, functionIndex) => (functionIndex === index ? { ...graphFunction, ...patch } : graphFunction));
+}
+
+export function graphFeatureReferencesFunction(feature: GraphFeature, functionIndex: number) {
+  return [feature.functionIndex, feature.functionAIndex, feature.functionBIndex, feature.clipFunctionIndex].some(
+    (candidate) => candidate === functionIndex,
+  );
 }

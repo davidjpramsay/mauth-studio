@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { MauthAgentQueuedRequest } from "@mauth-studio/shared";
 
-import { pollMauthAgentRequests, registerMauthAgentEditorSession, respondMauthAgentRequest } from "@/lib/api";
+import {
+  ApiError,
+  pollMauthAgentRequests,
+  registerMauthAgentEditorSession,
+  respondMauthAgentRequest,
+  unregisterMauthAgentEditorSession,
+} from "@/lib/api";
 
 const EDITOR_SESSION_STORAGE_KEY = "mauth-agent-editor-session-id";
 
@@ -43,6 +49,11 @@ function unknownErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The browser bridge failed while handling the agent request.";
 }
 
+function isLostBrowserSession(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 404 || !error.detail || typeof error.detail !== "object") return false;
+  return (error.detail as Record<string, unknown>).code === "APP_NOT_CONNECTED";
+}
+
 async function runHandler(request: MauthAgentQueuedRequest, handlers: MauthAgentBridgeHandlers): Promise<MauthAgentBridgeHandlerResult> {
   try {
     switch (request.kind) {
@@ -78,20 +89,17 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
 
     const abortController = new AbortController();
     let stopped = false;
+    let registered = false;
+    let unregistering = false;
 
     async function runBridgeLoop() {
       while (!stopped) {
         try {
-          await registerMauthAgentEditorSession(sessionId, "Mauth web editor", abortController.signal);
-          break;
-        } catch {
-          if (stopped || abortController.signal.aborted) return;
-          await delay(1500);
-        }
-      }
+          if (!registered) {
+            await registerMauthAgentEditorSession(sessionId, "Mauth web editor", abortController.signal);
+            registered = true;
+          }
 
-      while (!stopped) {
-        try {
           const response = await pollMauthAgentRequests(sessionId, abortController.signal);
           if (!response.request) continue;
 
@@ -105,18 +113,29 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
             },
             abortController.signal,
           );
-        } catch {
+        } catch (error) {
           if (stopped || abortController.signal.aborted) return;
-          await delay(1000);
+          if (isLostBrowserSession(error)) registered = false;
+          await delay(registered ? 1000 : 1500);
         }
       }
     }
 
+    function unregisterClosedPage() {
+      if (unregistering) return;
+      unregistering = true;
+      void unregisterMauthAgentEditorSession(sessionId).catch(() => undefined);
+    }
+
+    window.addEventListener("pagehide", unregisterClosedPage);
+    window.addEventListener("beforeunload", unregisterClosedPage);
     void runBridgeLoop();
 
     return () => {
       stopped = true;
       abortController.abort();
+      window.removeEventListener("pagehide", unregisterClosedPage);
+      window.removeEventListener("beforeunload", unregisterClosedPage);
     };
   }, [enabled, sessionId]);
 }

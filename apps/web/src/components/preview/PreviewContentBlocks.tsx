@@ -9,9 +9,16 @@ import type {
   GraphConfig,
   TableCellAlignment,
 } from "@mauth-studio/shared";
+import { diagramBlockHasSharedSolutionAnswer } from "@/lib/solutionDiagramCompleteness";
 
 import { normalizeColumnsBlock } from "@/lib/contentBlockNormalization";
+import {
+  sharedTableSolutionPresentation,
+  tableBlockHasSharedSolutionEntries,
+  tableSolutionEntryMasksForSlot,
+} from "@/lib/tableSolutionEntries";
 import { cn } from "@/lib/utils";
+import { choiceBlockHasSolutionAnswer, choiceSolutionAnswerIndexForPreview } from "@/lib/choiceSolutionAnswers";
 
 type EditorContentBlock = ContentBlock;
 type PreviewTable = {
@@ -51,6 +58,7 @@ export interface PreviewContentRuntime {
 export interface PreviewContentRenderers {
   renderDiagram: (props: {
     graphConfig?: GraphConfig | null;
+    anchor?: string;
     measureOnly?: boolean;
     showSolutions?: boolean;
     solutionTone?: boolean;
@@ -67,21 +75,25 @@ export interface PreviewContentBlocksProps {
   onGraphConfigChange?: (blockId: string, graphConfig: GraphConfig) => void;
   blockAnchorFor?: (block: EditorContentBlock) => string | undefined;
   activePreviewAnchor?: string;
+  tableSolutionEntryMasks?: Record<string, boolean[][]>;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
 }
 
 function ChoiceListPreview({
   block,
+  showSolutions,
   runtime,
   renderers,
 }: {
   block: Extract<EditorContentBlock, { kind: "choices" }>;
+  showSolutions: boolean;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
 }) {
   const choices = runtime.normalizeChoiceItems(block.choices);
   const layout = runtime.normalizeChoiceListLayout(block.layout);
+  const solutionAnswerIndex = choiceSolutionAnswerIndexForPreview(block, showSolutions);
 
   return (
     <div
@@ -92,8 +104,16 @@ function ChoiceListPreview({
       )}
     >
       {choices.map((choice, index) => (
-        <div key={`${choice}-${index}`} className="test-choice-item">
-          <span className="test-choice-label">{runtime.choiceLabel(block.numberingStyle, index)}</span>
+        <div
+          key={`${choice}-${index}`}
+          className={cn("test-choice-item", solutionAnswerIndex === index && "test-choice-item-solution-answer")}
+          data-solution-answer={solutionAnswerIndex === index ? "true" : undefined}
+        >
+          <span className="test-choice-label">
+            <span className={cn("test-choice-label-text", solutionAnswerIndex === index && "test-choice-label-answer-ring")}>
+              {runtime.choiceLabel(block.numberingStyle, index)}
+            </span>
+          </span>
           <div className="test-choice-content">{renderers.renderMath(choice, { plainSimpleInlineLatex: false })}</div>
         </div>
       ))}
@@ -103,15 +123,22 @@ function ChoiceListPreview({
 
 function TablePreview({
   block,
+  showSolutions,
   runtime,
   renderers,
+  solutionEntryMask,
 }: {
   block: Extract<EditorContentBlock, { kind: "table" }>;
+  showSolutions: boolean;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
+  solutionEntryMask?: boolean[][];
 }) {
+  const sharedPresentation = sharedTableSolutionPresentation(block, showSolutions);
   const table = runtime.normalizeTableBlock(block);
-  const rows = runtime.plainTableRows(table);
+  const rows = sharedPresentation.rows;
+  const solutionTable = block.visibility === "solution" || block.solutionOnly === true;
+  const headerRowCount = table.showHeader ? 1 : 0;
 
   return (
     <div className={cn("test-table-wrap", `test-table-${table.tableAlign}`)}>
@@ -120,7 +147,16 @@ function TablePreview({
           {rows.map((row, rowIndex) => (
             <tr key={`row-${rowIndex}`}>
               {row.map((cell, cellIndex) => (
-                <td key={`cell-${rowIndex}-${cellIndex}`} className={cn("test-table-cell", `test-table-cell-${table.cellAlignment}`)}>
+                <td
+                  key={`cell-${rowIndex}-${cellIndex}`}
+                  className={cn(
+                    "test-table-cell",
+                    `test-table-cell-${table.cellAlignment}`,
+                    solutionEntryMask?.[rowIndex]?.[cellIndex] || sharedPresentation.solutionEntryMask[rowIndex]?.[cellIndex]
+                      ? "test-table-solution-entry-cell"
+                      : solutionTable && rowIndex >= headerRowCount && cellIndex > 0 && cell.trim() && "test-table-solution-entry-cell",
+                  )}
+                >
                   {renderers.renderMath(cell)}
                 </td>
               ))}
@@ -184,13 +220,21 @@ function ColumnsPreview({
 
 function solutionSurfaceMarkTicks(block: EditorContentBlock, showSolutions: boolean) {
   if (!showSolutions) return 0;
-  if (block.visibility !== "solution" && block.solutionOnly !== true) return 0;
+  if (
+    block.visibility !== "solution" &&
+    block.solutionOnly !== true &&
+    !diagramBlockHasSharedSolutionAnswer(block) &&
+    !choiceBlockHasSolutionAnswer(block) &&
+    !tableBlockHasSharedSolutionEntries(block)
+  ) {
+    return 0;
+  }
   return Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0)));
 }
 
 function isSolutionSurface(block: EditorContentBlock, showSolutions: boolean) {
   if (!showSolutions) return false;
-  return block.visibility === "solution" || block.solutionOnly === true;
+  return block.visibility === "solution" || block.solutionOnly === true || tableBlockHasSharedSolutionEntries(block);
 }
 
 function SolutionMarkedSurface({
@@ -243,6 +287,7 @@ function VisibilityReplacementSlot({
   const solutionRef = useRef<HTMLDivElement | null>(null);
   const [overflowLines, setOverflowLines] = useState(0);
   const solutionBlocksKey = solutionBlocks.map((block) => block.id).join(":");
+  const tableSolutionEntryMasks = tableSolutionEntryMasksForSlot(studentBlock, solutionBlocks);
 
   useLayoutEffect(() => {
     if (measureOnly || !showSolutions) {
@@ -295,6 +340,7 @@ function VisibilityReplacementSlot({
           showSolutions={false}
           blockAnchorFor={showSolutions ? undefined : blockAnchorFor}
           activePreviewAnchor={activePreviewAnchor}
+          tableSolutionEntryMasks={tableSolutionEntryMasks}
           onGraphConfigChange={onGraphConfigChange}
           runtime={runtime}
           renderers={renderers}
@@ -361,6 +407,7 @@ function DiagramWithBesideNode({
     >
       {renderers.renderDiagram({
         graphConfig: diagramBlock.graphConfig,
+        anchor: diagramAnchor,
         measureOnly,
         showSolutions,
         solutionTone: isSolutionSurface(diagramBlock, showSolutions),
@@ -426,7 +473,7 @@ function DiagramBesideContentBlock({
         data-scroll-anchor={blockAnchor}
         data-preview-module-anchor={blockAnchor ? "true" : undefined}
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
-        className="test-space-block"
+        className={cn("test-space-block", block.showLines === false && "test-space-block-blank")}
         style={{ "--space-lines": String(runtime.spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
       />
     );
@@ -439,7 +486,9 @@ function DiagramBesideContentBlock({
         data-preview-module-anchor={blockAnchor ? "true" : undefined}
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
-        <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+        <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+          <ChoiceListPreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
+        </SolutionMarkedSurface>
       </div>
     );
   }
@@ -452,7 +501,7 @@ function DiagramBesideContentBlock({
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
         <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-          <TablePreview block={block} runtime={runtime} renderers={renderers} />
+          <TablePreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
         </SolutionMarkedSurface>
       </div>
     );
@@ -474,6 +523,7 @@ function DiagramBesideContentBlock({
         >
           {renderers.renderDiagram({
             graphConfig: block.graphConfig,
+            anchor: blockAnchor,
             measureOnly,
             showSolutions,
             solutionTone: isSolutionSurface(block, showSolutions),
@@ -663,6 +713,7 @@ function DiagramWithResponseSlot({
       >
         {renderers.renderDiagram({
           graphConfig: diagramBlock.graphConfig,
+          anchor: diagramAnchor,
           measureOnly,
           showSolutions,
           solutionTone: isSolutionSurface(diagramBlock, showSolutions),
@@ -687,7 +738,7 @@ function DiagramWithResponseSlot({
           data-preview-module-anchor={spaceAnchor ? "true" : undefined}
           data-preview-module-shape="l-space"
           data-preview-selected={isSpaceSelected}
-          className="test-diagram-response-space"
+          className={cn("test-diagram-response-space", studentBlock.showLines === false && "test-diagram-response-space-blank")}
         />
       )}
       {!measureOnly && outline.path ? (
@@ -712,6 +763,7 @@ export function PreviewContentBlocks({
   onGraphConfigChange,
   blockAnchorFor,
   activePreviewAnchor,
+  tableSolutionEntryMasks,
   runtime,
   renderers,
 }: PreviewContentBlocksProps) {
@@ -871,7 +923,7 @@ export function PreviewContentBlocks({
           data-scroll-anchor={blockAnchor}
           data-preview-module-anchor={blockAnchor ? "true" : undefined}
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
-          className="test-space-block"
+          className={cn("test-space-block", block.showLines === false && "test-space-block-blank")}
           style={{ "--space-lines": String(runtime.spaceLines(block.lines)) } as CSSProperties & Record<`--${string}`, string>}
         />,
       );
@@ -894,6 +946,7 @@ export function PreviewContentBlocks({
           >
             {renderers.renderDiagram({
               graphConfig: block.graphConfig,
+              anchor: blockAnchor,
               measureOnly,
               showSolutions,
               solutionTone: isSolutionSurface(block, showSolutions),
@@ -929,7 +982,9 @@ export function PreviewContentBlocks({
           data-preview-module-anchor={blockAnchor ? "true" : undefined}
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
-          <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+          <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
+            <ChoiceListPreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
+          </SolutionMarkedSurface>
         </div>,
       );
       continue;
@@ -943,7 +998,13 @@ export function PreviewContentBlocks({
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
           <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-            <TablePreview block={block} runtime={runtime} renderers={renderers} />
+            <TablePreview
+              block={block}
+              showSolutions={showSolutions}
+              runtime={runtime}
+              renderers={renderers}
+              solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
+            />
           </SolutionMarkedSurface>
         </div>,
       );

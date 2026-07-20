@@ -253,6 +253,21 @@ async function clickDrawerAction(drawer, name) {
   await drawer.getByRole("button", { name, exact: true }).click();
 }
 
+async function submitMauthPrompt(page, title, label, value, confirmLabel) {
+  const dialog = page.getByRole("dialog", { name: title });
+  await dialog.waitFor({ state: "visible", timeout: 5000 });
+  await dialog.getByLabel(label).fill(value);
+  await dialog.getByRole("button", { name: confirmLabel, exact: true }).click();
+  await dialog.waitFor({ state: "hidden", timeout: 5000 });
+}
+
+async function confirmMauthDialog(page, title, confirmLabel) {
+  const dialog = page.getByRole("dialog", { name: title });
+  await dialog.waitFor({ state: "visible", timeout: 5000 });
+  await dialog.getByRole("button", { name: confirmLabel, exact: true }).click();
+  await dialog.waitFor({ state: "hidden", timeout: 5000 });
+}
+
 async function findTextareaWithValue(page, expectedValue) {
   const textareas = page.locator("textarea");
   const count = await textareas.count();
@@ -297,14 +312,10 @@ await seedSmokeFiles(projectId, smokeRoot);
 let webServer = null;
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
-const dialogResponses = [];
+const nativeDialogs = [];
 page.on("dialog", (dialog) => {
-  const response = dialogResponses.shift();
-  if (dialog.type() === "prompt") {
-    dialog.accept(response ?? dialog.defaultValue()).catch(() => {});
-  } else {
-    dialog.accept().catch(() => {});
-  }
+  nativeDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+  dialog.dismiss().catch(() => {});
 });
 
 try {
@@ -351,8 +362,8 @@ try {
 
   const renamedFolder = `${smokeRoot}/Renamed Folder`;
   await fileRow(drawer, folderBCopy).click();
-  dialogResponses.push("Renamed Folder");
   await clickDrawerAction(drawer, "Rename");
+  await submitMauthPrompt(page, "Rename", "Folder name", "Renamed Folder", "Rename");
   await waitForFiles(
     projectId,
     (files) => hasPath(files, `tests/${renamedFolder}/Beta.test.json`) && !hasPath(files, `tests/${folderBCopy}`),
@@ -361,6 +372,7 @@ try {
 
   await fileRow(drawer, renamedFolder).click();
   await clickDrawerAction(drawer, "Delete");
+  await confirmMauthDialog(page, "Delete item", "Delete");
   await waitForFiles(projectId, (files) => !hasPath(files, `tests/${renamedFolder}`), "folder delete with contents");
 
   await fileRow(drawer, alpha).click();
@@ -392,6 +404,7 @@ try {
   await waitForSelectedCount(drawer, currentRowCount, "keyboard select all");
   await page.keyboard.press("Escape");
   await waitForSelectedCount(drawer, 0, "keyboard clear selection");
+  assert.deepEqual(nativeDialogs, [], "File manager should use Mauth dialogs, not native browser dialogs");
 
   console.log(`File manager smoke passed using ${smokeRoot}`);
 } finally {

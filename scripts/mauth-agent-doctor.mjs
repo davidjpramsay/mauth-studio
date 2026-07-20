@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
-const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/\/+$/, "");
+import { agentAuthorizationHeaders, resolveMauthRuntime } from "./mauth-runtime.mjs";
+
+const runtime = resolveMauthRuntime();
+const API_BASE = runtime.apiUrl;
+const WEB_URL = runtime.webUrl;
+const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
 
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
@@ -40,9 +44,9 @@ async function checkMcpDependency() {
   }
 }
 
-async function checkHttp(label, url, { expectJson = false, allowAppNotConnected = false } = {}) {
+async function checkHttp(label, url, { expectJson = false, allowAppNotConnected = false, agentAuth = false } = {}) {
   try {
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(url, { headers: agentAuth ? AGENT_HEADERS : {} });
     const body = expectJson ? await readJson(response) : await response.text();
     if (allowAppNotConnected && response.status === 503 && body && typeof body === "object" && body.code === "APP_NOT_CONNECTED") {
       line(false, label, "API is up, but no browser editor session is connected");
@@ -72,14 +76,18 @@ checks.push(await checkHttp("API health", `${API_BASE}/api/health`, { expectJson
 checks.push(await checkHttp("Web app", WEB_URL));
 checks.push(await checkHttp("Bridge discovery", `${API_BASE}/.well-known/mauth-agent.json`, { expectJson: true }));
 checks.push(
-  await checkHttp("Active editor snapshot", `${API_BASE}/api/agent/current/snapshot`, { expectJson: true, allowAppNotConnected: true }),
+  await checkHttp("Active editor snapshot", `${API_BASE}/api/agent/current/snapshot`, {
+    expectJson: true,
+    allowAppNotConnected: true,
+    agentAuth: true,
+  }),
 );
 
 const allOk = checks.every(Boolean);
 if (!allOk) {
-  console.log("\nStart the local stack, open the web app, then retry:");
-  console.log("  pnpm dev:api");
-  console.log("  pnpm dev:web");
+  console.log("\nOpen Mauth Studio, or start the development launcher, then retry:");
+  console.log("  open -a 'Mauth Studio'");
+  console.log("  pnpm dev:launch:desktop");
   console.log(`  open ${WEB_URL}`);
   console.log("\nIf pnpm dev:web printed a different web URL, pass it to the doctor, for example:");
   console.log("  MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor");

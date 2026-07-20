@@ -77,7 +77,10 @@ export function formatProjectFileSize(size: unknown) {
 }
 
 export function isProjectTestFile(file: Pick<ProjectFileSummary, "kind" | "fileType" | "path">) {
-  return file.kind === "file" && (file.fileType === "test" || file.fileType === "worksheet" || file.path.endsWith(".test.json"));
+  return (
+    file.kind === "file" &&
+    (file.fileType === "test" || file.fileType === "worksheet" || file.fileType === "notes" || file.path.endsWith(".test.json"))
+  );
 }
 
 export function testFilePathKey(file: ProjectFileSummary) {

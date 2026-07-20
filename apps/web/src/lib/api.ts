@@ -2,6 +2,7 @@ import type {
   DiagramSpec,
   GeneratedTest,
   MauthAgentRequest,
+  MauthSystemStatus,
   PenroseDiagramResponse,
   ProjectFileDocument,
   ProjectFileSaveRequest,
@@ -11,7 +12,10 @@ import type {
   Question,
 } from "@mauth-studio/shared";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+const PRODUCTION_ORIGIN = typeof globalThis.location?.origin === "string" ? globalThis.location.origin : "";
+
+export const API_BASE =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.PROD && PRODUCTION_ORIGIN ? PRODUCTION_ORIGIN : "http://127.0.0.1:8000");
 
 export class ApiError extends Error {
   status: number;
@@ -183,6 +187,10 @@ export function generateTest(seed = 20) {
   });
 }
 
+export function getSystemStatus(signal?: AbortSignal) {
+  return signal ? getJsonWithSignal<MauthSystemStatus>("/api/system/status", signal) : getJson<MauthSystemStatus>("/api/system/status");
+}
+
 // Legacy saved-test endpoints are retained for one-time migration into project files.
 // New user-facing file saves should go through /api/storage/projects.
 export function listStoredTests<TSavedTest>() {
@@ -215,6 +223,21 @@ export function listProjects() {
 
 export function getDefaultProject() {
   return getJson<ProjectSummary>("/api/storage/projects/default");
+}
+
+export function openDefaultProjectDocumentsFolder(path: string) {
+  return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder", { path });
+}
+
+export function chooseDefaultProjectDocumentsFolder() {
+  return postJson<{ cancelled: boolean; path?: string; project?: ProjectSummary }>(
+    "/api/storage/projects/default/documents-folder/choose",
+    {},
+  );
+}
+
+export function resetDefaultProjectDocumentsFolder() {
+  return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder/reset", {});
 }
 
 export function createProject(project: Partial<ProjectSummary> & { name: string }) {
@@ -315,6 +338,17 @@ export interface MauthAgentBrowserResponsePayload {
 
 export function registerMauthAgentEditorSession(sessionId: string, label = "Mauth web editor", signal?: AbortSignal) {
   return postJsonWithSignal<MauthAgentEditorRegistrationResponse>("/api/agent/current/browser/register", { sessionId, label }, signal);
+}
+
+export async function unregisterMauthAgentEditorSession(sessionId: string) {
+  const url = `${API_BASE}/api/agent/current/browser/unregister?sessionId=${encodeURIComponent(sessionId)}`;
+  if (typeof navigator !== "undefined" && navigator.sendBeacon?.(url)) return;
+
+  const response = await fetch(url, {
+    method: "POST",
+    keepalive: true,
+  });
+  if (!response.ok) throw await responseError(response);
 }
 
 export function pollMauthAgentRequests(sessionId: string, signal?: AbortSignal) {

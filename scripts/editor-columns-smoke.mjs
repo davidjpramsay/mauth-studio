@@ -11,6 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORKBENCH_ROOT = path.resolve(ROOT, "workspace");
 const OUTPUT_ROOT = process.env.MAUTH_EDITOR_COLUMNS_SMOKE_OUTPUT ?? path.join(WORKBENCH_ROOT, "verification", "editor-columns-smoke");
 const VIEWPORT = { width: 1484, height: 1264 };
+const BASIC_BLOCKS_ONLY = process.argv.includes("--basic-blocks-only");
 
 function timestampSlug() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -662,6 +663,35 @@ async function mockStorageApi(page) {
     await route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({}) });
   });
 
+  await page.route("http://127.0.0.1:8000/api/agent/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
+      return;
+    }
+    if (url.pathname.endsWith("/browser/register")) {
+      const payload = JSON.parse(request.postData() ?? "{}");
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: true,
+          sessionId: payload.sessionId,
+          pollUrl: `/api/agent/current/browser/requests?sessionId=${payload.sessionId}`,
+          respondUrl: "/api/agent/current/browser/respond",
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/browser/requests")) {
+      await delay(250);
+      await route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ request: null }) });
+      return;
+    }
+    await route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ success: true, removed: true }) });
+  });
+
   await page.route("http://127.0.0.1:8000/api/diagram/penrose", async (route) => {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300" viewBox="0 0 420 300"><rect width="420" height="300" fill="white"/><circle cx="120" cy="160" r="54" fill="none" stroke="#111827" stroke-width="3"/><circle cx="230" cy="160" r="54" fill="none" stroke="#111827" stroke-width="3"/><text x="210" y="60" text-anchor="middle" font-size="18" fill="#111827">Penrose smoke</text></svg>';
@@ -706,16 +736,17 @@ async function main() {
 
   try {
     await waitForServer(url, vite, logs);
-    await page.goto(url, { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Manual editor mode" }).waitFor();
     const partColumnsAnchor = "q:q-columns-ui/p:p-columns-ui/b:cols-ui";
     const diagramAnchor = "q:q-columns-ui/b:q-diagram";
     const nestedTableAnchor = `${partColumnsAnchor}/c:0/b:c1-table`;
     await page.getByRole("button", { name: "Manual editor mode" }).click();
     const inspector = page.locator("aside").filter({ hasText: "Inspector" }).first();
-    await page.getByRole("button", { name: "Show solutions" }).click();
+    await page.getByRole("radio", { name: "Solutions" }).click();
     await page.getByText("Answer space 5", { exact: false }).waitFor();
     await page.locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="q:q-columns-ui/b:q-space"]`).waitFor();
-    await page.getByRole("button", { name: "Hide solutions" }).click();
+    await page.getByRole("radio", { name: "Student" }).click();
     const previewPartColumnsNode = page
       .locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="${partColumnsAnchor}"]`)
       .first();
@@ -844,15 +875,18 @@ async function main() {
     assert.equal(await page.locator("select[aria-label='Choices 2 labels']").count(), 0, "space selection should not show choice controls");
     await assertVisibleInspectorControlsFit(inspector, "wide space");
 
-    await page.getByText("Diagram block 4", { exact: false }).dispatchEvent("pointerdown");
-    await inspector.getByText("Diagram 4").waitFor();
-    const diagramPanelElement = await page
-      .getByText("Diagram block 4", { exact: false })
-      .evaluateHandle((element) => element.closest("section"));
-    await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "wide");
     const inspectorScreenshotPath = path.join(outputDir, "inline-inspector.png");
-    await inspector.screenshot({ path: inspectorScreenshotPath });
     const screenshotPath = path.join(outputDir, "columns-editor.png");
+    let diagramPanelElement = null;
+    if (!BASIC_BLOCKS_ONLY) {
+      await page.getByText("Diagram block 4", { exact: false }).dispatchEvent("pointerdown");
+      await inspector.getByText("Diagram 4").waitFor();
+      diagramPanelElement = await page
+        .getByText("Diagram block 4", { exact: false })
+        .evaluateHandle((element) => element.closest("section"));
+      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "wide");
+    }
+    await inspector.screenshot({ path: inspectorScreenshotPath });
     await panelElement.asElement().screenshot({ path: screenshotPath });
 
     await page.setViewportSize({ width: 1180, height: 500 });
@@ -885,34 +919,35 @@ async function main() {
     await inspector.getByText("2 columns, 3 modules").waitFor();
     await assertVisibleInspectorControlsFit(inspector, "compact columns");
 
-    await page.getByText("Diagram block 4", { exact: false }).dispatchEvent("pointerdown");
-    await inspector.getByText("Diagram 4").waitFor();
-    const compactInspectorMetrics = await inspectorMetrics(inspector);
-    assert.equal(compactInspectorMetrics.placement, "inline", "compact editor should keep inline inspector placement");
-    assertInspectorBetweenEditorAndPreview(compactInspectorMetrics, "compact inline inspector");
-    await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "compact");
-    await selectDiagramType(inspector, "Diagram 4", "statsChart", "Chart settings");
-    await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
-    await inspector.getByText("Normal: mean", { exact: false }).waitFor();
-    const compactStatsInspectorMetrics = await inspectorMetrics(inspector);
-    assert(
-      compactStatsInspectorMetrics.scroller.scrollHeight > compactStatsInspectorMetrics.scroller.clientHeight + 8,
-      "compact inline inspector should become internally scrollable for tall settings",
-    );
-    await inspector.evaluate((element) => {
-      const scroller = element.querySelector(".overflow-y-auto");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    });
-    const compactScrolledMetrics = await inspectorMetrics(inspector);
-    assert(compactScrolledMetrics.scroller.scrollTop > 0, "compact inline inspector should allow scrolling to lower controls");
-    await inspector.locator("input[aria-label='Diagram 4 fill opacity']").fill("0.6");
-    assert.equal(
-      await inspector.locator("input[aria-label='Diagram 4 fill opacity']").inputValue(),
-      "0.6",
-      "inline inspector lower controls should remain editable after scrolling",
-    );
-
     const compactInspectorScreenshotPath = path.join(outputDir, "compact-inspector.png");
+    if (!BASIC_BLOCKS_ONLY && diagramPanelElement) {
+      await page.getByText("Diagram block 4", { exact: false }).dispatchEvent("pointerdown");
+      await inspector.getByText("Diagram 4").waitFor();
+      const compactInspectorMetrics = await inspectorMetrics(inspector);
+      assert.equal(compactInspectorMetrics.placement, "inline", "compact editor should keep inline inspector placement");
+      assertInspectorBetweenEditorAndPreview(compactInspectorMetrics, "compact inline inspector");
+      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "compact");
+      await selectDiagramType(inspector, "Diagram 4", "statsChart", "Chart settings");
+      await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
+      await inspector.getByText("Normal: mean", { exact: false }).waitFor();
+      const compactStatsInspectorMetrics = await inspectorMetrics(inspector);
+      assert(
+        compactStatsInspectorMetrics.scroller.scrollHeight > compactStatsInspectorMetrics.scroller.clientHeight + 8,
+        "compact inline inspector should become internally scrollable for tall settings",
+      );
+      await inspector.evaluate((element) => {
+        const scroller = element.querySelector(".overflow-y-auto");
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+      const compactScrolledMetrics = await inspectorMetrics(inspector);
+      assert(compactScrolledMetrics.scroller.scrollTop > 0, "compact inline inspector should allow scrolling to lower controls");
+      await inspector.locator("input[aria-label='Diagram 4 fill opacity']").fill("0.6");
+      assert.equal(
+        await inspector.locator("input[aria-label='Diagram 4 fill opacity']").inputValue(),
+        "0.6",
+        "inline inspector lower controls should remain editable after scrolling",
+      );
+    }
     await inspector.screenshot({ path: compactInspectorScreenshotPath });
 
     await nestedTableNode.dispatchEvent("pointerdown");
@@ -926,8 +961,11 @@ async function main() {
       "Delete should remove nested table",
     );
 
+    const coverage = BASIC_BLOCKS_ONLY
+      ? "text, space, columns, choices, and tables in wide and compact layouts"
+      : "text, space, columns, choices, tables, and every diagram type in wide and compact layouts";
     console.log(
-      `Editor inspector smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector covered text, space, columns, choices, tables, and every diagram type in wide and compact layouts, then deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}. Compact inspector screenshot: ${compactInspectorScreenshotPath}`,
+      `Editor inspector smoke passed. Grid columns: ${gridColumns}. Column one width: ${columnOne.width}px. Inspector covered ${coverage}, then deleted a nested table. Screenshot: ${screenshotPath}. Inspector screenshot: ${inspectorScreenshotPath}. Compact inspector screenshot: ${compactInspectorScreenshotPath}`,
     );
   } catch (error) {
     const bodyText = (
@@ -940,6 +978,7 @@ async function main() {
       `${error instanceof Error ? error.message : String(error)}\nConsole errors:\n${consoleErrors.join("\n")}\nPage errors:\n${pageErrors.join(
         "\n",
       )}\nVite logs:\n${logs.join("")}\nBody text:\n${bodyText}`,
+      { cause: error },
     );
   } finally {
     await browser.close();

@@ -1,6 +1,7 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import { Button } from "@/components/ui/button";
+import { Graph3DElementsEditor } from "@/components/editor/Graph3DElementsEditor";
 import { DEFAULT_3D_GRAPH, DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "@/lib/diagram3d";
 
 function optionalNumber(value: string) {
@@ -13,6 +14,7 @@ function numberInputValue(value?: number) {
 
 type Graph3DGraphEditorProps = {
   config: GraphConfig;
+  showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
@@ -41,7 +43,7 @@ function graph3dObjectSummary(config: GraphConfig) {
   return parts.join(", ");
 }
 
-export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }: Graph3DGraphEditorProps) {
+export function Graph3DGraphEditor({ config, showSolutions = true, settingsMode = "inline", onChange }: Graph3DGraphEditorProps) {
   const view = graph3dViewState(config);
   const showInlineSettings = settingsMode === "inline";
   const updateView = (patch: Partial<Graph3DViewState>) =>
@@ -72,7 +74,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               <input
                 type="number"
                 min={240}
-                step={20}
+                step={1}
                 value={numberInputValue(config.widthPx)}
                 onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.widthPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -83,7 +85,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               <input
                 type="number"
                 min={180}
-                step={20}
+                step={1}
                 value={numberInputValue(config.heightPx)}
                 onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.heightPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -96,7 +98,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Azimuth
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.az)}
                 onChange={(event) => updateView({ az: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.az })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -106,7 +108,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Elevation
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.el)}
                 onChange={(event) => updateView({ el: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.el })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -116,7 +118,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
               Bank
               <input
                 type="number"
-                step={0.05}
+                step={1}
                 value={numberInputValue(view.bank)}
                 onChange={(event) => updateView({ bank: optionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.bank })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -130,6 +132,7 @@ export function Graph3DGraphEditor({ config, settingsMode = "inline", onChange }
       ) : (
         <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">{graph3dObjectSummary(config)}</div>
       )}
+      <Graph3DElementsEditor config={config} showSolutions={showSolutions} onChange={onChange} />
     </div>
   );
 }

@@ -1,20 +1,21 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
-import { generatedSetPenroseSubstance, normalizedSetDiagramData } from "@/lib/diagramSet";
-
-const SET_REGION_EDITOR_LABELS = ["A only", "A and B", "B only", "Outside"] as const;
-const SET_REGION_COUNT_LABELS = ["8", "10", "6", "6"] as const;
-const SET_SHADING_OPTIONS: Array<{ label: string; regionIndex: number | null }> = [
-  { label: "None", regionIndex: null },
-  { label: "A only", regionIndex: 0 },
-  { label: "A and B", regionIndex: 1 },
-  { label: "B only", regionIndex: 2 },
-  { label: "Outside", regionIndex: 3 },
-];
+import {
+  DEFAULT_SET_DATA,
+  DEFAULT_THREE_SET_DATA,
+  generatedSetPenroseSubstance,
+  normalizedSetDiagramData,
+  setDiagramCountLabels,
+  setDiagramNotationLabel,
+  setDiagramRegionEditorLabels,
+  setDiagramRegionNameAt,
+  setDiagramSetTotalLabels,
+} from "@/lib/diagramSet";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
@@ -32,10 +33,11 @@ function setPenroseSubstanceSource(config: GraphConfig) {
 type SetDiagramEditorProps = {
   config: GraphConfig;
   settingsMode?: "inline" | "inspector";
+  showSolutions?: boolean;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: SetDiagramEditorProps) {
+export function SetDiagramEditor({ config, showSolutions = true, settingsMode = "inline", onChange }: SetDiagramEditorProps) {
   const scalePercent = penroseScalePercent(config);
   const data = normalizedSetDiagramData(config);
   const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
@@ -58,6 +60,19 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
   const updateUniverse = (patch: Partial<(typeof data)["universe"]>) => {
     patchSetData({ ...data, universe: { ...data.universe, ...patch } });
   };
+  const switchSetCount = (setCount: 2 | 3) => {
+    const defaults = setCount === 3 ? DEFAULT_THREE_SET_DATA : DEFAULT_SET_DATA;
+    patchSetData({
+      ...data,
+      setCount,
+      sets: defaults.sets.map((fallback, index) => ({
+        ...fallback,
+        ...(data.sets[index] ?? {}),
+        countLabel: data.sets[index]?.countLabel ?? "",
+      })),
+      regions: defaults.regions.map((region) => ({ ...region, shaded: false })),
+    });
+  };
   const updateSet = (setIndex: number, patch: Partial<(typeof data)["sets"][number]>) => {
     patchSetData({
       ...data,
@@ -67,34 +82,40 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
   const updateRegion = (regionIndex: number, patch: Partial<(typeof data)["regions"][number]>) => {
     patchSetData({
       ...data,
-      regions: data.regions.map((region, index) => (index === regionIndex ? { ...region, ...patch } : region)),
+      regions: data.regions.map((region, index) =>
+        index === regionIndex
+          ? {
+              ...region,
+              ...patch,
+              ...(showSolutions && patch.solutionOnly === undefined ? { solutionOnly: true } : {}),
+            }
+          : region,
+      ),
     });
   };
   const applyNotationLabels = () => {
-    const [leftSet, rightSet] = data.sets;
     patchSetData({
       ...data,
       regions: data.regions.map((region, index) => ({
         ...region,
-        label:
-          index === 0
-            ? `${leftSet.name} \\cap ${rightSet.name}'`
-            : index === 1
-              ? `${leftSet.name} \\cap ${rightSet.name}`
-              : index === 2
-                ? `${leftSet.name}' \\cap ${rightSet.name}`
-                : `(${leftSet.name} \\cup ${rightSet.name})'`,
+        label: setDiagramNotationLabel(setDiagramRegionNameAt(data.setCount, index, region.name), data.sets),
       })),
     });
   };
+  const regionCountLabels = setDiagramCountLabels(data.setCount);
+  const regionEditorLabels = setDiagramRegionEditorLabels(data.setCount);
+  const shadingOptions = [
+    { label: "None", regionIndex: null },
+    ...regionEditorLabels.map((label, index) => ({ label, regionIndex: index })),
+  ];
   const applyCountLabels = (includeTotals: boolean) => {
     patchSetData({
       ...data,
       universe: { ...data.universe, countLabel: includeTotals ? "30" : "" },
-      sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? (index === 0 ? "18" : "16") : "" })),
+      sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? setDiagramSetTotalLabels(data.setCount)[index] : "" })),
       regions: data.regions.map((region, index) => ({
         ...region,
-        label: SET_REGION_COUNT_LABELS[index] ?? "",
+        label: regionCountLabels[index] ?? "",
       })),
     });
   };
@@ -127,7 +148,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
               type="number"
               min={25}
               max={250}
-              step={5}
+              step={1}
               value={numberInputValue(scalePercent)}
               onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -135,6 +156,22 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           </label>
           <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
             Original
+          </Button>
+          <Button
+            type="button"
+            variant={data.setCount === 2 ? "default" : "outline"}
+            className="self-end"
+            onClick={() => switchSetCount(2)}
+          >
+            2 sets
+          </Button>
+          <Button
+            type="button"
+            variant={data.setCount === 3 ? "default" : "outline"}
+            className="self-end"
+            onClick={() => switchSetCount(3)}
+          >
+            3 sets
           </Button>
           <Button type="button" variant="outline" className="self-end" onClick={applyNotationLabels}>
             Set notation
@@ -150,12 +187,12 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
 
       {hasSubstanceOverride ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          This set diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured set
-          diagram data.
+          This Venn diagram has custom Substance. Changing the controls below will clear that Substance override and return to structured
+          Venn diagram data.
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
         <label className="flex flex-col gap-2 text-xs font-medium">
           Universe label
           <input
@@ -180,11 +217,21 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
             className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
           />
         </label>
+        {data.setCount === 3 ? (
+          <label className="flex flex-col gap-2 text-xs font-medium">
+            C label
+            <input
+              value={String(data.sets[2]?.label ?? "")}
+              onChange={(event) => updateSet(2, { label: event.target.value })}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+            />
+          </label>
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optional totals</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <label className="flex flex-col gap-2 text-xs font-medium">
             U total box
             <input
@@ -212,6 +259,17 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
+          {data.setCount === 3 ? (
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              C total box
+              <input
+                value={String(data.sets[2]?.countLabel ?? "")}
+                onChange={(event) => updateSet(2, { countLabel: event.target.value })}
+                placeholder="optional"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+          ) : null}
         </div>
       </section>
 
@@ -220,7 +278,7 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Regions</div>
           {showInlineSettings ? (
             <div className="flex flex-wrap gap-2">
-              {SET_SHADING_OPTIONS.map((option) => (
+              {shadingOptions.map((option) => (
                 <Button
                   key={`${option.label}-${option.regionIndex ?? "none"}`}
                   type="button"
@@ -235,30 +293,52 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           ) : null}
         </div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {data.regions.map((region, regionIndex) => (
-            <div
-              key={region.name ?? regionIndex}
-              className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[90px_minmax(0,1fr)_90px] md:items-end"
-            >
-              <div className="text-sm font-medium">{SET_REGION_EDITOR_LABELS[regionIndex]}</div>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Label or count
-                <input
-                  value={String(region.label ?? "")}
-                  onChange={(event) => updateRegion(regionIndex, { label: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex h-9 items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={region.shaded === true}
-                  onChange={(event) => updateRegion(regionIndex, { shaded: event.target.checked })}
-                />
-                Shaded
-              </label>
-            </div>
-          ))}
+          {data.regions
+            .map((region, regionIndex) => ({ region, regionIndex }))
+            .filter(({ region }) => showSolutions || region.solutionOnly !== true)
+            .map(({ region, regionIndex }) => (
+              <div
+                key={region.name ?? regionIndex}
+                data-penrose-item-kind="region"
+                data-penrose-item-id={region.name}
+                data-solution-only={region.solutionOnly === true ? "true" : undefined}
+                className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    {regionEditorLabels[regionIndex]}
+                    {region.solutionOnly === true ? <Badge variant="outline">Solution</Badge> : null}
+                  </span>
+                  <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={region.solutionOnly === true}
+                      aria-label={`${regionEditorLabels[regionIndex]} show in solutions only`}
+                      onChange={(event) => updateRegion(regionIndex, { solutionOnly: event.target.checked })}
+                    />
+                    Show in solutions only
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_100px] sm:items-end">
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Label or count
+                    <input
+                      value={String(region.label ?? "")}
+                      onChange={(event) => updateRegion(regionIndex, { label: event.target.value })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                  <label className="flex h-9 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={region.shaded === true}
+                      onChange={(event) => updateRegion(regionIndex, { shaded: event.target.checked })}
+                    />
+                    Shaded
+                  </label>
+                </div>
+              </div>
+            ))}
         </div>
       </section>
 

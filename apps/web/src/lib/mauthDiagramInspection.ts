@@ -1,6 +1,10 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
-import { graphFunctionNaturalBoundaries, graphFunctionNaturalDomainText } from "./graphFunctionDomains.ts";
+import {
+  graphFunctionNaturalBoundaries,
+  graphFunctionNaturalDomainEpsilon,
+  graphFunctionNaturalDomainText,
+} from "./graphFunctionDomains.ts";
 import { diagramIntentFromText, type MauthDiagramIntent } from "./mauthDiagramIntent.ts";
 import { inspectDiagramSemantics, type MauthDiagramSemanticWarning } from "./mauthDiagramSemanticInspection.ts";
 
@@ -257,31 +261,103 @@ function functionDomainBoundaryViolation(
   boundary: ReturnType<typeof graphFunctionNaturalBoundaries>[number],
 ) {
   const domainValue = boundary.side === "left" ? functionEntry.domainMin : functionEntry.domainMax;
+  const hasExplicitDomainValue = finiteGraphNumber(domainValue) !== undefined;
+  const domainMode = typeof functionEntry.domainMode === "string" ? functionEntry.domainMode : "auto";
+  if (domainMode !== "manual" && !hasExplicitDomainValue) return undefined;
+
   const graphValue = boundary.side === "left" ? config.xMin : config.xMax;
   const value = finiteGraphNumber(domainValue) ?? finiteGraphNumber(graphValue);
   if (value === undefined) return undefined;
-  const tolerance = 1e-6;
+  const tolerance = Math.max(graphFunctionNaturalDomainEpsilon(config) * 0.5, Number.EPSILON * 16);
   if (boundary.side === "left") {
     return boundary.strict ? value <= boundary.boundary + tolerance : value < boundary.boundary - tolerance;
   }
   return boundary.strict ? value >= boundary.boundary - tolerance : value > boundary.boundary + tolerance;
 }
 
+function functionDomainBoundaryManualOffset(
+  functionEntry: Record<string, unknown>,
+  config: GraphConfig,
+  boundary: ReturnType<typeof graphFunctionNaturalBoundaries>[number],
+) {
+  if (!boundary.strict) return false;
+  const domainMode = typeof functionEntry.domainMode === "string" ? functionEntry.domainMode : "auto";
+  if (domainMode !== "manual") return false;
+
+  const domainValue = boundary.side === "left" ? functionEntry.domainMin : functionEntry.domainMax;
+  const value = finiteGraphNumber(domainValue);
+  if (value === undefined) return false;
+
+  const distance = boundary.side === "left" ? value - boundary.boundary : boundary.boundary - value;
+  const tolerance = Math.max(graphConfigXSpan(config) * 0.01, 0.025);
+  return distance > graphFunctionNaturalDomainEpsilon(config) * 4 && distance <= tolerance;
+}
+
 function inspectGraph2dNaturalDomains(config: GraphConfig): MauthDiagramInspectionWarning[] {
   const warnings: MauthDiagramInspectionWarning[] = [];
   for (const { entry, index, expression } of sourceGraphFunctions(config)) {
     for (const boundary of graphFunctionNaturalBoundaries(expression)) {
-      if (!functionDomainBoundaryViolation(entry, config, boundary)) continue;
       const pathIndex = index >= 0 ? `[${index}]` : "";
       const pathSuffix = boundary.side === "left" ? "domainMin" : "domainMax";
-      warnings.push({
-        code: "graph2d-natural-domain-crossed",
-        severity: "warning",
-        message: `The function ${expression} contains ${boundary.source}, so its natural domain is ${graphFunctionNaturalDomainText(boundary)}. Keep the function domain inside that boundary and draw the asymptote or endpoint as a separate feature.`,
-        path: `graphConfig.functions${pathIndex}.${pathSuffix}`,
-      });
+      if (functionDomainBoundaryViolation(entry, config, boundary)) {
+        warnings.push({
+          code: "graph2d-natural-domain-crossed",
+          severity: "warning",
+          message: `The function ${expression} contains ${boundary.source}, so its natural domain is ${graphFunctionNaturalDomainText(boundary)}. Keep the function domain inside that boundary and draw the asymptote or endpoint as a separate feature.`,
+          path: `graphConfig.functions${pathIndex}.${pathSuffix}`,
+        });
+      } else if (functionDomainBoundaryManualOffset(entry, config, boundary)) {
+        warnings.push({
+          code: "graph2d-natural-domain-manual-offset",
+          severity: "warning",
+          message: `The function ${expression} uses a rounded manual domain near ${boundary.source}. Use domainMode: "auto" for the natural domain unless this is an intentional restricted interval.`,
+          path: `graphConfig.functions${pathIndex}.domainMode`,
+        });
+      }
     }
   }
+  return warnings;
+}
+
+function graphConfigXSpan(config: GraphConfig) {
+  return Math.abs((config.xMax ?? 10) - (config.xMin ?? -10));
+}
+
+function verticalLineSegmentX(feature: Record<string, unknown>, tolerance: number) {
+  if (feature.kind !== "line_segment") return undefined;
+  const x1 = finiteGraphNumber(feature.x1);
+  const x2 = finiteGraphNumber(feature.x2);
+  if (x1 === undefined || x2 === undefined || Math.abs(x1 - x2) > tolerance) return undefined;
+  return (x1 + x2) / 2;
+}
+
+function strictNaturalVerticalBoundaries(config: GraphConfig) {
+  return sourceGraphFunctions(config)
+    .flatMap(({ expression }) => graphFunctionNaturalBoundaries(expression))
+    .filter((boundary) => boundary.strict)
+    .map((boundary) => boundary.boundary)
+    .filter((boundary) => Number.isFinite(boundary));
+}
+
+function inspectGraph2dNaturalAsymptoteSpans(config: GraphConfig): MauthDiagramInspectionWarning[] {
+  const boundaries = strictNaturalVerticalBoundaries(config);
+  if (!boundaries.length) return [];
+
+  const tolerance = Math.max(graphConfigXSpan(config) * 1e-6, 1e-6);
+  const warnings: MauthDiagramInspectionWarning[] = [];
+  recordArray(config.features).forEach((feature, index) => {
+    if (feature.show === false || feature.span === "grid") return;
+    const verticalX = verticalLineSegmentX(feature, tolerance);
+    if (verticalX === undefined) return;
+    if (!boundaries.some((boundary) => Math.abs(boundary - verticalX) <= tolerance)) return;
+    warnings.push({
+      code: "graph2d-natural-asymptote-span-manual",
+      severity: "warning",
+      message:
+        'A vertical line_segment sits on a strict natural function boundary. Set span: "grid" so the asymptote automatically follows the current yMin/yMax view.',
+      path: `graphConfig.features[${index}].span`,
+    });
+  });
   return warnings;
 }
 
@@ -673,6 +749,7 @@ function inspectGraph2d(config: GraphConfig, contextText: string): MauthDiagramI
   const visibleExpressions = visibleGraphFunctionExpressions(config);
   const expectedStraightLineCount = straightLineGraphExpectation(contextText);
   warnings.push(...inspectGraph2dNaturalDomains(config));
+  warnings.push(...inspectGraph2dNaturalAsymptoteSpans(config));
   warnings.push(...inspectCoordinateMinorGrid(config, contextText));
 
   if (/\b(?:slope|direction)\s+field\b/i.test(contextText)) {
@@ -1328,19 +1405,23 @@ function inspectSetDiagram(config: GraphConfig, contextText: string): MauthDiagr
   const data = graphData(config);
   const sets = recordArray(data.sets);
   const regions = recordArray(data.regions);
+  const setCount = Number(data.setCount ?? data.setsCount ?? data.vennSetCount) >= 3 || sets.length >= 3 || regions.length >= 8 ? 3 : 2;
   if (sets.length < 2) {
     warnings.push({
       code: "set-diagram-sets-missing",
       severity: "warning",
-      message: "Set diagram should contain at least two set entries for a two-set Venn diagram.",
+      message: "Set diagram should contain at least two set entries for a Venn diagram.",
       path: "graphConfig.data.sets",
     });
   }
-  if (regions.length < 4) {
+  if (regions.length < (setCount === 3 ? 8 : 4)) {
     warnings.push({
       code: "set-diagram-regions-incomplete",
       severity: "warning",
-      message: "Set diagram should include the four standard two-set regions: onlyA, intersection, onlyB, and outside.",
+      message:
+        setCount === 3
+          ? "Set diagram should include the eight standard three-set regions: onlyA, onlyB, onlyC, onlyAB, onlyAC, onlyBC, intersection, and outside."
+          : "Set diagram should include the four standard two-set regions: onlyA, intersection, onlyB, and outside.",
       path: "graphConfig.data.regions",
     });
   }

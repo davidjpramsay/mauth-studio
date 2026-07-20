@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +34,7 @@ class PendingAgentRequest:
     response_ready: Event = field(default_factory=Event)
     response_status: int | None = None
     response_body: dict[str, Any] | None = None
+    session_id: str | None = None
 
 
 @dataclass
@@ -107,16 +109,34 @@ def _json_response(status_code: int, body: dict[str, Any]) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=body)
 
 
+def _disconnect_session_unlocked(session_id: str, message: str) -> bool:
+    session = _sessions.pop(session_id, None)
+    if not session:
+        return False
+
+    for request in _pending_requests.values():
+        if request.session_id != session_id or request.response_ready.is_set():
+            continue
+        request.response_status = 503
+        request.response_body = _error_body(
+            "APP_NOT_CONNECTED",
+            "The browser editor session closed before it could respond.",
+        )
+        request.response_ready.set()
+
+    _append_event_unlocked(
+        "editor.disconnected",
+        actor=session_id,
+        message=message,
+    )
+    return True
+
+
 def _prune_sessions_unlocked() -> None:
     cutoff = _now() - timedelta(seconds=SESSION_TTL_SECONDS)
     stale_session_ids = [session_id for session_id, session in _sessions.items() if session.last_seen < cutoff]
     for session_id in stale_session_ids:
-        del _sessions[session_id]
-        _append_event_unlocked(
-            "editor.disconnected",
-            actor=session_id,
-            message="Browser editor session expired.",
-        )
+        _disconnect_session_unlocked(session_id, "Browser editor session expired.")
 
 
 def _active_sessions_unlocked() -> list[BrowserEditorSession]:
@@ -166,6 +186,32 @@ def _active_editor_error_unlocked() -> tuple[int, dict[str, Any]] | None:
             ),
         )
     return None
+
+
+def browser_bridge_status() -> dict[str, Any]:
+    with _lock:
+        active_sessions = _active_sessions_unlocked()
+        return {
+            "available": True,
+            "authenticationRequired": bool(os.environ.get("MAUTH_AGENT_TOKEN", "").strip()),
+            "activeSessionCount": len(active_sessions),
+            "pendingRequestCount": len(_pending_requests),
+            "sessions": [
+                {
+                    "sessionId": session.session_id,
+                    "label": session.label,
+                    "connectedAt": session.connected_at.isoformat(),
+                    "lastSeen": session.last_seen.isoformat(),
+                }
+                for session in active_sessions
+            ],
+            "routes": {
+                "browserRegister": "/api/agent/current/browser/register",
+                "browserUnregister": "/api/agent/current/browser/unregister",
+                "browserRequests": "/api/agent/current/browser/requests",
+                "browserRespond": "/api/agent/current/browser/respond",
+            },
+        }
 
 
 def _validate_review_target(value: Any) -> dict[str, Any] | None:
@@ -289,6 +335,7 @@ def _dispatch_to_browser(kind: str, payload: dict[str, Any]) -> tuple[int, dict[
             )
 
         session = active_sessions[0]
+        request.session_id = session.session_id
         _pending_requests[request.request_id] = request
         session.requests.put(request)
         _append_event_unlocked(
@@ -357,6 +404,24 @@ def register_browser_editor(payload: dict[str, Any] = JSON_BODY) -> dict[str, An
         "pollUrl": f"/api/agent/current/browser/requests?sessionId={session_id}",
         "respondUrl": "/api/agent/current/browser/respond",
     }
+
+
+@agent_router.post("/browser/unregister")
+def unregister_browser_editor(
+    payload: dict[str, Any] = JSON_BODY,
+    query_session_id: str | None = Query(default=None, alias="sessionId"),
+) -> JSONResponse:
+    session_id = query_session_id or payload.get("sessionId")
+    if not isinstance(session_id, str) or not session_id:
+        return _json_response(
+            400,
+            _error_body("INVALID_REQUEST", "Browser unregister requires sessionId.", setup_link=None),
+        )
+
+    with _lock:
+        removed = _disconnect_session_unlocked(session_id, "Browser editor session disconnected.")
+
+    return _json_response(200, {"success": True, "removed": removed})
 
 
 @agent_router.get("/browser/requests")
@@ -659,6 +724,11 @@ def mauth_agent_discovery() -> dict[str, Any]:
         "version": "0.1.0",
         "localOnly": True,
         "requiresActiveEditor": True,
+        "authentication": {
+            "type": "bearer",
+            "requiredWhenPackaged": True,
+            "tokenSource": "private desktop runtime manifest",
+        },
         "canonicalContract": "http",
         "docs": "/agent-docs",
         "endpoints": {

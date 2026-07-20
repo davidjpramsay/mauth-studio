@@ -21,6 +21,29 @@ def test_snapshot_without_editor_returns_setup_error() -> None:
     assert response.json()["code"] == "APP_NOT_CONNECTED"
 
 
+def test_packaged_bridge_requires_the_per_launch_bearer_token(monkeypatch) -> None:
+    token = "test-packaged-agent-token-that-is-at-least-32-characters"
+    monkeypatch.setenv("MAUTH_AGENT_TOKEN", token)
+
+    missing = client.get("/api/agent/current/snapshot")
+    wrong = client.get("/api/agent/current/snapshot", headers={"Authorization": "Bearer wrong-token"})
+    authenticated = client.get("/api/agent/current/snapshot", headers={"Authorization": f"Bearer {token}"})
+    private_api = client.get("/api/storage/projects")
+    discovery = client.get("/.well-known/mauth-agent.json")
+    system_status = client.get("/api/system/status")
+
+    assert missing.status_code == 401
+    assert missing.json()["code"] == "AGENT_AUTH_REQUIRED"
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert wrong.status_code == 401
+    assert authenticated.status_code == 503
+    assert authenticated.json()["code"] == "APP_NOT_CONNECTED"
+    assert private_api.status_code == 401
+    assert private_api.json()["code"] == "API_AUTH_REQUIRED"
+    assert discovery.status_code == 200
+    assert system_status.status_code == 200
+
+
 def test_broker_dispatches_request_and_returns_browser_response() -> None:
     session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
         "sessionId"
@@ -53,6 +76,52 @@ def test_broker_dispatches_request_and_returns_browser_response() -> None:
     response = result["response"]
     assert response.status_code == 200
     assert response.json()["snapshotId"] == "snap_test"
+
+
+def test_unregister_removes_browser_session() -> None:
+    client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"})
+
+    response = client.post("/api/agent/current/browser/unregister", json={"sessionId": "test-editor"})
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "removed": True}
+    snapshot_response = client.get("/api/agent/current/snapshot")
+    assert snapshot_response.status_code == 503
+    assert snapshot_response.json()["code"] == "APP_NOT_CONNECTED"
+
+
+def test_unregister_accepts_query_session_for_page_beacon() -> None:
+    client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"})
+
+    response = client.post("/api/agent/current/browser/unregister?sessionId=test-editor")
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "removed": True}
+
+
+def test_unregister_releases_pending_browser_request() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
+        "sessionId"
+    ]
+    result: dict[str, object] = {}
+
+    def request_snapshot() -> None:
+        result["response"] = client.get("/api/agent/current/snapshot")
+
+    thread = Thread(target=request_snapshot)
+    thread.start()
+    browser_request = client.get(
+        "/api/agent/current/browser/requests",
+        params={"sessionId": session_id, "timeoutSeconds": 2},
+    ).json()["request"]
+    assert browser_request["kind"] == "snapshot"
+
+    client.post("/api/agent/current/browser/unregister", json={"sessionId": session_id})
+    thread.join(timeout=3)
+
+    response = result["response"]
+    assert response.status_code == 503
+    assert response.json()["code"] == "APP_NOT_CONNECTED"
 
 
 def test_presence_and_events_are_recorded() -> None:

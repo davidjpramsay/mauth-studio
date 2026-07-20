@@ -1,28 +1,98 @@
-import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
+import type { ContentBlock, ContentBlockVisibility, GraphConfig } from "@mauth-studio/shared";
 
+import { choiceBlockHasSolutionAnswer } from "./choiceSolutionAnswers.ts";
 import { normalizeColumnCount, normalizeTableBlock, paddedTableRow, plainTablePatch, plainTableRows } from "./contentBlockNormalization.ts";
 import { DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "./diagram3d.ts";
 import { finiteGraphNumber, imageDiagramData } from "./diagramImage.ts";
 import { DEFAULT_NETWORK_DATA, networkDataForSave, normalizedNetworkDiagramData } from "./diagramNetwork.ts";
 import { penroseOptions, removePenroseSubstanceOverride } from "./diagramPenrose.ts";
-import { normalizedSetDiagramData } from "./diagramSet.ts";
+import { diagramConfigHasSolutionAnnotations } from "./solutionDiagramCompleteness.ts";
+import { tableBlockHasSharedSolutionEntries } from "./tableSolutionEntries.ts";
+import {
+  DEFAULT_SET_DATA,
+  DEFAULT_THREE_SET_DATA,
+  normalizedSetDiagramData,
+  setDiagramCountLabels,
+  setDiagramNotationLabel,
+  setDiagramRegionEditorLabels,
+  setDiagramRegionNameAt,
+  setDiagramSetTotalLabels,
+} from "./diagramSet.ts";
 import { defaultVector2DName, normalizedVector2DEntries, vector2dMetadata, type Vector2DLabelStyle } from "./diagramVector2d.ts";
 
 export type InspectorColumnsBlock = Extract<ContentBlock, { kind: "columns" }>;
 export type InspectorTableBlock = Extract<ContentBlock, { kind: "table" }>;
 
+export const CONTENT_BLOCK_DISPLAY_OPTIONS: Array<{ value: ContentBlockVisibility; label: string }> = [
+  { value: "always", label: "Both copies" },
+  { value: "student", label: "Student only" },
+  { value: "solution", label: "Solutions only" },
+];
+
 export const INSPECTOR_MIN_TABLE_ROWS = 1;
 export const INSPECTOR_MAX_TABLE_ROWS = 24;
 export const INSPECTOR_MIN_TABLE_COLUMNS = 1;
 export const INSPECTOR_MAX_TABLE_COLUMNS = 12;
-export const INSPECTOR_SET_REGION_COUNT_LABELS = ["8", "10", "6", "6"] as const;
-export const INSPECTOR_SET_SHADING_OPTIONS: Array<{ label: string; regionIndex: number | null }> = [
-  { label: "None", regionIndex: null },
-  { label: "A only", regionIndex: 0 },
-  { label: "A and B", regionIndex: 1 },
-  { label: "B only", regionIndex: 2 },
-  { label: "Outside", regionIndex: 3 },
-];
+
+export function contentBlockDisplayVisibility(block: ContentBlock): ContentBlockVisibility {
+  if (block.solutionOnly === true || (block.solutionOnly !== false && block.id.startsWith("solution-"))) return "solution";
+  if (block.visibility === "solution") return "solution";
+  if (block.visibility === "student" || block.studentOnly === true) return "student";
+  return "always";
+}
+
+export function contentBlockVisibilityPatch(block: ContentBlock, visibility: ContentBlockVisibility): Partial<ContentBlock> {
+  const keepsSharedSolutionTicks =
+    visibility === "always" &&
+    ((block.kind === "diagram" && diagramConfigHasSolutionAnnotations(block.graphConfig)) ||
+      choiceBlockHasSolutionAnswer(block) ||
+      tableBlockHasSharedSolutionEntries(block));
+  return {
+    visibility,
+    solutionOnly: visibility === "solution",
+    studentOnly: visibility === "student",
+    ...(visibility !== "solution" && !keepsSharedSolutionTicks && block.markTicks !== undefined ? { markTicks: undefined } : {}),
+    ...(visibility === "student" && block.kind === "choices" && block.solutionAnswerIndex !== undefined
+      ? { solutionAnswerIndex: undefined }
+      : {}),
+    ...(visibility === "student" && block.kind === "table" && block.solutionEntries !== undefined ? { solutionEntries: undefined } : {}),
+  };
+}
+
+export function contentBlockMarkTicksPatch(value: unknown): Partial<ContentBlock> {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return { markTicks: undefined };
+  return { markTicks: Math.min(20, Math.max(0, Math.round(parsed))) };
+}
+
+export function contentBlockSupportsSolutionSurfaceTicks(block: ContentBlock) {
+  if (block.kind === "columns" || block.kind === "pageBreak") return false;
+  if (block.kind === "text" || block.kind === "space") return block.markTicks !== undefined;
+  return true;
+}
+
+export function contentBlockSolutionTickLabel(block: ContentBlock) {
+  if (block.kind === "text" || block.kind === "space") return "Block ticks";
+  return "Surface ticks";
+}
+
+export function contentBlockSolutionTickHelp(block: ContentBlock) {
+  if (block.kind === "text") {
+    return "For worked text, put hidden ticks on the earning line with [[marks:1]].";
+  }
+  if (block.kind === "space") {
+    return "Space blocks normally do not carry solution ticks; pair them with a solution text, table, or diagram block.";
+  }
+  return "Use this for answers completed directly on this solution surface, such as a table, diagram, graph, or circled choice.";
+}
+
+export function inspectorSetShadingOptions(config: GraphConfig): Array<{ label: string; regionIndex: number | null }> {
+  const data = normalizedSetDiagramData(config);
+  return [
+    { label: "None", regionIndex: null },
+    ...setDiagramRegionEditorLabels(data.setCount).map((label, index) => ({ label, regionIndex: index })),
+  ];
+}
 
 export function columnsColumnCountPatch(
   block: InspectorColumnsBlock,
@@ -139,19 +209,11 @@ function setDiagramStructuredPatch(config: GraphConfig, data: ReturnType<typeof 
 
 export function setDiagramNotationPatch(config: GraphConfig): Partial<GraphConfig> {
   const data = normalizedSetDiagramData(config);
-  const [leftSet, rightSet] = data.sets;
   return setDiagramStructuredPatch(config, {
     ...data,
     regions: data.regions.map((region, index) => ({
       ...region,
-      label:
-        index === 0
-          ? `${leftSet.name} \\cap ${rightSet.name}'`
-          : index === 1
-            ? `${leftSet.name} \\cap ${rightSet.name}`
-            : index === 2
-              ? `${leftSet.name}' \\cap ${rightSet.name}`
-              : `(${leftSet.name} \\cup ${rightSet.name})'`,
+      label: setDiagramNotationLabel(setDiagramRegionNameAt(data.setCount, index, region.name), data.sets),
     })),
   });
 }
@@ -161,11 +223,26 @@ export function setDiagramCountLabelsPatch(config: GraphConfig, includeTotals: b
   return setDiagramStructuredPatch(config, {
     ...data,
     universe: { ...data.universe, countLabel: includeTotals ? "30" : "" },
-    sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? (index === 0 ? "18" : "16") : "" })),
+    sets: data.sets.map((set, index) => ({ ...set, countLabel: includeTotals ? setDiagramSetTotalLabels(data.setCount)[index] : "" })),
     regions: data.regions.map((region, index) => ({
       ...region,
-      label: INSPECTOR_SET_REGION_COUNT_LABELS[index] ?? "",
+      label: setDiagramCountLabels(data.setCount)[index] ?? "",
     })),
+  });
+}
+
+export function setDiagramSetCountPatch(config: GraphConfig, setCount: 2 | 3): Partial<GraphConfig> {
+  const data = normalizedSetDiagramData(config);
+  const defaults = setCount === 3 ? DEFAULT_THREE_SET_DATA : DEFAULT_SET_DATA;
+  return setDiagramStructuredPatch(config, {
+    ...data,
+    setCount,
+    sets: defaults.sets.map((fallback, index) => ({
+      ...fallback,
+      ...(data.sets[index] ?? {}),
+      countLabel: data.sets[index]?.countLabel ?? "",
+    })),
+    regions: defaults.regions.map((region) => ({ ...region, shaded: false })),
   });
 }
 

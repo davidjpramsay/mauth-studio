@@ -8,3 +8,5 @@ Use these files as the starting prompts for the two Mauth agent lanes.
 `Authoring` is the replacement name for the rough “Mauth Use” idea.
 
 Authoring should move toward the local agent bridge loop in `docs/agent-bridge.md`: snapshot, action dry-run, validation, apply, then browser verification.
+
+For a model handoff or fresh session, read `docs/current-state.md` before choosing a work stream.

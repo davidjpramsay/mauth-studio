@@ -110,11 +110,20 @@ class FormattingEngine:
         choices = [str(choice) for choice in choices] or [""]
         style = block.get("numberingStyle") or "roman"
         css_class = f"choice-list choice-list-{html.escape(str(block.get('layout') or 'vertical'))}"
+        solution_answer_index = block.get("solutionAnswerIndex")
+        valid_solution_answer = (
+            isinstance(solution_answer_index, int)
+            and not isinstance(solution_answer_index, bool)
+            and 0 <= solution_answer_index < len(choices)
+        )
         items = []
         for index, choice in enumerate(choices):
             label = cls._choice_label(style, index)
+            selected = valid_solution_answer and solution_answer_index == index
+            item_class = "choice-item choice-item-solution-answer" if selected else "choice-item"
+            label_class = "choice-label choice-label-answer-ring" if selected else "choice-label"
             items.append(
-                f'<div class="choice-item"><span class="choice-label">{html.escape(label)}</span>'
+                f'<div class="{item_class}"><span class="{label_class}">{html.escape(label)}</span>'
                 f'<div class="choice-content">{cls._mixed_math_html(choice)}</div></div>'
             )
         return f'<div class="{css_class}">{"".join(items)}</div>'

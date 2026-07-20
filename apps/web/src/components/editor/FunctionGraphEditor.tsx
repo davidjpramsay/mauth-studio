@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
@@ -16,15 +16,19 @@ import {
   GRAPH_LINE_STYLES,
   GRAPH_REGION_LABEL_MODES,
   GRAPH_TANGENT_LABEL_MODES,
+  createAuthoredGraphFunction,
+  createAuthoredGraphFeature,
   createGraphFeature,
-  createGraphFunction,
   createGraphPiece,
   functionSummaryLatex,
   graphFunctionLabel,
+  graphFeatureReferencesFunction,
   graphHeight,
   graphPiecesFromFunction,
   isRegionFeatureKind,
   isSolutionOnlyGraphFeature,
+  isSolutionOnlyGraphFunction,
+  isStrokeStyledFeatureKind,
   lockedAspectHeight,
   type GraphFeatureKind,
   type GraphFunctionKind,
@@ -37,6 +41,68 @@ function optionalNumber(value: string) {
 
 function numberInputValue(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+
+function numberInputSpinnerMin(min?: number, step?: number) {
+  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
+  return min;
+}
+
+function numberInputSpinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
+  if (step !== 1 || nextValue === "") return nextValue;
+  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
+  if (inputType) return nextValue;
+
+  const previous = Number(previousValue);
+  const next = Number(nextValue);
+  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
+  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
+
+  const previousFraction = previous - Math.trunc(previous);
+  const nextFraction = next - Math.trunc(next);
+  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
+
+  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
+}
+
+function DraftNumberInput({
+  value,
+  fallbackValue,
+  min,
+  step,
+  className,
+  onChange,
+}: {
+  value?: number;
+  fallbackValue?: number;
+  min?: number;
+  step?: number;
+  className?: string;
+  onChange: (value: number | undefined) => void;
+}) {
+  const [draftValue, setDraftValue] = useState<string | null>(null);
+  const displayValue = draftValue ?? numberInputValue(value ?? fallbackValue);
+
+  return (
+    <input
+      type="number"
+      min={numberInputSpinnerMin(min, step)}
+      step={step}
+      value={displayValue}
+      onChange={(event) => {
+        const nextValue = numberInputSpinnerValue(event.target.value, displayValue, step, event.nativeEvent);
+        setDraftValue(nextValue);
+        if (nextValue === "") {
+          onChange(undefined);
+          return;
+        }
+        const parsed = Number(nextValue);
+        if (Number.isFinite(parsed)) onChange(parsed);
+      }}
+      onBlur={() => setDraftValue(null)}
+      className={className}
+    />
+  );
 }
 
 function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: string }) {
@@ -143,16 +209,28 @@ export function FunctionGraphEditor({
   };
   const functions = config.functions ?? [];
   const features = config.features ?? [];
+  const solutionFunctionIndexes = new Set<number>();
+  functions.forEach((graphFunction, functionIndex) => {
+    if (isSolutionOnlyGraphFunction(graphFunction)) solutionFunctionIndexes.add(functionIndex);
+  });
+  const visibleFunctionEntries = functions
+    .map((graphFunction, functionIndex) => ({ graphFunction, functionIndex }))
+    .filter(({ graphFunction }) => showSolutions || !isSolutionOnlyGraphFunction(graphFunction));
   const visibleFeatureEntries: GraphFeatureEntry[] = features
     .map((feature, featureIndex) => ({ feature, featureIndex }))
-    .filter(({ feature }) => showSolutions || !isSolutionOnlyGraphFeature(feature));
+    .filter(
+      ({ feature }) =>
+        showSolutions ||
+        (!isSolutionOnlyGraphFeature(feature) &&
+          ![...solutionFunctionIndexes].some((functionIndex) => graphFeatureReferencesFunction(feature, functionIndex))),
+    );
   const visibleFeatureGroups = GRAPH_FEATURE_GROUPS.map((group) => ({
     ...group,
     entries: visibleFeatureEntries.filter(({ feature }) => graphFeatureGroupId(feature) === group.id),
   })).filter((group) => group.entries.length);
-  const functionOptions = functions.map((graphFunction, index) => ({
-    value: index,
-    label: `${index + 1}: ${graphFunction.label || graphFunctionLabel(index)}`,
+  const functionOptions = visibleFunctionEntries.map(({ graphFunction, functionIndex }) => ({
+    value: functionIndex,
+    label: `${functionIndex + 1}: ${graphFunction.label || graphFunctionLabel(functionIndex)}`,
   }));
   const updateFunction = (functionIndex: number, patch: Partial<GraphFunction>) => {
     patchConfig({
@@ -160,7 +238,7 @@ export function FunctionGraphEditor({
     });
   };
   const addFunction = () => {
-    patchConfig({ functions: [...functions, createGraphFunction(functions.length)] });
+    patchConfig({ functions: [...functions, createAuthoredGraphFunction(functions.length, showSolutions)] });
   };
   const removeFunction = (functionIndex: number) => {
     const nextFunctions = functions.filter((_, index) => index !== functionIndex);
@@ -228,7 +306,7 @@ export function FunctionGraphEditor({
     );
   };
   const addFeature = () => {
-    patchConfig({ features: [...features, createGraphFeature("point", features.length, config)] });
+    patchConfig({ features: [...features, createAuthoredGraphFeature("point", features.length, config, showSolutions)] });
   };
   const removeFeature = (featureIndex: number) => {
     patchConfig({ features: features.filter((_, index) => index !== featureIndex) });
@@ -380,7 +458,7 @@ export function FunctionGraphEditor({
                   <input
                     type="number"
                     min={240}
-                    step={20}
+                    step={1}
                     value={numberInputValue(config.widthPx)}
                     onChange={(event) => updateDiagramWidth(event.target.value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -399,7 +477,7 @@ export function FunctionGraphEditor({
                     <input
                       type="number"
                       min={160}
-                      step={20}
+                      step={1}
                       value={numberInputValue(config.heightPx)}
                       onChange={(event) => patchConfig({ heightPx: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -422,23 +500,23 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X major interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0.1}
-                    step={0.5}
-                    value={numberInputValue(config.gridMajorStepX ?? config.gridMajorStep)}
-                    onChange={(event) => patchConfig({ gridMajorStepX: optionalNumber(event.target.value) })}
+                    step={1}
+                    value={config.gridMajorStepX}
+                    fallbackValue={config.gridMajorStep}
+                    onChange={(value) => patchConfig({ gridMajorStepX: value, axisLabelStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y major interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0.1}
-                    step={0.5}
-                    value={numberInputValue(config.gridMajorStepY ?? config.gridMajorStep)}
-                    onChange={(event) => patchConfig({ gridMajorStepY: optionalNumber(event.target.value) })}
+                    step={1}
+                    value={config.gridMajorStepY}
+                    fallbackValue={config.gridMajorStep}
+                    onChange={(value) => patchConfig({ gridMajorStepY: value, axisLabelStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -458,23 +536,23 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X minor interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0}
-                    step={0.5}
-                    value={numberInputValue(config.gridMinorStepX ?? config.gridMinorStep)}
-                    onChange={(event) => patchConfig({ gridMinorStepX: optionalNumber(event.target.value) })}
+                    step={1}
+                    value={config.gridMinorStepX}
+                    fallbackValue={config.gridMinorStep}
+                    onChange={(value) => patchConfig({ gridMinorStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y minor interval
-                  <input
-                    type="number"
+                  <DraftNumberInput
                     min={0}
-                    step={0.5}
-                    value={numberInputValue(config.gridMinorStepY ?? config.gridMinorStep)}
-                    onChange={(event) => patchConfig({ gridMinorStepY: optionalNumber(event.target.value) })}
+                    step={1}
+                    value={config.gridMinorStepY}
+                    fallbackValue={config.gridMinorStep}
+                    onChange={(value) => patchConfig({ gridMinorStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -500,13 +578,13 @@ export function FunctionGraphEditor({
           ) : null}
           <Button variant="outline" size="sm" onClick={addFunction}>
             <PlusCircle data-icon="inline-start" />
-            Add function
+            {showSolutions ? "Add solution function" : "Add function"}
           </Button>
         </div>
       </div>
 
       <div className="mt-3 flex flex-col gap-2">
-        {functions.map((graphFunction, functionIndex) => {
+        {visibleFunctionEntries.map(({ graphFunction, functionIndex }) => {
           const functionAnchor = anchor ? `${anchor}/gf:${functionIndex}` : undefined;
           const pieces = graphPiecesFromFunction(graphFunction, config);
           const functionLabel = graphFunction.label || graphFunctionLabel(functionIndex);
@@ -524,6 +602,11 @@ export function FunctionGraphEditor({
                 {functionTitleLabel} {functionIndex + 1}:
               </span>
               <Latex latex={functionSummaryLatex(graphFunction)} />
+              {isSolutionOnlyGraphFunction(graphFunction) ? (
+                <span className="rounded border border-blue-400/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-300">
+                  Solution
+                </span>
+              ) : null}
               {graphFunction.kind === "piecewise" ? <span className="font-normal text-muted-foreground">{functionSubtitle}</span> : null}
             </span>
           );
@@ -602,7 +685,7 @@ export function FunctionGraphEditor({
                         type="number"
                         min={0.5}
                         max={10}
-                        step={0.5}
+                        step={1}
                         value={numberInputValue(graphFunction.strokeWidth)}
                         onChange={(event) => updateFunction(functionIndex, { strokeWidth: optionalNumber(event.target.value) })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -673,7 +756,7 @@ export function FunctionGraphEditor({
                         <input
                           aria-label={`Function ${functionIndex + 1} left domain`}
                           type="number"
-                          step={0.5}
+                          step={1}
                           value={numberInputValue(graphFunction.domainMin ?? config.xMin)}
                           onChange={(event) => updateFunction(functionIndex, { domainMin: optionalNumber(event.target.value) })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -684,7 +767,7 @@ export function FunctionGraphEditor({
                         <input
                           aria-label={`Function ${functionIndex + 1} right domain`}
                           type="number"
-                          step={0.5}
+                          step={1}
                           value={numberInputValue(graphFunction.domainMax ?? config.xMax)}
                           onChange={(event) => updateFunction(functionIndex, { domainMax: optionalNumber(event.target.value) })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -722,7 +805,7 @@ export function FunctionGraphEditor({
                     Label x
                     <input
                       type="number"
-                      step={0.5}
+                      step={1}
                       value={numberInputValue(graphFunction.labelX)}
                       onChange={(event) => updateFunction(functionIndex, { labelX: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -732,7 +815,7 @@ export function FunctionGraphEditor({
                     Label y
                     <input
                       type="number"
-                      step={0.5}
+                      step={1}
                       value={numberInputValue(graphFunction.labelY)}
                       onChange={(event) => updateFunction(functionIndex, { labelY: optionalNumber(event.target.value) })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -829,11 +912,18 @@ export function FunctionGraphEditor({
       <div className="mt-4 flex items-end justify-between gap-3 border-t pt-3">
         <div>
           <div className="text-sm font-medium">Graph objects</div>
-          <div className="text-xs text-muted-foreground">Grouped by how they affect the graph</div>
+          <div className="text-xs text-muted-foreground">
+            {showSolutions ? "New annotations are added to the solution layer" : "Grouped by how they affect the graph"}
+          </div>
         </div>
-        <Button variant="outline" size="sm" onClick={addFeature}>
+        <Button
+          variant="outline"
+          size="sm"
+          title={showSolutions ? "Add an annotation that appears only in solutions" : "Add a graph feature"}
+          onClick={addFeature}
+        >
           <PlusCircle data-icon="inline-start" />
-          Add Feature
+          {showSolutions ? "Add solution annotation" : "Add feature"}
         </Button>
       </div>
 
@@ -867,11 +957,24 @@ export function FunctionGraphEditor({
                           : GRAPH_FEATURE_LABEL_MODES;
                   const featureLineStyles = isRegionFeatureKind(feature.kind) ? GRAPH_FEATURE_LINE_STYLES : GRAPH_LINE_STYLES;
                   const featureStrokeStyle = feature.strokeStyle ?? (isRegionFeatureKind(feature.kind) ? "none" : "solid");
+                  const showFeatureStrokeControls = isStrokeStyledFeatureKind(feature.kind);
                   const selectedFeatureFunction = functions[feature.functionIndex ?? 0];
                   const selectedFeatureIsRelation = selectedFeatureFunction?.kind === "relation";
                   const isFreeLabel = feature.kind === "label";
                   const featureTitle = (
-                    <InlineSummaryTitle label={`${featureTypeLabel} ${featureIndex + 1}`} summary={feature.label || featureTypeLabel} />
+                    <InlineSummaryTitle
+                      label={
+                        <span className="inline-flex items-center gap-2">
+                          <span>{`${featureTypeLabel} ${featureIndex + 1}`}</span>
+                          {isSolutionOnlyGraphFeature(feature) ? (
+                            <span className="rounded border border-blue-400/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-300">
+                              Solution
+                            </span>
+                          ) : null}
+                        </span>
+                      }
+                      summary={feature.label || featureTypeLabel}
+                    />
                   );
 
                   const featurePanel = (
@@ -932,7 +1035,7 @@ export function FunctionGraphEditor({
                             />
                           </label>
                         ) : null}
-                        {showInlineSettings && !isFreeLabel ? (
+                        {showInlineSettings && showFeatureStrokeControls ? (
                           <>
                             <label className="flex flex-col gap-2 text-xs font-medium">
                               Weight
@@ -940,7 +1043,7 @@ export function FunctionGraphEditor({
                                 type="number"
                                 min={0.5}
                                 max={10}
-                                step={0.5}
+                                step={1}
                                 value={numberInputValue(feature.strokeWidth)}
                                 disabled={featureStrokeStyle === "none"}
                                 onChange={(event) => updateFeature(featureIndex, { strokeWidth: optionalNumber(event.target.value) })}
@@ -1003,7 +1106,7 @@ export function FunctionGraphEditor({
                             x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x)}
                               onChange={(event) => updateFeature(featureIndex, { x: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1013,7 +1116,7 @@ export function FunctionGraphEditor({
                             y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y)}
                               onChange={(event) => updateFeature(featureIndex, { y: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1041,7 +1144,7 @@ export function FunctionGraphEditor({
                             Start x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x1)}
                               onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1051,7 +1154,7 @@ export function FunctionGraphEditor({
                             Start y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y1)}
                               onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1061,7 +1164,7 @@ export function FunctionGraphEditor({
                             End x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.x2)}
                               onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1071,7 +1174,7 @@ export function FunctionGraphEditor({
                             End y
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.y2)}
                               onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1105,7 +1208,7 @@ export function FunctionGraphEditor({
                               <input
                                 type="number"
                                 min={field === "size" ? 0.05 : undefined}
-                                step={field === "size" ? 0.05 : 0.5}
+                                step={1}
                                 value={numberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
                                 onChange={(event) =>
                                   updateFeature(featureIndex, { [field]: optionalNumber(event.target.value) } as Partial<GraphFeature>)
@@ -1174,7 +1277,7 @@ export function FunctionGraphEditor({
                             From x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.xMin)}
                               onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1184,7 +1287,7 @@ export function FunctionGraphEditor({
                             To x
                             <input
                               type="number"
-                              step={0.5}
+                              step={1}
                               value={numberInputValue(feature.xMax)}
                               onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1197,7 +1300,7 @@ export function FunctionGraphEditor({
                                 type="number"
                                 min={0.05}
                                 max={0.8}
-                                step={0.05}
+                                step={1}
                                 value={numberInputValue(feature.fillOpacity)}
                                 onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
                                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1245,7 +1348,7 @@ export function FunctionGraphEditor({
                                 x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.x)}
                                   onChange={(event) =>
                                     updateRelationTangentCoordinate(
@@ -1264,7 +1367,7 @@ export function FunctionGraphEditor({
                                   y
                                   <input
                                     type="number"
-                                    step={0.5}
+                                    step={1}
                                     value={numberInputValue(feature.y)}
                                     onChange={(event) =>
                                       updateRelationTangentCoordinate(
@@ -1286,7 +1389,7 @@ export function FunctionGraphEditor({
                                 From x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.xMin)}
                                   onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1296,7 +1399,7 @@ export function FunctionGraphEditor({
                                 To x
                                 <input
                                   type="number"
-                                  step={0.5}
+                                  step={1}
                                   value={numberInputValue(feature.xMax)}
                                   onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -1309,7 +1412,7 @@ export function FunctionGraphEditor({
                                     type="number"
                                     min={0.05}
                                     max={0.8}
-                                    step={0.05}
+                                    step={1}
                                     value={numberInputValue(feature.fillOpacity)}
                                     onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
                                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"

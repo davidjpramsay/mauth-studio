@@ -12,7 +12,9 @@ Do not put marking or formatting decisions inside question generator logic.
 
 Product direction: build for Codex/Claude-style external agent authoring first. Human UI should remain usable and clear, but new features, schemas, editor actions, validation, and docs should assume an AI agent will often create, inspect, and edit the document through a structured local agent bridge, Mauth actions, and browser verification. Prefer explicit document state, deterministic validators, reversible actions, stable labels, and small focused controls over UI-only behaviour that an agent cannot reason about or reproduce.
 
-The old provider-backed chat panel is not the product path. Treat this file plus `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
+The old provider-backed chat panel is not the product path. Treat this file plus `docs/current-state.md`, `docs/architecture.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md` as the operating contract for external/local agents such as Codex, Cursor, and Claude Code.
+
+At the start of a new model or development session, read `docs/current-state.md` before editing. It contains the resumable worktree checkpoint and distinguishes completed work from partially started work. Verify it against `git status`, the current branch, and the relevant source before relying on it. When a change affects runtime, storage, document lifecycle, bridge behavior, architecture, or product direction, update that handoff file in the same change.
 
 ## Commands
 
@@ -27,7 +29,26 @@ uv sync
 cd ../..
 ```
 
-Run locally from the project root, using two terminals:
+For normal macOS use, open the installed standalone app:
+
+```bash
+open ~/Applications/Mauth\ Studio.app
+```
+
+Build and install it from the project root with:
+
+```bash
+pnpm macos:build
+pnpm macos:install
+```
+
+The standalone app owns its dynamic local API port and child service; no Terminal windows need to remain open. `pnpm agent:doctor` and `pnpm agent:mcp` discover a running packaged app through its private runtime manifest. The packaged bridge is authenticated with a random per-launch token stored only in that mode-`0600` manifest; do not print, persist, or copy the token into source files. Use `pnpm macos:dev` for the Electron development shell. `pnpm dev:status` reports either a running packaged app or the fixed-port development runtime. `pnpm dev:stop` stops only fixed-port development servers; quit the packaged app normally with Command-Q or **Mauth Studio > Quit Mauth Studio**.
+
+External macOS distribution uses `pnpm macos:release` and the credential/setup contract in `docs/macos-release.md`. Never treat an ad-hoc-signed local build as a shareable release.
+
+During normal implementation, use `pnpm macos:dev`; signing and Apple notarization are not part of the edit-test loop. Use `pnpm macos:build` plus `pnpm macos:install` only for deliberate local installed-app checkpoints. Use `pnpm macos:release` only when preparing a versioned artifact for another person, after `pnpm check` passes and the source state that produced the artifact is committed or otherwise traceable. Do not rerun the release pipeline after every small source change.
+
+For lower-level API/web debugging, run locally from the project root using two terminals:
 
 ```bash
 pnpm dev:api
@@ -44,6 +65,14 @@ pnpm check
 
 This runs Prettier, ESLint, Ruff, pytest, TypeScript, and the Vite build.
 
+Before handing this dirty worktree to another model, run:
+
+```bash
+pnpm check:handoff:live
+```
+
+The ordinary `pnpm check:handoff` validates the durable documentation contract and is part of `pnpm check`. The live variant additionally verifies that the branch, baseline commit, dirty-worktree counts, and key source line counts recorded in `docs/current-state.md` still match the working tree. Keep it as a transition gate rather than a day-to-day gate because those facts legitimately change during an implementation slice.
+
 ## Storage And Git Hygiene
 
 Do not commit local authoring data or generated output:
@@ -56,9 +85,11 @@ Do not commit local authoring data or generated output:
 - `apps/web/dist/`
 - Python caches and virtual environments
 
-The app stores live tests, autosave, reusable logo assets, and prototype project files under `storage/`, with browser fallback state in localStorage. Treat those as user data, not source code. Logos are not built in: starter logos are editable seed data added once for new or migrated browsers, and the shared logo library is independent of any one saved test. Project/file storage lives under `storage/projects`; use revision-aware saves and version snapshots. The Files drawer ZIP backup/import path is the supported portable backup workflow and includes project files, version snapshots, and reusable logo assets. Treat legacy `storage/tests` as migration input only, while `storage/autosave/current-test.json` is the current recovery draft and should not be confused with a saved file.
+The app stores authored documents as visible local files under `~/Documents/Mauth/Documents` by default or another teacher-selected folder. On macOS, shared app state, autosave, reusable logo assets, and remembered-folder identity live under `~/Library/Application Support/Mauth Studio/storage`; project metadata and versions for a selected external folder live in that folder's `.mauth` directory. Browser localStorage is only a fallback cache. Treat both the visible workspace and legacy `storage/` as user data, not source code. Logos are not built in: starter logos are editable seed data added once for new or migrated browsers, and the shared logo library is independent of any one saved test. Project/file storage uses revision-aware saves and version snapshots. The Files drawer ZIP backup/import path is the supported portable backup workflow. Treat legacy `storage/tests` as migration input only, while the active state root's `autosave/current-test.json` is recovery state and should not be confused with a saved file.
 
-For assessment authoring, direct edits under `storage/projects` are a recovery fallback, not the normal workflow. Prefer, in order: the local agent bridge when available, structured Mauth actions, the project-file API, or the visible Files drawer. Keep active editor state, project-file metadata, loaded revisions, version snapshots, and autosave aligned.
+External or cloud-backed documents folders can disappear temporarily. Keep `/api/system/status` lightweight: it may report the selected folder identity without opening cloud-hosted `.mauth/project.json` metadata. On macOS, reject `dataless` File Provider placeholders before opening them so project routes return `503 STORAGE_UNAVAILABLE` instead of hanging while the provider downloads a file. Background active-file sync must absorb storage/network failures, preserve the editor draft and selected folder, distinguish unavailable, missing, and revision-conflict states, and report recovery only after the active file is confirmed current or reloaded. Do not reset, migrate, import, overwrite, or silently switch folders to make an outage appear healthy.
+
+For assessment authoring, direct edits to visible document files or `.mauth` metadata are a recovery fallback, not the normal workflow. Prefer, in order: the local agent bridge when available, structured Mauth actions, the project-file API, or the visible Files drawer. Keep active editor state, project-file metadata, loaded revisions, version snapshots, and autosave aligned.
 
 ## Mauthdown
 
@@ -80,7 +111,13 @@ Question, part, and subpart labels are automatic. Do not store visible labels li
 
 Use `$...$` for inline maths and `$$...$$` for display maths. Write simple prose values as normal text, not LaTeX: use `7%`, `15`, `18 months`, `5.7% p.a.`, and `2024 to 2025` unless the value is part of a real formula, equation, coordinate, variable statement, symbolic table heading, or a mathematical answer option in a choices block. Maths is rendered through MathJax SVG. Inline maths is wrapped with `\displaystyle` by default so it stays in the sentence while fractions and operators use display-style sizing. This is a local wrapper, not MathJax display mode, because MathJax display mode creates block layout. If a specific inline formula needs compact sizing, start it with `\textstyle`. TeX still shrinks content inside fraction numerators and denominators; for printable questions, solutions, table cells, and diagram labels, write nested large expressions explicitly, such as `\frac{\displaystyle\binom{n}{r}p^r(1-p)^{n-r}}{\displaystyle\sum_{x=0}^{n} ...}`. Markdown `**bold**`, `*italic*`, and `***bold italic***` are supported in text blocks. Table cells use the same inline maths and formatting renderer.
 
-Document templates are explicit. Use `frontMatter.titlePageTemplate = "standard"` for school tests, `"exam"` for exam booklets, and `"worksheet"` for compact worksheets where the heading and questions share the first page. Worksheet headings use the selected mini logo, school name, assessment title, subject title, the bottom heading rule as the name area, and a mark field only when marks exist; do not use `frontMatter.assessmentSubtitle` for worksheets. For worksheet column layouts, use normal `:::columns` modules inside the relevant question, part, or subpart rather than document-level worksheet columns.
+In solution copies, use the generous student answer space for readable vertical working: usually one mathematical step or conclusion per line. Put each hidden `[[marks:1]]` tick on the exact worked line, answer line, completed table, or completed diagram that earns that mark. For ordinary multi-step calculations, prefer several one-mark ticks over one dense final line with `[[marks:2]]` or `[[marks:3]]`.
+
+For multiple-choice answer keys, keep one shared choices block and set its `solutionAnswerIndex` rather than copying the whole list or writing the answer as prose underneath. The index is zero-based in JSON and `module.settings.update`; Student mode never reveals it, while Solutions mode keeps unselected choices in normal styling and circles only the selected label in solution blue. Put any marks for that response on the same shared choices block with `markTicks`. Legacy solutions-only choice copies remain readable, but new authoring should use the shared in-place answer layer.
+
+For completion-table answers, keep one shared table block and store answers in its sparse body-row `solutionEntries` matrix rather than copying the whole table. Entries are allowed only where the matching student `rows` cell is blank; headers, row labels, and given values stay shared. Student mode ignores the entries, while Solutions mode substitutes them in place, colours only those answer cells blue, and exposes the table `markTicks`. Use `module.settings.update` with `settings: { kind: "table", solutionEntry: { row, column, value } }` for focused agent edits; row and column are zero-based body-cell coordinates and `null` clears an entry. Legacy adjacent student/solution table pairs remain readable, but new authoring should use the shared in-place table layer.
+
+Document templates are explicit. Use `frontMatter.titlePageTemplate = "standard"` for school tests, `"exam"` for exam booklets, `"worksheet"` for compact worksheets where the heading and questions share the first page, and `"notes"` for printable mathematics notes. Worksheet headings use the selected mini logo, school name, assessment title, subject title, the bottom heading rule as the name area, and a mark field only when marks exist; do not use `frontMatter.assessmentSubtitle` for worksheets. Math Notes uses a compact heading and renders top-level question containers as note headings; keep marks hidden and use normal text, diagram, table, columns, and space modules under those headings. For worksheet and notes column layouts, use normal `:::columns` modules inside the relevant question, part, or subpart rather than document-level worksheet columns.
 
 Use top-level section headings for worksheet sections such as `Multiple choice` and `Short answer`. Do not fake these as zero-mark questions or first text modules inside a question. In JSON/action snapshots they live in `sectionHeadings` and `documentFlow`; use `sectionHeading.add`, `sectionHeading.update`, `sectionHeading.delete`, and `sectionHeading.reorder` actions when available.
 
@@ -120,22 +157,43 @@ Current diagram systems:
 - `graph2d` and `graph3d`: JSXGraph.
 - `geometricConstruction`, `network`, and `setDiagram`: Penrose-backed static diagrams.
 - `statsChart`: Plotly-backed statistical charts.
+- `image`: uploaded/imported bitmaps with structured overlay annotations.
 
 Keep these rendering systems separate. Do not unify Penrose, Plotly, and JSXGraph internals.
 
-For copied `graph2d` and `vector2d` coordinate graphs, default to major grid lines only. Use `showMinorGrid: true` only when the source visibly uses minor grid lines, small squares, or fractional grid spacing; do not add minor grid lines just to make a graph look more detailed.
+For copied `graph2d` and `vector2d` coordinate graphs, default to major grid lines only. Use `showMinorGrid: true` only when the source visibly uses minor grid lines, small squares, or fractional grid spacing; do not add minor grid lines just to make a graph look more detailed. Axis number labels should align to the major grid interval. The x-axis number step follows `gridMajorStepX`/`gridMajorStep`, and the y-axis number step follows `gridMajorStepY`/`gridMajorStep`, even when the grid is hidden. Only set `axisLabelIntervalMode: "manual"` with a different `axisLabelStepX`/`axisLabelStepY` when the source intentionally labels a different interval or a teacher asks for custom labels.
 
-For `graph2d` functions with natural boundaries, singularities, endpoints, or asymptotes, choose the function domain and view window together. Infer valid domains for `log`, `ln`, `log10`, `sqrt`, reciprocal/rational forms, and trigonometric asymptotes before setting `domainMin`/`domainMax`. Draw asymptotes as separate dashed `line_segment` features with `span: "grid"` and keep the function strictly inside undefined boundaries so the curve and arrowheads do not clip into the asymptote. For multi-branch functions, use separate function entries or pieces for each valid interval rather than one plotted interval crossing a singularity.
+For `graph2d` functions with natural boundaries, singularities, endpoints, or asymptotes, choose the function domain and view window together. Treat graph bounds (`xMin`, `xMax`, `yMin`, `yMax`) as the visible extent: axes, auto-domain functions, manual-domain functions, and grid-spanning asymptotes render to the grid, not beyond it. Infer valid domains for `log`, `ln`, `log10`, `sqrt`, reciprocal/rational forms, and trigonometric asymptotes before setting `domainMin`/`domainMax`; manual function domains are for restrictions inside the grid and should not be used to extend the visible graph. Draw asymptotes as separate dashed `line_segment` features with `span: "grid"` and keep the function strictly inside undefined boundaries so the curve and arrowheads do not clip into the asymptote. For multi-branch functions, use separate function entries or pieces for each valid interval rather than one plotted interval crossing a singularity. If the rendered `x` or `y` axis-letter label needs manual adjustment, set `xAxisLabelX`/`xAxisLabelY` or `yAxisLabelX`/`yAxisLabelY`; do not fake axis-letter placement with extra free-label features.
 
-For Penrose diagrams, normal authoring should edit Substance only. The app supplies family presets such as `geometry` and `sets`. Use `EqualLength(AB, CD)` with named segments for readable geometry side constraints; `EqualLength(A, B, C, D)` is supported for compact point-pair constraints. New `setDiagram` blocks should default to the `sets` preset rather than embedding generated Domain or Style.
+For Penrose diagrams, normal authoring should use the structured geometry, network, and set data when the standard controls are sufficient. Advanced Substance remains the escape hatch for custom constraints; the app supplies family presets such as `geometry` and `sets`. Use `EqualLength(AB, CD)` with named segments for readable geometry side constraints; `EqualLength(A, B, C, D)` is supported for compact point-pair constraints. New `setDiagram` blocks should default to the `sets` preset rather than embedding generated Domain or Style.
 
 For statistics charts, extend `packages/diagram-plotly` instead of adding chart logic to JSXGraph or React components.
 
+Shared `statsChart` surfaces support editable supplemental series in `data.series`. Series may use `line`, `points`, `linePoints`, or `bars`; each series carries its own coordinates, styling, visibility, and `solutionOnly` state. New series added in Solutions mode default to `solutionOnly`, are hidden from Student editor/preview, and render in solution blue without recolouring the shared chart. Use an element-level `diagram.settings.update` target for small answer overlays and a paired solution diagram when the whole chart should differ independently.
+
+Uploaded `image` surfaces support structured labels, ellipses, and arrows in `data.annotations`. Annotation geometry uses percentage coordinates so it remains aligned when the image is resized. New annotations added in Solutions mode default to `solutionOnly`, are hidden from Student editor/preview, and render in solution blue without recolouring the bitmap or shared annotations. Use an element-level `diagram.settings.update` target for focused image answers and a paired solution image only when the whole bitmap should be replaced or completed independently.
+
 For solution-copy graph annotations, use editable graph features such as `point`, `label`, and `line_segment`. Do not draw one-off SVG overlays in React.
+
+When the editor is in Solutions mode, newly added `graph2d` features default to `solutionOnly: true`. This is the manual annotation path for adding points, labels, segments, tangents, markers, and shading to a shared student graph without exposing the answer in the student copy. Keep the inspector override available when a feature is deliberately shared.
+
+New `graph2d` functions follow the same active authoring layer. A function added in Solutions mode defaults to `solutionOnly: true`, is hidden from the Student editor/preview, and renders in solution blue without recolouring shared curves. Student mode also hides any graph feature that references a hidden solution function while preserving function indexes for the remaining graph. Use a focused `diagram.settings.update` function target for agent edits and a paired solution diagram only when the entire graph should differ independently.
+
+A shared diagram with supported structured `solutionOnly` elements is itself a valid student response and solution surface. Its diagram `markTicks` may carry the marks earned directly on those answer elements; preview and print must keep the shared diagram in normal styling, colour only the answer elements blue, and place the ticks beside the surface. A paired solution diagram is not complete merely because the copy exists: its mathematical answer content must differ from the student diagram. Ignore presentation-only changes such as size, colour, grid, view bounds, chart range, or 3D camera when making that completeness decision.
+
+New `geometry2d` points, segments, arcs, angles, and construction markers follow the same Solutions-mode rule. Store `solutionOnly` on the primitive, filter it from Student editor/preview, render only that primitive in solution blue, and keep the primitive inspector override. Use this element-level path for small additions to a shared construction and a paired solution diagram for a wholly completed or independently changed diagram.
+
+New `vector2d` vectors, segment labels, and angle markers also follow the active authoring layer. In Solutions mode, store `solutionOnly` on the element, hide it from Student editor/preview, render only that element in solution blue, and preserve the element-level override. Keep referenced elements coherent: a student-visible segment label or angle marker must not depend on a solution-only vector that is hidden from the student diagram. Use a paired solution diagram when the entire vector construction should differ independently.
+
+New `graph3d` points, segments, and dimensions follow the same active authoring layer and are directly editable in the 3D diagram panel. Existing faces and solids also support `solutionOnly` and an element-level override. Student preview keeps hidden solution points in the range calculation with `show: false` so the camera and shared geometry do not jump, while suppressing any segment, dimension, face, or solid that depends on a hidden point. Solutions preview colours only solution elements blue. Use a paired solution diagram when the whole 3D construction should differ independently.
+
+Structured Penrose geometry and network diagrams support solution-only points/nodes and segments/links. New elements added in Solutions mode default to `solutionOnly`, Student mode removes them and relationships that depend on hidden points, and Solutions preview colours only those answer elements and labels blue. Structured two-set and three-set Venn diagrams support solution-only region labels/values and shading while preserving the fixed region slots in Student mode. Use element-level `diagram.settings.update` targets for these focused answers. Do not mix structured element editing with a custom `options.substanceSource`: return to structured data or use a paired solution diagram. Complex construction predicates such as angle/equality constraints and wholly changed diagrams remain paired-solution-copy work rather than pretending every Substance predicate has an editable solution layer.
 
 ## Print
 
 PDF output uses the browser print dialog and Save as PDF from the same generated A4 preview pages shown on screen. Screen preview uses pixel-sized page boxes for visual layout and zoom. Print CSS should use physical paged-media rules: `@page { size: A4; }` owns paper size and margins, while each generated app page renders only its printable content area. Do not make print DOM pages full physical-height paper boxes; that can create blank trailing pages in WebKit/Safari. Avoid browser-specific print branches unless a narrow compatibility issue is proven.
+
+Treat measured preview pagination as structured formatting evidence. The live Student and Solutions previews report page totals, supplementary-page totals, and any block taller than the printable A4 content area. Surface those reports through System Status and the current agent snapshot as `rendered-page-overflow` warnings; do not fold them into solution-completeness validation or attach stale current-document warnings to an unrendered action-preview result.
 
 ## Frontend Notes
 

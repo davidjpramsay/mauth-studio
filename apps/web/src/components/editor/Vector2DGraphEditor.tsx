@@ -2,20 +2,27 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DEFAULT_VECTOR_2D_GRAPH,
   VECTOR_2D_ANNOTATION_COLOR,
   VECTOR_2D_COLORS,
   defaultVector2DName,
+  isSolutionOnlyVector2DElement,
   normalizedVector2DAngleMarkers,
   normalizedVector2DEntries,
+  normalizedVector2DSegmentLabels,
   vector2dLabelStyle,
+  vector2dElementForAuthoringLayer,
+  vector2dElementWithSolutionOnly,
   vector2dMetadata,
   vector2dMetadataFromAngleMarkers,
   vector2dMetadataFromEntries,
+  vector2dMetadataFromSegmentLabels,
   type Vector2DAngleMarkerEntry,
   type Vector2DControlEntry,
   type Vector2DLabelStyle,
+  type Vector2DSegmentLabelEntry,
 } from "@/lib/diagramVector2d";
 
 const VECTOR_2D_LABEL_STYLES: Array<{ value: Vector2DLabelStyle; label: string }> = [
@@ -34,16 +41,36 @@ function numberInputValue(value?: number) {
 
 type Vector2DGraphEditorProps = {
   config: GraphConfig;
+  showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange }: Vector2DGraphEditorProps) {
+export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode = "inline", onChange }: Vector2DGraphEditorProps) {
   const vectors = normalizedVector2DEntries(config);
+  const segmentLabels = normalizedVector2DSegmentLabels(config);
   const angleMarkers = normalizedVector2DAngleMarkers(config);
+  const visibleVectorRows = vectors.flatMap((vector, index) =>
+    showSolutions || !isSolutionOnlyVector2DElement(vector) ? [{ vector, vectorIndex: index }] : [],
+  );
+  const visibleVectors = visibleVectorRows.map(({ vector }) => vector);
+  const visibleVectorReferences = new Set(
+    visibleVectors.flatMap((vector) => [vector.id.trim().toLowerCase(), vector.name.trim().toLowerCase()]).filter(Boolean),
+  );
+  const referencesVisibleVector = (reference: string) => visibleVectorReferences.has(reference.trim().toLowerCase());
+  const visibleSegmentLabelRows = segmentLabels.flatMap((segmentLabel, index) =>
+    (showSolutions || !isSolutionOnlyVector2DElement(segmentLabel)) && referencesVisibleVector(segmentLabel.vectorId)
+      ? [{ segmentLabel, segmentLabelIndex: index }]
+      : [],
+  );
+  const visibleAngleMarkerRows = angleMarkers.flatMap((marker, index) =>
+    (showSolutions || !isSolutionOnlyVector2DElement(marker)) && referencesVisibleVector(marker.from) && referencesVisibleVector(marker.to)
+      ? [{ marker, markerIndex: index }]
+      : [],
+  );
   const labelStyle = vector2dLabelStyle(vector2dMetadata(config).labelStyle);
   const showInlineSettings = settingsMode === "inline";
-  const vectorReferenceOptions = vectors.flatMap((vector) => {
+  const vectorReferenceOptions = visibleVectors.flatMap((vector) => {
     const options = [{ value: vector.id, label: vector.name && vector.name !== vector.id ? `${vector.name} (${vector.id})` : vector.id }];
     if (vector.name && vector.name !== vector.id) options.push({ value: vector.name, label: `${vector.name} (name)` });
     return options;
@@ -69,6 +96,11 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
   const patchAngleMarkers = (nextMarkers: Vector2DAngleMarkerEntry[]) => {
     onChange({
       metadata: vector2dMetadataFromAngleMarkers(config, nextMarkers),
+    });
+  };
+  const patchSegmentLabels = (nextLabels: Vector2DSegmentLabelEntry[]) => {
+    onChange({
+      metadata: vector2dMetadataFromSegmentLabels(config, nextLabels),
     });
   };
   const updateLabelStyle = (nextLabelStyle: Vector2DLabelStyle) => {
@@ -98,15 +130,18 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
     const index = vectors.length;
     patchVectors([
       ...vectors,
-      {
-        id: `v${index + 1}`,
-        name: defaultVector2DName(index, labelStyle),
-        label: "",
-        start: [0, 0],
-        components: [1, 1],
-        color: VECTOR_2D_COLORS[index % VECTOR_2D_COLORS.length],
-        showComponents: false,
-      },
+      vector2dElementForAuthoringLayer(
+        {
+          id: `v${index + 1}`,
+          name: defaultVector2DName(index, labelStyle),
+          label: "",
+          start: [0, 0],
+          components: [1, 1],
+          color: VECTOR_2D_COLORS[index % VECTOR_2D_COLORS.length],
+          showComponents: false,
+        },
+        showSolutions,
+      ),
     ]);
   };
   const removeVector = (vectorIndex: number) => {
@@ -133,26 +168,58 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
   const resetLabelPosition = (vectorIndex: number) => {
     updateVector(vectorIndex, { labelX: undefined, labelY: undefined });
   };
+  const updateSegmentLabel = (segmentLabelIndex: number, patch: Partial<Vector2DSegmentLabelEntry>) => {
+    patchSegmentLabels(segmentLabels.map((label, index) => (index === segmentLabelIndex ? { ...label, ...patch } : label)));
+  };
+  const addSegmentLabel = () => {
+    const vectorId = visibleVectors[0]?.id;
+    if (!vectorId) return;
+    let nextIndex = segmentLabels.length + 1;
+    while (segmentLabels.some((label) => label.id === `segment-label-${nextIndex}`)) nextIndex += 1;
+    patchSegmentLabels([
+      ...segmentLabels,
+      vector2dElementForAuthoringLayer(
+        {
+          id: `segment-label-${nextIndex}`,
+          vectorId,
+          label: "length",
+          position: 0.55,
+          offsetPx: 18,
+          color: VECTOR_2D_ANNOTATION_COLOR,
+        },
+        showSolutions,
+      ),
+    ]);
+  };
+  const removeSegmentLabel = (segmentLabelIndex: number) => {
+    patchSegmentLabels(segmentLabels.filter((_, index) => index !== segmentLabelIndex));
+  };
+  const resetSegmentLabelPosition = (segmentLabelIndex: number) => {
+    updateSegmentLabel(segmentLabelIndex, { labelX: undefined, labelY: undefined });
+  };
   const updateAngleMarker = (markerIndex: number, patch: Partial<Vector2DAngleMarkerEntry>) => {
     patchAngleMarkers(angleMarkers.map((marker, index) => (index === markerIndex ? { ...marker, ...patch } : marker)));
   };
   const addAngleMarker = () => {
-    const from = vectors[0]?.id;
-    const to = vectors[1]?.id ?? vectors[0]?.id;
+    const from = visibleVectors[0]?.id;
+    const to = visibleVectors[1]?.id ?? visibleVectors[0]?.id;
     if (!from || !to) return;
     let nextIndex = angleMarkers.length + 1;
     while (angleMarkers.some((marker) => marker.id === `angle-marker-${nextIndex}`)) nextIndex += 1;
     patchAngleMarkers([
       ...angleMarkers,
-      {
-        id: `angle-marker-${nextIndex}`,
-        from,
-        to,
-        label: "",
-        rightAngle: false,
-        radius: 0.45,
-        color: VECTOR_2D_ANNOTATION_COLOR,
-      },
+      vector2dElementForAuthoringLayer(
+        {
+          id: `angle-marker-${nextIndex}`,
+          from,
+          to,
+          label: "",
+          rightAngle: false,
+          radius: 0.45,
+          color: VECTOR_2D_ANNOTATION_COLOR,
+        },
+        showSolutions,
+      ),
     ]);
   };
   const removeAngleMarker = (markerIndex: number) => {
@@ -170,7 +237,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
       {showInlineSettings ? (
         <section className="flex flex-wrap items-end gap-3">
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            x min
+            i min
             <input
               type="number"
               value={numberInputValue(config.xMin)}
@@ -179,7 +246,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            x max
+            i max
             <input
               type="number"
               value={numberInputValue(config.xMax)}
@@ -188,7 +255,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            y min
+            j min
             <input
               type="number"
               value={numberInputValue(config.yMin)}
@@ -197,7 +264,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
-            y max
+            j max
             <input
               type="number"
               value={numberInputValue(config.yMax)}
@@ -251,8 +318,31 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
           </Button>
         </div>
         <div className="grid grid-cols-1 gap-2">
-          {vectors.map((vector, vectorIndex) => (
-            <div key={`${vector.id}-${vectorIndex}`} className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
+          {visibleVectorRows.map(({ vector, vectorIndex }) => (
+            <div
+              key={`${vector.id}-${vectorIndex}`}
+              data-vector2d-item-kind="vector"
+              data-vector2d-item-id={vector.id}
+              data-solution-only={isSolutionOnlyVector2DElement(vector) ? "true" : undefined}
+              className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Vector {vectorIndex + 1}
+                  {isSolutionOnlyVector2DElement(vector) ? <Badge variant="outline">Solution</Badge> : null}
+                </span>
+                <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={isSolutionOnlyVector2DElement(vector)}
+                    aria-label={`Vector ${vector.name || vector.id} show in solutions only`}
+                    onChange={(event) =>
+                      updateVector(vectorIndex, vector2dElementWithSolutionOnly(vector, event.target.checked) as Vector2DControlEntry)
+                    }
+                  />
+                  Show in solutions only
+                </label>
+              </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_minmax(10rem,1fr)_96px_40px] md:items-end">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Name
@@ -298,7 +388,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
               </div>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(6,minmax(70px,1fr))_auto] md:items-end">
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Start x
+                  Start i
                   <input
                     type="number"
                     value={numberInputValue(vector.start[0])}
@@ -307,7 +397,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Start y
+                  Start j
                   <input
                     type="number"
                     value={numberInputValue(vector.start[1])}
@@ -316,7 +406,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  x comp.
+                  i comp.
                   <input
                     type="number"
                     value={numberInputValue(vector.components[0])}
@@ -325,7 +415,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  y comp.
+                  j comp.
                   <input
                     type="number"
                     value={numberInputValue(vector.components[1])}
@@ -334,7 +424,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label x
+                  Label i
                   <input
                     type="number"
                     value={numberInputValue(vector.labelX)}
@@ -343,7 +433,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
-                  Label y
+                  Label j
                   <input
                     type="number"
                     value={numberInputValue(vector.labelY)}
@@ -369,7 +459,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Annotations</div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {vectors.map((vector, vectorIndex) => (
+          {visibleVectorRows.map(({ vector, vectorIndex }) => (
             <label
               key={`${vector.id}-${vectorIndex}-guides`}
               className="flex h-10 items-center gap-2 rounded-md border bg-muted/20 px-3 text-sm"
@@ -385,16 +475,179 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
         </div>
         <div className="mt-2 flex flex-col gap-2 border-t pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Segment labels</div>
+            <Button type="button" variant="outline" size="sm" onClick={addSegmentLabel} disabled={!visibleVectors.length}>
+              <PlusCircle data-icon="inline-start" />
+              Add label
+            </Button>
+          </div>
+          {visibleSegmentLabelRows.length ? (
+            <div className="grid grid-cols-1 gap-2">
+              {visibleSegmentLabelRows.map(({ segmentLabel, segmentLabelIndex }) => (
+                <div
+                  key={`${segmentLabel.id}-${segmentLabelIndex}`}
+                  data-vector2d-item-kind="segmentLabel"
+                  data-vector2d-item-id={segmentLabel.id}
+                  data-solution-only={isSolutionOnlyVector2DElement(segmentLabel) ? "true" : undefined}
+                  className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Segment label {segmentLabelIndex + 1}
+                      {isSolutionOnlyVector2DElement(segmentLabel) ? <Badge variant="outline">Solution</Badge> : null}
+                    </span>
+                    <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={isSolutionOnlyVector2DElement(segmentLabel)}
+                        aria-label={`Segment label ${segmentLabel.id} show in solutions only`}
+                        onChange={(event) =>
+                          updateSegmentLabel(
+                            segmentLabelIndex,
+                            vector2dElementWithSolutionOnly(segmentLabel, event.target.checked) as Vector2DSegmentLabelEntry,
+                          )
+                        }
+                      />
+                      Show in solutions only
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(100px,1fr)_minmax(130px,2fr)_90px_90px_90px_40px] md:items-end">
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Vector
+                      <select
+                        value={segmentLabel.vectorId}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { vectorId: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      >
+                        {vectorReferenceOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label
+                      <input
+                        value={segmentLabel.label}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { label: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Position
+                      <input
+                        type="number"
+                        min={0.05}
+                        max={0.95}
+                        step={0.05}
+                        value={numberInputValue(segmentLabel.position)}
+                        onChange={(event) =>
+                          updateSegmentLabel(segmentLabelIndex, {
+                            position: Math.max(0.05, Math.min(0.95, optionalNumber(event.target.value) ?? 0.55)),
+                          })
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Offset px
+                      <input
+                        type="number"
+                        value={numberInputValue(segmentLabel.offsetPx)}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { offsetPx: optionalNumber(event.target.value) ?? 18 })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Colour
+                      <input
+                        type="color"
+                        value={segmentLabel.color}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { color: event.target.value })}
+                        className="h-9 rounded-md border border-input bg-background px-2"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Remove segment label"
+                      aria-label="Remove segment label"
+                      onClick={() => removeSegmentLabel(segmentLabelIndex)}
+                      className="size-9"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(2,minmax(90px,1fr))_auto] md:items-end">
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label i
+                      <input
+                        type="number"
+                        value={numberInputValue(segmentLabel.labelX)}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { labelX: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-medium">
+                      Label j
+                      <input
+                        type="number"
+                        value={numberInputValue(segmentLabel.labelY)}
+                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { labelY: optionalNumber(event.target.value) })}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                      />
+                    </label>
+                    <Button type="button" variant="outline" size="sm" onClick={() => resetSegmentLabelPosition(segmentLabelIndex)}>
+                      Reset label
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">No segment labels.</div>
+          )}
+        </div>
+        <div className="mt-2 flex flex-col gap-2 border-t pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Angle markers</div>
             <Button type="button" variant="outline" size="sm" onClick={addAngleMarker} disabled={vectors.length < 2}>
               <PlusCircle data-icon="inline-start" />
               Add marker
             </Button>
           </div>
-          {angleMarkers.length ? (
+          {visibleAngleMarkerRows.length ? (
             <div className="grid grid-cols-1 gap-2">
-              {angleMarkers.map((marker, markerIndex) => (
-                <div key={`${marker.id}-${markerIndex}`} className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
+              {visibleAngleMarkerRows.map(({ marker, markerIndex }) => (
+                <div
+                  key={`${marker.id}-${markerIndex}`}
+                  data-vector2d-item-kind="angleMarker"
+                  data-vector2d-item-id={marker.id}
+                  data-solution-only={isSolutionOnlyVector2DElement(marker) ? "true" : undefined}
+                  className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Angle marker {markerIndex + 1}
+                      {isSolutionOnlyVector2DElement(marker) ? <Badge variant="outline">Solution</Badge> : null}
+                    </span>
+                    <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={isSolutionOnlyVector2DElement(marker)}
+                        aria-label={`Angle marker ${marker.id} show in solutions only`}
+                        onChange={(event) =>
+                          updateAngleMarker(
+                            markerIndex,
+                            vector2dElementWithSolutionOnly(marker, event.target.checked) as Vector2DAngleMarkerEntry,
+                          )
+                        }
+                      />
+                      Show in solutions only
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(100px,1fr)_minmax(100px,1fr)_120px_40px] md:items-end">
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       From
@@ -459,7 +712,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       <input
                         type="number"
                         min={0.05}
-                        step={0.05}
+                        step={1}
                         value={numberInputValue(marker.radius)}
                         onChange={(event) =>
                           updateAngleMarker(markerIndex, { radius: Math.max(0.05, optionalNumber(event.target.value) ?? 0.45) })
@@ -477,7 +730,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
-                      Label x
+                      Label i
                       <input
                         type="number"
                         value={numberInputValue(marker.labelX)}
@@ -486,7 +739,7 @@ export function Vector2DGraphEditor({ config, settingsMode = "inline", onChange 
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
-                      Label y
+                      Label j
                       <input
                         type="number"
                         value={numberInputValue(marker.labelY)}

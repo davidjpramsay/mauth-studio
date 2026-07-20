@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { insertionActionLabel, insertionActionTooltip } from "@/lib/editorInsertionActions";
 import { cn } from "@/lib/utils";
 
 export const EDITOR_ACTIVE_PANEL_CLASS = "border-primary/70 bg-primary/[0.03] shadow-[0_0_0_2px_hsl(var(--primary)/0.16)]";
@@ -120,6 +121,7 @@ export interface InsertionAction {
   tooltip?: string;
   icon?: ReactNode;
   disabled?: boolean;
+  subActions?: InsertionAction[];
   onClick: () => void;
 }
 
@@ -127,12 +129,14 @@ export function ContentInsertionActions({
   buttonLabel = "Add",
   className,
   centered = false,
+  solutionMode = false,
   spaceActionLabel = "Space",
   spaceActionTooltip,
   onAddText,
   onAddChoices,
   onAddTable,
   onAddDiagram,
+  diagramActions = [],
   onAddColumns,
   onAddSpace,
   extraActions = [],
@@ -140,12 +144,14 @@ export function ContentInsertionActions({
   buttonLabel?: "Add";
   className?: string;
   centered?: boolean;
+  solutionMode?: boolean;
   spaceActionLabel?: string;
   spaceActionTooltip?: string;
   onAddText?: () => void;
   onAddChoices?: () => void;
   onAddTable?: () => void;
   onAddDiagram?: () => void;
+  diagramActions?: InsertionAction[];
   onAddColumns?: () => void;
   onAddSpace?: () => void;
   extraActions?: InsertionAction[];
@@ -158,44 +164,48 @@ export function ContentInsertionActions({
   }
   const menuId = menuIdRef.current;
   const [open, setOpen] = useState(false);
+  const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null);
   const actionVerb = buttonLabel;
+  const solutionLabel = (label: string) => insertionActionLabel(label, solutionMode);
+  const solutionTooltip = (label: string, fallback: string) => insertionActionTooltip({ actionVerb, label, fallback, solutionMode });
   const actions: InsertionAction[] = [
     onAddText
       ? {
-          label: "Text",
-          tooltip: `${actionVerb} a text block here`,
+          label: solutionLabel("Text"),
+          tooltip: solutionTooltip("text block", `${actionVerb} a text block here`),
           icon: <Type className="size-4" aria-hidden="true" />,
           onClick: onAddText,
         }
       : null,
     onAddChoices
       ? {
-          label: "Choice list",
-          tooltip: `${actionVerb} answer choices such as i, ii, iii`,
+          label: solutionLabel("Choice list"),
+          tooltip: solutionTooltip("choice list", `${actionVerb} answer choices such as i, ii, iii`),
           icon: <ListOrdered className="size-4" aria-hidden="true" />,
           onClick: onAddChoices,
         }
       : null,
     onAddTable
       ? {
-          label: "Table",
-          tooltip: `${actionVerb} a table with LaTeX-ready cells`,
+          label: solutionLabel("Table"),
+          tooltip: solutionTooltip("table", `${actionVerb} a table with LaTeX-ready cells`),
           icon: <Table2 className="size-4" aria-hidden="true" />,
           onClick: onAddTable,
         }
       : null,
     onAddDiagram
       ? {
-          label: "Diagram",
-          tooltip: `${actionVerb} a diagram block here`,
+          label: solutionLabel("Diagram"),
+          tooltip: solutionTooltip("diagram block", `${actionVerb} a diagram block here`),
           icon: <ImagePlus className="size-4" aria-hidden="true" />,
+          subActions: diagramActions,
           onClick: onAddDiagram,
         }
       : null,
     onAddColumns
       ? {
-          label: "Columns",
-          tooltip: `${actionVerb} a 2-column content container`,
+          label: solutionLabel("Columns"),
+          tooltip: solutionTooltip("columns block", `${actionVerb} a 2-column content container`),
           icon: <Columns3 className="size-4" aria-hidden="true" />,
           onClick: onAddColumns,
         }
@@ -215,6 +225,7 @@ export function ContentInsertionActions({
     const closeOtherMenus = (event: Event) => {
       if ((event as CustomEvent<string>).detail !== menuId) {
         setOpen(false);
+        setOpenSubmenuIndex(null);
       }
     };
 
@@ -228,6 +239,7 @@ export function ContentInsertionActions({
     const closeOnOutsidePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && containerRef.current?.contains(event.target)) return;
       setOpen(false);
+      setOpenSubmenuIndex(null);
     };
 
     window.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
@@ -244,6 +256,7 @@ export function ContentInsertionActions({
         onBlur={(event) => {
           if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
           setOpen(false);
+          setOpenSubmenuIndex(null);
         }}
       >
         <Button
@@ -259,6 +272,8 @@ export function ContentInsertionActions({
               const nextOpen = !current;
               if (nextOpen) {
                 window.dispatchEvent(new CustomEvent(INSERT_MENU_OPEN_EVENT, { detail: menuId }));
+              } else {
+                setOpenSubmenuIndex(null);
               }
               return nextOpen;
             })
@@ -266,6 +281,7 @@ export function ContentInsertionActions({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               setOpen(false);
+              setOpenSubmenuIndex(null);
             }
           }}
         >
@@ -277,26 +293,82 @@ export function ContentInsertionActions({
           <div
             id={menuId}
             role="menu"
-            className="absolute left-0 top-full z-[100] mt-2 min-w-48 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
+            className="absolute left-0 top-full z-[100] mt-2 min-w-52 overflow-visible rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
           >
-            {actions.map((action, index) => (
-              <button
-                key={`${action.label}-${index}`}
-                type="button"
-                role="menuitem"
-                title={action.tooltip}
-                disabled={action.disabled}
-                onClick={() => {
-                  if (action.disabled) return;
-                  setOpen(false);
-                  action.onClick();
-                }}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {action.icon ?? <PlusCircle className="size-4" aria-hidden="true" />}
-                <span>{action.label}</span>
-              </button>
-            ))}
+            {actions.map((action, index) => {
+              const subActions = action.subActions?.filter((subAction) => !subAction.disabled || subAction.subActions?.length) ?? [];
+              const hasSubmenu = subActions.length > 0;
+              const submenuOpen = openSubmenuIndex === index;
+              return (
+                <div
+                  key={`${action.label}-${index}`}
+                  className="relative"
+                  onMouseEnter={() => {
+                    if (!hasSubmenu) setOpenSubmenuIndex(null);
+                  }}
+                  onMouseLeave={() => {
+                    if (hasSubmenu) setOpenSubmenuIndex((current) => (current === index ? null : current));
+                  }}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup={hasSubmenu ? "menu" : undefined}
+                    aria-expanded={hasSubmenu ? submenuOpen : undefined}
+                    disabled={action.disabled}
+                    onFocus={() => {
+                      if (!hasSubmenu) setOpenSubmenuIndex(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (hasSubmenu && (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        setOpenSubmenuIndex(index);
+                      }
+                    }}
+                    onClick={() => {
+                      if (action.disabled) return;
+                      if (hasSubmenu) {
+                        setOpenSubmenuIndex((current) => (current === index ? null : index));
+                        return;
+                      }
+                      setOpen(false);
+                      setOpenSubmenuIndex(null);
+                      action.onClick();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {action.icon ?? <PlusCircle className="size-4" aria-hidden="true" />}
+                    <span className="min-w-0 flex-1">{action.label}</span>
+                    {hasSubmenu ? <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" /> : null}
+                  </button>
+                  {hasSubmenu && submenuOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute left-full top-0 z-[110] min-w-56 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
+                    >
+                      {subActions.map((subAction, subIndex) => (
+                        <button
+                          key={`${subAction.label}-${subIndex}`}
+                          type="button"
+                          role="menuitem"
+                          disabled={subAction.disabled}
+                          onClick={() => {
+                            if (subAction.disabled) return;
+                            setOpen(false);
+                            setOpenSubmenuIndex(null);
+                            subAction.onClick();
+                          }}
+                          className="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {subAction.icon ?? <PlusCircle className="size-4" aria-hidden="true" />}
+                          <span>{subAction.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </div>

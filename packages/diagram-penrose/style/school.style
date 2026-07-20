@@ -48,12 +48,19 @@ where HidePoint(p) {
   p.dot.strokeWidth = 0
 }
 
+forall Point p
+where SolutionPoint(p) {
+  p.dot.fillColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  p.dot.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  p.labelText.fillColor = rgba(0.1137, 0.3059, 0.8471, 1)
+}
+
 forall NamedSegment s; Point a; Point b
 where Segment(s, a, b) {
   s.start = a.dot.center
   s.end = b.dot.center
 
-  segmentLine = Line {
+  s.segmentLine = Line {
     start: s.start
     end: s.end
     strokeColor: rgba(0, 0, 0, 1)
@@ -61,8 +68,13 @@ where Segment(s, a, b) {
     fillColor: none()
   }
 
-  layer segmentLine below a.dot
-  layer segmentLine below b.dot
+  layer s.segmentLine below a.dot
+  layer s.segmentLine below b.dot
+}
+
+forall NamedSegment s; Point a; Point b
+where Segment(s, a, b); SolutionSegment(s) {
+  s.segmentLine.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
 }
 
 forall NamedSegment s; Point a; Point b
@@ -75,7 +87,7 @@ where VectorSegment(s, a, b) {
   tip = b.dot.center
   base = b.dot.center - direction * 18
 
-  vectorLine = Line {
+  s.vectorLine = Line {
     start: a.dot.center
     end: base
     strokeColor: rgba(0, 0, 0, 1)
@@ -83,16 +95,85 @@ where VectorSegment(s, a, b) {
     fillColor: none()
   }
 
-  vectorHead = Polygon {
+  s.vectorHead = Polygon {
     points: [tip, base + normal * 6, base - normal * 6]
     fillColor: rgba(0, 0, 0, 1)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 0
   }
 
-  layer vectorLine below vectorHead
-  layer vectorLine below a.dot
-  layer vectorHead below b.labelText
+  layer s.vectorLine below s.vectorHead
+  layer s.vectorLine below a.dot
+  layer s.vectorHead below b.labelText
+}
+
+forall NamedSegment s; Point a; Point b
+where VectorSegment(s, a, b); SolutionVectorSegment(s) {
+  s.vectorLine.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  s.vectorHead.fillColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  s.vectorHead.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
+}
+
+forall NamedSegment s; Point a
+where SelfLoop(s, a) {
+  s.start = a.dot.center
+  s.end = a.dot.center
+  loopCenter = a.dot.center + (24, -24)
+
+  s.loop = Circle {
+    center: loopCenter
+    r: 18
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2
+    fillColor: none()
+  }
+
+  ensure onCanvas(s.loop, 420, 300)
+  layer s.loop below a.dot
+  layer s.loop below a.labelText
+}
+
+forall NamedSegment s; Point a
+where SelfLoop(s, a); SolutionSelfLoop(s) {
+  s.loop.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
+}
+
+forall NamedSegment s; Point a
+where VectorSelfLoop(s, a) {
+  s.start = a.dot.center
+  s.end = a.dot.center
+  loopCenter = a.dot.center + (24, -24)
+  tip = loopCenter + (-13, 13)
+  direction = unit((-1, 1))
+  normal = rot90(direction)
+  base = tip - direction * 12
+
+  s.loop = Circle {
+    center: loopCenter
+    r: 18
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 2.2
+    fillColor: none()
+  }
+
+  s.vectorHead = Polygon {
+    points: [tip, base + normal * 5.5, base - normal * 5.5]
+    fillColor: rgba(0, 0, 0, 1)
+    strokeColor: rgba(0, 0, 0, 1)
+    strokeWidth: 0
+  }
+
+  ensure onCanvas(s.loop, 420, 300)
+  layer s.loop below s.vectorHead
+  layer s.loop below a.dot
+  layer s.vectorHead below a.labelText
+}
+
+forall NamedSegment s; Point a
+where VectorSelfLoop(s, a); SolutionVectorSelfLoop(s) {
+  s.loop.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  s.vectorHead.fillColor = rgba(0.1137, 0.3059, 0.8471, 1)
+  s.vectorHead.strokeColor = rgba(0.1137, 0.3059, 0.8471, 1)
 }
 
 forall Line l; Point a; Point b
@@ -550,6 +631,11 @@ forall LengthLabel l {
   ensure onCanvas(l.text, 420, 300)
 }
 
+forall LengthLabel l
+where SolutionLengthLabel(l) {
+  l.text.fillColor = rgba(0.1137, 0.3059, 0.8471, 1)
+}
+
 forall Point a; Point b; Point c
 where AngleMark(a, b, c) {
   angleArc = Path {
@@ -588,6 +674,13 @@ where LabelsSegment(l, a, b) {
   l.text.center = midpoint(a.dot.center, b.dot.center) + unit(rot90(b.dot.center - a.dot.center + (0.001, 0.001)) + (0.001, 0.001)) * 18
   ensure disjoint(l.text, a.dot, 5)
   ensure disjoint(l.text, b.dot, 5)
+}
+
+forall LengthLabel l; Point a
+where LabelsSelfLoop(l, a) {
+  l.text.center = a.dot.center + (48, -48)
+  ensure onCanvas(l.text, 420, 300)
+  ensure disjoint(l.text, a.dot, 12)
 }
 
 forall LengthLabel l; Point a; Point b; Point c

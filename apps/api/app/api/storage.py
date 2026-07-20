@@ -1,6 +1,16 @@
+import subprocess
+import sys
+
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from app.models.schemas import AutosaveRequest, LogoAssetRequest, ProjectFileRequest, ProjectRequest, SavedTestRequest
+from app.models.schemas import (
+    AutosaveRequest,
+    LogoAssetRequest,
+    ProjectFileRequest,
+    ProjectRequest,
+    ProjectWorkspaceRequest,
+    SavedTestRequest,
+)
 from app.services.storage import (
     FileLogoStorage,
     FileProjectStorage,
@@ -14,6 +24,7 @@ router = APIRouter()
 storage_service = FileTestStorage()
 logo_storage_service = FileLogoStorage()
 project_storage_service = FileProjectStorage()
+STORAGE_OPERATION_ERRORS = (StorageConflictError, StorageNotFoundError, StorageValidationError, OSError)
 
 
 def storage_http_error(error: Exception) -> HTTPException:
@@ -26,6 +37,14 @@ def storage_http_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=400, detail=str(error))
     if isinstance(error, StorageNotFoundError):
         return HTTPException(status_code=404, detail=str(error))
+    if isinstance(error, OSError):
+        return HTTPException(
+            status_code=503,
+            detail={
+                "code": "STORAGE_UNAVAILABLE",
+                "message": "The active documents folder is temporarily unavailable. Check that the drive is connected and the folder has finished downloading, then try again.",
+            },
+        )
     return HTTPException(status_code=500, detail="Storage error")
 
 
@@ -108,7 +127,59 @@ def list_projects() -> dict:
 def get_default_project() -> dict:
     try:
         return project_storage_service.get_or_create_default_project()
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/documents-folder")
+def open_default_project_documents_folder(request: ProjectWorkspaceRequest) -> dict:
+    try:
+        return project_storage_service.open_documents_folder(request.path)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/documents-folder/choose")
+def choose_default_project_documents_folder() -> dict:
+    if sys.platform != "darwin":
+        raise storage_http_error(StorageValidationError("Native folder picker is only available on macOS"))
+
+    script = """
+set chosenFolder to choose folder with prompt "Choose a Mauth documents folder"
+POSIX path of chosenFolder
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise storage_http_error(StorageValidationError("Native folder picker is unavailable")) from error
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip().lower()
+        if "user canceled" in stderr:
+            return {"cancelled": True}
+        raise storage_http_error(StorageValidationError(result.stderr.strip() or "Folder picker failed"))
+
+    folder_path = result.stdout.strip()
+    if not folder_path:
+        return {"cancelled": True}
+
+    try:
+        project = project_storage_service.open_documents_folder(folder_path)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+    return {"cancelled": False, "path": folder_path, "project": project}
+
+
+@router.post("/projects/default/documents-folder/reset")
+def reset_default_project_documents_folder() -> dict:
+    try:
+        return project_storage_service.reset_documents_folder()
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -116,13 +187,16 @@ def get_default_project() -> dict:
 def create_project(request: ProjectRequest) -> dict:
     try:
         return project_storage_service.create_project(request.model_dump())
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.get("/projects/{project_id}")
 def get_project(project_id: str) -> dict:
-    project = project_storage_service.get_project(project_id)
+    try:
+        project = project_storage_service.get_project(project_id)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
@@ -132,13 +206,16 @@ def get_project(project_id: str) -> dict:
 def update_project(project_id: str, request: ProjectRequest) -> dict:
     try:
         return project_storage_service.update_project(project_id, request.model_dump(exclude_unset=True))
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.delete("/projects/{project_id}", status_code=204)
 def delete_project(project_id: str) -> Response:
-    deleted = project_storage_service.delete_project(project_id)
+    try:
+        deleted = project_storage_service.delete_project(project_id)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found")
     return Response(status_code=204)
@@ -148,7 +225,7 @@ def delete_project(project_id: str) -> Response:
 def list_project_files(project_id: str) -> dict:
     try:
         return {"files": project_storage_service.list_files(project_id)}
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -156,7 +233,7 @@ def list_project_files(project_id: str) -> dict:
 def export_project_backup(project_id: str) -> Response:
     try:
         filename, content = project_storage_service.export_backup(project_id)
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
     return Response(
         content=content,
@@ -170,7 +247,7 @@ async def import_project_backup(project_id: str, request: Request) -> dict:
     try:
         content = await request.body()
         return project_storage_service.import_backup(project_id, content)
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -178,7 +255,7 @@ async def import_project_backup(project_id: str, request: Request) -> dict:
 def list_project_file_versions(project_id: str, path: str = Query(...)) -> dict:
     try:
         return {"versions": project_storage_service.list_versions(project_id, path)}
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -186,7 +263,7 @@ def list_project_file_versions(project_id: str, path: str = Query(...)) -> dict:
 def restore_project_file_version(project_id: str, version_id: str, path: str = Query(...)) -> dict:
     try:
         return project_storage_service.restore_version(project_id, path, version_id)
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -194,7 +271,7 @@ def restore_project_file_version(project_id: str, version_id: str, path: str = Q
 def get_project_file(project_id: str, file_path: str) -> dict:
     try:
         return project_storage_service.get_file(project_id, file_path)
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -202,7 +279,7 @@ def get_project_file(project_id: str, file_path: str) -> dict:
 def save_project_file(project_id: str, file_path: str, request: ProjectFileRequest) -> dict:
     try:
         return project_storage_service.save_file(project_id, file_path, request.model_dump(exclude_unset=True))
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
@@ -214,7 +291,7 @@ def delete_project_file(
 ) -> Response:
     try:
         deleted = project_storage_service.delete_file(project_id, file_path, base_revision=base_revision)
-    except (StorageConflictError, StorageNotFoundError, StorageValidationError) as error:
+    except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
     if not deleted:
         raise HTTPException(status_code=404, detail="Project file not found")

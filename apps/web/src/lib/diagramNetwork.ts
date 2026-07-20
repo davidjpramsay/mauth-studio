@@ -4,16 +4,38 @@ export const DEFAULT_NETWORK_DATA = {
   hidePoints: false,
   hidePointLabels: false,
   objects: [
-    { type: "point", name: "A", label: "A" },
-    { type: "point", name: "B", label: "B" },
-    { type: "point", name: "C", label: "C" },
+    { type: "point", name: "A", label: "A", solutionOnly: false },
+    { type: "point", name: "B", label: "B", solutionOnly: false },
+    { type: "point", name: "C", label: "C", solutionOnly: false },
   ],
   relationships: [
-    { type: "vectorSegment", name: "AB", points: ["A", "B"], label: "" },
-    { type: "vectorSegment", name: "AC", points: ["A", "C"], label: "" },
-    { type: "segment", name: "BC", points: ["B", "C"], label: "" },
+    { type: "vectorSegment", name: "AB", points: ["A", "B"], label: "", solutionOnly: false },
+    { type: "vectorSegment", name: "AC", points: ["A", "C"], label: "", solutionOnly: false },
+    { type: "segment", name: "BC", points: ["B", "C"], label: "", solutionOnly: false },
   ],
 };
+
+export interface NormalizedNetworkNode {
+  type: string;
+  name: string;
+  label: string;
+  solutionOnly: boolean;
+}
+
+export interface NormalizedNetworkRelationship {
+  type: string;
+  name: string;
+  points: string[];
+  label: string;
+  solutionOnly: boolean;
+}
+
+export interface NormalizedNetworkDiagramData {
+  hidePoints: boolean;
+  hidePointLabels: boolean;
+  objects: NormalizedNetworkNode[];
+  relationships: NormalizedNetworkRelationship[];
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -71,7 +93,7 @@ function networkPointNamesFromRelationships(relationships: Array<Record<string, 
   return [...names];
 }
 
-export function normalizedNetworkDiagramData(config: GraphConfig) {
+export function normalizedNetworkDiagramData(config: GraphConfig): NormalizedNetworkDiagramData {
   const { data, objects } = networkSourceData(config);
   const relationships = networksFromConfig(config).map((relationship, index) => {
     const points = relationshipPointNames(relationship).slice(0, 2);
@@ -83,7 +105,8 @@ export function normalizedNetworkDiagramData(config: GraphConfig) {
       type: relationship.type === "segment" ? "segment" : "vectorSegment",
       name: penroseIdentifier(relationship.name, `${start}${end}`),
       points: [start, end],
-      label: relationship.label ?? relationship.value ?? fallback.label ?? "",
+      label: String(relationship.label ?? relationship.value ?? fallback.label ?? ""),
+      solutionOnly: relationship.solutionOnly === true,
     };
   });
   const relationshipPointNamesSet = networkPointNamesFromRelationships(relationships);
@@ -103,18 +126,19 @@ export function normalizedNetworkDiagramData(config: GraphConfig) {
       return {
         type: "point",
         name,
-        label: object.label ?? name,
+        label: String(object.label ?? name),
+        solutionOnly: object.solutionOnly === true,
       };
     }),
     relationships,
   };
 }
 
-export function networkDataForSave(data: ReturnType<typeof normalizedNetworkDiagramData>) {
+export function networkDataForSave(data: NormalizedNetworkDiagramData) {
   const points = new Map<string, Record<string, unknown>>();
   data.objects.forEach((object) => {
     const name = penroseIdentifier(object.name, "");
-    if (name) points.set(name, { type: "point", name, label: object.label ?? name });
+    if (name) points.set(name, { type: "point", name, label: object.label ?? name, solutionOnly: object.solutionOnly === true });
   });
   data.relationships.forEach((relationship) => {
     relationship.points.forEach((point) => {

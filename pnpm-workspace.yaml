@@ -3,3 +3,7 @@ packages:
   - "packages/shared"
   - "packages/diagram-penrose"
   - "packages/diagram-plotly"
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true

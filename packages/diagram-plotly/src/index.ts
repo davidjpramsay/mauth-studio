@@ -3,13 +3,23 @@ import type {
   HistogramBarType,
   StatsChartData,
   StatsChartDataMode,
+  StatsChartSeriesData,
+  StatsChartSeriesType,
   StatsChartSpec,
   StatsChartType,
   StatsChartYAxisMode,
   StatsChartYLabelOrientation,
 } from "@mauth-studio/shared";
 
-export type { StatsChartData, StatsChartOptions, StatsChartSpec, StatsChartType, StatsChartYLabelOrientation } from "@mauth-studio/shared";
+export type {
+  StatsChartData,
+  StatsChartOptions,
+  StatsChartSeriesData,
+  StatsChartSeriesType,
+  StatsChartSpec,
+  StatsChartType,
+  StatsChartYLabelOrientation,
+} from "@mauth-studio/shared";
 
 export interface PlotlyChartConfig {
   data: Array<Record<string, unknown>>;
@@ -90,6 +100,45 @@ function numberArray(value: unknown, fallback: number[]) {
 
 function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function optionalPositiveNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+
+function statsChartSeriesType(value: unknown): StatsChartSeriesType {
+  if (value === "points" || value === "linePoints" || value === "bars") return value;
+  return "line";
+}
+
+export function normalizeStatsChartSeries(value: unknown): StatsChartSeriesData[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry, index): StatsChartSeriesData[] => {
+    const record = asRecord(entry);
+    if (!record) return [];
+    const xValues = numberArray(record.xValues, []);
+    const yValues = numberArray(record.yValues, []);
+    const pairCount = Math.min(xValues.length, yValues.length);
+    if (!pairCount) return [];
+    const id = stringValue(record.id, `series-${index + 1}`).trim() || `series-${index + 1}`;
+    return [
+      {
+        ...record,
+        id,
+        label: stringValue(record.label, ""),
+        seriesType: statsChartSeriesType(record.seriesType ?? record.kind),
+        xValues: xValues.slice(0, pairCount),
+        yValues: yValues.slice(0, pairCount),
+        color: stringValue(record.color, "#111111"),
+        lineWidth: optionalPositiveNumber(record.lineWidth),
+        markerSize: optionalPositiveNumber(record.markerSize),
+        barWidth: optionalPositiveNumber(record.barWidth),
+        show: record.show !== false,
+        solutionOnly: record.solutionOnly === true,
+      },
+    ];
+  });
 }
 
 function chartType(value: unknown): StatsChartType {
@@ -273,6 +322,7 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
                 : histogramDefaultYLabel,
       ),
       title: stringValue(sourceData.title, ""),
+      series: normalizeStatsChartSeries(sourceData.series),
     },
     style: stringValue(sourceRecord?.style, "exam"),
     options: {
@@ -644,7 +694,7 @@ function colorWithOpacity(color: string, opacity: number) {
   return normalized || DEFAULT_FILL_COLOR;
 }
 
-function chartTraces(spec: StatsChartSpec) {
+function baseChartTraces(spec: StatsChartSpec) {
   const data = spec.data;
   const options = spec.options ?? {};
   const lineColor = "#111111";
@@ -740,6 +790,49 @@ function chartTraces(spec: StatsChartSpec) {
       name: data.title || (histogram.manual ? "Probability" : histogram.relative ? "Relative frequency" : "Frequency"),
     },
   ];
+}
+
+function supplementalSeriesTraces(data: StatsChartData) {
+  return normalizeStatsChartSeries(data.series)
+    .filter((series) => series.show !== false)
+    .map((series) => {
+      const color = series.color || "#111111";
+      const name = series.label?.trim() || series.id;
+      if (series.seriesType === "bars") {
+        return {
+          type: "bar",
+          x: series.xValues,
+          y: series.yValues,
+          ...(series.barWidth ? { width: series.barWidth } : {}),
+          marker: {
+            color,
+            line: { color, width: 1.4 },
+          },
+          hoverinfo: "skip",
+          cliponaxis: false,
+          name,
+          meta: { mauthSeriesId: series.id },
+        };
+      }
+
+      const mode = series.seriesType === "points" ? "markers" : series.seriesType === "linePoints" ? "lines+markers" : "lines";
+      return {
+        type: "scatter",
+        mode,
+        x: series.xValues,
+        y: series.yValues,
+        hoverinfo: "skip",
+        cliponaxis: false,
+        line: { color, width: series.lineWidth ?? 2.4 },
+        marker: { color, size: series.markerSize ?? 7 },
+        name,
+        meta: { mauthSeriesId: series.id },
+      };
+    });
+}
+
+function chartTraces(spec: StatsChartSpec) {
+  return [...baseChartTraces(spec), ...supplementalSeriesTraces(spec.data)];
 }
 
 export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec | null): PlotlyChartConfig {

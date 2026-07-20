@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import type { ChoiceListLayout, ChoiceNumberingStyle, ContentBlock } from "@mauth-studio/shared";
 
+import { ChoiceSolutionAnswerSelect } from "@/components/solutions/ChoiceSolutionAnswerSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeChoiceItems, normalizeChoiceListLayout, normalizeChoiceNumberingStyle } from "@/lib/contentBlockNormalization";
+import { contentBlockDisplayVisibility } from "@/lib/moduleSettingsPatches";
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
 
@@ -14,6 +16,7 @@ interface ChoiceListBlockEditorProps {
   block: ChoiceListBlock;
   numberingStyleOptions: Array<{ value: ChoiceNumberingStyle; label: string }>;
   layoutOptions: Array<{ value: ChoiceListLayout; label: string }>;
+  showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
   dragHandle?: ReactNode;
   muted?: boolean;
@@ -38,6 +41,7 @@ export function ChoiceListBlockEditor({
   block,
   numberingStyleOptions,
   layoutOptions,
+  showSolutions = false,
   settingsMode = "inline",
   dragHandle,
   muted = false,
@@ -100,6 +104,14 @@ export function ChoiceListBlockEditor({
             className="min-h-[110px] font-mono"
           />
         </label>
+        {showSolutions && contentBlockDisplayVisibility(block) !== "student" ? (
+          <ChoiceSolutionAnswerSelect
+            block={block}
+            ariaLabel={`${label} circled answer`}
+            className={cn(showInlineSettings && "md:col-span-2")}
+            onChange={onChange}
+          />
+        ) : null}
       </div>
     </CollapsiblePanel>
   );
