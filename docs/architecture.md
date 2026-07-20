@@ -31,7 +31,7 @@ Normal macOS use starts through the installed app:
 open ~/Applications/Mauth\ Studio.app
 ```
 
-`pnpm macos:build` creates a Hardened Runtime, ad-hoc-signed local bundle and `pnpm macos:install` installs it. `pnpm macos:release` is the separate Developer ID/notarization path described in `docs/macos-release.md`. The Electron main process:
+`pnpm macos:build` creates a Hardened Runtime, ad-hoc-signed local bundle and `pnpm macos:install` installs it. `pnpm macos:release` creates the Developer ID signed/notarized artifact set, while `pnpm macos:ship` guards and publishes that set as a GitHub prerelease. The Electron main process:
 
 1. reserves a dynamic `127.0.0.1` port;
 2. starts the packaged FastAPI executable as a child process;
@@ -39,6 +39,8 @@ open ~/Applications/Mauth\ Studio.app
 4. generates a random per-launch bridge token and writes it with the URL in a mode-`0600` runtime manifest under Application Support for Codex/MCP discovery;
 5. serves the built editor and API from one local origin;
 6. removes the manifest and stops the sidecar when the app quits.
+
+Update-enabled packaged releases use `electron-updater` against the public GitHub alpha channel. A check runs once shortly after launch and is also available from the application menu. Downloads and restart/install actions each require teacher confirmation; source-development and ad-hoc directory builds without `app-update.yml` never check. The updater consumes the signed ZIP and `latest-mac.yml` published beside the signed DMG. The first updater-enabled release after 0.1.0 remains a manual bootstrap install because 0.1.0 did not contain an updater.
 
 The packaged sidecar includes the Python maths stack and a bundled Penrose renderer. Electron supplies the Node runtime used by Penrose. The BrowserWindow uses context isolation, renderer sandboxing, no Node integration, and main-process authorization-header injection for local API traffic. When the desktop token is configured, every `/api/*` route except health and system status requires it; discovery docs remain public. External tools discover the token through the private runtime manifest. Unauthenticated local requests receive `401 AGENT_AUTH_REQUIRED` for bridge routes or `401 API_AUTH_REQUIRED` for other private APIs. Navigation outside the local app origin opens in the system browser.
 

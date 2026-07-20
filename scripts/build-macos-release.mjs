@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+
+import { parse as parseYaml } from "yaml";
+import { macUpdateMetadataProblems } from "./macos-ship-plan.mjs";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", ...options });
@@ -42,12 +46,41 @@ function singleDmgArtifact() {
   return path.join(releaseDir, artifacts[0]);
 }
 
-function removeUnusedUpdateMetadata() {
+function singleZipArtifact() {
   const releaseDir = path.resolve("release");
-  for (const name of fs.readdirSync(releaseDir)) {
-    if (name.endsWith(".blockmap") || name === "latest-mac.yml") {
-      fs.rmSync(path.join(releaseDir, name));
-    }
+  const artifacts = fs.readdirSync(releaseDir).filter((name) => name.endsWith(".zip"));
+  if (artifacts.length !== 1) {
+    console.error(`Expected one ZIP release artifact, found ${artifacts.length}.`);
+    process.exit(1);
+  }
+  return path.join(releaseDir, artifacts[0]);
+}
+
+function prepareReleaseDirectory() {
+  const releaseDir = path.resolve("release");
+  fs.rmSync(releaseDir, { recursive: true, force: true });
+  fs.mkdirSync(releaseDir, { recursive: true });
+}
+
+function sha512(file) {
+  return createHash("sha512").update(fs.readFileSync(file)).digest("base64");
+}
+
+function validateUpdateMetadata(zipArtifact) {
+  const metadataPath = path.resolve("release", "latest-mac.yml");
+  if (!fs.existsSync(metadataPath)) {
+    console.error("Expected release/latest-mac.yml for in-app updates.");
+    process.exit(1);
+  }
+  const metadata = parseYaml(fs.readFileSync(metadataPath, "utf8"));
+  const problems = macUpdateMetadataProblems(metadata, {
+    name: path.basename(zipArtifact),
+    sha512: sha512(zipArtifact),
+    size: fs.statSync(zipArtifact).size,
+  });
+  if (problems.length) {
+    console.error(`Update metadata validation failed:\n- ${problems.join("\n- ")}`);
+    process.exit(1);
   }
 }
 
@@ -80,6 +113,7 @@ if (process.argv.includes("--preflight-only")) {
   process.exit(0);
 }
 
+prepareReleaseDirectory();
 run("pnpm", ["build:web"]);
 run("pnpm", ["macos:build:sidecar"]);
 run("pnpm", ["macos:build:penrose"]);
@@ -94,6 +128,8 @@ run(
     "dmg",
     "zip",
     "--arm64",
+    "--publish",
+    "never",
     `--config.mac.identity=${electronBuilderIdentity}`,
     "--config.mac.notarize=true",
     "--config.mac.gatekeeperAssess=true",
@@ -107,12 +143,13 @@ run(
   },
 );
 const dmgArtifact = singleDmgArtifact();
+const zipArtifact = singleZipArtifact();
 run("/usr/bin/codesign", ["--force", "--sign", identity, "--timestamp", dmgArtifact]);
 run("/usr/bin/xcrun", ["notarytool", "submit", dmgArtifact, "--wait", ...notarizationCredentialArgs()]);
 run("/usr/bin/xcrun", ["stapler", "staple", dmgArtifact]);
 run("/usr/bin/xcrun", ["stapler", "validate", dmgArtifact]);
 run("/usr/sbin/spctl", ["-a", "-vvv", "-t", "install", dmgArtifact]);
-removeUnusedUpdateMetadata();
+validateUpdateMetadata(zipArtifact);
 run("node", ["scripts/verify-macos-app.mjs", "--distribution"]);
 
 console.log("Mauth Studio release artifacts were signed, notarized, and written to release/.");

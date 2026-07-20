@@ -21,6 +21,7 @@ extraResources:
 mac:
   category: public.app-category.education
   icon: docs/assets/mauth-icon.png
+  electronUpdaterCompatibility: ">=2.16"
   extendInfo:
     NSDocumentsFolderUsageDescription: Mauth Studio needs access to the documents folders you choose for assessment files.
   target:
@@ -31,4 +32,9 @@ mac:
   entitlementsInherit: build/entitlements.mac.inherit.plist
   hardenedRuntime: true
   gatekeeperAssess: false
-artifactName: ${productName}-${version}-${arch}.${ext}
+artifactName: Mauth-Studio-${version}-${arch}.${ext}
+publish:
+  provider: github
+  owner: davidjpramsay
+  repo: mauth-studio
+  releaseType: prerelease

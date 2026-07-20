@@ -32,9 +32,9 @@ For development work, also inspect the relevant tests beside the changed code. F
 - **Normal launch path:** open `~/Applications/Mauth Studio.app`. It is a standalone Electron app that owns a packaged FastAPI sidecar on a dynamic loopback port; no Terminal windows need to remain open. `pnpm macos:dev` is the source-development shell, and `dev:launch:desktop` remains a fixed-port browser debugging path.
 - **Durable data:** visible teacher documents live in the selected documents folder. On macOS, shared state, autosave, logos, and remembered-folder identity live under `~/Library/Application Support/Mauth Studio/storage`; external selected folders keep project metadata and versions in their own `.mauth/`. Autosave is recovery state, not a saved project file.
 - **Authoring contract:** inspect the current snapshot, dry-run structured Mauth actions, apply with revision/idempotency protection, validate, then verify in the browser. Direct edits to teacher JSON or `.mauth` metadata are recovery-only.
-- **Current source state:** the standalone alpha source was merged to `main` as `79f13fb` through PR #34. The clean checkpoint below uses symbolic `CURRENT`/`HEAD` markers so it remains truthful after a committed documentation handoff; always inspect Git before editing.
+- **Current source state:** the standalone alpha and publication-status documentation were merged through PR #35 at `b460a9a`. The clean checkpoint below uses symbolic `CURRENT`/`HEAD` markers so it remains truthful after a committed documentation handoff; always inspect Git before editing.
 - **Implemented direction:** launcher/status tooling, guarded file and folder lifecycle, system diagnostics, deterministic agent actions, and manual solution layers for shared choices and tables, `graph2d` functions/features, `geometry2d`, `vector2d`, `graph3d`, Plotly `statsChart` series, uploaded-image annotations, supported Penrose elements, and paired diagrams are present in the current worktree.
-- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, and Codex Run action are implemented. The source, README, public-site source, and v0.1.0 prerelease page are published. The DMG asset upload and Pages deployment remain blocked by GitHub's 20 July 2026 API/Actions incident; clean-machine release verification and updater design remain next-phase work.
+- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, Codex Run action, teacher-confirmed alpha updater, and guarded draft-first ship pipeline are implemented. The source, README, public-site source, and v0.1.0 prerelease page are published. GitHub Pages recovered after the 20 July incident, but v0.1.0 still has no public DMG asset and cannot self-update; the next release must be a manually installed updater bootstrap.
 - **Do not infer:** the old provider-backed chat is not the product path, the current browser tab is not automatically authoritative, and a running API alone does not mean the full app or active documents folder is healthy.
 
 ### Documentation Ownership
@@ -59,9 +59,9 @@ When a transient runtime fact conflicts with a durable architecture document, tr
 
 ## Immediate Worktree Checkpoint
 
-This checkpoint was refreshed after merging the standalone alpha source and creating its prerelease page on 20 July 2026. Runtime and external-service facts are deliberately timestamped because they can change without a source edit.
+This checkpoint was refreshed after implementing the updater and guarded release publication workflow on 20 July 2026. Runtime and external-service facts are deliberately timestamped because they can change without a source edit.
 
-Handoff status: standalone implementation and the first signed/notarized release are complete locally; final repository gates are recorded below. The next model should begin from clean-machine release testing or another prioritised follow-on item rather than reconstructing the desktop shell, bridge security, or Apple signing setup.
+Handoff status: standalone implementation, signed/notarized release building, teacher-confirmed updates, and draft-first publication are implemented; final repository gates are recorded below. The next model should prepare and clean-machine-test the first updater-enabled release or begin another prioritised follow-on item rather than reconstructing the desktop shell, bridge security, updater, or Apple signing setup.
 
 Repository state at the checkpoint:
 
@@ -90,7 +90,7 @@ pnpm dev:status
 ### Model Transition Readiness
 
 - Repository branch, baseline commit, `App.tsx`/`SelectionInspector.tsx` sizes, and dirty-worktree counts were rechecked against Git.
-- The full `pnpm check` gate passes after release hardening: API 81, web/actions 569, Plotly 8, launcher/runtime 20, formatting/lint, TypeScript, and the Vite production build. The isolated solution-authoring smoke also passes against disposable storage.
+- The full `pnpm check` gate passes after updater and release hardening: API 81, web/actions 569, Plotly 8, launcher/runtime 33, formatting/lint, TypeScript, and the Vite production build. The isolated solution-authoring smoke also passes against disposable storage.
 - Documented `pnpm` project commands were checked against `package.json`; `pnpm dev` is the one intentional contextual command and is only used when already inside `apps/web`.
 - `pnpm check:handoff` verifies the required handoff files, checkpoint sections, root entry-point links, documented package scripts, and local Markdown links.
 - All documents named in the handoff reading order exist and the local documentation link audit passes.
@@ -109,11 +109,11 @@ The Codex goal completed on 18 July 2026. Its scope was:
 4. improve open, close, save, autosave, recovery, and conflict lifecycle behavior; and
 5. continue first-class manual solution editing.
 
-The completion criteria in `docs/todo.md` are met: normal macOS use has one standalone app path; browser-native prompts are guarded out; file, folder, version, recovery, and conflict transitions use the shared document-session outcome model; `App.tsx` is a composition shell over focused owners; structured manual solutions remain editable across text, choices, tables, graphs, and supported diagram surfaces; focused regression coverage and the full repository gate pass. Clean-machine release testing, updater policy, further composition reduction, deeper page-flow repair actions, and optional in-app AI remain deliberate follow-on work; Developer ID signing and notarization are complete.
+The completion criteria in `docs/todo.md` are met: normal macOS use has one standalone app path; browser-native prompts are guarded out; file, folder, version, recovery, and conflict transitions use the shared document-session outcome model; `App.tsx` is a composition shell over focused owners; structured manual solutions remain editable across text, choices, tables, graphs, and supported diagram surfaces; focused regression coverage and the full repository gate pass. Clean-machine updater verification, further composition reduction, deeper page-flow repair actions, and optional in-app AI remain deliberate follow-on work; Developer ID signing, notarization, update policy, and guarded publication are complete.
 
 The document-workspace binding and workspace-presentation slices are complete. A new model should begin from the source named in **Exact Resume Point**, not search for an unfinished workspace adapter.
 
-The merged standalone alpha contains fifty-six completed or active change groups:
+The standalone alpha worktree contains fifty-seven completed or active change groups:
 
 1. **Completed and verified multiple-choice solution-answer work.**
    - Choice lists can store a zero-based `solutionAnswerIndex`; legacy solutions-only copies remain readable.
@@ -486,7 +486,7 @@ The merged standalone alpha contains fifty-six completed or active change groups
     - The local bundle now enables Hardened Runtime with explicit Electron entitlements. Build and installed-app verification confirm a valid nested signature, runtime flag, arm64 architecture, live editor registration, authenticated action smoke, and rejection of an unauthenticated snapshot request.
     - `pnpm dev:status` now discovers and reports the running packaged app before inspecting fixed development ports. `pnpm dev:stop` reports that the packaged app is independent and stops only development servers; users quit the standalone app normally with Command-Q or the application menu.
     - `pnpm macos:release` is a fail-closed Developer ID/notarization pipeline for arm64 DMG and ZIP artifacts, with `pnpm macos:verify` and distribution verification. This Mac now has `Developer ID Application: David Ramsay (9TZPXJ6JGH)` and the validated `mauth-notary` Keychain profile. The latest release `0.1.0` rebuild completed on 19 July 2026: Apple accepted the app submission `98159fbd-8ac0-4d71-bfba-1c6e63e26dd5` and the signed DMG submission `176d7d15-6461-490a-be0b-6de62d1c9a13`; both the app and DMG have stapled tickets and Gatekeeper reports `Notarized Developer ID`.
-    - The release pipeline strips the certificate-class prefix before passing the identity to electron-builder, then explicitly signs, notarizes, staples, and Gatekeeper-validates the final DMG. It removes generated updater metadata because the first beta remains manually updated and those files would become stale after stapling the DMG.
+    - The release pipeline strips the certificate-class prefix before passing the identity to electron-builder, then explicitly signs, notarizes, staples, and Gatekeeper-validates the final DMG. The original v0.1.0 path removed updater metadata because that build was manual; group 57 supersedes that behavior for later updater-enabled releases.
     - `docs/macos-release.md` records certificate setup, credential hygiene, release verification, clean-machine testing, Apple-Silicon scope, and the authenticated agent contract.
 
 55. **Completed and verified blank new-test creation.**
@@ -500,10 +500,17 @@ The merged standalone alpha contains fifty-six completed or active change groups
     - Normal teacher download, optional Codex/Claude bridge setup, source development, local installed checkpoints, and external notarized releases are documented as separate workflows.
     - `AGENTS.md`, local-agent setup, release guidance, product direction, and the roadmap now state that notarization is a versioned release operation rather than part of every edit-test cycle.
     - PR #34 is merged at `79f13fb`, and the versioned v0.1.0 alpha prerelease page exists.
-    - GitHub reported a partial outage for API Requests and Actions on 20 July 2026. Repeated large-asset uploads returned `502/503`, and the generated Pages deployment failed during the same incident. The release currently has no DMG asset; retry the unchanged notarized file at `release/Mauth Studio-0.1.0-arm64.dmg` after GitHub recovers, then rerun and verify Pages.
+    - GitHub reported a partial outage for API Requests and Actions on 20 July 2026. Repeated large-asset uploads returned `502/503`, and the first generated Pages deployment failed during the same incident. The later Pages deployment succeeded, but the v0.1.0 release still has no assets; do not reconstruct it as an updater release because its app bundle predates updater support.
     - The local DMG remains Gatekeeper accepted with SHA-256 `d219d3c46335a7ae09edbd57b9930b93b3978d3a7fae59384bb49b90c515ccb8`.
 
-The full `pnpm check` gate passes on this checkpoint: API 81 passed, web/actions 569 passed, Plotly 8 passed, launcher 20 passed, and TypeScript/Vite production build passed. GitHub's post-merge Check workflow also passed. The installed packaged app reached healthy dynamic API status, Vite, authenticated agent discovery, one bridge session, the 12-tool MCP client smoke, a dry-run action smoke, and a real Penrose Venn render; its previously verified native Close path removes the runtime manifest and stops both sidecar processes. The Google Drive project metadata remains a File Provider placeholder, so external-folder listing must be rechecked after materialisation.
+57. **Completed teacher-confirmed updater and guarded publication workflow.**
+    - Update-enabled packaged releases use `electron-updater` against the public GitHub prerelease channel, check once after launch, expose a dynamic **Check for Updates…** application-menu item, and never check from source-development or ad-hoc directory builds without release metadata.
+    - Available releases ask before download; completed downloads ask before restart/install. Background network failures remain quiet, while manual-check and approved-download failures produce Mauth-owned dialogs. Alpha prereleases are allowed and downgrades are not.
+    - Release packaging now retains `latest-mac.yml` and blockmaps and verifies that metadata points to the generated signed ZIP with its exact size and SHA-512.
+    - `pnpm macos:ship` requires clean pushed `main`, a new version, matching release notes, valid GitHub authentication, and Apple signing/notarization prerequisites. It runs `pnpm check`, builds the release, creates or resumes a matching draft prerelease, uploads all update assets, verifies names/sizes/digests, and publishes only after verification.
+    - Version 0.1.0 cannot discover this feature. The first updater-enabled release after it is a one-time manual install; update-to-the-next-alpha is the first complete end-to-end updater acceptance test.
+
+The full `pnpm check` gate passes on this checkpoint: API 81 passed, web/actions 569 passed, Plotly 8 passed, launcher 33 passed, and TypeScript/Vite production build passed. The packaged updater bundle contains its provider config and dependencies, and a real background check reached GitHub without showing a disruptive dialog when the legacy v0.1.0 release lacked metadata. The installed packaged app was then restored at its normal path and healthy dynamic runtime. The prior authenticated agent, bridge, Penrose, and native Close verification remains valid. Recheck external cloud-folder materialisation before teacher-file authoring.
 
 The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reloader parent and worker for one Mauth runtime. Do not treat that pair alone as evidence of a stale duplicate API.
 
@@ -511,7 +518,7 @@ The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reload
 
 Resume follow-on development in this order:
 
-1. After GitHub's API/Actions incident is resolved, upload `release/Mauth Studio-0.1.0-arm64.dmg` to the existing v0.1.0 prerelease, rerun the failed Pages deployment, verify the live release-page link, then download and clean-machine-test the DMG on another Apple Silicon Mac. Developer ID signing, app-and-DMG notarization/stapling, per-launch bridge authentication, Hardened Runtime, fail-closed release tooling, and automatic Codex/Claude discovery are complete. A stricter content-security policy and updater policy remain follow-on hardening.
+1. Prepare the first updater-enabled release after v0.1.0: bump the package version, add matching release notes, merge to clean `main`, run `pnpm macos:ship --preflight`, then `pnpm macos:ship`. Download and clean-machine-test that DMG on another Apple Silicon Mac. Because v0.1.0 predates the updater, install this bootstrap release manually; verify the complete in-app flow when publishing the following alpha. Do not retrofit stale v0.1.0 artifacts into the new update channel.
 2. Continue first-class manual solution editing through the next coherent teacher-facing ergonomic or validation gap, or build the next conservative page-flow check on the measured preview-readiness contract. Do not create a second status, mark, preview, validation, or mutation path.
 3. Continue the `App.tsx` composition split only at a coherent remaining boundary. Existing persistence, Files, bridge, manual-solution, preview, workspace, navigator, overlay, header, inspector, drag, mutation, and lifecycle slices are complete; do not duplicate controller ownership merely to reduce line count.
 4. Recheck the selected Google Drive documents folder and live editor session before authoring teacher files. The packaged app starts independently of cloud metadata, but the normal project route still correctly returns `503` while `.mauth/project.json` is dataless. Do not reset the folder or import files automatically.
@@ -724,7 +731,7 @@ formatting and lint: passed
 API: 81 passed
 web/actions: 569 passed
 Plotly: 8 passed
-launcher: 20 passed
+launcher: 33 passed
 TypeScript and Vite production build: passed
 ```
 
@@ -858,7 +865,7 @@ wc -l apps/web/src/App.tsx
 
 6. Harden the standalone package.
    - Keep the Electron app as the normal macOS entry point and the fixed-port browser launcher as a debugging path.
-   - Clean-machine-test the completed Developer ID signed/notarized release, then define update/rollback policy when releases become regular. Per-launch bridge authentication and Hardened Runtime are already implemented.
+   - Clean-machine-test the first updater-enabled Developer ID signed/notarized release, then verify an in-app update to the following alpha. Teacher-confirmed update and manual-DMG rollback policy, per-launch bridge authentication, and Hardened Runtime are implemented.
    - A Swift/macOS-native rewrite is not the next practical step unless deep Finder/print/iCloud/classroom integration becomes essential.
 
 ## First Commands For A New Model

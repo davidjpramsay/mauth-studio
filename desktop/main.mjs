@@ -7,6 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, dialog, Menu, shell } from "electron";
+import electronUpdater from "electron-updater";
 
 import {
   desktopRuntimeFile,
@@ -15,6 +16,7 @@ import {
   runtimeManifestRecord,
   writeRuntimeManifest,
 } from "./runtime.mjs";
+import { createDesktopUpdaterController } from "./updater.mjs";
 
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(DESKTOP_DIR, "..");
@@ -25,6 +27,9 @@ let mainWindow = null;
 let apiProcess = null;
 let runtimeFile = null;
 let quitting = false;
+let updateController = null;
+
+const { autoUpdater } = electronUpdater;
 
 app.setName("Mauth Studio");
 app.setAppUserModelId(APP_ID);
@@ -137,6 +142,7 @@ function createApplicationMenu() {
       label: "Mauth Studio",
       submenu: [
         { role: "about" },
+        updateController?.menuItem() ?? { label: "Check for Updates…", enabled: false },
         { type: "separator" },
         { role: "hide" },
         { role: "hideOthers" },
@@ -164,6 +170,10 @@ function createApplicationMenu() {
     },
     { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] },
   ]);
+}
+
+function refreshApplicationMenu() {
+  Menu.setApplicationMenu(createApplicationMenu());
 }
 
 function createWindow(webUrl, icon, agentToken) {
@@ -258,8 +268,19 @@ async function launch() {
       agentToken,
     }),
   );
-  Menu.setApplicationMenu(createApplicationMenu());
+  const updatesEnabled = app.isPackaged && fs.existsSync(path.join(process.resourcesPath, "app-update.yml"));
+  updateController = createDesktopUpdaterController({
+    enabled: updatesEnabled,
+    updater: autoUpdater,
+    dialog,
+    getWindow: () => mainWindow,
+    log: desktopLog,
+    refreshMenu: refreshApplicationMenu,
+  });
+  if (app.isPackaged && !updatesEnabled) desktopLog("updater disabled because app-update.yml is unavailable");
+  refreshApplicationMenu();
   createWindow(webUrl, paths.icon, agentToken);
+  updateController.scheduleAutomaticCheck();
   desktopLog("window created");
 }
 
@@ -275,6 +296,7 @@ app.on("before-quit", () => {
 });
 
 app.on("will-quit", () => {
+  updateController?.dispose();
   if (runtimeFile) removeOwnedRuntimeManifest(runtimeFile, process.pid);
   stopApi();
 });

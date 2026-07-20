@@ -79,6 +79,7 @@ const requiredScripts = [
   "macos:install",
   "macos:verify",
   "macos:release",
+  "macos:ship",
   "dev:launch:desktop",
   "dev:status",
   "dev:stop",
