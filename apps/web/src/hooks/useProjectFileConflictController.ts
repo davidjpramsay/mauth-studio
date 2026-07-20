@@ -1,5 +1,6 @@
 import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import { reloadProjectConflictFile, saveProjectConflictRecoveryCopy } from "@/lib/projectFileConflictWorkflow";
 
 interface UseProjectFileConflictControllerOptions {
   conflict: ProjectSaveConflict | null;
@@ -19,20 +20,22 @@ export function useProjectFileConflictController({
   reloadFromDisk,
 }: UseProjectFileConflictControllerOptions) {
   async function saveConflictRecoveryCopy() {
-    if (!conflict || fileOperationBusy) return;
-    await saveRecoveryCopy();
+    await saveProjectConflictRecoveryCopy({ conflict, fileOperationBusy, saveRecoveryCopy });
   }
 
   async function reloadConflictFileFromDisk() {
-    if (!conflict || fileOperationBusy) return;
-    const shouldReload = await dialogs.confirm({
-      title: "Reload disk file?",
-      description: `Reload "${currentProjectFileName}" from disk? Local unsaved changes in the editor will be discarded. Save a recovery copy first if you need to keep them.`,
-      confirmLabel: "Reload from disk",
-      destructive: true,
+    await reloadProjectConflictFile({
+      conflict,
+      fileOperationBusy,
+      confirmReload: () =>
+        dialogs.confirm({
+          title: "Reload disk file?",
+          description: `Reload "${currentProjectFileName}" from disk? Local unsaved changes in the editor will be discarded. Save a recovery copy first if you need to keep them.`,
+          confirmLabel: "Reload from disk",
+          destructive: true,
+        }),
+      reloadFromDisk,
     });
-    if (!shouldReload) return;
-    await reloadFromDisk();
   }
 
   return {

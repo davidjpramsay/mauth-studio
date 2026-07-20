@@ -25,6 +25,7 @@ import {
 import type { EditorContentBlock } from "@/lib/editorDocumentNormalization";
 import { normalizeDiagramType, withGraphDefaults } from "@/lib/editorDiagramConfig";
 import { isSolutionTextBlock, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
+import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import type { TableSolutionEntryMask } from "@/lib/tableSolutionEntries";
 
 const { choiceListSummary } = createEditorBlockSummaryRuntime({
@@ -123,6 +124,7 @@ interface EditorContentBlockPanelProps {
   diagramBlockForType: (type: string, visibility?: ContentBlockVisibility) => EditorContentBlock;
   onActivateAnchor: (anchor: string) => void;
   onContextMenuAnchor: (event: ReactMouseEvent<HTMLElement>, anchor: string) => void;
+  onCompleteBlockInSolutions?: (nestedAnchor?: string) => void;
   onChange: (patch: Partial<EditorContentBlock>) => void;
   onRemove: () => void;
 }
@@ -144,6 +146,7 @@ export function EditorContentBlockPanel({
   diagramBlockForType,
   onActivateAnchor,
   onContextMenuAnchor,
+  onCompleteBlockInSolutions,
   onChange,
   onRemove,
 }: EditorContentBlockPanelProps) {
@@ -170,6 +173,7 @@ export function EditorContentBlockPanel({
 
   if (block.kind === "diagram") {
     const { label, dragLabel } = blockLabel(block.kind, context, blockIndex);
+    const solutionSurfaceState = solutionSurfaceControlState(block);
     return (
       <DiagramBlockEditor
         label={label}
@@ -186,6 +190,10 @@ export function EditorContentBlockPanel({
         openSignal={openSignal}
         onChange={(graphConfig) => onChange({ graphConfig } as Partial<EditorContentBlock>)}
         onAlignmentChange={(diagramAlign) => onChange({ diagramAlign } as Partial<EditorContentBlock>)}
+        completeInSolutionsTitle={solutionSurfaceState.copyTitle}
+        onCompleteInSolutions={
+          onCompleteBlockInSolutions && solutionSurfaceState.canCreateSolutionCopy ? () => onCompleteBlockInSolutions() : undefined
+        }
         onRemove={onRemove}
       />
     );
@@ -211,6 +219,7 @@ export function EditorContentBlockPanel({
         diagramBlockForType={diagramBlockForType}
         onActivateAnchor={onActivateAnchor}
         onContextMenuAnchor={onContextMenuAnchor}
+        onCompleteBlockInSolutions={onCompleteBlockInSolutions}
         onChange={(patch) => onChange(patch as Partial<EditorContentBlock>)}
         onRemove={onRemove}
       />
@@ -226,6 +235,7 @@ export function EditorContentBlockPanel({
         block={block}
         numberingStyleOptions={CHOICE_NUMBERING_STYLES}
         layoutOptions={CHOICE_LIST_LAYOUTS}
+        showSolutions={showSolutions}
         settingsMode="inspector"
         dragHandle={dragHandleForLabel(dragLabel)}
         muted={muted}
@@ -247,12 +257,14 @@ export function EditorContentBlockPanel({
         diagramAlignments={DIAGRAM_ALIGNMENTS}
         cellAlignments={TABLE_CELL_ALIGNMENTS}
         settingsMode="inspector"
+        showSolutions={showSolutions}
         solutionEntryMask={solutionEntryMask}
         dragHandle={dragHandleForLabel(dragLabel)}
         muted={muted}
         active={active}
         openSignal={openSignal}
         onChange={(patch) => onChange(patch as Partial<EditorContentBlock>)}
+        onCompleteInSolutions={onCompleteBlockInSolutions ? () => onCompleteBlockInSolutions() : undefined}
         onRemove={onRemove}
       />
     );

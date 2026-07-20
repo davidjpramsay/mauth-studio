@@ -118,6 +118,24 @@ export function geometry2dPrimitiveDisplayName(data: Graph2DGeometryData, target
   return suffix ? `${kindLabel} ${target.index + 1}: ${suffix}` : `${kindLabel} ${target.index + 1}`;
 }
 
+export function isSolutionOnlyGeometry2DPrimitive(primitive: Geometry2DPrimitive) {
+  return primitive.solutionOnly === true;
+}
+
+export function geometry2dPrimitiveForAuthoringLayer<TPrimitive extends Geometry2DPrimitive>(
+  primitive: TPrimitive,
+  solutionsMode: boolean,
+): TPrimitive {
+  return solutionsMode ? ({ ...primitive, solutionOnly: true } as TPrimitive) : primitive;
+}
+
+export function geometry2dPrimitiveWithSolutionOnly<TPrimitive extends Geometry2DPrimitive>(
+  primitive: TPrimitive,
+  solutionOnly: boolean,
+): TPrimitive {
+  return { ...primitive, solutionOnly } as TPrimitive;
+}
+
 export function updateGeometry2DPrimitive(
   data: Graph2DGeometryData,
   target: Geometry2DPrimitiveTarget,
@@ -195,6 +213,47 @@ export function geometry2dData(graphConfig?: GraphConfig | null): Graph2DGeometr
   if (graphConfig?.type === "geometry2d") return data as Graph2DGeometryData;
   const nested = (data as Record<string, unknown>).geometry2d;
   return nested && typeof nested === "object" && !Array.isArray(nested) ? (nested as Graph2DGeometryData) : DEFAULT_GEOMETRY_2D_DATA;
+}
+
+function geometry2dListForSolutionVisibility<TPrimitive extends Geometry2DPrimitive>(
+  primitives: TPrimitive[] | undefined,
+  showSolutions: boolean,
+  solutionColor?: string,
+) {
+  if (!primitives?.some(isSolutionOnlyGeometry2DPrimitive)) return primitives;
+  if (!showSolutions) return primitives.filter((primitive) => !isSolutionOnlyGeometry2DPrimitive(primitive));
+  if (!solutionColor) return primitives;
+  return primitives.map((primitive) =>
+    isSolutionOnlyGeometry2DPrimitive(primitive) ? ({ ...primitive, color: solutionColor } as TPrimitive) : primitive,
+  );
+}
+
+export function geometry2dDataForSolutionVisibility(
+  data: Graph2DGeometryData,
+  showSolutions: boolean,
+  solutionColor?: string,
+): Graph2DGeometryData {
+  const points = geometry2dListForSolutionVisibility(data.points, showSolutions, solutionColor);
+  const segments = geometry2dListForSolutionVisibility(data.segments, showSolutions, solutionColor);
+  const arcs = geometry2dListForSolutionVisibility(data.arcs, showSolutions, solutionColor);
+  const angles = geometry2dListForSolutionVisibility(data.angles, showSolutions, solutionColor);
+  const decorations = geometry2dListForSolutionVisibility(data.decorations, showSolutions, solutionColor);
+  if (
+    points === data.points &&
+    segments === data.segments &&
+    arcs === data.arcs &&
+    angles === data.angles &&
+    decorations === data.decorations
+  ) {
+    return data;
+  }
+  return { ...data, points, segments, arcs, angles, decorations };
+}
+
+export function geometry2dDataHasSolutionOnly(data: Graph2DGeometryData) {
+  return [data.points, data.segments, data.arcs, data.angles, data.decorations].some((primitives) =>
+    primitives?.some(isSolutionOnlyGeometry2DPrimitive),
+  );
 }
 
 export function geometry2dCounts(data: Graph2DGeometryData) {

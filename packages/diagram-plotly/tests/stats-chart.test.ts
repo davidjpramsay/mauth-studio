@@ -151,3 +151,28 @@ test("renders blank statistics axes for student distribution sketches", () => {
   assert.deepEqual(layout.xaxis.range, [2.1, 2.7]);
   assert.deepEqual(layout.yaxis.range, [0, 4]);
 });
+
+test("renders structured supplemental line, point, and bar series", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "blankAxes",
+      range: [0, 2],
+      yRange: [0, 2],
+      series: [
+        { id: "curve", seriesType: "line", xValues: [0, 1, 2], yValues: [0, 1, 0], color: "#1d4ed8" },
+        { id: "points", seriesType: "points", xValues: [0.5, 1.5], yValues: [0.5, 0.5], color: "#111111", markerSize: 9 },
+        { id: "bars", seriesType: "bars", xValues: [0.5, 1.5], yValues: [1, 2], color: "#333333", barWidth: 0.4 },
+      ],
+    },
+  });
+
+  assert.equal(config.data.length, 3);
+  assert.deepEqual(config.data[0].meta, { mauthSeriesId: "curve" });
+  assert.equal(config.data[0].mode, "lines");
+  assert.equal((config.data[0].line as { color: string }).color, "#1d4ed8");
+  assert.equal(config.data[1].mode, "markers");
+  assert.equal((config.data[1].marker as { size: number }).size, 9);
+  assert.equal(config.data[2].type, "bar");
+  assert.equal(config.data[2].width, 0.4);
+});

@@ -38,6 +38,23 @@ test("generatedPenroseSubstance preserves named segments and tick counts", () =>
   assert.match(substance, /^LabelsSegment\(segmentLabel1, A, B\)/m);
 });
 
+test("generatedPenroseSubstance tags structured solution points, segments, and labels", () => {
+  const substance = generatedPenroseSubstance({
+    type: "network",
+    data: {
+      objects: [
+        { type: "point", name: "A" },
+        { type: "point", name: "B", solutionOnly: true },
+      ],
+      relationships: [{ type: "segment", name: "AB", points: ["A", "B"], label: "5", solutionOnly: true }],
+    },
+  } as GraphConfig);
+
+  assert.match(substance, /^SolutionPoint\(B\)/m);
+  assert.match(substance, /^SolutionSegment\(AB\)/m);
+  assert.match(substance, /^SolutionLengthLabel\(segmentLabel1\)/m);
+});
+
 test("penroseSubstanceSource respects manual substance overrides", () => {
   assert.equal(
     penroseSubstanceSource({

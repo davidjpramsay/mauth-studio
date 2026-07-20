@@ -6,12 +6,15 @@ import {
   bookletSupplementaryPageCount,
   buildExplicitBreakPages,
   buildMeasuredPages,
+  buildPreviewPaginationReport,
   examQuestionPageReservedHeight,
   examStructurePercentageTotal,
   examStructureRows,
   frontMatterPageCount,
   groupPreviewPageSegments,
   pagesAreEqual,
+  previewPaginationReportsEqual,
+  previewReadinessWarnings,
   questionSpacingPx,
 } from "./previewPagination.ts";
 import type { PageFormat } from "./previewPageFormat.ts";
@@ -40,6 +43,58 @@ test("pagesAreEqual compares segment indexes and overflow flags", () => {
   );
   assert.equal(pagesAreEqual([{ segmentIndexes: [0], overflow: false }], [{ segmentIndexes: [0], overflow: true }]), false);
   assert.equal(pagesAreEqual([{ segmentIndexes: [0], overflow: false }], [{ segmentIndexes: [1], overflow: false }]), false);
+});
+
+test("buildPreviewPaginationReport records physical page numbers and overflow targets", () => {
+  const report = buildPreviewPaginationReport({
+    pages: [
+      { segmentIndexes: [0, 1], overflow: false },
+      { segmentIndexes: [2], overflow: true },
+    ],
+    segments: [
+      { id: "q1-start", question: { id: "q1" } },
+      { id: "q1-block", question: { id: "q1" } },
+      { id: "q2-block", question: { id: "q2" } },
+    ],
+    frontMatter: DEFAULT_EXAM_FRONT_MATTER,
+    supplementaryPageCount: 1,
+    showSolutions: true,
+  });
+
+  assert.deepEqual(report, {
+    mode: "solutions",
+    contentPageCount: 2,
+    supplementaryPageCount: 1,
+    totalPageCount: 5,
+    overflowPages: [
+      {
+        pageIndex: 1,
+        pageNumber: 4,
+        segmentIds: ["q2-block"],
+        targetId: "q2",
+      },
+    ],
+  });
+});
+
+test("preview readiness warnings identify the measured copy and target", () => {
+  const report = buildPreviewPaginationReport({
+    pages: [{ segmentIndexes: [0], overflow: true }],
+    segments: [{ id: "q1-block", question: { id: "q1" } }],
+    frontMatter: DEFAULT_FRONT_MATTER,
+    supplementaryPageCount: 0,
+    showSolutions: false,
+  });
+
+  assert.deepEqual(previewReadinessWarnings(report), [
+    {
+      code: "rendered-page-overflow",
+      message: "Student preview page 2 contains a block taller than the printable A4 content area.",
+      targetId: "q1",
+    },
+  ]);
+  assert.equal(previewPaginationReportsEqual(report, { ...report }), true);
+  assert.equal(previewPaginationReportsEqual(report, { ...report, mode: "solutions" }), false);
 });
 
 test("groupPreviewPageSegments keeps adjacent question segments together", () => {

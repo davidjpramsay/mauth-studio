@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { MauthAgentQueuedRequest } from "@mauth-studio/shared";
 
-import { ApiError, pollMauthAgentRequests, registerMauthAgentEditorSession, respondMauthAgentRequest } from "@/lib/api";
+import {
+  ApiError,
+  pollMauthAgentRequests,
+  registerMauthAgentEditorSession,
+  respondMauthAgentRequest,
+  unregisterMauthAgentEditorSession,
+} from "@/lib/api";
 
 const EDITOR_SESSION_STORAGE_KEY = "mauth-agent-editor-session-id";
 
@@ -84,6 +90,7 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
     const abortController = new AbortController();
     let stopped = false;
     let registered = false;
+    let unregistering = false;
 
     async function runBridgeLoop() {
       while (!stopped) {
@@ -114,11 +121,21 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
       }
     }
 
+    function unregisterClosedPage() {
+      if (unregistering) return;
+      unregistering = true;
+      void unregisterMauthAgentEditorSession(sessionId).catch(() => undefined);
+    }
+
+    window.addEventListener("pagehide", unregisterClosedPage);
+    window.addEventListener("beforeunload", unregisterClosedPage);
     void runBridgeLoop();
 
     return () => {
       stopped = true;
       abortController.abort();
+      window.removeEventListener("pagehide", unregisterClosedPage);
+      window.removeEventListener("beforeunload", unregisterClosedPage);
     };
   }, [enabled, sessionId]);
 }

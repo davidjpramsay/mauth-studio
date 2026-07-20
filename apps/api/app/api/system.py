@@ -44,6 +44,16 @@ def _git_status() -> dict[str, Any]:
     }
 
 
+def _runtime_status() -> dict[str, Any]:
+    kind = os.environ.get("MAUTH_RUNTIME_KIND", "development")
+    return {
+        "kind": kind,
+        "packaged": kind == "desktop-packaged",
+        "appVersion": os.environ.get("MAUTH_APP_VERSION"),
+        "webUrl": os.environ.get("MAUTH_WEB_URL"),
+    }
+
+
 @router.get("/status")
 def system_status() -> dict[str, Any]:
     return {
@@ -54,6 +64,7 @@ def system_status() -> dict[str, Any]:
         "cwd": os.getcwd(),
         "root": str(ROOT),
         "git": _git_status(),
+        "runtime": _runtime_status(),
         "workspace": project_storage_service.workspace_status(),
         "bridge": browser_bridge_status(),
         "routes": {

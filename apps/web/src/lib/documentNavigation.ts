@@ -35,3 +35,23 @@ export interface DocumentTocItem {
   editorAnchor: string;
   previewAnchor: string;
 }
+
+export interface DocumentNavigationPresentationPlan {
+  showExpandedNavigator: boolean;
+  questionItemLabel: "question" | "heading";
+  contextMenuSurface: "miniToc";
+}
+
+export function documentNavigationPresentationPlan({
+  open,
+  isNotesTemplate,
+}: {
+  open: boolean;
+  isNotesTemplate: boolean;
+}): DocumentNavigationPresentationPlan {
+  return {
+    showExpandedNavigator: open,
+    questionItemLabel: isNotesTemplate ? "heading" : "question",
+    contextMenuSurface: "miniToc",
+  };
+}

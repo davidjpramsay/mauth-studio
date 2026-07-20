@@ -10,6 +10,7 @@ import {
   planLegacySavedTestMigration,
 } from "@/lib/projectLegacyMigration";
 import type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
+import { projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 
 export type { ProjectSaveConflict } from "@/lib/projectSaveConflicts";
 
@@ -81,9 +82,9 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
       setActiveProject(project);
       setProjectFiles(filesResponse.files);
       setProjectFilesStatus("ready");
-    } catch {
+    } catch (error) {
       setProjectFilesStatus("error");
-      setProjectFilesMessage("Files unavailable");
+      setProjectFilesMessage(projectFilesUnavailableMessage(error));
     }
   }, [buildLegacySavedTestImport, legacySavedTests]);
 

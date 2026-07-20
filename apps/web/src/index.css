@@ -221,6 +221,10 @@
     font-weight: 600;
   }
 
+  .table-editor-solution-target {
+    background: color-mix(in srgb, #2563eb 14%, hsl(var(--background)));
+  }
+
   .table-editor-controls {
     display: grid;
     gap: 0.75rem;
@@ -1716,6 +1720,27 @@
     font-weight: 500;
   }
 
+  .test-solution-surface .test-choice-list {
+    color: #0f172a;
+  }
+
+  .test-choice-item-solution-answer .test-choice-content {
+    color: #0f172a;
+  }
+
+  .test-choice-label-answer-ring {
+    align-items: center;
+    border: 0.12rem solid var(--test-solution-color);
+    border-radius: 999px;
+    color: var(--test-solution-color);
+    display: inline-flex;
+    font-weight: 700;
+    justify-content: center;
+    min-height: 1.8rem;
+    min-width: 1.8rem;
+    padding: 0 0.26rem;
+  }
+
   .solution-mark-ticks {
     color: #c1121f;
     display: inline-flex;
@@ -1867,6 +1892,10 @@
     font-weight: 700;
     padding-right: 0.45rem;
     text-align: right;
+  }
+
+  .test-choice-label-text {
+    box-sizing: border-box;
   }
 
   .test-table-wrap {

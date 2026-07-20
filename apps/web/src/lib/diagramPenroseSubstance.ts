@@ -177,6 +177,7 @@ export function generatedPenroseSubstance(config: GraphConfig) {
     if (point.hidePoint === true || point.hidden === true || point.showPoint === false || hideNetworkPoints) {
       lines.push(`HidePoint(${pointNames[index] ?? `P${index + 1}`})`);
     }
+    if (point.solutionOnly === true) lines.push(`SolutionPoint(${pointNames[index] ?? `P${index + 1}`})`);
   });
   const namedSegments = relationships
     .filter(
@@ -232,7 +233,11 @@ export function generatedPenroseSubstance(config: GraphConfig) {
           ? relationship.between
           : [];
       if (segmentName && points.length === 2) {
-        lines.push(`Segment(${segmentName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+        const start = penroseIdentifier(points[0], "A");
+        const end = penroseIdentifier(points[1], "B");
+        lines.push(start === end ? `SelfLoop(${segmentName}, ${start})` : `Segment(${segmentName}, ${start}, ${end})`);
+        if (relationship.solutionOnly === true)
+          lines.push(start === end ? `SolutionSelfLoop(${segmentName})` : `SolutionSegment(${segmentName})`);
       }
     }
     if (relationship.type === "vectorSegment") {
@@ -243,7 +248,11 @@ export function generatedPenroseSubstance(config: GraphConfig) {
           ? relationship.between
           : [];
       if (segmentName && points.length === 2) {
-        lines.push(`VectorSegment(${segmentName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+        const start = penroseIdentifier(points[0], "A");
+        const end = penroseIdentifier(points[1], "B");
+        lines.push(start === end ? `VectorSelfLoop(${segmentName}, ${start})` : `VectorSegment(${segmentName}, ${start}, ${end})`);
+        if (relationship.solutionOnly === true)
+          lines.push(start === end ? `SolutionVectorSelfLoop(${segmentName})` : `SolutionVectorSegment(${segmentName})`);
       }
     }
     if (relationship.type === "angleMark") {
@@ -272,6 +281,7 @@ export function generatedPenroseSubstance(config: GraphConfig) {
     const labelName = `segmentLabel${index + 1}`;
     lines.push(penroseLabelStatement(labelName, relationship.label ?? relationship.value));
     lines.push(`LabelsSegment(${labelName}, ${penroseIdentifier(points[0], "A")}, ${penroseIdentifier(points[1], "B")})`);
+    if (relationship.solutionOnly === true) lines.push(`SolutionLengthLabel(${labelName})`);
   });
   angleLabels.forEach((relationship, index) => {
     const points = penroseAnglePoints(relationship);

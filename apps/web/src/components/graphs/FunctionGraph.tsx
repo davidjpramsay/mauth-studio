@@ -36,6 +36,7 @@ interface FunctionGraphProps {
   previewAnchor?: string;
   solutionColor?: string;
   solutionFeatureColor?: string;
+  solutionFunctionColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
 }
 
@@ -3446,6 +3447,7 @@ export function FunctionGraph({
   previewAnchor,
   solutionColor,
   solutionFeatureColor,
+  solutionFunctionColor,
   onGraphConfigChange,
 }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
@@ -3748,7 +3750,11 @@ export function FunctionGraph({
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction)) return;
-      const color = solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length];
+      const color =
+        solutionColor ??
+        (graphFunction.solutionOnly === true ? solutionFunctionColor : undefined) ??
+        graphFunction.color ??
+        FUNCTION_COLORS[index % FUNCTION_COLORS.length];
       const strokeWidth = lineWeight(graphFunction.strokeWidth, DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH);
       const dash = lineDash(graphFunction.strokeStyle);
       const functionAnchor = previewAnchor ? `${previewAnchor}/gf:${index}` : undefined;
@@ -3870,7 +3876,10 @@ export function FunctionGraph({
         labelX,
         labelY,
         functionLabelLatex(graphFunction, index),
-        solutionColor ?? graphFunction.color ?? FUNCTION_COLORS[index % FUNCTION_COLORS.length],
+        solutionColor ??
+          (graphFunction.solutionOnly === true ? solutionFunctionColor : undefined) ??
+          graphFunction.color ??
+          FUNCTION_COLORS[index % FUNCTION_COLORS.length],
         onGraphConfigChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
       );
     });
@@ -3878,7 +3887,7 @@ export function FunctionGraph({
     return () => {
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, graphConfig, onGraphConfigChange, previewAnchor, solutionColor, solutionFeatureColor]);
+  }, [boardId, graphConfig, onGraphConfigChange, previewAnchor, solutionColor, solutionFeatureColor, solutionFunctionColor]);
 
   return (
     <div

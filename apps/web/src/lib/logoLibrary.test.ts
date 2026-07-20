@@ -3,15 +3,18 @@ import test from "node:test";
 
 import {
   STARTER_LOGOS,
+  appendedLogoLibraryAsset,
   appendMissingLogoAssets,
   frontMatterPatchForLogo,
   logoNameFromFile,
   mergeLogoAssets,
   normalizeLogoAsset,
   normalizeLogoAssets,
+  removedLogoLibraryAsset,
   schoolInitials,
   selectedLogoForFrontMatter,
   selectedLogoFromLibrary,
+  updatedLogoLibraryAsset,
   type LogoAsset,
 } from "./logoLibrary.ts";
 
@@ -57,6 +60,37 @@ test("appendMissingLogoAssets preserves existing logos and ignores duplicates", 
     next.map((logo) => logo.id),
     [accLogo.id, customLogo.id],
   );
+});
+
+test("updatedLogoLibraryAsset updates metadata and keeps the existing name for blank input", () => {
+  const initial = [accLogo, customLogo];
+  const updated = updatedLogoLibraryAsset(initial, customLogo.id, {
+    name: "  Renamed School  ",
+    schoolName: "RENAMED\nSCHOOL",
+  });
+
+  assert.equal(updated?.logo.name, "Renamed School");
+  assert.equal(updated?.logo.schoolName, "RENAMED\nSCHOOL");
+  assert.equal(updated?.logos[0], accLogo);
+  assert.equal(updatedLogoLibraryAsset(initial, "missing", { name: "Missing", schoolName: "" }), null);
+
+  const blankName = updatedLogoLibraryAsset(initial, customLogo.id, { name: "   ", schoolName: "CUSTOM SCHOOL" });
+  assert.equal(blankName?.logo.name, customLogo.name);
+});
+
+test("appendedLogoLibraryAsset appends new logos and replaces matching records", () => {
+  const initial = [accLogo];
+  assert.deepEqual(appendedLogoLibraryAsset(initial, customLogo), [accLogo, customLogo]);
+
+  const renamed = { ...customLogo, name: "Renamed School" };
+  assert.deepEqual(appendedLogoLibraryAsset([accLogo, customLogo], renamed), [accLogo, renamed]);
+});
+
+test("removedLogoLibraryAsset rejects missing and final-logo removals", () => {
+  const initial = [accLogo, customLogo];
+  assert.deepEqual(removedLogoLibraryAsset(initial, customLogo.id), [accLogo]);
+  assert.equal(removedLogoLibraryAsset(initial, "missing"), null);
+  assert.equal(removedLogoLibraryAsset([accLogo], accLogo.id), null);
 });
 
 test("logo selection falls back predictably", () => {

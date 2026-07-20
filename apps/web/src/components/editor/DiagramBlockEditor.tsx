@@ -35,9 +35,11 @@ interface DiagramBlockEditorProps {
   muted?: boolean;
   active?: boolean;
   openSignal?: number;
+  completeInSolutionsTitle?: string;
   onActivateAnchor?: (anchor: string) => void;
   onChange: (graphConfig: GraphConfig) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
+  onCompleteInSolutions?: () => void;
   onRemove: () => void;
 }
 
@@ -60,9 +62,11 @@ export function DiagramBlockEditor({
   muted = false,
   active = false,
   openSignal,
+  completeInSolutionsTitle,
   onActivateAnchor,
   onChange,
   onAlignmentChange,
+  onCompleteInSolutions,
   onRemove,
 }: DiagramBlockEditorProps) {
   const config = withGraphDefaults(graphConfig);
@@ -82,8 +86,10 @@ export function DiagramBlockEditor({
       active={active}
       openSignal={openSignal}
       bodyClassName={bodyClassName}
+      completeInSolutionsTitle={completeInSolutionsTitle}
       onTypeChange={(type) => patchConfig(diagramTypePatch(type, config))}
       onAlignmentChange={onAlignmentChange}
+      onCompleteInSolutions={onCompleteInSolutions}
       onRemove={onRemove}
     >
       {children}
@@ -91,7 +97,11 @@ export function DiagramBlockEditor({
   );
 
   if (config.type === "image") {
-    return renderDiagramPanel(diagramConfigSummary(config), "p-3", <ImageDiagramEditor config={config} onChange={patchConfig} />);
+    return renderDiagramPanel(
+      diagramConfigSummary(config),
+      "p-3",
+      <ImageDiagramEditor config={config} showSolutions={showSolutions} onChange={patchConfig} />,
+    );
   }
 
   if (isPenroseDiagramType(config.type)) {
@@ -102,15 +112,17 @@ export function DiagramBlockEditor({
         <NetworkDiagramEditor
           config={config}
           substanceSource={penroseSubstanceSource(config)}
+          showSolutions={showSolutions}
           settingsMode={settingsMode}
           onChange={patchConfig}
         />
       ) : config.type === "setDiagram" ? (
-        <SetDiagramEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />
+        <SetDiagramEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />
       ) : (
         <GeometricConstructionEditor
           config={config}
           substanceSource={penroseSubstanceSource(config)}
+          showSolutions={showSolutions}
           settingsMode={settingsMode}
           onChange={patchConfig}
         />
@@ -126,6 +138,7 @@ export function DiagramBlockEditor({
         config={config}
         anchor={anchor}
         activeAnchor={activeAnchor}
+        showSolutions={showSolutions}
         onActivateAnchor={onActivateAnchor}
         onChange={patchConfig}
       />,
@@ -136,7 +149,7 @@ export function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "graph-editor-controls p-3",
-      <Vector2DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
+      <Vector2DGraphEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
     );
   }
 
@@ -144,7 +157,7 @@ export function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "graph-editor-controls p-3",
-      <Graph3DGraphEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
+      <Graph3DGraphEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
     );
   }
 
@@ -152,7 +165,7 @@ export function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "p-3",
-      <StatsChartEditor config={config} settingsMode={settingsMode} onChange={patchConfig} />,
+      <StatsChartEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
     );
   }
 

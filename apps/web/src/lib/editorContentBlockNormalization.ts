@@ -13,7 +13,10 @@ import {
   paddedTableRow,
 } from "./contentBlockNormalization.ts";
 import { contentBlockVisibilityFields } from "./editorContentBlocks.ts";
+import { choiceSolutionAnswerFields } from "./choiceSolutionAnswers.ts";
+import { diagramConfigHasSolutionAnnotations } from "./solutionDiagramCompleteness.ts";
 import { normalizeContentBlockVisibility } from "./solutionBlockVisibility.ts";
+import { tableSharedSolutionEntryFields } from "./tableSolutionEntries.ts";
 
 export interface EditorContentBlockNormalizerOptions {
   id: (prefix: string) => string;
@@ -47,8 +50,8 @@ export function normalizedBlockVisibility(record: Record<string, unknown>, block
   return undefined;
 }
 
-export function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: ContentBlockVisibility) {
-  if (visibility !== "solution") return {};
+export function surfaceMarkTickFields(record: Record<string, unknown>, visibility?: ContentBlockVisibility, sharedSolutionSurface = false) {
+  if (visibility !== "solution" && !sharedSolutionSurface) return {};
   const markTicks = Number(record.markTicks);
   if (!Number.isInteger(markTicks) || markTicks < 0 || markTicks > 20) return {};
   return { markTicks };
@@ -81,14 +84,18 @@ export function createEditorContentBlockNormalizer({
       }
 
       if (record.kind === "choices") {
+        const choices = normalizeChoiceItems(record.choices);
+        const solutionAnswerFields = choiceSolutionAnswerFields(record.solutionAnswerIndex, visibility, choices.length);
         return [
           {
             id: blockId,
             kind: "choices",
-            choices: normalizeChoiceItems(record.choices),
+            choices,
             numberingStyle: normalizeChoiceNumberingStyle(record.numberingStyle),
             layout: normalizeChoiceListLayout(record.layout),
             ...contentBlockVisibilityFields(visibility),
+            ...solutionAnswerFields,
+            ...surfaceMarkTickFields(record, visibility, solutionAnswerFields.solutionAnswerIndex !== undefined),
           },
         ];
       }
@@ -97,32 +104,40 @@ export function createEditorContentBlockNormalizer({
         const headers = normalizeTableCells(record.headers);
         const rows = normalizeTableRows(record.rows, Math.max(2, headers.length || 0));
         const columnCount = normalizedTableColumnCount(headers, rows);
+        const normalizedRows = rows.map((row) => paddedTableRow(row, columnCount));
+        const solutionEntryFields = tableSharedSolutionEntryFields(record.solutionEntries, normalizedRows, visibility);
         return [
           {
             id: blockId,
             kind: "table",
             headers: paddedTableRow(headers, columnCount),
-            rows: rows.map((row) => paddedTableRow(row, columnCount)),
+            rows: normalizedRows,
+            ...solutionEntryFields,
             showHeader: record.showHeader !== false,
             tableAlign: normalizeDiagramAlignment(record.tableAlign),
             cellAlignment: normalizeTableCellAlignment(record.cellAlignment),
             ...contentBlockVisibilityFields(visibility),
-            ...surfaceMarkTickFields(record, visibility),
+            ...surfaceMarkTickFields(record, visibility, solutionEntryFields.solutionEntries !== undefined),
           },
         ];
       }
 
       if (record.kind === "diagram") {
         const graphConfig = asRecord(record.graphConfig) ? (record.graphConfig as GraphConfig) : defaultGraphConfig;
+        const normalizedGraphConfig = withGraphDefaults(graphConfig);
         return [
           {
             id: blockId,
             kind: "diagram",
             diagramAlign: normalizeDiagramAlignment(record.diagramAlign),
             diagramTextSide: normalizeDiagramTextSide(record.diagramTextSide),
-            graphConfig: withGraphDefaults(graphConfig),
+            graphConfig: normalizedGraphConfig,
             ...contentBlockVisibilityFields(visibility),
-            ...surfaceMarkTickFields(record, visibility),
+            ...surfaceMarkTickFields(
+              record,
+              visibility,
+              visibility !== "student" && diagramConfigHasSolutionAnnotations(normalizedGraphConfig),
+            ),
           },
         ];
       }

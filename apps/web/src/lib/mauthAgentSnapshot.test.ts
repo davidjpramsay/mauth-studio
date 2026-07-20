@@ -83,6 +83,41 @@ test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
   assert.equal(snapshot.questions[0].modules[1].lines, 6);
 });
 
+test("buildMauthAgentSnapshot exposes a shared selected choice answer and its ticks", () => {
+  const snapshot = snapshotFor([
+    {
+      id: "choices",
+      kind: "choices",
+      choices: ["$2$", "$4$", "$6$"],
+      solutionAnswerIndex: 1,
+      markTicks: 1,
+    },
+  ]);
+
+  assert.equal(snapshot.questions[0]?.modules[0]?.choiceCount, 3);
+  assert.equal(snapshot.questions[0]?.modules[0]?.visibility, "always");
+  assert.equal(snapshot.questions[0]?.modules[0]?.solutionAnswerIndex, 1);
+  assert.equal(snapshot.questions[0]?.modules[0]?.marks, 1);
+});
+
+test("buildMauthAgentSnapshot reports shared table answer entry counts", () => {
+  const snapshot = snapshotFor([
+    {
+      id: "table",
+      kind: "table",
+      headers: ["x", "0", "1"],
+      rows: [["y", "", ""]],
+      solutionEntries: [["", "6", "4"]],
+      markTicks: 2,
+    },
+  ]);
+
+  assert.equal(snapshot.questions[0]?.modules[0]?.rowCount, 1);
+  assert.equal(snapshot.questions[0]?.modules[0]?.columnCount, 3);
+  assert.equal(snapshot.questions[0]?.modules[0]?.solutionEntryCount, 2);
+  assert.equal(snapshot.questions[0]?.modules[0]?.marks, 2);
+});
+
 test("buildMauthAgentSnapshot exposes section headings and document flow", () => {
   const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
     document: {
@@ -110,5 +145,38 @@ test("buildMauthAgentSnapshot exposes section headings and document flow", () =>
   assert.deepEqual(snapshot.documentFlow, [
     { kind: "sectionHeading", id: "section-1", title: "Multiple choice" },
     { kind: "question", id: "q1", label: "Question 1" },
+  ]);
+});
+
+test("buildMauthAgentSnapshot preserves measured preview warnings", () => {
+  const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
+    document: {
+      frontMatter: { assessmentTitle: "Calculus", logoId: "school" },
+      formattingConfig: { showMarks: true },
+      questions: [question([textBlock("b1", "Differentiate $x^2$.")])],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: "tests/calculus.test.json",
+      activeRevision: 7,
+      dirty: false,
+      saveStatus: "saved",
+    },
+    warnings: [
+      {
+        code: "rendered-page-overflow",
+        message: "Student preview page 2 contains a block taller than the printable A4 content area.",
+        targetId: "q1",
+      },
+    ],
+  });
+
+  assert.deepEqual(snapshot.warnings, [
+    {
+      code: "rendered-page-overflow",
+      message: "Student preview page 2 contains a block taller than the printable A4 content area.",
+      targetId: "q1",
+    },
   ]);
 });

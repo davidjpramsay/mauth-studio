@@ -1,6 +1,7 @@
 import type { ContentBlock, ContentBlockVisibility } from "@mauth-studio/shared";
-import { CopyPlus } from "lucide-react";
+import { CopyPlus, PencilLine } from "lucide-react";
 
+import { ChoiceSolutionAnswerSelect } from "@/components/solutions/ChoiceSolutionAnswerSelect";
 import { Button } from "@/components/ui/button";
 import { CONTENT_BLOCK_DISPLAY_OPTIONS, contentBlockMarkTicksPatch, contentBlockVisibilityPatch } from "@/lib/moduleSettingsPatches";
 import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
@@ -12,6 +13,7 @@ export interface SolutionSurfaceSelection {
 
 interface SolutionSurfaceControlsProps<TSelection extends SolutionSurfaceSelection> {
   selectedBlock: TSelection;
+  showSolutions: boolean;
   controlClassName: string;
   onBlockChange: (selection: TSelection, patch: Partial<ContentBlock>) => void;
   onCreateSolutionCopy?: (selection: TSelection) => void;
@@ -19,11 +21,13 @@ interface SolutionSurfaceControlsProps<TSelection extends SolutionSurfaceSelecti
 
 export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelection>({
   selectedBlock,
+  showSolutions,
   controlClassName,
   onBlockChange,
   onCreateSolutionCopy,
 }: SolutionSurfaceControlsProps<TSelection>) {
-  const state = solutionSurfaceControlState(selectedBlock.block);
+  const state = solutionSurfaceControlState(selectedBlock.block, showSolutions);
+  const CompleteIcon = selectedBlock.block.kind === "table" && state.visibility === "always" ? PencilLine : CopyPlus;
 
   return (
     <div className="space-y-3 border-b p-3">
@@ -45,7 +49,7 @@ export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelect
           ))}
         </select>
       </label>
-      {onCreateSolutionCopy ? (
+      {onCreateSolutionCopy && selectedBlock.block.kind !== "choices" ? (
         <Button
           type="button"
           variant="outline"
@@ -55,11 +59,11 @@ export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelect
           onClick={() => onCreateSolutionCopy(selectedBlock)}
           className="justify-start gap-2"
         >
-          <CopyPlus className="size-4" aria-hidden="true" />
-          Copy to solutions
+          <CompleteIcon className="size-4" aria-hidden="true" />
+          Complete in solutions
         </Button>
       ) : null}
-      {state.visibility === "solution" && state.supportsSurfaceTicks ? (
+      {state.showSurfaceTicks ? (
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground" title={state.tickHelp}>
           {state.tickLabel}
           <input
@@ -73,6 +77,14 @@ export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelect
             className={controlClassName}
           />
         </label>
+      ) : null}
+      {showSolutions && state.visibility !== "student" && selectedBlock.block.kind === "choices" ? (
+        <ChoiceSolutionAnswerSelect
+          block={selectedBlock.block}
+          ariaLabel={`${selectedBlock.label} circled answer`}
+          selectClassName={controlClassName}
+          onChange={(patch) => onBlockChange(selectedBlock, patch)}
+        />
       ) : null}
     </div>
   );

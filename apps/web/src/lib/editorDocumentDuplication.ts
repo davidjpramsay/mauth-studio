@@ -1,7 +1,7 @@
 import { normalizeColumnsBlock } from "./contentBlockNormalization.ts";
 import type { EditorContentBlock, EditorPart, EditorSubpart, QuestionBlock } from "./editorDocumentNormalization.ts";
 
-const SOLUTION_SURFACE_COPY_KINDS = new Set<EditorContentBlock["kind"]>(["text", "choices", "table", "diagram", "columns"]);
+const SOLUTION_SURFACE_COPY_KINDS = new Set<EditorContentBlock["kind"]>(["text", "table", "diagram", "columns"]);
 
 export interface EditorDocumentDuplicationOptions {
   id: (prefix: string) => string;
@@ -59,6 +59,11 @@ export function createEditorDocumentDuplicator({ id, cloneSerializable }: Editor
         columnCount: normalized.columnCount,
         columns: normalized.columns.map((column) => column.map(solutionVisibleContentBlock)),
       };
+    }
+    if (nextBlock.kind === "table" && nextBlock.solutionEntries !== undefined) {
+      const nextTable = { ...nextBlock };
+      delete nextTable.solutionEntries;
+      return nextTable;
     }
     return nextBlock;
   }

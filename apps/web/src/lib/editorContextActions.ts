@@ -26,7 +26,7 @@ export function editorContextActionDescriptors({
   if (canMoveUp) actions.push({ id: "move-up", label: "Move up" });
   if (canMoveDown) actions.push({ id: "move-down", label: "Move down" });
   if (canDuplicate) actions.push({ id: "duplicate", label: "Duplicate" });
-  if (canCreateSolutionCopy) actions.push({ id: "copy-to-solutions", label: "Copy to solutions" });
+  if (canCreateSolutionCopy) actions.push({ id: "copy-to-solutions", label: "Complete in solutions" });
   if (canDelete) actions.push({ id: "delete", label: "Delete", destructive: true });
 
   return actions;

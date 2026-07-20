@@ -9,6 +9,7 @@ import {
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { StatsChartSeriesEditor } from "./StatsChartSeriesEditor";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
@@ -93,11 +94,12 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
 
 type StatsChartEditorProps = {
   config: GraphConfig;
+  showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function StatsChartEditor({ config, settingsMode = "inline", onChange }: StatsChartEditorProps) {
+export function StatsChartEditor({ config, showSolutions = false, settingsMode = "inline", onChange }: StatsChartEditorProps) {
   const spec = normalizeStatsChartSpec(config);
   const data = spec.data;
   const options = spec.options ?? {};
@@ -465,6 +467,13 @@ export function StatsChartEditor({ config, settingsMode = "inline", onChange }: 
           ) : null}
         </section>
       )}
+
+      <StatsChartSeriesEditor
+        config={config}
+        data={data}
+        showSolutions={showSolutions}
+        onChange={(nextData) => onChange({ data: nextData })}
+      />
     </div>
   );
 }

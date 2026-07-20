@@ -11,6 +11,7 @@ import {
   systemStatusRevisionLabel,
   type LauncherCommand,
 } from "@/lib/systemStatusGuidance";
+import type { PreviewPaginationReport } from "@/lib/previewPagination";
 import { cn } from "@/lib/utils";
 
 export function systemStatusTone(state: SystemStatusState) {
@@ -100,6 +101,8 @@ interface SystemStatusPanelProps {
   headerStorageStatus: HeaderSaveStatus;
   draftAutosaveStatus: DraftAutosaveStatus;
   draftAutosaveMessage: string;
+  previewReadinessReport: PreviewPaginationReport | null;
+  previewReadinessWarningCount: number;
   onRefresh: () => void;
   onClose: () => void;
 }
@@ -118,6 +121,8 @@ export function SystemStatusPanel({
   headerStorageStatus,
   draftAutosaveStatus,
   draftAutosaveMessage,
+  previewReadinessReport,
+  previewReadinessWarningCount,
   onRefresh,
   onClose,
 }: SystemStatusPanelProps) {
@@ -130,8 +135,9 @@ export function SystemStatusPanel({
   const activeFileLabel = systemStatusActiveFileLabel({ editorDocumentOpen, currentFileName, activeProjectPathLabel });
   const revisionLabel = systemStatusRevisionLabel({ editorDocumentOpen, activeProjectFileRevision });
   const launcherGuidance = systemStatusLauncherGuidance({ state, workspace });
+  const packagedRuntime = status?.runtime.packaged === true;
   const bridgeSummary = bridge
-    ? `${bridge.activeSessionCount} active session${bridge.activeSessionCount === 1 ? "" : "s"} · ${bridge.pendingRequestCount} pending`
+    ? `${bridge.activeSessionCount} active session${bridge.activeSessionCount === 1 ? "" : "s"} · ${bridge.pendingRequestCount} pending${bridge.authenticationRequired ? " · secured" : ""}`
     : "Unknown";
 
   return (
@@ -168,15 +174,21 @@ export function SystemStatusPanel({
           <section>
             <div className="flex items-center gap-2">
               <Terminal className="size-4 text-slate-500" aria-hidden="true" />
-              <h3 className="text-sm font-semibold text-slate-950">{launcherGuidance.title}</h3>
+              <h3 className="text-sm font-semibold text-slate-950">{packagedRuntime ? "Standalone app" : launcherGuidance.title}</h3>
             </div>
-            <p className="mt-1 text-sm leading-6 text-slate-600">{launcherGuidance.summary}</p>
-            <dl className="mt-2 rounded-lg border border-slate-200 px-3">
-              <LauncherCommandRow command={launcherGuidance.primaryCommand} />
-              {launcherGuidance.commands.map((command) => (
-                <LauncherCommandRow key={`${command.label}:${command.command}`} command={command} />
-              ))}
-            </dl>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              {packagedRuntime
+                ? "Mauth Studio owns its local mathematics service. Close the app or choose Quit Mauth Studio to stop it; no Terminal windows are required."
+                : launcherGuidance.summary}
+            </p>
+            {!packagedRuntime ? (
+              <dl className="mt-2 rounded-lg border border-slate-200 px-3">
+                <LauncherCommandRow command={launcherGuidance.primaryCommand} />
+                {launcherGuidance.commands.map((command) => (
+                  <LauncherCommandRow key={`${command.label}:${command.command}`} command={command} />
+                ))}
+              </dl>
+            ) : null}
             <p className="mt-2 text-xs leading-5 text-slate-500">{launcherGuidance.folderNote}</p>
           </section>
 
@@ -184,6 +196,8 @@ export function SystemStatusPanel({
             <h3 className="text-sm font-semibold text-slate-950">Process</h3>
             <dl className="mt-2 rounded-lg border border-slate-200 px-3">
               <SystemStatusRow label="Web version" value={`${webBuild.version} · ${compactBuildId(webBuild.buildId)}`} />
+              <SystemStatusRow label="Runtime" value={status?.runtime.kind} />
+              <SystemStatusRow label="App version" value={status?.runtime.appVersion} />
               <SystemStatusRow label="API URL" value={webBuild.apiBase} />
               <SystemStatusRow label="Status route" value={status?.routes.systemStatus ?? "/api/system/status"} />
               <SystemStatusRow label="API version" value={status?.apiVersion} />
@@ -224,6 +238,7 @@ export function SystemStatusPanel({
             <dl className="mt-2 rounded-lg border border-slate-200 px-3">
               <SystemStatusRow label="Bridge" value={bridgeSummary} />
               <SystemStatusRow label="Register route" value={bridge?.routes.browserRegister} />
+              <SystemStatusRow label="Unregister route" value={bridge?.routes.browserUnregister} />
               <SystemStatusRow
                 label="Sessions"
                 value={
@@ -240,6 +255,34 @@ export function SystemStatusPanel({
                   ) : (
                     "No browser bridge session registered"
                   )
+                }
+              />
+            </dl>
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-slate-950">Current preview</h3>
+            <dl className="mt-2 rounded-lg border border-slate-200 px-3">
+              <SystemStatusRow
+                label="Copy"
+                value={previewReadinessReport ? (previewReadinessReport.mode === "solutions" ? "Solutions" : "Student") : "Not measured"}
+              />
+              <SystemStatusRow
+                label="Pages"
+                value={
+                  previewReadinessReport
+                    ? `${previewReadinessReport.totalPageCount} total · ${previewReadinessReport.contentPageCount} content · ${previewReadinessReport.supplementaryPageCount} supplementary`
+                    : "Open the preview to measure page flow"
+                }
+              />
+              <SystemStatusRow
+                label="Print readiness"
+                value={
+                  previewReadinessReport
+                    ? previewReadinessWarningCount
+                      ? `${previewReadinessWarningCount} oversized page warning${previewReadinessWarningCount === 1 ? "" : "s"}`
+                      : "No measured page overflow"
+                    : "Not measured"
                 }
               />
             </dl>

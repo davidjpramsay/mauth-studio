@@ -1,13 +1,26 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
+import { ImageDiagramCanvas } from "@/components/diagrams/ImageDiagramCanvas";
 import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
 import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
 import { FunctionGraph } from "@/components/graphs/FunctionGraph";
 import { Vector2DGraph } from "@/components/graphs/Vector2DGraph";
-import { graphHeight, graphWidth, isSolutionOnlyGraphFeature } from "@/lib/diagramGraph2d";
-import { imageDiagramAlt, imageDiagramData } from "@/lib/diagramImage";
-import { previewGraphConfigForSolutionVisibility } from "@/lib/previewDiagramVisibility";
+import { graphHeight, graphWidth, isSolutionOnlyGraphFeature, isSolutionOnlyGraphFunction } from "@/lib/diagramGraph2d";
+import { geometry2dData, geometry2dDataHasSolutionOnly } from "@/lib/diagramGeometry2d";
+import { vector2dConfigHasSolutionOnly } from "@/lib/diagramVector2d";
+import { graph3dConfigHasSolutionOnly } from "@/lib/diagramGraph3d";
+import { imageConfigForSolutionVisibility, imageConfigHasSolutionOnly } from "@/lib/diagramImage";
+import { statsChartConfigHasSolutionOnly } from "@/lib/diagramStatsChart";
+import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
+import {
+  previewGeometry2DConfigForSolutionVisibility,
+  previewGraph3DConfigForSolutionVisibility,
+  previewGraphConfigForSolutionVisibility,
+  previewStatsChartConfigForSolutionVisibility,
+  previewVector2DConfigForSolutionVisibility,
+} from "@/lib/previewDiagramVisibility";
+import { previewPenroseConfigForSolutionVisibility } from "@/lib/diagramPenroseSolution";
 
 const TEST_SOLUTION_COLOR = "#1d4ed8";
 
@@ -21,39 +34,6 @@ interface PreviewDiagramProps {
   withGraphDefaults: (graphConfig?: GraphConfig | null) => GraphConfig;
 }
 
-function UploadedImageDiagram({
-  graphConfig,
-  withGraphDefaults,
-}: {
-  graphConfig?: GraphConfig | null;
-  withGraphDefaults: (graphConfig?: GraphConfig | null) => GraphConfig;
-}) {
-  const config = withGraphDefaults(graphConfig);
-  const data = imageDiagramData(config);
-  const widthPx = graphWidth(config);
-  const heightPx = graphHeight(config);
-
-  if (!data.src) {
-    return (
-      <div
-        className="flex items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-xs text-slate-500"
-        style={{ width: widthPx, maxWidth: "100%", height: heightPx }}
-      >
-        No image selected
-      </div>
-    );
-  }
-
-  return (
-    <img
-      className="block max-w-full bg-white object-contain"
-      src={data.src}
-      alt={imageDiagramAlt(config)}
-      style={{ width: widthPx, height: "auto", maxHeight: heightPx }}
-    />
-  );
-}
-
 export function PreviewDiagram({
   graphConfig,
   anchor,
@@ -64,9 +44,25 @@ export function PreviewDiagram({
   withGraphDefaults,
 }: PreviewDiagramProps) {
   const baseConfig = withGraphDefaults(graphConfig);
-  const hasHiddenSolutionFeatures = !showSolutions && Boolean(baseConfig.features?.some(isSolutionOnlyGraphFeature));
-  const config = previewGraphConfigForSolutionVisibility(baseConfig, showSolutions, isSolutionOnlyGraphFeature);
-  const visibleGraphConfigChange = hasHiddenSolutionFeatures ? undefined : onGraphConfigChange;
+  const hasHiddenSolutionContent =
+    !showSolutions &&
+    (Boolean(baseConfig.functions?.some(isSolutionOnlyGraphFunction)) ||
+      Boolean(baseConfig.features?.some(isSolutionOnlyGraphFeature)) ||
+      (baseConfig.type === "geometry2d" && geometry2dDataHasSolutionOnly(geometry2dData(baseConfig))) ||
+      (baseConfig.type === "vector2d" && vector2dConfigHasSolutionOnly(baseConfig)) ||
+      (baseConfig.type === "graph3d" && graph3dConfigHasSolutionOnly(baseConfig)) ||
+      (baseConfig.type === "statsChart" && statsChartConfigHasSolutionOnly(baseConfig)) ||
+      (baseConfig.type === "image" && imageConfigHasSolutionOnly(baseConfig)) ||
+      ((baseConfig.type === "geometricConstruction" || baseConfig.type === "network" || baseConfig.type === "setDiagram") &&
+        penroseConfigHasSolutionOnly(baseConfig)));
+  const featureVisibleConfig = previewGraphConfigForSolutionVisibility(baseConfig, showSolutions, isSolutionOnlyGraphFeature);
+  const geometryVisibleConfig = previewGeometry2DConfigForSolutionVisibility(featureVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
+  const vectorVisibleConfig = previewVector2DConfigForSolutionVisibility(geometryVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
+  const graph3dVisibleConfig = previewGraph3DConfigForSolutionVisibility(vectorVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
+  const statsVisibleConfig = previewStatsChartConfigForSolutionVisibility(graph3dVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
+  const imageVisibleConfig = imageConfigForSolutionVisibility(statsVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
+  const config = previewPenroseConfigForSolutionVisibility(imageVisibleConfig, showSolutions);
+  const visibleGraphConfigChange = hasHiddenSolutionContent ? undefined : onGraphConfigChange;
   const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
   const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
 
@@ -76,7 +72,7 @@ export function PreviewDiagram({
 
   switch (config.type) {
     case "image":
-      return <UploadedImageDiagram graphConfig={config} withGraphDefaults={withGraphDefaults} />;
+      return <ImageDiagramCanvas graphConfig={config} />;
     case "geometricConstruction":
     case "network":
     case "setDiagram":
@@ -100,6 +96,7 @@ export function PreviewDiagram({
           previewAnchor={anchor}
           solutionColor={solutionColor}
           solutionFeatureColor={solutionFeatureColor}
+          solutionFunctionColor={solutionFeatureColor}
           onGraphConfigChange={visibleGraphConfigChange}
         />
       );

@@ -1,6 +1,7 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
@@ -32,10 +33,11 @@ function setPenroseSubstanceSource(config: GraphConfig) {
 type SetDiagramEditorProps = {
   config: GraphConfig;
   settingsMode?: "inline" | "inspector";
+  showSolutions?: boolean;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
-export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: SetDiagramEditorProps) {
+export function SetDiagramEditor({ config, showSolutions = true, settingsMode = "inline", onChange }: SetDiagramEditorProps) {
   const scalePercent = penroseScalePercent(config);
   const data = normalizedSetDiagramData(config);
   const hasSubstanceOverride = typeof config.options?.substanceSource === "string" && config.options.substanceSource.trim().length > 0;
@@ -80,7 +82,15 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
   const updateRegion = (regionIndex: number, patch: Partial<(typeof data)["regions"][number]>) => {
     patchSetData({
       ...data,
-      regions: data.regions.map((region, index) => (index === regionIndex ? { ...region, ...patch } : region)),
+      regions: data.regions.map((region, index) =>
+        index === regionIndex
+          ? {
+              ...region,
+              ...patch,
+              ...(showSolutions && patch.solutionOnly === undefined ? { solutionOnly: true } : {}),
+            }
+          : region,
+      ),
     });
   };
   const applyNotationLabels = () => {
@@ -283,30 +293,52 @@ export function SetDiagramEditor({ config, settingsMode = "inline", onChange }: 
           ) : null}
         </div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {data.regions.map((region, regionIndex) => (
-            <div
-              key={region.name ?? regionIndex}
-              className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-[90px_minmax(0,1fr)_90px] md:items-end"
-            >
-              <div className="text-sm font-medium">{regionEditorLabels[regionIndex]}</div>
-              <label className="flex flex-col gap-2 text-xs font-medium">
-                Label or count
-                <input
-                  value={String(region.label ?? "")}
-                  onChange={(event) => updateRegion(regionIndex, { label: event.target.value })}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                />
-              </label>
-              <label className="flex h-9 items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={region.shaded === true}
-                  onChange={(event) => updateRegion(regionIndex, { shaded: event.target.checked })}
-                />
-                Shaded
-              </label>
-            </div>
-          ))}
+          {data.regions
+            .map((region, regionIndex) => ({ region, regionIndex }))
+            .filter(({ region }) => showSolutions || region.solutionOnly !== true)
+            .map(({ region, regionIndex }) => (
+              <div
+                key={region.name ?? regionIndex}
+                data-penrose-item-kind="region"
+                data-penrose-item-id={region.name}
+                data-solution-only={region.solutionOnly === true ? "true" : undefined}
+                className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    {regionEditorLabels[regionIndex]}
+                    {region.solutionOnly === true ? <Badge variant="outline">Solution</Badge> : null}
+                  </span>
+                  <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={region.solutionOnly === true}
+                      aria-label={`${regionEditorLabels[regionIndex]} show in solutions only`}
+                      onChange={(event) => updateRegion(regionIndex, { solutionOnly: event.target.checked })}
+                    />
+                    Show in solutions only
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_100px] sm:items-end">
+                  <label className="flex flex-col gap-2 text-xs font-medium">
+                    Label or count
+                    <input
+                      value={String(region.label ?? "")}
+                      onChange={(event) => updateRegion(regionIndex, { label: event.target.value })}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                    />
+                  </label>
+                  <label className="flex h-9 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={region.shaded === true}
+                      onChange={(event) => updateRegion(regionIndex, { shaded: event.target.checked })}
+                    />
+                    Shaded
+                  </label>
+                </div>
+              </div>
+            ))}
         </div>
       </section>
 

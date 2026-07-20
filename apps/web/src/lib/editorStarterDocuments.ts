@@ -1,6 +1,5 @@
 import type { ContentBlock, DiagramAlignment, FormattingConfig, GraphConfig } from "@mauth-studio/shared";
 
-import { browserStorageItem, type BrowserStorageLike } from "./browserStorage.ts";
 import { DEFAULT_STATS_CHART } from "./editorDiagramConfig.ts";
 import { DEFAULT_2D_GRAPH } from "./diagramGraph2d.ts";
 import { DEFAULT_FORMATTING_CONFIG, formattingConfigForPresetId } from "./editorFormattingConfig.ts";
@@ -23,10 +22,6 @@ import {
 } from "./frontMatterConfig.ts";
 import { selectedLogoFromLibrary, type LogoAsset } from "./logoLibrary.ts";
 import { questionScrollAnchor } from "./scrollAnchors.ts";
-
-export const STARTER_DOCUMENT_STORAGE_KEY = "mauth-studio.starter-document.v1";
-export const LEGACY_STARTER_DOCUMENT_STORAGE_KEY = "math-app.starter-document.v1";
-export const SCREENSHOT_STARTER_DOCUMENT_ID = "calculus-area-screenshot-questions-v4";
 
 export interface ScreenshotStarterRuntime {
   id: (prefix: string) => string;
@@ -420,7 +415,7 @@ export function createTemplateEditorDocumentPlan({
     logoId: currentLogo.id,
     schoolName: currentLogo.schoolName ?? currentFrontMatter.schoolName,
   };
-  const questions = template === "notes" ? [createNotesSection(id)] : [createQuestion(id)];
+  const questions = template === "notes" ? [createNotesSection(id)] : [];
   const sectionHeadings: DocumentSectionHeading[] = [];
   const documentFlow = defaultDocumentFlow(questions);
   const formattingConfig = formattingConfigForPresetId(formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id);
@@ -447,10 +442,4 @@ export function isBlankStarterQuestion(question?: QuestionBlock) {
     question.itemOrder.length === 0 &&
     !question.pageBreakAfter
   );
-}
-
-export function shouldSeedScreenshotStarter(questions: QuestionBlock[], storage?: BrowserStorageLike | null) {
-  if (storage === undefined && typeof window === "undefined") return false;
-  if (browserStorageItem(STARTER_DOCUMENT_STORAGE_KEY, LEGACY_STARTER_DOCUMENT_STORAGE_KEY, storage) !== null) return false;
-  return questions.length === 1 && isBlankStarterQuestion(questions[0]);
 }

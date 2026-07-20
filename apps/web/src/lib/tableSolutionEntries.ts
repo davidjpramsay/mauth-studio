@@ -1,12 +1,93 @@
-import type { ContentBlock } from "@mauth-studio/shared";
+import type { ContentBlock, ContentBlockVisibility } from "@mauth-studio/shared";
 
 import { normalizeTableBlock, plainTableRows } from "./contentBlockNormalization.ts";
-import { visibilityReplacementSlotAt } from "./solutionBlockVisibility.ts";
+import { solutionBlockVisibility, visibilityReplacementSlotAt } from "./solutionBlockVisibility.ts";
 
 type TableBlock = Extract<ContentBlock, { kind: "table" }>;
 
 export type TableSolutionEntryMask = boolean[][];
 export type TableSolutionEntryMasks = Record<string, TableSolutionEntryMask>;
+
+function tableSolutionCellValue(value: unknown) {
+  return typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
+}
+
+export function normalizeTableSolutionEntries(value: unknown, rows: string[][]) {
+  const entries = Array.isArray(value) ? value : [];
+  return rows.map((row, rowIndex) => {
+    const entryRow = Array.isArray(entries[rowIndex]) ? entries[rowIndex] : [];
+    return row.map((cell, columnIndex) => (cell.trim() ? "" : tableSolutionCellValue(entryRow[columnIndex])));
+  });
+}
+
+export function tableBlockSolutionEntries(block: TableBlock) {
+  const table = normalizeTableBlock(block);
+  return normalizeTableSolutionEntries(block.solutionEntries, table.rows);
+}
+
+export function tableSolutionEntryCount(block: TableBlock) {
+  return tableBlockSolutionEntries(block).reduce(
+    (count, row) => count + row.reduce((rowCount, cell) => rowCount + (cell.trim() ? 1 : 0), 0),
+    0,
+  );
+}
+
+export function tableBlockHasSharedSolutionEntries(block: ContentBlock): block is TableBlock {
+  return block.kind === "table" && solutionBlockVisibility(block) === "always" && tableSolutionEntryCount(block) > 0;
+}
+
+export function tableSharedSolutionEntryFields(
+  value: unknown,
+  rows: string[][],
+  visibility: ContentBlockVisibility | undefined,
+): Partial<Pick<TableBlock, "solutionEntries">> {
+  if (visibility === "student" || visibility === "solution") return {};
+  const solutionEntries = normalizeTableSolutionEntries(value, rows);
+  return solutionEntries.some((row) => row.some((cell) => cell.trim())) ? { solutionEntries } : {};
+}
+
+export function tableSolutionEntryPatch(block: TableBlock, rowIndex: number, columnIndex: number, value: string | null) {
+  const table = normalizeTableBlock(block);
+  const solutionEntries = normalizeTableSolutionEntries(block.solutionEntries, table.rows);
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return {};
+  if (!solutionEntries[rowIndex] || solutionEntries[rowIndex]?.[columnIndex] === undefined) return {};
+  if (table.rows[rowIndex]?.[columnIndex]?.trim()) return {};
+
+  solutionEntries[rowIndex][columnIndex] = value ?? "";
+  const hasEntries = solutionEntries.some((row) => row.some((cell) => cell.trim()));
+  return {
+    solutionEntries: hasEntries ? solutionEntries : undefined,
+    ...(!hasEntries && block.markTicks !== undefined ? { markTicks: undefined } : {}),
+  } satisfies Partial<TableBlock>;
+}
+
+export function sharedTableSolutionPresentation(block: TableBlock, showSolutions: boolean) {
+  const table = normalizeTableBlock(block);
+  const solutionEntries = tableBlockSolutionEntries(table);
+  const showSharedEntries = showSolutions && solutionBlockVisibility(block) === "always";
+  const bodyRows = table.rows.map((row, rowIndex) =>
+    row.map((cell, columnIndex) => {
+      const solutionEntry = solutionEntries[rowIndex]?.[columnIndex] ?? "";
+      return showSharedEntries && !cell.trim() && solutionEntry.trim() ? solutionEntry : cell;
+    }),
+  );
+  const bodyMask = table.rows.map((row, rowIndex) =>
+    row.map((cell, columnIndex) => showSharedEntries && !cell.trim() && Boolean(solutionEntries[rowIndex]?.[columnIndex]?.trim())),
+  );
+  return {
+    table,
+    rows: table.showHeader ? [table.headers, ...bodyRows] : bodyRows,
+    solutionEntryMask: table.showHeader ? [table.headers.map(() => false), ...bodyMask] : bodyMask,
+  };
+}
+
+export function sharedTableHasBlankAnswerCells(block: TableBlock) {
+  const table = normalizeTableBlock(block);
+  const solutionEntries = tableBlockSolutionEntries(table);
+  return table.rows.some((row, rowIndex) =>
+    row.some((cell, columnIndex) => !cell.trim() && !(solutionEntries[rowIndex]?.[columnIndex] ?? "").trim()),
+  );
+}
 
 export function tableSolutionEntryMask(studentBlock: ContentBlock, solutionBlock: ContentBlock): TableSolutionEntryMask | undefined {
   if (studentBlock.kind !== "table" || solutionBlock.kind !== "table") return undefined;

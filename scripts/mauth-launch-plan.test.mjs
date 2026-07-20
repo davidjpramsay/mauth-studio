@@ -82,7 +82,7 @@ test("runtime status explains a clean stopped app as stopped", () => {
     {
       level: "info",
       message: "Mauth is stopped.",
-      detail: "Start it with pnpm dev:launch:desktop, or double-click ~/Applications/Mauth Studio.app.",
+      detail: "Open ~/Applications/Mauth Studio.app for normal use. Use pnpm dev:launch:desktop only for browser debugging.",
     },
   );
 });
@@ -99,7 +99,7 @@ test("runtime status reports a ready API and web pair", () => {
     {
       level: "ok",
       message: "Mauth is ready at http://127.0.0.1:5173.",
-      detail: "Use the open browser tab. Stop with pnpm dev:stop, the launcher Terminal Ctrl+C, or Mauth Studio Stop.command.",
+      detail: "Use the open browser tab. Stop development servers with pnpm dev:stop or the launcher Terminal Ctrl+C.",
     },
   );
 });

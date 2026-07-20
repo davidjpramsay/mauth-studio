@@ -212,6 +212,7 @@ test("solution tick helpers separate text-line ticks from surface ticks", () => 
   const solutionTable = tableBlock("solution-table");
   const solutionDiagram = diagramBlock("solution-diagram", { type: "graph2d", functions: [], features: [] });
   const solutionSpace = spaceBlock("solution-space", 4);
+  const solutionColumns: ContentBlock = { id: "solution-columns", kind: "columns", columnCount: 2, columns: [[], []] };
 
   assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionText), false);
   assert.match(contentBlockSolutionTickHelp(solutionText), /\[\[marks:1\]\]/);
@@ -224,6 +225,7 @@ test("solution tick helpers separate text-line ticks from surface ticks", () => 
 
   assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionSpace), false);
   assert.match(contentBlockSolutionTickHelp(solutionSpace), /pair them with/);
+  assert.equal(contentBlockSupportsSolutionSurfaceTicks(solutionColumns), false);
 });
 
 test("module.update applies inspector diagram patches and preserves unrelated modules", () => {
@@ -347,6 +349,7 @@ test("module.update applies inspector diagram patches and preserves unrelated mo
     mimeType: "",
     naturalWidth: 800,
     naturalHeight: 600,
+    annotations: [],
   });
   assert.equal(findContentBlock(questions[0].contentBlocks, "untouched")?.kind, "text");
 });
@@ -497,6 +500,7 @@ test("image patch preserves image metadata and clears rendered graph content", (
     mimeType: "image/png",
     naturalWidth: 800,
     naturalHeight: 600,
+    annotations: [],
   });
   assert.deepEqual(patch.functions, []);
   assert.deepEqual(patch.features, []);

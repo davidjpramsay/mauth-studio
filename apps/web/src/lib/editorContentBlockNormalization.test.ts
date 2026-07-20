@@ -40,6 +40,7 @@ test("normalizer preserves legacy solution and student visibility fields", () =>
 test("surfaceMarkTickFields keeps solution surface ticks only when valid", () => {
   assert.deepEqual(surfaceMarkTickFields({ markTicks: 2 }, "solution"), { markTicks: 2 });
   assert.deepEqual(surfaceMarkTickFields({ markTicks: 2 }, "student"), {});
+  assert.deepEqual(surfaceMarkTickFields({ markTicks: 2 }, "always", true), { markTicks: 2 });
   assert.deepEqual(surfaceMarkTickFields({ markTicks: 30 }, "solution"), {});
 });
 
@@ -99,6 +100,96 @@ test("editor content block normalizer normalizes nested columns recursively", ()
   assert.equal(columns.kind === "columns" ? columns.columns[1][0]?.kind : undefined, "space");
 });
 
+test("editor content block normalizer keeps valid shared and solution-only choice answers", () => {
+  const { normalizeContentBlocks } = testNormalizer();
+  const blocks = normalizeContentBlocks([
+    {
+      id: "solution-choices",
+      kind: "choices",
+      choices: ["A", "B", "C"],
+      visibility: "solution",
+      solutionAnswerIndex: 1,
+      markTicks: 2,
+    },
+    {
+      id: "shared-choices",
+      kind: "choices",
+      choices: ["A", "B", "C"],
+      solutionAnswerIndex: 2,
+      markTicks: 1,
+    },
+    {
+      id: "student-choices",
+      kind: "choices",
+      choices: ["A", "B", "C"],
+      visibility: "student",
+      solutionAnswerIndex: 2,
+      markTicks: 1,
+    },
+    {
+      id: "invalid-solution-choices",
+      kind: "choices",
+      choices: ["A", "B"],
+      visibility: "solution",
+      solutionAnswerIndex: 4,
+    },
+  ]);
+
+  assert.equal(blocks[0]?.kind === "choices" ? blocks[0].solutionAnswerIndex : undefined, 1);
+  assert.equal(blocks[0]?.kind === "choices" ? blocks[0].markTicks : undefined, 2);
+  assert.equal(blocks[1]?.kind === "choices" ? blocks[1].solutionAnswerIndex : undefined, 2);
+  assert.equal(blocks[1]?.kind === "choices" ? blocks[1].markTicks : undefined, 1);
+  assert.equal(blocks[2]?.kind === "choices" ? blocks[2].solutionAnswerIndex : undefined, undefined);
+  assert.equal(blocks[2]?.kind === "choices" ? blocks[2].markTicks : undefined, undefined);
+  assert.equal(blocks[3]?.kind === "choices" ? blocks[3].solutionAnswerIndex : undefined, undefined);
+});
+
+test("editor content block normalizer keeps valid shared table answers and drops invalid layer data", () => {
+  const { normalizeContentBlocks } = testNormalizer();
+  const blocks = normalizeContentBlocks([
+    {
+      id: "shared-table",
+      kind: "table",
+      headers: ["x", "0", "1"],
+      rows: [["y", "", ""]],
+      solutionEntries: [["not over label", "6", "4"]],
+      markTicks: 2,
+    },
+    {
+      id: "student-table",
+      kind: "table",
+      rows: [["y", ""]],
+      visibility: "student",
+      solutionEntries: [["", "6"]],
+      markTicks: 1,
+    },
+    {
+      id: "legacy-solution-table",
+      kind: "table",
+      rows: [["y", "6"]],
+      visibility: "solution",
+      solutionEntries: [["", "duplicate answer"]],
+      markTicks: 1,
+    },
+    {
+      id: "given-table",
+      kind: "table",
+      rows: [["y", "5"]],
+      solutionEntries: [["", "6"]],
+      markTicks: 1,
+    },
+  ]);
+
+  assert.deepEqual(blocks[0]?.kind === "table" ? blocks[0].solutionEntries : undefined, [["", "6", "4"]]);
+  assert.equal(blocks[0]?.kind === "table" ? blocks[0].markTicks : undefined, 2);
+  assert.equal(blocks[1]?.kind === "table" ? blocks[1].solutionEntries : undefined, undefined);
+  assert.equal(blocks[1]?.kind === "table" ? blocks[1].markTicks : undefined, undefined);
+  assert.equal(blocks[2]?.kind === "table" ? blocks[2].solutionEntries : undefined, undefined);
+  assert.equal(blocks[2]?.kind === "table" ? blocks[2].markTicks : undefined, 1);
+  assert.equal(blocks[3]?.kind === "table" ? blocks[3].solutionEntries : undefined, undefined);
+  assert.equal(blocks[3]?.kind === "table" ? blocks[3].markTicks : undefined, undefined);
+});
+
 test("editor content block normalizer applies graph defaults", () => {
   const { normalizeContentBlocks } = testNormalizer();
   const [diagram] = normalizeContentBlocks([
@@ -117,4 +208,28 @@ test("editor content block normalizer applies graph defaults", () => {
   assert.equal(diagram.kind === "diagram" ? diagram.graphConfig.type : undefined, "statsChart");
   assert.equal(diagram.kind === "diagram" ? diagram.graphConfig.metadata?.defaulted : undefined, true);
   assert.equal(diagram.kind === "diagram" ? diagram.markTicks : undefined, 1);
+});
+
+test("editor content block normalizer preserves ticks on shared diagrams with solution annotations", () => {
+  const { normalizeContentBlocks } = testNormalizer();
+  const [annotated, ordinary] = normalizeContentBlocks([
+    {
+      id: "annotated-graph",
+      kind: "diagram",
+      graphConfig: {
+        type: "graph2d",
+        features: [{ kind: "point", x: 2, y: 4, solutionOnly: true }],
+      },
+      markTicks: 2,
+    },
+    {
+      id: "ordinary-graph",
+      kind: "diagram",
+      graphConfig: { type: "graph2d", features: [{ kind: "point", x: 2, y: 4 }] },
+      markTicks: 2,
+    },
+  ]);
+
+  assert.equal(annotated.kind === "diagram" ? annotated.markTicks : undefined, 2);
+  assert.equal(ordinary.kind === "diagram" ? ordinary.markTicks : undefined, undefined);
 });

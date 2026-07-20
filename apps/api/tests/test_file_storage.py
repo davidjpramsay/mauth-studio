@@ -1,6 +1,9 @@
 import io
 import json
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,9 +11,61 @@ from fastapi.testclient import TestClient
 from app.api import storage as storage_api
 from app.main import app
 from app.services import storage as storage_service
-from app.services.storage import FileLogoStorage, FileProjectStorage, FileTestStorage, StorageValidationError
+from app.services.storage import (
+    MACOS_DATALESS_FILE_FLAG,
+    FileLogoStorage,
+    FileProjectStorage,
+    FileTestStorage,
+    StorageValidationError,
+    require_materialized_file,
+)
 
 client = TestClient(app)
+
+
+def test_require_materialized_file_rejects_cloud_placeholder() -> None:
+    path = SimpleNamespace(stat=lambda: SimpleNamespace(st_flags=MACOS_DATALESS_FILE_FLAG))
+
+    with pytest.raises(OSError, match="Cloud-backed file is not downloaded"):
+        require_materialized_file(path)
+
+
+def test_copy_tree_if_missing_is_atomic_under_concurrent_migration(tmp_path, monkeypatch):
+    source = tmp_path / "legacy"
+    source.mkdir()
+    for index in range(20):
+        (source / f"document-{index}.json").write_text(json.dumps({"index": index}), encoding="utf-8")
+    target = tmp_path / "current"
+    copy_barrier = Barrier(2)
+    original_copytree = storage_service.shutil.copytree
+
+    def synchronized_copytree(*args, **kwargs):
+        copy_barrier.wait(timeout=2)
+        return original_copytree(*args, **kwargs)
+
+    monkeypatch.setattr(storage_service.shutil, "copytree", synchronized_copytree)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(storage_service.copy_tree_if_missing, source, target) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=5)
+
+    assert sorted(path.name for path in target.iterdir()) == sorted(f"document-{index}.json" for index in range(20))
+    assert list(tmp_path.glob(".current.*.tmp")) == []
+
+
+def test_default_project_reports_external_folder_timeout_as_temporarily_unavailable(monkeypatch):
+    def unavailable_project():
+        raise TimeoutError("cloud-backed project metadata timed out")
+
+    monkeypatch.setattr(storage_api.project_storage_service, "get_or_create_default_project", unavailable_project)
+
+    response = client.get("/api/storage/projects/default")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "STORAGE_UNAVAILABLE",
+        "message": "The active documents folder is temporarily unavailable. Check that the drive is connected and the folder has finished downloading, then try again.",
+    }
 
 
 def test_default_project_uses_visible_documents_workspace(tmp_path, monkeypatch):
@@ -48,6 +103,23 @@ def test_default_project_uses_visible_documents_workspace(tmp_path, monkeypatch)
         encoding="utf-8"
     ) == '{"title":"Visible"}\n'
     assert (tmp_path / ".mauth" / "project.json").exists()
+
+
+def test_relocated_workspace_state_keeps_visible_documents_folder(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "visible-workspace"
+    state_root = tmp_path / "application-support" / "storage"
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("MAUTH_WORKSPACE_STATE_ROOT", str(state_root))
+
+    service = FileProjectStorage()
+    project = service.get_or_create_default_project()
+
+    assert service.uses_visible_workspace is True
+    assert project["documentsPath"] == str(workspace_root / "Documents")
+    assert service.workspace_status()["metadataPath"] == str(state_root)
+    assert (state_root / "project.json").exists()
+    assert not (workspace_root / ".mauth").exists()
 
 
 def test_project_file_list_reconciles_files_deleted_from_visible_workspace(tmp_path, monkeypatch):
@@ -118,6 +190,39 @@ def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatc
         "tests/Year 10",
         "tests/Year 10/Term 1.test.json",
     ]
+
+
+def test_project_storage_restores_external_folder_without_validating_cloud_path(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    external_documents = tmp_path / "Cloud Drive" / "Past Tests"
+    metadata_dir = workspace_root / ".mauth"
+    metadata_dir.mkdir(parents=True)
+    (metadata_dir / "workspace.json").write_text(
+        json.dumps({"documentsPath": str(external_documents)}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+
+    def fail_if_validated(_self, _folder_path):
+        raise AssertionError("startup must not contact the remembered documents folder")
+
+    monkeypatch.setattr(FileProjectStorage, "_validated_documents_folder", fail_if_validated)
+
+    service = FileProjectStorage()
+
+    assert service.workspace_status()["documentsPath"] == str(external_documents)
+    assert service.workspace_status()["isExternalDocumentsFolder"] is True
+
+
+def test_project_storage_still_validates_explicit_folder_selection(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
+    service = FileProjectStorage()
+
+    with pytest.raises(StorageValidationError, match="Folder does not exist"):
+        service.open_documents_folder(str(tmp_path / "Missing"))
 
 
 def test_external_documents_folder_never_imports_legacy_project_files(tmp_path, monkeypatch):

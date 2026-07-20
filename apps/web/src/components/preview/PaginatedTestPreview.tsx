@@ -1,6 +1,6 @@
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { ChoiceNumberingStyle, FormattingConfig } from "@mauth-studio/shared";
+import type { FormattingConfig } from "@mauth-studio/shared";
 
 import { FrontMatterInlineText, MixedMath, SolutionMarkTicks } from "@/components/MathText";
 import {
@@ -19,13 +19,8 @@ import {
   WorksheetHeaderPreview,
 } from "@/components/preview/FrontMatterPreviewPages";
 import { A4PreviewPageFrame } from "@/components/preview/PreviewPageFrame";
-import {
-  normalizeChoiceItems,
-  normalizeChoiceListLayout,
-  normalizeChoiceNumberingStyle,
-  normalizeTableBlock,
-  plainTableRows,
-} from "@/lib/contentBlockNormalization";
+import { normalizeChoiceItems, normalizeChoiceListLayout, normalizeTableBlock, plainTableRows } from "@/lib/contentBlockNormalization";
+import { choiceListLabel } from "@/lib/choiceSolutionAnswers";
 import { graphHeight } from "@/lib/diagramGraph2d";
 import { diagramAlignmentClass, effectiveDiagramTextSide, withGraphDefaults } from "@/lib/editorDiagramConfig";
 import {
@@ -61,13 +56,16 @@ import { selectedLogoForFrontMatter, type LogoAsset } from "@/lib/logoLibrary";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
 import {
   bookletSupplementaryPageCount,
+  buildPreviewPaginationReport,
   buildExplicitBreakPages,
   buildMeasuredPages,
   examQuestionPageReservedHeight,
   frontMatterPageCount,
   groupPreviewPageSegments,
   pagesAreEqual,
+  previewPaginationReportsEqual,
   type PreviewPage,
+  type PreviewPaginationReport,
   type PreviewPageSegmentEntry,
   type PreviewQuestionSegmentGroup,
 } from "@/lib/previewPagination";
@@ -90,19 +88,10 @@ import {
 import { measuredLineHeightPx, solutionSlotToleranceLines } from "@/lib/solutionValidation";
 import { cn } from "@/lib/utils";
 
-function choiceLabel(style: ChoiceNumberingStyle | undefined, index: number) {
-  const normalizedStyle = normalizeChoiceNumberingStyle(style);
-  if (normalizedStyle === "bullet") return "•";
-  if (normalizedStyle === "decimal") return `${index + 1}.`;
-  if (normalizedStyle === "upper-alpha") return `${alphaLabel(index).toUpperCase()}.`;
-  if (normalizedStyle === "lower-alpha") return `${alphaLabel(index)}.`;
-  return `${romanLabel(index)}.`;
-}
-
 type AppPreviewContentBlocksProps = Omit<PreviewContentBlocksBaseProps, "runtime" | "renderers">;
 
 const previewContentRuntime: PreviewContentRuntime = {
-  choiceLabel,
+  choiceLabel: choiceListLabel,
   diagramAlignmentClass,
   effectiveDiagramTextSide,
   graphHeight,
@@ -441,6 +430,7 @@ interface PaginatedTestPreviewProps {
   showSolutions?: boolean;
   activePreviewAnchor?: string;
   onGraphConfigChange?: (change: PreviewGraphConfigChange) => void;
+  onPaginationReport?: (report: PreviewPaginationReport) => void;
 }
 
 export const PaginatedTestPreview = memo(function PaginatedTestPreview({
@@ -456,8 +446,12 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
   showSolutions = true,
   activePreviewAnchor,
   onGraphConfigChange,
+  onPaginationReport,
 }: PaginatedTestPreviewProps) {
   const measureRef = useRef<HTMLDivElement>(null);
+  const onPaginationReportRef = useRef(onPaginationReport);
+  const lastPaginationReportRef = useRef<PreviewPaginationReport | null>(null);
+  onPaginationReportRef.current = onPaginationReport;
   const normalizedFormatting = useMemo(() => normalizeFormattingConfig(formattingConfig), [formattingConfig]);
   const pageFormat = useMemo(() => pageFormatFromConfig(normalizedFormatting), [normalizedFormatting]);
   const showMarks = normalizedFormatting.showMarks ?? DEFAULT_FORMATTING_CONFIG.showMarks ?? true;
@@ -490,8 +484,20 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
       (element) => element.getBoundingClientRect().height,
     );
     const nextPages = buildMeasuredPages(segmentHeights, segments, pageFormat, reservedPageHeight);
+    const nextSupplementaryPageCount = bookletSupplementaryPageCount(frontMatter, nextPages.length);
+    const nextReport = buildPreviewPaginationReport({
+      pages: nextPages,
+      segments,
+      frontMatter,
+      supplementaryPageCount: nextSupplementaryPageCount,
+      showSolutions,
+    });
+    if (!previewPaginationReportsEqual(lastPaginationReportRef.current, nextReport)) {
+      lastPaginationReportRef.current = nextReport;
+      onPaginationReportRef.current?.(nextReport);
+    }
     setPages((currentPages) => (pagesAreEqual(currentPages, nextPages) ? currentPages : nextPages));
-  }, [frontMatterLogo, pageFormat, reservedPageHeight, segments, showMarks]);
+  }, [frontMatter, frontMatterLogo, pageFormat, reservedPageHeight, segments, showMarks, showSolutions]);
 
   const visiblePages = pages.length ? pages : fallbackPages;
   const supplementaryPageCount = bookletSupplementaryPageCount(frontMatter, visiblePages.length);

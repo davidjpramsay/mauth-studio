@@ -16,15 +16,18 @@ import {
   GRAPH_LINE_STYLES,
   GRAPH_REGION_LABEL_MODES,
   GRAPH_TANGENT_LABEL_MODES,
+  createAuthoredGraphFunction,
+  createAuthoredGraphFeature,
   createGraphFeature,
-  createGraphFunction,
   createGraphPiece,
   functionSummaryLatex,
   graphFunctionLabel,
+  graphFeatureReferencesFunction,
   graphHeight,
   graphPiecesFromFunction,
   isRegionFeatureKind,
   isSolutionOnlyGraphFeature,
+  isSolutionOnlyGraphFunction,
   isStrokeStyledFeatureKind,
   lockedAspectHeight,
   type GraphFeatureKind,
@@ -206,16 +209,28 @@ export function FunctionGraphEditor({
   };
   const functions = config.functions ?? [];
   const features = config.features ?? [];
+  const solutionFunctionIndexes = new Set<number>();
+  functions.forEach((graphFunction, functionIndex) => {
+    if (isSolutionOnlyGraphFunction(graphFunction)) solutionFunctionIndexes.add(functionIndex);
+  });
+  const visibleFunctionEntries = functions
+    .map((graphFunction, functionIndex) => ({ graphFunction, functionIndex }))
+    .filter(({ graphFunction }) => showSolutions || !isSolutionOnlyGraphFunction(graphFunction));
   const visibleFeatureEntries: GraphFeatureEntry[] = features
     .map((feature, featureIndex) => ({ feature, featureIndex }))
-    .filter(({ feature }) => showSolutions || !isSolutionOnlyGraphFeature(feature));
+    .filter(
+      ({ feature }) =>
+        showSolutions ||
+        (!isSolutionOnlyGraphFeature(feature) &&
+          ![...solutionFunctionIndexes].some((functionIndex) => graphFeatureReferencesFunction(feature, functionIndex))),
+    );
   const visibleFeatureGroups = GRAPH_FEATURE_GROUPS.map((group) => ({
     ...group,
     entries: visibleFeatureEntries.filter(({ feature }) => graphFeatureGroupId(feature) === group.id),
   })).filter((group) => group.entries.length);
-  const functionOptions = functions.map((graphFunction, index) => ({
-    value: index,
-    label: `${index + 1}: ${graphFunction.label || graphFunctionLabel(index)}`,
+  const functionOptions = visibleFunctionEntries.map(({ graphFunction, functionIndex }) => ({
+    value: functionIndex,
+    label: `${functionIndex + 1}: ${graphFunction.label || graphFunctionLabel(functionIndex)}`,
   }));
   const updateFunction = (functionIndex: number, patch: Partial<GraphFunction>) => {
     patchConfig({
@@ -223,7 +238,7 @@ export function FunctionGraphEditor({
     });
   };
   const addFunction = () => {
-    patchConfig({ functions: [...functions, createGraphFunction(functions.length)] });
+    patchConfig({ functions: [...functions, createAuthoredGraphFunction(functions.length, showSolutions)] });
   };
   const removeFunction = (functionIndex: number) => {
     const nextFunctions = functions.filter((_, index) => index !== functionIndex);
@@ -291,7 +306,7 @@ export function FunctionGraphEditor({
     );
   };
   const addFeature = () => {
-    patchConfig({ features: [...features, createGraphFeature("point", features.length, config)] });
+    patchConfig({ features: [...features, createAuthoredGraphFeature("point", features.length, config, showSolutions)] });
   };
   const removeFeature = (featureIndex: number) => {
     patchConfig({ features: features.filter((_, index) => index !== featureIndex) });
@@ -563,13 +578,13 @@ export function FunctionGraphEditor({
           ) : null}
           <Button variant="outline" size="sm" onClick={addFunction}>
             <PlusCircle data-icon="inline-start" />
-            Add function
+            {showSolutions ? "Add solution function" : "Add function"}
           </Button>
         </div>
       </div>
 
       <div className="mt-3 flex flex-col gap-2">
-        {functions.map((graphFunction, functionIndex) => {
+        {visibleFunctionEntries.map(({ graphFunction, functionIndex }) => {
           const functionAnchor = anchor ? `${anchor}/gf:${functionIndex}` : undefined;
           const pieces = graphPiecesFromFunction(graphFunction, config);
           const functionLabel = graphFunction.label || graphFunctionLabel(functionIndex);
@@ -587,6 +602,11 @@ export function FunctionGraphEditor({
                 {functionTitleLabel} {functionIndex + 1}:
               </span>
               <Latex latex={functionSummaryLatex(graphFunction)} />
+              {isSolutionOnlyGraphFunction(graphFunction) ? (
+                <span className="rounded border border-blue-400/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-300">
+                  Solution
+                </span>
+              ) : null}
               {graphFunction.kind === "piecewise" ? <span className="font-normal text-muted-foreground">{functionSubtitle}</span> : null}
             </span>
           );
@@ -892,11 +912,18 @@ export function FunctionGraphEditor({
       <div className="mt-4 flex items-end justify-between gap-3 border-t pt-3">
         <div>
           <div className="text-sm font-medium">Graph objects</div>
-          <div className="text-xs text-muted-foreground">Grouped by how they affect the graph</div>
+          <div className="text-xs text-muted-foreground">
+            {showSolutions ? "New annotations are added to the solution layer" : "Grouped by how they affect the graph"}
+          </div>
         </div>
-        <Button variant="outline" size="sm" onClick={addFeature}>
+        <Button
+          variant="outline"
+          size="sm"
+          title={showSolutions ? "Add an annotation that appears only in solutions" : "Add a graph feature"}
+          onClick={addFeature}
+        >
           <PlusCircle data-icon="inline-start" />
-          Add Feature
+          {showSolutions ? "Add solution annotation" : "Add feature"}
         </Button>
       </div>
 
@@ -935,7 +962,19 @@ export function FunctionGraphEditor({
                   const selectedFeatureIsRelation = selectedFeatureFunction?.kind === "relation";
                   const isFreeLabel = feature.kind === "label";
                   const featureTitle = (
-                    <InlineSummaryTitle label={`${featureTypeLabel} ${featureIndex + 1}`} summary={feature.label || featureTypeLabel} />
+                    <InlineSummaryTitle
+                      label={
+                        <span className="inline-flex items-center gap-2">
+                          <span>{`${featureTypeLabel} ${featureIndex + 1}`}</span>
+                          {isSolutionOnlyGraphFeature(feature) ? (
+                            <span className="rounded border border-blue-400/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-300">
+                              Solution
+                            </span>
+                          ) : null}
+                        </span>
+                      }
+                      summary={feature.label || featureTypeLabel}
+                    />
                   );
 
                   const featurePanel = (

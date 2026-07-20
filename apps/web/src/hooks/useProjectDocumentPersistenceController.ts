@@ -13,6 +13,13 @@ import {
   testPathBasename,
   testPathFromProjectPath,
 } from "@/lib/projectFiles";
+import {
+  projectFileTransitionCopy,
+  resolveProjectFileTransition,
+  type ProjectFileTransitionChoice,
+  type ProjectFileTransitionIntent,
+  type ProjectFileTransitionOutcome,
+} from "@/lib/projectFileBeforeOpenWorkflow";
 
 interface SerializedProjectDocument {
   content: string;
@@ -177,21 +184,52 @@ export function useProjectDocumentPersistenceController<TDocument>({
     }
   }
 
-  async function saveCurrentProjectFileBeforeOpening(project: ProjectSummary) {
-    if (!hasUnsavedProjectChanges || !activeProjectFilePath) return;
+  async function prepareCurrentProjectFileTransition(
+    project: ProjectSummary,
+    intent: ProjectFileTransitionIntent,
+  ): Promise<ProjectFileTransitionOutcome> {
+    const sourcePath = activeProjectFilePath;
+    const copy = projectFileTransitionCopy(currentProjectFileName, intent);
+    const outcome = await resolveProjectFileTransition({
+      shouldSave: Boolean(hasUnsavedProjectChanges && sourcePath),
+      saveCurrentFile: async () => {
+        if (sourcePath) await writeCurrentTestProjectFile(sourcePath, currentProjectFileName);
+      },
+      isRecoverableSaveConflict: (error) =>
+        Boolean(sourcePath && projectFileConflictFromError(error, sourcePath, activeProjectFileRevisionRef.current)) ||
+        (error instanceof Error && error.message === revisionMissingErrorMessage),
+      chooseConflictAction: async () => {
+        const choice = await dialogs.choose({
+          title: "File changed on disk",
+          description: copy.conflictDescription,
+          options: [
+            { value: "save-recovery", label: copy.recoveryLabel },
+            { value: "open-without-saving", label: copy.discardLabel, destructive: true },
+          ],
+          cancelLabel: "Cancel",
+        });
+        return choice === "save-recovery" || choice === "open-without-saving" ? (choice satisfies ProjectFileTransitionChoice) : null;
+      },
+      saveRecoveryCopy: async () => {
+        if (sourcePath) await saveCurrentEditorRecoveryCopy(project, sourcePath);
+      },
+    });
 
-    try {
-      await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
-    } catch (error) {
-      const conflict = projectFileConflictFromError(error, activeProjectFilePath, activeProjectFileRevisionRef.current);
-      const missingRevision = error instanceof Error && error.message === revisionMissingErrorMessage;
-      if (!conflict && !missingRevision) throw error;
-
-      await saveCurrentEditorRecoveryCopy(project, activeProjectFilePath);
-      setProjectSaveConflict(null);
+    if (outcome === "cancelled") {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(copy.cancelledMessage);
+    } else if (outcome === "recovery-failed") {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(copy.recoveryFailedMessage);
+    } else if (outcome === "recovery-saved") {
       setProjectFilesStatus("ready");
-      setProjectFilesMessage("Saved recovery copy before opening");
+      setProjectFilesMessage(copy.recoverySavedMessage);
+    } else if (outcome === "open-without-saving") {
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(copy.discardMessage);
     }
+
+    return outcome;
   }
 
   async function saveCurrentTestToProjectFile(folderPath = "") {
@@ -238,7 +276,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     writeCurrentTestProjectFile,
     saveCurrentEditorRecoveryCopy,
     saveActiveFileRecoveryCopy,
-    saveCurrentProjectFileBeforeOpening,
+    prepareCurrentProjectFileTransition,
     saveCurrentTestToProjectFile,
   };
 }

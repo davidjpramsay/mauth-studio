@@ -9,6 +9,49 @@ import {
 } from "./editorSubsectionDrag.ts";
 import { parseScrollAnchor, type ParsedScrollAnchor } from "./scrollAnchors.ts";
 
+export interface EditorRevealRequest {
+  anchor: string;
+  sequence: number;
+}
+
+export function nextEditorRevealRequest(current: EditorRevealRequest | null, anchor: string): EditorRevealRequest {
+  return {
+    anchor,
+    sequence: (current?.sequence ?? 0) + 1,
+  };
+}
+
+export function editorRevealOpenSignal(
+  anchor: string,
+  request: EditorRevealRequest | null,
+  anchorContains: (containerAnchor: string, selectedAnchor?: string | null) => boolean,
+) {
+  return anchorContains(anchor, request?.anchor) ? request?.sequence : undefined;
+}
+
+export function editorAnchorActivationPlan<TTocItem>({
+  anchor,
+  showPreview,
+  documentTocItems,
+  questionIdFromScrollAnchor,
+  graphChildParentScrollAnchor,
+  previewAnchorForEditorAnchor,
+}: {
+  anchor: string;
+  showPreview: boolean;
+  documentTocItems: TTocItem[];
+  questionIdFromScrollAnchor: (anchor: string) => string | null;
+  graphChildParentScrollAnchor: (anchor: string) => string | null;
+  previewAnchorForEditorAnchor: (anchor: string, items: TTocItem[]) => string;
+}) {
+  const graphChildParentAnchor = graphChildParentScrollAnchor(anchor);
+  return {
+    questionId: questionIdFromScrollAnchor(anchor),
+    activeAnchor: anchor,
+    previewAnchor: graphChildParentAnchor && showPreview ? previewAnchorForEditorAnchor(anchor, documentTocItems) : null,
+  };
+}
+
 export function subsectionTargetFromParsed(parsed: ParsedScrollAnchor): SubsectionDragTarget | null {
   if (!parsed.questionId) return null;
   if (parsed.kind === "questionBlock" && parsed.blockId) {

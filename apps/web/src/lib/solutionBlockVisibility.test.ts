@@ -103,6 +103,19 @@ test("isContentBlockVisibleInScope keeps unpaired student answer space visible i
   assert.equal(isContentBlockVisibleInScope(blocks, 0, false), true);
 });
 
+test("isContentBlockVisibleInScope shows only the active layer for paired diagrams", () => {
+  const blocks = [diagramBlock("student-diagram", "student"), diagramBlock("solution-diagram", "solution")];
+
+  assert.deepEqual(
+    blocks.map((_, index) => isContentBlockVisibleInScope(blocks, index, false)),
+    [true, false],
+  );
+  assert.deepEqual(
+    blocks.map((_, index) => isContentBlockVisibleInScope(blocks, index, true)),
+    [false, true],
+  );
+});
+
 test("recoverMissingSolutionSurfaceTicks fills exactly one solution surface from marks", () => {
   const blocks = [tableBlock("student-table", "student"), tableBlock("solution-table", "solution")];
   const result = recoverMissingSolutionSurfaceTicks(blocks, 3);

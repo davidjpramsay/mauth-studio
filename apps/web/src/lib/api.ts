@@ -12,7 +12,10 @@ import type {
   Question,
 } from "@mauth-studio/shared";
 
-export const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+const PRODUCTION_ORIGIN = typeof globalThis.location?.origin === "string" ? globalThis.location.origin : "";
+
+export const API_BASE =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.PROD && PRODUCTION_ORIGIN ? PRODUCTION_ORIGIN : "http://127.0.0.1:8000");
 
 export class ApiError extends Error {
   status: number;
@@ -335,6 +338,17 @@ export interface MauthAgentBrowserResponsePayload {
 
 export function registerMauthAgentEditorSession(sessionId: string, label = "Mauth web editor", signal?: AbortSignal) {
   return postJsonWithSignal<MauthAgentEditorRegistrationResponse>("/api/agent/current/browser/register", { sessionId, label }, signal);
+}
+
+export async function unregisterMauthAgentEditorSession(sessionId: string) {
+  const url = `${API_BASE}/api/agent/current/browser/unregister?sessionId=${encodeURIComponent(sessionId)}`;
+  if (typeof navigator !== "undefined" && navigator.sendBeacon?.(url)) return;
+
+  const response = await fetch(url, {
+    method: "POST",
+    keepalive: true,
+  });
+  if (!response.ok) throw await responseError(response);
 }
 
 export function pollMauthAgentRequests(sessionId: string, signal?: AbortSignal) {

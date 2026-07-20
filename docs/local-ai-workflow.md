@@ -8,10 +8,11 @@ Use this guide when an external or local agent is helping author, inspect, conve
 
 1. `AGENTS.md`
 2. `docs/current-state.md`
-3. `docs/agent-bridge.md`
-4. `docs/mauth-actions.md`
-5. `docs/ai-brains.md`
-6. `README.md`
+3. `docs/architecture.md`
+4. `docs/agent-bridge.md`
+5. `docs/mauth-actions.md`
+6. `docs/ai-brains.md`
+7. `README.md`
 
 These files define the contract for document edits, diagram rules, validation, file operations, and generated-artifact hygiene.
 
@@ -26,7 +27,8 @@ The `Authoring` name replaces the rough “Mauth Use” label. It is shorter and
 
 - Root source tree: app source, tests, docs, configs, durable fixtures, and intentional tooling.
 - `~/Documents/Mauth/Documents`: normal local Mauth document files that teachers can manage in Finder, backups, or Git.
-- `~/Documents/Mauth/.mauth`: Mauth metadata, autosave recovery, reusable logos, and version snapshots.
+- `~/Library/Application Support/Mauth Studio/storage`: shared Mauth state, autosave recovery, reusable logos, remembered-folder identity, and default-workspace versions.
+- `<selected documents folder>/.mauth`: metadata and version snapshots that belong to an explicitly selected external documents folder.
 - `workspace/`: scratch space for OCR crops, PDF conversions, Canvas/QTI exports, eval output, temporary scripts, screenshots, and generated reports.
 - Local `.env` files: local overrides and secrets only. Do not commit them.
 
@@ -56,7 +58,7 @@ verify in browser
 
 Use the bridge endpoints or MCP tools for normal agent authoring. If the bridge is unavailable, use the closest available mechanism and keep the same discipline: inspect current state, preview or test the edit where possible, apply through the app's normal action/file APIs, then verify the rendered result.
 
-Do not make raw project-file JSON edits the normal authoring path. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/` are acceptable only for recovery, migration, or deliberate maintenance, and they must keep project metadata, active revision, autosave, and version safety aligned.
+Do not make raw project-file JSON edits the normal authoring path. Direct edits under the selected documents folder, its `.mauth` metadata, `~/Library/Application Support/Mauth Studio/storage`, or legacy repo `storage/` are acceptable only for recovery, migration, or deliberate maintenance, and they must keep project metadata, active revision, autosave, and version safety aligned.
 
 ## Canvas Quiz Page Assets
 

@@ -1,0 +1,34 @@
+appId: au.edu.acc.mauth-studio
+productName: Mauth Studio
+copyright: Australian Christian College
+directories:
+  output: release
+files:
+  - desktop/**
+  - package.json
+asar: true
+extraResources:
+  - from: apps/web/dist
+    to: web-dist
+  - from: configs
+    to: configs
+  - from: tmp/macos/mauth-api
+    to: sidecars/mauth-api
+  - from: tmp/macos/penrose-runtime
+    to: penrose-runtime
+  - from: docs/assets/mauth-icon.png
+    to: mauth-icon.png
+mac:
+  category: public.app-category.education
+  icon: docs/assets/mauth-icon.png
+  extendInfo:
+    NSDocumentsFolderUsageDescription: Mauth Studio needs access to the documents folders you choose for assessment files.
+  target:
+    - target: dir
+      arch:
+        - arm64
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  hardenedRuntime: true
+  gatekeeperAssess: false
+artifactName: ${productName}-${version}-${arch}.${ext}

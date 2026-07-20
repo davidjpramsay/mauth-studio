@@ -17,6 +17,22 @@ export type HistogramBarType = "continuous" | "discrete";
 export type StatsChartDataMode = "raw" | "manualProbabilities" | "manualFrequencies";
 export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
 export type StatsChartYLabelOrientation = "vertical" | "horizontal";
+export type StatsChartSeriesType = "line" | "points" | "linePoints" | "bars";
+
+export interface StatsChartSeriesData {
+  id: string;
+  label?: string;
+  seriesType: StatsChartSeriesType;
+  xValues: number[];
+  yValues: number[];
+  color?: string;
+  lineWidth?: number;
+  markerSize?: number;
+  barWidth?: number;
+  show?: boolean;
+  solutionOnly?: boolean;
+  [key: string]: unknown;
+}
 
 export interface StatsChartData {
   chartType: StatsChartType;
@@ -42,7 +58,7 @@ export interface StatsChartData {
   categories?: string[];
   frequencies?: number[];
   points?: Array<{ x: number; y: number; label?: string }>;
-  series?: Array<Record<string, unknown>>;
+  series?: StatsChartSeriesData[];
   [key: string]: unknown;
 }
 
@@ -80,10 +96,12 @@ export interface Graph3DPointData {
   z?: number;
   color?: string;
   show?: boolean;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
 export interface Graph3DSegmentData {
+  id?: string;
   from?: string;
   to?: string;
   points?: string[];
@@ -93,10 +111,30 @@ export interface Graph3DSegmentData {
   strokeWidth?: number;
   dashed?: boolean;
   show?: boolean;
+  solutionOnly?: boolean;
+  [key: string]: unknown;
+}
+
+export interface Graph3DDimensionData {
+  id?: string;
+  from?: string | [number, number, number] | Graph3DPointData;
+  to?: string | [number, number, number] | Graph3DPointData;
+  start?: string | [number, number, number] | Graph3DPointData;
+  end?: string | [number, number, number] | Graph3DPointData;
+  points?: Array<string | [number, number, number] | Graph3DPointData>;
+  label?: string;
+  color?: string;
+  strokeColor?: string;
+  strokeStyle?: "solid" | "dashed";
+  strokeWidth?: number;
+  dashed?: boolean;
+  show?: boolean;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
 export interface Graph3DFaceData {
+  id?: string;
   points?: Array<string | [number, number, number] | Graph3DPointData>;
   vertices?: Array<string | [number, number, number] | Graph3DPointData>;
   label?: string;
@@ -108,10 +146,12 @@ export interface Graph3DFaceData {
   strokeWidth?: number;
   dashed?: boolean;
   show?: boolean;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
 export interface Graph3DSolidData {
+  id?: string;
   kind?: "circle" | "cone" | "cylinder" | "sphere" | "sphereCap" | "sphericalCap" | string;
   type?: "circle" | "cone" | "cylinder" | "sphere" | "sphereCap" | "sphericalCap" | string;
   center?: string | [number, number, number] | Graph3DPointData;
@@ -131,6 +171,7 @@ export interface Graph3DSolidData {
   stepsU?: number;
   stepsV?: number;
   show?: boolean;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
@@ -139,12 +180,34 @@ export interface Graph3DData {
   vertices?: Graph3DPointData[];
   segments?: Graph3DSegmentData[];
   edges?: Graph3DSegmentData[];
+  dimensions?: Graph3DDimensionData[];
+  dimensionLines?: Graph3DDimensionData[];
   faces?: Graph3DFaceData[];
   solids?: Graph3DSolidData[];
   surfaces?: Graph3DSolidData[];
   xRange?: [number, number];
   yRange?: [number, number];
   zRange?: [number, number];
+  [key: string]: unknown;
+}
+
+export type ImageDiagramAnnotationKind = "label" | "ellipse" | "arrow";
+
+export interface ImageDiagramAnnotation {
+  id: string;
+  kind: ImageDiagramAnnotationKind;
+  xPercent: number;
+  yPercent: number;
+  endXPercent?: number;
+  endYPercent?: number;
+  widthPercent?: number;
+  heightPercent?: number;
+  text?: string;
+  color?: string;
+  strokeWidth?: number;
+  fontSizePx?: number;
+  show?: boolean;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
@@ -155,6 +218,7 @@ export interface ImageDiagramData {
   mimeType?: string;
   naturalWidth?: number;
   naturalHeight?: number;
+  annotations?: ImageDiagramAnnotation[];
   [key: string]: unknown;
 }
 
@@ -164,6 +228,56 @@ export interface WorkedStep {
   expression?: string;
   latex?: string;
   explanation?: string;
+}
+
+export interface GraphVector2DVector {
+  id: string;
+  name: string;
+  label: string;
+  start: [number, number];
+  components: [number, number];
+  color: string;
+  showComponents: boolean;
+  labelX?: number;
+  labelY?: number;
+  solutionOnly?: boolean;
+}
+
+export interface GraphVector2DSegmentLabel {
+  id: string;
+  vectorId: string;
+  label: string;
+  position: number;
+  offsetPx: number;
+  color: string;
+  labelX?: number;
+  labelY?: number;
+  solutionOnly?: boolean;
+}
+
+export interface GraphVector2DAngleMarker {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  rightAngle: boolean;
+  radius: number;
+  color: string;
+  labelX?: number;
+  labelY?: number;
+  solutionOnly?: boolean;
+}
+
+export interface GraphVector2DData {
+  labelStyle?: "boldLower" | "arrow" | "custom";
+  vectors?: GraphVector2DVector[];
+  segmentLabels?: GraphVector2DSegmentLabel[];
+  angleMarkers?: GraphVector2DAngleMarker[];
+  [key: string]: unknown;
+}
+
+export interface GraphMetadata extends Record<string, unknown> {
+  vector2d?: GraphVector2DData;
 }
 
 export interface GraphConfig {
@@ -224,7 +338,7 @@ export interface GraphConfig {
   functionExtension?: number;
   functionExtensionLeft?: number;
   functionExtensionRight?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: GraphMetadata;
 }
 
 export interface Graph2DPolarGridData {
@@ -249,6 +363,7 @@ export interface Graph2DGeometryPoint {
   labelY?: number;
   color?: string;
   show?: boolean;
+  solutionOnly?: boolean;
 }
 
 export interface Graph2DGeometrySegment {
@@ -262,6 +377,7 @@ export interface Graph2DGeometrySegment {
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed";
   show?: boolean;
+  solutionOnly?: boolean;
 }
 
 export interface Graph2DGeometryArc {
@@ -276,6 +392,7 @@ export interface Graph2DGeometryArc {
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed";
   show?: boolean;
+  solutionOnly?: boolean;
 }
 
 export interface Graph2DGeometryAngle {
@@ -290,6 +407,7 @@ export interface Graph2DGeometryAngle {
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed";
   show?: boolean;
+  solutionOnly?: boolean;
 }
 
 export interface Graph2DGeometryDecoration {
@@ -307,6 +425,7 @@ export interface Graph2DGeometryDecoration {
   size?: number;
   color?: string;
   show?: boolean;
+  solutionOnly?: boolean;
 }
 
 export interface Graph2DGeometryData {
@@ -321,6 +440,7 @@ export interface GeometricDiagramObject {
   type: "point" | "line" | "circle" | "angle" | string;
   name: string;
   label?: string;
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
@@ -355,6 +475,7 @@ export interface GeometricDiagramRelationship {
   segmentA?: string[];
   segmentB?: string[];
   segments?: string[][];
+  solutionOnly?: boolean;
   [key: string]: unknown;
 }
 
@@ -385,6 +506,7 @@ export interface GraphFunction {
   strokeWidth?: number;
   strokeStyle?: "solid" | "dashed";
   show?: boolean;
+  solutionOnly?: boolean;
   showLabel?: boolean;
   labelMode?: "name" | "equation";
   labelX?: number;
@@ -568,6 +690,7 @@ export interface ChoiceListContentBlock extends ContentBlockVisibilityOptions {
   choices: string[];
   numberingStyle?: ChoiceNumberingStyle;
   layout?: ChoiceListLayout;
+  solutionAnswerIndex?: number;
 }
 
 export interface TableContentBlock extends ContentBlockVisibilityOptions {
@@ -575,6 +698,7 @@ export interface TableContentBlock extends ContentBlockVisibilityOptions {
   kind: "table";
   headers: string[];
   rows: string[][];
+  solutionEntries?: string[][];
   showHeader?: boolean;
   tableAlign?: DiagramAlignment;
   cellAlignment?: TableCellAlignment;
@@ -766,11 +890,13 @@ export interface MauthSystemBridgeSessionStatus {
 
 export interface MauthSystemBridgeStatus {
   available: boolean;
+  authenticationRequired: boolean;
   activeSessionCount: number;
   pendingRequestCount: number;
   sessions: MauthSystemBridgeSessionStatus[];
   routes: {
     browserRegister: string;
+    browserUnregister: string;
     browserRequests: string;
     browserRespond: string;
   };
@@ -784,6 +910,12 @@ export interface MauthSystemStatus {
   cwd: string;
   root: string;
   git: MauthSystemGitStatus;
+  runtime: {
+    kind: string;
+    packaged: boolean;
+    appVersion?: string | null;
+    webUrl?: string | null;
+  };
   workspace: MauthSystemWorkspaceStatus;
   bridge: MauthSystemBridgeStatus;
   routes: {
@@ -794,6 +926,8 @@ export interface MauthSystemStatus {
 }
 
 export type MauthAgentBridgeErrorCode =
+  | "AGENT_AUTH_REQUIRED"
+  | "API_AUTH_REQUIRED"
   | "APP_NOT_CONNECTED"
   | "MULTIPLE_ACTIVE_EDITORS"
   | "STALE_SNAPSHOT"
@@ -833,8 +967,10 @@ export interface MauthAgentModuleSummary {
   marks?: number;
   lines?: number;
   choiceCount?: number;
+  solutionAnswerIndex?: number;
   rowCount?: number;
   columnCount?: number;
+  solutionEntryCount?: number;
   graphType?: DiagramType | string;
   diagramAlign?: DiagramAlignment;
   childModules?: MauthAgentModuleSummary[];

@@ -6,7 +6,7 @@ import { firstDocumentFlowAnchor, firstQuestionId } from "../lib/editorSectionHe
 import type { DocumentFlowItem, DocumentSectionHeading, QuestionBlock } from "../lib/editorDocumentNormalization.ts";
 import { normalizeFormattingConfig } from "../lib/editorFormattingConfig.ts";
 import type { FrontMatterConfig } from "../lib/frontMatterConfig.ts";
-import { mergeLogoAssets, persistLogoLibrary, selectedLogoFromLibrary, type LogoAsset } from "../lib/logoLibrary.ts";
+import { selectedLogoFromLibrary, type LogoAsset } from "../lib/logoLibrary.ts";
 import type { ProjectSaveConflict } from "./useProjectFilesController.ts";
 
 export interface SavedProjectDocumentState {
@@ -63,8 +63,7 @@ interface UseSavedProjectDocumentApplierOptions {
   setActiveProjectFileState: (filePath: string | null, revision: number | null) => void;
   setProjectSaveConflict: (conflict: ProjectSaveConflict | null) => void;
   updateLastProjectSaveFingerprint: (fingerprint: string | null) => void;
-  setLogos: (updater: (current: LogoAsset[]) => LogoAsset[]) => void;
-  writeLogoToDisk: (logo: LogoAsset) => void;
+  importLogo: (value: unknown) => LogoAsset | undefined;
 }
 
 export function useSavedProjectDocumentApplier({
@@ -84,8 +83,7 @@ export function useSavedProjectDocumentApplier({
   setActiveProjectFileState,
   setProjectSaveConflict,
   updateLastProjectSaveFingerprint,
-  setLogos,
-  writeLogoToDisk,
+  importLogo,
 }: UseSavedProjectDocumentApplierOptions) {
   function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedTest: SavedTest, revision: number | null) {
     pushEditorHistory();
@@ -115,17 +113,7 @@ export function useSavedProjectDocumentApplier({
       ),
     );
 
-    if (savedTest.logo) {
-      setLogos((current) => {
-        const next = mergeLogoAssets(current, [savedTest.logo]);
-        if (next !== current) {
-          logosRef.current = next;
-          persistLogoLibrary(next);
-        }
-        return next;
-      });
-      writeLogoToDisk(savedTest.logo);
-    }
+    if (savedTest.logo) importLogo(savedTest.logo);
   }
 
   return { applySavedProjectDocument };

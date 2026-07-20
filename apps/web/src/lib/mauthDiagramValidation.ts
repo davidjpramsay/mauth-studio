@@ -16,6 +16,7 @@ const HISTOGRAM_BAR_TYPES = new Set(["continuous", "discrete"]);
 const STATS_CHART_DATA_MODES = new Set(["raw", "manualProbabilities", "manualFrequencies"]);
 const STATS_CHART_Y_AXIS_MODES = new Set(["frequency", "relativeFrequency"]);
 const STATS_CHART_Y_LABEL_ORIENTATIONS = new Set(["vertical", "horizontal"]);
+const STATS_CHART_SERIES_TYPES = new Set(["line", "points", "linePoints", "bars"]);
 const GRAPH_FUNCTION_KINDS = new Set(["expression", "piecewise", "relation"]);
 const STROKE_STYLES = new Set(["solid", "dashed"]);
 const GRAPH_FEATURE_KINDS = new Set([
@@ -532,6 +533,7 @@ function validateGraphFunctions(config: Record<string, unknown>, path: string, i
     optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
     optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
     optionalBoolean(entry, "showLabel", entryPath, issues);
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
@@ -761,6 +763,7 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "labelY", entryPath, issues);
     optionalString(entry, "color", entryPath, issues);
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 
   const segmentIds = new Set<string>();
@@ -781,6 +784,7 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
     optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 
   const arcIds = new Set<string>();
@@ -802,6 +806,7 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
     optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 
   const angleIds = new Set<string>();
@@ -829,6 +834,7 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "strokeWidth", entryPath, issues, { positive: true });
     optionalEnum(entry, "strokeStyle", entryPath, STROKE_STYLES, issues);
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 
   const decorations = optionalArray(geometry, "decorations", path, issues);
@@ -846,6 +852,7 @@ function validateGraph2DGeometryData(geometry: Record<string, unknown>, path: st
     optionalNumber(entry, "size", entryPath, issues, { positive: true });
     optionalString(entry, "color", entryPath, issues);
     optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
 
     if (entry.kind === "equalLength") {
       if (hasOwn(entry, "segments")) validateGraph2DReferenceArray(entry, "segments", entryPath, segmentIds, "segment", issues);
@@ -1061,6 +1068,7 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
     optionalString(entry, "label", entryPath, issues);
     optionalString(entry, "color", entryPath, issues);
     optionalBoolean(entry, "showComponents", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
     numberPair(entry.start, `${entryPath}.start`, issues);
     numberPair(entry.components ?? entry.vector, `${entryPath}.components`, issues);
     optionalNumber(entry, "labelX", entryPath, issues);
@@ -1086,6 +1094,7 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
     optionalString(entry, "color", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 
   const angleMarkers = optionalArray(vector2d, "angleMarkers", `${path}.metadata.vector2d`, issues);
@@ -1108,6 +1117,7 @@ function validateVector2D(config: Record<string, unknown>, path: string, issues:
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
     optionalString(entry, "color", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 }
 
@@ -1149,6 +1159,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalString(entry, "color", entryPath, issues);
       rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
+      optionalBoolean(entry, "solutionOnly", entryPath, issues);
     });
 
     const segments = optionalArray(data, "segments", `${path}.data`, issues) ?? optionalArray(data, "edges", `${path}.data`, issues);
@@ -1158,6 +1169,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         addIssue(issues, entryPath, "must be a 3D segment object", "{ from, to }");
         return;
       }
+      optionalString(entry, "id", entryPath, issues);
       const pointsValue = Array.isArray(entry.points) ? entry.points : [];
       const from = typeof entry.from === "string" ? entry.from : typeof pointsValue[0] === "string" ? pointsValue[0] : "";
       const to = typeof entry.to === "string" ? entry.to : typeof pointsValue[1] === "string" ? pointsValue[1] : "";
@@ -1180,6 +1192,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalBoolean(entry, "dashed", entryPath, issues);
       rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
+      optionalBoolean(entry, "solutionOnly", entryPath, issues);
     });
 
     const dimensionLists = [
@@ -1193,6 +1206,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
           addIssue(issues, entryPath, "must be a graph3d dimension object", "{ from, to, label }");
           return;
         }
+        optionalString(entry, "id", entryPath, issues);
         const pointsValue = Array.isArray(entry.points) ? entry.points : undefined;
         graph3dPointReference(entry.from ?? entry.start ?? pointsValue?.[0], `${entryPath}.from`, pointNames, issues);
         graph3dPointReference(entry.to ?? entry.end ?? pointsValue?.[1], `${entryPath}.to`, pointNames, issues);
@@ -1204,6 +1218,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         optionalBoolean(entry, "dashed", entryPath, issues);
         rejectGraph3DVisibleAlias(entry, entryPath, issues);
         optionalBoolean(entry, "show", entryPath, issues);
+        optionalBoolean(entry, "solutionOnly", entryPath, issues);
       });
     }
 
@@ -1214,6 +1229,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         addIssue(issues, entryPath, "must be a 3D face object", "{ points: [...] }");
         return;
       }
+      optionalString(entry, "id", entryPath, issues);
       const pointRefs = Array.isArray(entry.points) ? entry.points : Array.isArray(entry.vertices) ? entry.vertices : undefined;
       if (!pointRefs) {
         addIssue(issues, `${entryPath}.points`, "must be an array of point ids or coordinate triples", "point references[]");
@@ -1235,6 +1251,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalBoolean(entry, "dashed", entryPath, issues);
       rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
+      optionalBoolean(entry, "solutionOnly", entryPath, issues);
       if (hasOwn(entry, "style"))
         addIssue(issues, `${entryPath}.style`, "must use graph3d face fillColor/strokeColor fields, not style", "fillColor/strokeColor");
     });
@@ -1250,6 +1267,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
           addIssue(issues, entryPath, "must be a graph3d solid object", "{ kind, ... }");
           return;
         }
+        optionalString(entry, "id", entryPath, issues);
         const kind = typeof entry.kind === "string" ? entry.kind : typeof entry.type === "string" ? entry.type : "";
         const normalizedKind = kind.toLowerCase();
         if (!GRAPH3D_SOLID_KINDS.has(kind)) {
@@ -1284,6 +1302,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         optionalNumber(entry, "stepsV", entryPath, issues, { integer: true, min: 2 });
         rejectGraph3DVisibleAlias(entry, entryPath, issues);
         optionalBoolean(entry, "show", entryPath, issues);
+        optionalBoolean(entry, "solutionOnly", entryPath, issues);
         if (hasOwn(entry, "normal")) numberTriple(entry.normal, `${entryPath}.normal`, issues);
         if (hasOwn(entry, "axis")) numberTriple(entry.axis, `${entryPath}.axis`, issues);
         if (!hasOwn(entry, "radius")) addIssue(issues, `${entryPath}.radius`, "is required", "positive number");
@@ -1349,6 +1368,46 @@ function validateImageDiagram(config: Record<string, unknown>, path: string, iss
   optionalString(data, "mimeType", `${path}.data`, issues);
   optionalNumber(data, "naturalWidth", `${path}.data`, issues, { positive: true });
   optionalNumber(data, "naturalHeight", `${path}.data`, issues, { positive: true });
+  const annotations = optionalArray(data, "annotations", `${path}.data`, issues);
+  const ids = new Set<string>();
+  annotations?.forEach((entry, index) => {
+    const entryPath = `${path}.data.annotations[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be an image annotation", "{ id, kind, xPercent, yPercent } ");
+      return;
+    }
+    requiredString(entry, "id", entryPath, issues);
+    requiredEnum(entry, "kind", entryPath, new Set(["label", "ellipse", "arrow"]), issues);
+    requiredNumber(entry, "xPercent", entryPath, issues);
+    requiredNumber(entry, "yPercent", entryPath, issues);
+    optionalNumber(entry, "xPercent", entryPath, issues, { min: 0, max: 100 });
+    optionalNumber(entry, "yPercent", entryPath, issues, { min: 0, max: 100 });
+    optionalString(entry, "text", entryPath, issues);
+    optionalString(entry, "color", entryPath, issues);
+    optionalNumber(entry, "strokeWidth", entryPath, issues, { min: 0.5, max: 12 });
+    optionalNumber(entry, "fontSizePx", entryPath, issues, { min: 8, max: 48 });
+    optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
+    if (entry.kind === "label" && (typeof entry.text !== "string" || !entry.text.trim())) {
+      addIssue(issues, `${entryPath}.text`, "must contain visible label text", "non-empty string");
+    }
+    if (entry.kind === "ellipse") {
+      requiredNumber(entry, "widthPercent", entryPath, issues, { positive: true });
+      requiredNumber(entry, "heightPercent", entryPath, issues, { positive: true });
+      optionalNumber(entry, "widthPercent", entryPath, issues, { min: 1, max: 100 });
+      optionalNumber(entry, "heightPercent", entryPath, issues, { min: 1, max: 100 });
+    }
+    if (entry.kind === "arrow") {
+      requiredNumber(entry, "endXPercent", entryPath, issues);
+      requiredNumber(entry, "endYPercent", entryPath, issues);
+      optionalNumber(entry, "endXPercent", entryPath, issues, { min: 0, max: 100 });
+      optionalNumber(entry, "endYPercent", entryPath, issues, { min: 0, max: 100 });
+    }
+    if (typeof entry.id === "string") {
+      if (ids.has(entry.id)) addIssue(issues, `${entryPath}.id`, "must be unique within data.annotations", "unique annotation id");
+      ids.add(entry.id);
+    }
+  });
 }
 
 function validateStatsChartOptions(options: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -1363,6 +1422,37 @@ function validateStatsChartOptions(options: Record<string, unknown>, path: strin
   optionalBoolean(options, "interactive", path, issues);
   optionalBoolean(options, "showLegend", path, issues);
   optionalString(options, "fillColor", path, issues);
+}
+
+function validateStatsChartSeries(data: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const series = optionalArray(data, "series", path, issues);
+  const ids = new Set<string>();
+  series?.forEach((entry, index) => {
+    const entryPath = `${path}.series[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be a statistics chart series", "{ id, seriesType, xValues, yValues }");
+      return;
+    }
+    requiredString(entry, "id", entryPath, issues);
+    requiredEnum(entry, "seriesType", entryPath, STATS_CHART_SERIES_TYPES, issues);
+    optionalString(entry, "label", entryPath, issues);
+    optionalString(entry, "color", entryPath, issues);
+    optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
+    optionalNumber(entry, "lineWidth", entryPath, issues, { positive: true });
+    optionalNumber(entry, "markerSize", entryPath, issues, { positive: true });
+    optionalNumber(entry, "barWidth", entryPath, issues, { positive: true });
+    const xValues = numberArray(entry, "xValues", entryPath, issues, { optional: false });
+    const yValues = numberArray(entry, "yValues", entryPath, issues, { optional: false });
+    if (xValues && yValues && xValues.length !== yValues.length) {
+      addIssue(issues, `${entryPath}.yValues`, "must have the same length as xValues", "one y-value per x-value");
+    }
+    if (xValues && xValues.length < 1) addIssue(issues, `${entryPath}.xValues`, "must contain at least one value", "number[]");
+    if (typeof entry.id === "string") {
+      if (ids.has(entry.id)) addIssue(issues, `${entryPath}.id`, "must be unique within data.series", "unique series id");
+      ids.add(entry.id);
+    }
+  });
 }
 
 function validateStatsChart(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -1380,6 +1470,7 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
   optionalString(data, "xLabel", `${path}.data`, issues);
   optionalString(data, "yLabel", `${path}.data`, issues);
   optionalString(data, "title", `${path}.data`, issues);
+  validateStatsChartSeries(data, `${path}.data`, issues);
 
   if (data.chartType === "histogram") {
     const xValues = numberArray(data, "xValues", `${path}.data`, issues);
@@ -1476,6 +1567,7 @@ function validatePenrosePointData(data: Record<string, unknown>, path: string, i
   const objects = requiredArray(data, "objects", path, issues);
   const relationships = requiredArray(data, "relationships", path, issues);
   const pointNames = new Set<string>();
+  let sharedPointCount = 0;
   objects?.forEach((entry, index) => {
     const entryPath = `${path}.objects[${index}]`;
     if (!isRecord(entry)) {
@@ -1493,12 +1585,16 @@ function validatePenrosePointData(data: Record<string, unknown>, path: string, i
     optionalBoolean(entry, "hidePoint", entryPath, issues);
     optionalBoolean(entry, "hidden", entryPath, issues);
     optionalBoolean(entry, "showPoint", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
     if (entry.type === undefined || entry.type === "point") {
       if (typeof entry.name === "string") pointNames.add(entry.name);
+      if (entry.solutionOnly !== true) sharedPointCount += 1;
     }
   });
 
   if (!pointNames.size) addIssue(issues, `${path}.objects`, "must contain at least one point", "point objects");
+  if (pointNames.size && !sharedPointCount)
+    addIssue(issues, `${path}.objects`, "must retain at least one student-visible point", "one point without solutionOnly");
   optionalBoolean(data, "hidePoints", path, issues);
   optionalBoolean(data, "hidePointLabels", path, issues);
 
@@ -1517,6 +1613,15 @@ function validatePenrosePointData(data: Record<string, unknown>, path: string, i
     optionalNumber(entry, "tickCount", entryPath, issues, { integer: true, min: 1, max: 3 });
     optionalNumber(entry, "arcCount", entryPath, issues, { integer: true, min: 1, max: 3 });
     optionalNumber(entry, "count", entryPath, issues, { integer: true, min: 1, max: 3 });
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
+    if (entry.solutionOnly === true && entry.type !== "segment" && entry.type !== "vectorSegment") {
+      addIssue(
+        issues,
+        `${entryPath}.solutionOnly`,
+        "is currently supported only for segment and vectorSegment relationships",
+        "Use a solution point/segment or a paired solution diagram for the full construction.",
+      );
+    }
 
     if (entry.type === "triangle") pointNameArray(entry.points, `${entryPath}.points`, issues, pointNames, 3);
     if (entry.type === "segment" || entry.type === "vectorSegment") {
@@ -1738,6 +1843,7 @@ function validateSetDiagram(config: Record<string, unknown>, path: string, issue
     optionalString(entry, "value", entryPath, issues);
     optionalBoolean(entry, "shaded", entryPath, issues);
     optionalBoolean(entry, "shade", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
   });
 }
 

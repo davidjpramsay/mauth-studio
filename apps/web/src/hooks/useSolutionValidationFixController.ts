@@ -2,6 +2,7 @@ import type { ContentBlock } from "@mauth-studio/shared";
 
 import type { MauthAction, MauthContentScope } from "@/lib/mauthActions";
 import type { SolutionValidationFix, SolutionValidationIssue } from "@/lib/solutionValidation";
+import { insertBesideNestedContentBlock, nestedColumnsMutationPatch, updateNestedContentBlock } from "@/lib/solutionValidationNestedBlocks";
 
 interface ParsedSolutionAnchor {
   questionId?: string;
@@ -115,12 +116,29 @@ export function useSolutionValidationFixController<TQuestion extends SolutionQue
     }
 
     if (fix.kind === "add-solution") {
+      const solutionBlock = buildSolutionTextBlock();
+      const directTarget = contentBlocks.some((block) => block.id === fix.afterBlockId);
+      if (!directTarget) {
+        const nested = insertBesideNestedContentBlock(contentBlocks, fix.afterBlockId, solutionBlock, "after");
+        if (!nested) return null;
+        return {
+          actions: [
+            {
+              type: "module.update",
+              scope,
+              blockId: nested.rootBlock.id,
+              patch: nestedColumnsMutationPatch(nested),
+            } satisfies MauthAction,
+          ],
+          showSolutionsAfter: true,
+        };
+      }
       return {
         actions: [
           {
             type: "module.add",
             scope,
-            blocks: [buildSolutionTextBlock()],
+            blocks: [solutionBlock],
             placement: { blockId: fix.afterBlockId, position: "after" },
           } satisfies MauthAction,
         ],
@@ -129,12 +147,29 @@ export function useSolutionValidationFixController<TQuestion extends SolutionQue
     }
 
     if (fix.kind === "add-student-space") {
+      const studentBlock = buildStudentSpaceBlock(fix.lines);
+      const directTarget = contentBlocks.some((block) => block.id === fix.beforeBlockId);
+      if (!directTarget) {
+        const nested = insertBesideNestedContentBlock(contentBlocks, fix.beforeBlockId, studentBlock, "before");
+        if (!nested) return null;
+        return {
+          actions: [
+            {
+              type: "module.update",
+              scope,
+              blockId: nested.rootBlock.id,
+              patch: nestedColumnsMutationPatch(nested),
+            } satisfies MauthAction,
+          ],
+          showSolutionsAfter: true,
+        };
+      }
       return {
         actions: [
           {
             type: "module.add",
             scope,
-            blocks: [buildStudentSpaceBlock(fix.lines)],
+            blocks: [studentBlock],
             placement: { blockId: fix.beforeBlockId, position: "before" },
           } satisfies MauthAction,
         ],
@@ -143,7 +178,24 @@ export function useSolutionValidationFixController<TQuestion extends SolutionQue
     }
 
     const block = contentBlocks.find((current) => current.id === fix.blockId);
-    if (block?.kind !== "space") return null;
+    if (!block) {
+      const nested = updateNestedContentBlock(contentBlocks, fix.blockId, (candidate) =>
+        candidate.kind === "space" ? { ...candidate, lines: Math.max(spaceLines(candidate.lines), fix.lines) } : null,
+      );
+      if (!nested || nested.targetBlock.kind !== "space") return null;
+      return {
+        actions: [
+          {
+            type: "module.update",
+            scope,
+            blockId: nested.rootBlock.id,
+            patch: nestedColumnsMutationPatch(nested),
+          } satisfies MauthAction,
+        ],
+        showSolutionsAfter: false,
+      };
+    }
+    if (block.kind !== "space") return null;
     return {
       actions: [
         {

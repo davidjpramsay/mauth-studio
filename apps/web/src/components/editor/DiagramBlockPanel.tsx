@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import type { DiagramAlignment } from "@mauth-studio/shared";
+import { CopyPlus } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
 
@@ -29,8 +31,10 @@ interface DiagramBlockPanelProps {
   active?: boolean;
   openSignal?: number;
   bodyClassName?: string;
+  completeInSolutionsTitle?: string;
   onTypeChange: (type: string) => void;
   onAlignmentChange: (alignment: DiagramAlignment) => void;
+  onCompleteInSolutions?: () => void;
   onRemove: () => void;
 }
 
@@ -49,13 +53,31 @@ export function DiagramBlockPanel({
   active = false,
   openSignal,
   bodyClassName = "p-3",
+  completeInSolutionsTitle,
   onTypeChange,
   onAlignmentChange,
+  onCompleteInSolutions,
   onRemove,
 }: DiagramBlockPanelProps) {
   const showInlineSettings = settingsMode === "inline";
   const actions = (
     <>
+      {onCompleteInSolutions ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          title={completeInSolutionsTitle}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCompleteInSolutions();
+          }}
+          className="h-8 gap-2"
+        >
+          <CopyPlus className="size-4" aria-hidden="true" />
+          Complete in solutions
+        </Button>
+      ) : null}
       {showInlineSettings ? (
         <>
           <select

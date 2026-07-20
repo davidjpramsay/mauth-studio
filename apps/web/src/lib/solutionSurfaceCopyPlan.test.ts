@@ -15,6 +15,10 @@ function columnsBlock(id: string, columns: ContentBlock[][]): ContentBlock {
   return { id, kind: "columns", columnCount: columns.length, columns };
 }
 
+function tableBlock(id: string, visibility?: ContentBlock["visibility"]): ContentBlock {
+  return { id, kind: "table", headers: ["x", "0"], rows: [["y", ""]], ...(visibility ? { visibility } : {}) };
+}
+
 function question(contentBlocks: ContentBlock[]): QuestionBlock {
   return {
     id: "q1",
@@ -62,6 +66,52 @@ test("solutionSurfaceCopyPlan creates paired actions for a selected question blo
   });
 });
 
+test("solutionSurfaceCopyPlan reopens an existing paired solution instead of duplicating it", () => {
+  const studentBlock = textBlock("student-text", "student");
+  const solutionBlock = textBlock("solution-text", "solution");
+  const selection: SelectedEditorBlock = {
+    scope: { kind: "question", questionId: "q1" },
+    block: studentBlock,
+    label: "Text block 1",
+    summary: "Working",
+  };
+
+  const plan = solutionSurfaceCopyPlan({
+    questions: [question([studentBlock, solutionBlock])],
+    selection,
+    solutionSurfaceContentBlock: () => {
+      throw new Error("An existing solution must be reused.");
+    },
+    solutionSurfaceColumnBlockCopyAtPath: () => null,
+  });
+
+  assert.deepEqual(plan, {
+    actions: [],
+    selectAnchor: "q:q1/b:solution-text",
+  });
+});
+
+test("solutionSurfaceCopyPlan opens a shared table in place instead of duplicating it", () => {
+  const table = tableBlock("shared-table");
+  const selection: SelectedEditorBlock = {
+    scope: { kind: "question", questionId: "q1" },
+    block: table,
+    label: "Table block 1",
+    summary: "Table",
+  };
+
+  const plan = solutionSurfaceCopyPlan({
+    questions: [question([table])],
+    selection,
+    solutionSurfaceContentBlock: () => {
+      throw new Error("A shared table must not be duplicated.");
+    },
+    solutionSurfaceColumnBlockCopyAtPath: () => null,
+  });
+
+  assert.deepEqual(plan, { actions: [], selectAnchor: "q:q1/b:shared-table" });
+});
+
 test("solutionSurfaceCopyPlan updates nested columns and selects the new solution child", () => {
   const studentBlock = textBlock("student-text");
   const solutionBlock = textBlock("solution-text", "solution");
@@ -107,6 +157,64 @@ test("solutionSurfaceCopyPlan updates nested columns and selects the new solutio
     ],
     selectAnchor: "q:q1/b:columns/c:0/b:solution-text",
   });
+});
+
+test("solutionSurfaceCopyPlan reopens an existing solution inside columns", () => {
+  const studentBlock = textBlock("student-text", "student");
+  const solutionBlock = textBlock("solution-text", "solution");
+  const rootBlock = columnsBlock("columns", [[studentBlock, solutionBlock]]);
+  const selection: SelectedEditorBlock = {
+    scope: {
+      kind: "column",
+      rootScope: { kind: "question", questionId: "q1" },
+      rootBlockId: "columns",
+      path: [{ columnIndex: 0, blockId: "student-text" }],
+    },
+    block: studentBlock,
+    label: "Column 1 text block 1",
+    summary: "Working",
+  };
+
+  const plan = solutionSurfaceCopyPlan({
+    questions: [question([rootBlock])],
+    selection,
+    solutionSurfaceContentBlock: () => null,
+    solutionSurfaceColumnBlockCopyAtPath: () => {
+      throw new Error("An existing nested solution must be reused.");
+    },
+  });
+
+  assert.deepEqual(plan, {
+    actions: [],
+    selectAnchor: "q:q1/b:columns/c:0/b:solution-text",
+  });
+});
+
+test("solutionSurfaceCopyPlan opens a shared nested table at the same column path", () => {
+  const table = tableBlock("shared-table");
+  const rootBlock = columnsBlock("columns", [[table]]);
+  const selection: SelectedEditorBlock = {
+    scope: {
+      kind: "column",
+      rootScope: { kind: "question", questionId: "q1" },
+      rootBlockId: "columns",
+      path: [{ columnIndex: 0, blockId: "shared-table" }],
+    },
+    block: table,
+    label: "Column 1 table 1",
+    summary: "Table",
+  };
+
+  const plan = solutionSurfaceCopyPlan({
+    questions: [question([rootBlock])],
+    selection,
+    solutionSurfaceContentBlock: () => null,
+    solutionSurfaceColumnBlockCopyAtPath: () => {
+      throw new Error("A shared nested table must not be duplicated.");
+    },
+  });
+
+  assert.deepEqual(plan, { actions: [], selectAnchor: "q:q1/b:columns/c:0/b:shared-table" });
 });
 
 test("solutionSurfaceCopyPlan ignores blocks that are already solution-only", () => {

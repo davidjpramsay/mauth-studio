@@ -46,6 +46,64 @@ def test_penrose_endpoint_renders_triangle_svg():
     assert "ensure perpendicular(a.dot.center, b.dot.center, c.dot.center)" in data["metadata"]["styleSource"]
 
 
+def test_penrose_endpoint_colours_structured_solution_points_segments_and_labels():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "network",
+            "data": {
+                "objects": [
+                    {"type": "point", "name": "A", "label": "A"},
+                    {"type": "point", "name": "B", "label": "B", "solutionOnly": True},
+                ],
+                "relationships": [
+                    {
+                        "type": "segment",
+                        "name": "AB",
+                        "points": ["A", "B"],
+                        "label": "5",
+                        "solutionOnly": True,
+                    }
+                ],
+            },
+            "options": {"variation": "solution-colour"},
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "SolutionPoint(B)" in data["metadata"]["substance"]
+    assert "SolutionSegment(AB)" in data["metadata"]["substance"]
+    assert "SolutionLengthLabel(segmentLabel1)" in data["metadata"]["substance"]
+    assert data["svg"].count("#1d4ed8") >= 3
+
+
+def test_penrose_endpoint_colours_solution_venn_region_text_and_shading():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "setDiagram",
+            "data": {
+                "universe": {"name": "U", "label": "U"},
+                "sets": [{"name": "A", "label": "A"}, {"name": "B", "label": "B"}],
+                "regions": [
+                    {"name": "onlyA", "label": "7", "shaded": True, "solutionOnly": True},
+                    {"name": "intersection", "label": "2"},
+                    {"name": "onlyB", "label": "3"},
+                    {"name": "outside", "label": "1"},
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    svg = response.json()["svg"]
+    assert 'data-mauth-penrose-kind="region"' in svg
+    assert 'data-mauth-penrose-id="onlyA"' in svg
+    assert 'fill="#1d4ed8"' in svg
+    assert "rgba(29, 78, 216, 0.3)" in svg
+
+
 def test_penrose_endpoint_renders_default_two_set_diagram():
     response = client.post("/api/diagram/penrose", json=SET_SPEC)
 

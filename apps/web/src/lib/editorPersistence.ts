@@ -164,7 +164,7 @@ export function createEditorPersistence<
     const sectionHeadings = normalizeSectionHeadings(record.sectionHeadings);
     const documentFlow = normalizeDocumentFlow(record.documentFlow, questions, sectionHeadings);
     const formattingConfig = normalizeFormattingConfig(record.formattingConfig);
-    if (!frontMatter || !questions.length) return null;
+    if (!frontMatter) return null;
 
     return {
       frontMatter,

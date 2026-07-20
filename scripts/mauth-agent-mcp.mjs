@@ -5,7 +5,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
 
-const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+import { agentAuthorizationHeaders, resolveMauthRuntime } from "./mauth-runtime.mjs";
+
+const runtime = resolveMauthRuntime();
+const API_BASE = runtime.apiUrl;
+const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
 
 const actionSchema = z.array(z.record(z.string(), z.unknown()));
 const reviewTargetSchema = z
@@ -41,7 +45,7 @@ async function bridgeRequest(path, { method = "GET", body, headers = {} } = {}) 
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: body ? { "Content-Type": "application/json", ...headers } : headers,
+      headers: body ? { "Content-Type": "application/json", ...AGENT_HEADERS, ...headers } : { ...AGENT_HEADERS, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
     const parsedBody = parseResponseBody(await response.text());

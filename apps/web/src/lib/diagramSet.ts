@@ -83,6 +83,20 @@ function penroseLabelStatement(name: string, label?: unknown) {
 
 export type SetDiagramSetCount = 2 | 3;
 
+export interface NormalizedSetDiagramRegion extends Record<string, unknown> {
+  name: string;
+  label: unknown;
+  shaded: boolean;
+  solutionOnly?: boolean;
+}
+
+export interface NormalizedSetDiagramData extends Record<string, unknown> {
+  setCount: SetDiagramSetCount;
+  universe: Record<string, unknown> & { name: string; label: unknown; countLabel: string };
+  sets: Array<Record<string, unknown> & { name: string; label: unknown; countLabel: string }>;
+  regions: NormalizedSetDiagramRegion[];
+}
+
 export function setDiagramSetCountFromData(data?: Record<string, unknown> | null): SetDiagramSetCount {
   const explicitCount = Number(data?.setCount ?? data?.setsCount ?? data?.vennSetCount);
   if (explicitCount >= 3) return 3;
@@ -138,7 +152,7 @@ function setCountLabel(source?: Record<string, unknown> | null) {
   return value === undefined || value === null ? "" : String(value);
 }
 
-export function normalizedSetDiagramData(config: GraphConfig) {
+export function normalizedSetDiagramData(config: GraphConfig): NormalizedSetDiagramData {
   const { setCount, universe, sets, regions } = setSourceData(config);
   const setDefaults = setDiagramSetDefaults(setCount);
   const regionDefaults = setDiagramRegionDefaults(setCount);
@@ -150,6 +164,7 @@ export function normalizedSetDiagramData(config: GraphConfig) {
       name: penroseIdentifier(source.name, String(fallback.name)),
       label: source.label ?? source.value ?? fallback.label,
       shaded: source.shaded === true || source.shade === true,
+      solutionOnly: source.solutionOnly === true,
     };
   });
   return {

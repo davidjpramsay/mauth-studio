@@ -1,6 +1,6 @@
 # Local Agent Bridge
 
-Mauth should run locally as it does now, but assessment authoring should move toward a local agent bridge instead of direct project-file edits or an in-app provider chat panel.
+Mauth runs locally with an implemented agent bridge for assessment authoring. Normal agent work uses that bridge instead of direct project-file edits or an in-app provider chat panel.
 
 The bridge is a machine-facing contract around the existing editor state, Mauth action layer, validators, project-file API, and browser preview. Codex, Claude Code, Cursor, or a local MCP/App tool should use this contract for authoring work while the human keeps using the web app as the review and preview surface.
 
@@ -30,11 +30,11 @@ Agents should use this loop for document authoring:
 5. Apply the same batch with the current revision and an idempotency key.
 6. Verify the rendered result in the browser.
 
-If the bridge is unavailable in a given runtime, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under `~/Documents/Mauth/Documents`, `~/Documents/Mauth/.mauth`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
+If the bridge is unavailable in a given runtime, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under the selected documents folder, its `.mauth` metadata, `~/Library/Application Support/Mauth Studio/storage`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
 
 ## Local Endpoints
 
-The first bridge slice is small and deterministic:
+The implemented bridge surface is local and deterministic:
 
 ```text
 GET  /api/agent/current/snapshot
@@ -42,6 +42,7 @@ POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
 POST /api/agent/current/browser/register
+POST /api/agent/current/browser/unregister
 GET  /api/agent/current/browser/requests?sessionId=...
 POST /api/agent/current/browser/respond
 GET  /api/agent/current/events?after=...
@@ -58,22 +59,28 @@ GET  /.well-known/mauth-agent.json
 GET  /agent-docs
 ```
 
-`/api/system/status` is the process and bridge-health check for local tools. It reports the API build/version state, active documents folder, default project, browser bridge session count, and route names. Launchers and external agents should use it before assuming the API and web app are from the same generation.
+`/api/system/status` is the process and bridge-health check for local tools. It reports the API build/version state, runtime kind, active documents folder, default project, browser bridge session count, authentication requirement, and route names. The standalone app publishes its dynamic URL and random per-launch bridge token in the mode-`0600` file `~/Library/Application Support/Mauth Studio/runtime.json`; `pnpm agent:doctor`, `pnpm agent:mcp`, and bridge smoke tooling discover them automatically before checking status.
+
+Packaged private API routes require `Authorization: Bearer <token>`. Electron injects that header into its own `/api/*` traffic without exposing the token to document state or renderer JavaScript. Codex and Claude wrappers read it from the runtime manifest, and the manifest is removed when the owning app quits. Health, discovery, and system-status routes stay readable for diagnostics, but they never return the token. Fixed-port development runs remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly configured.
+
+The browser registers when the editor loads and unregisters with a beacon-safe request on normal page exit. Unregistering removes the session and releases requests assigned to it immediately. A crashed browser still falls back to the server-side session TTL.
 
 ## Snapshot Shape
 
-The snapshot should be compact, stable, and targeted at agent planning. It should include:
+The snapshot is compact, stable, and targeted at agent planning. Its contract includes:
 
 - active project id, file path, saved revision, dirty state, and autosave state
 - front matter, formatting config, page format, and selected logo summary
 - question, part, subpart, and module ids with labels and text previews
 - diagram summaries with renderer type, ids, warnings, and sizing/alignment state
 - student/solution visibility markers and response-space summaries
-- solution coverage and hidden mark totals where available
+- solution coverage, selected shared choice answers, and text or surface mark ticks where available
 - validation warnings and layout/preview warnings
 - action links and the preferred mutation precondition
 
 Agents should target ids from this snapshot. They should not infer document identity from DOM order, React component state, browser localStorage, or raw JSON file paths.
+
+Layout warnings are measured browser evidence, not speculative action validation. After a Student or Solutions preview has rendered, its page totals and oversized-page results are retained for the current document fingerprint and exposed as `rendered-page-overflow` warnings. Editing or opening another document clears those reports until the new preview is measured. A dry-run or applied-action result snapshot does not reuse warnings measured against the previous rendered document; verify the changed document in the browser to obtain fresh layout evidence.
 
 ## Mutation Rules
 
@@ -102,7 +109,7 @@ Use comments for notes such as:
 
 Use suggestions for proposed replacements that a human can accept or reject. A suggestion should target a stable question, part, subpart, module, or text range where possible, include the proposed action payload or replacement text, and record the proposing actor.
 
-The first implementation can keep comments and suggestions local to the active document. It does not need multi-user realtime collaboration.
+Comments and suggestions are local to the active document. The current bridge does not provide multi-user realtime collaboration.
 
 ## Presence And Events
 

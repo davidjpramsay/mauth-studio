@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
 import shutil
+import sys
 import uuid
 import zipfile
 from base64 import b64decode, b64encode, urlsafe_b64encode
@@ -13,6 +15,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.bootstrap import ROOT
+
+MACOS_DATALESS_FILE_FLAG = 0x40000000
 
 
 def documents_workspace_root() -> Path:
@@ -28,7 +32,14 @@ def utc_now_iso() -> str:
 
 def storage_root() -> Path:
     configured = os.environ.get("MATH_APP_STORAGE_ROOT")
-    return Path(configured).expanduser() if configured else documents_workspace_root() / ".mauth"
+    if configured:
+        return Path(configured).expanduser()
+    workspace_state_root = os.environ.get("MAUTH_WORKSPACE_STATE_ROOT")
+    if workspace_state_root:
+        return Path(workspace_state_root).expanduser()
+    if sys.platform == "darwin" and "MAUTH_DOCUMENTS_ROOT" not in os.environ:
+        return Path.home() / "Library" / "Application Support" / "Mauth Studio" / "storage"
+    return documents_workspace_root() / ".mauth"
 
 
 def using_default_visible_workspace() -> bool:
@@ -38,7 +49,18 @@ def using_default_visible_workspace() -> bool:
 def copy_tree_if_missing(source: Path, target: Path) -> None:
     if not source.exists() or target.exists():
         return
-    shutil.copytree(source, target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_target = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copytree(source, temp_target)
+        try:
+            temp_target.rename(target)
+        except OSError:
+            if not target.exists():
+                raise
+    finally:
+        if temp_target.exists():
+            shutil.rmtree(temp_target)
 
 
 def copy_user_project_tree(source: Path, target: Path) -> None:
@@ -77,7 +99,14 @@ def atomic_write_text(path: Path, content: str) -> None:
     os.replace(temp_path, path)
 
 
+def require_materialized_file(path: Path) -> None:
+    flags = getattr(path.stat(), "st_flags", 0)
+    if flags & MACOS_DATALESS_FILE_FLAG:
+        raise OSError(errno.ENODATA, "Cloud-backed file is not downloaded", str(path))
+
+
 def read_json_file(path: Path) -> dict[str, Any]:
+    require_materialized_file(path)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     return data if isinstance(data, dict) else {}
@@ -410,6 +439,7 @@ class FileLogoStorage:
                 media_type = (
                     record.get("mediaType") if isinstance(record.get("mediaType"), str) else "application/octet-stream"
                 )
+                require_materialized_file(file_path)
                 return data_url(media_type, file_path.read_bytes())
         src = record.get("src")
         return src if isinstance(src, str) else ""
@@ -503,8 +533,12 @@ class FileProjectStorage:
 
     def workspace_status(self) -> dict[str, Any]:
         default_project: dict[str, Any] | None = None
+        is_external_documents_folder = self._is_external_visible_documents_folder(self.DEFAULT_PROJECT_ID)
         project_path = self._project_path(self.DEFAULT_PROJECT_ID)
-        if project_path.exists():
+        # Cloud-backed external folders can leave metadata as an unavailable
+        # placeholder. System status must stay a lightweight launcher health
+        # check and must not wait for that file to materialize.
+        if not is_external_documents_folder and project_path.exists():
             try:
                 record = self._load_project(self.DEFAULT_PROJECT_ID)
             except (OSError, json.JSONDecodeError):
@@ -514,7 +548,7 @@ class FileProjectStorage:
 
         return {
             "usesVisibleWorkspace": self.uses_visible_workspace,
-            "isExternalDocumentsFolder": self._is_external_visible_documents_folder(self.DEFAULT_PROJECT_ID),
+            "isExternalDocumentsFolder": is_external_documents_folder,
             "baseWorkspacePath": str(self.base_workspace_root),
             "workspacePath": str(self.workspace_root),
             "documentsPath": str(self.documents_dir),
@@ -605,11 +639,12 @@ class FileProjectStorage:
         project = self._require_project(project_id)
         record = self._require_file(project_id, project, normalized_path)
         public = self._public_file(project_id, normalized_path, record, project)
-        public["content"] = (
-            None
-            if public["kind"] == "folder"
-            else self._content_path(project_id, normalized_path).read_text(encoding="utf-8")
-        )
+        if public["kind"] == "folder":
+            public["content"] = None
+        else:
+            content_path = self._content_path(project_id, normalized_path)
+            require_materialized_file(content_path)
+            public["content"] = content_path.read_text(encoding="utf-8")
         public["versionCount"] = len(self.list_versions(project_id, normalized_path))
         return public
 
@@ -782,6 +817,7 @@ class FileProjectStorage:
                     continue
                 content_path = self._content_path(project_id, file_path)
                 if content_path.exists():
+                    require_materialized_file(content_path)
                     archive.write(content_path, f"project/files/{file_path}")
 
             for file in active_files:
@@ -792,11 +828,13 @@ class FileProjectStorage:
                 if not versions_dir.exists():
                     continue
                 for version_path in sorted(versions_dir.glob("*.json")):
+                    require_materialized_file(version_path)
                     archive.write(version_path, f"project/versions/{versions_dir.name}/{version_path.name}")
 
             logos_dir = self.root / "assets" / "logos"
             logo_files_dir = logos_dir / "files"
             for logo_path in sorted(logos_dir.glob("*.json")):
+                require_materialized_file(logo_path)
                 archive.write(logo_path, f"logos/{logo_path.name}")
                 try:
                     record = read_json_file(logo_path)
@@ -806,6 +844,7 @@ class FileProjectStorage:
                 if isinstance(file_name, str):
                     logo_file_path = logo_files_dir / Path(file_name).name
                     if logo_file_path.exists():
+                        require_materialized_file(logo_file_path)
                         archive.write(logo_file_path, f"logos/files/{logo_file_path.name}")
 
         filename = f"{safe_file_stem(str(public_project.get('name') or project_id))}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
@@ -971,14 +1010,14 @@ class FileProjectStorage:
         if not isinstance(documents_path, str) or not documents_path.strip():
             return
         try:
-            resolved = self._validated_documents_folder(documents_path)
+            resolved = self._normalized_documents_folder(documents_path)
         except StorageValidationError:
             return
         self._configure_documents_folder(resolved, persist=False)
 
     def _configure_documents_folder(self, documents_dir: Path, persist: bool) -> None:
-        resolved = documents_dir.expanduser().resolve()
-        default_documents_dir = self.default_documents_dir.expanduser().resolve()
+        resolved = self._normalized_documents_folder(str(documents_dir))
+        default_documents_dir = self._normalized_documents_folder(str(self.default_documents_dir))
         if resolved == default_documents_dir:
             self.workspace_root = self.base_workspace_root
             self.root = self.base_root
@@ -1007,20 +1046,25 @@ class FileProjectStorage:
                 )
 
     def _validated_documents_folder(self, folder_path: str) -> Path:
+        resolved = self._normalized_documents_folder(folder_path)
+        if not resolved.exists():
+            raise StorageValidationError("Folder does not exist")
+        if not resolved.is_dir():
+            raise StorageValidationError("Path is not a folder")
+        return resolved
+
+    @staticmethod
+    def _normalized_documents_folder(folder_path: str) -> Path:
         if not isinstance(folder_path, str) or not folder_path.strip():
             raise StorageValidationError("Folder path is required")
         try:
-            resolved = Path(folder_path).expanduser().resolve()
+            resolved = Path(os.path.abspath(os.path.expanduser(folder_path)))
         except (OSError, RuntimeError) as error:
             raise StorageValidationError("Folder path is invalid") from error
         if resolved.name == ".mauth" or ".mauth" in resolved.parts:
             raise StorageValidationError(
                 "Choose the folder that contains your documents, not the .mauth metadata folder"
             )
-        if not resolved.exists():
-            raise StorageValidationError("Folder does not exist")
-        if not resolved.is_dir():
-            raise StorageValidationError("Path is not a folder")
         return resolved
 
     def _migrate_default_project_to_visible_workspace(self) -> None:
@@ -1282,6 +1326,7 @@ class FileProjectStorage:
         content_path = self._content_path(project_id, file_path)
         if not content_path.exists():
             return
+        require_materialized_file(content_path)
         now = utc_now_iso()
         version = {
             "id": f"version-{uuid.uuid4().hex}",

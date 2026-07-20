@@ -30,7 +30,7 @@ test("editorContextActionDescriptors orders editor actions predictably", () => {
       { id: "move-up", label: "Move up" },
       { id: "move-down", label: "Move down" },
       { id: "duplicate", label: "Duplicate" },
-      { id: "copy-to-solutions", label: "Copy to solutions" },
+      { id: "copy-to-solutions", label: "Complete in solutions" },
       { id: "delete", label: "Delete", destructive: true },
     ],
   );

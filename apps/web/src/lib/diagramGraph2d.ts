@@ -152,6 +152,11 @@ export function createGraphFunction(index: number, expression = "x"): GraphFunct
   };
 }
 
+export function createAuthoredGraphFunction(index: number, showSolutions: boolean, expression = "x"): GraphFunction {
+  const graphFunction = createGraphFunction(index, expression);
+  return showSolutions ? { ...graphFunction, solutionOnly: true } : graphFunction;
+}
+
 export function createGraphPiece(expression = "x", xMin?: number, xMax?: number): GraphFunctionPiece {
   return {
     id: id("piece"),
@@ -270,6 +275,16 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
     labelX: undefined,
     labelY: undefined,
   };
+}
+
+export function createAuthoredGraphFeature(
+  kind: GraphFeatureKind,
+  index: number,
+  graphConfig: GraphConfig | null | undefined,
+  solutionsMode: boolean,
+): GraphFeature {
+  const feature = createGraphFeature(kind, index, graphConfig);
+  return solutionsMode ? { ...feature, solutionOnly: true } : feature;
 }
 
 export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): GraphFeature[] {
@@ -435,4 +450,31 @@ export function lockedAspectHeight(graphConfig: GraphConfig, nextWidth: number) 
 
 export function isSolutionOnlyGraphFeature(feature: GraphFeature) {
   return feature.solutionOnly === true;
+}
+
+export function isSolutionOnlyGraphFunction(graphFunction: GraphFunction) {
+  return graphFunction.solutionOnly === true;
+}
+
+export function graphFunctionIndexById(functions: readonly GraphFunction[], idValue: string) {
+  return functions.findIndex((graphFunction) => graphFunction.id === idValue);
+}
+
+export function graphFunctionAt(functions: readonly GraphFunction[], index: number) {
+  return Number.isInteger(index) && index >= 0 ? functions[index] : undefined;
+}
+
+export function updateGraphFunction(
+  functions: readonly GraphFunction[],
+  index: number,
+  patch: Partial<GraphFunction>,
+): GraphFunction[] | null {
+  if (!graphFunctionAt(functions, index)) return null;
+  return functions.map((graphFunction, functionIndex) => (functionIndex === index ? { ...graphFunction, ...patch } : graphFunction));
+}
+
+export function graphFeatureReferencesFunction(feature: GraphFeature, functionIndex: number) {
+  return [feature.functionIndex, feature.functionAIndex, feature.functionBIndex, feature.clipFunctionIndex].some(
+    (candidate) => candidate === functionIndex,
+  );
 }

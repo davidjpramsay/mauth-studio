@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 type EditorBlockPanelContext = "question" | "part" | "subpart";
 
-interface EditorScopedContentBlockPanelProps {
+export interface EditorScopedContentBlockPanelProps {
   block: EditorContentBlock;
   scopeBlocks: EditorContentBlock[];
   context: EditorBlockPanelContext;
@@ -28,6 +28,7 @@ interface EditorScopedContentBlockPanelProps {
   diagramBlockForType: (type: string, visibility?: ContentBlockVisibility) => EditorContentBlock;
   onActivateAnchor: (anchor: string) => void;
   onContextMenuAnchor: (event: ReactMouseEvent<HTMLElement>, anchor: string) => void;
+  onCompleteBlockInSolutions?: (anchor: string) => void;
   onDragOver: (event: DragEvent<HTMLDivElement>, target: SubsectionDragTarget) => void;
   onDragLeave: (event: DragEvent<HTMLDivElement>, target: SubsectionDragTarget) => void;
   onDrop: (event: DragEvent<HTMLDivElement>, target: SubsectionDragTarget) => void;
@@ -52,6 +53,7 @@ export function EditorScopedContentBlockPanel({
   diagramBlockForType,
   onActivateAnchor,
   onContextMenuAnchor,
+  onCompleteBlockInSolutions,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -96,6 +98,9 @@ export function EditorScopedContentBlockPanel({
         diagramBlockForType={diagramBlockForType}
         onActivateAnchor={onActivateAnchor}
         onContextMenuAnchor={onContextMenuAnchor}
+        onCompleteBlockInSolutions={
+          onCompleteBlockInSolutions ? (nestedAnchor) => onCompleteBlockInSolutions(nestedAnchor || anchor) : undefined
+        }
         onChange={onChange}
         onRemove={onRemove}
       />

@@ -4,9 +4,6 @@ import test from "node:test";
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import {
-  LEGACY_STARTER_DOCUMENT_STORAGE_KEY,
-  SCREENSHOT_STARTER_DOCUMENT_ID,
-  STARTER_DOCUMENT_STORAGE_KEY,
   createScreenshotStarterDocumentPlan,
   createNotesSection,
   createQuestion,
@@ -15,7 +12,6 @@ import {
   createTemplateEditorDocumentPlan,
   frontMatterForTemplate,
   isBlankStarterQuestion,
-  shouldSeedScreenshotStarter,
   type ScreenshotStarterRuntime,
 } from "./editorStarterDocuments.ts";
 import { STARTER_LOGOS, type LogoAsset } from "./logoLibrary.ts";
@@ -26,15 +22,6 @@ function createIdFactory() {
     const next = (counters.get(prefix) ?? 0) + 1;
     counters.set(prefix, next);
     return `${prefix}-${next}`;
-  };
-}
-
-function createMemoryStorage(initialEntries: [string, string][] = []) {
-  const values = new Map(initialEntries);
-  return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => values.set(key, value),
-    removeItem: (key: string) => values.delete(key),
   };
 }
 
@@ -81,25 +68,6 @@ test("createNotesSection creates an editable notes heading with a starter text b
   assert.equal(section.contentBlocks[0]?.kind, "text");
   assert.equal(section.itemOrder[0]?.kind, "block");
   assert.equal(isBlankStarterQuestion(section), false);
-});
-
-test("shouldSeedScreenshotStarter is guarded by browser storage markers and blank state", () => {
-  const blank = createQuestion(createIdFactory());
-
-  assert.equal(shouldSeedScreenshotStarter([blank], createMemoryStorage()), true);
-  assert.equal(
-    shouldSeedScreenshotStarter([blank], createMemoryStorage([[STARTER_DOCUMENT_STORAGE_KEY, SCREENSHOT_STARTER_DOCUMENT_ID]])),
-    false,
-  );
-  assert.equal(shouldSeedScreenshotStarter([blank], createMemoryStorage([[LEGACY_STARTER_DOCUMENT_STORAGE_KEY, "legacy"]])), false);
-  assert.equal(shouldSeedScreenshotStarter([createNotesSection(createIdFactory())], createMemoryStorage()), false);
-  assert.equal(shouldSeedScreenshotStarter([blank, createQuestion(createIdFactory())], createMemoryStorage()), false);
-});
-
-test("shouldSeedScreenshotStarter does not seed from a server-side default storage context", () => {
-  const blank = createQuestion(createIdFactory());
-
-  assert.equal(shouldSeedScreenshotStarter([blank]), false);
 });
 
 test("createScreenshotStarterFrontMatter configures the screenshot starter as a test", () => {
@@ -243,6 +211,26 @@ test("createTemplateEditorDocumentPlan preserves logo context and records a clea
     currentFrontMatter: { ...createScreenshotStarterFrontMatter(), logoId: "missing-logo", schoolName: "Fallback" },
     editorDocumentFingerprint: () => "standard-fingerprint",
   });
-  assert.equal(standardPlan.document.questions[0]?.section, "Algebra");
+  assert.deepEqual(standardPlan.document.questions, []);
+  assert.deepEqual(standardPlan.document.documentFlow, []);
+  assert.equal(standardPlan.activeQuestionId, "");
+  assert.equal(standardPlan.anchor, "");
   assert.equal(standardPlan.document.formattingConfig.id, "high-school-mathematics-test");
+});
+
+test("new tests, exams, and worksheets start without questions", () => {
+  for (const template of ["standard", "exam", "worksheet"] as const) {
+    const plan = createTemplateEditorDocumentPlan({
+      template,
+      id: createIdFactory(),
+      logos: STARTER_LOGOS,
+      currentFrontMatter: createScreenshotStarterFrontMatter(),
+      editorDocumentFingerprint: () => `${template}-fingerprint`,
+    });
+
+    assert.deepEqual(plan.document.questions, []);
+    assert.deepEqual(plan.document.documentFlow, []);
+    assert.equal(plan.activeQuestionId, "");
+    assert.equal(plan.anchor, "");
+  }
 });

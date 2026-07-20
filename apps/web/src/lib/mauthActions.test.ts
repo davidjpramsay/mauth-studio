@@ -279,8 +279,17 @@ test("applies named module settings updates deterministically", () => {
     question("q1", [
       spaceBlock("space", 3),
       tableBlock("table"),
+      { id: "answer-table", kind: "table", headers: ["x", "0", "1"], rows: [["y", "", ""]] },
       columnsBlock,
       { id: "choices", kind: "choices", choices: ["A", "B"], numberingStyle: "upper-alpha", layout: "vertical" },
+      {
+        id: "solution-choices",
+        kind: "choices",
+        choices: ["A", "B", "C"],
+        numberingStyle: "upper-alpha",
+        layout: "vertical",
+        visibility: "solution",
+      },
       diagramBlock("diagram", { type: "graph2d", widthPx: 420, heightPx: 260 }),
     ]),
   ];
@@ -324,6 +333,28 @@ test("applies named module settings updates deterministically", () => {
   result = applyMauthAction(questions, {
     type: "module.settings.update",
     scope: { kind: "question", questionId: "q1" },
+    blockId: "answer-table",
+    settings: { kind: "table", solutionEntry: { row: 0, column: 1, value: "6" } },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const answeredTable = findContentBlock(questions[0].contentBlocks, "answer-table");
+  assert.deepEqual(answeredTable?.kind === "table" ? answeredTable.solutionEntries : undefined, [["", "6", ""]]);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "answer-table",
+    settings: { kind: "table", solutionEntry: { row: 0, column: 1, value: null } },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const clearedTable = findContentBlock(questions[0].contentBlocks, "answer-table");
+  assert.equal(clearedTable?.kind === "table" ? clearedTable.solutionEntries : undefined, undefined);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
     blockId: "cols",
     settings: { kind: "columns", columnCount: 4 },
   });
@@ -355,6 +386,39 @@ test("applies named module settings updates deterministically", () => {
   result = applyMauthAction(questions, {
     type: "module.settings.update",
     scope: { kind: "question", questionId: "q1" },
+    blockId: "choices",
+    settings: { kind: "choices", solutionAnswerIndex: 1 },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const sharedAnsweredChoices = findContentBlock(questions[0].contentBlocks, "choices");
+  assert.equal(sharedAnsweredChoices?.kind === "choices" ? sharedAnsweredChoices.solutionAnswerIndex : undefined, 1);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "solution-choices",
+    settings: { kind: "choices", solutionAnswerIndex: 2 },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const answeredChoices = findContentBlock(questions[0].contentBlocks, "solution-choices");
+  assert.equal(answeredChoices?.kind === "choices" ? answeredChoices.solutionAnswerIndex : undefined, 2);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "solution-choices",
+    settings: { kind: "choices", solutionAnswerIndex: null },
+  });
+  assert.equal(result.ok, true, result.error);
+  questions = result.questions;
+  const clearedChoices = findContentBlock(questions[0].contentBlocks, "solution-choices");
+  assert.equal(clearedChoices?.kind === "choices" ? clearedChoices.solutionAnswerIndex : undefined, undefined);
+
+  result = applyMauthAction(questions, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
     blockId: "diagram",
     settings: { kind: "diagram", diagramAlign: "left", diagramTextSide: "right" },
   });
@@ -363,6 +427,57 @@ test("applies named module settings updates deterministically", () => {
   assert.equal(updatedDiagram?.kind, "diagram");
   assert.equal(updatedDiagram?.kind === "diagram" ? updatedDiagram.diagramAlign : undefined, "left");
   assert.equal(updatedDiagram?.kind === "diagram" ? updatedDiagram.diagramTextSide : undefined, "right");
+});
+
+test("rejects circled choice answers on student choice lists", () => {
+  const result = applyMauthAction([question("q1", [{ id: "choices", kind: "choices", choices: ["A", "B"], visibility: "student" }])], {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "choices",
+    settings: { kind: "choices", solutionAnswerIndex: 1 },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /student-only choice list/);
+});
+
+test("rejects structured table answers outside blank shared body cells", () => {
+  const studentTable = {
+    id: "student-table",
+    kind: "table" as const,
+    headers: ["x", "0"],
+    rows: [["y", ""]],
+    visibility: "student" as const,
+  };
+  const sharedTable = { ...studentTable, id: "shared-table", visibility: "always" as const };
+  const initial = [question("q1", [studentTable, sharedTable])];
+
+  const studentResult = applyMauthAction(initial, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "student-table",
+    settings: { kind: "table", solutionEntry: { row: 0, column: 1, value: "6" } },
+  });
+  assert.equal(studentResult.ok, false);
+  assert.match(studentResult.error ?? "", /shown in both copies/);
+
+  const givenCellResult = applyMauthAction(initial, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "shared-table",
+    settings: { kind: "table", solutionEntry: { row: 0, column: 0, value: "answer" } },
+  });
+  assert.equal(givenCellResult.ok, false);
+  assert.match(givenCellResult.error ?? "", /student table cell is blank/);
+
+  const boundsResult = applyMauthAction(initial, {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "shared-table",
+    settings: { kind: "table", solutionEntry: { row: 4, column: 1, value: "6" } },
+  });
+  assert.equal(boundsResult.ok, false);
+  assert.match(boundsResult.error ?? "", /existing body cell/);
 });
 
 test("adds, deletes, and reorders parts while preserving itemOrder", () => {
@@ -1081,7 +1196,7 @@ test("updates selected geometry2d primitive settings without replacing the diagr
     blockId: "d1",
     settings: {
       renderer: "geometry2d",
-      primitive: { kind: "angle", index: 0, label: "$45^\\circ$", strokeStyle: "dashed", radius: 0.65 },
+      primitive: { kind: "angle", index: 0, label: "$45^\\circ$", strokeStyle: "dashed", radius: 0.65, solutionOnly: true },
     },
   });
 
@@ -1095,6 +1210,7 @@ test("updates selected geometry2d primitive settings without replacing the diagr
   assert.equal(data?.angles?.[0]?.label, "$45^\\circ$");
   assert.equal(data?.angles?.[0]?.strokeStyle, "dashed");
   assert.equal(data?.angles?.[0]?.radius, 0.65);
+  assert.equal(data?.angles?.[0]?.solutionOnly, true);
   assert.equal(data?.decorations?.[0]?.kind, "rightAngle");
 
   const missingPrimitive = applyMauthAction(initial, {
@@ -1105,6 +1221,336 @@ test("updates selected geometry2d primitive settings without replacing the diagr
   });
   assert.equal(missingPrimitive.ok, false);
   assert.match(missingPrimitive.error ?? "", /outside angles/);
+});
+
+test("updates selected vector2d element settings without replacing sibling elements", () => {
+  const vectorConfig: GraphConfig = {
+    type: "vector2d",
+    metadata: {
+      vector2d: {
+        vectors: [
+          { id: "a", name: "a", label: "", start: [0, 0], components: [2, 1], color: "#111111", showComponents: false },
+          { id: "b", name: "b", label: "", start: [0, 0], components: [1, 2], color: "#222222", showComponents: false },
+        ],
+        segmentLabels: [{ id: "length-a", vectorId: "a", label: "2", position: 0.5, offsetPx: 18, color: "#111111" }],
+        angleMarkers: [{ id: "angle-ab", from: "a", to: "b", label: "", rightAngle: false, radius: 0.5, color: "#111111" }],
+      },
+    },
+  };
+  const initial = [question("q1", [diagramBlock("d1", vectorConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "vector2d",
+      element: { kind: "angleMarker", id: "angle-ab", label: "45^\\circ", radius: 0.65, solutionOnly: true },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  assert.equal(diagram.graphConfig.metadata?.vector2d?.angleMarkers?.[0]?.label, "45^\\circ");
+  assert.equal(diagram.graphConfig.metadata?.vector2d?.angleMarkers?.[0]?.radius, 0.65);
+  assert.equal(diagram.graphConfig.metadata?.vector2d?.angleMarkers?.[0]?.solutionOnly, true);
+  assert.deepEqual(diagram.graphConfig.metadata?.vector2d?.vectors, vectorConfig.metadata?.vector2d?.vectors);
+  assert.deepEqual(diagram.graphConfig.metadata?.vector2d?.segmentLabels, vectorConfig.metadata?.vector2d?.segmentLabels);
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "vector2d", element: { kind: "vector", index: 5, solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /outside vector/);
+});
+
+test("updates selected graph2d functions without replacing sibling graph content", () => {
+  const graphConfig: GraphConfig = {
+    type: "graph2d",
+    xMin: -4,
+    xMax: 4,
+    functions: [
+      { id: "shared", expression: "x", label: "f", color: "#111111" },
+      { id: "answer", expression: "x^2", label: "g", color: "#cc0000" },
+    ],
+    features: [{ id: "origin", kind: "point", x: 0, y: 0 }],
+  };
+  const initial = [question("q1", [diagramBlock("d1", graphConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "graph2d",
+      function: { id: "answer", patch: { expression: "(x-1)^2", label: "solution", solutionOnly: true } },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  assert.equal(diagram.graphConfig.functions?.[0]?.expression, "x");
+  assert.equal(diagram.graphConfig.functions?.[1]?.expression, "(x-1)^2");
+  assert.equal(diagram.graphConfig.functions?.[1]?.label, "solution");
+  assert.equal(diagram.graphConfig.functions?.[1]?.solutionOnly, true);
+  assert.deepEqual(diagram.graphConfig.features, graphConfig.features);
+  assert.equal(diagram.graphConfig.xMin, -4);
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "graph2d", function: { id: "missing", solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /could not find the requested function/);
+});
+
+test("updates selected graph3d element settings without replacing sibling elements", () => {
+  const graph3dConfig: GraphConfig = {
+    type: "graph3d",
+    data: {
+      points: [
+        { id: "A", coords: [0, 0, 0] },
+        { id: "B", coords: [1, 1, 1] },
+      ],
+      segments: [
+        { id: "shared", from: "A", to: "B", label: "AB" },
+        { id: "answer", from: "A", to: "B", label: "" },
+      ],
+      xRange: [-2, 2],
+    },
+  };
+  const initial = [question("q1", [diagramBlock("d1", graph3dConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "graph3d",
+      element: { kind: "segment", id: "answer", label: "solution", color: "#1d4ed8", solutionOnly: true },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  const data = diagram.graphConfig.data;
+  assert.equal(data?.segments?.[0]?.label, "AB");
+  assert.equal(data?.segments?.[1]?.label, "solution");
+  assert.equal(data?.segments?.[1]?.solutionOnly, true);
+  assert.deepEqual(data?.points, graph3dConfig.data?.points);
+  assert.deepEqual(data?.xRange, [-2, 2]);
+
+  const renamed = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "graph3d", element: { kind: "point", id: "B", patch: { id: "C" } } },
+  });
+  assert.equal(renamed.ok, true, renamed.error);
+  const renamedDiagram = renamed.questions[0].contentBlocks[0];
+  assert.equal(renamedDiagram.kind, "diagram");
+  if (renamedDiagram.kind === "diagram") {
+    assert.equal(renamedDiagram.graphConfig.data?.points?.[1]?.id, "C");
+    assert.equal(renamedDiagram.graphConfig.data?.segments?.[0]?.to, "C");
+  }
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "graph3d", element: { kind: "point", index: 5, solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /outside point/);
+});
+
+test("updates selected statsChart series without replacing sibling chart data", () => {
+  const chartConfig: GraphConfig = {
+    type: "statsChart",
+    data: {
+      chartType: "blankAxes",
+      range: [0, 2],
+      yRange: [0, 2],
+      series: [
+        { id: "shared", seriesType: "points", xValues: [0], yValues: [1], color: "#111111" },
+        { id: "answer", seriesType: "line", xValues: [0, 1, 2], yValues: [0, 1, 0], color: "#cc0000" },
+      ],
+    },
+    options: { widthPx: 420, heightPx: 260, showGrid: false },
+  };
+  const initial = [question("q1", [diagramBlock("d1", chartConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "statsChart",
+      element: { kind: "series", id: "answer", label: "Completed curve", color: "#1d4ed8", solutionOnly: true },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  const data = diagram.graphConfig.data;
+  assert.equal(data?.series?.[0]?.label, undefined);
+  assert.equal(data?.series?.[1]?.label, "Completed curve");
+  assert.equal(data?.series?.[1]?.solutionOnly, true);
+  assert.deepEqual(data?.range, [0, 2]);
+  assert.deepEqual(diagram.graphConfig.options, chartConfig.options);
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "statsChart", element: { kind: "series", index: 5, solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /outside data\.series/);
+});
+
+test("updates selected image annotations without replacing the uploaded image", () => {
+  const imageConfig: GraphConfig = {
+    type: "image",
+    data: {
+      src: "data:image/png;base64,abc",
+      name: "Triangle",
+      alt: "A labelled triangle",
+      annotations: [
+        { id: "shared", kind: "label", xPercent: 20, yPercent: 30, text: "$A$", color: "#111827" },
+        {
+          id: "answer",
+          kind: "ellipse",
+          xPercent: 60,
+          yPercent: 70,
+          widthPercent: 20,
+          heightPercent: 12,
+          color: "#dc2626",
+        },
+      ],
+    },
+    widthPx: 420,
+    heightPx: 260,
+  };
+  const initial = [question("q1", [diagramBlock("d1", imageConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "image",
+      element: {
+        kind: "annotation",
+        id: "answer",
+        patch: { xPercent: 75, widthPercent: 30, color: "#1d4ed8", solutionOnly: true },
+      },
+    },
+  });
+
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  assert.equal(diagram.graphConfig.data?.src, "data:image/png;base64,abc");
+  assert.equal(diagram.graphConfig.data?.annotations?.[0]?.text, "$A$");
+  assert.equal(diagram.graphConfig.data?.annotations?.[1]?.xPercent, 75);
+  assert.equal(diagram.graphConfig.data?.annotations?.[1]?.widthPercent, 30);
+  assert.equal(diagram.graphConfig.data?.annotations?.[1]?.solutionOnly, true);
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "image", element: { kind: "annotation", index: 5, solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /could not find the requested annotation/);
+});
+
+test("updates selected Penrose elements without replacing sibling diagram data", () => {
+  const networkConfig: GraphConfig = {
+    type: "network",
+    data: {
+      hidePoints: false,
+      objects: [
+        { type: "point", name: "A", label: "A" },
+        { type: "point", name: "B", label: "B" },
+      ],
+      relationships: [
+        { type: "segment", name: "AB", points: ["A", "B"], label: "" },
+        { type: "vectorSegment", name: "BA", points: ["B", "A"], label: "shared" },
+      ],
+    },
+    options: { variation: "fixed", substanceSource: "Point A, B" },
+  };
+  const initial = [question("q1", [diagramBlock("d1", networkConfig)])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "network", element: { kind: "relationship", id: "AB", label: "5", solutionOnly: true } },
+  });
+  assert.equal(result.ok, true, result.error);
+  const diagram = result.questions[0].contentBlocks[0];
+  assert.equal(diagram.kind, "diagram");
+  if (diagram.kind !== "diagram") return;
+  const data = diagram.graphConfig.data as { objects: unknown[]; relationships: Array<Record<string, unknown>> };
+  assert.equal(data.objects.length, 2);
+  assert.equal(data.relationships[0].label, "5");
+  assert.equal(data.relationships[0].solutionOnly, true);
+  assert.equal(data.relationships[1].label, "shared");
+  assert.equal(diagram.graphConfig.options?.variation, "fixed");
+  assert.equal(diagram.graphConfig.options?.substanceSource, undefined);
+
+  const missing = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "network", element: { kind: "relationship", id: "missing", solutionOnly: true } },
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error ?? "", /could not find/);
+
+  const setConfig: GraphConfig = {
+    type: "setDiagram",
+    data: {
+      universe: { name: "U", label: "U" },
+      sets: [
+        { name: "A", label: "A" },
+        { name: "B", label: "B" },
+      ],
+      regions: [
+        { name: "onlyA", label: "" },
+        { name: "intersection", label: "2" },
+        { name: "onlyB", label: "3" },
+        { name: "outside", label: "1" },
+      ],
+    },
+  };
+  const setResult = applyMauthAction([question("q1", [diagramBlock("d1", setConfig)])], {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { renderer: "setDiagram", element: { kind: "region", id: "onlyA", label: "7", shaded: true, solutionOnly: true } },
+  });
+  assert.equal(setResult.ok, true, setResult.error);
+  const setDiagram = setResult.questions[0].contentBlocks[0];
+  assert.equal(setDiagram.kind, "diagram");
+  if (setDiagram.kind !== "diagram") return;
+  const regions = (setDiagram.graphConfig.data as { regions: Array<Record<string, unknown>> }).regions;
+  assert.equal(regions[0].label, "7");
+  assert.equal(regions[0].shaded, true);
+  assert.equal(regions[0].solutionOnly, true);
+  assert.equal(regions[1].label, "2");
 });
 
 test("fails cleanly when ids are wrong", () => {

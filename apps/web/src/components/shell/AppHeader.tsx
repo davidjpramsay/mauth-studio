@@ -31,7 +31,7 @@ function ManualModeIcon({ className }: { className?: string }) {
   );
 }
 
-interface AppHeaderProps {
+export interface AppHeaderProps {
   paneMode: PaneMode;
   showInspectorPane: boolean;
   editorDocumentOpen: boolean;

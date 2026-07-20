@@ -1,10 +1,13 @@
 import type { ContentBlock, ContentBlockVisibility, GraphConfig } from "@mauth-studio/shared";
 
+import { choiceBlockHasSolutionAnswer } from "./choiceSolutionAnswers.ts";
 import { normalizeColumnCount, normalizeTableBlock, paddedTableRow, plainTablePatch, plainTableRows } from "./contentBlockNormalization.ts";
 import { DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "./diagram3d.ts";
 import { finiteGraphNumber, imageDiagramData } from "./diagramImage.ts";
 import { DEFAULT_NETWORK_DATA, networkDataForSave, normalizedNetworkDiagramData } from "./diagramNetwork.ts";
 import { penroseOptions, removePenroseSubstanceOverride } from "./diagramPenrose.ts";
+import { diagramConfigHasSolutionAnnotations } from "./solutionDiagramCompleteness.ts";
+import { tableBlockHasSharedSolutionEntries } from "./tableSolutionEntries.ts";
 import {
   DEFAULT_SET_DATA,
   DEFAULT_THREE_SET_DATA,
@@ -39,11 +42,20 @@ export function contentBlockDisplayVisibility(block: ContentBlock): ContentBlock
 }
 
 export function contentBlockVisibilityPatch(block: ContentBlock, visibility: ContentBlockVisibility): Partial<ContentBlock> {
+  const keepsSharedSolutionTicks =
+    visibility === "always" &&
+    ((block.kind === "diagram" && diagramConfigHasSolutionAnnotations(block.graphConfig)) ||
+      choiceBlockHasSolutionAnswer(block) ||
+      tableBlockHasSharedSolutionEntries(block));
   return {
     visibility,
     solutionOnly: visibility === "solution",
     studentOnly: visibility === "student",
-    ...(visibility !== "solution" && block.markTicks !== undefined ? { markTicks: undefined } : {}),
+    ...(visibility !== "solution" && !keepsSharedSolutionTicks && block.markTicks !== undefined ? { markTicks: undefined } : {}),
+    ...(visibility === "student" && block.kind === "choices" && block.solutionAnswerIndex !== undefined
+      ? { solutionAnswerIndex: undefined }
+      : {}),
+    ...(visibility === "student" && block.kind === "table" && block.solutionEntries !== undefined ? { solutionEntries: undefined } : {}),
   };
 }
 
@@ -54,6 +66,7 @@ export function contentBlockMarkTicksPatch(value: unknown): Partial<ContentBlock
 }
 
 export function contentBlockSupportsSolutionSurfaceTicks(block: ContentBlock) {
+  if (block.kind === "columns" || block.kind === "pageBreak") return false;
   if (block.kind === "text" || block.kind === "space") return block.markTicks !== undefined;
   return true;
 }

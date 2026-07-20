@@ -410,7 +410,7 @@ function offsetUserByPixels(board: JXG.Board, x: number, y: number, dxPx: number
   return [x + dxPx / boardUnit(board, "x"), y - dyPx / boardUnit(board, "y")];
 }
 
-function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number, number], color: string) {
+function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number, number], color: string, vectorId: string) {
   const lengthPx = Math.hypot((end[0] - start[0]) * boardUnit(board, "x"), (end[1] - start[1]) * boardUnit(board, "y"));
   const directionX = lengthPx > 0 ? ((end[0] - start[0]) * boardUnit(board, "x")) / lengthPx : 1;
   const directionY = lengthPx > 0 ? -((end[1] - start[1]) * boardUnit(board, "y")) / lengthPx : 0;
@@ -432,7 +432,7 @@ function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number
     -perpendicularY * VECTOR_ARROW_HALF_WIDTH_PX,
   );
 
-  board.create("segment", [start, baseCenter], {
+  const shaft = board.create("segment", [start, baseCenter], {
     strokeColor: color,
     highlightStrokeColor: color,
     strokeWidth: 3,
@@ -440,7 +440,7 @@ function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number
     withLabel: false,
     layer: GRAPH_LAYERS.vector,
   });
-  board.create("polygon", [end, baseLeft, baseRight], {
+  const arrowHead = board.create("polygon", [end, baseLeft, baseRight], {
     fixed: true,
     highlight: false,
     withLabel: false,
@@ -463,6 +463,9 @@ function drawVectorArrow(board: JXG.Board, start: [number, number], end: [number
       visible: false,
     },
   } as Record<string, unknown>);
+  const attributes = { "data-mauth-vector-arrow": "true", "data-mauth-vector-id": vectorId };
+  setRenderedDataAttributes(shaft, attributes);
+  setRenderedDataAttributes(arrowHead, attributes);
 }
 
 function vectorEnd(vector: Vector2DEntry): [number, number] {
@@ -994,7 +997,7 @@ export function Vector2DGraph({
           layer: GRAPH_LAYERS.vectorGuide,
         });
       }
-      drawVectorArrow(board, vector.start, end, vector.color);
+      drawVectorArrow(board, vector.start, end, vector.color, vector.id);
       const labelLatex = vectorLabelLatex(vector);
       if (labelLatex.trim()) {
         const [defaultLabelX, defaultLabelY] = defaultVectorLabelPosition(board, vector);

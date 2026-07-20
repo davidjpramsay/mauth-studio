@@ -7,6 +7,7 @@ import type {
   MauthAgentSnapshot,
   MauthAgentSubpartSummary,
 } from "@mauth-studio/shared";
+import { tableSolutionEntryCount } from "./tableSolutionEntries.ts";
 
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "./mauthActions.ts";
 
@@ -63,19 +64,21 @@ function summarizeBlock(block: ContentBlock): MauthAgentModuleSummary {
     id: block.id,
     kind: block.kind,
     visibility: blockVisibility(block),
+    marks: block.markTicks,
   };
 
   if (block.kind === "text") {
     summary.textPreview = compactText(block.text);
-    summary.marks = block.markTicks;
   }
   if (block.kind === "choices") {
     summary.choiceCount = block.choices.length;
+    summary.solutionAnswerIndex = block.solutionAnswerIndex;
     summary.textPreview = compactText(block.choices.join(" | "));
   }
   if (block.kind === "table") {
     summary.rowCount = block.rows.length;
     summary.columnCount = Math.max(block.headers.length, ...block.rows.map((row) => row.length));
+    summary.solutionEntryCount = tableSolutionEntryCount(block);
     summary.textPreview = compactText([...block.headers, ...block.rows.flat()].join(" | "));
   }
   if (block.kind === "diagram") {

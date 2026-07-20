@@ -144,6 +144,29 @@ export function mergeLogoAssets(current: LogoAsset[], assets: Array<LogoAsset | 
   return changed ? next : current;
 }
 
+export function updatedLogoLibraryAsset(current: LogoAsset[], logoId: string, patch: { name: string; schoolName: string }) {
+  const existingLogo = current.find((logo) => logo.id === logoId);
+  if (!existingLogo) return null;
+  const logo = {
+    ...existingLogo,
+    name: patch.name.trim() || existingLogo.name,
+    schoolName: patch.schoolName,
+  };
+  return {
+    logo,
+    logos: current.map((candidate) => (candidate.id === logoId ? logo : candidate)),
+  };
+}
+
+export function appendedLogoLibraryAsset(current: LogoAsset[], logo: LogoAsset) {
+  return mergeLogoAssets(current, [logo]);
+}
+
+export function removedLogoLibraryAsset(current: LogoAsset[], logoId: string) {
+  const logos = current.filter((candidate) => candidate.id !== logoId);
+  return logos.length && logos.length !== current.length ? logos : null;
+}
+
 export function appendMissingLogoAssets(current: LogoAsset[], assets: Array<LogoAsset | null | undefined>) {
   let changed = false;
   const next = [...current];

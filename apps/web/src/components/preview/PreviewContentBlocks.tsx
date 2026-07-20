@@ -9,10 +9,16 @@ import type {
   GraphConfig,
   TableCellAlignment,
 } from "@mauth-studio/shared";
+import { diagramBlockHasSharedSolutionAnswer } from "@/lib/solutionDiagramCompleteness";
 
 import { normalizeColumnsBlock } from "@/lib/contentBlockNormalization";
-import { tableSolutionEntryMasksForSlot } from "@/lib/tableSolutionEntries";
+import {
+  sharedTableSolutionPresentation,
+  tableBlockHasSharedSolutionEntries,
+  tableSolutionEntryMasksForSlot,
+} from "@/lib/tableSolutionEntries";
 import { cn } from "@/lib/utils";
+import { choiceBlockHasSolutionAnswer, choiceSolutionAnswerIndexForPreview } from "@/lib/choiceSolutionAnswers";
 
 type EditorContentBlock = ContentBlock;
 type PreviewTable = {
@@ -76,15 +82,18 @@ export interface PreviewContentBlocksProps {
 
 function ChoiceListPreview({
   block,
+  showSolutions,
   runtime,
   renderers,
 }: {
   block: Extract<EditorContentBlock, { kind: "choices" }>;
+  showSolutions: boolean;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
 }) {
   const choices = runtime.normalizeChoiceItems(block.choices);
   const layout = runtime.normalizeChoiceListLayout(block.layout);
+  const solutionAnswerIndex = choiceSolutionAnswerIndexForPreview(block, showSolutions);
 
   return (
     <div
@@ -95,8 +104,16 @@ function ChoiceListPreview({
       )}
     >
       {choices.map((choice, index) => (
-        <div key={`${choice}-${index}`} className="test-choice-item">
-          <span className="test-choice-label">{runtime.choiceLabel(block.numberingStyle, index)}</span>
+        <div
+          key={`${choice}-${index}`}
+          className={cn("test-choice-item", solutionAnswerIndex === index && "test-choice-item-solution-answer")}
+          data-solution-answer={solutionAnswerIndex === index ? "true" : undefined}
+        >
+          <span className="test-choice-label">
+            <span className={cn("test-choice-label-text", solutionAnswerIndex === index && "test-choice-label-answer-ring")}>
+              {runtime.choiceLabel(block.numberingStyle, index)}
+            </span>
+          </span>
           <div className="test-choice-content">{renderers.renderMath(choice, { plainSimpleInlineLatex: false })}</div>
         </div>
       ))}
@@ -106,17 +123,20 @@ function ChoiceListPreview({
 
 function TablePreview({
   block,
+  showSolutions,
   runtime,
   renderers,
   solutionEntryMask,
 }: {
   block: Extract<EditorContentBlock, { kind: "table" }>;
+  showSolutions: boolean;
   runtime: PreviewContentRuntime;
   renderers: PreviewContentRenderers;
   solutionEntryMask?: boolean[][];
 }) {
+  const sharedPresentation = sharedTableSolutionPresentation(block, showSolutions);
   const table = runtime.normalizeTableBlock(block);
-  const rows = runtime.plainTableRows(table);
+  const rows = sharedPresentation.rows;
   const solutionTable = block.visibility === "solution" || block.solutionOnly === true;
   const headerRowCount = table.showHeader ? 1 : 0;
 
@@ -132,7 +152,7 @@ function TablePreview({
                   className={cn(
                     "test-table-cell",
                     `test-table-cell-${table.cellAlignment}`,
-                    solutionEntryMask?.[rowIndex]?.[cellIndex]
+                    solutionEntryMask?.[rowIndex]?.[cellIndex] || sharedPresentation.solutionEntryMask[rowIndex]?.[cellIndex]
                       ? "test-table-solution-entry-cell"
                       : solutionTable && rowIndex >= headerRowCount && cellIndex > 0 && cell.trim() && "test-table-solution-entry-cell",
                   )}
@@ -200,13 +220,21 @@ function ColumnsPreview({
 
 function solutionSurfaceMarkTicks(block: EditorContentBlock, showSolutions: boolean) {
   if (!showSolutions) return 0;
-  if (block.visibility !== "solution" && block.solutionOnly !== true) return 0;
+  if (
+    block.visibility !== "solution" &&
+    block.solutionOnly !== true &&
+    !diagramBlockHasSharedSolutionAnswer(block) &&
+    !choiceBlockHasSolutionAnswer(block) &&
+    !tableBlockHasSharedSolutionEntries(block)
+  ) {
+    return 0;
+  }
   return Math.max(0, Math.min(20, Math.round(Number(block.markTicks) || 0)));
 }
 
 function isSolutionSurface(block: EditorContentBlock, showSolutions: boolean) {
   if (!showSolutions) return false;
-  return block.visibility === "solution" || block.solutionOnly === true;
+  return block.visibility === "solution" || block.solutionOnly === true || tableBlockHasSharedSolutionEntries(block);
 }
 
 function SolutionMarkedSurface({
@@ -459,7 +487,7 @@ function DiagramBesideContentBlock({
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
         <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-          <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+          <ChoiceListPreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
         </SolutionMarkedSurface>
       </div>
     );
@@ -473,7 +501,7 @@ function DiagramBesideContentBlock({
         data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
       >
         <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-          <TablePreview block={block} runtime={runtime} renderers={renderers} />
+          <TablePreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
         </SolutionMarkedSurface>
       </div>
     );
@@ -955,7 +983,7 @@ export function PreviewContentBlocks({
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
           <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-            <ChoiceListPreview block={block} runtime={runtime} renderers={renderers} />
+            <ChoiceListPreview block={block} showSolutions={showSolutions} runtime={runtime} renderers={renderers} />
           </SolutionMarkedSurface>
         </div>,
       );
@@ -970,7 +998,13 @@ export function PreviewContentBlocks({
           data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
         >
           <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers}>
-            <TablePreview block={block} runtime={runtime} renderers={renderers} solutionEntryMask={tableSolutionEntryMasks?.[block.id]} />
+            <TablePreview
+              block={block}
+              showSolutions={showSolutions}
+              runtime={runtime}
+              renderers={renderers}
+              solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
+            />
           </SolutionMarkedSurface>
         </div>,
       );

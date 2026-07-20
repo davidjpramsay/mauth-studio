@@ -1,30 +1,16 @@
-import type { GraphConfig } from "@mauth-studio/shared";
+import type {
+  GraphConfig,
+  GraphMetadata,
+  GraphVector2DAngleMarker,
+  GraphVector2DSegmentLabel,
+  GraphVector2DVector,
+} from "@mauth-studio/shared";
 
 export type Vector2DLabelStyle = "boldLower" | "arrow" | "custom";
 
-export type Vector2DControlEntry = {
-  id: string;
-  name: string;
-  label: string;
-  start: [number, number];
-  components: [number, number];
-  color: string;
-  showComponents: boolean;
-  labelX?: number;
-  labelY?: number;
-};
-
-export type Vector2DAngleMarkerEntry = {
-  id: string;
-  from: string;
-  to: string;
-  label: string;
-  rightAngle: boolean;
-  radius: number;
-  color: string;
-  labelX?: number;
-  labelY?: number;
-};
+export type Vector2DControlEntry = GraphVector2DVector;
+export type Vector2DSegmentLabelEntry = GraphVector2DSegmentLabel;
+export type Vector2DAngleMarkerEntry = GraphVector2DAngleMarker;
 
 export type Vector2DSourceVectorInput = {
   id?: string;
@@ -40,6 +26,7 @@ export type Vector2DSourceVectorInput = {
   showComponents?: boolean;
   labelX?: number;
   labelY?: number;
+  solutionOnly?: boolean;
 };
 
 export type Vector2DSourceSegmentLabelInput = {
@@ -53,6 +40,7 @@ export type Vector2DSourceSegmentLabelInput = {
   color?: string;
   labelX?: number;
   labelY?: number;
+  solutionOnly?: boolean;
 };
 
 export type Vector2DSourceAngleMarkerInput = {
@@ -69,6 +57,7 @@ export type Vector2DSourceAngleMarkerInput = {
   color?: string;
   labelX?: number;
   labelY?: number;
+  solutionOnly?: boolean;
 };
 
 export type Vector2DSourceDiagramInput = {
@@ -87,6 +76,16 @@ export type Vector2DSourceDiagramInput = {
   labelStyle?: Vector2DLabelStyle;
 };
 
+export type Vector2DElementKind = "vector" | "segmentLabel" | "angleMarker";
+export type Vector2DElementListKey = "vectors" | "segmentLabels" | "angleMarkers";
+export type Vector2DElement = Vector2DControlEntry | Vector2DSegmentLabelEntry | Vector2DAngleMarkerEntry;
+
+export interface Vector2DElementTarget {
+  kind: Vector2DElementKind;
+  listKey: Vector2DElementListKey;
+  index: number;
+}
+
 export const VECTOR_2D_COLORS = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#7c3aed"];
 export const VECTOR_2D_ANNOTATION_COLOR = "#0f172a";
 
@@ -98,7 +97,7 @@ export const DEFAULT_VECTOR_2D_METADATA = {
       { id: "b", name: "b", label: "", start: [0, 0], components: [4, -3], color: VECTOR_2D_COLORS[1], showComponents: false },
     ],
   },
-};
+} satisfies GraphMetadata;
 
 export const DEFAULT_VECTOR_2D_GRAPH: GraphConfig = {
   type: "vector2d",
@@ -339,6 +338,7 @@ function sourceSegmentLabel(
     position: Math.min(0.95, Math.max(0.05, finiteVectorNumber(entry.position, 0.55))),
     offsetPx: finiteVectorNumber(entry.offsetPx ?? entry.offset, fallbackOffsetPx),
     color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
+    ...(entry.solutionOnly === true ? { solutionOnly: true } : {}),
     ...(labelX !== undefined ? { labelX } : {}),
     ...(labelY !== undefined ? { labelY } : {}),
   };
@@ -395,6 +395,7 @@ function sourceAngleMarker(
     rightAngle,
     radius,
     color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
+    ...(entry.solutionOnly === true ? { solutionOnly: true } : {}),
     ...(labelX !== undefined ? { labelX } : {}),
     ...(labelY !== undefined ? { labelY } : {}),
   };
@@ -443,6 +444,7 @@ export function normalizedVector2DEntries(config: GraphConfig): Vector2DControlE
         showComponents: record.showComponents === true,
         labelX: finiteOptionalVectorNumber(record.labelX),
         labelY: finiteOptionalVectorNumber(record.labelY),
+        ...(record.solutionOnly === true ? { solutionOnly: true } : {}),
       };
     });
   }
@@ -468,6 +470,31 @@ export function normalizedVector2DEntries(config: GraphConfig): Vector2DControlE
   }));
 }
 
+export function normalizedVector2DSegmentLabels(config: GraphConfig): Vector2DSegmentLabelEntry[] {
+  const vector2d = vector2dMetadata(config);
+  const rawLabels = Array.isArray(vector2d.segmentLabels) ? vector2d.segmentLabels : [];
+
+  return rawLabels
+    .map((entry, index): Vector2DSegmentLabelEntry | null => {
+      const record = asRecord(entry) ?? {};
+      const vectorId = String(record.vectorId ?? record.vector ?? "");
+      const label = String(record.label ?? "");
+      if (!vectorId.trim() || !label.trim()) return null;
+      return {
+        id: String(record.id ?? `segment-label-${index + 1}`),
+        vectorId,
+        label,
+        position: Math.max(0.05, Math.min(0.95, finiteVectorNumber(record.position, 0.55))),
+        offsetPx: finiteVectorNumber(record.offsetPx ?? record.offset, 18),
+        color: String(record.color ?? VECTOR_2D_ANNOTATION_COLOR),
+        labelX: finiteOptionalVectorNumber(record.labelX),
+        labelY: finiteOptionalVectorNumber(record.labelY),
+        ...(record.solutionOnly === true ? { solutionOnly: true } : {}),
+      };
+    })
+    .filter((entry): entry is Vector2DSegmentLabelEntry => !!entry);
+}
+
 export function normalizedVector2DAngleMarkers(config: GraphConfig): Vector2DAngleMarkerEntry[] {
   const vector2d = vector2dMetadata(config);
   const rawMarkers = Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : [];
@@ -489,6 +516,7 @@ export function normalizedVector2DAngleMarkers(config: GraphConfig): Vector2DAng
         color: String(record.color ?? VECTOR_2D_ANNOTATION_COLOR),
         labelX: finiteOptionalVectorNumber(record.labelX),
         labelY: finiteOptionalVectorNumber(record.labelY),
+        ...(record.solutionOnly === true ? { solutionOnly: true } : {}),
       };
     })
     .filter((entry): entry is Vector2DAngleMarkerEntry => !!entry);
@@ -504,6 +532,16 @@ export function vector2dMetadataFromEntries(config: GraphConfig, vectors: Vector
   };
 }
 
+export function vector2dMetadataFromSegmentLabels(config: GraphConfig, segmentLabels: Vector2DSegmentLabelEntry[]) {
+  return {
+    ...(config.metadata ?? {}),
+    vector2d: {
+      ...vector2dMetadata(config),
+      segmentLabels,
+    },
+  };
+}
+
 export function vector2dMetadataFromAngleMarkers(config: GraphConfig, angleMarkers: Vector2DAngleMarkerEntry[]) {
   return {
     ...(config.metadata ?? {}),
@@ -511,6 +549,118 @@ export function vector2dMetadataFromAngleMarkers(config: GraphConfig, angleMarke
       ...vector2dMetadata(config),
       angleMarkers,
     },
+  };
+}
+
+const VECTOR_2D_ELEMENT_LIST_KEYS = {
+  vector: "vectors",
+  segmentLabel: "segmentLabels",
+  angleMarker: "angleMarkers",
+} as const satisfies Record<Vector2DElementKind, Vector2DElementListKey>;
+
+export function normalizeVector2DElementKind(value: unknown): Vector2DElementKind | null {
+  if (value === "vector" || value === "vectors") return "vector";
+  if (value === "segmentLabel" || value === "segment-label" || value === "segmentLabels") return "segmentLabel";
+  if (value === "angleMarker" || value === "angle-marker" || value === "angleMarkers") return "angleMarker";
+  return null;
+}
+
+export function vector2dElementTarget(kind: Vector2DElementKind, index: number): Vector2DElementTarget | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  return { kind, listKey: VECTOR_2D_ELEMENT_LIST_KEYS[kind], index };
+}
+
+export function vector2dElements(config: GraphConfig, kind: Vector2DElementKind): Vector2DElement[] {
+  if (kind === "vector") return normalizedVector2DEntries(config);
+  if (kind === "segmentLabel") return normalizedVector2DSegmentLabels(config);
+  return normalizedVector2DAngleMarkers(config);
+}
+
+export function vector2dElementAt(config: GraphConfig, target: Vector2DElementTarget): Vector2DElement | undefined {
+  return vector2dElements(config, target.kind)[target.index];
+}
+
+export function vector2dElementIndexById(config: GraphConfig, kind: Vector2DElementKind, idValue: string) {
+  return vector2dElements(config, kind).findIndex((entry) => entry.id === idValue);
+}
+
+export function vector2dElementDisplayName(config: GraphConfig, target: Vector2DElementTarget) {
+  const element = vector2dElementAt(config, target);
+  const kindLabel = target.kind === "segmentLabel" ? "Segment label" : target.kind === "angleMarker" ? "Angle marker" : "Vector";
+  const name = element && "name" in element && element.name.trim() ? element.name.trim() : element?.id?.trim();
+  return name ? `${kindLabel} ${target.index + 1}: ${name}` : `${kindLabel} ${target.index + 1}`;
+}
+
+export function isSolutionOnlyVector2DElement(element: Vector2DElement) {
+  return element.solutionOnly === true;
+}
+
+export function vector2dElementForAuthoringLayer<TElement extends Vector2DElement>(element: TElement, solutionsMode: boolean): TElement {
+  return solutionsMode ? ({ ...element, solutionOnly: true } as TElement) : element;
+}
+
+export function vector2dElementWithSolutionOnly<TElement extends Vector2DElement>(element: TElement, solutionOnly: boolean): TElement {
+  return { ...element, solutionOnly } as TElement;
+}
+
+export function updateVector2DElement(
+  config: GraphConfig,
+  target: Vector2DElementTarget,
+  patch: Partial<Vector2DElement>,
+): Record<string, unknown> {
+  const elements = vector2dElements(config, target.kind);
+  if (!elements[target.index]) return config.metadata ?? {};
+  const nextElements = elements.map((entry, index) => (index === target.index ? { ...entry, ...patch } : entry));
+  return {
+    ...(config.metadata ?? {}),
+    vector2d: {
+      ...vector2dMetadata(config),
+      [target.listKey]: nextElements,
+    },
+  };
+}
+
+function vector2dRawElementLists(config: GraphConfig) {
+  const metadata = config.metadata ?? {};
+  const vector2d = vector2dMetadata(config);
+  return {
+    metadata,
+    vector2d,
+    vectors: Array.isArray(vector2d.vectors) ? vector2d.vectors : [],
+    segmentLabels: Array.isArray(vector2d.segmentLabels) ? vector2d.segmentLabels : [],
+    angleMarkers: Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : [],
+  };
+}
+
+export function vector2dConfigHasSolutionOnly(config: GraphConfig) {
+  if (config.type !== "vector2d") return false;
+  const lists = vector2dRawElementLists(config);
+  return [lists.vectors, lists.segmentLabels, lists.angleMarkers].some((entries) =>
+    entries.some((entry) => asRecord(entry)?.solutionOnly === true),
+  );
+}
+
+export function vector2dConfigForSolutionVisibility(config: GraphConfig, showSolutions: boolean, solutionColor?: string): GraphConfig {
+  if (!vector2dConfigHasSolutionOnly(config)) return config;
+  const lists = vector2dRawElementLists(config);
+  const visibleList = (entries: unknown[]) =>
+    showSolutions
+      ? entries.map((entry) => {
+          const record = asRecord(entry);
+          return record?.solutionOnly === true && solutionColor ? { ...record, color: solutionColor } : entry;
+        })
+      : entries.filter((entry) => asRecord(entry)?.solutionOnly !== true);
+  return {
+    ...config,
+    metadata: {
+      ...lists.metadata,
+      vector2d: {
+        ...lists.vector2d,
+        vectors: visibleList(lists.vectors),
+        segmentLabels: visibleList(lists.segmentLabels),
+        angleMarkers: visibleList(lists.angleMarkers),
+      },
+    } as GraphMetadata,
   };
 }
 
@@ -550,6 +700,7 @@ export function buildVector2DSourceDiagramConfig(input: Vector2DSourceDiagramInp
       components,
       color: String(entry.color ?? VECTOR_2D_ANNOTATION_COLOR),
       showComponents: entry.showComponents === true,
+      ...(entry.solutionOnly === true ? { solutionOnly: true } : {}),
       ...(labelX !== undefined ? { labelX } : {}),
       ...(labelY !== undefined ? { labelY } : {}),
     };

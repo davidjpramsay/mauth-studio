@@ -155,8 +155,10 @@ class ContentBlock(BaseModel):
     choices: list[str] = Field(default_factory=list)
     numberingStyle: Literal["roman", "upper-alpha", "lower-alpha", "decimal", "bullet"] | None = "roman"
     layout: Literal["vertical", "two-column", "inline"] | None = "vertical"
+    solutionAnswerIndex: int | None = None
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
+    solutionEntries: list[list[str]] = Field(default_factory=list)
     showHeader: bool | None = True
     tableAlign: Literal["left", "center", "right"] | None = "center"
     cellAlignment: Literal["left", "center", "right"] | None = "center"

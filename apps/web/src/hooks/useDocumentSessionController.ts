@@ -4,10 +4,12 @@ import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 import { useActiveProjectFileSyncController } from "@/hooks/useActiveProjectFileSyncController";
 import { useEditorCloseController } from "@/hooks/useEditorCloseController";
 import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
+import { useProjectFileConflictController } from "@/hooks/useProjectFileConflictController";
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import { useProjectDocumentOpenController } from "@/hooks/useProjectDocumentOpenController";
 import { useProjectDocumentPersistenceController } from "@/hooks/useProjectDocumentPersistenceController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
+import { projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 
 interface DiskAutosaveResult {
   updatedAt?: string;
@@ -35,6 +37,7 @@ interface UseDocumentSessionControllerOptions<TDocument, TSavedDocument, TAutosa
   editorDocumentOpenRef: MutableRefObject<boolean>;
   lastProjectSaveFingerprintRef: MutableRefObject<string | null>;
   fileOperationBusy: boolean;
+  projectSaveConflict: ProjectSaveConflict | null;
   hasUnsavedProjectChanges: boolean;
   hasUnsavedDraftChanges: boolean;
   currentProjectFileName: string;
@@ -81,6 +84,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   editorDocumentOpenRef,
   lastProjectSaveFingerprintRef,
   fileOperationBusy,
+  projectSaveConflict,
   hasUnsavedProjectChanges,
   hasUnsavedDraftChanges,
   currentProjectFileName,
@@ -119,7 +123,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   const {
     writeEditorDocumentToProjectFile,
     writeCurrentTestProjectFile,
-    saveCurrentProjectFileBeforeOpening,
+    prepareCurrentProjectFileTransition,
     saveCurrentTestToProjectFile,
     saveActiveFileRecoveryCopy,
   } = useProjectDocumentPersistenceController<TDocument>({
@@ -184,7 +188,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
       revisionMissingErrorMessage,
       parseSavedDocument,
       applySavedProjectDocument,
-      saveCurrentProjectFileBeforeOpening,
+      prepareCurrentProjectFileTransition,
       currentEditorDocumentFingerprint,
       projectFileConflictFromError,
       setActiveProject,
@@ -202,12 +206,29 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     fileOperationBusy,
     intervalMs: activeFileSyncIntervalMs,
     syncActiveProjectFileFromDisk,
+    onUnexpectedSyncError: (error) => {
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(projectFilesUnavailableMessage(error));
+    },
+    onSyncRecovered: () => {
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage("Documents folder reconnected");
+    },
+  });
+
+  const { saveConflictRecoveryCopy, reloadConflictFileFromDisk } = useProjectFileConflictController({
+    conflict: projectSaveConflict,
+    fileOperationBusy,
+    currentProjectFileName,
+    dialogs,
+    saveRecoveryCopy: saveActiveFileRecoveryCopy,
+    reloadFromDisk: reloadActiveProjectFileFromDisk,
   });
 
   return {
     writeEditorDocumentToProjectFile,
     writeCurrentTestProjectFile,
-    saveCurrentProjectFileBeforeOpening,
+    prepareCurrentProjectFileTransition,
     saveCurrentTestToProjectFile,
     saveActiveFileRecoveryCopy,
     saveCurrentTest,
@@ -217,5 +238,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     openProjectFile,
     syncActiveProjectFileFromDisk,
     reloadActiveProjectFileFromDisk,
+    saveConflictRecoveryCopy,
+    reloadConflictFileFromDisk,
   };
 }

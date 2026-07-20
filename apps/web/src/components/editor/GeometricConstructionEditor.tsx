@@ -3,6 +3,7 @@ import { Shuffle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PenroseSolutionElementsEditor } from "@/components/editor/PenroseSolutionElementsEditor";
 import { DEFAULT_PENROSE_SCALE_PERCENT, PENROSE_ORIGINAL_WIDTH, penroseOptions, penroseScalePercent } from "@/lib/diagramPenrose";
 
 function optionalNumber(value: string) {
@@ -21,12 +22,14 @@ type GeometricConstructionEditorProps = {
   config: GraphConfig;
   substanceSource: string;
   settingsMode?: "inline" | "inspector";
+  showSolutions?: boolean;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
 export function GeometricConstructionEditor({
   config,
   substanceSource,
+  showSolutions = true,
   settingsMode = "inline",
   onChange,
 }: GeometricConstructionEditorProps) {
@@ -83,6 +86,7 @@ export function GeometricConstructionEditor({
           </p>
         </>
       ) : null}
+      <PenroseSolutionElementsEditor config={config} showSolutions={showSolutions} onChange={onChange} />
       <label className="flex flex-col gap-2 text-xs font-medium">
         Substance
         <Textarea

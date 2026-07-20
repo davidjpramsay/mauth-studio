@@ -27,7 +27,13 @@ import {
 import type { EditorContentBlock } from "@/lib/editorDocumentNormalization";
 import { normalizeDiagramType, withGraphDefaults } from "@/lib/editorDiagramConfig";
 import { columnChildScrollAnchor, scrollAnchorContains } from "@/lib/scrollAnchors";
-import { isSolutionTextBlock, solutionModeInsertedBlockVisibility, type SolutionInsertionBlockKind } from "@/lib/solutionBlockVisibility";
+import {
+  isContentBlockVisibleInScope,
+  isSolutionTextBlock,
+  solutionModeInsertedBlockVisibility,
+  type SolutionInsertionBlockKind,
+} from "@/lib/solutionBlockVisibility";
+import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import { tableSolutionEntryMasksForBlocks } from "@/lib/tableSolutionEntries";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +57,7 @@ interface ColumnsBlockEditorProps {
   diagramBlockForType: (type: string, visibility?: ContentBlockVisibility) => EditorContentBlock;
   onActivateAnchor?: (anchor: string) => void;
   onContextMenuAnchor?: (event: ReactMouseEvent<HTMLElement>, anchor: string) => void;
+  onCompleteBlockInSolutions?: (anchor: string) => void;
   onChange: (patch: Partial<EditorColumnsBlock>) => void;
   onRemove: () => void;
 }
@@ -79,10 +86,14 @@ export function ColumnsBlockEditor({
   diagramBlockForType,
   onActivateAnchor,
   onContextMenuAnchor,
+  onCompleteBlockInSolutions,
   onChange,
   onRemove,
 }: ColumnsBlockEditorProps) {
   const normalized = normalizeColumnsBlock(block);
+  const visibleColumns = normalized.columns.map((column) =>
+    column.filter((_, blockIndex) => isContentBlockVisibleInScope(column, blockIndex, showSolutions)),
+  );
   const updateColumns = (columns: EditorContentBlock[][], columnCount = normalized.columnCount) => onChange({ columnCount, columns });
   const addColumnBlock = (
     columnIndex: number,
@@ -163,6 +174,7 @@ export function ColumnsBlockEditor({
     }
 
     if (child.kind === "diagram") {
+      const solutionSurfaceState = solutionSurfaceControlState(child);
       return wrapChild(
         <DiagramBlockEditor
           label={`${childLabelPrefix} diagram ${childNumber}`}
@@ -178,6 +190,12 @@ export function ColumnsBlockEditor({
           openSignal={childOpenSignal}
           onChange={(graphConfig) => updateColumnBlock(columnIndex, child.id, { graphConfig })}
           onAlignmentChange={(diagramAlign) => updateColumnBlock(columnIndex, child.id, { diagramAlign })}
+          completeInSolutionsTitle={solutionSurfaceState.copyTitle}
+          onCompleteInSolutions={
+            childAnchor && onCompleteBlockInSolutions && solutionSurfaceState.canCreateSolutionCopy
+              ? () => onCompleteBlockInSolutions(childAnchor)
+              : undefined
+          }
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
         />,
       );
@@ -191,6 +209,7 @@ export function ColumnsBlockEditor({
           block={child}
           numberingStyleOptions={CHOICE_NUMBERING_STYLES}
           layoutOptions={CHOICE_LIST_LAYOUTS}
+          showSolutions={showSolutions}
           settingsMode="inspector"
           muted
           active={childActive}
@@ -210,11 +229,13 @@ export function ColumnsBlockEditor({
           diagramAlignments={DIAGRAM_ALIGNMENTS}
           cellAlignments={TABLE_CELL_ALIGNMENTS}
           settingsMode="inspector"
+          showSolutions={showSolutions}
           solutionEntryMask={columnTableSolutionEntryMasks?.[child.id]}
           muted
           active={childActive}
           openSignal={childOpenSignal}
           onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
+          onCompleteInSolutions={childAnchor && onCompleteBlockInSolutions ? () => onCompleteBlockInSolutions(childAnchor) : undefined}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
         />,
       );
@@ -237,6 +258,8 @@ export function ColumnsBlockEditor({
           contentBlockForKind={contentBlockForKind}
           diagramBlockForType={diagramBlockForType}
           onActivateAnchor={onActivateAnchor}
+          onContextMenuAnchor={onContextMenuAnchor}
+          onCompleteBlockInSolutions={onCompleteBlockInSolutions}
           onChange={(patch) => updateColumnBlock(columnIndex, child.id, patch as Record<string, unknown>)}
           onRemove={() => removeColumnBlock(columnIndex, child.id)}
         />,
@@ -274,7 +297,7 @@ export function ColumnsBlockEditor({
       openSignal={openSignal}
     >
       <div className="grid min-w-0 gap-3" style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}>
-        {normalized.columns.map((column, columnIndex) => (
+        {visibleColumns.map((column, columnIndex) => (
           <section key={columnIndex} className="min-w-0 space-y-3 rounded-md border bg-background p-3">
             <div className="text-xs font-semibold uppercase text-muted-foreground">Column {columnIndex + 1}</div>
             {column.length ? (

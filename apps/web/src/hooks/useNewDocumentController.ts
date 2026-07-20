@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 
 interface NewDocumentResult<TDocument> {
   document: TDocument;
@@ -7,19 +7,7 @@ interface NewDocumentResult<TDocument> {
   cleanFingerprint?: string | null;
 }
 
-interface StarterDocumentResult<TDocument> {
-  document: TDocument;
-  activeQuestionId: string;
-  anchor: string;
-  markSeeded: () => void;
-}
-
-interface UseNewDocumentControllerOptions<TTemplate, TStarterChangeKey, TDocument> {
-  storageHydrated: boolean;
-  editorDocumentOpen: boolean;
-  starterChangeKey: TStarterChangeKey;
-  shouldSeedStarter: () => boolean;
-  createStarterDocument: () => StarterDocumentResult<TDocument>;
+interface UseNewDocumentControllerOptions<TTemplate, TDocument> {
   createTemplateDocument: (template: TTemplate) => NewDocumentResult<TDocument>;
   setDocument: (document: TDocument) => void;
   setDocumentOpen: (open: boolean) => void;
@@ -35,14 +23,11 @@ interface UseNewDocumentControllerOptions<TTemplate, TStarterChangeKey, TDocumen
   queueDocumentJump: (editorAnchor: string, previewAnchor: string) => void;
 }
 
-export function useNewDocumentController<TTemplate, TStarterChangeKey, TDocument>(
-  options: UseNewDocumentControllerOptions<TTemplate, TStarterChangeKey, TDocument>,
-) {
+export function useNewDocumentController<TTemplate, TDocument>(options: UseNewDocumentControllerOptions<TTemplate, TDocument>) {
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const { storageHydrated, editorDocumentOpen, starterChangeKey } = options;
 
-  const activateDocument = useCallback((result: NewDocumentResult<TDocument> | StarterDocumentResult<TDocument>, openDocument: boolean) => {
+  const activateDocument = useCallback((result: NewDocumentResult<TDocument>, openDocument: boolean) => {
     const { setDocument, setDocumentOpen, clearActiveProjectFileState, setActiveQuestionId, setActiveTocItemId, setActiveRailItemId } =
       optionsRef.current;
     setDocument(result.document);
@@ -52,16 +37,6 @@ export function useNewDocumentController<TTemplate, TStarterChangeKey, TDocument
     setActiveTocItemId(result.anchor);
     setActiveRailItemId(result.anchor);
   }, []);
-
-  useLayoutEffect(() => {
-    if (!storageHydrated || !editorDocumentOpen) return;
-    const { shouldSeedStarter, createStarterDocument } = optionsRef.current;
-    if (!shouldSeedStarter()) return;
-
-    const starterDocument = createStarterDocument();
-    activateDocument(starterDocument, false);
-    starterDocument.markSeeded();
-  }, [activateDocument, editorDocumentOpen, starterChangeKey, storageHydrated]);
 
   function createNewDocumentFromTemplate(template: TTemplate) {
     const {

@@ -132,7 +132,33 @@ test("normalizes autosave snapshots and filters stale flow entries", () => {
     updatedAt: "2026-06-30T01:00:00.000Z",
   });
 
-  assert.equal(persistence.normalizeEditorSnapshot({ frontMatter: { title: "Exam" }, questions: [] }), null);
+  assert.deepEqual(persistence.normalizeEditorSnapshot({ frontMatter: { title: "Exam" }, questions: [] }), {
+    frontMatter: { title: "Exam" },
+    questions: [],
+    sectionHeadings: [],
+    documentFlow: [],
+    formattingConfig: { mode: "default" },
+    logo: undefined,
+    activeProjectFilePath: undefined,
+    activeProjectFileRevision: undefined,
+    documentOpen: undefined,
+    updatedAt: undefined,
+  });
+});
+
+test("loads a persisted draft with no questions", () => {
+  const storage = memoryStorage({
+    draft: JSON.stringify({
+      frontMatter: { title: "Blank test" },
+      questions: [],
+      sectionHeadings: [],
+      documentFlow: [],
+      formattingConfig: { mode: "test" },
+    }),
+  });
+
+  assert.deepEqual(persistence.loadCurrentDraft({ key: "draft", storage })?.questions, []);
+  assert.deepEqual(persistence.loadCurrentDraft({ key: "draft", storage })?.documentFlow, []);
 });
 
 test("loads and persists current drafts through primary and legacy keys", () => {

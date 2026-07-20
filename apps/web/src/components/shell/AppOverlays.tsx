@@ -16,7 +16,7 @@ type ActionProposalOverlayProps = ComponentProps<typeof ActionProposalPanel> & {
   open: boolean;
 };
 
-interface AppOverlaysProps {
+export interface AppOverlaysProps {
   fileManagement: ComponentProps<typeof FileManagementDrawer>;
   dialogNode: ReactNode;
   newTestDialog: ComponentProps<typeof NewTestDialog>;

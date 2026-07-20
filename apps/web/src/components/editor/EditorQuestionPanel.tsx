@@ -3,6 +3,7 @@ import { FileText, GitBranch, Trash2 } from "lucide-react";
 
 import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
+import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
@@ -16,6 +17,7 @@ import { orderedQuestionItems } from "@/lib/editorDocumentNormalization";
 import { markLabel, questionMarks } from "@/lib/editorDocumentToc";
 import type { EditorPageBreakTarget, SubsectionContainerRef } from "@/lib/editorSubsectionDrag";
 import { solutionSlotInsertionPlan } from "@/lib/solutionSlotInsertionActions";
+import type { SolutionValidationIssue, SolutionValidationResult } from "@/lib/solutionValidation";
 import { questionScrollAnchor } from "@/lib/scrollAnchors";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +30,7 @@ interface EditorQuestionPanelProps {
   isNotesTemplate: boolean;
   supportsSolutionTools: boolean;
   effectiveShowSolutions: boolean;
+  solutionValidation: SolutionValidationResult;
   draggedSubsectionActive: boolean;
   draggedEditorPageBreakActive: boolean;
   canAddPartPageBreak: boolean;
@@ -51,6 +54,8 @@ interface EditorQuestionPanelProps {
   addQuestionSolutionSlot: (questionId: string) => void;
   addPart: (questionId: string) => void;
   addPartPageBreak: (questionId: string) => void;
+  onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
+  onJumpSolutionIssue: (anchor: string) => void;
 }
 
 function solutionSlotExtraActions(plan: ReturnType<typeof solutionSlotInsertionPlan>, onClick: () => void) {
@@ -72,6 +77,7 @@ export function EditorQuestionPanel({
   isNotesTemplate,
   supportsSolutionTools,
   effectiveShowSolutions,
+  solutionValidation,
   draggedSubsectionActive,
   draggedEditorPageBreakActive,
   canAddPartPageBreak,
@@ -89,6 +95,8 @@ export function EditorQuestionPanel({
   addQuestionSolutionSlot,
   addPart,
   addPartPageBreak,
+  onFixSolutionIssue,
+  onJumpSolutionIssue,
 }: EditorQuestionPanelProps) {
   const hasParts = question.parts.length > 0;
   const questionItems = orderedQuestionItems(question);
@@ -161,6 +169,16 @@ export function EditorQuestionPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {supportsSolutionTools && effectiveShowSolutions ? (
+            <SolutionScopeStatus
+              result={solutionValidation}
+              anchor={questionAnchor}
+              marked={questionMarks(question) > 0}
+              includeDescendants={hasParts}
+              onFix={onFixSolutionIssue}
+              onJump={onJumpSolutionIssue}
+            />
+          ) : null}
           <Button
             variant="outline"
             size="icon"

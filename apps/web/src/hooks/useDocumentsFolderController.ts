@@ -8,11 +8,19 @@ import {
   openDefaultProjectDocumentsFolder,
   resetDefaultProjectDocumentsFolder,
 } from "@/lib/api";
+import {
+  projectFileTransitionCanProceed,
+  type ProjectFileTransitionIntent,
+  type ProjectFileTransitionOutcome,
+} from "@/lib/projectFileBeforeOpenWorkflow";
 
 interface UseDocumentsFolderControllerOptions {
   activeProject: ProjectSummary | null;
   fileOperationBusy: boolean;
-  saveCurrentProjectFileBeforeOpening: (project: ProjectSummary) => Promise<void>;
+  prepareCurrentProjectFileTransition: (
+    project: ProjectSummary,
+    intent: ProjectFileTransitionIntent,
+  ) => Promise<ProjectFileTransitionOutcome>;
   clearActiveProjectFile: () => void;
   setActiveProject: (project: ProjectSummary) => void;
   setProjectFiles: (files: ProjectFileSummary[]) => void;
@@ -25,7 +33,7 @@ interface UseDocumentsFolderControllerOptions {
 export function useDocumentsFolderController({
   activeProject,
   fileOperationBusy,
-  saveCurrentProjectFileBeforeOpening,
+  prepareCurrentProjectFileTransition,
   clearActiveProjectFile,
   setActiveProject,
   setProjectFiles,
@@ -36,8 +44,8 @@ export function useDocumentsFolderController({
 }: UseDocumentsFolderControllerOptions) {
   async function projectBeforeFolderSwitch() {
     const project = activeProject ?? (await getDefaultProject());
-    await saveCurrentProjectFileBeforeOpening(project);
-    return project;
+    const outcome = await prepareCurrentProjectFileTransition(project, { kind: "switch-folder" });
+    return projectFileTransitionCanProceed(outcome);
   }
 
   async function loadProjectFolder(project: ProjectSummary, readyMessage: string) {
@@ -55,7 +63,7 @@ export function useDocumentsFolderController({
     if (!cleanPath || fileOperationBusy) return;
 
     try {
-      await projectBeforeFolderSwitch();
+      if (!(await projectBeforeFolderSwitch())) return;
       setProjectFilesStatus("loading");
       setProjectFilesMessage("Opening folder");
       const nextProject = await openDefaultProjectDocumentsFolder(cleanPath);
@@ -71,7 +79,7 @@ export function useDocumentsFolderController({
     if (fileOperationBusy) return;
 
     try {
-      await projectBeforeFolderSwitch();
+      if (!(await projectBeforeFolderSwitch())) return;
       setProjectFilesStatus("loading");
       setProjectFilesMessage("Choose a folder");
       const result = await chooseDefaultProjectDocumentsFolder();
@@ -94,7 +102,7 @@ export function useDocumentsFolderController({
     if (fileOperationBusy) return;
 
     try {
-      await projectBeforeFolderSwitch();
+      if (!(await projectBeforeFolderSwitch())) return;
       setProjectFilesStatus("loading");
       setProjectFilesMessage("Opening default folder");
       const nextProject = await resetDefaultProjectDocumentsFolder();

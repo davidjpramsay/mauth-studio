@@ -4,6 +4,7 @@ import { FileText, GitBranch } from "lucide-react";
 import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel, ContentInsertionActions, RemoveActionButton, type InsertionAction } from "@/components/editor/EditorPanels";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
+import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
 import type {
   ContainerOrderItem,
   EditorContentBlock,
@@ -21,12 +22,13 @@ import {
   subsectionTargetDataAttributes,
 } from "@/lib/editorSubsectionDrag";
 import { solutionSlotInsertionPlan } from "@/lib/solutionSlotInsertionActions";
+import type { SolutionValidationIssue, SolutionValidationResult } from "@/lib/solutionValidation";
 import { partScrollAnchor, subpartScrollAnchor } from "@/lib/scrollAnchors";
 import { cn } from "@/lib/utils";
 
 type ContentBlockKind = "text" | "choices" | "table" | "diagram" | "columns" | "space";
 
-interface NestedPanelDragHandlers {
+export interface NestedPanelDragHandlers {
   onEditorPageBreakDragOver: (event: DragEvent<HTMLElement>, target: SubsectionDragTarget) => boolean;
   onEditorPageBreakDragLeave: (event: DragEvent<HTMLElement>, target: SubsectionDragTarget) => void;
   onEditorPageBreakDrop: (event: DragEvent<HTMLElement>, target: SubsectionDragTarget) => boolean;
@@ -35,7 +37,7 @@ interface NestedPanelDragHandlers {
   onSubsectionDrop: (event: DragEvent<HTMLElement>, target: SubsectionDragTarget) => void;
 }
 
-interface NestedPanelRenderers {
+export interface NestedPanelRenderers {
   dragClasses: (target: SubsectionDragTarget) => string;
   dragHandle: (target: SubsectionDragTarget, label: string) => ReactNode;
   itemDropZone: (container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible?: boolean) => ReactNode;
@@ -58,7 +60,7 @@ interface NestedPanelRenderers {
   renderEditorPageBreakRow: (target: EditorPageBreakTarget) => ReactNode;
 }
 
-interface NestedPanelActions {
+export interface NestedPanelActions {
   updatePart: (questionId: string, partId: string, patch: Partial<EditorPart>) => void;
   updateSubpart: (questionId: string, partId: string, subpartId: string, patch: Partial<EditorSubpart>) => void;
   removePart: (questionId: string, partId: string) => void;
@@ -73,17 +75,20 @@ interface NestedPanelActions {
   addSubpartSolutionSlot: (questionId: string, part: EditorPart, subpart: EditorSubpart) => void;
 }
 
-interface EditorNestedPartPanelProps extends NestedPanelDragHandlers, NestedPanelRenderers, NestedPanelActions {
+export interface EditorNestedPartPanelProps extends NestedPanelDragHandlers, NestedPanelRenderers, NestedPanelActions {
   question: QuestionBlock;
   part: EditorPart;
   isNotesTemplate: boolean;
   supportsSolutionTools: boolean;
   effectiveShowSolutions: boolean;
+  solutionValidation: SolutionValidationResult;
   draggedSubsectionActive: boolean;
   draggedEditorPageBreakActive: boolean;
   openSignalForAnchor: (anchor: string) => number | undefined;
   isActiveEditorAnchor: (anchor: string) => boolean;
   onHeaderContextMenu: (event: React.MouseEvent<HTMLElement>, anchor: string) => void;
+  onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
+  onJumpSolutionIssue: (anchor: string) => void;
 }
 
 function solutionSlotExtraActions(plan: ReturnType<typeof solutionSlotInsertionPlan>, onClick: () => void): InsertionAction[] {
@@ -108,11 +113,14 @@ export function EditorNestedPartPanel({
   isNotesTemplate,
   supportsSolutionTools,
   effectiveShowSolutions,
+  solutionValidation,
   draggedSubsectionActive,
   draggedEditorPageBreakActive,
   openSignalForAnchor,
   isActiveEditorAnchor,
   onHeaderContextMenu,
+  onFixSolutionIssue,
+  onJumpSolutionIssue,
   dragClasses,
   dragHandle,
   itemDropZone,
@@ -201,6 +209,16 @@ export function EditorNestedPartPanel({
           onHeaderContextMenu={(event) => onHeaderContextMenu(event, partAnchor)}
           actions={
             <>
+              {supportsSolutionTools && effectiveShowSolutions ? (
+                <SolutionScopeStatus
+                  result={solutionValidation}
+                  anchor={partAnchor}
+                  marked={partMarks(part) > 0}
+                  includeDescendants={Boolean(subparts.length)}
+                  onFix={onFixSolutionIssue}
+                  onJump={onJumpSolutionIssue}
+                />
+              ) : null}
               {!isNotesTemplate && subparts.length ? (
                 <div className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                   Marks
@@ -264,10 +282,13 @@ export function EditorNestedPartPanel({
                       isNotesTemplate={isNotesTemplate}
                       supportsSolutionTools={supportsSolutionTools}
                       effectiveShowSolutions={effectiveShowSolutions}
+                      solutionValidation={solutionValidation}
                       draggedSubsectionActive={draggedSubsectionActive}
                       openSignalForAnchor={openSignalForAnchor}
                       isActiveEditorAnchor={isActiveEditorAnchor}
                       onHeaderContextMenu={onHeaderContextMenu}
+                      onFixSolutionIssue={onFixSolutionIssue}
+                      onJumpSolutionIssue={onJumpSolutionIssue}
                       dragClasses={dragClasses}
                       dragHandle={dragHandle}
                       itemDropZone={itemDropZone}
@@ -328,10 +349,13 @@ interface EditorSubpartPanelProps extends Omit<NestedPanelDragHandlers, "onEdito
   isNotesTemplate: boolean;
   supportsSolutionTools: boolean;
   effectiveShowSolutions: boolean;
+  solutionValidation: SolutionValidationResult;
   draggedSubsectionActive: boolean;
   openSignalForAnchor: (anchor: string) => number | undefined;
   isActiveEditorAnchor: (anchor: string) => boolean;
   onHeaderContextMenu: (event: React.MouseEvent<HTMLElement>, anchor: string) => void;
+  onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
+  onJumpSolutionIssue: (anchor: string) => void;
   dragClasses: (target: SubsectionDragTarget) => string;
   dragHandle: (target: SubsectionDragTarget, label: string) => ReactNode;
   itemDropZone: (container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible?: boolean) => ReactNode;
@@ -359,10 +383,13 @@ function EditorSubpartPanel({
   isNotesTemplate,
   supportsSolutionTools,
   effectiveShowSolutions,
+  solutionValidation,
   draggedSubsectionActive,
   openSignalForAnchor,
   isActiveEditorAnchor,
   onHeaderContextMenu,
+  onFixSolutionIssue,
+  onJumpSolutionIssue,
   dragClasses,
   dragHandle,
   itemDropZone,
@@ -433,6 +460,15 @@ function EditorSubpartPanel({
         onHeaderContextMenu={(event) => onHeaderContextMenu(event, subpartAnchor)}
         actions={
           <>
+            {supportsSolutionTools && effectiveShowSolutions ? (
+              <SolutionScopeStatus
+                result={solutionValidation}
+                anchor={subpartAnchor}
+                marked={Math.max(0, Number(subpart.marks) || 0) > 0}
+                onFix={onFixSolutionIssue}
+                onJump={onJumpSolutionIssue}
+              />
+            ) : null}
             {!isNotesTemplate ? (
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                 Marks

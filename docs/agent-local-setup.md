@@ -6,81 +6,56 @@ For current project state and next-work context, read `docs/current-state.md` be
 
 ## Local Project Folder
 
-Clone or pull the repo into a normal local project folder. From the repo root:
+Normal teacher use does not require this repository. Download the signed DMG from the [GitHub release](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0), move Mauth Studio to Applications, and open it normally.
+
+Clone or pull the repo into a normal local project folder when connecting Codex/Claude helper tools or developing the app. For bridge tools only, install the Node dependencies from the repo root:
 
 ```bash
 pnpm install
+```
+
+For application development, also install the Python environment:
+
+```bash
 cd apps/api
 uv sync
 cd ../..
 ```
 
-For normal local use, run the app through the launcher:
+Build and install an ad-hoc-signed local checkpoint only when needed:
 
 ```bash
-pnpm dev:launch
+pnpm macos:build
+pnpm macos:install
 ```
 
-On macOS, install the Finder/desktop entry point:
+Then open it normally:
 
 ```bash
-pnpm macos:install-launcher
+open ~/Applications/Mauth\ Studio.app
 ```
 
-This creates `~/Applications/Mauth Studio.app`, which opens a labelled Terminal session and runs the same launcher/status checks.
-It also installs two companion commands beside the app:
+Mauth Studio starts its packaged FastAPI service on a dynamic loopback port, opens the editor in a native window, and stops the service when the app quits. No Terminal windows need to remain open. If an unsaved page blocks quitting, the native confirmation explains that the current draft is backed up before allowing Close.
 
-- `~/Applications/Mauth Studio Status.command` checks whether the local API/web servers are ready, stopped, stale, or conflicting.
-- `~/Applications/Mauth Studio Stop.command` stops Mauth-owned local API/web servers without needing to remember a terminal command.
+For ordinary source development, use:
 
-If the repo has moved, the app shows a macOS dialog with the reinstall command instead of opening a broken Terminal session. If the stored `pnpm` path has moved, the app falls back to `pnpm` on `PATH` and common Homebrew/Corepack locations before asking you to reinstall.
-The installed app runs the desktop launcher mode:
+```bash
+pnpm macos:dev
+```
+
+The Codex app also exposes a project Run action through `.codex/environments/environment.toml`; it calls `script/build_and_run.sh` to build, sign, and launch the current bundle.
+
+Do not run the Developer ID/notarization pipeline after routine source edits. `pnpm macos:release` is reserved for versioned external artifacts after the full quality gate passes and the source state is traceable in Git.
+
+The previous Terminal-backed browser launcher remains available for runtime debugging:
 
 ```bash
 pnpm dev:launch:desktop
-```
-
-That mode reuses healthy servers, but it restarts stale or partial Mauth-owned sessions before opening the browser. It handles the common case where the web server is still running but the API has stopped, and it also cleans up duplicate listener addresses that could make `localhost` and `127.0.0.1` show different builds.
-
-To reveal the installed app in Finder after installing:
-
-```bash
-pnpm macos:install-launcher --reveal
-```
-
-To also add a Desktop shortcut:
-
-```bash
-pnpm macos:install-launcher --desktop-shortcut
-```
-
-Check what Mauth servers are currently running:
-
-```bash
 pnpm dev:status
-```
-
-When the app is fully stopped, this should end with `Runtime: Mauth is stopped.`. If it says the runtime is partially running or stale, use the desktop launcher mode to repair it:
-
-```bash
-pnpm dev:launch:desktop
-```
-
-Stop Mauth-owned local servers:
-
-```bash
 pnpm dev:stop
 ```
 
-Or double-click `~/Applications/Mauth Studio Stop.command` after installing the macOS launcher.
-
-If stale manual servers are still running, stop their terminals with `Ctrl+C` or `pnpm dev:stop`. To force a clean launcher-owned restart, run:
-
-```bash
-pnpm dev:launch:replace
-```
-
-The normal launcher reuses healthy existing Mauth servers, but it warns when same-port listeners could make `localhost` and `127.0.0.1` show different app versions. The desktop launcher mode performs that cleanup automatically and also replaces Mauth-owned partial runtimes.
+These commands manage only the fixed-port development launcher, not a running packaged app. Quit the packaged app from its normal macOS menu.
 
 For lower-level debugging, run the API and web app in two terminals:
 
@@ -89,7 +64,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-Open the web URL printed by the launcher or by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
+Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
 
 Check the bridge:
 
@@ -97,7 +72,7 @@ Check the bridge:
 pnpm agent:doctor
 ```
 
-If Vite prints a different web URL, pass it to the doctor:
+With the packaged app, the doctor discovers the current dynamic URL and per-launch bridge token from `~/Library/Application Support/Mauth Studio/runtime.json`. The file is private to the local user and is removed when Mauth quits. If a manual Vite runtime uses another URL, pass it explicitly:
 
 ```bash
 MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
@@ -114,10 +89,7 @@ Claude Desktop example:
   "mcpServers": {
     "mauth": {
       "command": "pnpm",
-      "args": ["--dir", "/Users/djpramsay@acc.edu.au/Documents/Code/Mauth", "agent:mcp"],
-      "env": {
-        "MAUTH_AGENT_API_URL": "http://127.0.0.1:8000"
-      }
+      "args": ["--dir", "/Users/djpramsay@acc.edu.au/Documents/Code/Mauth", "agent:mcp"]
     }
   }
 }
@@ -140,18 +112,19 @@ Comments and suggestions are review state; they do not mutate the document.
 
 ## Proof-Style Split
 
-The human app remains the review surface: preview, file drawer, validation, browser print, and human judgement.
+The human app remains the review surface: preview, file drawer, validation, print, and human judgement.
 
 The local bridge is the agent control surface: snapshot, dry run, apply, validation, events, and presence.
 
-This gives local Codex/Claude the structure of an API-driven product without making the app hosted-first. Hosted collaboration can come later, but V1 assumes the repo, API, and browser are running on the user’s machine.
+This gives local Codex/Claude the structure of an API-driven product without making the app hosted-first. Hosted collaboration can come later, but V1 assumes the standalone app is running locally and the helper repository is available when MCP tooling is required.
 
 ## Failure Modes
 
-- `APP_NOT_CONNECTED`: start the API/web app and open the web URL printed by `pnpm dev:web`.
+- `AGENT_AUTH_REQUIRED`: use `pnpm agent:doctor`, `pnpm agent:mcp`, or the normal bridge smoke command so the current packaged token is discovered automatically. Do not copy the token into a config file.
+- `APP_NOT_CONNECTED`: open `~/Applications/Mauth Studio.app`, wait for its editor window, then rerun `pnpm agent:doctor`. For a deliberate browser-debug runtime, run `pnpm dev:launch:desktop` and keep exactly one Mauth tab open.
 - `MULTIPLE_ACTIVE_EDITORS`: close extra Mauth tabs.
 - `STALE_SNAPSHOT`: call `mauth_snapshot` again and rebuild the action batch.
 - `VALIDATION_FAILED`: repair the action payload.
 - `ACTION_FAILED`: inspect the action result and current snapshot.
 - `SAVE_CONFLICT`: reload or resolve the active project file before applying again.
-- `BRIDGE_TIMEOUT`: reload the browser app and retry.
+- `BRIDGE_TIMEOUT`: reload the Mauth Studio window and retry.

@@ -43,6 +43,7 @@ import {
   writeRecentProjectFileReferences,
 } from "@/lib/projectFileRecents";
 import type { ProjectFileVersionPreviewSummary } from "@/lib/projectFileVersionPreview";
+import type { ProjectFileVersionRestoreOutcome } from "@/lib/projectFileVersionRestoreWorkflow";
 import { cn } from "@/lib/utils";
 
 interface TestFileManagerProps {
@@ -66,7 +67,7 @@ interface TestFileManagerProps {
   onMoveItems: (filePaths: string[], targetFolderPath: string) => void;
   onDeleteItems: (filePaths: string[]) => void;
   onListVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
-  onRestoreVersion: (filePath: string, versionId: string) => Promise<void>;
+  onRestoreVersion: (filePath: string, versionId: string, revision: number) => Promise<ProjectFileVersionRestoreOutcome>;
 }
 
 function TestFileManager({
@@ -432,7 +433,12 @@ function TestFileManager({
     setVersionStatus("loading");
     setVersionMessage("Restoring version");
     try {
-      await onRestoreVersion(filePath, version.id);
+      const outcome = await onRestoreVersion(filePath, version.id, version.revision);
+      if (outcome !== "restored") {
+        setVersionStatus(outcome === "cancelled" ? "ready" : "error");
+        setVersionMessage(outcome === "cancelled" ? "Restore cancelled; local changes kept" : "Restore blocked; current document kept");
+        return;
+      }
       const nextVersions = await onListVersions(filePath);
       setVersions(nextVersions);
       setSelectedVersionId(nextVersions[0]?.id ?? null);
@@ -996,7 +1002,7 @@ export function FileManagementDrawer({
   onMoveProjectFiles: (filePaths: string[], targetFolderPath: string) => void;
   onDeleteProjectFiles: (filePaths: string[]) => void;
   onListProjectFileVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
-  onRestoreProjectFileVersion: (filePath: string, versionId: string) => Promise<void>;
+  onRestoreProjectFileVersion: (filePath: string, versionId: string, revision: number) => Promise<ProjectFileVersionRestoreOutcome>;
 }) {
   if (!open) return null;
 

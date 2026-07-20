@@ -1,14 +1,14 @@
 # Mauth Local Agent Bridge
 
-Mauth exposes a local bridge for Codex, Claude Code, and MCP clients. V1 requires the FastAPI app, the web app, and one active browser editor tab. For current handoff context, read `docs/current-state.md`.
+Mauth exposes a local bridge for Codex, Claude Code, and MCP clients. The standalone app supplies the FastAPI sidecar, editor renderer, and one active editor session. For current handoff context, read `docs/current-state.md`; for the process and state boundaries around the bridge, read `docs/architecture.md`.
 
 ## Start
 
 ```bash
-pnpm dev:launch:desktop
+open ~/Applications/Mauth\ Studio.app
 ```
 
-Open the web URL printed by the launcher if it does not open automatically. For lower-level debugging, `pnpm dev:api` and `pnpm dev:web` can still be run in separate terminals.
+The app owns its dynamic local port and sidecar. No Terminal windows need to remain open. For source development use `pnpm macos:dev`; for lower-level browser debugging, `pnpm dev:launch:desktop` or separate `pnpm dev:api` and `pnpm dev:web` processes remain available.
 
 Run:
 
@@ -16,13 +16,15 @@ Run:
 pnpm agent:doctor
 ```
 
-If Vite prints a different web URL, pass it to the doctor:
+The doctor normally discovers the packaged runtime URL and per-launch bridge token from `~/Library/Application Support/Mauth Studio/runtime.json`. If a manual Vite runtime uses another URL, pass it explicitly:
 
 ```bash
 MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
 ```
 
 ## HTTP Contract
+
+Packaged `/api/agent/*` requests require the bearer token from the private runtime manifest. The supplied doctor, MCP wrapper, and smoke tooling attach it automatically. Do not copy the token into a persistent Claude/Codex configuration; it changes every time Mauth starts. Development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
 
 ```text
 GET  /api/agent/current/snapshot

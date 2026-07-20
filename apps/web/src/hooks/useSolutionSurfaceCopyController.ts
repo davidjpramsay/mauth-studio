@@ -19,6 +19,7 @@ interface UseSolutionSurfaceCopyControllerOptions {
   selectContextAnchor: (anchor: string, options?: { openEditor?: boolean; openInspector?: boolean; previewOnly?: boolean }) => void;
   solutionSurfaceContentBlock: (block: ContentBlock) => ContentBlock | null;
   solutionSurfaceColumnBlockCopyAtPath: (rootBlock: ColumnsContentBlock, path: ColumnBlockPath) => SolutionSurfaceColumnCopyResult | null;
+  selectedEditorBlockFromAnchor: (questions: QuestionBlock[], anchor: string) => SelectedEditorBlock | null;
 }
 
 export function useSolutionSurfaceCopyController({
@@ -29,15 +30,23 @@ export function useSolutionSurfaceCopyController({
   selectContextAnchor,
   solutionSurfaceContentBlock,
   solutionSurfaceColumnBlockCopyAtPath,
+  selectedEditorBlockFromAnchor,
 }: UseSolutionSurfaceCopyControllerOptions) {
   function createSolutionCopyForSelectedBlock(selection: SelectedEditorBlock) {
     const plan = solutionSurfaceCopyPlan({ questions, selection, solutionSurfaceContentBlock, solutionSurfaceColumnBlockCopyAtPath });
     if (!plan) return;
-    const result = applyActions(plan.actions);
-    if (!result.ok) return;
+    if (plan.actions.length) {
+      const result = applyActions(plan.actions);
+      if (!result.ok) return;
+    }
     showSolutions();
     if (plan.selectAnchor) selectContextAnchor(plan.selectAnchor, { openEditor: showEditor, openInspector: true });
   }
 
-  return { createSolutionCopyForSelectedBlock };
+  function createSolutionCopyForAnchor(anchor: string) {
+    const selection = selectedEditorBlockFromAnchor(questions, anchor);
+    if (selection) createSolutionCopyForSelectedBlock(selection);
+  }
+
+  return { createSolutionCopyForSelectedBlock, createSolutionCopyForAnchor };
 }

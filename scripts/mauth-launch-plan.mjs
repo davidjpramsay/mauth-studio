@@ -41,7 +41,7 @@ export function runtimeStatusSummary({ apiHealthy, webHealthy, apiListeners, web
     return {
       level: "ok",
       message: `Mauth is ready${webUrl ? ` at ${webUrl}` : ""}.`,
-      detail: "Use the open browser tab. Stop with pnpm dev:stop, the launcher Terminal Ctrl+C, or Mauth Studio Stop.command.",
+      detail: "Use the open browser tab. Stop development servers with pnpm dev:stop or the launcher Terminal Ctrl+C.",
     };
   }
 
@@ -49,7 +49,7 @@ export function runtimeStatusSummary({ apiHealthy, webHealthy, apiListeners, web
     return {
       level: "info",
       message: "Mauth is stopped.",
-      detail: "Start it with pnpm dev:launch:desktop, or double-click ~/Applications/Mauth Studio.app.",
+      detail: "Open ~/Applications/Mauth Studio.app for normal use. Use pnpm dev:launch:desktop only for browser debugging.",
     };
   }
 

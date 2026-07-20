@@ -12,6 +12,29 @@ export interface PreviewPage {
   overflow: boolean;
 }
 
+export type PreviewCopyMode = "student" | "solutions";
+
+export interface PreviewPaginationOverflow {
+  pageIndex: number;
+  pageNumber: number;
+  segmentIds: string[];
+  targetId?: string;
+}
+
+export interface PreviewPaginationReport {
+  mode: PreviewCopyMode;
+  contentPageCount: number;
+  supplementaryPageCount: number;
+  totalPageCount: number;
+  overflowPages: PreviewPaginationOverflow[];
+}
+
+export interface PreviewReadinessWarning {
+  code: "rendered-page-overflow";
+  message: string;
+  targetId?: string;
+}
+
 export interface PreviewPaginationSegmentLike {
   kind: string;
   spacingTop?: number;
@@ -43,6 +66,59 @@ export function pagesAreEqual(left: PreviewPage[], right: PreviewPage[]) {
     const other = right[pageIndex];
     return page.overflow === other.overflow && page.segmentIndexes.join(",") === other.segmentIndexes.join(",");
   });
+}
+
+export function previewPaginationReportsEqual(left: PreviewPaginationReport | null, right: PreviewPaginationReport | null) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function buildPreviewPaginationReport<TSegment extends PreviewQuestionSegmentLike>({
+  pages,
+  segments,
+  frontMatter,
+  supplementaryPageCount,
+  showSolutions,
+}: {
+  pages: PreviewPage[];
+  segments: TSegment[];
+  frontMatter: FrontMatterConfig;
+  supplementaryPageCount: number;
+  showSolutions: boolean;
+}): PreviewPaginationReport {
+  const leadingPageCount = frontMatterPageCount(frontMatter);
+  const overflowPages = pages.flatMap((page, pageIndex) => {
+    if (!page.overflow) return [];
+    const pageSegments = page.segmentIndexes.map((segmentIndex) => segments[segmentIndex]).filter(Boolean) as TSegment[];
+    const firstQuestionId = pageSegments.find((segment) => segment.question)?.question?.id;
+    return [
+      {
+        pageIndex,
+        pageNumber: leadingPageCount + pageIndex + 1,
+        segmentIds: pageSegments.map((segment) => segment.id),
+        targetId: firstQuestionId ?? pageSegments[0]?.id,
+      },
+    ];
+  });
+
+  return {
+    mode: showSolutions ? "solutions" : "student",
+    contentPageCount: pages.length,
+    supplementaryPageCount,
+    totalPageCount: leadingPageCount + pages.length + supplementaryPageCount,
+    overflowPages,
+  };
+}
+
+export function previewReadinessWarnings(report: PreviewPaginationReport | null): PreviewReadinessWarning[] {
+  if (!report) return [];
+  const copyLabel = report.mode === "solutions" ? "Solutions" : "Student";
+  return report.overflowPages.map((overflow) => ({
+    code: "rendered-page-overflow",
+    message: `${copyLabel} preview page ${overflow.pageNumber} contains a block taller than the printable A4 content area.`,
+    ...(overflow.targetId ? { targetId: overflow.targetId } : {}),
+  }));
 }
 
 export function groupPreviewPageSegments<TSegment extends PreviewQuestionSegmentLike>(

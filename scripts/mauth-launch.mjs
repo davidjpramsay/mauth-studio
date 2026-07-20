@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 
 import { desktopReplacementReasons, listenersAreAmbiguous, runtimeStatusSummary } from "./mauth-launch-plan.mjs";
+import { resolveMauthRuntime } from "./mauth-runtime.mjs";
 
 const API_BASE = (process.env.MAUTH_AGENT_API_URL || process.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const WEB_URL = (process.env.MAUTH_WEB_URL || "http://127.0.0.1:5173").replace(/\/+$/, "");
@@ -156,13 +157,13 @@ function printPortStatus(label, port, listeners) {
   }
 }
 
-async function waitForMauthListenersToStop(port, timeoutMs = 8000) {
+async function waitForMauthListenersToStop(port, timeoutMs = 4000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (!listenersForPort(port).some((listener) => listener.isMauthOwned)) return;
+    if (!listenersForPort(port).some((listener) => listener.isMauthOwned)) return true;
     await sleep(250);
   }
-  throw new Error(`Timed out waiting for Mauth-owned listeners on port ${port} to stop.`);
+  return false;
 }
 
 async function replaceAmbiguousMauthListeners(label, port) {
@@ -211,7 +212,23 @@ async function stopMauthListeners(label, port) {
       console.log(`     could not stop pid ${listener.pid}: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   }
-  await waitForMauthListenersToStop(port);
+  if (await waitForMauthListenersToStop(port)) return;
+
+  const stubbornListeners = listenersForPort(port).filter((listener) => listener.isMauthOwned);
+  console.log(
+    `warn ${label}: ${stubbornListeners.length} Mauth-owned listener${stubbornListeners.length === 1 ? "" : "s"} ignored SIGTERM`,
+  );
+  for (const listener of stubbornListeners) {
+    try {
+      process.kill(listener.pid, "SIGKILL");
+      console.log(`     sent SIGKILL to pid ${listener.pid}`);
+    } catch (error) {
+      console.log(`     could not force-stop pid ${listener.pid}: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+  if (!(await waitForMauthListenersToStop(port))) {
+    throw new Error(`Timed out waiting for Mauth-owned listeners on port ${port} to stop.`);
+  }
 }
 
 async function fetchText(url, timeoutMs = 1500) {
@@ -307,6 +324,26 @@ function failForPortConflict(label, port, listeners, detail) {
 }
 
 async function printRuntimeStatus() {
+  const desktopRuntime = resolveMauthRuntime();
+  if (desktopRuntime.source.startsWith("desktop-")) {
+    const [status, web] = await Promise.all([fetchJson(`${desktopRuntime.apiUrl}/api/system/status`), fetchText(desktopRuntime.webUrl)]);
+    const webIsMauth = web.ok && /Mauth Studio|id="root"|\/src\/main/.test(web.text);
+    if (status.ok && webIsMauth) {
+      const runtime = status.json.runtime ?? {};
+      const bridge = status.json.bridge ?? {};
+      console.log(`ok   Packaged app: Mauth Studio ${runtime.appVersion || status.json.apiVersion} is ready at ${desktopRuntime.webUrl}`);
+      console.log(`ok   Documents folder: ${status.json.workspace.documentsPath}`);
+      console.log(
+        `ok   Agent bridge: ${bridge.activeSessionCount ?? 0} active session${bridge.activeSessionCount === 1 ? "" : "s"}${bridge.authenticationRequired ? " · secured" : ""}`,
+      );
+      console.log("     Close Mauth Studio normally with Command-Q or Mauth Studio > Quit Mauth Studio.");
+      return;
+    }
+    console.log(`warn Packaged runtime manifest found, but its app is not healthy at ${desktopRuntime.webUrl}.`);
+    console.log("     Quit and reopen Mauth Studio before using its documents or agent bridge.");
+    return;
+  }
+
   const apiListeners = listenersForPort(apiPort);
   printPortStatus("API", apiPort, apiListeners);
   const status = await readSystemStatus();
@@ -358,6 +395,11 @@ if (statusOnly) {
 }
 
 if (stopOnly) {
+  const desktopRuntime = resolveMauthRuntime();
+  if (desktopRuntime.source.startsWith("desktop-")) {
+    console.log("info The packaged Mauth Studio app is running independently of the development servers.");
+    console.log("     Quit it normally with Command-Q or Mauth Studio > Quit Mauth Studio.");
+  }
   await stopMauthListeners("web", webPort);
   await stopMauthListeners("api", apiPort);
   process.exit(0);

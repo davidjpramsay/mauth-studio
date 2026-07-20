@@ -65,6 +65,10 @@ test("solutionSurfaceContentBlock makes an editable solution-only copy", () => {
       ["0", ""],
       ["1", ""],
     ],
+    solutionEntries: [
+      ["", "2"],
+      ["", "3"],
+    ],
     visibility: "always",
     markTicks: 2,
   };
@@ -78,8 +82,37 @@ test("solutionSurfaceContentBlock makes an editable solution-only copy", () => {
   assert.equal(solutionBlock.solutionOnly, true);
   assert.equal(solutionBlock.studentOnly, undefined);
   assert.equal(solutionBlock.markTicks, undefined);
+  assert.equal(solutionBlock.kind === "table" ? solutionBlock.solutionEntries : undefined, undefined);
   assert.deepEqual(solutionBlock.kind === "table" ? solutionBlock.rows : [], block.rows);
   assert.equal(block.visibility, "always");
+});
+
+test("solutionSurfaceContentBlock preserves an independently editable diagram config", () => {
+  const { solutionSurfaceContentBlock } = testDuplicator();
+  const block: EditorContentBlock = {
+    id: "diagram-original",
+    kind: "diagram",
+    graphConfig: {
+      type: "setDiagram",
+      data: {
+        setCount: 3,
+        regions: [{ id: "intersection", label: "" }],
+      },
+    },
+    visibility: "always",
+    markTicks: 2,
+  };
+
+  const solutionBlock = solutionSurfaceContentBlock(block);
+
+  assert.ok(solutionBlock);
+  assert.equal(solutionBlock.kind, "diagram");
+  assert.notEqual(solutionBlock.id, block.id);
+  assert.equal(solutionBlock.visibility, "solution");
+  assert.equal(solutionBlock.solutionOnly, true);
+  assert.equal(solutionBlock.markTicks, undefined);
+  assert.deepEqual(solutionBlock.kind === "diagram" ? solutionBlock.graphConfig : null, block.graphConfig);
+  assert.notEqual(solutionBlock.kind === "diagram" ? solutionBlock.graphConfig : null, block.graphConfig);
 });
 
 test("solutionSurfaceContentBlock recursively marks copied columns as solution-only", () => {
@@ -154,6 +187,7 @@ test("solutionSurfaceColumnBlockCopyAtPath pairs nested column block copies", ()
 });
 
 test("solution surface copy helpers reject answer spaces and page breaks", () => {
+  assert.equal(canCreateSolutionSurfaceCopy({ id: "choices", kind: "choices", choices: ["A", "B"] }), false);
   assert.equal(canCreateSolutionSurfaceCopy({ id: "space", kind: "space", lines: 4 }), false);
   assert.equal(canCreateSolutionSurfaceCopy({ id: "break", kind: "pageBreak" }), false);
   assert.deepEqual(studentSurfaceBlockPatch(), {

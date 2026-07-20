@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DocumentFlowItem, DocumentSectionHeading, EditorPart, QuestionBlock } from "./editorDocumentNormalization.ts";
-import { canDeleteAnchorTarget, canMoveAnchorTarget, subsectionTargetFromAnchor } from "./editorAnchorActions.ts";
+import {
+  canDeleteAnchorTarget,
+  canMoveAnchorTarget,
+  editorAnchorActivationPlan,
+  editorRevealOpenSignal,
+  nextEditorRevealRequest,
+  subsectionTargetFromAnchor,
+} from "./editorAnchorActions.ts";
 import {
   partBlockScrollAnchor,
   partScrollAnchor,
@@ -78,6 +85,40 @@ test("subsectionTargetFromAnchor maps content anchors to drag targets", () => {
     subpartId: "s1",
     id: "b3",
   });
+});
+
+test("editor reveal requests increment and open containing panels", () => {
+  const first = nextEditorRevealRequest(null, "q:q1/p:p1");
+  const second = nextEditorRevealRequest(first, "q:q1/p:p1/b:b1");
+
+  assert.deepEqual(first, { anchor: "q:q1/p:p1", sequence: 1 });
+  assert.deepEqual(second, { anchor: "q:q1/p:p1/b:b1", sequence: 2 });
+  assert.equal(
+    editorRevealOpenSignal("q:q1/p:p1", second, (parent, selected) => Boolean(selected?.startsWith(parent))),
+    2,
+  );
+  assert.equal(
+    editorRevealOpenSignal("q:q2", second, (parent, selected) => Boolean(selected?.startsWith(parent))),
+    undefined,
+  );
+});
+
+test("editorAnchorActivationPlan mirrors graph children only when preview is visible", () => {
+  const item = { id: "function", editorAnchor: "q:q1/b:d1", previewAnchor: "q:q1/b:d1" };
+  const options = {
+    anchor: "q:q1/b:d1/f:0",
+    documentTocItems: [item],
+    questionIdFromScrollAnchor: () => "q1",
+    graphChildParentScrollAnchor: () => "q:q1/b:d1",
+    previewAnchorForEditorAnchor: () => "q:q1/b:d1",
+  };
+
+  assert.deepEqual(editorAnchorActivationPlan({ ...options, showPreview: true }), {
+    questionId: "q1",
+    activeAnchor: "q:q1/b:d1/f:0",
+    previewAnchor: "q:q1/b:d1",
+  });
+  assert.equal(editorAnchorActivationPlan({ ...options, showPreview: false }).previewAnchor, null);
 });
 
 test("canDeleteAnchorTarget excludes only front matter and unknown anchors", () => {

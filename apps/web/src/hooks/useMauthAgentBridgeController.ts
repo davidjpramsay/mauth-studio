@@ -23,6 +23,7 @@ interface UseMauthAgentBridgeControllerOptions<
   currentDocument: () => MauthDocumentLike<Q, F, C>;
   fileState: (document: MauthDocumentLike<Q, F, C>) => MauthAgentFileState;
   validate: () => unknown;
+  warnings?: () => MauthAgentSnapshot["warnings"];
   previewActions: (actions: MauthDocumentAction[]) => MauthDocumentActionResult<Q, F, C>;
   applyActionsWithoutCommit: (actions: MauthDocumentAction[]) => MauthDocumentActionResult<Q, F, C>;
   commitDocument: (document: MauthDocumentLike<Q, F, C>) => void;
@@ -47,6 +48,7 @@ export function useMauthAgentBridgeController<
   currentDocument,
   fileState,
   validate,
+  warnings,
   previewActions,
   applyActionsWithoutCommit,
   commitDocument,
@@ -54,14 +56,13 @@ export function useMauthAgentBridgeController<
   saveAppliedDocument,
   saveConflictMessage,
 }: UseMauthAgentBridgeControllerOptions<Q, F, C>) {
-  function buildCurrentAgentSnapshot(
-    validation: unknown = validate(),
-    document: MauthDocumentLike<Q, F, C> = currentDocument(),
-  ): MauthAgentSnapshot {
+  function buildCurrentAgentSnapshot(validation: unknown = validate(), document?: MauthDocumentLike<Q, F, C>): MauthAgentSnapshot {
+    const current = document ?? currentDocument();
     return buildMauthAgentSnapshot<Q, F, C>({
-      document,
-      file: fileState(document),
+      document: current,
+      file: fileState(current),
       validation,
+      warnings: document ? [] : warnings?.(),
     });
   }
 

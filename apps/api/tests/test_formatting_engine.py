@@ -22,3 +22,17 @@ def test_mixed_math_keeps_real_inline_math_as_latex():
 
     assert '<span class="inline-latex">\\displaystyle x=1</span>' in rendered
     assert '<span class="inline-latex">\\displaystyle \\frac{1}{2}</span>' in rendered
+
+
+def test_choices_html_marks_only_the_selected_solution_answer():
+    rendered = FormattingEngine._choices_html(
+        {
+            "choices": ["2", "4", "6"],
+            "numberingStyle": "upper-alpha",
+            "solutionAnswerIndex": 1,
+        }
+    )
+
+    assert rendered.count("choice-item-solution-answer") == 1
+    assert rendered.count("choice-label-answer-ring") == 1
+    assert '<span class="choice-label choice-label-answer-ring">B.</span>' in rendered

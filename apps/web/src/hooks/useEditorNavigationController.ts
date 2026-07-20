@@ -2,10 +2,18 @@ import {
   useCallback,
   useLayoutEffect,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+
+import {
+  editorAnchorActivationPlan,
+  editorRevealOpenSignal,
+  nextEditorRevealRequest,
+  type EditorRevealRequest,
+} from "@/lib/editorAnchorActions";
 
 interface NavigationTocItem {
   id: string;
@@ -28,7 +36,6 @@ interface UseEditorNavigationControllerOptions<TTocItem extends NavigationTocIte
   paneMode: "split" | "preview";
   activeQuestionId: string | null;
   activeTocItemId: string;
-  editorRevealSequence?: number;
   previewFitScale: number;
   documentLayoutKey: unknown;
   previewEditClickMoveTolerancePx: number;
@@ -36,15 +43,16 @@ interface UseEditorNavigationControllerOptions<TTocItem extends NavigationTocIte
   setInspectorOpen: (value: boolean | ((current: boolean) => boolean)) => void;
   setActiveTocItemId: (anchor: string) => void;
   setActiveRailItemId: (anchor: string) => void;
-  selectQuestionInEditor: (questionId: string) => void;
-  revealEditorAnchor: (anchor: string) => void;
+  setActiveQuestionId: (questionId: string) => void;
   resetPreviewZoom: () => void;
   scrollToAnchorPosition: (container: HTMLElement, position: { anchor: string; progress: number }) => boolean;
   scrollAnchorFallbacks: (anchor: string) => string[];
   graphChildParentScrollAnchor: (anchor: string) => string | null;
+  previewAnchorForEditorAnchor: (anchor: string, items: TTocItem[]) => string;
   previewAnchorFromEventTarget: (target: EventTarget | null, previewPane: HTMLElement | null) => string | null;
   questionIdFromScrollAnchor: (anchor: string) => string | null;
   questionScrollAnchor: (questionId: string) => string;
+  scrollAnchorContains: (containerAnchor: string, selectedAnchor?: string | null) => boolean;
 }
 
 export function useEditorNavigationController<TTocItem extends NavigationTocItem>({
@@ -56,7 +64,6 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
   paneMode,
   activeQuestionId,
   activeTocItemId,
-  editorRevealSequence,
   previewFitScale,
   documentLayoutKey,
   previewEditClickMoveTolerancePx,
@@ -64,19 +71,50 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
   setInspectorOpen,
   setActiveTocItemId,
   setActiveRailItemId,
-  selectQuestionInEditor,
-  revealEditorAnchor,
+  setActiveQuestionId,
   resetPreviewZoom,
   scrollToAnchorPosition,
   scrollAnchorFallbacks,
   graphChildParentScrollAnchor,
+  previewAnchorForEditorAnchor,
   previewAnchorFromEventTarget,
   questionIdFromScrollAnchor,
   questionScrollAnchor,
+  scrollAnchorContains,
 }: UseEditorNavigationControllerOptions<TTocItem>) {
   const pendingEditorJumpAnchorRef = useRef<string | null>(null);
   const pendingPreviewJumpAnchorRef = useRef<string | null>(null);
   const previewEditClickStartRef = useRef<PreviewEditClickStart | null>(null);
+  const [editorRevealRequest, setEditorRevealRequest] = useState<EditorRevealRequest | null>(null);
+
+  function selectQuestionInEditor(questionId: string) {
+    if (questionId) setActiveQuestionId(questionId);
+  }
+
+  function revealEditorAnchor(anchor: string) {
+    const questionId = questionIdFromScrollAnchor(anchor);
+    if (questionId) selectQuestionInEditor(questionId);
+    setEditorRevealRequest((current) => nextEditorRevealRequest(current, anchor));
+  }
+
+  function activateEditorAnchor(anchor: string) {
+    const plan = editorAnchorActivationPlan({
+      anchor,
+      showPreview,
+      documentTocItems,
+      questionIdFromScrollAnchor,
+      graphChildParentScrollAnchor,
+      previewAnchorForEditorAnchor,
+    });
+    if (plan.questionId) selectQuestionInEditor(plan.questionId);
+    setActiveTocItemId(plan.activeAnchor);
+    setActiveRailItemId(plan.activeAnchor);
+    if (plan.previewAnchor) queuePreviewJump(plan.previewAnchor);
+  }
+
+  function openSignalForAnchor(anchor: string) {
+    return editorRevealOpenSignal(anchor, editorRevealRequest, scrollAnchorContains);
+  }
 
   const jumpPendingDocumentAnchors = useCallback(() => {
     let attemptedJump = false;
@@ -132,7 +170,19 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
       window.cancelAnimationFrame(secondFrame);
       window.cancelAnimationFrame(retryFrame);
     };
-  }, [activeQuestionId, activeTocItemId, documentLayoutKey, editorRevealSequence, jumpPendingDocumentAnchors, previewFitScale]);
+  }, [activeQuestionId, activeTocItemId, documentLayoutKey, editorRevealRequest?.sequence, jumpPendingDocumentAnchors, previewFitScale]);
+
+  useLayoutEffect(() => {
+    const editorPane = editorPaneRef.current;
+    if (!editorPane || !showEditor) return;
+
+    editorPane.scrollLeft = 0;
+    const keepEditorPinnedLeft = () => {
+      if (editorPane.scrollLeft !== 0) editorPane.scrollLeft = 0;
+    };
+    editorPane.addEventListener("scroll", keepEditorPinnedLeft, { passive: true });
+    return () => editorPane.removeEventListener("scroll", keepEditorPinnedLeft);
+  }, [editorPaneRef, showEditor]);
 
   function clearPendingDocumentJumps() {
     pendingEditorJumpAnchorRef.current = null;
@@ -312,6 +362,10 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
   }
 
   return {
+    selectQuestionInEditor,
+    activateEditorAnchor,
+    revealEditorAnchor,
+    openSignalForAnchor,
     clearPendingDocumentJumps,
     queueDocumentJump,
     queueEditorJump,
