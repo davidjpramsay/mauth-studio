@@ -15,6 +15,7 @@ The app should be excellent for:
 ## Implemented Foundation
 
 - Standalone Electron macOS app with a packaged Vite editor, FastAPI sidecar, bundled Penrose runtime, dynamic loopback port, native quit confirmation, ad-hoc signing, and local installer.
+- Teacher-confirmed in-app alpha updates plus a guarded `macos:ship` pipeline that publishes only after signed DMG, ZIP, metadata, and blockmap verification.
 - Authenticated runtime-manifest discovery for Codex/MCP tools, with a random per-launch bridge token and the fixed-port browser launcher retained only for development diagnostics.
 - Shared macOS state, autosave, logos, and remembered-folder identity under Application Support, while visible documents and external-folder project metadata remain where the teacher selected them.
 - Cloud-safe launcher status, ownership-scoped shutdown escalation, and active-file outage/reconnect handling that preserves editor drafts.
@@ -76,7 +77,7 @@ The broad launcher/editor/lifecycle/manual-solutions milestone completed on 18 J
 - External-folder, stale-autosave, document-conflict, bridge-session, solution-surface, and rendered-preview workflows have focused regression coverage.
 - `docs/current-state.md`, architecture, storage, bridge, actions, AI brains, and roadmap documents agree with the implemented behavior, and `pnpm check` passes.
 
-Completion does not require a Swift rewrite, distribution notarization, an automatic updater, or a restored in-app chat panel.
+Completion does not require a Swift rewrite or a restored in-app chat panel.
 
 ## Next
 
@@ -85,7 +86,7 @@ Completion does not require a Swift rewrite, distribution notarization, an autom
 - Improve Mauthdown import/export and round-trip fidelity.
 - Extract remaining render-heavy frontend boundaries, especially function graphs and preview segmentation. The navigator, workspace binding, overlay, header, and selection-inspector splits are complete.
 - Add runtime smoke tests whenever a stale-state or hidden-state regression is fixed.
-- Clean-machine-test the completed Developer ID signed/notarized `0.1.0` DMG on another Apple Silicon Mac. The app and DMG release pipeline, per-launch bridge authentication, and Hardened Runtime are complete; update/rollback policy remains later work.
+- Publish and clean-machine-test the first updater-enabled release after `0.1.0` on another Apple Silicon Mac, then verify an in-app update to the following alpha. Version `0.1.0` cannot self-update and therefore needs one final manual replacement.
 - Keep the public README, GitHub Pages download page, GitHub release assets, release tag, and app version aligned. Normal teacher installation should use the signed DMG; source builds remain for development and local agent helper tooling.
 
 ## Later

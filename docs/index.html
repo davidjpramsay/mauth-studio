@@ -505,11 +505,12 @@
           <div>
             <h2>Download Mauth Studio.</h2>
             <p>
-              Version 0.1.0 is signed with Developer ID and notarized by Apple. It currently supports Apple Silicon Macs. No Python,
-              Node.js, repository checkout, or open Terminal windows are required for normal teacher use.
+              Version 0.1.0 was signed with Developer ID and notarized by Apple, but its public DMG upload did not complete. The next
+              shareable Apple Silicon build will include the updater. No Python, Node.js, repository checkout, or open Terminal windows will
+              be required for normal teacher use.
             </p>
             <div class="hero-actions">
-              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0">Get Apple Silicon release</a>
+              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0">View alpha release status</a>
               <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0">Release notes</a>
             </div>
           </div>
@@ -519,7 +520,7 @@
             <ul>
               <li><strong>Platform:</strong> macOS on Apple Silicon.</li>
               <li><strong>Trust:</strong> Developer ID signed, notarized, and Gatekeeper-validated.</li>
-              <li><strong>Updates:</strong> manual during the alpha; download a newer DMG when a release is published.</li>
+              <li><strong>Updates:</strong> 0.1.0 is manual; later updater-enabled alphas ask before download and restart.</li>
               <li><strong>Stage:</strong> alpha software intended for early testing and feedback.</li>
             </ul>
           </article>
@@ -549,7 +550,7 @@ Please help me use two separate chats/work streams where practical:
 - Mauth Development: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
 - Mauth Authoring: create, inspect, convert, and polish assessments through the running app.
 
-1. Download Mauth Studio 0.1.0 from https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0, install it in Applications, and open it. Do not build from source just for normal use.
+1. Open https://github.com/davidjpramsay/mauth-studio/releases and choose the newest release that contains a signed Apple Silicon DMG under Assets. Install it in Applications and open it. Version 0.1.0 has release notes but no public installer asset. Do not build from source just for normal use.
 2. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder for the agent helper tools. Fork it first only if I intend to change and publish the app.
 3. Read AGENTS.md, docs/current-state.md, docs/architecture.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
 4. From the repo root, install the Node dependencies used by the bridge helper:
@@ -560,7 +561,7 @@ Please help me use two separate chats/work streams where practical:
 6. If I want Claude or Codex MCP tools, configure:
    pnpm agent:mcp
 7. When editing an assessment, use the running app, rendered preview checks, and structured Mauth actions where possible.
-8. Only if I ask to develop the app, install the Python environment with `cd apps/api && uv sync`, use `pnpm macos:dev` while iterating, and reserve `pnpm macos:release` for a versioned external release after the full quality gate passes.
+8. Only if I ask to develop the app, install the Python environment with `cd apps/api && uv sync` and use `pnpm macos:dev` while iterating. Reserve `pnpm macos:release` for building signed release artifacts and `pnpm macos:ship` for guarded publication from clean, pushed main.
 
 Do not edit the selected documents folder, its .mauth metadata, ~/Library/Application Support/Mauth Studio/storage, or legacy storage/projects files directly unless I ask for recovery work. Use the app, bridge, or project-file API so revisions and autosave stay safe. Keep local storage, drafts, screenshots, and temporary output out of Git unless I explicitly ask for them.</textarea
             >

@@ -45,7 +45,7 @@ pnpm macos:dev
 
 The Codex app also exposes a project Run action through `.codex/environments/environment.toml`; it calls `script/build_and_run.sh` to build, sign, and launch the current bundle.
 
-Do not run the Developer ID/notarization pipeline after routine source edits. `pnpm macos:release` is reserved for versioned external artifacts after the full quality gate passes and the source state is traceable in Git.
+Do not run the Developer ID/notarization pipeline after routine source edits. `pnpm macos:release` is reserved for building versioned external artifacts, and `pnpm macos:ship` is the guarded publication path from clean, pushed `main` after the full quality gate passes.
 
 The previous Terminal-backed browser launcher remains available for runtime debugging:
 

@@ -44,9 +44,9 @@ pnpm macos:install
 
 The standalone app owns its dynamic local API port and child service; no Terminal windows need to remain open. `pnpm agent:doctor` and `pnpm agent:mcp` discover a running packaged app through its private runtime manifest. The packaged bridge is authenticated with a random per-launch token stored only in that mode-`0600` manifest; do not print, persist, or copy the token into source files. Use `pnpm macos:dev` for the Electron development shell. `pnpm dev:status` reports either a running packaged app or the fixed-port development runtime. `pnpm dev:stop` stops only fixed-port development servers; quit the packaged app normally with Command-Q or **Mauth Studio > Quit Mauth Studio**.
 
-External macOS distribution uses `pnpm macos:release` and the credential/setup contract in `docs/macos-release.md`. Never treat an ad-hoc-signed local build as a shareable release.
+External macOS distribution uses the guarded `pnpm macos:ship` workflow and the credential/setup contract in `docs/macos-release.md`. `pnpm macos:release` only builds and verifies the local signed/notarized artifacts. Never treat an ad-hoc-signed local build as a shareable release.
 
-During normal implementation, use `pnpm macos:dev`; signing and Apple notarization are not part of the edit-test loop. Use `pnpm macos:build` plus `pnpm macos:install` only for deliberate local installed-app checkpoints. Use `pnpm macos:release` only when preparing a versioned artifact for another person, after `pnpm check` passes and the source state that produced the artifact is committed or otherwise traceable. Do not rerun the release pipeline after every small source change.
+During normal implementation, use `pnpm macos:dev`; signing, notarization, and publication are not part of the edit-test loop. Use `pnpm macos:build` plus `pnpm macos:install` only for deliberate local installed-app checkpoints. Use `pnpm macos:release` only to inspect a versioned release bundle. Use `pnpm macos:ship` only from clean, pushed `main` when publishing a new version for another person. Do not rerun either release pipeline after every small source change.
 
 For lower-level API/web debugging, run locally from the project root using two terminals:
 

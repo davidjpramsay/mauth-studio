@@ -60,13 +60,13 @@ Example:
 
 ## Install Mauth Studio
 
-Open the versioned release page, then choose the signed and Apple-notarized Apple Silicon DMG under **Assets**:
+The current v0.1.0 page records the first signed/notarized alpha, but its DMG upload did not complete during the GitHub incident and it has no public installer asset. The next shareable build will be the first updater-enabled release:
 
-[Get Mauth Studio 0.1.0 for macOS](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0)
+[View Mauth Studio 0.1.0 release status](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0)
 
-Open the DMG, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
+When a release page contains a DMG under **Assets**, open it, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
 
-Mauth is manually updated during the alpha. Download a newer signed DMG when a new release is published.
+Version 0.1.0 predates the in-app updater. Install the first updater-enabled release manually once. From that release onward, Mauth checks the public alpha channel shortly after launch, asks before downloading, and asks again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
 
 ## Connect Codex Or Claude
 
@@ -113,13 +113,19 @@ pnpm macos:install
 
 This installs an ad-hoc-signed development build at `~/Applications/Mauth Studio.app`. It is not a shareable release.
 
-Only versioned external releases use Developer ID signing and Apple notarization:
+Only versioned external releases use Developer ID signing and Apple notarization. Build a local release bundle with:
 
 ```bash
 pnpm macos:release
 ```
 
-Do not run `pnpm macos:release` for routine edit-test cycles. See `docs/macos-release.md` for certificate setup, release verification, Apple Silicon support, and clean-machine checks.
+The guarded end-to-end publication command is:
+
+```bash
+pnpm macos:ship
+```
+
+It requires a clean, pushed `main`, a new package version, matching release notes, Apple credentials, and GitHub authentication. It keeps the GitHub prerelease in draft until the signed DMG, signed ZIP, updater metadata, and blockmaps have uploaded and verified. Do not run either release command for routine edit-test cycles. See `docs/macos-release.md` for the complete contract.
 
 The older browser launcher remains available for lower-level runtime debugging:
 
