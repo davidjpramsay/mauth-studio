@@ -12,6 +12,14 @@ export function macReleaseArtifactNames(version) {
   };
 }
 
+export function remoteReleaseApiPath(repository, databaseId) {
+  const releaseId = Number(databaseId);
+  if (!repository || !Number.isInteger(releaseId) || releaseId <= 0) {
+    throw new Error("a GitHub repository and numeric release ID are required");
+  }
+  return `repos/${repository}/releases/${releaseId}`;
+}
+
 export function macShipPreflightProblems({
   version,
   branch,

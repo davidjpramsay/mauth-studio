@@ -6,7 +6,13 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { macReleaseArtifactNames, macReleaseTag, macShipPreflightProblems, remoteReleaseAssetProblems } from "./macos-ship-plan.mjs";
+import {
+  macReleaseArtifactNames,
+  macReleaseTag,
+  macShipPreflightProblems,
+  remoteReleaseApiPath,
+  remoteReleaseAssetProblems,
+} from "./macos-ship-plan.mjs";
 
 const REPOSITORY = "davidjpramsay/mauth-studio";
 const preflightOnly = process.argv.includes("--preflight");
@@ -78,8 +84,8 @@ function retryUpload(tag, files) {
   }
 }
 
-function assertRemoteAssets(tag, localAssets) {
-  const release = JSON.parse(output("gh", ["api", `repos/${REPOSITORY}/releases/tags/${tag}`]));
+function assertRemoteAssets(releaseDatabaseId, localAssets) {
+  const release = JSON.parse(output("gh", ["api", remoteReleaseApiPath(REPOSITORY, releaseDatabaseId)]));
   const problems = remoteReleaseAssetProblems(localAssets, release.assets || []);
   if (problems.length) throw new Error(`Remote release verification failed:\n- ${problems.join("\n- ")}`);
 }
@@ -136,7 +142,10 @@ function main() {
     tag,
     assets.map(({ file }) => file),
   );
-  assertRemoteAssets(tag, assets);
+  const uploadedRelease = JSON.parse(
+    output("gh", ["release", "view", tag, "--repo", REPOSITORY, "--json", "databaseId,isDraft,targetCommitish,url"]),
+  );
+  assertRemoteAssets(uploadedRelease.databaseId, assets);
   execute("gh", ["release", "edit", tag, "--notes-file", notesFile, "--draft=false", "--prerelease", "--repo", REPOSITORY]);
 
   const published = JSON.parse(
