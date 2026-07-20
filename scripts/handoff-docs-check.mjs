@@ -143,26 +143,37 @@ if (verifyLiveCheckpoint) {
   const lineCount = (relativePath) => read(relativePath).split(/\r?\n/).length - 1;
 
   const documentedBranch = requiredMatch(/^branch: (.+)$/m, "checkpoint branch")[1];
-  const documentedHead = requiredMatch(/^baseline commit: ([0-9a-f]+)(?: .*)?$/m, "baseline commit")[1];
+  const documentedHead = requiredMatch(/^baseline commit: ([0-9a-f]+|HEAD)(?: .*)?$/m, "baseline commit")[1];
   const documentedAppLines = Number(requiredMatch(/^App\.tsx: (\d+) lines$/m, "App.tsx line count")[1]);
   const documentedInspectorLines = Number(
     requiredMatch(/^SelectionInspector\.tsx: (\d+) lines(?: .*)?$/m, "SelectionInspector.tsx line count")[1],
   );
-  const documentedWorktree = requiredMatch(
+  const documentedDirtyWorktree = currentState.match(
     /^worktree: intentionally dirty \((\d+) modified files and (\d+) untracked files at this checkpoint\);/m,
-    "dirty-worktree counts",
   );
+  const documentedCleanWorktree = /^worktree: clean at this checkpoint;/m.test(currentState);
 
-  assert.equal(documentedBranch, branch, "The handoff branch does not match Git");
-  assert.equal(documentedHead, head, "The handoff baseline commit does not match HEAD");
+  assert.ok(documentedDirtyWorktree || documentedCleanWorktree, "docs/current-state.md is missing its clean or dirty worktree checkpoint");
+
+  if (documentedBranch !== "CURRENT") {
+    assert.equal(documentedBranch, branch, "The handoff branch does not match Git");
+  }
+  if (documentedHead !== "HEAD") {
+    assert.equal(documentedHead, head, "The handoff baseline commit does not match HEAD");
+  }
   assert.equal(documentedAppLines, lineCount("apps/web/src/App.tsx"), "The handoff App.tsx line count is stale");
   assert.equal(
     documentedInspectorLines,
     lineCount("apps/web/src/components/editor/SelectionInspector.tsx"),
     "The handoff SelectionInspector.tsx line count is stale",
   );
-  assert.equal(Number(documentedWorktree[1]), modifiedCount, "The handoff modified-file count is stale");
-  assert.equal(Number(documentedWorktree[2]), untrackedCount, "The handoff untracked-file count is stale");
+  if (documentedCleanWorktree) {
+    assert.equal(modifiedCount, 0, "The handoff says the worktree is clean but modified files are present");
+    assert.equal(untrackedCount, 0, "The handoff says the worktree is clean but untracked files are present");
+  } else {
+    assert.equal(Number(documentedDirtyWorktree[1]), modifiedCount, "The handoff modified-file count is stale");
+    assert.equal(Number(documentedDirtyWorktree[2]), untrackedCount, "The handoff untracked-file count is stale");
+  }
 
   console.log(
     `Live checkpoint matches Git: ${branch} at ${head}, ${modifiedCount} modified, ${untrackedCount} untracked, App.tsx ${documentedAppLines} lines, SelectionInspector.tsx ${documentedInspectorLines} lines.`,
