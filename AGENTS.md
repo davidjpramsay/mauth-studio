@@ -71,7 +71,7 @@ Before handing this dirty worktree to another model, run:
 pnpm check:handoff:live
 ```
 
-The ordinary `pnpm check:handoff` validates the durable documentation contract and is part of `pnpm check`. The live variant additionally verifies that the branch, baseline commit, dirty-worktree counts, and key source line counts recorded in `docs/current-state.md` still match the working tree. Keep it as a transition gate rather than a day-to-day gate because those facts legitimately change during an implementation slice.
+The ordinary `pnpm check:handoff` validates the durable documentation contract and is part of `pnpm check`. The live variant additionally verifies the branch/baseline when pinned, the documented clean-or-dirty worktree state, and key source line counts in `docs/current-state.md`. A clean committed checkpoint may use `CURRENT` and `HEAD`; a dirty transition checkpoint must record exact counts. Keep the live check as a transition gate rather than a day-to-day gate because those facts legitimately change during an implementation slice.
 
 ## Storage And Git Hygiene
 

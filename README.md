@@ -10,9 +10,9 @@ Teachers work in the Mauth Studio app. It includes the editor, A4 preview, files
 
 Mauth Studio is alpha software. Expect active changes to app code, schemas, docs, tests, and agent workflows.
 
-For a model or developer joining an existing worktree, `docs/current-state.md` is the authoritative handoff: it records the active branch, runtime, storage warning, uncommitted change groups, verification baseline, and exact resume point. Read it before starting or restarting services. Its **Documentation Ownership** table identifies which document owns each durable contract, so transient status, architecture, storage rules, and roadmap intent do not get mixed together.
+For a model or developer joining an existing worktree, `docs/current-state.md` is the authoritative handoff: it records the source checkpoint, runtime, storage warning, completed and active work, verification baseline, and exact resume point. Read it before starting or restarting services. Its **Documentation Ownership** table identifies which document owns each durable contract, so transient status, architecture, storage rules, and roadmap intent do not get mixed together.
 
-For a model transition, read `AGENTS.md`, `docs/current-state.md`, and `docs/architecture.md` first. Then read only the subsystem guide named by the current resume point. Preserve the dirty worktree unless the handoff explicitly says otherwise.
+For a model transition, read `AGENTS.md`, `docs/current-state.md`, and `docs/architecture.md` first. Then read only the subsystem guide named by the current resume point. Inspect and preserve any current uncommitted work unless the handoff explicitly says otherwise.
 
 If you are new to Mauth, start with the public download page:
 
@@ -60,9 +60,9 @@ Example:
 
 ## Install Mauth Studio
 
-Download the signed and Apple-notarized Apple Silicon build:
+Open the versioned release page, then choose the signed and Apple-notarized Apple Silicon DMG under **Assets**:
 
-[Download Mauth Studio 0.1.0 for macOS](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.0/Mauth%20Studio-0.1.0-arm64.dmg)
+[Get Mauth Studio 0.1.0 for macOS](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0)
 
 Open the DMG, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
 

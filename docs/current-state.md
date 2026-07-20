@@ -32,9 +32,9 @@ For development work, also inspect the relevant tests beside the changed code. F
 - **Normal launch path:** open `~/Applications/Mauth Studio.app`. It is a standalone Electron app that owns a packaged FastAPI sidecar on a dynamic loopback port; no Terminal windows need to remain open. `pnpm macos:dev` is the source-development shell, and `dev:launch:desktop` remains a fixed-port browser debugging path.
 - **Durable data:** visible teacher documents live in the selected documents folder. On macOS, shared state, autosave, logos, and remembered-folder identity live under `~/Library/Application Support/Mauth Studio/storage`; external selected folders keep project metadata and versions in their own `.mauth/`. Autosave is recovery state, not a saved project file.
 - **Authoring contract:** inspect the current snapshot, dry-run structured Mauth actions, apply with revision/idempotency protection, validate, then verify in the browser. Direct edits to teacher JSON or `.mauth` metadata are recovery-only.
-- **Current source state:** the branch is `codex/mauth-authoring-polish` at baseline commit `1ec0fe0`, with the intentionally dirty implementation described below. There is no hidden partially applied code change outside the listed worktree; manual-solution composition is completed as group 52 below.
+- **Current source state:** the standalone alpha source was merged to `main` as `79f13fb` through PR #34. The clean checkpoint below uses symbolic `CURRENT`/`HEAD` markers so it remains truthful after a committed documentation handoff; always inspect Git before editing.
 - **Implemented direction:** launcher/status tooling, guarded file and folder lifecycle, system diagnostics, deterministic agent actions, and manual solution layers for shared choices and tables, `graph2d` functions/features, `geometry2d`, `vector2d`, `graph3d`, Plotly `statsChart` series, uploaded-image annotations, supported Penrose elements, and paired diagrams are present in the current worktree.
-- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, and Codex Run action are implemented. Public release alignment is active; clean-machine release verification, updater design, further `App.tsx` reduction, and page-flow repair actions remain next-phase work.
+- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, and Codex Run action are implemented. The source, README, public-site source, and v0.1.0 prerelease page are published. The DMG asset upload and Pages deployment remain blocked by GitHub's 20 July 2026 API/Actions incident; clean-machine release verification and updater design remain next-phase work.
 - **Do not infer:** the old provider-backed chat is not the product path, the current browser tab is not automatically authoritative, and a running API alone does not mean the full app or active documents folder is healthy.
 
 ### Documentation Ownership
@@ -59,15 +59,15 @@ When a transient runtime fact conflicts with a durable architecture document, tr
 
 ## Immediate Worktree Checkpoint
 
-This checkpoint was refreshed after completing and installing the first external-release hardening slice on 19 July 2026. Runtime facts are deliberately timestamped because they can change without a source edit.
+This checkpoint was refreshed after merging the standalone alpha source and creating its prerelease page on 20 July 2026. Runtime and external-service facts are deliberately timestamped because they can change without a source edit.
 
 Handoff status: standalone implementation and the first signed/notarized release are complete locally; final repository gates are recorded below. The next model should begin from clean-machine release testing or another prioritised follow-on item rather than reconstructing the desktop shell, bridge security, or Apple signing setup.
 
 Repository state at the checkpoint:
 
 ```text
-branch: codex/mauth-authoring-polish
-baseline commit: 1ec0fe0 Document current Mauth handoff state
+branch: CURRENT
+baseline commit: HEAD
 runtime: installed packaged app running on a dynamic loopback port after authenticated API, MCP, bridge, Hardened Runtime, and installed-bundle verification
 active documents folder: external Year 10 Test 4 - Exam folder on Google Drive
 current Drive state at 5:52 pm AWST: Google Drive and the selected folder are online, but File Provider still marks `.mauth/project.json` as `dataless`, download-requested, and downloading; the guarded project and file routes return `503 STORAGE_UNAVAILABLE` in about 1-2 ms instead of hanging until materialisation completes
@@ -76,7 +76,7 @@ current runtime state at 10:40 am AWST: installed packaged app version 0.1.0 is 
 live bridge state at 10:40 am AWST: packaged discovery, web/API health, active editor snapshot, automatic bearer authentication, one live bridge session, the 12-tool MCP client smoke, and the dry-run action smoke all pass
 App.tsx: 1053 lines
 SelectionInspector.tsx: 107 lines after the focused basic-block, diagram-router, renderer-specific inspector extractions, and explicit Solutions-mode binding
-worktree: intentionally dirty (150 modified files and 135 untracked files at this checkpoint); do not discard, clean, or rewrite it wholesale
+worktree: clean at this checkpoint; inspect Git before assuming a later session is also clean
 ```
 
 Always confirm this with:
@@ -97,7 +97,7 @@ pnpm dev:status
 - The API status and web app are healthy against the configured external Google Drive folder, but Google File Provider had not finished downloading `.mauth/project.json`. Earlier guarded project-route checks returned `503` promptly; an authenticated file-list check in this slice did not complete promptly and was terminated without changing teacher files. Treat cloud-placeholder listing as a separate follow-up, wait for materialisation, and require a fully passing `pnpm agent:doctor` before snapshot or mutation work.
 - The preview-composition, workspace-presentation, navigator-composition, overlay-composition, header-composition, document-workspace-binding, basic-block, diagram-router, geometry2d, graph2d, Penrose, vector2d, graph3d, statistics, and image selection-inspector extractions are complete and verified.
 - The project-persistence, Files-drawer project-management, editor-agent bridge, and manual-solution composition slices are complete. `SelectionInspector.tsx` and the workspace-presentation, navigator, overlay, header, document-workspace, project-persistence, project-file-management, agent-bridge, and manual-solution adapters are now focused boundaries; the next model should use **Exact Resume Point** rather than trying to reconstruct completed work.
-- The implementation and documentation changes are intentionally uncommitted on `codex/mauth-authoring-polish`; the next model must preserve them.
+- The standalone implementation and release-alignment documentation are committed and merged through PR #34. Preserve any new uncommitted work found in a later checkout.
 
 ### Active Development Goal
 
@@ -113,7 +113,7 @@ The completion criteria in `docs/todo.md` are met: normal macOS use has one stan
 
 The document-workspace binding and workspace-presentation slices are complete. A new model should begin from the source named in **Exact Resume Point**, not search for an unfinished workspace adapter.
 
-The dirty worktree contains fifty-six completed or active change groups:
+The merged standalone alpha contains fifty-six completed or active change groups:
 
 1. **Completed and verified multiple-choice solution-answer work.**
    - Choice lists can store a zero-based `solutionAnswerIndex`; legacy solutions-only copies remain readable.
@@ -495,13 +495,15 @@ The dirty worktree contains fifty-six completed or active change groups:
     - Empty drafts are valid persistence snapshots, and initial editor startup no longer creates a fallback question. A blank test therefore remains blank after closing and reopening the app.
     - Focused starter-document and persistence tests cover blank standard, exam, and worksheet plans, blank-draft recovery, plus the retained notes behavior. The signed/notarized packaged app was verified through **New document -> School test** with zero question buttons, `questionCount: 0`, and an empty document flow.
 
-56. **Active public-release alignment.**
+56. **Active public-release completion.**
     - The README and GitHub Pages source now lead with the standalone signed Apple Silicon app instead of presenting the two-terminal browser runtime as normal installation.
     - Normal teacher download, optional Codex/Claude bridge setup, source development, local installed checkpoints, and external notarized releases are documented as separate workflows.
     - `AGENTS.md`, local-agent setup, release guidance, product direction, and the roadmap now state that notarization is a versioned release operation rather than part of every edit-test cycle.
-    - Publication remains gated on committing and pushing the source state, creating the matching GitHub tag/prerelease, attaching the notarized DMG, and verifying the live download page.
+    - PR #34 is merged at `79f13fb`, and the versioned v0.1.0 alpha prerelease page exists.
+    - GitHub reported a partial outage for API Requests and Actions on 20 July 2026. Repeated large-asset uploads returned `502/503`, and the generated Pages deployment failed during the same incident. The release currently has no DMG asset; retry the unchanged notarized file at `release/Mauth Studio-0.1.0-arm64.dmg` after GitHub recovers, then rerun and verify Pages.
+    - The local DMG remains Gatekeeper accepted with SHA-256 `d219d3c46335a7ae09edbd57b9930b93b3978d3a7fae59384bb49b90c515ccb8`.
 
-The full `pnpm check` gate passes on this checkpoint: API 81 passed, web/actions 569 passed, Plotly 8 passed, launcher 20 passed, and TypeScript/Vite production build passed. The isolated solution-authoring smoke also passed after the composition extraction without touching teacher files. The installed packaged app reached healthy dynamic API status, Vite, authenticated agent discovery, one bridge session, the 12-tool MCP client smoke, a dry-run action smoke, and a real Penrose Venn render; its previously verified native Close path removes the runtime manifest and stops both sidecar processes. The Google Drive project metadata remains a File Provider placeholder, so external-folder listing must be rechecked after materialisation. Documentation and implementation changes remain uncommitted.
+The full `pnpm check` gate passes on this checkpoint: API 81 passed, web/actions 569 passed, Plotly 8 passed, launcher 20 passed, and TypeScript/Vite production build passed. GitHub's post-merge Check workflow also passed. The installed packaged app reached healthy dynamic API status, Vite, authenticated agent discovery, one bridge session, the 12-tool MCP client smoke, a dry-run action smoke, and a real Penrose Venn render; its previously verified native Close path removes the runtime manifest and stops both sidecar processes. The Google Drive project metadata remains a File Provider placeholder, so external-folder listing must be rechecked after materialisation.
 
 The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reloader parent and worker for one Mauth runtime. Do not treat that pair alone as evidence of a stale duplicate API.
 
@@ -509,7 +511,7 @@ The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reload
 
 Resume follow-on development in this order:
 
-1. Finish the external beta trust boundary without creating a second app: download and clean-machine-test the signed/notarized `0.1.0` DMG on another Apple Silicon Mac. Developer ID signing, app-and-DMG notarization/stapling, per-launch bridge authentication, Hardened Runtime, fail-closed release tooling, and automatic Codex/Claude discovery are complete. A stricter content-security policy and updater policy remain follow-on hardening.
+1. After GitHub's API/Actions incident is resolved, upload `release/Mauth Studio-0.1.0-arm64.dmg` to the existing v0.1.0 prerelease, rerun the failed Pages deployment, verify the live release-page link, then download and clean-machine-test the DMG on another Apple Silicon Mac. Developer ID signing, app-and-DMG notarization/stapling, per-launch bridge authentication, Hardened Runtime, fail-closed release tooling, and automatic Codex/Claude discovery are complete. A stricter content-security policy and updater policy remain follow-on hardening.
 2. Continue first-class manual solution editing through the next coherent teacher-facing ergonomic or validation gap, or build the next conservative page-flow check on the measured preview-readiness contract. Do not create a second status, mark, preview, validation, or mutation path.
 3. Continue the `App.tsx` composition split only at a coherent remaining boundary. Existing persistence, Files, bridge, manual-solution, preview, workspace, navigator, overlay, header, inspector, drag, mutation, and lifecycle slices are complete; do not duplicate controller ownership merely to reduce line count.
 4. Recheck the selected Google Drive documents folder and live editor session before authoring teacher files. The packaged app starts independently of cloud metadata, but the normal project route still correctly returns `503` while `.mauth/project.json` is dataless. Do not reset the folder or import files automatically.
@@ -525,7 +527,7 @@ Before a new model edits anything:
 
 1. Read the files in **Start Here** and this checkpoint completely.
 2. Run `git status --short --branch`, `git log --oneline -5`, and `pnpm dev:status`.
-3. Preserve every existing modified and untracked source file; this worktree is the current implementation, not disposable generated output.
+3. Preserve any modified and untracked source file reported by Git; the recorded checkpoint is clean, but a later user's work is never disposable generated output.
 4. Confirm the active folder and file through `/api/system/status` or the bridge snapshot before assessment-authoring actions.
 5. The current packaged runtime was stopped after lifecycle verification. Open `~/Applications/Mauth Studio.app`; do not start manual API/web terminals alongside it.
 6. Run `pnpm agent:doctor` and require passing web and active-editor checks before bridge mutation. The doctor discovers the packaged dynamic URL automatically; use explicit URL variables only for manual fixed-port debugging.
