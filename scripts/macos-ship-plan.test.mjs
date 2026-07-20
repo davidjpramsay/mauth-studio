@@ -6,6 +6,7 @@ import {
   macReleaseTag,
   macShipPreflightProblems,
   macUpdateMetadataProblems,
+  remoteReleaseApiPath,
   remoteReleaseAssetProblems,
 } from "./macos-ship-plan.mjs";
 
@@ -67,6 +68,11 @@ test("remote asset verification checks required names, sizes, digests, and extra
     ]),
     ["size mismatch for Mauth.zip", "digest mismatch for Mauth.zip", "unexpected remote asset extra.txt"],
   );
+});
+
+test("draft release verification uses the numeric release API path", () => {
+  assert.equal(remoteReleaseApiPath("davidjpramsay/mauth-studio", 356516319), "repos/davidjpramsay/mauth-studio/releases/356516319");
+  assert.throws(() => remoteReleaseApiPath("davidjpramsay/mauth-studio", null), /numeric release ID/);
 });
 
 test("mac updater metadata must point to the exact ZIP bytes", () => {
