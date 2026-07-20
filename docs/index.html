@@ -505,13 +505,12 @@
           <div>
             <h2>Download Mauth Studio.</h2>
             <p>
-              Version 0.1.0 was signed with Developer ID and notarized by Apple, but its public DMG upload did not complete. The next
-              shareable Apple Silicon build will include the updater. No Python, Node.js, repository checkout, or open Terminal windows will
-              be required for normal teacher use.
+              Version 0.1.1 is the first downloadable updater-enabled Apple Silicon alpha. It is signed with Developer ID and notarized by
+              Apple. No Python, Node.js, repository checkout, or open Terminal windows are required for normal teacher use.
             </p>
             <div class="hero-actions">
-              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0">View alpha release status</a>
-              <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0">Release notes</a>
+              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.1">Download version 0.1.1</a>
+              <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.1">Release notes</a>
             </div>
           </div>
           <article class="surface">
@@ -520,7 +519,7 @@
             <ul>
               <li><strong>Platform:</strong> macOS on Apple Silicon.</li>
               <li><strong>Trust:</strong> Developer ID signed, notarized, and Gatekeeper-validated.</li>
-              <li><strong>Updates:</strong> 0.1.0 is manual; later updater-enabled alphas ask before download and restart.</li>
+              <li><strong>Updates:</strong> 0.1.1 asks before downloading and again before restarting to install.</li>
               <li><strong>Stage:</strong> alpha software intended for early testing and feedback.</li>
             </ul>
           </article>
@@ -550,7 +549,7 @@ Please help me use two separate chats/work streams where practical:
 - Mauth Development: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
 - Mauth Authoring: create, inspect, convert, and polish assessments through the running app.
 
-1. Open https://github.com/davidjpramsay/mauth-studio/releases and choose the newest release that contains a signed Apple Silicon DMG under Assets. Install it in Applications and open it. Version 0.1.0 has release notes but no public installer asset. Do not build from source just for normal use.
+1. Open https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.1 and download the signed Apple Silicon DMG under Assets. Install it in Applications and open it. Do not build from source just for normal use.
 2. Clone https://github.com/davidjpramsay/mauth-studio into a local Projects folder for the agent helper tools. Fork it first only if I intend to change and publish the app.
 3. Read AGENTS.md, docs/current-state.md, docs/architecture.md, docs/agent-local-setup.md, docs/agent-bridge.md, docs/mauth-actions.md, and docs/ai-brains.md before making changes.
 4. From the repo root, install the Node dependencies used by the bridge helper:

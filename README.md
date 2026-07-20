@@ -60,13 +60,13 @@ Example:
 
 ## Install Mauth Studio
 
-The current v0.1.0 page records the first signed/notarized alpha, but its DMG upload did not complete during the GitHub incident and it has no public installer asset. The next shareable build will be the first updater-enabled release:
+Mauth Studio 0.1.1 is the first downloadable updater-enabled alpha release:
 
-[View Mauth Studio 0.1.0 release status](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0)
+[Download Mauth Studio 0.1.1](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.1)
 
-When a release page contains a DMG under **Assets**, open it, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
+Open the DMG under **Assets**, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
 
-Version 0.1.0 predates the in-app updater. Install the first updater-enabled release manually once. From that release onward, Mauth checks the public alpha channel shortly after launch, asks before downloading, and asks again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
+Version 0.1.0 predates the in-app updater, so existing users must install 0.1.1 manually once. From 0.1.1 onward, Mauth checks the public alpha channel shortly after launch, asks before downloading, and asks again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
 
 ## Connect Codex Or Claude
 
