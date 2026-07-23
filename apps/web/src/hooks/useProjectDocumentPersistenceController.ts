@@ -1,4 +1,4 @@
-import type { MutableRefObject } from "react";
+import { useRef, type MutableRefObject } from "react";
 import type { ProjectFileDocument, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
@@ -20,6 +20,7 @@ import {
   type ProjectFileTransitionIntent,
   type ProjectFileTransitionOutcome,
 } from "@/lib/projectFileBeforeOpenWorkflow";
+import { runSingleFlight } from "@/lib/singleFlight";
 
 interface SerializedProjectDocument {
   content: string;
@@ -82,6 +83,8 @@ export function useProjectDocumentPersistenceController<TDocument>({
   refreshProjectFiles,
   dialogs,
 }: UseProjectDocumentPersistenceControllerOptions<TDocument>) {
+  const saveCurrentTestInFlightRef = useRef<Promise<boolean> | null>(null);
+
   async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: TDocument) {
     setProjectFilesStatus("saving");
     setProjectFilesMessage("Saving");
@@ -232,7 +235,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     return outcome;
   }
 
-  async function saveCurrentTestToProjectFile(folderPath = "") {
+  async function performSaveCurrentTestToProjectFile(folderPath: string) {
     let saveTargetPath = activeProjectFilePath;
     try {
       const defaultName = defaultProjectFileName();
@@ -269,6 +272,10 @@ export function useProjectDocumentPersistenceController<TDocument>({
       setProjectFilesMessage("Save failed");
       return false;
     }
+  }
+
+  function saveCurrentTestToProjectFile(folderPath = "") {
+    return runSingleFlight(saveCurrentTestInFlightRef, () => performSaveCurrentTestToProjectFile(folderPath));
   }
 
   return {
