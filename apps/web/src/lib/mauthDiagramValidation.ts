@@ -1,3 +1,6 @@
+import type { GraphFeature } from "@mauth-studio/shared";
+
+import { graphLineSegmentsShareEndpoint } from "./graphFeatureGeometry.ts";
 import type { MauthActionValidationIssue } from "./mauthActionValidation.ts";
 
 const SUPPORTED_DIAGRAM_TYPES = new Set([
@@ -499,6 +502,10 @@ function validateCommonGraphConfig(config: Record<string, unknown>, path: string
   optionalBoolean(config, "showGridBorder", path, issues);
   optionalBoolean(config, "showAxes", path, issues);
   optionalBoolean(config, "showArrows", path, issues);
+  optionalBoolean(config, "showXAxisMinArrow", path, issues);
+  optionalBoolean(config, "showXAxisMaxArrow", path, issues);
+  optionalBoolean(config, "showYAxisMinArrow", path, issues);
+  optionalBoolean(config, "showYAxisMaxArrow", path, issues);
   optionalBoolean(config, "showAxisLabels", path, issues);
   optionalBoolean(config, "showAxisNumbers", path, issues);
   optionalBoolean(config, "showFunctionArrows", path, issues);
@@ -589,6 +596,13 @@ function nonNegativeIndex(record: Record<string, unknown>, key: string, path: st
 
 function validateGraphFeatures(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   const features = optionalArray(config, "features", path, issues);
+  const lineSegmentIds = new Set(
+    features?.flatMap((entry, index) =>
+      isRecord(entry) && entry.kind === "line_segment"
+        ? [typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `feature-${index}`]
+        : [],
+    ) ?? [],
+  );
   features?.forEach((entry, index) => {
     const entryPath = `${path}.features[${index}]`;
     if (!isRecord(entry)) {
@@ -624,6 +638,8 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
     optionalNumber(entry, "size", entryPath, issues, { positive: true });
     optionalNumber(entry, "labelX", entryPath, issues);
     optionalNumber(entry, "labelY", entryPath, issues);
+    optionalString(entry, "firstSegmentId", entryPath, issues);
+    optionalString(entry, "secondSegmentId", entryPath, issues);
     nonNegativeIndex(entry, "functionIndex", entryPath, issues);
     nonNegativeIndex(entry, "functionAIndex", entryPath, issues);
     nonNegativeIndex(entry, "functionBIndex", entryPath, issues);
@@ -640,15 +656,41 @@ function validateGraphFeatures(config: Record<string, unknown>, path: string, is
       requiredNumber(entry, "x", entryPath, issues);
       requiredNumber(entry, "y", entryPath, issues);
     }
-    if (entry.kind === "point_between_points" || entry.kind === "line_segment" || entry.kind === "angle_marker") {
+    if (entry.kind === "point_between_points" || entry.kind === "line_segment") {
       requiredNumber(entry, "x1", entryPath, issues);
       requiredNumber(entry, "y1", entryPath, issues);
       requiredNumber(entry, "x2", entryPath, issues);
       requiredNumber(entry, "y2", entryPath, issues);
     }
     if (entry.kind === "angle_marker") {
-      requiredNumber(entry, "x", entryPath, issues);
-      requiredNumber(entry, "y", entryPath, issues);
+      const firstSegmentId = typeof entry.firstSegmentId === "string" ? entry.firstSegmentId.trim() : "";
+      const secondSegmentId = typeof entry.secondSegmentId === "string" ? entry.secondSegmentId.trim() : "";
+      if (firstSegmentId || secondSegmentId) {
+        if (!firstSegmentId || !lineSegmentIds.has(firstSegmentId)) {
+          addIssue(issues, `${entryPath}.firstSegmentId`, "must reference an existing line segment", "line_segment id");
+        }
+        if (!secondSegmentId || !lineSegmentIds.has(secondSegmentId)) {
+          addIssue(issues, `${entryPath}.secondSegmentId`, "must reference an existing line segment", "line_segment id");
+        }
+        if (firstSegmentId && secondSegmentId && firstSegmentId === secondSegmentId) {
+          addIssue(issues, `${entryPath}.secondSegmentId`, "must reference a different line segment", "different line_segment id");
+        } else if (
+          firstSegmentId &&
+          secondSegmentId &&
+          lineSegmentIds.has(firstSegmentId) &&
+          lineSegmentIds.has(secondSegmentId) &&
+          !graphLineSegmentsShareEndpoint(features as GraphFeature[], firstSegmentId, secondSegmentId)
+        ) {
+          addIssue(issues, `${entryPath}.secondSegmentId`, "must share an endpoint with the first segment", "connected line_segment id");
+        }
+      } else {
+        requiredNumber(entry, "x", entryPath, issues);
+        requiredNumber(entry, "y", entryPath, issues);
+        requiredNumber(entry, "x1", entryPath, issues);
+        requiredNumber(entry, "y1", entryPath, issues);
+        requiredNumber(entry, "x2", entryPath, issues);
+        requiredNumber(entry, "y2", entryPath, issues);
+      }
     }
     if (entry.kind === "point_between_points") optionalNumber(entry, "ratio", entryPath, issues);
     if (entry.kind === "region_between_curves") {

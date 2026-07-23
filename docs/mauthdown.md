@@ -1,6 +1,6 @@
 # Mauthdown
 
-Mauthdown is the source format for editable maths tests. It is Markdown with a small set of explicit containers so humans, AI tools, and the app can all edit the same document without guessing the structure.
+Mauthdown (`.mauth.md`) is the text authoring and interchange format for editable maths tests. Native Mauth Studio documents use `.mauth` and store the complete versioned JSON editor state; Mauthdown uses Markdown with a small set of explicit containers so humans, AI tools, and the app can edit structured content without guessing the hierarchy.
 
 The format is intentionally not a Word or Pages clone. It stores test meaning first: title-page data, document formatting config, top-level section headings, questions, parts, subparts, marks, choice lists, tables, diagrams, columns, spaces, and page breaks. The app then applies formatting rules when it renders the test.
 
@@ -67,7 +67,67 @@ In the editor, these document-level settings are shown under `T`: title-page/fro
 
 Title-page text fields support the same maths delimiters as question text: use `$...$` for inline maths and `$$...$$` for display maths in titles, labels, declarations, and instructions. The assessment title style may uppercase normal prose, but LaTeX commands and delimited maths should be preserved exactly.
 
-`frontMatter.titlePageTemplate` controls the document-level title model. Use `"standard"` for the normal single school-test title page. Use `"exam"` for the single supported exam-booklet model: a school-logo cover page, a structure/instructions page, running course/section headers from page 2 onward, question-page footers, and supplementary pages. Use `"worksheet"` for a compact first-page heading with questions starting immediately underneath. Use `"notes"` for printable mathematics notes with a compact heading, Markdown-style text, diagrams, tables, columns, and worked examples. Worksheet headings use the selected mini logo, school name, assessment title, subject title, the bottom heading rule as the name area, and a mark field only when marks exist; put extra worksheet context in the title or in normal question/text content rather than `assessmentSubtitle`.
+`frontMatter.titlePageTemplate` controls the document-level title model. Use `"standard"` for the normal school-test title-page model. Use `"exam"` for the single supported exam-booklet model: a school-logo cover page, a structure/instructions page, running course/section headers from page 2 onward, question-page footers, and supplementary pages. Use `"worksheet"` for a compact first-page heading with questions starting immediately underneath. Use `"notes"` for printable mathematics notes with a compact heading, Markdown-style text, diagrams, tables, columns, and worked examples. Use `"investigation"` for a non-question investigation brief with a linked teacher rubric. Worksheet headings use the selected mini logo, school name, assessment title, subject title, the bottom heading rule as the name area, and a mark field only when marks exist; put extra worksheet context in the title or in normal question/text content rather than `assessmentSubtitle`.
+
+Investigation documents use `formattingConfig.id = "investigation"` and keep the whole authored assessment under `frontMatter.investigation`. They do not contain questions, parts, solution slots, or section markers. Student mode renders one standard-test title page ordered as title identity, Name/Result row, then task and general marking guidance; it does not add a repeated brief header, logo, or administration grid. Teacher mode renders that student page followed by as many compact teacher-rubric pages as the criteria need. Each rubric page repeats the assessment context, rubric title, and column headings; instructions appear on the first rubric page and the final total appears only on the last. The teacher rubric reuses each criterion's `heading` and `guidance`, then adds its detailed `allocations`. For `scoringMode: "additive"`, the criterion total is the sum of its allocation rows. For `scoringMode: "holistic"`, the rows are alternative performance levels and the criterion total is the highest available level, not the sum of every level.
+
+```json
+{
+  "titlePageTemplate": "investigation",
+  "investigation": {
+    "teacherNameLabel": "Teacher's name",
+    "assessmentType": "Investigation",
+    "weighting": "10%",
+    "time": "",
+    "date": "",
+    "taskTitle": "Task",
+    "taskBody": "Describe the mathematical problem to be investigated.",
+    "guidanceTitle": "What is expected for this investigation?",
+    "rubricTitle": "Teacher rubric",
+    "rubricInstructions": "Allocate marks using the evidence described under each criterion.",
+    "criteria": [
+      {
+        "id": "planning",
+        "heading": "Planning and mathematical formulation",
+        "guidance": "Define the problem, variables, assumptions, and mathematical approach.",
+        "scoringMode": "holistic",
+        "allocations": [
+          {
+            "id": "planning-level-4",
+            "marks": 4,
+            "description": "Defines the problem, variables, constraints, and assumptions clearly and completely."
+          },
+          {
+            "id": "planning-level-3",
+            "marks": 3,
+            "description": "Defines the main problem and variables with minor omissions."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+For a standard test with multiple named sections, insert a top-level section marker before every section, including the first. The leading marker supplies the section title and calculated section-only marks on the opening test title page; each later marker creates another full test title page. A marker applies to the following questions up to the next marker or the end of the document. These markers are structural and do not also appear as inline headings above their questions.
+
+In the standard-test editor, these structural markers are presented as **T** title-page items rather than section-heading symbols. The saved Mauthdown/JSON structure still uses section headings so section grouping, marks, ordering, and agent actions remain deterministic.
+
+Each standard-test T opens a complete title-page editor. Shared document identity stays in `frontMatter`: logo, school name, subject title, main assessment title, and starting question number. A section heading may store page-specific overrides under `titlePage`, including name and mark labels, declaration, and instructions; its `title` is the page subtitle. The displayed mark total is always calculated from the questions following that marker.
+
+```json
+{
+  "id": "section-calculator-free",
+  "title": "Section One: Calculator-Free",
+  "titlePage": {
+    "nameLabel": "Name:",
+    "markLabel": "Mark:",
+    "showInstructions": true,
+    "instructionsTitle": "Test conditions",
+    "instructionsBody": "Calculators are not permitted."
+  }
+}
+```
 
 Worksheet documents use `formattingConfig.id = "worksheet"`. Math Notes documents use `formattingConfig.id = "math-notes"` and render top-level question containers as note headings. For worksheet and notes column layouts, use normal `:::columns` blocks inside the relevant question, part, or subpart. This keeps each column section local to the content and lets a document mix full-width material with different column structures across the document.
 
@@ -79,7 +139,7 @@ Exam booklets automatically pad their total printed page count to a multiple of 
 
 Exam booklet layout should default loosely to one question per printed page. Set a question-boundary page break after each question except the final question unless a question naturally needs to continue onto a second page. Use the question's own part/subpart answer-space blocks to fill most of the available page area, distributing extra working lines across those spaces rather than adding one unrelated trailing space block before the page break. Weight the extra lines toward parts with more marks.
 
-When creating a new file, choose the title-page template first. `"standard"` pairs with formatting preset `"high-school-mathematics-test"`. `"exam"` pairs with formatting preset `"exam-booklet"`. `"worksheet"` pairs with formatting preset `"worksheet"`. `"notes"` pairs with formatting preset `"math-notes"`. Do not approximate exam front matter with ordinary question modules, page breaks, or title-page prose when the exam template can represent it directly.
+When creating a new file, choose the title-page template first. `"standard"` pairs with formatting preset `"high-school-mathematics-test"`. `"exam"` pairs with formatting preset `"exam-booklet"`. `"worksheet"` pairs with formatting preset `"worksheet"`. `"notes"` pairs with formatting preset `"math-notes"`. `"investigation"` pairs with formatting preset `"investigation"`. Do not approximate exam or investigation front matter with ordinary question modules, page breaks, or title-page prose when the relevant template can represent it directly.
 
 When converting a past exam, store the front matter as document data, not as question content. Use the school exam booklet layout even for external/ATAR-style source papers unless the user explicitly asks for a different publishing style. For the current section, choose the matching `sectionPreset` and set `frontMatter.exam.structureRows[].useCurrentDocument` to `true`; for other sections from the same source paper, enter the row counts and marks manually unless the user explicitly points to a companion section file.
 
@@ -350,9 +410,13 @@ For no-axis textbook geometry sketches, use `type: "geometry2d"`. Put named coor
 
 For `graph2d`, graph bounds (`xMin`, `xMax`, `yMin`, `yMax`), size (`widthPx`, `heightPx`), axes/grid display flags, `functions`, and `features` are top-level diagram JSON fields. Only renderer-specific data such as `slopeField` or `polarGrid` belongs under `data`. Do not put `functions` or `features` under `data`, do not put axes/size fields under `options`, and use `domainMin`/`domainMax` plus `color`/`strokeWidth`/`strokeStyle` directly on each function rather than `domain` or `style` wrapper fields. A function may use `solutionOnly: true` when it is an answer curve on a shared graph. Graph features use `kind`, not `type`, and feature style fields such as `color`, `size`, and `strokeWidth` also live directly on the feature. Free labels use `kind: "label"` with `x`/`y`; line segments use `kind: "line_segment"` with `x1`/`y1`/`x2`/`y2`; add `span: "grid"` when a line segment should clip to the current graph bounds, such as an asymptote or full-grid guide line; angle markers use `kind: "angle_marker"` with `x`/`y` for the vertex, `x1`/`y1` and `x2`/`y2` for the two arms, `size` for radius, optional `label`, and optional `rightAngle: true` for a square marker. Do not draw angle markers as fake function curves. Copied coordinate graphs default to major grid lines only; set `showMinorGrid: true` only when the source visibly uses minor grid lines, small squares, or fractional grid spacing. Axis number labels align to the major grid interval: `gridMajorStepX`/`gridMajorStep` for the x-axis and `gridMajorStepY`/`gridMajorStep` for the y-axis, even when the grid is hidden. Use different manual `axisLabelStepX`/`axisLabelStepY` values only when the source intentionally labels a different interval or a teacher asks for custom labels. For Argand polar-guide backgrounds, use `data.polarGrid` with `radii`, `angleLinesDeg`, `radius`, `color`, and `strokeWidth` instead of repeating every guide circle and radial guide line as separate functions/features; `angleLinesDeg` stores undirected guide-line orientations, so list each orientation once in `[0,180)`, not both `theta` and `theta+180`. For shaded regions and loci, define boundary curves/rays in `functions`, then use exact supported feature kinds such as `region_between_curves`, `region_curve_axis`, or `region_clipped_by_curve` with `xMin`/`xMax` bounds, function indices, and `fillOpacity`; fields and feature kinds such as `region_between`, `polygon`, `free_label`, `points`, `coords`, `functionIndex1`, `functionIndex2`, feature `domainMin`/`domainMax`, `expressionTop`, `expressionBottom`, `opacity`, `fillColor`, and `strokeColor` are not part of the graph2d feature schema. For Argand loci, preserve the source or marking-key argument reference; a locus can combine a shifted circle such as `|z-i| <= 2` with sector bounds such as `Arg(z)`, so do not rewrite the argument expression unless the source does. Draw argument-boundary rays from the origin with finite `line_segment` features or boundary functions whose `domainMin`/`domainMax` restrict them to rays from the origin; full infinite line functions do not preserve an Argand ray. Keep those rays distinct from any shifted circle centre/radius.
 
+When a `graph2d` angle is bounded by existing sides or rays, the segment-reference form supersedes the coordinate form: set `firstSegmentId` and `secondSegmentId` to two different `line_segment` ids that share the angle vertex. The marker derives its vertex and arm directions from those segments and stays attached when either endpoint changes. Keep coordinate-only marker fields only for a standalone legacy annotation with no suitable segments.
+
 For `vector2d`, use vector basis notation for the coordinate directions: default axis-letter labels are `\mathbf{i}` and `\mathbf{j}` rather than `x` and `y`. Use `xAxisLabel`/`yAxisLabel` only when a vector source intentionally uses different axis letters.
 
 For `graph2d` functions with natural boundaries or asymptotes, choose the function domain and visible bounds as one decision. Graph bounds (`xMin`, `xMax`, `yMin`, `yMax`) are the visible extent: axes, auto-domain functions, manual-domain functions, and `span: "grid"` asymptotes render to the grid, not beyond it. Keep `log`, `ln`, `log10`, reciprocal/rational, and tangent-like functions strictly inside undefined boundaries; keep `sqrt` at or inside its endpoint as appropriate. Manual `domainMin`/`domainMax` values restrict a function inside the graph bounds; they should not be used to extend a function past the grid. Draw asymptotes as separate dashed `line_segment` features with `span: "grid"`. For multi-branch functions, use separate function entries or pieces for each valid interval rather than one plotted interval crossing a singularity. Set `xMin`/`xMax`/`yMin`/`yMax` so the important branch is readable without clipping into the asymptote, flattening the curve, or hiding intercepts. Axis-letter labels can be manually positioned with `xAxisLabelX`/`xAxisLabelY` and `yAxisLabelX`/`yAxisLabelY`; do not add duplicate free-label features just to move the built-in `x` or `y` labels.
+
+Axis arrows can be controlled independently with `showXAxisMinArrow`, `showXAxisMaxArrow`, `showYAxisMinArrow`, and `showYAxisMaxArrow`. When an endpoint setting is omitted, an endpoint at coordinate `0` is treated as terminating at the origin and its outward arrow is suppressed; an explicit `true` restores it. `showArrows: false` hides every axis arrowhead.
 
 For `graph3d` diagrams, the live preview persists the teacher's rotated camera in `metadata.view3d`:
 

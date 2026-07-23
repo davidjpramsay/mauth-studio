@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ContentBlock, GraphConfig, GraphFeature, GraphFunction } from "@mauth-studio/shared";
 
 import {
@@ -23,70 +22,11 @@ import {
   graphFunctionSolutionOnlyPatch,
   type Graph2DInspectorSelection,
 } from "../../lib/graph2dInspectorSelection";
-import { graphInspectorWidthPatch, inspectorNumberInputValue, inspectorOptionalNumber } from "../../lib/moduleSettingsPatches";
+import { graphInspectorWidthPatch } from "../../lib/moduleSettingsPatches";
 import { cn } from "../../lib/utils";
-
-function inspectorNumberInputSpinnerMin(min?: number, step?: number) {
-  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
-  return min;
-}
-
-function inspectorNumberInputSpinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
-  if (step !== 1 || nextValue === "") return nextValue;
-  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
-  if (inputType) return nextValue;
-
-  const previous = Number(previousValue);
-  const next = Number(nextValue);
-  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
-  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
-
-  const previousFraction = previous - Math.trunc(previous);
-  const nextFraction = next - Math.trunc(next);
-  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
-
-  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
-}
-
-function DraftInspectorNumberInput({
-  value,
-  fallbackValue,
-  min,
-  step,
-  className,
-  onChange,
-}: {
-  value?: number;
-  fallbackValue?: number;
-  min?: number;
-  step?: number;
-  className?: string;
-  onChange: (value: number | undefined) => void;
-}) {
-  const [draftValue, setDraftValue] = useState<string | null>(null);
-  const displayValue = draftValue ?? inspectorNumberInputValue(value ?? fallbackValue);
-
-  return (
-    <input
-      type="number"
-      min={inspectorNumberInputSpinnerMin(min, step)}
-      step={step}
-      value={displayValue}
-      onChange={(event) => {
-        const nextValue = inspectorNumberInputSpinnerValue(event.target.value, displayValue, step, event.nativeEvent);
-        setDraftValue(nextValue);
-        if (nextValue === "") {
-          onChange(undefined);
-          return;
-        }
-        const parsed = Number(nextValue);
-        if (Number.isFinite(parsed)) onChange(parsed);
-      }}
-      onBlur={() => setDraftValue(null)}
-      className={className}
-    />
-  );
-}
+import { GraphAngleMarkerControls } from "./GraphAngleMarkerControls";
+import { GraphAxisArrowControls } from "./GraphAxisArrowControls";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface Graph2DSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -131,18 +71,10 @@ export function Graph2DSelectionInspector({
             />
             Axes
           </label>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showArrows ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showArrows: event.target.checked }),
-                })
-              }
-            />
-            Axis arrows
-          </label>
+          <GraphAxisArrowControls
+            config={selectedDiagramConfig}
+            onChange={(patch) => onBlockChange(selectedBlock, { graphConfig: updateGraphConfig(selectedDiagramConfig, patch) })}
+          />
           <label className={checkboxLabelClassName}>
             <input
               type="checkbox"
@@ -264,18 +196,17 @@ export function Graph2DSelectionInspector({
                       </label>
                       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                         Weight
-                        <input
-                          type="number"
+                        <NumericExpressionInput
                           min={0.5}
                           max={10}
                           step={1}
-                          value={inspectorNumberInputValue(graphFunction.strokeWidth)}
-                          aria-label={`${selectedBlock.label} function ${functionIndex + 1} weight`}
-                          onChange={(event) =>
+                          value={graphFunction.strokeWidth}
+                          ariaLabel={`${selectedBlock.label} function ${functionIndex + 1} weight`}
+                          onValueChange={(value) =>
                             onBlockChange(selectedBlock, {
                               graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                 functions: graphFunctionPatch(selectedGraphFunctions, functionIndex, {
-                                  strokeWidth: inspectorOptionalNumber(event.target.value),
+                                  strokeWidth: value,
                                 }),
                               }),
                             })
@@ -342,16 +273,15 @@ export function Graph2DSelectionInspector({
                           <>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               Left x
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(graphFunction.domainMin ?? selectedDiagramConfig.xMin)}
-                                aria-label={`${selectedBlock.label} function ${functionIndex + 1} left domain`}
-                                onChange={(event) =>
+                                value={graphFunction.domainMin ?? selectedDiagramConfig.xMin}
+                                ariaLabel={`${selectedBlock.label} function ${functionIndex + 1} left domain`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       functions: graphFunctionPatch(selectedGraphFunctions, functionIndex, {
-                                        domainMin: inspectorOptionalNumber(event.target.value),
+                                        domainMin: value,
                                       }),
                                     }),
                                   })
@@ -361,16 +291,15 @@ export function Graph2DSelectionInspector({
                             </label>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               Right x
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(graphFunction.domainMax ?? selectedDiagramConfig.xMax)}
-                                aria-label={`${selectedBlock.label} function ${functionIndex + 1} right domain`}
-                                onChange={(event) =>
+                                value={graphFunction.domainMax ?? selectedDiagramConfig.xMax}
+                                ariaLabel={`${selectedBlock.label} function ${functionIndex + 1} right domain`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       functions: graphFunctionPatch(selectedGraphFunctions, functionIndex, {
-                                        domainMax: inspectorOptionalNumber(event.target.value),
+                                        domainMax: value,
                                       }),
                                     }),
                                   })
@@ -423,16 +352,15 @@ export function Graph2DSelectionInspector({
                         </label>
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           Label x
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(graphFunction.labelX)}
-                            aria-label={`${selectedBlock.label} function ${functionIndex + 1} label x`}
-                            onChange={(event) =>
+                            value={graphFunction.labelX}
+                            ariaLabel={`${selectedBlock.label} function ${functionIndex + 1} label x`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   functions: graphFunctionPatch(selectedGraphFunctions, functionIndex, {
-                                    labelX: inspectorOptionalNumber(event.target.value),
+                                    labelX: value,
                                   }),
                                 }),
                               })
@@ -442,16 +370,15 @@ export function Graph2DSelectionInspector({
                         </label>
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           Label y
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(graphFunction.labelY)}
-                            aria-label={`${selectedBlock.label} function ${functionIndex + 1} label y`}
-                            onChange={(event) =>
+                            value={graphFunction.labelY}
+                            ariaLabel={`${selectedBlock.label} function ${functionIndex + 1} label y`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   functions: graphFunctionPatch(selectedGraphFunctions, functionIndex, {
-                                    labelY: inspectorOptionalNumber(event.target.value),
+                                    labelY: value,
                                   }),
                                 }),
                               })
@@ -603,19 +530,18 @@ export function Graph2DSelectionInspector({
                               </label>
                               <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                                 Weight
-                                <input
-                                  type="number"
+                                <NumericExpressionInput
                                   min={0.5}
                                   max={10}
                                   step={1}
-                                  value={inspectorNumberInputValue(feature.strokeWidth)}
+                                  value={feature.strokeWidth}
                                   disabled={featureStrokeStyle === "none"}
-                                  aria-label={`${selectedBlock.label} feature ${featureIndex + 1} weight`}
-                                  onChange={(event) =>
+                                  ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} weight`}
+                                  onValueChange={(value) =>
                                     onBlockChange(selectedBlock, {
                                       graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                         features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                          strokeWidth: inspectorOptionalNumber(event.target.value),
+                                          strokeWidth: value,
                                         }),
                                       }),
                                     })
@@ -630,18 +556,17 @@ export function Graph2DSelectionInspector({
                       {isRegionFeatureKind(feature.kind) ? (
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           Opacity
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             min={0.05}
                             max={0.8}
-                            step={1}
-                            value={inspectorNumberInputValue(feature.fillOpacity)}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} fill opacity`}
-                            onChange={(event) =>
+                            step={0.05}
+                            value={feature.fillOpacity}
+                            ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} fill opacity`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    fillOpacity: inspectorOptionalNumber(event.target.value),
+                                    fillOpacity: value,
                                   }),
                                 }),
                               })
@@ -655,16 +580,15 @@ export function Graph2DSelectionInspector({
                       <div className="grid grid-cols-2 gap-2 border-t pt-2">
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           x
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(feature.x)}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} x`}
-                            onChange={(event) =>
+                            value={feature.x}
+                            ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} x`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    x: inspectorOptionalNumber(event.target.value),
+                                    x: value,
                                   }),
                                 }),
                               })
@@ -674,16 +598,15 @@ export function Graph2DSelectionInspector({
                         </label>
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           y
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(feature.y)}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} y`}
-                            onChange={(event) =>
+                            value={feature.y}
+                            ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} y`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    y: inspectorOptionalNumber(event.target.value),
+                                    y: value,
                                   }),
                                 }),
                               })
@@ -723,16 +646,15 @@ export function Graph2DSelectionInspector({
                         ].map(([label, field]) => (
                           <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                             {label}
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={inspectorNumberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
-                              aria-label={`${selectedBlock.label} feature ${featureIndex + 1} ${label.toLowerCase()}`}
-                              onChange={(event) =>
+                              value={feature[field as keyof GraphFeature] as number | undefined}
+                              ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} ${label.toLowerCase()}`}
+                              onValueChange={(value) =>
                                 onBlockChange(selectedBlock, {
                                   graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                     features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                      [field]: inspectorOptionalNumber(event.target.value),
+                                      [field]: value,
                                     }),
                                   }),
                                 })
@@ -744,55 +666,21 @@ export function Graph2DSelectionInspector({
                       </div>
                     ) : null}
                     {feature.kind === "angle_marker" ? (
-                      <div className="grid grid-cols-2 gap-2 border-t pt-2">
-                        <label className={cn(checkboxLabelClassName, "col-span-2")}>
-                          <input
-                            type="checkbox"
-                            checked={feature.rightAngle === true}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} right angle`}
-                            onChange={(event) =>
-                              onBlockChange(selectedBlock, {
-                                graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                  features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    rightAngle: event.target.checked,
-                                  }),
-                                }),
-                              })
-                            }
-                          />
-                          Right angle square
-                        </label>
-                        {[
-                          ["Vertex x", "x"],
-                          ["Vertex y", "y"],
-                          ["First arm x", "x1"],
-                          ["First arm y", "y1"],
-                          ["Second arm x", "x2"],
-                          ["Second arm y", "y2"],
-                          ["Radius", "size"],
-                        ].map(([label, field]) => (
-                          <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                            {label}
-                            <input
-                              type="number"
-                              min={field === "size" ? 0.05 : undefined}
-                              step={1}
-                              value={inspectorNumberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
-                              aria-label={`${selectedBlock.label} feature ${featureIndex + 1} ${label.toLowerCase()}`}
-                              onChange={(event) =>
-                                onBlockChange(selectedBlock, {
-                                  graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                                    features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                      [field]: inspectorOptionalNumber(event.target.value),
-                                    } as Partial<GraphFeature>),
-                                  }),
-                                })
-                              }
-                              className={controlClassName}
-                            />
-                          </label>
-                        ))}
-                      </div>
+                      <GraphAngleMarkerControls
+                        feature={feature}
+                        features={selectedGraphFeatures}
+                        variant="inspector"
+                        ariaPrefix={`${selectedBlock.label} feature ${featureIndex + 1}`}
+                        controlClassName={controlClassName}
+                        checkboxLabelClassName={checkboxLabelClassName}
+                        onChange={(patch) =>
+                          onBlockChange(selectedBlock, {
+                            graphConfig: updateGraphConfig(selectedDiagramConfig, {
+                              features: graphFeaturePatch(selectedGraphFeatures, featureIndex, patch),
+                            }),
+                          })
+                        }
+                      />
                     ) : null}
                     {feature.kind === "region_between_curves" || feature.kind === "intersection" ? (
                       <div className="grid grid-cols-2 gap-2 border-t pt-2">
@@ -872,16 +760,15 @@ export function Graph2DSelectionInspector({
                         ) : null}
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           From x
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(feature.xMin)}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
-                            onChange={(event) =>
+                            value={feature.xMin}
+                            ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    xMin: inspectorOptionalNumber(event.target.value),
+                                    xMin: value,
                                   }),
                                 }),
                               })
@@ -891,16 +778,15 @@ export function Graph2DSelectionInspector({
                         </label>
                         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                           To x
-                          <input
-                            type="number"
+                          <NumericExpressionInput
                             step={1}
-                            value={inspectorNumberInputValue(feature.xMax)}
-                            aria-label={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
-                            onChange={(event) =>
+                            value={feature.xMax}
+                            ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
+                            onValueChange={(value) =>
                               onBlockChange(selectedBlock, {
                                 graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                   features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                    xMax: inspectorOptionalNumber(event.target.value),
+                                    xMax: value,
                                   }),
                                 }),
                               })
@@ -961,16 +847,15 @@ export function Graph2DSelectionInspector({
                           <>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               x
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(feature.x)}
-                                aria-label={`${selectedBlock.label} feature ${featureIndex + 1} tangent x`}
-                                onChange={(event) =>
+                                value={feature.x}
+                                ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} tangent x`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                        x: inspectorOptionalNumber(event.target.value),
+                                        x: value,
                                       }),
                                     }),
                                   })
@@ -980,16 +865,15 @@ export function Graph2DSelectionInspector({
                             </label>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               y
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(feature.y)}
-                                aria-label={`${selectedBlock.label} feature ${featureIndex + 1} tangent y`}
-                                onChange={(event) =>
+                                value={feature.y}
+                                ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} tangent y`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                        y: inspectorOptionalNumber(event.target.value),
+                                        y: value,
                                       }),
                                     }),
                                   })
@@ -1002,16 +886,15 @@ export function Graph2DSelectionInspector({
                           <>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               From x
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(feature.xMin)}
-                                aria-label={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
-                                onChange={(event) =>
+                                value={feature.xMin}
+                                ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} from x`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                        xMin: inspectorOptionalNumber(event.target.value),
+                                        xMin: value,
                                       }),
                                     }),
                                   })
@@ -1021,16 +904,15 @@ export function Graph2DSelectionInspector({
                             </label>
                             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                               To x
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 step={1}
-                                value={inspectorNumberInputValue(feature.xMax)}
-                                aria-label={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
-                                onChange={(event) =>
+                                value={feature.xMax}
+                                ariaLabel={`${selectedBlock.label} feature ${featureIndex + 1} to x`}
+                                onValueChange={(value) =>
                                   onBlockChange(selectedBlock, {
                                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                                       features: graphFeaturePatch(selectedGraphFeatures, featureIndex, {
-                                        xMax: inspectorOptionalNumber(event.target.value),
+                                        xMax: value,
                                       }),
                                     }),
                                   })
@@ -1054,10 +936,11 @@ export function Graph2DSelectionInspector({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Domain min
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 step={1}
                 value={selectedDiagramConfig.xMin}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} domain minimum`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, { xMin: value }),
                   })
@@ -1067,10 +950,11 @@ export function Graph2DSelectionInspector({
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Domain max
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 step={1}
                 value={selectedDiagramConfig.xMax}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} domain maximum`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, { xMax: value }),
                   })
@@ -1080,10 +964,11 @@ export function Graph2DSelectionInspector({
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Range min
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 step={1}
                 value={selectedDiagramConfig.yMin}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} range minimum`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, { yMin: value }),
                   })
@@ -1093,10 +978,11 @@ export function Graph2DSelectionInspector({
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Range max
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 step={1}
                 value={selectedDiagramConfig.yMax}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} range maximum`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, { yMax: value }),
                   })
@@ -1108,16 +994,16 @@ export function Graph2DSelectionInspector({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Width
-              <input
-                type="number"
+              <NumericExpressionInput
                 min={240}
                 step={10}
-                value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
-                onChange={(event) =>
+                value={selectedDiagramConfig.widthPx}
+                ariaLabel={`${selectedBlock.label} graph width`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(
                       selectedDiagramConfig,
-                      graphInspectorWidthPatch(selectedDiagramConfig, event.target.value, lockedAspectHeight),
+                      graphInspectorWidthPatch(selectedDiagramConfig, value === undefined ? "" : String(value), lockedAspectHeight),
                     ),
                   })
                 }
@@ -1134,15 +1020,15 @@ export function Graph2DSelectionInspector({
             ) : (
               <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
                 Height
-                <input
-                  type="number"
+                <NumericExpressionInput
                   min={160}
                   step={10}
-                  value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
-                  onChange={(event) =>
+                  value={selectedDiagramConfig.heightPx}
+                  ariaLabel={`${selectedBlock.label} graph height`}
+                  onValueChange={(value) =>
                     onBlockChange(selectedBlock, {
                       graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                        heightPx: inspectorOptionalNumber(event.target.value),
+                        heightPx: value,
                       }),
                     })
                   }
@@ -1196,12 +1082,13 @@ export function Graph2DSelectionInspector({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               X major
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 min={0.1}
                 step={1}
                 value={selectedDiagramConfig.gridMajorStepX}
                 fallbackValue={selectedDiagramConfig.gridMajorStep}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} x major step`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                       gridMajorStepX: value,
@@ -1214,12 +1101,13 @@ export function Graph2DSelectionInspector({
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Y major
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 min={0.1}
                 step={1}
                 value={selectedDiagramConfig.gridMajorStepY}
                 fallbackValue={selectedDiagramConfig.gridMajorStep}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} y major step`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                       gridMajorStepY: value,
@@ -1246,12 +1134,13 @@ export function Graph2DSelectionInspector({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               X minor
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 min={0.1}
                 step={1}
                 value={selectedDiagramConfig.gridMinorStepX}
                 fallbackValue={selectedDiagramConfig.gridMinorStep}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} x minor step`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                       gridMinorStepX: value,
@@ -1263,12 +1152,13 @@ export function Graph2DSelectionInspector({
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               Y minor
-              <DraftInspectorNumberInput
+              <NumericExpressionInput
                 min={0.1}
                 step={1}
                 value={selectedDiagramConfig.gridMinorStepY}
                 fallbackValue={selectedDiagramConfig.gridMinorStep}
-                onChange={(value) =>
+                ariaLabel={`${selectedBlock.label} y minor step`}
+                onValueChange={(value) =>
                   onBlockChange(selectedBlock, {
                     graphConfig: updateGraphConfig(selectedDiagramConfig, {
                       gridMinorStepY: value,

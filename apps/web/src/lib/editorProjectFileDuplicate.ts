@@ -39,7 +39,7 @@ export function createEditorProjectFileDuplicatePlan({
       kind: "file",
       fileType: serialized.fileType,
       metadata: {
-        format: "saved-test-json",
+        format: "mauth-document",
         source: "mauth-studio",
       },
     },

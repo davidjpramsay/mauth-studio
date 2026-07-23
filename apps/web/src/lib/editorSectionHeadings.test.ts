@@ -96,6 +96,10 @@ test("updatedSectionHeadings only returns a new list for real title changes", ()
     { id: "h1", title: "Renamed" },
     { id: "h2", title: "Second" },
   ]);
+  assert.deepEqual(updatedSectionHeadings(headings, "h1", { titlePage: { instructionsBody: "No calculator." } }), [
+    { id: "h1", title: "First", titlePage: { instructionsBody: "No calculator." } },
+    { id: "h2", title: "Second" },
+  ]);
 });
 
 test("plannedSectionHeadingRemoval removes the heading and selects a nearby fallback", () => {

@@ -102,7 +102,7 @@ test("legacy saved-test migration exposes planned imports to unique filename gen
 
   assert.deepEqual(
     plan.imports.map((legacyImport) => legacyImport.path),
-    ["tests/Common name.test.json", "tests/Common name copy.test.json"],
+    ["tests/Common name.mauth", "tests/Common name copy.mauth"],
   );
 });
 

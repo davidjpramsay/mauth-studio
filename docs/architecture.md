@@ -44,7 +44,7 @@ Update-enabled packaged releases use `electron-updater` against the public GitHu
 
 The packaged sidecar includes the Python maths stack and a bundled Penrose renderer. Electron supplies the Node runtime used by Penrose. The BrowserWindow uses context isolation, renderer sandboxing, no Node integration, and main-process authorization-header injection for local API traffic. When the desktop token is configured, every `/api/*` route except health and system status requires it; discovery docs remain public. External tools discover the token through the private runtime manifest. Unauthenticated local requests receive `401 AGENT_AUTH_REQUIRED` for bridge routes or `401 API_AUTH_REQUIRED` for other private APIs. Navigation outside the local app origin opens in the system browser.
 
-The status route remains deliberately lightweight. For an external cloud-backed documents folder it reports configured identity without opening `.mauth/project.json`; unavailable File Provider placeholders return `503 STORAGE_UNAVAILABLE` on normal project routes rather than blocking app startup. The older `dev:launch:desktop` browser stack remains a debugging path, while `pnpm macos:dev` runs the Electron shell from source. See `docs/agent-local-setup.md`.
+The status route remains deliberately lightweight. For an external cloud-backed documents folder it reports configured identity without opening `.mauth/project.json`; unavailable File Provider placeholders return `503 STORAGE_UNAVAILABLE` on normal project routes rather than blocking app startup. The older `dev:launch:desktop` browser stack remains a debugging path. `pnpm macos:dev` runs the Electron shell from source with a watched Uvicorn API and Vite HMR renderer on separate dynamic loopback ports; the private runtime manifest records the API and web URLs independently. Electron main-process and packaging edits still require a development-shell restart. See `docs/agent-local-setup.md`.
 
 ## Frontend Composition
 
@@ -176,7 +176,7 @@ The default visible document workspace and macOS app state are:
 
 `apps/api/app/services/storage.py` implements file-backed legacy, logo, and project storage. `apps/api/app/api/storage.py` exposes the HTTP routes.
 
-The Files drawer can switch to an external documents folder. That operation changes the active workspace identity; it must not import browser fallback data or unrelated legacy files into the selected folder. Project metadata and versions for that selected folder remain in its hidden `.mauth` directory, while global autosave, logos, and the remembered path remain in Application Support.
+The Files drawer can switch to an external documents folder. That operation changes the active workspace identity; it must not import browser fallback data or unrelated legacy files into the selected folder. Canonical `.mauth` documents are versioned JSON editor snapshots; `.test.json` remains a compatibility format and `.mauth.md` remains the separate text interchange format. The packaged macOS shell registers `.mauth` with Finder and forwards document-open events through a narrow preload bridge into the normal guarded editor lifecycle. Project metadata and versions for that selected folder remain in its hidden `.mauth` directory, while global autosave, logos, and the remembered path remain in Application Support.
 
 Project saves use base revisions. A stale editor cannot silently overwrite a file changed by another process. See `docs/storage.md` for the full storage contract and recovery rules.
 
@@ -194,7 +194,7 @@ mauth_validation_run
 browser verification
 ```
 
-The MCP process in `scripts/mauth-agent-mcp.mjs` is a wrapper over this local HTTP bridge. It is not a separate document implementation. Comments, suggestions, presence, and events are collaboration/review state; only an applied action batch mutates the document.
+The MCP process in `scripts/mauth-agent-mcp.mjs` is a wrapper over this local HTTP bridge. Release builds bundle it and its JavaScript dependencies into `Contents/Resources/agent/mauth-agent-mcp.mjs`, with an executable launcher that uses the app-owned Electron runtime in Node mode. The human setup surface receives only the connector path and client commands through narrow preload IPC; the renderer never receives the bridge token. The repository wrapper and generated connector share the same source and are not separate document implementations. Comments, suggestions, presence, and events are collaboration/review state; only an applied action batch mutates the document.
 
 See `docs/agent-bridge.md`, `docs/agent-docs.md`, and `docs/mauth-actions.md`.
 

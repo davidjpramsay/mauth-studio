@@ -86,6 +86,17 @@ const IMAGE_ELEMENT_KIND_KEYS = new Set(["annotation"]);
 const IMAGE_ANNOTATION_TYPES = new Set(["label", "ellipse", "arrow"]);
 const PENROSE_GEOMETRY_ELEMENT_KIND_KEYS = new Set(["object", "relationship"]);
 const PENROSE_SET_ELEMENT_KIND_KEYS = new Set(["region"]);
+const STANDARD_TITLE_PAGE_STRING_FIELDS = [
+  "nameLabel",
+  "markLabel",
+  "declarationTitle",
+  "declarationBody",
+  "signatureLabel",
+  "signatureRole",
+  "instructionsTitle",
+  "instructionsBody",
+] as const;
+const STANDARD_TITLE_PAGE_BOOLEAN_FIELDS = ["showAssessmentSubtitle", "showDeclaration", "showInstructions"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -176,6 +187,15 @@ function stringArrayField(
   values.forEach((value, index) => {
     if (typeof value !== "string") addIssue(issues, `${path}.${key}[${index}]`, "must be a string", "string");
   });
+}
+
+function validateStandardTitlePage(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be an object", "standard test title-page settings");
+    return;
+  }
+  STANDARD_TITLE_PAGE_STRING_FIELDS.forEach((field) => stringValueField(value, field, path, issues, true));
+  STANDARD_TITLE_PAGE_BOOLEAN_FIELDS.forEach((field) => booleanField(value, field, path, issues, true));
 }
 
 function numberFields(record: Record<string, unknown>, keys: readonly string[], path: string, issues: MauthActionValidationIssue[]) {
@@ -858,6 +878,10 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
         "showAxisLabels",
         "showAxisNumbers",
         "showArrows",
+        "showXAxisMinArrow",
+        "showXAxisMaxArrow",
+        "showYAxisMinArrow",
+        "showYAxisMaxArrow",
         "showFunctionArrows",
         "lockAspectRatio",
         "equalScale",
@@ -1034,6 +1058,7 @@ function validateAction(action: Record<string, unknown>, path: string, issues: M
       if (heading) {
         stringField(heading, "id", `${path}.heading`, issues);
         stringValueField(heading, "title", `${path}.heading`, issues);
+        if (hasOwn(heading, "titlePage")) validateStandardTitlePage(heading.titlePage, `${path}.heading.titlePage`, issues);
       }
       if (hasOwn(action, "beforeItem")) validateDocumentFlowItem(action.beforeItem, `${path}.beforeItem`, issues);
       if (hasOwn(action, "afterItem")) validateDocumentFlowItem(action.afterItem, `${path}.afterItem`, issues);
@@ -1045,7 +1070,10 @@ function validateAction(action: Record<string, unknown>, path: string, issues: M
     case "sectionHeading.update": {
       stringField(action, "sectionHeadingId", path, issues);
       const patch = recordField(action, "patch", path, issues);
-      if (patch) stringValueField(patch, "title", `${path}.patch`, issues, true);
+      if (patch) {
+        stringValueField(patch, "title", `${path}.patch`, issues, true);
+        if (hasOwn(patch, "titlePage")) validateStandardTitlePage(patch.titlePage, `${path}.patch.titlePage`, issues);
+      }
       break;
     }
     case "sectionHeading.delete":

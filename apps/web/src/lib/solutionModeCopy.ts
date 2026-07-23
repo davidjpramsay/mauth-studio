@@ -2,6 +2,7 @@ export interface SolutionModeCopyInput {
   supportsSolutionTools: boolean;
   effectiveShowSolutions: boolean;
   isNotesTemplate?: boolean;
+  isInvestigationTemplate?: boolean;
 }
 
 export interface SolutionModeCopy {
@@ -13,12 +14,25 @@ export function solutionModeCopy({
   supportsSolutionTools,
   effectiveShowSolutions,
   isNotesTemplate = false,
+  isInvestigationTemplate = false,
 }: SolutionModeCopyInput): SolutionModeCopy {
   if (isNotesTemplate || !supportsSolutionTools) {
     return {
       layerLabel: "Notes",
       layerTitle: "Notes documents do not use a separate solution layer.",
     };
+  }
+
+  if (isInvestigationTemplate) {
+    return effectiveShowSolutions
+      ? {
+          layerLabel: "Teacher rubric",
+          layerTitle: "Teacher mode adds the detailed rubric after the shared student investigation brief.",
+        }
+      : {
+          layerLabel: "Student brief",
+          layerTitle: "Student mode shows the investigation task and general marking guidance.",
+        };
   }
 
   if (effectiveShowSolutions) {

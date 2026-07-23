@@ -16,6 +16,7 @@ import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
 import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
+  graphConfigWithPresentationPatch,
   previewGraphConfigForSolutionVisibility,
   previewStatsChartConfigForSolutionVisibility,
   previewVector2DConfigForSolutionVisibility,
@@ -63,6 +64,9 @@ export function PreviewDiagram({
   const imageVisibleConfig = imageConfigForSolutionVisibility(statsVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const config = previewPenroseConfigForSolutionVisibility(imageVisibleConfig, showSolutions);
   const visibleGraphConfigChange = hasHiddenSolutionContent ? undefined : onGraphConfigChange;
+  const axisLabelConfigPatch = onGraphConfigChange
+    ? (patch: Partial<GraphConfig>) => onGraphConfigChange(graphConfigWithPresentationPatch(baseConfig, patch))
+    : undefined;
   const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
   const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
 
@@ -80,7 +84,14 @@ export function PreviewDiagram({
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
     case "geometry2d":
-      return <FunctionGraph graphConfig={config} previewAnchor={anchor} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <FunctionGraph
+          graphConfig={config}
+          previewAnchor={anchor}
+          onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
+        />
+      );
     case "vector2d":
       return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
     case "graph3d":
@@ -98,6 +109,7 @@ export function PreviewDiagram({
           solutionFeatureColor={solutionFeatureColor}
           solutionFunctionColor={solutionFeatureColor}
           onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
         />
       );
   }

@@ -11,6 +11,8 @@ import type { LogoAsset } from "./logoLibrary.ts";
 import {
   defaultProjectFileNameForDocument,
   fingerprintProjectDocument,
+  MAUTH_DOCUMENT_FORMAT,
+  MAUTH_DOCUMENT_SCHEMA_VERSION,
   parseProjectSavedDocument,
   parseProjectSavedDocumentSafely,
   serializeProjectDocumentSnapshot,
@@ -51,6 +53,14 @@ test("defaultProjectFileNameForDocument uses the active project file basename", 
       assessmentTitle: "Name",
     }),
     "Test 4",
+  );
+  assert.equal(
+    defaultProjectFileNameForDocument("tests/Year 10/Test 5.mauth", {
+      ...DEFAULT_FRONT_MATTER,
+      subjectTitle: "Fallback",
+      assessmentTitle: "Name",
+    }),
+    "Test 5",
   );
 });
 
@@ -136,7 +146,9 @@ test("serializeProjectDocumentSnapshot saves normalized formatting, selected log
   assert.deepEqual(fingerprintInput?.sectionHeadings, sectionHeadings);
   assert.deepEqual(fingerprintInput?.documentFlow, documentFlow);
 
-  const parsed = JSON.parse(result.content) as SavedTest;
+  const parsed = JSON.parse(result.content) as SavedTest & { format: string; schemaVersion: number };
+  assert.equal(parsed.format, MAUTH_DOCUMENT_FORMAT);
+  assert.equal(parsed.schemaVersion, MAUTH_DOCUMENT_SCHEMA_VERSION);
   assert.equal(parsed.id, "project-file:tests/Worksheet.test.json");
   assert.equal(parsed.name, "Worksheet");
   assert.equal(parsed.formattingConfig.page?.heightPx, 777);

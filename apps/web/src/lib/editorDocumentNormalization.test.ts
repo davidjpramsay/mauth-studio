@@ -18,6 +18,7 @@ import {
   type EditorPart,
   type QuestionBlock,
 } from "./editorDocumentNormalization.ts";
+import { resolveEditorDocumentFlow } from "./editorDocumentFlowResolution.ts";
 
 function testDocumentNormalizer() {
   let count = 0;
@@ -159,12 +160,17 @@ test("editor document normalizer repairs headings and document flow", () => {
     },
   ];
   const headings = normalizer.normalizeSectionHeadings([
-    { id: "heading-a", title: "Multiple choice" },
+    {
+      id: "heading-a",
+      title: "Multiple choice",
+      titlePage: { instructionsTitle: "Instructions", showInstructions: true, nameLabel: 12 },
+    },
     { id: "heading-a", title: "Duplicate" },
     { title: "Generated id" },
   ]);
 
   assert.equal(headings.length, 2);
+  assert.deepEqual(headings[0].titlePage, { instructionsTitle: "Instructions", showInstructions: true });
   assert.deepEqual(defaultDocumentFlow(questions), [{ kind: "question", id: "question-a" }]);
   assert.deepEqual(
     normalizer.normalizeDocumentFlow(
@@ -252,4 +258,54 @@ test("partAllowedOrderItems excludes legacy page-break modules", () => {
     { kind: "block", id: "visible" },
     { kind: "subpart", id: "subpart-a" },
   ]);
+});
+
+test("full document replacement preserves an explicit interleaved section flow", () => {
+  const normalizer = testDocumentNormalizer();
+  const previousQuestions = [{ id: "starter" }] as QuestionBlock[];
+  const nextQuestions = [{ id: "q1" }, { id: "q2" }] as QuestionBlock[];
+  const headings = [
+    { id: "h1", title: "Section One" },
+    { id: "h2", title: "Section Two" },
+  ];
+  const explicitFlow = [
+    { kind: "sectionHeading" as const, id: "h1" },
+    { kind: "question" as const, id: "q1" },
+    { kind: "sectionHeading" as const, id: "h2" },
+    { kind: "question" as const, id: "q2" },
+  ];
+
+  assert.deepEqual(
+    resolveEditorDocumentFlow({
+      previousQuestions,
+      nextQuestions,
+      sectionHeadings: headings,
+      currentDocumentFlow: [{ kind: "question", id: "starter" }],
+      explicitDocumentFlow: explicitFlow,
+      normalizeDocumentFlow: normalizer.normalizeDocumentFlow,
+      documentFlowFromQuestionChange: normalizer.documentFlowFromQuestionChange,
+    }),
+    explicitFlow,
+  );
+});
+
+test("question-only replacement still reconciles the current document flow", () => {
+  const normalizer = testDocumentNormalizer();
+  const previousQuestions = [{ id: "q1" }] as QuestionBlock[];
+  const nextQuestions = [{ id: "q1" }, { id: "q2" }] as QuestionBlock[];
+
+  assert.deepEqual(
+    resolveEditorDocumentFlow({
+      previousQuestions,
+      nextQuestions,
+      sectionHeadings: [],
+      currentDocumentFlow: [{ kind: "question", id: "q1" }],
+      normalizeDocumentFlow: normalizer.normalizeDocumentFlow,
+      documentFlowFromQuestionChange: normalizer.documentFlowFromQuestionChange,
+    }),
+    [
+      { kind: "question", id: "q1" },
+      { kind: "question", id: "q2" },
+    ],
+  );
 });

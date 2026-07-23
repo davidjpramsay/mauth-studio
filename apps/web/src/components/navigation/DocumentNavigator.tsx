@@ -55,9 +55,15 @@ export function tocSummaryText(source: string) {
     .trim();
 }
 
-function TocItemIcon({ kind }: { kind: TocItemKind }) {
+function TocItemIcon({ kind, sectionItemPresentation }: { kind: TocItemKind; sectionItemPresentation: "section" | "titlePage" }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
-  if (kind === "sectionHeading") return <SectionSymbolIcon className="size-4 text-base" />;
+  if (kind === "sectionHeading") {
+    return sectionItemPresentation === "titlePage" ? (
+      <FileText className="size-4" aria-hidden="true" />
+    ) : (
+      <SectionSymbolIcon className="size-4 text-base" />
+    );
+  }
   if (kind === "question") return null;
   if (kind === "pageBreak") return <SeparatorHorizontal className="size-4" aria-hidden="true" />;
   if (kind === "part" || kind === "subpart") return <GitBranch className="size-4" aria-hidden="true" />;
@@ -80,11 +86,13 @@ export function SectionSymbolIcon({ className }: { className?: string }) {
 export function DocumentNavigator({
   items,
   activeItemId,
+  sectionItemPresentation = "section",
   onJump,
   onContextMenu,
 }: {
   items: DocumentTocItem[];
   activeItemId: string;
+  sectionItemPresentation?: "section" | "titlePage";
   onJump: (item: DocumentTocItem) => void;
   onContextMenu: (event: MouseEvent<HTMLElement>, item: DocumentTocItem) => void;
 }) {
@@ -135,7 +143,7 @@ export function DocumentNavigator({
               const isBranch = branchItemIds.has(item.id);
               const branchCollapsed = collapsedItemIds.has(item.id);
               const summaryText = item.summary ? tocSummaryText(item.summary) : "";
-              const icon = TocItemIcon({ kind: item.kind });
+              const icon = TocItemIcon({ kind: item.kind, sectionItemPresentation });
               return (
                 <div
                   key={item.id}

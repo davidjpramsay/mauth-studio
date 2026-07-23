@@ -28,6 +28,8 @@ interface WorkspaceLayoutBindings {
 interface WorkspaceDocumentBindings {
   frontMatter: EditorSurfaceProps["frontMatter"];
   questions: EditorSurfaceProps["questions"];
+  sectionHeadings: EditorSurfaceProps["sectionHeadings"];
+  documentFlow: EditorSurfaceProps["documentFlow"];
   logos: FrontMatterProps["logos"];
   totalMarks: FrontMatterProps["totalMarks"];
 }
@@ -270,6 +272,8 @@ export function DocumentEditorWorkspaceBindings({
           activeSectionHeading: selection.activeSectionHeading,
           activeQuestion: selection.activeQuestion,
           questions: document.questions,
+          sectionHeadings: document.sectionHeadings,
+          documentFlow: document.documentFlow,
           frontMatter: document.frontMatter,
           activeAnchor: selection.activeTocItemId,
           isActiveAnchor: selection.isActiveEditorAnchor,

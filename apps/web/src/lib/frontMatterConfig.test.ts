@@ -4,10 +4,13 @@ import test from "node:test";
 import {
   DEFAULT_EXAM_TITLE_PAGE,
   DEFAULT_FRONT_MATTER,
+  DEFAULT_INVESTIGATION,
   assessmentTitleText,
   examSectionPresetPatch,
+  investigationTotalMarks,
   normalizeExamTitlePage,
   normalizeFrontMatter,
+  normalizeInvestigation,
 } from "./frontMatterConfig.ts";
 
 test("assessmentTitleText uppercases prose while preserving maths segments", () => {
@@ -15,12 +18,60 @@ test("assessmentTitleText uppercases prose while preserving maths segments", () 
   assert.equal(assessmentTitleText("Area $$A=\\pi r^2$$ task"), "AREA $$A=\\pi r^2$$ TASK");
 });
 
-test("normalizeFrontMatter keeps worksheet and notes titles as authored", () => {
+test("normalizeFrontMatter keeps worksheet, notes, and investigation titles as authored", () => {
   assert.equal(
     normalizeFrontMatter({ titlePageTemplate: "worksheet", assessmentTitle: "Linear Graphs" })?.assessmentTitle,
     "Linear Graphs",
   );
   assert.equal(normalizeFrontMatter({ titlePageTemplate: "notes", assessmentTitle: "Math Notes" })?.assessmentTitle, "Math Notes");
+  assert.equal(
+    normalizeFrontMatter({ titlePageTemplate: "investigation", assessmentTitle: "Investigation 1" })?.assessmentTitle,
+    "Investigation 1",
+  );
+});
+
+test("investigation criteria share stable guidance and derive their total from allocations", () => {
+  const investigation = normalizeInvestigation({
+    criteria: [
+      {
+        id: "reasoning",
+        heading: "Reasoning",
+        guidance: "Justify the conclusion.",
+        scoringMode: "additive",
+        allocations: [
+          { id: "r1", marks: 2.4, description: "Uses evidence." },
+          { id: "r2", marks: 3, description: "Justifies the conclusion." },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(investigation.criteria[0]?.heading, "Reasoning");
+  assert.equal(investigation.criteria[0]?.allocations[0]?.marks, 2);
+  assert.equal(investigationTotalMarks(investigation), 5);
+  assert.equal(investigationTotalMarks(DEFAULT_INVESTIGATION), 20);
+});
+
+test("holistic investigation criteria use the highest performance level as the criterion total", () => {
+  const investigation = normalizeInvestigation({
+    criteria: [
+      {
+        id: "reasoning",
+        heading: "Reasoning",
+        guidance: "Justify the conclusion.",
+        scoringMode: "holistic",
+        allocations: [
+          { id: "level-4", marks: 4, description: "Comprehensive reasoning." },
+          { id: "level-3", marks: 3, description: "Sound reasoning." },
+          { id: "level-2", marks: 2, description: "Some reasoning." },
+          { id: "level-1", marks: 1, description: "Limited reasoning." },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(investigation.criteria[0]?.scoringMode, "holistic");
+  assert.equal(investigationTotalMarks(investigation), 4);
 });
 
 test("normalizeFrontMatter uppercases standard test titles and preserves legacy section fields", () => {

@@ -958,6 +958,8 @@ test("applies named diagram settings updates across supported renderers", () => 
         equalScale: true,
         gridMajorStepX: 2,
         gridMajorStepY: 0.5,
+        showXAxisMinArrow: false,
+        showYAxisMaxArrow: false,
       },
     },
     {
@@ -1020,6 +1022,8 @@ test("applies named diagram settings updates across supported renderers", () => 
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.axisLabelStepX : undefined, 2);
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.gridMajorStepY : undefined, 0.5);
   assert.equal(graph?.kind === "diagram" ? graph.graphConfig.axisLabelStepY : undefined, 0.5);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.showXAxisMinArrow : undefined, false);
+  assert.equal(graph?.kind === "diagram" ? graph.graphConfig.showYAxisMaxArrow : undefined, false);
 
   const vector = findContentBlock(blocks, "vector");
   assert.equal(vector?.kind, "diagram");
@@ -1732,12 +1736,22 @@ test("adds, updates, deletes, and reorders section headings", () => {
 
   const added = applyMauthDocumentAction(initial, {
     type: "sectionHeading.add",
-    heading: { id: "section-1", title: "Multiple choice" },
+    heading: {
+      id: "section-1",
+      title: "Multiple choice",
+      titlePage: { instructionsTitle: "Instructions", instructionsBody: "No calculator.", showInstructions: true },
+    },
     beforeItem: { kind: "question", id: "q1" },
   });
   assert.equal(added.ok, true);
   assert.deepEqual(added.changedIds, ["section-1"]);
-  assert.deepEqual(added.document.sectionHeadings, [{ id: "section-1", title: "Multiple choice" }]);
+  assert.deepEqual(added.document.sectionHeadings, [
+    {
+      id: "section-1",
+      title: "Multiple choice",
+      titlePage: { instructionsTitle: "Instructions", instructionsBody: "No calculator.", showInstructions: true },
+    },
+  ]);
   assert.deepEqual(added.document.documentFlow, [
     { kind: "sectionHeading", id: "section-1" },
     { kind: "question", id: "q1" },
@@ -1747,10 +1761,14 @@ test("adds, updates, deletes, and reorders section headings", () => {
   const updated = applyMauthDocumentAction(added.document, {
     type: "sectionHeading.update",
     sectionHeadingId: "section-1",
-    patch: { title: "Short answer" },
+    patch: { title: "Short answer", titlePage: { instructionsBody: "Calculator permitted.", showInstructions: true } },
   });
   assert.equal(updated.ok, true);
   assert.equal(updated.document.sectionHeadings?.[0]?.title, "Short answer");
+  assert.deepEqual(updated.document.sectionHeadings?.[0]?.titlePage, {
+    instructionsBody: "Calculator permitted.",
+    showInstructions: true,
+  });
 
   const reordered = applyMauthDocumentAction(updated.document, {
     type: "sectionHeading.reorder",

@@ -57,8 +57,8 @@ export function useEditorSectionHeadingController({
     queueDocumentJump(plan.anchor, plan.anchor, { preservePaneMode: true });
   }
 
-  function updateSectionHeading(sectionHeadingId: string, title: string) {
-    const nextHeadings = updatedSectionHeadings(sectionHeadingsRef.current, sectionHeadingId, title);
+  function updateSectionHeading(sectionHeadingId: string, patch: string | Partial<DocumentSectionHeading>) {
+    const nextHeadings = updatedSectionHeadings(sectionHeadingsRef.current, sectionHeadingId, patch);
     if (!nextHeadings) return;
     setSectionFlowWithHistory(nextHeadings, documentFlowRef.current);
   }

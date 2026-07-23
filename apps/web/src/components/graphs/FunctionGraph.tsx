@@ -21,7 +21,8 @@ import {
   separateRangeFromStrictNaturalBoundaries,
   snapManualDomainToNaturalAsymptotes,
 } from "@/lib/graphFunctionDomains";
-import { lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
+import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
+import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import {
   GRAPH_LABEL_FONT_CSS,
@@ -38,6 +39,7 @@ interface FunctionGraphProps {
   solutionFeatureColor?: string;
   solutionFunctionColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
+  onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
 }
 
 function skipSpaces(expression: string, index: number) {
@@ -1173,6 +1175,51 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
+function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: (x: number, y: number) => void) {
+  const draggableText = text as JXGElement;
+  const node = draggableText.rendNode;
+  if (!node || node.dataset.mauthDragBound === "true") return;
+
+  node.dataset.mauthDragBound = "true";
+  draggableText.isDraggable = false;
+  node.style.setProperty("cursor", "move");
+  node.style.setProperty("pointer-events", "auto");
+  node.style.setProperty("user-select", "none");
+  node.style.setProperty("-webkit-user-select", "none");
+  node.style.setProperty("touch-action", "none");
+  node.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const start = textCoordinates(text);
+    if (!start) return;
+    const sizedBoard = board as JXG.Board & { unitX?: number; unitY?: number };
+    const unitX = sizedBoard.unitX || 1;
+    const unitY = sizedBoard.unitY || 1;
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    event.preventDefault();
+    event.stopPropagation();
+    node.setPointerCapture?.(event.pointerId);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const x = start[0] + (moveEvent.clientX - startClientX) / unitX;
+      const y = start[1] - (moveEvent.clientY - startClientY) / unitY;
+      moveElement(text, x, y);
+      board.update();
+    };
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      node.releasePointerCapture?.(upEvent.pointerId);
+      const coords = textCoordinates(text);
+      if (coords) onMove(coords[0], coords[1]);
+    };
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+  });
+}
+
 function setRenderedDataAttributes(element: unknown, attributes: Record<string, string | undefined>) {
   if (!element || typeof element !== "object") return;
   const node = (element as JXGElement).rendNode;
@@ -1258,16 +1305,7 @@ function createLabelText(
   } as Record<string, unknown>);
 
   if (onMove) {
-    const draggableText = text as unknown as JXGElement;
-    draggableText.isDraggable = true;
-    draggableText.rendNode?.style.setProperty("cursor", "move");
-    draggableText.rendNode?.style.setProperty("user-select", "none");
-    draggableText.rendNode?.style.setProperty("-webkit-user-select", "none");
-    draggableText.rendNode?.style.setProperty("touch-action", "none");
-    draggableText.on?.("up", () => {
-      const coords = textCoordinates(text);
-      if (coords) onMove(coords[0], coords[1]);
-    });
+    window.requestAnimationFrame(() => enableHtmlTextDragging(board, text, onMove));
   }
 
   return text;
@@ -1283,7 +1321,7 @@ function createAxisLabelText(
   anchorY: "top" | "middle" | "bottom",
   onMove?: (x: number, y: number) => void,
 ) {
-  const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
+  const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;${onMove ? " pointer-events:auto; cursor:move;" : ""}`;
   const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR)], {
     fixed: !onMove,
     highlight: false,
@@ -1301,13 +1339,9 @@ function createAxisLabelText(
     layer: GRAPH_LAYERS.axisLabel,
   } as Record<string, unknown>);
   if (onMove) {
-    const draggableText = text as unknown as JXGElement;
-    draggableText.isDraggable = true;
-    draggableText.rendNode?.style.setProperty("cursor", "move");
-    draggableText.on?.("up", () => {
-      const coords = textCoordinates(text);
-      if (coords) onMove(Number(coords[0].toFixed(6)), Number(coords[1].toFixed(6)));
-    });
+    window.requestAnimationFrame(() =>
+      enableHtmlTextDragging(board, text, (nextX, nextY) => onMove(Number(nextX.toFixed(6)), Number(nextY.toFixed(6)))),
+    );
   }
 }
 
@@ -1801,24 +1835,14 @@ function drawRightAngleMarkerFromPoints(
   setRenderedDataAttributes(secondSegment, attributes);
 }
 
-function angleMarkerFeaturePoints(feature: GraphFeature): [GraphPoint, GraphPoint, GraphPoint] {
-  const first: GraphPoint = [
-    Number.isFinite(feature.x1) ? (feature.x1 as number) : 1,
-    Number.isFinite(feature.y1) ? (feature.y1 as number) : 0,
-  ];
-  const vertex: GraphPoint = [
-    Number.isFinite(feature.x) ? (feature.x as number) : 0,
-    Number.isFinite(feature.y) ? (feature.y as number) : 0,
-  ];
-  const second: GraphPoint = [
-    Number.isFinite(feature.x2) ? (feature.x2 as number) : 0.7,
-    Number.isFinite(feature.y2) ? (feature.y2 as number) : 0.7,
-  ];
-  return [first, vertex, second];
-}
-
-function createAngleMarkerFeature(board: JXG.Board, feature: GraphFeature, color: string, onLabelMove?: (x: number, y: number) => void) {
-  const [first, vertex, second] = angleMarkerFeaturePoints(feature);
+function createAngleMarkerFeature(
+  board: JXG.Board,
+  feature: GraphFeature,
+  graphConfig: GraphConfig,
+  color: string,
+  onLabelMove?: (x: number, y: number) => void,
+) {
+  const [first, vertex, second] = graphAngleMarkerFeaturePoints(feature, graphConfig);
   const featureSize = feature.size;
   const markerSize = typeof featureSize === "number" && Number.isFinite(featureSize) && featureSize > 0 ? featureSize : 0.35;
   const strokeWidth = lineWeight(feature.strokeWidth, 1.6);
@@ -3369,7 +3393,7 @@ function renderGraphFeature(
   }
 
   if (feature.kind === "angle_marker") {
-    createAngleMarkerFeature(board, feature, color, handleLabelMove);
+    createAngleMarkerFeature(board, feature, graphConfig, color, handleLabelMove);
     return;
   }
 
@@ -3449,6 +3473,7 @@ export function FunctionGraph({
   solutionFeatureColor,
   solutionFunctionColor,
   onGraphConfigChange,
+  onGraphConfigPatch,
 }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
 
@@ -3477,7 +3502,7 @@ export function FunctionGraph({
     const showGrid = graphConfig.showGrid ?? true;
     const showMajorGrid = graphConfig.showMajorGrid ?? true;
     const showMinorGrid = graphConfig.showMinorGrid ?? false;
-    const showArrows = graphConfig.showArrows ?? true;
+    const axisArrows = graphAxisArrowVisibility(graphConfig);
     const showAxisLabels = graphConfig.showAxisLabels ?? true;
     const showAxisNumbers = graphConfig.showAxisNumbers ?? true;
     const showFunctionArrows = graphConfig.showFunctionArrows ?? true;
@@ -3513,10 +3538,9 @@ export function FunctionGraph({
     });
 
     const commitAxisLabelPosition = (axis: "x" | "y", x: number, y: number) => {
-      if (!onGraphConfigChange) return;
-      onGraphConfigChange(
-        axis === "x" ? { ...graphConfig, xAxisLabelX: x, xAxisLabelY: y } : { ...graphConfig, yAxisLabelX: x, yAxisLabelY: y },
-      );
+      const patch = axis === "x" ? { xAxisLabelX: x, xAxisLabelY: y } : { yAxisLabelX: x, yAxisLabelY: y };
+      if (onGraphConfigPatch) onGraphConfigPatch(patch);
+      else if (onGraphConfigChange) onGraphConfigChange({ ...graphConfig, ...patch });
     };
 
     if (showGrid) {
@@ -3601,8 +3625,6 @@ export function FunctionGraph({
         highlight: false,
         straightFirst: false,
         straightLast: false,
-        firstArrow: showArrows ? axisArrowAttributes() : false,
-        lastArrow: showArrows ? axisArrowAttributes() : false,
         strokeColor: AXIS_COLOR,
         strokeWidth: AXIS_STROKE_WIDTH,
         layer: GRAPH_LAYERS.axis,
@@ -3624,6 +3646,8 @@ export function FunctionGraph({
           ],
           {
             ...axisAttributes,
+            firstArrow: axisArrows.xMin ? axisArrowAttributes() : false,
+            lastArrow: axisArrows.xMax ? axisArrowAttributes() : false,
             name: "",
             withLabel: false,
             ticks: {
@@ -3651,6 +3675,8 @@ export function FunctionGraph({
           ],
           {
             ...axisAttributes,
+            firstArrow: axisArrows.yMin ? axisArrowAttributes() : false,
+            lastArrow: axisArrows.yMax ? axisArrowAttributes() : false,
             name: "",
             withLabel: false,
             ticks: {
@@ -3686,7 +3712,7 @@ export function FunctionGraph({
           [-10, 8],
           "middle",
           "bottom",
-          onGraphConfigChange ? (x, y) => commitAxisLabelPosition("x", x, y) : undefined,
+          onGraphConfigChange || onGraphConfigPatch ? (x, y) => commitAxisLabelPosition("x", x, y) : undefined,
         );
         createAxisLabelText(
           board,
@@ -3696,7 +3722,7 @@ export function FunctionGraph({
           [8, -8],
           "left",
           "bottom",
-          onGraphConfigChange ? (x, y) => commitAxisLabelPosition("y", x, y) : undefined,
+          onGraphConfigChange || onGraphConfigPatch ? (x, y) => commitAxisLabelPosition("y", x, y) : undefined,
         );
       }
     }
@@ -3887,7 +3913,16 @@ export function FunctionGraph({
     return () => {
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, graphConfig, onGraphConfigChange, previewAnchor, solutionColor, solutionFeatureColor, solutionFunctionColor]);
+  }, [
+    boardId,
+    graphConfig,
+    onGraphConfigChange,
+    onGraphConfigPatch,
+    previewAnchor,
+    solutionColor,
+    solutionFeatureColor,
+    solutionFunctionColor,
+  ]);
 
   return (
     <div

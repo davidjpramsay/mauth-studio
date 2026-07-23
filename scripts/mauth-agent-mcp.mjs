@@ -7,6 +7,13 @@ import { z } from "zod/v4";
 
 import { agentAuthorizationHeaders, resolveMauthRuntime } from "./mauth-runtime.mjs";
 
+const CONNECTOR_VERSION = typeof __MAUTH_CONNECTOR_VERSION__ === "string" ? __MAUTH_CONNECTOR_VERSION__ : "development";
+
+if (process.argv.includes("--version")) {
+  console.log(`Mauth Agent Connector ${CONNECTOR_VERSION}`);
+  process.exit(0);
+}
+
 const runtime = resolveMauthRuntime();
 const API_BASE = runtime.apiUrl;
 const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
@@ -71,7 +78,7 @@ function toolResult(output) {
 
 const server = new McpServer({
   name: "mauth-local-agent-bridge",
-  version: "0.1.0",
+  version: CONNECTOR_VERSION,
 });
 
 server.registerTool(
@@ -289,5 +296,14 @@ server.registerTool(
     ),
 );
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (process.argv.includes("--doctor")) {
+  const result = await bridgeRequest("/api/system/status");
+  if (result.httpStatus !== 200) {
+    console.error(`Mauth Agent Connector could not reach Mauth Studio (${result.httpStatus || "not connected"}).`);
+    process.exit(1);
+  }
+  console.log(`Mauth Agent Connector ${CONNECTOR_VERSION} is connected to ${runtime.source} at ${runtime.apiUrl}.`);
+} else {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

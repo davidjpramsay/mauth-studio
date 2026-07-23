@@ -10,6 +10,7 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import {
   graph3dDataFromElements,
   graph3dDataWithRenamedPoint,
@@ -26,14 +27,6 @@ import {
 const GRAPH_3D_POINT_COLOR = "#111827";
 const GRAPH_3D_LINE_COLOR = "#111827";
 const GRAPH_3D_DIMENSION_COLOR = "#6b7280";
-
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
 
 function nextElementId(prefix: string, elements: Graph3DElement[], kind: Graph3DElementKind) {
   const ids = new Set(elements.map((element, index) => graph3dElementId(element, kind, index)));
@@ -364,12 +357,13 @@ export function Graph3DElementsEditor({ config, showSolutions, onChange }: Graph
                 {([0, 1, 2] as const).map((axis) => (
                   <label key={axis} className="flex flex-col gap-2 text-xs font-medium">
                     {axis === 0 ? "x" : axis === 1 ? "y" : "z"}
-                    <input
-                      type="number"
-                      value={numberInputValue(coords[axis])}
-                      onChange={(event) => {
+                    <NumericExpressionInput
+                      value={coords[axis]}
+                      ariaLabel={`Point ${pointIndex + 1} ${axis === 0 ? "x" : axis === 1 ? "y" : "z"}`}
+                      onValueChange={(value) => {
+                        if (value === undefined) return;
                         const nextCoords: [number, number, number] = [...coords];
-                        nextCoords[axis] = optionalNumber(event.target.value) ?? 0;
+                        nextCoords[axis] = value;
                         updateElement("point", points, pointIndex, { coords: nextCoords });
                       }}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"

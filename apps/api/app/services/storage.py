@@ -474,7 +474,7 @@ class FileLogoStorage:
 class FileProjectStorage:
     DEFAULT_PROJECT_ID = "local-project"
     WORKSPACE_CONFIG_NAME = "workspace.json"
-    VISIBLE_PROJECT_FILE_SUFFIXES = (".test.json", ".mauth.md")
+    VISIBLE_PROJECT_FILE_SUFFIXES = (".mauth", ".test.json", ".mauth.md")
 
     def __init__(self, root: Path | None = None) -> None:
         self.base_workspace_root = documents_workspace_root()
@@ -1451,7 +1451,7 @@ class FileProjectStorage:
     def _import_name_parts(name: str, kind: str) -> tuple[str, str]:
         if kind != "file":
             return name, ""
-        for suffix in (".test.json", ".mauth.md", ".diagram.json", ".config.json"):
+        for suffix in (".test.json", ".mauth.md", ".mauth", ".diagram.json", ".config.json"):
             if name.lower().endswith(suffix):
                 return name[: -len(suffix)], name[-len(suffix) :]
         suffix = PurePosixPath(name).suffix
@@ -1549,6 +1549,8 @@ class FileProjectStorage:
         suffix = PurePosixPath(file_path).suffix.lower()
         if file_path.endswith(".mauth.md"):
             return "mauthdown"
+        if file_path.endswith(".mauth"):
+            return "test"
         if file_path.endswith(".diagram.json"):
             return "diagram"
         if file_path.endswith(".config.json"):

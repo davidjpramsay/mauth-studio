@@ -7,11 +7,13 @@ import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
+import { StandardSectionTitlePageEditor } from "@/components/front-matter/StandardSectionTitlePageEditor";
 import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview";
 import { documentEditorSurfaceKind, documentPageBreakPanelLabel, documentQuestionPanelLabel } from "@/lib/documentWorkspaceRenderPlan";
 import { syncPreviewSelection } from "@/lib/editorDomNavigation";
 import type { PartPageBreakTarget } from "@/lib/editorPageBreakLifecycle";
-import type { DocumentSectionHeading, QuestionBlock } from "@/lib/editorDocumentNormalization";
+import type { DocumentFlowItem, DocumentSectionHeading, QuestionBlock } from "@/lib/editorDocumentNormalization";
+import { buildTestSectionPlans } from "@/lib/editorPreviewSegments";
 import { questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import type { FrontMatterConfig } from "@/lib/frontMatterConfig";
 import { SCROLL_ANCHOR_FRONT_MATTER, pageBreakScrollAnchor, questionScrollAnchor, sectionHeadingScrollAnchor } from "@/lib/scrollAnchors";
@@ -30,6 +32,8 @@ interface DocumentEditorSurfaceProps {
   activeSectionHeading: DocumentSectionHeading | null;
   activeQuestion: QuestionBlock | null;
   questions: QuestionBlock[];
+  sectionHeadings: DocumentSectionHeading[];
+  documentFlow: DocumentFlowItem[];
   frontMatter: FrontMatterConfig;
   activeAnchor: string;
   isActiveAnchor: (anchor: string) => boolean;
@@ -37,7 +41,7 @@ interface DocumentEditorSurfaceProps {
   questionPanelBindings: QuestionPanelBindings;
   hasPartPageBreak: (target: PartPageBreakTarget) => boolean;
   onRemovePageBreak: (questionId: string) => void;
-  onUpdateSectionHeading: (headingId: string, title: string) => void;
+  onUpdateSectionHeading: (headingId: string, patch: string | Partial<DocumentSectionHeading>) => void;
   onRemoveSectionHeading: (headingId: string) => void;
 }
 
@@ -70,6 +74,8 @@ function ActiveDocumentEditorSurface({
   activeSectionHeading,
   activeQuestion,
   questions,
+  sectionHeadings,
+  documentFlow,
   frontMatter,
   activeAnchor,
   isActiveAnchor,
@@ -131,15 +137,36 @@ function ActiveDocumentEditorSurface({
 
   if (surfaceKind === "sectionHeading" && activeSectionHeading) {
     const anchor = sectionHeadingScrollAnchor(activeSectionHeading.id);
+    const titlePageMode = frontMatter.titlePageTemplate === "standard";
+    const sectionPlan = titlePageMode
+      ? buildTestSectionPlans(documentFlow, questions, sectionHeadings).find((plan) => plan.heading.id === activeSectionHeading.id)
+      : null;
     return (
       <div className="flex flex-col gap-4">
-        <div data-scroll-anchor={anchor}>
-          <SectionHeadingStructurePanel
-            heading={activeSectionHeading}
-            active={isActiveAnchor(anchor)}
-            onChange={(title) => onUpdateSectionHeading(activeSectionHeading.id, title)}
-            onRemove={() => onRemoveSectionHeading(activeSectionHeading.id)}
-          />
+        <div
+          className={cn(
+            titlePageMode && "rounded-lg border bg-card p-4 shadow-panel transition-colors",
+            titlePageMode && isActiveAnchor(anchor) && EDITOR_ACTIVE_PANEL_CLASS,
+          )}
+          data-scroll-anchor={anchor}
+        >
+          {titlePageMode ? (
+            <StandardSectionTitlePageEditor
+              heading={activeSectionHeading}
+              sectionMarks={sectionPlan?.marks ?? 0}
+              sectionQuestionCount={sectionPlan?.questionIds.length ?? 0}
+              frontMatterProps={frontMatterProps}
+              onChangeHeading={(patch) => onUpdateSectionHeading(activeSectionHeading.id, patch)}
+              onRemove={() => onRemoveSectionHeading(activeSectionHeading.id)}
+            />
+          ) : (
+            <SectionHeadingStructurePanel
+              heading={activeSectionHeading}
+              active={isActiveAnchor(anchor)}
+              onChange={(title) => onUpdateSectionHeading(activeSectionHeading.id, title)}
+              onRemove={() => onRemoveSectionHeading(activeSectionHeading.id)}
+            />
+          )}
         </div>
       </div>
     );

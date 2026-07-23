@@ -6,9 +6,16 @@ import { defaultSavedTestName, printFileNameForDocument, projectFileTypeForFront
 test("projectFileTypeForFrontMatter maps document templates to project file types", () => {
   assert.equal(projectFileTypeForFrontMatter({ titlePageTemplate: "notes" }), "notes");
   assert.equal(projectFileTypeForFrontMatter({ titlePageTemplate: "worksheet" }), "worksheet");
+  assert.equal(projectFileTypeForFrontMatter({ titlePageTemplate: "investigation" }), "investigation");
   assert.equal(projectFileTypeForFrontMatter({ titlePageTemplate: "exam" }), "test");
   assert.equal(projectFileTypeForFrontMatter({ titlePageTemplate: "standard" }), "test");
   assert.equal(projectFileTypeForFrontMatter({}), "test");
+});
+
+test("printFileNameForDocument names investigation teacher copies explicitly", () => {
+  const frontMatter = { subjectTitle: "Methods", assessmentTitle: "Investigation 1", titlePageTemplate: "investigation" };
+  assert.equal(printFileNameForDocument(frontMatter, "", false), "Methods - Investigation 1 - Student");
+  assert.equal(printFileNameForDocument(frontMatter, "", true), "Methods - Investigation 1 - Teacher");
 });
 
 test("defaultSavedTestName joins subject and assessment title", () => {

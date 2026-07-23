@@ -145,6 +145,8 @@ function savedTestContent(name, text) {
   const now = new Date().toISOString();
   return JSON.stringify(
     {
+      format: "mauth-studio-document",
+      schemaVersion: 1,
       id: `file-manager-smoke:${name}`,
       name,
       frontMatter: {
@@ -198,10 +200,10 @@ async function seedSmokeFiles(projectId, root) {
   await saveProjectFile(projectId, `tests/${root}`, { kind: "folder", fileType: "folder" });
   await saveProjectFile(projectId, `tests/${root}/Folder A`, { kind: "folder", fileType: "folder" });
   await saveProjectFile(projectId, `tests/${root}/Folder B`, { kind: "folder", fileType: "folder" });
-  await saveProjectFile(projectId, `tests/${root}/Alpha.test.json`, {
+  await saveProjectFile(projectId, `tests/${root}/Alpha.mauth`, {
     kind: "file",
     fileType: "test",
-    metadata: { format: "saved-test-json", source: "file-manager-smoke" },
+    metadata: { format: "mauth-document", source: "file-manager-smoke" },
     content: savedTestContent("Alpha", "Alpha original"),
   });
   await saveProjectFile(projectId, `tests/${root}/Beta.test.json`, {
@@ -238,7 +240,7 @@ async function openSmokeRoot(drawer, root) {
   const testsCrumb = breadcrumb(drawer, "");
   if (await testsCrumb.isVisible().catch(() => false)) await testsCrumb.click();
   await fileRow(drawer, root).dblclick();
-  await fileRow(drawer, `${root}/Alpha.test.json`).waitFor({ state: "visible", timeout: 5000 });
+  await fileRow(drawer, `${root}/Alpha.mauth`).waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function selectPaths(drawer, paths) {
@@ -325,11 +327,11 @@ try {
   let drawer = await openFilesDrawer(page);
   await openSmokeRoot(drawer, smokeRoot);
 
-  const alpha = `${smokeRoot}/Alpha.test.json`;
+  const alpha = `${smokeRoot}/Alpha.mauth`;
   const beta = `${smokeRoot}/Beta.test.json`;
   const folderA = `${smokeRoot}/Folder A`;
   const folderB = `${smokeRoot}/Folder B`;
-  const alphaInA = `${folderA}/Alpha.test.json`;
+  const alphaInA = `${folderA}/Alpha.mauth`;
   const betaInA = `${folderA}/Beta.test.json`;
   const betaInB = `${folderB}/Beta.test.json`;
 
@@ -390,7 +392,7 @@ try {
   await openSmokeRoot(drawer, smokeRoot);
   await fileRow(drawer, alpha).click();
   await clickDrawerAction(drawer, "Duplicate");
-  const alphaCopy = `${smokeRoot}/Alpha copy.test.json`;
+  const alphaCopy = `${smokeRoot}/Alpha copy.mauth`;
   await waitForFiles(projectId, (files) => hasPath(files, `tests/${alphaCopy}`), "active dirty file duplicate");
 
   const alphaDocument = await parsedProjectFileContent(projectId, `tests/${alpha}`);

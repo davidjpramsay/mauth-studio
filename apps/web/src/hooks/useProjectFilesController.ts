@@ -58,7 +58,7 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
             kind: "file",
             fileType: "test",
             metadata: {
-              format: "saved-test-json",
+              format: "mauth-document",
               source: "legacy-saved-tests-migration",
               legacySavedTestId: legacyImport.savedTest.id,
               ...legacyImport.metadata,

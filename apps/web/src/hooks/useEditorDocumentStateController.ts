@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { useEditorHistoryController } from "@/hooks/useEditorHistoryController";
+import { resolveEditorDocumentFlow } from "@/lib/editorDocumentFlowResolution";
 
 export interface EditorDocumentSnapshot<TFrontMatter, TQuestion, TSectionHeading, TDocumentFlow, TFormattingConfig> {
   frontMatter: TFrontMatter;
@@ -187,12 +188,15 @@ export function useEditorDocumentStateController<
     const previousQuestions = questionsRef.current;
     const nextQuestions = normalizeQuestions(document.questions);
     const nextSectionHeadings = normalizeSectionHeadings(document.sectionHeadings ?? sectionHeadingsRef.current);
-    const nextDocumentFlow = documentFlowFromQuestionChange(
+    const nextDocumentFlow = resolveEditorDocumentFlow({
       previousQuestions,
       nextQuestions,
-      nextSectionHeadings,
-      document.documentFlow ?? documentFlowRef.current,
-    );
+      sectionHeadings: nextSectionHeadings,
+      currentDocumentFlow: documentFlowRef.current,
+      explicitDocumentFlow: document.documentFlow,
+      normalizeDocumentFlow,
+      documentFlowFromQuestionChange,
+    });
     setFrontMatter(document.frontMatter);
     setQuestions(nextQuestions);
     setSectionHeadings(nextSectionHeadings);

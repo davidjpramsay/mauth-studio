@@ -1,6 +1,7 @@
 import type { ContentBlock, QuestionPart, QuestionSubpart } from "@mauth-studio/shared";
 
 import { recoverMissingSolutionSurfaceTicks } from "./solutionBlockVisibility.ts";
+import { normalizeStandardSectionTitlePage, type StandardSectionTitlePageConfig } from "./standardTestTitlePage.ts";
 
 export type EditorContentBlock = ContentBlock;
 export type EditorSubpart = Omit<QuestionSubpart, "contentBlocks"> & { contentBlocks: EditorContentBlock[] };
@@ -33,6 +34,7 @@ export interface QuestionBlock {
 export interface DocumentSectionHeading {
   id: string;
   title: string;
+  titlePage?: StandardSectionTitlePageConfig;
 }
 
 export type DocumentFlowItem = { kind: "sectionHeading"; id: string } | { kind: "question"; id: string };
@@ -304,7 +306,8 @@ export function createEditorDocumentNormalizer({ id, normalizeContentBlocks }: E
       if (seen.has(headingId)) return [];
       seen.add(headingId);
       const title = typeof record.title === "string" ? record.title : "";
-      return [{ id: headingId, title }];
+      const titlePage = normalizeStandardSectionTitlePage(record.titlePage);
+      return [{ id: headingId, title, ...(titlePage ? { titlePage } : {}) }];
     });
   }
 

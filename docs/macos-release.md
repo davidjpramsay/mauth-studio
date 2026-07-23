@@ -5,7 +5,7 @@ This is the distribution contract for sharing Mauth Studio outside the developme
 ## Current Support
 
 - macOS on Apple Silicon (`arm64`).
-- Standalone Electron app with packaged FastAPI and Penrose runtimes.
+- Standalone Electron app with packaged FastAPI, Penrose, and self-contained MCP connector runtimes.
 - No Python, Node.js, repo checkout, or Terminal window is required for ordinary use.
 - Codex, Claude Code, and MCP clients remain supported through the authenticated local bridge.
 
@@ -45,7 +45,7 @@ The command deliberately fails before building when it cannot find:
 - an installed `Developer ID Application` identity; or
 - notarization credentials through a keychain profile, Apple ID variables, or App Store Connect API-key variables.
 
-When those prerequisites exist, it builds the web app, FastAPI sidecar, and Penrose runtime; signs the complete app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. It preserves `latest-mac.yml` and generated blockmaps, and verifies that the metadata hash and size match the signed ZIP used by the updater.
+When those prerequisites exist, it builds the web app, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the complete app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. It preserves `latest-mac.yml` and generated blockmaps, verifies that the metadata hash and size match the signed ZIP used by the updater, and starts the packaged connector with the app-owned runtime as part of app verification.
 
 This command does not publish anything. It is useful for inspecting a release bundle, but the normal public-release path is the guarded ship command below.
 
@@ -94,7 +94,7 @@ Before sharing a release, also test the downloaded artifact on a clean Apple Sil
 3. Confirm Gatekeeper identifies the developer and accepts the app.
 4. Create, save, close, reopen, print, and export a disposable document.
 5. Open an external documents folder and confirm no unrelated files are copied.
-6. Run `pnpm agent:doctor` from a Mauth source checkout when testing Codex/Claude integration.
+6. Choose **Help > Set Up Codex or Claude...**, configure a disposable agent client, and run the shown connection test without a source checkout.
 7. Confirm an unauthenticated request to `/api/agent/current/snapshot` is rejected.
 
 ## Agent Authentication
@@ -106,7 +106,7 @@ Every desktop launch generates a new random bridge token. The app:
 3. writes it beside the dynamic URL in `~/Library/Application Support/Mauth Studio/runtime.json` with mode `0600`; and
 4. removes the runtime manifest when the owning app quits.
 
-`pnpm agent:doctor`, `pnpm agent:mcp`, and `pnpm smoke:agent-bridge` discover the URL and token automatically. Claude/Codex users do not paste or persist the token. Fixed-port development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
+The bundled connector, `pnpm agent:doctor`, `pnpm agent:mcp`, `pnpm smoke:agent-connector`, and `pnpm smoke:agent-bridge` discover the URL and token automatically. Claude/Codex users do not paste or persist the token. Fixed-port development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
 
 ## Updates And Rollback
 

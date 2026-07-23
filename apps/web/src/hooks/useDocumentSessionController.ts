@@ -176,7 +176,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     dialogs,
   });
 
-  const { openProjectFile, syncActiveProjectFileFromDisk, reloadActiveProjectFileFromDisk } =
+  const { openProjectFile, openExternalProjectDocument, syncActiveProjectFileFromDisk, reloadActiveProjectFileFromDisk } =
     useProjectDocumentOpenController<TSavedDocument>({
       activeProject,
       projectFiles,
@@ -236,6 +236,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     closeEditorDocument,
     closeCurrentDocument,
     openProjectFile,
+    openExternalProjectDocument,
     syncActiveProjectFileFromDisk,
     reloadActiveProjectFileFromDisk,
     saveConflictRecoveryCopy,

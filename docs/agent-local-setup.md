@@ -1,130 +1,104 @@
 # Local Agent Setup
 
-This is the intended Codex/Claude Code workflow for Mauth authoring.
+This is the intended Codex, Claude Code, and Claude Desktop workflow for Mauth authoring.
 
-For current project state and next-work context, read `docs/current-state.md` before starting a new model/session.
+For current project state and development context, read `docs/current-state.md`. Ordinary teachers and agent users do not need a source checkout.
 
-## Local Project Folder
+## Install The App
 
-Normal teacher use does not require this repository. Download the signed DMG from the [GitHub release](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.0), move Mauth Studio to Applications, and open it normally.
+Download the current signed DMG from the [GitHub release](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.2), move **Mauth Studio** to Applications, and open it normally.
 
-Clone or pull the repo into a normal local project folder when connecting Codex/Claude helper tools or developing the app. For bridge tools only, install the Node dependencies from the repo root:
+Mauth Studio starts its packaged FastAPI service on a dynamic loopback port, opens the editor in a native window, and stops the service when the app quits. No Python, Node.js, pnpm, repository checkout, or open Terminal window is required for the app or its bundled connector.
 
-```bash
-pnpm install
-```
+## Connect An Agent Once
 
-For application development, also install the Python environment:
+1. Keep Mauth Studio in Applications and open it.
+2. Choose **Help > Set Up Codex or Claude...**.
+3. Copy the setup for the agent being used.
+4. Keep Mauth Studio open while the agent reads or edits the current document.
 
-```bash
-cd apps/api
-uv sync
-cd ../..
-```
+The setup panel provides:
 
-Build and install an ad-hoc-signed local checkpoint only when needed:
+- a `codex mcp add` command for Codex;
+- a user-scoped `claude mcp add` command for Claude Code;
+- a Claude Desktop `mcpServers.mauth` configuration entry; and
+- a connection-test command.
 
-```bash
-pnpm macos:build
-pnpm macos:install
-```
+For Codex or Claude Code, run the copied command once in Terminal. For Claude Desktop, open **Settings > Developer > Edit Config**, merge the copied `mauth` entry with any existing `mcpServers`, save, then fully restart Claude Desktop. Do not replace unrelated server entries.
 
-Then open it normally:
+The saved configuration points to the connector inside the installed app. It does not contain an API URL or token. If Mauth Studio is moved after setup, run setup again so the path remains valid.
 
-```bash
-open ~/Applications/Mauth\ Studio.app
-```
+## Runtime Security
 
-Mauth Studio starts its packaged FastAPI service on a dynamic loopback port, opens the editor in a native window, and stops the service when the app quits. No Terminal windows need to remain open. If an unsaved page blocks quitting, the native confirmation explains that the current draft is backed up before allowing Close.
+Each app launch creates a new random bridge token. Mauth writes it with the current dynamic URL to the private mode-`0600` runtime manifest under `~/Library/Application Support/Mauth Studio/runtime.json`. The connector reads that file at launch and sends the token only to Mauth's loopback API.
 
-For ordinary source development, use:
+Do not paste the token into an MCP config, prompt, source file, issue, or log. The app removes its runtime manifest when it quits.
 
-```bash
-pnpm macos:dev
-```
+The MCP process is a thin wrapper over the local HTTP bridge. It does not read or write React state, localStorage, visible `.mauth` files, project metadata, or autosave files directly.
 
-The Codex app also exposes a project Run action through `.codex/environments/environment.toml`; it calls `script/build_and_run.sh` to build, sign, and launch the current bundle.
+## Agent Tool Loop
 
-Do not run the Developer ID/notarization pipeline after routine source edits. `pnpm macos:release` is reserved for building versioned external artifacts, and `pnpm macos:ship` is the guarded publication path from clean, pushed `main` after the full quality gate passes.
-
-The previous Terminal-backed browser launcher remains available for runtime debugging:
-
-```bash
-pnpm dev:launch:desktop
-pnpm dev:status
-pnpm dev:stop
-```
-
-These commands manage only the fixed-port development launcher, not a running packaged app. Quit the packaged app from its normal macOS menu.
-
-For lower-level debugging, run the API and web app in two terminals:
-
-```bash
-pnpm dev:api
-pnpm dev:web
-```
-
-Open the web URL printed by `pnpm dev:web` (usually `http://localhost:5173`) and keep exactly one Mauth editor tab active.
-
-Check the bridge:
-
-```bash
-pnpm agent:doctor
-```
-
-With the packaged app, the doctor discovers the current dynamic URL and per-launch bridge token from `~/Library/Application Support/Mauth Studio/runtime.json`. The file is private to the local user and is removed when Mauth quits. If a manual Vite runtime uses another URL, pass it explicitly:
-
-```bash
-MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
-```
-
-## MCP
-
-The MCP server wraps the local HTTP bridge. It does not read or write React state, localStorage, visible document files, `.mauth` metadata, or legacy `storage/projects` files directly.
-
-Claude Desktop example:
-
-```json
-{
-  "mcpServers": {
-    "mauth": {
-      "command": "pnpm",
-      "args": ["--dir", "/Users/djpramsay@acc.edu.au/Documents/Code/Mauth", "agent:mcp"]
-    }
-  }
-}
-```
-
-Tool loop:
+The main authoring loop is:
 
 ```text
 mauth_snapshot
 mauth_actions_preview
 mauth_actions_apply
 mauth_validation_run
-mauth_comment_create
-mauth_suggestion_create
-mauth_events_read
+rendered app verification
 ```
 
-`mauth_actions_apply` requires `baseSnapshotId` from the latest snapshot and uses an `Idempotency-Key` header internally.
-Comments and suggestions are review state; they do not mutate the document.
+`mauth_actions_apply` requires `baseSnapshotId` from the latest snapshot and adds an idempotency key internally. Comments and suggestions are review state; they do not mutate the document.
 
-## Proof-Style Split
+## Source Development
 
-The human app remains the review surface: preview, file drawer, validation, print, and human judgement.
+Clone the repository only to change or diagnose Mauth itself:
 
-The local bridge is the agent control surface: snapshot, dry run, apply, validation, events, and presence.
+```bash
+git clone https://github.com/davidjpramsay/mauth-studio.git
+cd mauth-studio
+pnpm install
+cd apps/api
+uv sync
+cd ../..
+```
 
-This gives local Codex/Claude the structure of an API-driven product without making the app hosted-first. Hosted collaboration can come later, but V1 assumes the standalone app is running locally and the helper repository is available when MCP tooling is required.
+Use the watched Electron development shell:
+
+```bash
+pnpm macos:dev
+```
+
+React/CSS changes use Vite HMR and API source changes reload through Uvicorn. Restart `pnpm macos:dev` after changing Electron main-process, preload, startup, or packaging files.
+
+Repository diagnostics remain available:
+
+```bash
+pnpm agent:doctor
+pnpm agent:mcp
+pnpm macos:build:agent
+pnpm smoke:agent-connector
+```
+
+The first two use the source wrapper; the generated connector smoke negotiates MCP tools and reads a live snapshot. These are developer checks, not installation requirements for users of the signed app.
+
+Build and install an ad-hoc local checkpoint only when needed:
+
+```bash
+pnpm macos:build
+pnpm macos:install
+```
+
+Use `pnpm macos:release` only for a versioned signed/notarized local release bundle. Use `pnpm macos:ship` only from clean, pushed `main` to publish a verified release.
 
 ## Failure Modes
 
-- `AGENT_AUTH_REQUIRED`: use `pnpm agent:doctor`, `pnpm agent:mcp`, or the normal bridge smoke command so the current packaged token is discovered automatically. Do not copy the token into a config file.
-- `APP_NOT_CONNECTED`: open `~/Applications/Mauth Studio.app`, wait for its editor window, then rerun `pnpm agent:doctor`. For a deliberate browser-debug runtime, run `pnpm dev:launch:desktop` and keep exactly one Mauth tab open.
-- `MULTIPLE_ACTIVE_EDITORS`: close extra Mauth tabs.
+- `APP_NOT_CONNECTED`: open Mauth Studio, wait for the editor window, then retry the connection test.
+- `AGENT_AUTH_REQUIRED`: use the bundled connector or repository wrapper so the current token is discovered automatically.
+- `MULTIPLE_ACTIVE_EDITORS`: close extra Mauth editor windows or browser tabs.
 - `STALE_SNAPSHOT`: call `mauth_snapshot` again and rebuild the action batch.
-- `VALIDATION_FAILED`: repair the action payload.
-- `ACTION_FAILED`: inspect the action result and current snapshot.
+- `VALIDATION_FAILED`: repair the action payload before applying it.
 - `SAVE_CONFLICT`: reload or resolve the active project file before applying again.
 - `BRIDGE_TIMEOUT`: reload the Mauth Studio window and retry.
+
+The human app remains the review surface for preview, files, validation, print, and judgement. The connector remains the deterministic agent control surface for snapshots, dry runs, applies, validation, events, comments, suggestions, and presence.

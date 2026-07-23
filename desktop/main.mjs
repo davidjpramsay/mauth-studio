@@ -6,9 +6,16 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, dialog, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import electronUpdater from "electron-updater";
 
+import {
+  MAUTH_AGENT_CONNECTOR_INFO_CHANNEL,
+  MAUTH_AGENT_SETUP_OPEN_CHANNEL,
+  agentConnectorInfo,
+  packagedAgentConnectorPath,
+} from "./agent-connector.mjs";
+import { developmentRuntimePlan } from "./development-runtime.mjs";
 import {
   desktopRuntimeFile,
   isAllowedAppNavigation,
@@ -17,6 +24,7 @@ import {
   writeRuntimeManifest,
 } from "./runtime.mjs";
 import { createDesktopUpdaterController } from "./updater.mjs";
+import { MAUTH_DOCUMENT_OPEN_CHANNEL, isMauthDocumentPath, mauthDocumentPathsFromCommandLine } from "./document-open.mjs";
 
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(DESKTOP_DIR, "..");
@@ -25,9 +33,11 @@ const API_READY_TIMEOUT_MS = 45_000;
 
 let mainWindow = null;
 let apiProcess = null;
+let webProcess = null;
 let runtimeFile = null;
 let quitting = false;
 let updateController = null;
+const pendingOpenDocumentPaths = [];
 
 const { autoUpdater } = electronUpdater;
 
@@ -71,7 +81,36 @@ function desktopPaths() {
       ? path.join(resourceRoot, "sidecars", "mauth-api")
       : path.join(REPO_ROOT, "apps", "api", ".venv", "bin", "python"),
     icon: app.isPackaged ? path.join(resourceRoot, "mauth-icon.png") : path.join(REPO_ROOT, "docs", "assets", "mauth-icon.png"),
+    preload: path.join(DESKTOP_DIR, "preload.cjs"),
+    agentConnector: app.isPackaged ? packagedAgentConnectorPath(resourceRoot) : path.join(REPO_ROOT, "scripts", "mauth-agent-mcp.mjs"),
   };
+}
+
+function currentAgentConnectorInfo() {
+  const paths = desktopPaths();
+  return agentConnectorInfo({
+    packaged: app.isPackaged,
+    resourceRoot: paths.resourceRoot,
+    repoRoot: REPO_ROOT,
+    version: app.getVersion(),
+    available: fs.existsSync(paths.agentConnector),
+  });
+}
+
+function sendOpenDocument(filePath) {
+  if (!isMauthDocumentPath(filePath)) return;
+  if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) {
+    if (!pendingOpenDocumentPaths.includes(filePath)) pendingOpenDocumentPaths.push(filePath);
+    return;
+  }
+  mainWindow.webContents.send(MAUTH_DOCUMENT_OPEN_CHANNEL, filePath);
+}
+
+function flushPendingOpenDocuments() {
+  if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) return;
+  for (const filePath of pendingOpenDocumentPaths.splice(0)) {
+    mainWindow.webContents.send(MAUTH_DOCUMENT_OPEN_CHANNEL, filePath);
+  }
 }
 
 function openLogStream(name) {
@@ -80,12 +119,22 @@ function openLogStream(name) {
   return fs.openSync(path.join(logDirectory, name), "a");
 }
 
-function startApi(port, agentToken) {
+function handleServiceExit(serviceName, processHandle, code, signal) {
+  if (quitting || processHandle?.killed) return;
+  dialog.showErrorBox(
+    "Mauth Studio stopped",
+    `The local ${serviceName} service exited unexpectedly (${signal || `code ${code ?? "unknown"}`}). Reopen Mauth Studio to restart it.`,
+  );
+  app.quit();
+}
+
+function startApi(port, agentToken, developmentPlan = null) {
   const paths = desktopPaths();
-  const webUrl = `http://127.0.0.1:${port}`;
+  const apiUrl = `http://127.0.0.1:${port}`;
+  const webUrl = developmentPlan?.webUrl ?? apiUrl;
   const args = app.isPackaged
     ? ["--port", String(port), "--web-dist", paths.webDist, "--parent-pid", String(process.pid)]
-    : ["-m", "app.standalone", "--port", String(port), "--web-dist", paths.webDist, "--parent-pid", String(process.pid)];
+    : developmentPlan.api.args;
   const apiLog = openLogStream("api.log");
   const env = {
     ...process.env,
@@ -102,30 +151,39 @@ function startApi(port, agentToken) {
   };
 
   apiProcess = spawn(paths.apiExecutable, args, {
-    cwd: app.isPackaged ? paths.resourceRoot : path.join(REPO_ROOT, "apps", "api"),
+    cwd: app.isPackaged ? paths.resourceRoot : developmentPlan.api.cwd,
     env,
     stdio: ["ignore", apiLog, apiLog],
   });
   fs.closeSync(apiLog);
+  apiProcess.once("error", (error) => desktopLog(`mathematics service spawn error ${error.message}`));
   apiProcess.once("exit", (code, signal) => {
-    if (!quitting) {
-      dialog.showErrorBox(
-        "Mauth Studio stopped",
-        `The local mathematics service exited unexpectedly (${signal || `code ${code ?? "unknown"}`}). Reopen Mauth Studio to restart it.`,
-      );
-      app.quit();
-    }
+    handleServiceExit("mathematics", apiProcess, code, signal);
   });
-  return { webUrl, paths };
+  return { apiUrl, webUrl, paths };
 }
 
-async function waitForApi(webUrl) {
+function startDevelopmentWeb(developmentPlan) {
+  const webLog = openLogStream("web.log");
+  webProcess = spawn(developmentPlan.web.executable, developmentPlan.web.args, {
+    cwd: developmentPlan.web.cwd,
+    env: { ...process.env, ...developmentPlan.web.env },
+    stdio: ["ignore", webLog, webLog],
+  });
+  fs.closeSync(webLog);
+  webProcess.once("error", (error) => desktopLog(`web development service spawn error ${error.message}`));
+  webProcess.once("exit", (code, signal) => {
+    handleServiceExit("web development", webProcess, code, signal);
+  });
+}
+
+async function waitForLocalService(url, serviceName, processHandle) {
   const deadline = Date.now() + API_READY_TIMEOUT_MS;
-  let lastError = "API did not respond";
+  let lastError = `${serviceName} did not respond`;
   while (Date.now() < deadline) {
-    if (apiProcess?.exitCode !== null) throw new Error(`API exited with code ${apiProcess?.exitCode}`);
+    if (processHandle?.exitCode !== null) throw new Error(`${serviceName} exited with code ${processHandle?.exitCode}`);
     try {
-      const response = await fetch(`${webUrl}/api/system/status`, { cache: "no-store" });
+      const response = await fetch(url, { cache: "no-store" });
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
@@ -133,7 +191,15 @@ async function waitForApi(webUrl) {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Timed out waiting for the Mauth service: ${lastError}`);
+  throw new Error(`Timed out waiting for the Mauth ${serviceName} service: ${lastError}`);
+}
+
+function openAgentSetup() {
+  if (!mainWindow) return;
+  mainWindow.webContents.send(MAUTH_AGENT_SETUP_OPEN_CHANNEL);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 function createApplicationMenu() {
@@ -169,6 +235,14 @@ function createApplicationMenu() {
       submenu: [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }],
     },
     { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] },
+    {
+      role: "help",
+      submenu: [
+        { label: "Set Up Codex or Claude…", click: openAgentSetup },
+        { type: "separator" },
+        { label: "Mauth Studio Documentation", click: () => void shell.openExternal("https://davidjpramsay.github.io/mauth-studio/") },
+      ],
+    },
   ]);
 }
 
@@ -176,8 +250,9 @@ function refreshApplicationMenu() {
   Menu.setApplicationMenu(createApplicationMenu());
 }
 
-function createWindow(webUrl, icon, agentToken) {
+function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
   const appOrigin = new URL(webUrl).origin;
+  const apiOrigin = new URL(apiUrl).origin;
   mainWindow = new BrowserWindow({
     title: "Mauth Studio",
     width: 1560,
@@ -191,16 +266,20 @@ function createWindow(webUrl, icon, agentToken) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload,
     },
   });
-  mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`${appOrigin}/api/*`] }, (details, callback) => {
-    callback({
-      requestHeaders: {
-        ...details.requestHeaders,
-        Authorization: `Bearer ${agentToken}`,
-      },
-    });
-  });
+  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: [`${appOrigin}/api/*`, `${apiOrigin}/api/*`] },
+    (details, callback) => {
+      callback({
+        requestHeaders: {
+          ...details.requestHeaders,
+          Authorization: `Bearer ${agentToken}`,
+        },
+      });
+    },
+  );
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedAppNavigation(url, appOrigin)) return { action: "allow" };
     if (/^(https?:|mailto:)/.test(url)) void shell.openExternal(url);
@@ -236,6 +315,7 @@ function createWindow(webUrl, icon, agentToken) {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  mainWindow.webContents.on("did-finish-load", flushPendingOpenDocuments);
   void mainWindow.loadURL(webUrl);
 }
 
@@ -245,15 +325,30 @@ function stopApi() {
   apiProcess = null;
 }
 
+function stopWeb() {
+  if (!webProcess || webProcess.killed || webProcess.exitCode !== null) return;
+  webProcess.kill("SIGTERM");
+  webProcess = null;
+}
+
 async function launch() {
   desktopLog("launch started");
-  const port = await findAvailablePort();
-  if (!port) throw new Error("Could not reserve a local port for Mauth Studio.");
+  const apiPort = await findAvailablePort();
+  if (!apiPort) throw new Error("Could not reserve a local API port for Mauth Studio.");
+  const webPort = app.isPackaged ? null : await findAvailablePort();
+  if (!app.isPackaged && !webPort) throw new Error("Could not reserve a local web development port for Mauth Studio.");
+  const developmentPlan = app.isPackaged ? null : developmentRuntimePlan({ repoRoot: REPO_ROOT, apiPort, webPort });
   const agentToken = randomBytes(32).toString("base64url");
-  const { webUrl, paths } = startApi(port, agentToken);
-  desktopLog(`api spawned pid=${apiProcess?.pid ?? "unknown"} url=${webUrl}`);
-  await waitForApi(webUrl);
+  const { apiUrl, webUrl, paths } = startApi(apiPort, agentToken, developmentPlan);
+  desktopLog(`api spawned pid=${apiProcess?.pid ?? "unknown"} url=${apiUrl}`);
+  await waitForLocalService(`${apiUrl}/api/system/status`, "API", apiProcess);
   desktopLog("api ready");
+  if (developmentPlan) {
+    startDevelopmentWeb(developmentPlan);
+    desktopLog(`web development server spawned pid=${webProcess?.pid ?? "unknown"} url=${webUrl}`);
+    await waitForLocalService(webUrl, "web development", webProcess);
+    desktopLog("web development server ready");
+  }
   runtimeFile = desktopRuntimeFile(app.getPath("userData"));
   writeRuntimeManifest(
     runtimeFile,
@@ -261,7 +356,7 @@ async function launch() {
       appVersion: app.getVersion(),
       appPid: process.pid,
       apiPid: apiProcess?.pid,
-      apiUrl: webUrl,
+      apiUrl,
       webUrl,
       executablePath: process.execPath,
       packaged: app.isPackaged,
@@ -277,18 +372,26 @@ async function launch() {
     log: desktopLog,
     refreshMenu: refreshApplicationMenu,
   });
+  ipcMain.removeHandler(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
+  ipcMain.handle(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL, currentAgentConnectorInfo);
   if (app.isPackaged && !updatesEnabled) desktopLog("updater disabled because app-update.yml is unavailable");
   refreshApplicationMenu();
-  createWindow(webUrl, paths.icon, agentToken);
+  createWindow(webUrl, apiUrl, paths.icon, paths.preload, agentToken);
   updateController.scheduleAutomaticCheck();
   desktopLog("window created");
 }
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, commandLine) => {
+  for (const filePath of mauthDocumentPathsFromCommandLine(commandLine)) sendOpenDocument(filePath);
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+});
+
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  sendOpenDocument(filePath);
 });
 
 app.on("before-quit", () => {
@@ -298,6 +401,7 @@ app.on("before-quit", () => {
 app.on("will-quit", () => {
   updateController?.dispose();
   if (runtimeFile) removeOwnedRuntimeManifest(runtimeFile, process.pid);
+  stopWeb();
   stopApi();
 });
 
@@ -314,3 +418,5 @@ app.whenReady().then(async () => {
     app.quit();
   }
 });
+
+for (const filePath of mauthDocumentPathsFromCommandLine(process.argv)) sendOpenDocument(filePath);

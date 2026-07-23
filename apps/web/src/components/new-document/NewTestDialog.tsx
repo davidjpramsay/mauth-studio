@@ -1,4 +1,4 @@
-import { Columns3, FileText, Heading2, ListTree, PlusCircle, X } from "lucide-react";
+import { ClipboardList, Columns3, FileText, Heading2, ListTree, PlusCircle, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { TitlePageTemplate } from "@/lib/frontMatterConfig";
@@ -34,6 +34,12 @@ export const NEW_TEST_TEMPLATES: Array<{
     description: "Printable notes with headings, Markdown-style text, diagrams, tables, columns, and examples.",
     formatPresetId: "math-notes",
   },
+  {
+    id: "investigation",
+    title: "Investigation",
+    description: "Single-page test-style brief with shared marking guidance and a linked teacher rubric.",
+    formatPresetId: "investigation",
+  },
 ];
 
 export function NewTestDialog({
@@ -50,7 +56,7 @@ export function NewTestDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" onMouseDown={onClose}>
       <section
-        className="w-full max-w-4xl rounded-xl border bg-background shadow-2xl"
+        className="w-full max-w-6xl rounded-xl border bg-background shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-test-dialog-title"
@@ -67,7 +73,7 @@ export function NewTestDialog({
             <X />
           </Button>
         </header>
-        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
           {NEW_TEST_TEMPLATES.map((template) => (
             <button
               key={template.id}
@@ -82,6 +88,8 @@ export function NewTestDialog({
                   <Columns3 className="size-5" aria-hidden="true" />
                 ) : template.id === "notes" ? (
                   <Heading2 className="size-5" aria-hidden="true" />
+                ) : template.id === "investigation" ? (
+                  <ClipboardList className="size-5" aria-hidden="true" />
                 ) : (
                   <FileText className="size-5" aria-hidden="true" />
                 )}

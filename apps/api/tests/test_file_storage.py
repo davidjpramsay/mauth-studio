@@ -167,6 +167,10 @@ def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatc
     nested_folder = external_documents / "Year 10"
     nested_folder.mkdir(parents=True)
     (nested_folder / "Term 1.test.json").write_text('{"name":"Term 1"}\n', encoding="utf-8")
+    (external_documents / "Term 2.mauth").write_text(
+        '{"format":"mauth-studio-document","schemaVersion":1,"name":"Term 2"}\n',
+        encoding="utf-8",
+    )
     (external_documents / "Ignore.pdf").write_text("not a mauth file", encoding="utf-8")
     monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
     monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(workspace_root))
@@ -177,7 +181,13 @@ def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatc
 
     assert project["workspacePath"] == str(external_documents.resolve())
     assert project["documentsPath"] == str(external_documents.resolve())
-    assert [file["path"] for file in files] == ["tests", "tests/Year 10", "tests/Year 10/Term 1.test.json"]
+    assert [file["path"] for file in files] == [
+        "tests",
+        "tests/Year 10",
+        "tests/Term 2.mauth",
+        "tests/Year 10/Term 1.test.json",
+    ]
+    assert next(file for file in files if file["path"] == "tests/Term 2.mauth")["fileType"] == "test"
     assert (external_documents / ".mauth" / "project.json").exists()
     assert not any(file["path"].endswith("Ignore.pdf") for file in files)
 
@@ -188,8 +198,13 @@ def test_project_storage_can_open_external_documents_folder(tmp_path, monkeypatc
     assert [file["path"] for file in reloaded_service.list_files(reloaded_project["id"])] == [
         "tests",
         "tests/Year 10",
+        "tests/Term 2.mauth",
         "tests/Year 10/Term 1.test.json",
     ]
+
+
+def test_project_storage_preserves_mauth_extension_when_import_names_conflict():
+    assert FileProjectStorage._import_name_parts("Exam.mauth", "file") == ("Exam", ".mauth")
 
 
 def test_project_storage_restores_external_folder_without_validating_cloud_path(tmp_path, monkeypatch):

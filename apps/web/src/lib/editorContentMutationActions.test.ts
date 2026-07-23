@@ -66,7 +66,9 @@ function runtime() {
 
 test("scoped update actions preserve question, part, subpart, and selected-column roots", () => {
   const { controller, actions } = runtime();
-  controller.updateQuestion("question-1", { marks: 4 });
+  controller.updateQuestion("question-1", { text: "Question wording", marks: 4 });
+  controller.updatePart("question-1", "part-1", { text: "Part wording" });
+  controller.updateSubpart("question-1", "part-1", "subpart-1", { text: "Subpart wording" });
   controller.updateContentBlock("question-1", "question-block", { text: "Question" });
   controller.updatePartContentBlock("question-1", "part-1", "part-block", { text: "Part" });
   controller.updateSubpartContentBlock("question-1", "part-1", "subpart-1", "subpart-block", { text: "Subpart" });
@@ -88,6 +90,8 @@ test("scoped update actions preserve question, part, subpart, and selected-colum
     actions.map((action) => (action.type === "module.update" ? [action.type, action.scope.kind, action.blockId] : [action.type])),
     [
       ["question.update"],
+      ["part.update"],
+      ["subpart.update"],
       ["module.update", "question", "question-block"],
       ["module.update", "part", "part-block"],
       ["module.update", "subpart", "subpart-block"],

@@ -23,6 +23,42 @@ test("graph2d validation rejects non-boolean function solution-layer state", () 
   assert.ok(issues.some((issue) => issue.path === "diagram.functions[0].solutionOnly"));
 });
 
+test("graph2d validation accepts angle markers attached to connected line segments", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "graph2d",
+      functions: [],
+      features: [
+        { id: "AB", kind: "line_segment", x1: 0, y1: 0, x2: 3, y2: 0 },
+        { id: "AC", kind: "line_segment", x1: 0, y1: 0, x2: 2, y2: 4 },
+        { id: "angle-A", kind: "angle_marker", firstSegmentId: "AB", secondSegmentId: "AC", size: 0.35 },
+      ],
+    },
+    "diagram",
+    issues,
+  );
+  assert.deepEqual(issues, []);
+});
+
+test("graph2d validation rejects angle-marker segments without a shared endpoint", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "graph2d",
+      functions: [],
+      features: [
+        { id: "AB", kind: "line_segment", x1: 0, y1: 0, x2: 3, y2: 0 },
+        { id: "CD", kind: "line_segment", x1: 4, y1: 1, x2: 5, y2: 2 },
+        { id: "angle-A", kind: "angle_marker", firstSegmentId: "AB", secondSegmentId: "CD", size: 0.35 },
+      ],
+    },
+    "diagram",
+    issues,
+  );
+  assert.ok(issues.some((issue) => issue.path === "diagram.features[2].secondSegmentId"));
+});
+
 function geometryConfig(solutionOnly: unknown) {
   return {
     type: "geometry2d",

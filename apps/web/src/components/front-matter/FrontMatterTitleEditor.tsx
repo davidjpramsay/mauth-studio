@@ -43,6 +43,7 @@ export function FrontMatterTitleEditor({
   const logoHasDraftChanges = normalizedLogoNameDraft !== selectedLogo.name || frontMatter.schoolName !== selectedLogoSchoolName;
   const titlePageTemplate = frontMatter.titlePageTemplate ?? "standard";
   const isCompactDocumentTemplate = titlePageTemplate === "worksheet" || titlePageTemplate === "notes";
+  const preserveAssessmentTitleCase = isCompactDocumentTemplate || titlePageTemplate === "investigation";
   const exam = normalizeExamTitlePage(frontMatter.exam);
   const activeExamSectionPreset = examSectionPresetById(exam.sectionPreset);
 
@@ -64,7 +65,7 @@ export function FrontMatterTitleEditor({
         <InlineSummaryTitle
           label="Title"
           summary={`${frontMatter.subjectTitle} - ${
-            isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+            preserveAssessmentTitleCase ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
           }`}
         />
       }
@@ -206,12 +207,18 @@ export function FrontMatterTitleEditor({
           />
         </label>
         <label className="flex flex-col gap-2 text-xs font-medium">
-          {titlePageTemplate === "notes" ? "Notes title" : titlePageTemplate === "worksheet" ? "Worksheet title" : "Assessment title"}
+          {titlePageTemplate === "notes"
+            ? "Notes title"
+            : titlePageTemplate === "worksheet"
+              ? "Worksheet title"
+              : titlePageTemplate === "investigation"
+                ? "Investigation title"
+                : "Assessment title"}
           <input
-            value={isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)}
+            value={preserveAssessmentTitleCase ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)}
             onChange={(event) =>
               onChange({
-                assessmentTitle: isCompactDocumentTemplate ? event.target.value : assessmentTitleText(event.target.value),
+                assessmentTitle: preserveAssessmentTitleCase ? event.target.value : assessmentTitleText(event.target.value),
               })
             }
             className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -241,7 +248,7 @@ export function FrontMatterTitleEditor({
             ) : null}
           </>
         ) : null}
-        {titlePageTemplate !== "notes" ? (
+        {titlePageTemplate !== "notes" && titlePageTemplate !== "investigation" ? (
           <label className="flex flex-col gap-2 text-xs font-medium">
             Start questions at
             <input

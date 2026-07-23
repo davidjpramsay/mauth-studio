@@ -83,6 +83,47 @@ test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
   assert.equal(snapshot.questions[0].modules[1].lines, 6);
 });
 
+test("buildMauthAgentSnapshot reports holistic investigation marks without questions", () => {
+  const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter & Record<string, unknown>, TestFormattingConfig>({
+    document: {
+      frontMatter: {
+        assessmentTitle: "Investigation 2",
+        logoId: "school",
+        titlePageTemplate: "investigation",
+        investigation: {
+          criteria: [
+            {
+              id: "criterion-1",
+              heading: "Criterion 1",
+              guidance: "Evidence",
+              scoringMode: "holistic",
+              allocations: [
+                { id: "level-4", marks: 4, description: "Complete" },
+                { id: "level-3", marks: 3, description: "Substantial" },
+                { id: "level-2", marks: 2, description: "Partial" },
+                { id: "level-1", marks: 1, description: "Limited" },
+              ],
+            },
+          ],
+        },
+      },
+      formattingConfig: { showMarks: true },
+      questions: [],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: null,
+      activeRevision: null,
+      dirty: false,
+      saveStatus: "draft",
+    },
+  });
+
+  assert.equal(snapshot.questionCount, 0);
+  assert.equal(snapshot.totalMarks, 4);
+});
+
 test("buildMauthAgentSnapshot exposes a shared selected choice answer and its ticks", () => {
   const snapshot = snapshotFor([
     {
@@ -124,7 +165,13 @@ test("buildMauthAgentSnapshot exposes section headings and document flow", () =>
       frontMatter: { assessmentTitle: "Calculus", logoId: "school" },
       formattingConfig: { showMarks: true },
       questions: [question([textBlock("b1", "Choose the correct response.")])],
-      sectionHeadings: [{ id: "section-1", title: "Multiple choice" }],
+      sectionHeadings: [
+        {
+          id: "section-1",
+          title: "Multiple choice",
+          titlePage: { instructionsBody: "No calculator.", showInstructions: true },
+        },
+      ],
       documentFlow: [
         { kind: "sectionHeading", id: "section-1" },
         { kind: "question", id: "q1" },
@@ -141,7 +188,13 @@ test("buildMauthAgentSnapshot exposes section headings and document flow", () =>
     generatedAt: "2026-05-31T00:00:00.000Z",
   });
 
-  assert.deepEqual(snapshot.sectionHeadings, [{ id: "section-1", title: "Multiple choice" }]);
+  assert.deepEqual(snapshot.sectionHeadings, [
+    {
+      id: "section-1",
+      title: "Multiple choice",
+      titlePage: { instructionsBody: "No calculator.", showInstructions: true },
+    },
+  ]);
   assert.deepEqual(snapshot.documentFlow, [
     { kind: "sectionHeading", id: "section-1", title: "Multiple choice" },
     { kind: "question", id: "q1", label: "Question 1" },

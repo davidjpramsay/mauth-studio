@@ -85,8 +85,8 @@ Use section headings for document-level worksheet/course labels such as `Multipl
 
 Available document actions:
 
-- `sectionHeading.add`: add `{ id, title }`, optionally before or after a `{ kind, id }` flow item.
-- `sectionHeading.update`: rename a heading with `patch.title`.
+- `sectionHeading.add`: add `{ id, title }`, optionally with standard-test `titlePage` overrides and optionally before or after a `{ kind, id }` flow item.
+- `sectionHeading.update`: update `patch.title` and/or standard-test `patch.titlePage` overrides. The title is the T subtitle; supported overrides are name and mark labels, declaration fields, and instruction fields.
 - `sectionHeading.delete`: remove a heading from `sectionHeadings` and `documentFlow`.
 - `sectionHeading.reorder`: move a heading before or after a question or another heading.
 

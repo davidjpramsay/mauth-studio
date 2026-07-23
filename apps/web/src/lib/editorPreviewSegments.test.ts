@@ -126,6 +126,81 @@ test("buildPreviewSegments follows document flow and adds compact template heade
   assert.equal(segments[2].spacingTop > 0, true);
 });
 
+test("standard tests render section headings as section title pages with section-only marks", () => {
+  const calculatorFreePart = part("p1");
+  calculatorFreePart.marks = 4;
+  const calculatorAssumedPart = part("p2");
+  calculatorAssumedPart.marks = 3;
+  const calculatorFree = question("q1", [], [calculatorFreePart]);
+  const calculatorAssumed = question("q2", [], [calculatorAssumedPart]);
+  calculatorFree.pageBreakAfter = true;
+  const segments = buildPreviewSegments({
+    frontMatter: { titlePageTemplate: "standard" } as FrontMatterConfig,
+    questions: [calculatorFree, calculatorAssumed],
+    sectionHeadings: [
+      { id: "h1", title: "Section One: Calculator-Free" },
+      { id: "h2", title: "Section Two: Calculator-Assumed" },
+    ],
+    documentFlow: [
+      { kind: "sectionHeading", id: "h1" },
+      { kind: "question", id: "q1" },
+      { kind: "sectionHeading", id: "h2" },
+      { kind: "question", id: "q2" },
+    ],
+    showSolutions: false,
+    normalizeDocumentFlow,
+  });
+
+  assert.deepEqual(
+    segments.map((segment) => [segment.kind, segment.id, segment.sectionMarks]),
+    [
+      ["question-start", "q1:start", undefined],
+      ["part-group", "q1:part-group:p1:0", undefined],
+      ["page-break", "q1:page-break", undefined],
+      ["section-title-page", "section-title-page:h2", 3],
+      ["page-break", "section-title-page:h2:page-break-after", undefined],
+      ["question-start", "q2:start", undefined],
+      ["part-group", "q2:part-group:p2:0", undefined],
+    ],
+  );
+});
+
+test("standard tests support an implicit first section when only later title pages are requested", () => {
+  const firstPart = part("p1");
+  firstPart.marks = 4;
+  const secondPart = part("p2");
+  secondPart.marks = 3;
+  const segments = buildPreviewSegments({
+    frontMatter: { titlePageTemplate: "standard" } as FrontMatterConfig,
+    questions: [question("q1", [], [firstPart]), question("q2", [], [secondPart])],
+    sectionHeadings: [{ id: "h2", title: "Section Two: Calculator-Assumed" }],
+    documentFlow: [
+      { kind: "question", id: "q1" },
+      { kind: "sectionHeading", id: "h2" },
+      { kind: "question", id: "q2" },
+    ],
+    showSolutions: false,
+    normalizeDocumentFlow,
+  });
+
+  assert.deepEqual(
+    segments.map((segment) => [segment.kind, segment.id, segment.sectionMarks]),
+    [
+      ["question-start", "q1:start", undefined],
+      ["part-group", "q1:part-group:p1:0", undefined],
+      ["page-break", "section-title-page:h2:page-break-before", undefined],
+      ["section-title-page", "section-title-page:h2", 3],
+      ["page-break", "section-title-page:h2:page-break-after", undefined],
+      ["question-start", "q2:start", undefined],
+      ["part-group", "q2:part-group:p2:0", undefined],
+    ],
+  );
+  assert.equal(
+    segments.some((segment) => segment.kind === "section-heading"),
+    false,
+  );
+});
+
 test("buildPreviewSegments splits part groups around subpart page breaks", () => {
   const questionPart = part(
     "p1",

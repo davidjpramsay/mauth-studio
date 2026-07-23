@@ -174,12 +174,21 @@ export function buildDocumentToc({
 }: BuildDocumentTocOptions) {
   const isNotesTemplate = frontMatter.titlePageTemplate === "notes";
   const isCompactDocumentTemplate = frontMatter.titlePageTemplate === "worksheet" || isNotesTemplate;
+  const isInvestigationTemplate = frontMatter.titlePageTemplate === "investigation";
   const items: DocumentTocItem[] = [
     {
       id: SCROLL_ANCHOR_FRONT_MATTER,
-      label: isNotesTemplate ? "Notes heading" : frontMatter.titlePageTemplate === "worksheet" ? "Worksheet heading" : "Title Page",
+      label: isNotesTemplate
+        ? "Notes heading"
+        : frontMatter.titlePageTemplate === "worksheet"
+          ? "Worksheet heading"
+          : isInvestigationTemplate
+            ? "Investigation"
+            : "Title Page",
       summary: `${frontMatter.subjectTitle} - ${
-        isCompactDocumentTemplate ? frontMatter.assessmentTitle : assessmentTitleText(frontMatter.assessmentTitle)
+        isCompactDocumentTemplate || isInvestigationTemplate
+          ? frontMatter.assessmentTitle
+          : assessmentTitleText(frontMatter.assessmentTitle)
       }`,
       kind: "title",
       depth: 0,
@@ -191,7 +200,6 @@ export function buildDocumentToc({
   const questionMap = new Map(questions.map((question, index) => [question.id, { question, questionIndex: index }]));
   const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
   const normalizedFlow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
-
   normalizedFlow.forEach((flowItem) => {
     if (flowItem.kind === "sectionHeading") {
       const heading = sectionHeadingMap.get(flowItem.id);
@@ -200,7 +208,11 @@ export function buildDocumentToc({
       items.push({
         id: headingAnchor,
         label: heading.title.trim() || "Section heading",
-        summary: isNotesTemplate ? "Notes section" : "Worksheet section",
+        summary: isNotesTemplate
+          ? "Notes section"
+          : frontMatter.titlePageTemplate === "standard"
+            ? "Test section title page"
+            : "Worksheet section",
         kind: "sectionHeading",
         depth: 0,
         editorAnchor: headingAnchor,

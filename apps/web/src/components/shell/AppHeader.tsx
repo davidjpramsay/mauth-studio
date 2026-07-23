@@ -43,10 +43,14 @@ export interface AppHeaderProps {
   systemStatusState: SystemStatusState;
   darkMode: boolean;
   supportsSolutionTools: boolean;
+  supportsSolutionValidation: boolean;
+  isInvestigationTemplate: boolean;
   showSolutions: boolean;
   effectiveShowSolutions: boolean;
   printModeLabel: string;
   printModeTitle: string;
+  studentModeLabel: string;
+  solutionModeLabel: string;
   solutionIssueCount: number;
   solutionErrorCount: number;
   canUndo: boolean;
@@ -78,10 +82,14 @@ export function AppHeader({
   systemStatusState,
   darkMode,
   supportsSolutionTools,
+  supportsSolutionValidation,
+  isInvestigationTemplate,
   showSolutions,
   effectiveShowSolutions,
   printModeLabel,
   printModeTitle,
+  studentModeLabel,
+  solutionModeLabel,
   solutionIssueCount,
   solutionErrorCount,
   canUndo,
@@ -240,10 +248,14 @@ export function AppHeader({
             <SolutionModeControls
               editorDocumentOpen={editorDocumentOpen}
               supportsSolutionTools={supportsSolutionTools}
+              supportsSolutionValidation={supportsSolutionValidation}
+              isInvestigationTemplate={isInvestigationTemplate}
               showSolutions={showSolutions}
               effectiveShowSolutions={effectiveShowSolutions}
               printModeLabel={printModeLabel}
               printModeTitle={printModeTitle}
+              studentModeLabel={studentModeLabel}
+              solutionModeLabel={solutionModeLabel}
               solutionIssueCount={solutionIssueCount}
               solutionErrorCount={solutionErrorCount}
               onShowSolutionsChange={onShowSolutionsChange}

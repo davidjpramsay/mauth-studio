@@ -7,10 +7,14 @@ import { cn } from "@/lib/utils";
 export function SolutionModeControls({
   editorDocumentOpen,
   supportsSolutionTools,
+  supportsSolutionValidation,
+  isInvestigationTemplate,
   showSolutions,
   effectiveShowSolutions,
   printModeLabel,
   printModeTitle,
+  studentModeLabel,
+  solutionModeLabel,
   solutionIssueCount,
   solutionErrorCount,
   onShowSolutionsChange,
@@ -19,10 +23,14 @@ export function SolutionModeControls({
 }: {
   editorDocumentOpen: boolean;
   supportsSolutionTools: boolean;
+  supportsSolutionValidation: boolean;
+  isInvestigationTemplate: boolean;
   showSolutions: boolean;
   effectiveShowSolutions: boolean;
   printModeLabel: string;
   printModeTitle: string;
+  studentModeLabel: string;
+  solutionModeLabel: string;
   solutionIssueCount: number;
   solutionErrorCount: number;
   onShowSolutionsChange: (showSolutions: boolean) => void;
@@ -35,7 +43,7 @@ export function SolutionModeControls({
         ? "border-red-300/25 bg-red-500/15 text-red-50 hover:bg-red-500/25 hover:text-white"
         : "border-amber-300/25 bg-amber-500/15 text-amber-50 hover:bg-amber-500/25 hover:text-white"
       : "border-blue-300/20 bg-slate-950/20 text-blue-100 hover:bg-blue-500/15 hover:text-white";
-  const modeCopy = solutionModeCopy({ supportsSolutionTools, effectiveShowSolutions });
+  const modeCopy = solutionModeCopy({ supportsSolutionTools, effectiveShowSolutions, isInvestigationTemplate });
 
   return (
     <>
@@ -51,7 +59,7 @@ export function SolutionModeControls({
             size="sm"
             role="radio"
             aria-checked={!showSolutions}
-            title="Edit the student copy"
+            title={`Edit the ${studentModeLabel.toLowerCase()} copy`}
             onClick={() => onShowSolutionsChange(false)}
             className={cn(
               "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
@@ -59,7 +67,7 @@ export function SolutionModeControls({
             )}
           >
             <EyeOff className="size-3.5" aria-hidden="true" />
-            <span>Student</span>
+            <span>{studentModeLabel}</span>
           </Button>
           <Button
             type="button"
@@ -67,7 +75,7 @@ export function SolutionModeControls({
             size="sm"
             role="radio"
             aria-checked={showSolutions}
-            title="Edit the solutions copy"
+            title={`Edit the ${solutionModeLabel.toLowerCase()} copy`}
             onClick={() => onShowSolutionsChange(true)}
             className={cn(
               "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
@@ -75,7 +83,7 @@ export function SolutionModeControls({
             )}
           >
             <Eye className="size-3.5" aria-hidden="true" />
-            <span>Solutions</span>
+            <span>{solutionModeLabel}</span>
           </Button>
         </div>
       ) : null}
@@ -91,7 +99,7 @@ export function SolutionModeControls({
           <span className="hidden 2xl:inline">{modeCopy.layerLabel}</span>
         </span>
       ) : null}
-      {editorDocumentOpen && supportsSolutionTools ? (
+      {editorDocumentOpen && supportsSolutionValidation ? (
         <Button
           type="button"
           variant="ghost"

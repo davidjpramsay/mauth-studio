@@ -148,6 +148,7 @@ test("frontMatterForTemplate returns cloned template front matter", () => {
   assert.equal(examFrontMatter.titlePageTemplate, "exam");
   assert.equal(frontMatterForTemplate("worksheet").titlePageTemplate, "worksheet");
   assert.equal(frontMatterForTemplate("notes").titlePageTemplate, "notes");
+  assert.equal(frontMatterForTemplate("investigation").titlePageTemplate, "investigation");
   assert.equal(frontMatterForTemplate("standard").titlePageTemplate, "standard");
   assert.notEqual(freshExamFrontMatter.assessmentTitle, "Changed");
 });
@@ -218,8 +219,8 @@ test("createTemplateEditorDocumentPlan preserves logo context and records a clea
   assert.equal(standardPlan.document.formattingConfig.id, "high-school-mathematics-test");
 });
 
-test("new tests, exams, and worksheets start without questions", () => {
-  for (const template of ["standard", "exam", "worksheet"] as const) {
+test("new tests, exams, worksheets, and investigations start without questions", () => {
+  for (const template of ["standard", "exam", "worksheet", "investigation"] as const) {
     const plan = createTemplateEditorDocumentPlan({
       template,
       id: createIdFactory(),
@@ -232,5 +233,9 @@ test("new tests, exams, and worksheets start without questions", () => {
     assert.deepEqual(plan.document.documentFlow, []);
     assert.equal(plan.activeQuestionId, "");
     assert.equal(plan.anchor, "");
+    if (template === "investigation") {
+      assert.equal(plan.document.formattingConfig.id, "investigation");
+      assert.equal(plan.document.frontMatter.investigation?.criteria.length, 4);
+    }
   }
 });

@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { MauthSystemStatus, ProjectSummary } from "@mauth-studio/shared";
-import { Check, Copy, RefreshCw, Terminal, X } from "lucide-react";
+import { Bot, Check, Copy, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { DraftAutosaveStatus, HeaderSaveStatus } from "@/hooks/useProjectFileStatus";
 import type { MauthWebBuildInfo, SystemStatusState } from "@/hooks/useSystemStatusController";
@@ -87,6 +87,48 @@ function LauncherCommandRow({ command }: { command: LauncherCommand }) {
   );
 }
 
+function ConnectorCopyRow({ label, text, multiline = false }: { label: string; text: string; multiline?: boolean }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyText() {
+    try {
+      await navigator.clipboard?.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-1 border-b border-slate-200/70 py-2 last:border-b-0 md:grid-cols-[10rem_minmax(0,1fr)]">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="flex min-w-0 items-start gap-2">
+        <code
+          className={cn(
+            "min-w-0 flex-1 select-all overflow-x-auto rounded-md bg-slate-950 px-2 py-1.5 font-mono text-xs leading-5 text-slate-50",
+            multiline && "max-h-40 whitespace-pre-wrap",
+          )}
+        >
+          {text}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          title={`Copy ${label.toLowerCase()}`}
+          aria-label={`Copy ${label.toLowerCase()}`}
+          onClick={() => void copyText()}
+        >
+          {copied ? <Check className="size-4 text-emerald-600" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+        </Button>
+      </dd>
+    </div>
+  );
+}
+
 interface SystemStatusPanelProps {
   open: boolean;
   status: MauthSystemStatus | null;
@@ -126,6 +168,36 @@ export function SystemStatusPanel({
   onRefresh,
   onClose,
 }: SystemStatusPanelProps) {
+  const [connectorInfo, setConnectorInfo] = useState<MauthAgentConnectorInfo | null>(null);
+  const [connectorMessage, setConnectorMessage] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const desktop = window.mauthDesktop;
+    if (!desktop) {
+      setConnectorInfo(null);
+      setConnectorMessage("Agent setup is shown in the standalone or Electron development app.");
+      return;
+    }
+    let cancelled = false;
+    setConnectorMessage("Checking the installed connector…");
+    void desktop
+      .getAgentConnectorInfo()
+      .then((info) => {
+        if (cancelled) return;
+        setConnectorInfo(info);
+        setConnectorMessage(info.available ? "The connector is ready." : "The connector is missing from this app build.");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConnectorInfo(null);
+        setConnectorMessage("Mauth Studio could not read the connector setup details.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const workspace = status?.workspace;
@@ -190,6 +262,37 @@ export function SystemStatusPanel({
               </dl>
             ) : null}
             <p className="mt-2 text-xs leading-5 text-slate-500">{launcherGuidance.folderNote}</p>
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2">
+              <Bot className="size-4 text-slate-500" aria-hidden="true" />
+              <h3 className="text-sm font-semibold text-slate-950">Agent setup</h3>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Set up each agent once, then keep Mauth Studio open while Codex or Claude edits the current document. The connector discovers
+              the app securely at runtime; no repository checkout, Node installation, API address, or saved token is required.
+            </p>
+            <dl className="mt-2 rounded-lg border border-slate-200 px-3">
+              <SystemStatusRow
+                label="Connector"
+                value={connectorInfo ? `${connectorInfo.bundled ? "Bundled" : "Development"} · ${connectorMessage}` : connectorMessage}
+              />
+              {connectorInfo?.connectorPath ? <SystemStatusRow label="Installed at" value={connectorInfo.connectorPath} /> : null}
+              {connectorInfo?.available ? (
+                <>
+                  <ConnectorCopyRow label="Codex" text={connectorInfo.codexSetupCommand} />
+                  <ConnectorCopyRow label="Claude Code" text={connectorInfo.claudeCodeSetupCommand} />
+                  <ConnectorCopyRow label="Claude Desktop" text={connectorInfo.claudeDesktopConfiguration} multiline />
+                  <ConnectorCopyRow label="Connection test" text={connectorInfo.doctorCommand} />
+                </>
+              ) : null}
+            </dl>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Run the Codex or Claude Code command in Terminal. For Claude Desktop, merge the copied <code>mauth</code> entry into its
+              Developer configuration and restart Claude Desktop. If Mauth Studio is moved to another folder, run setup again so the saved
+              path stays valid.
+            </p>
           </section>
 
           <section>

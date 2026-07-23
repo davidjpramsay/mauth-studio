@@ -1,8 +1,37 @@
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 
+import { graphAngleMarkerSegmentIds } from "./graphFeatureGeometry.ts";
+
 export const GRAPH_COLORS = ["#1677ff", "#7955ff", "#0f766e", "#b45309", "#be123c"];
 export const GRAPH_LABELS = ["f", "g", "h", "p", "q"];
 export const DEFAULT_GRAPH_FUNCTION_STROKE_WIDTH = 2.5;
+
+export type GraphAxisArrowKey = "showXAxisMinArrow" | "showXAxisMaxArrow" | "showYAxisMinArrow" | "showYAxisMaxArrow";
+
+export interface GraphAxisArrowVisibility {
+  xMin: boolean;
+  xMax: boolean;
+  yMin: boolean;
+  yMax: boolean;
+}
+
+function axisEndpointIsOrigin(value: number | undefined) {
+  return Number.isFinite(value) && Math.abs(value ?? 0) < 1e-9;
+}
+
+export function graphAxisArrowVisibility(graphConfig?: GraphConfig | null): GraphAxisArrowVisibility {
+  if (graphConfig?.showArrows === false) return { xMin: false, xMax: false, yMin: false, yMax: false };
+  return {
+    xMin: graphConfig?.showXAxisMinArrow ?? !axisEndpointIsOrigin(graphConfig?.xMin),
+    xMax: graphConfig?.showXAxisMaxArrow ?? !axisEndpointIsOrigin(graphConfig?.xMax),
+    yMin: graphConfig?.showYAxisMinArrow ?? !axisEndpointIsOrigin(graphConfig?.yMin),
+    yMax: graphConfig?.showYAxisMaxArrow ?? !axisEndpointIsOrigin(graphConfig?.yMax),
+  };
+}
+
+export function graphAxisArrowPatch(key: GraphAxisArrowKey, enabled: boolean): Partial<GraphConfig> {
+  return { showArrows: true, [key]: enabled };
+}
 
 export const DEFAULT_2D_GRAPH: GraphConfig = {
   type: "graph2d",
@@ -242,7 +271,7 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
             ? "name"
             : "name_and_coordinates";
 
-  return {
+  const feature: GraphFeature = {
     id: id("feature"),
     kind,
     label: defaultLabel,
@@ -275,6 +304,8 @@ export function createGraphFeature(kind: GraphFeatureKind, index: number, graphC
     labelX: undefined,
     labelY: undefined,
   };
+  const segmentIds = kind === "angle_marker" ? graphAngleMarkerSegmentIds(feature, graphConfig?.features ?? []) : null;
+  return segmentIds ? { ...feature, ...segmentIds } : feature;
 }
 
 export function createAuthoredGraphFeature(
@@ -288,7 +319,8 @@ export function createAuthoredGraphFeature(
 }
 
 export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): GraphFeature[] {
-  return (graphConfig?.features ?? []).flatMap((feature, index) => {
+  const sourceFeatures = graphConfig?.features ?? [];
+  return sourceFeatures.flatMap((feature, index) => {
     if (feature.kind === "region_clipped_by_curve") return [];
 
     const kind = normalFeatureKind(feature.kind);
@@ -298,6 +330,7 @@ export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): Graph
     const pointY =
       feature.kind === "point_between_points" ? (feature.y1 ?? 0) + ((feature.y2 ?? 0) - (feature.y1 ?? 0)) * ratio : (feature.y ?? 0);
 
+    const segmentIds = kind === "angle_marker" ? graphAngleMarkerSegmentIds(feature, sourceFeatures) : null;
     return {
       id: feature.id ?? `feature-${index}`,
       kind,
@@ -316,6 +349,7 @@ export function graphFeaturesFromConfig(graphConfig?: GraphConfig | null): Graph
       y1: feature.y1 ?? (kind === "angle_marker" ? 0 : (graphConfig?.yMin ?? DEFAULT_2D_GRAPH.yMin)),
       x2: feature.x2 ?? (kind === "angle_marker" ? 0.7 : (graphConfig?.xMax ?? DEFAULT_2D_GRAPH.xMax)),
       y2: feature.y2 ?? (kind === "angle_marker" ? 0.7 : (graphConfig?.yMax ?? DEFAULT_2D_GRAPH.yMax)),
+      ...(segmentIds ?? {}),
       rightAngle: feature.rightAngle === true,
       ratio,
       functionIndex: feature.functionIndex ?? 0,

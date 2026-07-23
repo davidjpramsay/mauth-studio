@@ -8,6 +8,9 @@ import type { FrontMatterConfig } from "./frontMatterConfig.ts";
 import { selectedLogoForFrontMatter, type LogoAsset } from "./logoLibrary.ts";
 import { testFileDisplayName, testPathBasename, testPathFromProjectPath } from "./projectFiles.ts";
 
+export const MAUTH_DOCUMENT_FORMAT = "mauth-studio-document";
+export const MAUTH_DOCUMENT_SCHEMA_VERSION = 1;
+
 export interface ProjectSerializableDocument {
   frontMatter: FrontMatterConfig;
   questions: QuestionBlock[];
@@ -70,8 +73,14 @@ export function serializeProjectDocumentSnapshot({
     logo: currentLogo,
   });
 
+  const savedDocument = {
+    format: MAUTH_DOCUMENT_FORMAT,
+    schemaVersion: MAUTH_DOCUMENT_SCHEMA_VERSION,
+    ...savedTest,
+  };
+
   return {
-    content: JSON.stringify(savedTest, null, 2),
+    content: JSON.stringify(savedDocument, null, 2),
     fileType: projectFileTypeForFrontMatter(document.frontMatter),
     fingerprint: fingerprintProjectDocument({
       document: { ...document, formattingConfig: nextFormattingConfig, logo: currentLogo },
