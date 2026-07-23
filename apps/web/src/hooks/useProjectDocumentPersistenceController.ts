@@ -109,7 +109,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
         kind: "file",
         fileType: serializedDocument.fileType,
         metadata: {
-          format: "saved-test-json",
+          format: "mauth-document",
           source: "mauth-studio",
         },
         baseRevision,
@@ -155,7 +155,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
       kind: "file",
       fileType: serializedDocument.fileType,
       metadata: {
-        format: "saved-test-json",
+        format: "mauth-document",
         source: "mauth-studio",
         recoveryFor: sourcePath,
         recoveryReason: "open-project-file-save-conflict",

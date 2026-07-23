@@ -44,6 +44,8 @@ Do not upload workspace data, browser profiles, generated PDFs, logs, or tempora
 6. Keep scratch artifacts in `workspace/`.
 7. Run the relevant tests or smoke checks before treating work as done.
 
+For a signed installed app, connect Codex or Claude once through **Help > Set Up Codex or Claude...**. The app contains the MCP connector, so assessment authoring does not require this repository, Node, pnpm, or separately downloaded agent files. A source checkout remains necessary only for Mauth development.
+
 ## Authoring Loop
 
 The target authoring loop is:

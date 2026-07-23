@@ -132,6 +132,9 @@ test("buildDocumentToc includes title, section, question, part, subpart, and mod
     ],
   );
   assert.equal(items.find((item) => item.label === "Question 4")?.summary, "Simplify the expression.");
+  assert.equal(items.find((item) => item.label === "Short answer")?.summary, "Test section title page");
+  assert.equal(items.find((item) => item.label === "Short answer")?.previewAnchor, "sh:section-1");
+  assert.notEqual(items.find((item) => item.label === "Short answer")?.previewAnchor, items[0].previewAnchor);
 });
 
 test("notes TOC uses note heading labels and question titles", () => {

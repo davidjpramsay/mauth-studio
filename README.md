@@ -18,7 +18,7 @@ If you are new to Mauth, start with the public download page:
 
 [davidjpramsay.github.io/mauth-studio](https://davidjpramsay.github.io/mauth-studio/)
 
-The current public build supports Apple Silicon Macs and is alpha software. Downloading the signed app is enough for normal teacher use. Clone the repository only when connecting the local agent tools or developing Mauth itself.
+The current public build supports Apple Silicon Macs and is alpha software. Downloading the signed app is enough for normal teacher use and for connecting Codex or Claude through the bundled Mauth Agent Connector. Clone the repository only when developing Mauth itself.
 
 Recommended setup:
 
@@ -60,32 +60,19 @@ Example:
 
 ## Install Mauth Studio
 
-Mauth Studio 0.1.1 is the first downloadable updater-enabled alpha release:
+Mauth Studio 0.1.2 is the current downloadable updater-enabled alpha release:
 
-[Download Mauth Studio 0.1.1](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.1)
+[Download Mauth Studio 0.1.2](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.2)
 
 Open the DMG under **Assets**, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
 
-Version 0.1.0 predates the in-app updater, so existing users must install 0.1.1 manually once. From 0.1.1 onward, Mauth checks the public alpha channel shortly after launch, asks before downloading, and asks again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
+Version 0.1.0 predates the in-app updater, so those users must install a newer build manually once. Updater-enabled Mauth builds check the public alpha channel shortly after launch, ask before downloading, and ask again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
 
 ## Connect Codex Or Claude
 
-The standalone app remains usable by external coding agents. The current helper commands live in this repository, so clone it and install the Node dependencies:
+Mauth Studio 0.1.2 includes a self-contained MCP connector. Keep the app in Applications, open it, then choose **Help > Set Up Codex or Claude…**. Copy the one-time Codex or Claude Code command, or merge the supplied `mauth` entry into Claude Desktop's Developer configuration. Keep Mauth Studio open while the agent is working.
 
-```bash
-git clone https://github.com/davidjpramsay/mauth-studio.git
-cd mauth-studio
-pnpm install
-```
-
-Open Mauth Studio, then verify automatic discovery of its dynamic local URL and per-launch bridge token:
-
-```bash
-pnpm agent:doctor
-pnpm agent:mcp
-```
-
-The token stays in the private runtime manifest and must not be copied into prompts or configuration files. See `docs/agent-local-setup.md` and `docs/agent-bridge.md`.
+The saved agent configuration points only to the signed connector inside the app. On each launch, that connector discovers the current dynamic local URL and private bridge token automatically; the token is not copied into prompts or configuration files. No source checkout, Node installation, or separate agent-files download is required. See `docs/agent-local-setup.md` and `docs/agent-bridge.md`.
 
 ## Develop From Source
 
@@ -103,6 +90,8 @@ Use the Electron development shell while changing the app:
 ```bash
 pnpm macos:dev
 ```
+
+The development shell starts watched FastAPI and Vite services on dynamic local ports. React and CSS edits update in the Electron window through Vite HMR, and API source edits trigger Uvicorn reloads. Restart `pnpm macos:dev` only after changing Electron main-process or packaging files. The installed standalone app remains a production build and receives source changes only through a deliberate install or published update.
 
 For a deliberate local installed-app checkpoint:
 
@@ -240,11 +229,11 @@ pnpm smoke:diagram-gallery
 
 ## Mauthdown
 
-Mauthdown is the editable source format for tests, exams, and worksheets. It is Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
+Normal app documents use the `.mauth` extension. They are structured, versioned JSON files that preserve the full editor state and can be opened from Finder in an installed build. Mauthdown (`.mauth.md`) is the separate text authoring and interchange format: Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
 
 ## Storage
 
-Project files are visible teacher files under `~/Documents/Mauth/Documents` by default or in another selected folder. On macOS, shared app state, autosave, reusable logos, and the remembered folder identity live under `~/Library/Application Support/Mauth Studio/storage`; project metadata and versions for an external selected folder remain in that folder's `.mauth` directory. Browser storage is only a fallback cache. Legacy repo-local `storage/` data is migration input or test data, not the normal save location. See `docs/storage.md`.
+Project files are visible `.mauth` teacher documents under `~/Documents/Mauth/Documents` by default or in another selected folder. Existing `.test.json` documents remain readable and retain their extension until deliberately renamed. On macOS, shared app state, autosave, reusable logos, and the remembered folder identity live under `~/Library/Application Support/Mauth Studio/storage`; project metadata and versions for an external selected folder remain in that folder's `.mauth` directory. Browser storage is only a fallback cache. Legacy repo-local `storage/` data is migration input or test data, not the normal save location. See `docs/storage.md`.
 
 ## Print
 

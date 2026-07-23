@@ -57,6 +57,8 @@ export interface DocumentNavigationWorkspaceProps {
   activeTocItemId: string;
   pageBreakQuestionIds: Set<string>;
   isNotesTemplate: boolean;
+  isStandardTestTemplate: boolean;
+  isInvestigationTemplate?: boolean;
   dragState: DocumentNavigationState;
   navigation: DocumentNavigationActions;
   questionLifecycle: QuestionNavigationLifecycle;
@@ -73,6 +75,8 @@ export function DocumentNavigationWorkspace({
   activeTocItemId,
   pageBreakQuestionIds,
   isNotesTemplate,
+  isStandardTestTemplate,
+  isInvestigationTemplate = false,
   dragState,
   navigation,
   questionLifecycle,
@@ -81,7 +85,7 @@ export function DocumentNavigationWorkspace({
   onOpenChange,
   onContextMenu,
 }: DocumentNavigationWorkspaceProps) {
-  const presentation = documentNavigationPresentationPlan({ open, isNotesTemplate });
+  const presentation = documentNavigationPresentationPlan({ open, isNotesTemplate, isStandardTestTemplate, isInvestigationTemplate });
   const handleContextMenu = (event: ReactMouseEvent<HTMLElement>, item: DocumentTocItem) =>
     onContextMenu(event, item.editorAnchor, presentation.contextMenuSurface);
 
@@ -105,6 +109,8 @@ export function DocumentNavigationWorkspace({
         onAddSectionHeading={sectionHeadingLifecycle.addSectionHeading}
         onAddQuestion={questionLifecycle.addQuestion}
         questionItemLabel={presentation.questionItemLabel}
+        sectionItemPresentation={presentation.sectionItemPresentation}
+        showStructureControls={presentation.showStructureControls}
         onAddPageBreakAfterQuestion={questionLifecycle.addPageBreakAfterQuestion}
         onMoveQuestion={questionPageBreakDrag.moveQuestionByKeyboard}
         onMoveSectionHeading={sectionHeadingLifecycle.moveSectionHeadingByKeyboard}
@@ -130,6 +136,7 @@ export function DocumentNavigationWorkspace({
         <DocumentNavigator
           items={items}
           activeItemId={activeTocItemId}
+          sectionItemPresentation={presentation.sectionItemPresentation}
           onJump={navigation.jumpToTocItem}
           onContextMenu={handleContextMenu}
         />

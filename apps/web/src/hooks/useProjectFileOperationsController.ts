@@ -11,6 +11,7 @@ import {
   projectPathContains,
   projectPathForTestPath,
   safeProjectFileName,
+  structuredMauthDocumentExtension,
   testFileDisplayName,
   testPathBasename,
   testPathFromProjectPath,
@@ -181,7 +182,13 @@ export function useProjectFileOperationsController({
           source.kind === "folder"
             ? `${testPathBasename(sourceTestPath)} copy`
             : `${testFileDisplayName(testPathBasename(sourceTestPath))} copy`;
-        const targetTestPath = uniqueTestPath(currentFiles, parentPath, baseName, source.kind);
+        const targetTestPath = uniqueTestPath(
+          currentFiles,
+          parentPath,
+          baseName,
+          source.kind,
+          source.kind === "file" ? (structuredMauthDocumentExtension(sourceTestPath) ?? undefined) : undefined,
+        );
         const targetFilePath = projectPathForTestPath(targetTestPath);
         const duplicatingActiveEditor = sourcePaths.length === 1 && source.kind === "file" && filePath === activeProjectFilePath;
         if (duplicatingActiveEditor) {
@@ -230,7 +237,10 @@ export function useProjectFileOperationsController({
       requireValue: true,
     });
     if (requestedName === null) return;
-    const newName = source.kind === "folder" ? safeProjectFileName(requestedName) : ensureTestFileName(requestedName);
+    const newName =
+      source.kind === "folder"
+        ? safeProjectFileName(requestedName)
+        : ensureTestFileName(requestedName, structuredMauthDocumentExtension(sourceTestPath) ?? undefined);
     if (!newName) return;
     const targetTestPath = joinTestPath(parentTestPath(sourceTestPath), newName);
     const targetFilePath = projectPathForTestPath(targetTestPath);

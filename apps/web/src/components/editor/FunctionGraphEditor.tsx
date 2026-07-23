@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
@@ -6,6 +6,9 @@ import { Latex } from "@/components/Latex";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { snapImplicitRelationPointAtX, snapImplicitRelationPointAtY } from "@/components/graphs/FunctionGraph";
 import { Button } from "@/components/ui/button";
+import { GraphAngleMarkerControls } from "@/components/editor/GraphAngleMarkerControls";
+import { GraphAxisArrowControls } from "@/components/editor/GraphAxisArrowControls";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import {
   GRAPH_COLORS,
   GRAPH_ANGLE_MARKER_LABEL_MODES,
@@ -37,72 +40,6 @@ import { cn } from "@/lib/utils";
 
 function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
-
-function numberInputSpinnerMin(min?: number, step?: number) {
-  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
-  return min;
-}
-
-function numberInputSpinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
-  if (step !== 1 || nextValue === "") return nextValue;
-  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
-  if (inputType) return nextValue;
-
-  const previous = Number(previousValue);
-  const next = Number(nextValue);
-  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
-  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
-
-  const previousFraction = previous - Math.trunc(previous);
-  const nextFraction = next - Math.trunc(next);
-  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
-
-  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
-}
-
-function DraftNumberInput({
-  value,
-  fallbackValue,
-  min,
-  step,
-  className,
-  onChange,
-}: {
-  value?: number;
-  fallbackValue?: number;
-  min?: number;
-  step?: number;
-  className?: string;
-  onChange: (value: number | undefined) => void;
-}) {
-  const [draftValue, setDraftValue] = useState<string | null>(null);
-  const displayValue = draftValue ?? numberInputValue(value ?? fallbackValue);
-
-  return (
-    <input
-      type="number"
-      min={numberInputSpinnerMin(min, step)}
-      step={step}
-      value={displayValue}
-      onChange={(event) => {
-        const nextValue = numberInputSpinnerValue(event.target.value, displayValue, step, event.nativeEvent);
-        setDraftValue(nextValue);
-        if (nextValue === "") {
-          onChange(undefined);
-          return;
-        }
-        const parsed = Number(nextValue);
-        if (Number.isFinite(parsed)) onChange(parsed);
-      }}
-      onBlur={() => setDraftValue(null)}
-      className={className}
-    />
-  );
 }
 
 function InlineSummaryTitle({ label, summary }: { label: ReactNode; summary?: string }) {
@@ -359,14 +296,6 @@ export function FunctionGraphEditor({
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={config.showArrows ?? true}
-                    onChange={(event) => patchConfig({ showArrows: event.target.checked })}
-                  />
-                  Axis arrows
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
                     checked={config.showAxisLabels ?? true}
                     onChange={(event) => patchConfig({ showAxisLabels: event.target.checked })}
                   />
@@ -382,40 +311,41 @@ export function FunctionGraphEditor({
                 </label>
               </div>
             </div>
+            <GraphAxisArrowControls config={config} onChange={patchConfig} className="mt-3" />
             <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Domain min
-                <input
-                  type="number"
-                  value={numberInputValue(config.xMin)}
-                  onChange={(event) => patchConfig({ xMin: optionalNumber(event.target.value) })}
+                <NumericExpressionInput
+                  value={config.xMin}
+                  ariaLabel="Domain minimum"
+                  onValueChange={(value) => patchConfig({ xMin: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Domain max
-                <input
-                  type="number"
-                  value={numberInputValue(config.xMax)}
-                  onChange={(event) => patchConfig({ xMax: optionalNumber(event.target.value) })}
+                <NumericExpressionInput
+                  value={config.xMax}
+                  ariaLabel="Domain maximum"
+                  onValueChange={(value) => patchConfig({ xMax: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Range min
-                <input
-                  type="number"
-                  value={numberInputValue(config.yMin)}
-                  onChange={(event) => patchConfig({ yMin: optionalNumber(event.target.value) })}
+                <NumericExpressionInput
+                  value={config.yMin}
+                  ariaLabel="Range minimum"
+                  onValueChange={(value) => patchConfig({ yMin: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Range max
-                <input
-                  type="number"
-                  value={numberInputValue(config.yMax)}
-                  onChange={(event) => patchConfig({ yMax: optionalNumber(event.target.value) })}
+                <NumericExpressionInput
+                  value={config.yMax}
+                  ariaLabel="Range maximum"
+                  onValueChange={(value) => patchConfig({ yMax: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
@@ -455,12 +385,12 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Diagram width
-                  <input
-                    type="number"
+                  <NumericExpressionInput
                     min={240}
-                    step={1}
-                    value={numberInputValue(config.widthPx)}
-                    onChange={(event) => updateDiagramWidth(event.target.value)}
+                    step={10}
+                    value={config.widthPx}
+                    ariaLabel="Diagram width"
+                    onValueChange={(value) => updateDiagramWidth(value === undefined ? "" : String(value))}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -474,12 +404,12 @@ export function FunctionGraphEditor({
                 ) : (
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Diagram height
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={160}
-                      step={1}
-                      value={numberInputValue(config.heightPx)}
-                      onChange={(event) => patchConfig({ heightPx: optionalNumber(event.target.value) })}
+                      step={10}
+                      value={config.heightPx}
+                      ariaLabel="Diagram height"
+                      onValueChange={(value) => patchConfig({ heightPx: value })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
@@ -500,23 +430,25 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X major interval
-                  <DraftNumberInput
+                  <NumericExpressionInput
                     min={0.1}
                     step={1}
                     value={config.gridMajorStepX}
                     fallbackValue={config.gridMajorStep}
-                    onChange={(value) => patchConfig({ gridMajorStepX: value, axisLabelStepX: value })}
+                    ariaLabel="X major interval"
+                    onValueChange={(value) => patchConfig({ gridMajorStepX: value, axisLabelStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y major interval
-                  <DraftNumberInput
+                  <NumericExpressionInput
                     min={0.1}
                     step={1}
                     value={config.gridMajorStepY}
                     fallbackValue={config.gridMajorStep}
-                    onChange={(value) => patchConfig({ gridMajorStepY: value, axisLabelStepY: value })}
+                    ariaLabel="Y major interval"
+                    onValueChange={(value) => patchConfig({ gridMajorStepY: value, axisLabelStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -536,23 +468,25 @@ export function FunctionGraphEditor({
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   X minor interval
-                  <DraftNumberInput
+                  <NumericExpressionInput
                     min={0}
                     step={1}
                     value={config.gridMinorStepX}
                     fallbackValue={config.gridMinorStep}
-                    onChange={(value) => patchConfig({ gridMinorStepX: value })}
+                    ariaLabel="X minor interval"
+                    onValueChange={(value) => patchConfig({ gridMinorStepX: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Y minor interval
-                  <DraftNumberInput
+                  <NumericExpressionInput
                     min={0}
                     step={1}
                     value={config.gridMinorStepY}
                     fallbackValue={config.gridMinorStep}
-                    onChange={(value) => patchConfig({ gridMinorStepY: value })}
+                    ariaLabel="Y minor interval"
+                    onValueChange={(value) => patchConfig({ gridMinorStepY: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -681,13 +615,13 @@ export function FunctionGraphEditor({
                   <>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Weight
-                      <input
-                        type="number"
+                      <NumericExpressionInput
                         min={0.5}
                         max={10}
                         step={1}
-                        value={numberInputValue(graphFunction.strokeWidth)}
-                        onChange={(event) => updateFunction(functionIndex, { strokeWidth: optionalNumber(event.target.value) })}
+                        value={graphFunction.strokeWidth}
+                        ariaLabel={`Function ${functionIndex + 1} weight`}
+                        onValueChange={(value) => updateFunction(functionIndex, { strokeWidth: value })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
@@ -753,23 +687,21 @@ export function FunctionGraphEditor({
                     <>
                       <label className="flex flex-col gap-2 text-xs font-medium">
                         Left x
-                        <input
-                          aria-label={`Function ${functionIndex + 1} left domain`}
-                          type="number"
+                        <NumericExpressionInput
                           step={1}
-                          value={numberInputValue(graphFunction.domainMin ?? config.xMin)}
-                          onChange={(event) => updateFunction(functionIndex, { domainMin: optionalNumber(event.target.value) })}
+                          value={graphFunction.domainMin ?? config.xMin}
+                          ariaLabel={`Function ${functionIndex + 1} left domain`}
+                          onValueChange={(value) => updateFunction(functionIndex, { domainMin: value })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                         />
                       </label>
                       <label className="flex flex-col gap-2 text-xs font-medium">
                         Right x
-                        <input
-                          aria-label={`Function ${functionIndex + 1} right domain`}
-                          type="number"
+                        <NumericExpressionInput
                           step={1}
-                          value={numberInputValue(graphFunction.domainMax ?? config.xMax)}
-                          onChange={(event) => updateFunction(functionIndex, { domainMax: optionalNumber(event.target.value) })}
+                          value={graphFunction.domainMax ?? config.xMax}
+                          ariaLabel={`Function ${functionIndex + 1} right domain`}
+                          onValueChange={(value) => updateFunction(functionIndex, { domainMax: value })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                         />
                       </label>
@@ -803,21 +735,21 @@ export function FunctionGraphEditor({
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Label x
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       step={1}
-                      value={numberInputValue(graphFunction.labelX)}
-                      onChange={(event) => updateFunction(functionIndex, { labelX: optionalNumber(event.target.value) })}
+                      value={graphFunction.labelX}
+                      ariaLabel={`Function ${functionIndex + 1} label x`}
+                      onValueChange={(value) => updateFunction(functionIndex, { labelX: value })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Label y
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       step={1}
-                      value={numberInputValue(graphFunction.labelY)}
-                      onChange={(event) => updateFunction(functionIndex, { labelY: optionalNumber(event.target.value) })}
+                      value={graphFunction.labelY}
+                      ariaLabel={`Function ${functionIndex + 1} label y`}
+                      onValueChange={(value) => updateFunction(functionIndex, { labelY: value })}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
@@ -845,19 +777,19 @@ export function FunctionGraphEditor({
                       </label>
                       <label className="flex flex-col gap-2 text-xs font-medium">
                         From x
-                        <input
-                          type="number"
-                          value={numberInputValue(piece.xMin)}
-                          onChange={(event) => updatePiece(functionIndex, pieceIndex, { xMin: optionalNumber(event.target.value) })}
+                        <NumericExpressionInput
+                          value={piece.xMin}
+                          ariaLabel={`Function ${functionIndex + 1} piece ${pieceIndex + 1} from x`}
+                          onValueChange={(value) => updatePiece(functionIndex, pieceIndex, { xMin: value })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                         />
                       </label>
                       <label className="flex flex-col gap-2 text-xs font-medium">
                         To x
-                        <input
-                          type="number"
-                          value={numberInputValue(piece.xMax)}
-                          onChange={(event) => updatePiece(functionIndex, pieceIndex, { xMax: optionalNumber(event.target.value) })}
+                        <NumericExpressionInput
+                          value={piece.xMax}
+                          ariaLabel={`Function ${functionIndex + 1} piece ${pieceIndex + 1} to x`}
+                          onValueChange={(value) => updatePiece(functionIndex, pieceIndex, { xMax: value })}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                         />
                       </label>
@@ -1039,14 +971,14 @@ export function FunctionGraphEditor({
                           <>
                             <label className="flex flex-col gap-2 text-xs font-medium">
                               Weight
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 min={0.5}
                                 max={10}
                                 step={1}
-                                value={numberInputValue(feature.strokeWidth)}
+                                value={feature.strokeWidth}
                                 disabled={featureStrokeStyle === "none"}
-                                onChange={(event) => updateFeature(featureIndex, { strokeWidth: optionalNumber(event.target.value) })}
+                                ariaLabel={`Feature ${featureIndex + 1} weight`}
+                                onValueChange={(value) => updateFeature(featureIndex, { strokeWidth: value })}
                                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:cursor-not-allowed disabled:opacity-60"
                               />
                             </label>
@@ -1104,21 +1036,21 @@ export function FunctionGraphEditor({
                         <div className="graph-auto-grid mt-2 border-t pt-2">
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             x
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.x)}
-                              onChange={(event) => updateFeature(featureIndex, { x: optionalNumber(event.target.value) })}
+                              value={feature.x}
+                              ariaLabel={`Feature ${featureIndex + 1} x`}
+                              onValueChange={(value) => updateFeature(featureIndex, { x: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             y
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.y)}
-                              onChange={(event) => updateFeature(featureIndex, { y: optionalNumber(event.target.value) })}
+                              value={feature.y}
+                              ariaLabel={`Feature ${featureIndex + 1} y`}
+                              onValueChange={(value) => updateFeature(featureIndex, { y: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
@@ -1142,41 +1074,41 @@ export function FunctionGraphEditor({
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             Start x
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.x1)}
-                              onChange={(event) => updateFeature(featureIndex, { x1: optionalNumber(event.target.value) })}
+                              value={feature.x1}
+                              ariaLabel={`Feature ${featureIndex + 1} start x`}
+                              onValueChange={(value) => updateFeature(featureIndex, { x1: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             Start y
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.y1)}
-                              onChange={(event) => updateFeature(featureIndex, { y1: optionalNumber(event.target.value) })}
+                              value={feature.y1}
+                              ariaLabel={`Feature ${featureIndex + 1} start y`}
+                              onValueChange={(value) => updateFeature(featureIndex, { y1: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             End x
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.x2)}
-                              onChange={(event) => updateFeature(featureIndex, { x2: optionalNumber(event.target.value) })}
+                              value={feature.x2}
+                              ariaLabel={`Feature ${featureIndex + 1} end x`}
+                              onValueChange={(value) => updateFeature(featureIndex, { x2: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             End y
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.y2)}
-                              onChange={(event) => updateFeature(featureIndex, { y2: optionalNumber(event.target.value) })}
+                              value={feature.y2}
+                              ariaLabel={`Feature ${featureIndex + 1} end y`}
+                              onValueChange={(value) => updateFeature(featureIndex, { y2: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
@@ -1184,40 +1116,14 @@ export function FunctionGraphEditor({
                       ) : null}
 
                       {showInlineSettings && feature.kind === "angle_marker" ? (
-                        <div className="graph-auto-grid mt-2 border-t pt-2">
-                          <label className="col-span-full flex items-center gap-2 text-xs font-medium">
-                            <input
-                              type="checkbox"
-                              checked={feature.rightAngle === true}
-                              onChange={(event) => updateFeature(featureIndex, { rightAngle: event.target.checked })}
-                              className="size-4"
-                            />
-                            Right angle square
-                          </label>
-                          {[
-                            ["Vertex x", "x"],
-                            ["Vertex y", "y"],
-                            ["First arm x", "x1"],
-                            ["First arm y", "y1"],
-                            ["Second arm x", "x2"],
-                            ["Second arm y", "y2"],
-                            ["Radius", "size"],
-                          ].map(([label, field]) => (
-                            <label key={field} className="flex flex-col gap-2 text-xs font-medium">
-                              {label}
-                              <input
-                                type="number"
-                                min={field === "size" ? 0.05 : undefined}
-                                step={1}
-                                value={numberInputValue(feature[field as keyof GraphFeature] as number | undefined)}
-                                onChange={(event) =>
-                                  updateFeature(featureIndex, { [field]: optionalNumber(event.target.value) } as Partial<GraphFeature>)
-                                }
-                                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                              />
-                            </label>
-                          ))}
-                        </div>
+                        <GraphAngleMarkerControls
+                          feature={feature}
+                          features={features}
+                          variant="inline"
+                          ariaPrefix={`Feature ${featureIndex + 1}`}
+                          controlClassName="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          onChange={(patch) => updateFeature(featureIndex, patch)}
+                        />
                       ) : null}
 
                       {showInlineSettings && (feature.kind === "region_between_curves" || feature.kind === "intersection") ? (
@@ -1275,34 +1181,34 @@ export function FunctionGraphEditor({
                           ) : null}
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             From x
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.xMin)}
-                              onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
+                              value={feature.xMin}
+                              ariaLabel={`Feature ${featureIndex + 1} from x`}
+                              onValueChange={(value) => updateFeature(featureIndex, { xMin: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-xs font-medium">
                             To x
-                            <input
-                              type="number"
+                            <NumericExpressionInput
                               step={1}
-                              value={numberInputValue(feature.xMax)}
-                              onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
+                              value={feature.xMax}
+                              ariaLabel={`Feature ${featureIndex + 1} to x`}
+                              onValueChange={(value) => updateFeature(featureIndex, { xMax: value })}
                               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                             />
                           </label>
                           {showInlineSettings && feature.kind === "region_between_curves" ? (
                             <label className="flex flex-col gap-2 text-xs font-medium">
                               Opacity
-                              <input
-                                type="number"
+                              <NumericExpressionInput
                                 min={0.05}
                                 max={0.8}
-                                step={1}
-                                value={numberInputValue(feature.fillOpacity)}
-                                onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
+                                step={0.05}
+                                value={feature.fillOpacity}
+                                ariaLabel={`Feature ${featureIndex + 1} opacity`}
+                                onValueChange={(value) => updateFeature(featureIndex, { fillOpacity: value })}
                                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                               />
                             </label>
@@ -1346,18 +1252,12 @@ export function FunctionGraphEditor({
                             <>
                               <label className="flex flex-col gap-2 text-xs font-medium">
                                 x
-                                <input
-                                  type="number"
+                                <NumericExpressionInput
                                   step={1}
-                                  value={numberInputValue(feature.x)}
-                                  onChange={(event) =>
-                                    updateRelationTangentCoordinate(
-                                      featureIndex,
-                                      feature,
-                                      selectedFeatureFunction,
-                                      "x",
-                                      optionalNumber(event.target.value),
-                                    )
+                                  value={feature.x}
+                                  ariaLabel={`Feature ${featureIndex + 1} tangent x`}
+                                  onValueChange={(value) =>
+                                    updateRelationTangentCoordinate(featureIndex, feature, selectedFeatureFunction, "x", value)
                                   }
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                                 />
@@ -1365,18 +1265,12 @@ export function FunctionGraphEditor({
                               {selectedFeatureIsRelation ? (
                                 <label className="flex flex-col gap-2 text-xs font-medium">
                                   y
-                                  <input
-                                    type="number"
+                                  <NumericExpressionInput
                                     step={1}
-                                    value={numberInputValue(feature.y)}
-                                    onChange={(event) =>
-                                      updateRelationTangentCoordinate(
-                                        featureIndex,
-                                        feature,
-                                        selectedFeatureFunction,
-                                        "y",
-                                        optionalNumber(event.target.value),
-                                      )
+                                    value={feature.y}
+                                    ariaLabel={`Feature ${featureIndex + 1} tangent y`}
+                                    onValueChange={(value) =>
+                                      updateRelationTangentCoordinate(featureIndex, feature, selectedFeatureFunction, "y", value)
                                     }
                                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                                   />
@@ -1387,34 +1281,34 @@ export function FunctionGraphEditor({
                             <>
                               <label className="flex flex-col gap-2 text-xs font-medium">
                                 From x
-                                <input
-                                  type="number"
+                                <NumericExpressionInput
                                   step={1}
-                                  value={numberInputValue(feature.xMin)}
-                                  onChange={(event) => updateFeature(featureIndex, { xMin: optionalNumber(event.target.value) })}
+                                  value={feature.xMin}
+                                  ariaLabel={`Feature ${featureIndex + 1} from x`}
+                                  onValueChange={(value) => updateFeature(featureIndex, { xMin: value })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                                 />
                               </label>
                               <label className="flex flex-col gap-2 text-xs font-medium">
                                 To x
-                                <input
-                                  type="number"
+                                <NumericExpressionInput
                                   step={1}
-                                  value={numberInputValue(feature.xMax)}
-                                  onChange={(event) => updateFeature(featureIndex, { xMax: optionalNumber(event.target.value) })}
+                                  value={feature.xMax}
+                                  ariaLabel={`Feature ${featureIndex + 1} to x`}
+                                  onValueChange={(value) => updateFeature(featureIndex, { xMax: value })}
                                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                                 />
                               </label>
                               {showInlineSettings && feature.kind === "region_curve_axis" ? (
                                 <label className="flex flex-col gap-2 text-xs font-medium">
                                   Opacity
-                                  <input
-                                    type="number"
+                                  <NumericExpressionInput
                                     min={0.05}
                                     max={0.8}
-                                    step={1}
-                                    value={numberInputValue(feature.fillOpacity)}
-                                    onChange={(event) => updateFeature(featureIndex, { fillOpacity: optionalNumber(event.target.value) })}
+                                    step={0.05}
+                                    value={feature.fillOpacity}
+                                    ariaLabel={`Feature ${featureIndex + 1} opacity`}
+                                    onValueChange={(value) => updateFeature(featureIndex, { fillOpacity: value })}
                                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                                   />
                                 </label>

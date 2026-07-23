@@ -43,8 +43,17 @@ test("section heading actions validate document flow targets", () => {
   const result = validateMauthDocumentActionPayloads([
     {
       type: "sectionHeading.add",
-      heading: { id: "section-1", title: "Multiple choice" },
+      heading: {
+        id: "section-1",
+        title: "Multiple choice",
+        titlePage: { instructionsBody: "No calculator.", showInstructions: true },
+      },
       beforeItem: { kind: "question", id: "q1" },
+    },
+    {
+      type: "sectionHeading.update",
+      sectionHeadingId: "section-1",
+      patch: { titlePage: { instructionsBody: "Calculator permitted.", showInstructions: true } },
     },
     {
       type: "sectionHeading.reorder",
@@ -55,6 +64,22 @@ test("section heading actions validate document flow targets", () => {
   ]);
 
   assert.equal(result.ok, true);
+});
+
+test("section title-page settings reject invalid field types", () => {
+  const result = validateMauthDocumentActionPayloads([
+    {
+      type: "sectionHeading.update",
+      sectionHeadingId: "section-1",
+      patch: { titlePage: { showInstructions: "yes" } },
+    },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.issues.some((issue) => issue.path === "actions[0].patch.titlePage.showInstructions"),
+    true,
+  );
 });
 
 test("section heading actions reject ambiguous placement", () => {

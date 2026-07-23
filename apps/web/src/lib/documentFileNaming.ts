@@ -15,6 +15,7 @@ function trimmedText(value: unknown) {
 export function projectFileTypeForFrontMatter(frontMatter: DocumentFileNamingFrontMatter): MauthProjectFileType {
   if (frontMatter.titlePageTemplate === "notes") return "notes";
   if (frontMatter.titlePageTemplate === "worksheet") return "worksheet";
+  if (frontMatter.titlePageTemplate === "investigation") return "investigation";
   return "test";
 }
 
@@ -26,5 +27,8 @@ export function defaultSavedTestName(frontMatter: DocumentFileNamingFrontMatter)
 export function printFileNameForDocument(frontMatter: DocumentFileNamingFrontMatter, baseName: string, showSolutions: boolean) {
   const cleanBaseName = safeProjectFileName(baseName || defaultSavedTestName(frontMatter));
   if (frontMatter.titlePageTemplate === "notes") return cleanBaseName;
+  if (frontMatter.titlePageTemplate === "investigation") {
+    return `${cleanBaseName} - ${showSolutions ? "Teacher" : "Student"}`;
+  }
   return `${cleanBaseName} - ${showSolutions ? "Solutions" : "Student"}`;
 }

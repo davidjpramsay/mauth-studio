@@ -121,7 +121,7 @@ function seededDraft() {
           {
             id: "p-columns-ui",
             label: "",
-            text: "",
+            text: "Editable part wording.",
             marks: 5,
             contentBlocks: [
               {
@@ -387,7 +387,7 @@ async function assertGeometry2DRenderedPrimitives(page, label) {
   assert((metrics.labels.angle ?? 0) >= 1, `${label}: geometry2d should render angle labels separately from angle arcs`);
 }
 
-async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, label, mode) {
+async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, label, mode, outputDir) {
   await selectDiagramType(inspector, label, "graph2d", "Graph settings");
   if (mode === "wide") {
     await assertTextOrder(
@@ -396,26 +396,17 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
       `${mode}: graph editor groups`,
     );
   }
-  await inspector.getByLabel("Domain max").fill(mode === "wide" ? "8" : "9");
-  assert.equal(
-    await inspector.getByLabel("Domain max").inputValue(),
-    mode === "wide" ? "8" : "9",
-    `${mode}: graph domain settings should edit in inspector`,
-  );
+  const domainMaximum = inspector.getByRole("spinbutton", { name: `${label} domain maximum` });
+  await domainMaximum.fill(mode === "wide" ? "8" : "9");
+  assert.equal(await domainMaximum.inputValue(), mode === "wide" ? "8" : "9", `${mode}: graph domain settings should edit in inspector`);
   await inspector.getByLabel("Minor grid").check();
   assert.equal(await inspector.getByLabel("Minor grid").isChecked(), true, `${mode}: graph minor grid toggle should edit in inspector`);
-  await inspector.getByLabel("X minor").fill(mode === "wide" ? "0.25" : "0.2");
-  await inspector.getByLabel("Y minor").fill(mode === "wide" ? "0.5" : "0.4");
-  assert.equal(
-    await inspector.getByLabel("X minor").inputValue(),
-    mode === "wide" ? "0.25" : "0.2",
-    `${mode}: graph x minor interval should edit in inspector`,
-  );
-  assert.equal(
-    await inspector.getByLabel("Y minor").inputValue(),
-    mode === "wide" ? "0.5" : "0.4",
-    `${mode}: graph y minor interval should edit in inspector`,
-  );
+  const xMinor = inspector.getByRole("spinbutton", { name: `${label} x minor step` });
+  const yMinor = inspector.getByRole("spinbutton", { name: `${label} y minor step` });
+  await xMinor.fill(mode === "wide" ? "0.25" : "0.2");
+  await yMinor.fill(mode === "wide" ? "0.5" : "0.4");
+  assert.equal(await xMinor.inputValue(), mode === "wide" ? "0.25" : "0.2", `${mode}: graph x minor interval should edit in inspector`);
+  assert.equal(await yMinor.inputValue(), mode === "wide" ? "0.5" : "0.4", `${mode}: graph y minor interval should edit in inspector`);
   if (mode === "wide") {
     await page.locator(".preview-pane").evaluate((pane) => {
       pane.scrollTop = pane.scrollHeight;
@@ -446,11 +437,27 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     await solutionVisibilityToggle.check();
     assert.equal(await solutionVisibilityToggle.isChecked(), true, `${mode}: graph feature solution visibility should edit in inspector`);
     const featureX = inspector.locator(`input[aria-label='${label} feature 1 x']`);
-    await featureX.fill("2.5");
-    assert.equal(await featureX.inputValue(), "2.5", `${mode}: graph feature x location should edit in inspector`);
+    await featureX.fill("");
+    await delay(50);
+    assert.equal(await featureX.inputValue(), "", `${mode}: graph coordinate input should remain empty while replacing its value`);
+    await featureX.fill("pi + 3");
+    assert.equal(await featureX.inputValue(), "pi + 3", `${mode}: graph coordinate input should retain an exact expression while editing`);
     const featureY = inspector.locator(`input[aria-label='${label} feature 1 y']`);
-    await featureY.fill("-1.5");
-    assert.equal(await featureY.inputValue(), "-1.5", `${mode}: graph feature y location should edit in inspector`);
+    await featureY.fill("sqrt(2)");
+    await inspector.screenshot({ path: path.join(outputDir, "numeric-expression-input.png") });
+    await featureX.blur();
+    assert(
+      Math.abs(Number(await featureX.inputValue()) - (Math.PI + 3)) < 1e-12,
+      `${mode}: graph x expression should commit as a finite number`,
+    );
+    await featureY.blur();
+    assert(
+      Math.abs(Number(await featureY.inputValue()) - Math.sqrt(2)) < 1e-12,
+      `${mode}: graph y expression should commit as a finite number`,
+    );
+    await featureX.fill("4.1");
+    await inspector.getByRole("button", { name: `${label} feature 1 x increase` }).click();
+    assert.equal(await featureX.inputValue(), "5", `${mode}: graph coordinate stepper should advance to the next integer`);
     await page.locator(".editor-pane").getByText("Angle marker 4:", { exact: false }).click();
     await inspector.getByText("Feature display", { exact: true }).waitFor();
     const angleRadius = inspector.locator(`input[aria-label='${label} feature 4 radius']`);
@@ -479,7 +486,11 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
 
   await selectDiagramType(inspector, label, "geometry2d", "2D diagram settings");
   if (mode === "wide") {
-    await assertTextOrder(inspector, ["Points", "Segments", "Arcs", "Angles", "Markers"], `${mode}: geometry2d inspector primitive groups`);
+    await assertTextOrder(
+      page.locator(".editor-pane"),
+      ["Points", "Segments", "Arcs", "Angles", "Markers"],
+      `${mode}: geometry2d editor primitive groups`,
+    );
   }
   await inspector.locator(`input[aria-label='${label} 2D diagram width']`).fill(mode === "wide" ? "440" : "420");
   assert.equal(
@@ -497,7 +508,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     await page.locator(".preview-pane").evaluate((pane) => {
       pane.scrollTop = pane.scrollHeight;
     });
-    await inspector.getByRole("button", { name: "Select point 1" }).click();
+    await page.getByRole("button", { name: /^Point 1:/ }).click();
     await inspector.getByText("Point", { exact: true }).waitFor();
     await assertPreviewAnchorSelectedAndVisible(
       page,
@@ -514,7 +525,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     assert.equal(await pointX.inputValue(), "-2.25", `${mode}: geometry2d point location should edit in inspector`);
 
     await inspector.getByRole("button", { name: "2D diagram" }).click();
-    await inspector.getByRole("button", { name: "Select segment 1" }).click();
+    await page.getByRole("button", { name: /^Segment 1:/ }).click();
     await inspector.getByText("Segment", { exact: true }).waitFor();
     const segmentLabelX = inspector.locator(`input[aria-label='${label} segment 1 label x']`);
     await segmentLabelX.fill("0.95");
@@ -527,8 +538,8 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     );
 
     await inspector.getByRole("button", { name: "2D diagram" }).click();
-    await inspector.getByRole("button", { name: "Add arc" }).click();
-    await inspector.getByRole("button", { name: "Select arc 1" }).click();
+    await page.getByRole("button", { name: "Add arc", exact: true }).click();
+    await page.getByRole("button", { name: /^Arc 1:/ }).click();
     await inspector.getByText("Arc", { exact: true }).waitFor();
     const arcLabel = inspector.locator(`input[aria-label='${label} arc 1 label']`);
     await arcLabel.fill("$\\widehat{BD}$");
@@ -541,7 +552,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     );
 
     await inspector.getByRole("button", { name: "2D diagram" }).click();
-    await inspector.getByRole("button", { name: "Select angle 1" }).click();
+    await page.getByRole("button", { name: /^Angle 1:/ }).click();
     await inspector.getByText("Angle", { exact: true }).waitFor();
     const angleCount = inspector.locator(`input[aria-label='${label} angle 1 count']`);
     await angleCount.fill("2");
@@ -554,13 +565,13 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
     );
 
     await inspector.getByRole("button", { name: "2D diagram" }).click();
-    await inspector.getByRole("button", { name: "Select marker 1" }).click();
+    await page.getByRole("button", { name: /^Marker 1:/ }).click();
     await inspector.getByText("Marker", { exact: true }).waitFor();
     const markerCount = inspector.locator(`input[aria-label='${label} marker 1 count']`);
     await markerCount.fill("2");
     assert.equal(await markerCount.inputValue(), "2", `${mode}: geometry2d equal-length marker count should edit in inspector`);
     await inspector.getByRole("button", { name: "2D diagram" }).click();
-    await inspector.getByRole("button", { name: "Select marker 2" }).click();
+    await page.getByRole("button", { name: /^Marker 2:/ }).click();
     await inspector.getByText("Marker", { exact: true }).waitFor();
     const markerSize = inspector.locator(`input[aria-label='${label} marker 2 size']`);
     await markerSize.fill("0.4");
@@ -579,7 +590,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
   await selectDiagramType(inspector, label, "vector2d", "Vector settings");
   await inspector.locator(`select[aria-label='${label} vector label style']`).selectOption("custom");
   assert.equal(await inspector.locator(`select[aria-label='${label} vector label style']`).inputValue(), "custom");
-  await inspector.getByLabel("Grid").uncheck();
+  await inspector.getByRole("checkbox", { name: `${label} vector grid` }).uncheck();
   await assertPanelLacks(diagramPanelElement, [/\bx min\b/i, /\bLabel style\b/i], `${mode} vector2d`);
   await assertVisibleInspectorControlsFit(inspector, `${mode} vector2d`);
 
@@ -614,7 +625,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
   await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bNetwork preset\b/i, /\bShow node dots\b/i], `${mode} network`);
   await assertVisibleInspectorControlsFit(inspector, `${mode} network`);
 
-  await selectDiagramType(inspector, label, "setDiagram", "Set diagram settings");
+  await selectDiagramType(inspector, label, "setDiagram", "Venn diagram settings");
   await inspector.locator(`input[aria-label='${label} Penrose scale']`).fill(mode === "wide" ? "120" : "90");
   await inspector.getByRole("button", { name: "Set notation" }).click();
   await inspector.getByRole("button", { name: "Counts + totals" }).click();
@@ -639,6 +650,10 @@ async function mockStorageApi(page) {
     "access-control-allow-headers": "content-type",
     "content-type": "application/json",
   };
+
+  await page.route("http://127.0.0.1:8000/api/system/status", async (route) => {
+    await route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({}) });
+  });
 
   await page.route("http://127.0.0.1:8000/api/storage/**", async (route) => {
     const request = route.request();
@@ -757,6 +772,14 @@ async function main() {
     await partColumnsNode.getByText("Part columns", { exact: false }).waitFor({ timeout: 10_000 });
     await page.getByText("COLUMN 1").waitFor();
     await page.getByText("COLUMN 2").waitFor();
+    const partWording = page.getByLabel("Part wording");
+    await partWording.fill("Updated part wording with $x=2$.");
+    assert.equal(await partWording.inputValue(), "Updated part wording with $x=2$.", "part wording should be directly editable");
+    const previewTexts = await page.locator(".preview-pane").allTextContents();
+    assert(
+      previewTexts.some((text) => text.includes("Updated part wording with")),
+      "part wording edits should update the preview",
+    );
 
     const nestedTableNode = page.locator(`.editor-pane [data-scroll-anchor="${nestedTableAnchor}"]`).first();
     const columnOne = await page.getByText("COLUMN 1").evaluate(sectionRectForText);
@@ -884,7 +907,7 @@ async function main() {
       diagramPanelElement = await page
         .getByText("Diagram block 4", { exact: false })
         .evaluateHandle((element) => element.closest("section"));
-      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "wide");
+      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "wide", outputDir);
     }
     await inspector.screenshot({ path: inspectorScreenshotPath });
     await panelElement.asElement().screenshot({ path: screenshotPath });
@@ -926,7 +949,7 @@ async function main() {
       const compactInspectorMetrics = await inspectorMetrics(inspector);
       assert.equal(compactInspectorMetrics.placement, "inline", "compact editor should keep inline inspector placement");
       assertInspectorBetweenEditorAndPreview(compactInspectorMetrics, "compact inline inspector");
-      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "compact");
+      await exerciseDiagramInspectorCycle(page, inspector, diagramPanelElement, "Diagram 4", "compact", outputDir);
       await selectDiagramType(inspector, "Diagram 4", "statsChart", "Chart settings");
       await inspector.locator("select[aria-label='Diagram 4 chart type']").selectOption("normal");
       await inspector.getByText("Normal: mean", { exact: false }).waitFor();

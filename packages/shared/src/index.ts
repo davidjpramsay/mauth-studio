@@ -311,6 +311,10 @@ export interface GraphConfig {
   showGridBorder?: boolean;
   showAxes?: boolean;
   showArrows?: boolean;
+  showXAxisMinArrow?: boolean;
+  showXAxisMaxArrow?: boolean;
+  showYAxisMinArrow?: boolean;
+  showYAxisMaxArrow?: boolean;
   showAxisLabels?: boolean;
   showAxisNumbers?: boolean;
   xAxisLabel?: string;
@@ -559,6 +563,8 @@ export interface GraphFeature {
   y1?: number;
   x2?: number;
   y2?: number;
+  firstSegmentId?: string;
+  secondSegmentId?: string;
   rightAngle?: boolean;
   ratio?: number;
   functionIndex?: number;
@@ -1005,9 +1011,24 @@ export interface MauthAgentQuestionSummary {
   parts: MauthAgentPartSummary[];
 }
 
+export interface StandardTestTitlePageConfig {
+  nameLabel?: string;
+  markLabel?: string;
+  showAssessmentSubtitle?: boolean;
+  showDeclaration?: boolean;
+  declarationTitle?: string;
+  declarationBody?: string;
+  signatureLabel?: string;
+  signatureRole?: string;
+  showInstructions?: boolean;
+  instructionsTitle?: string;
+  instructionsBody?: string;
+}
+
 export interface MauthAgentSectionHeadingSummary {
   id: string;
   title: string;
+  titlePage?: StandardTestTitlePageConfig;
 }
 
 export type MauthAgentDocumentFlowItem =

@@ -2,6 +2,12 @@ import type { ProjectFileSummary } from "@mauth-studio/shared";
 
 export const TEST_FILE_ROOT = "tests";
 export const TEST_FILE_ROOT_LABEL = "Documents";
+export const MAUTH_DOCUMENT_EXTENSION = ".mauth";
+export const LEGACY_TEST_DOCUMENT_EXTENSION = ".test.json";
+
+export type StructuredMauthDocumentExtension = typeof MAUTH_DOCUMENT_EXTENSION | typeof LEGACY_TEST_DOCUMENT_EXTENSION;
+
+const STRUCTURED_MAUTH_DOCUMENT_EXTENSIONS: StructuredMauthDocumentExtension[] = [LEGACY_TEST_DOCUMENT_EXTENSION, MAUTH_DOCUMENT_EXTENSION];
 
 export function safeProjectFileName(value: string) {
   const safeName = value
@@ -36,6 +42,26 @@ export function projectPathForTestPath(relativePath: string) {
   return [TEST_FILE_ROOT, cleanPath].filter(Boolean).join("/");
 }
 
+export function absoluteMauthDocumentTarget(filePath: string, currentDocumentsPath?: string | null) {
+  const normalizedFilePath = filePath.trim().replace(/\/+$/g, "");
+  if (!normalizedFilePath.startsWith("/") || !isStructuredMauthDocumentPath(normalizedFilePath)) return null;
+
+  const normalizedDocumentsPath = currentDocumentsPath?.trim().replace(/\/+$/g, "") ?? "";
+  if (normalizedDocumentsPath && normalizedFilePath.startsWith(`${normalizedDocumentsPath}/`)) {
+    return {
+      documentsPath: normalizedDocumentsPath,
+      projectFilePath: projectPathForTestPath(normalizedFilePath.slice(normalizedDocumentsPath.length + 1)),
+    };
+  }
+
+  const separatorIndex = normalizedFilePath.lastIndexOf("/");
+  if (separatorIndex <= 0) return null;
+  return {
+    documentsPath: normalizedFilePath.slice(0, separatorIndex),
+    projectFilePath: projectPathForTestPath(normalizedFilePath.slice(separatorIndex + 1)),
+  };
+}
+
 export function testPathFromProjectPath(path: string) {
   if (path === TEST_FILE_ROOT) return "";
   if (!path.startsWith(`${TEST_FILE_ROOT}/`)) return null;
@@ -60,13 +86,27 @@ export function testPathBasename(path: string) {
   return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
-export function ensureTestFileName(name: string) {
-  const safeName = safeProjectFileName(name.replace(/\.test\.json$/i, "").replace(/\.json$/i, ""));
-  return `${safeName}.test.json`;
+export function structuredMauthDocumentExtension(name: string): StructuredMauthDocumentExtension | null {
+  const lowerName = name.toLowerCase();
+  return STRUCTURED_MAUTH_DOCUMENT_EXTENSIONS.find((extension) => lowerName.endsWith(extension)) ?? null;
+}
+
+export function isStructuredMauthDocumentPath(path: string) {
+  return structuredMauthDocumentExtension(path) !== null;
+}
+
+export function stripStructuredMauthDocumentExtension(name: string) {
+  const extension = structuredMauthDocumentExtension(name);
+  return extension ? name.slice(0, -extension.length) : name.replace(/\.json$/i, "");
+}
+
+export function ensureTestFileName(name: string, extension: StructuredMauthDocumentExtension = MAUTH_DOCUMENT_EXTENSION) {
+  const safeName = safeProjectFileName(stripStructuredMauthDocumentExtension(name));
+  return `${safeName}${extension}`;
 }
 
 export function testFileDisplayName(name: string) {
-  return name.replace(/\.test\.json$/i, "");
+  return stripStructuredMauthDocumentExtension(name);
 }
 
 export function formatProjectFileSize(size: unknown) {
@@ -79,7 +119,7 @@ export function formatProjectFileSize(size: unknown) {
 export function isProjectTestFile(file: Pick<ProjectFileSummary, "kind" | "fileType" | "path">) {
   return (
     file.kind === "file" &&
-    (file.fileType === "test" || file.fileType === "worksheet" || file.fileType === "notes" || file.path.endsWith(".test.json"))
+    (file.fileType === "test" || file.fileType === "worksheet" || file.fileType === "notes" || isStructuredMauthDocumentPath(file.path))
   );
 }
 
@@ -118,12 +158,18 @@ export function testFolderOptions(files: ProjectFileSummary[]) {
   return ["", ...folders];
 }
 
-export function uniqueTestPath(files: ProjectFileSummary[], folderPath: string, baseName: string, kind: "file" | "folder") {
+export function uniqueTestPath(
+  files: ProjectFileSummary[],
+  folderPath: string,
+  baseName: string,
+  kind: "file" | "folder",
+  fileExtension: StructuredMauthDocumentExtension = MAUTH_DOCUMENT_EXTENSION,
+) {
   const cleanFolder = normalizeTestFolderPath(folderPath);
   const existing = new Set(visibleTestFiles(files).map(({ testPath }) => testPath.toLowerCase()));
   const cleanBaseName =
-    kind === "file" ? safeProjectFileName(baseName.replace(/\.test\.json$/i, "").replace(/\.json$/i, "")) : safeProjectFileName(baseName);
-  const extension = kind === "file" ? ".test.json" : "";
+    kind === "file" ? safeProjectFileName(stripStructuredMauthDocumentExtension(baseName)) : safeProjectFileName(baseName);
+  const extension = kind === "file" ? fileExtension : "";
 
   let suffix = "";
   let counter = 2;

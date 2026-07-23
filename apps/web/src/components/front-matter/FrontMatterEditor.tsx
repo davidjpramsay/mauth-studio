@@ -1,6 +1,7 @@
 import { ExamCoverEditor, ExamInstructionsEditor, ExamTimeMaterialsEditor } from "@/components/front-matter/ExamDetailsEditors";
 import { ExamStructureEditor } from "@/components/front-matter/ExamStructureEditor";
 import { FrontMatterTitleEditor } from "@/components/front-matter/FrontMatterTitleEditor";
+import { InvestigationEditor } from "@/components/front-matter/InvestigationEditor";
 import { StandardFrontMatterEditor } from "@/components/front-matter/StandardFrontMatterEditor";
 import {
   normalizeExamTitlePage,
@@ -107,6 +108,7 @@ export function FrontMatterEditor({
       ) : null}
 
       {titlePageTemplate === "standard" ? <StandardFrontMatterEditor frontMatter={frontMatter} onChange={onChange} /> : null}
+      {titlePageTemplate === "investigation" ? <InvestigationEditor frontMatter={frontMatter} onChange={onChange} /> : null}
     </div>
   );
 }

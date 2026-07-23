@@ -231,6 +231,10 @@ interface Bounded2DSettingsUpdate extends SizedSettingsUpdate {
 
 interface Graph2DBaseSettingsUpdate extends Bounded2DSettingsUpdate {
   showArrows?: boolean;
+  showXAxisMinArrow?: boolean;
+  showXAxisMaxArrow?: boolean;
+  showYAxisMinArrow?: boolean;
+  showYAxisMaxArrow?: boolean;
   showFunctionArrows?: boolean;
   lockAspectRatio?: boolean;
   gridMajorStep?: number;
@@ -415,6 +419,10 @@ function graph2dSettingsPatch(config: GraphConfig, settings: Graph2DBaseSettings
   setIfDefined(patch, "showAxisLabels", settings.showAxisLabels);
   setIfDefined(patch, "showAxisNumbers", settings.showAxisNumbers);
   setIfDefined(patch, "showArrows", settings.showArrows);
+  setIfDefined(patch, "showXAxisMinArrow", settings.showXAxisMinArrow);
+  setIfDefined(patch, "showXAxisMaxArrow", settings.showXAxisMaxArrow);
+  setIfDefined(patch, "showYAxisMinArrow", settings.showYAxisMinArrow);
+  setIfDefined(patch, "showYAxisMaxArrow", settings.showYAxisMaxArrow);
   setIfDefined(patch, "showFunctionArrows", settings.showFunctionArrows);
   if (settings.gridMajorStep !== undefined) {
     patch.gridMajorStep = settings.gridMajorStep;

@@ -8,9 +8,25 @@ import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
   previewGraphConfigForSolutionVisibility,
+  graphConfigWithPresentationPatch,
   previewStatsChartConfigForSolutionVisibility,
   previewVector2DConfigForSolutionVisibility,
 } from "./previewDiagramVisibility.ts";
+
+test("axis-label presentation patches preserve hidden solution content", () => {
+  const solutionFunction = { id: "answer", expression: "x^2", solutionOnly: true };
+  const config: GraphConfig = {
+    type: "graph2d",
+    functions: [solutionFunction],
+    features: [{ kind: "point", x: 1, y: 1, solutionOnly: true }],
+  };
+  const result = graphConfigWithPresentationPatch(config, { xAxisLabelX: 4, xAxisLabelY: 0.25 });
+
+  assert.equal(result.functions?.[0], solutionFunction);
+  assert.equal(result.features, config.features);
+  assert.equal(result.xAxisLabelX, 4);
+  assert.equal(result.xAxisLabelY, 0.25);
+});
 
 const visibleFeature: GraphFeature = { kind: "point", x: 0, y: 0, label: "A" };
 const solutionOnlyFeature: GraphFeature = { kind: "point", x: 1, y: 1, label: "B", solutionOnly: true };

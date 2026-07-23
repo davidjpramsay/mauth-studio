@@ -6,6 +6,10 @@ import { graph3dConfigForSolutionVisibility } from "./diagramGraph3d.ts";
 import { statsChartConfigForSolutionVisibility } from "./diagramStatsChart.ts";
 import { vector2dConfigForSolutionVisibility } from "./diagramVector2d.ts";
 
+export function graphConfigWithPresentationPatch(graphConfig: GraphConfig, patch: Partial<GraphConfig>) {
+  return { ...graphConfig, ...patch };
+}
+
 export function previewGraphConfigForSolutionVisibility(
   graphConfig: GraphConfig,
   showSolutions: boolean,

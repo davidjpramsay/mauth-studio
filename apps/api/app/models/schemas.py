@@ -88,6 +88,8 @@ class GraphFeature(BaseModel):
     y1: float | None = None
     x2: float | None = None
     y2: float | None = None
+    firstSegmentId: str | None = None
+    secondSegmentId: str | None = None
     rightAngle: bool | None = False
     ratio: float | None = 0.5
     functionIndex: int | None = 0
@@ -125,6 +127,10 @@ class GraphConfig(BaseModel):
     showGridBorder: bool = False
     showAxes: bool = True
     showArrows: bool = True
+    showXAxisMinArrow: bool | None = None
+    showXAxisMaxArrow: bool | None = None
+    showYAxisMinArrow: bool | None = None
+    showYAxisMaxArrow: bool | None = None
     showAxisLabels: bool = True
     axisLabelIntervalMode: Literal["auto", "manual"] = "auto"
     axisLabelStepX: float | None = None

@@ -10,6 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distribution = process.argv.includes("--distribution");
 const appArgument = process.argv.slice(2).find((argument) => argument !== "--distribution");
 const appBundle = path.resolve(appArgument ?? path.join(ROOT, "release", "mac-arm64", "Mauth Studio.app"));
+const connector = path.join(appBundle, "Contents", "Resources", "agent", "mauth-agent-mcp");
 
 function run(command, args, { capture = false, allowFailure = false } = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", stdio: capture ? "pipe" : "inherit" });
@@ -19,6 +20,11 @@ function run(command, args, { capture = false, allowFailure = false } = {}) {
 
 if (!fs.existsSync(appBundle)) {
   console.error(`Mauth Studio app bundle was not found: ${appBundle}`);
+  process.exit(1);
+}
+
+if (!fs.existsSync(connector) || !(fs.statSync(connector).mode & 0o111)) {
+  console.error(`The executable Mauth Agent Connector is missing from the app bundle: ${connector}`);
   process.exit(1);
 }
 
@@ -37,6 +43,12 @@ if (!architectures.split(/\s+/).includes("arm64")) {
   process.exit(1);
 }
 
+const connectorVersion = run(connector, ["--version"], { capture: true }).trim();
+if (!/^Mauth Agent Connector \d+\.\d+\.\d+/.test(connectorVersion)) {
+  console.error(`The bundled Mauth Agent Connector did not start correctly: ${connectorVersion || "no output"}`);
+  process.exit(1);
+}
+
 if (distribution) {
   if (!/Authority=Developer ID Application:/.test(signing) || /TeamIdentifier=not set/.test(signing)) {
     console.error("Distribution verification requires a Developer ID Application signature with a Team ID.");
@@ -45,4 +57,6 @@ if (distribution) {
   run("/usr/sbin/spctl", ["--assess", "--type", "execute", "--verbose=4", appBundle]);
 }
 
-console.log(`${distribution ? "Distribution" : "Local hardened"} verification passed for ${appBundle} (${architectures}).`);
+console.log(
+  `${distribution ? "Distribution" : "Local hardened"} verification passed for ${appBundle} (${architectures}; ${connectorVersion}).`,
+);

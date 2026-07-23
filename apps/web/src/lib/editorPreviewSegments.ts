@@ -2,7 +2,12 @@ import type { FormattingConfig, GraphConfig } from "@mauth-studio/shared";
 
 import { normalizeColumnsBlock } from "./contentBlockNormalization.ts";
 import { effectiveDiagramTextSide } from "./editorDiagramConfig.ts";
-import { isOrderedBlockVisible, isOrderedDiagramBesideContentBlock, visibilityReplacementSlotAtOrderedItems } from "./editorDocumentToc.ts";
+import {
+  isOrderedBlockVisible,
+  isOrderedDiagramBesideContentBlock,
+  questionMarks,
+  visibilityReplacementSlotAtOrderedItems,
+} from "./editorDocumentToc.ts";
 import {
   orderedPartItems,
   orderedQuestionItems,
@@ -19,10 +24,19 @@ import { isContentBlockVisibleInScope, visibilityReplacementSlotAt } from "./sol
 
 export interface PreviewSegment {
   id: string;
-  kind: "worksheet-header" | "notes-header" | "section-heading" | "question-start" | "question-block" | "part-group" | "page-break";
+  kind:
+    | "worksheet-header"
+    | "notes-header"
+    | "section-title-page"
+    | "section-heading"
+    | "question-start"
+    | "question-block"
+    | "part-group"
+    | "page-break";
   questionIndex?: number;
   spacingTop: number;
   sectionHeading?: DocumentSectionHeading;
+  sectionMarks?: number;
   question?: QuestionBlock;
   block?: EditorContentBlock;
   blocks?: EditorContentBlock[];
@@ -38,6 +52,39 @@ export interface PreviewGraphConfigChange {
   graphConfig: GraphConfig;
   partId?: string;
   subpartId?: string;
+}
+
+export interface TestSectionPlan {
+  heading: DocumentSectionHeading;
+  marks: number;
+  questionIds: string[];
+}
+
+export function buildTestSectionPlans(
+  normalizedFlow: DocumentFlowItem[],
+  questions: QuestionBlock[],
+  sectionHeadings: DocumentSectionHeading[],
+): TestSectionPlan[] {
+  const questionMap = new Map(questions.map((question) => [question.id, question]));
+  const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
+  const plans: TestSectionPlan[] = [];
+  let currentPlan: TestSectionPlan | null = null;
+
+  normalizedFlow.forEach((flowItem) => {
+    if (flowItem.kind === "sectionHeading") {
+      const heading = sectionHeadingMap.get(flowItem.id);
+      currentPlan = heading ? { heading, marks: 0, questionIds: [] } : null;
+      if (currentPlan) plans.push(currentPlan);
+      return;
+    }
+    if (!currentPlan) return;
+    const question = questionMap.get(flowItem.id);
+    if (!question) return;
+    currentPlan.questionIds.push(question.id);
+    currentPlan.marks += questionMarks(question);
+  });
+
+  return plans;
 }
 
 export interface BuildPreviewSegmentsOptions {
@@ -260,13 +307,44 @@ export function buildPreviewSegments({
   const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
   const questionSegments: PreviewSegment[] = [];
   let topLevelItemCount = 0;
+  const normalizedFlow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
+  const sectionMarks = new Map(
+    buildTestSectionPlans(normalizedFlow, questions, sectionHeadings).map((plan) => [plan.heading.id, plan.marks]),
+  );
 
-  normalizeDocumentFlow(documentFlow, questions, sectionHeadings).forEach((flowItem) => {
+  const leadingStandardSectionHeadingId =
+    frontMatter.titlePageTemplate === "standard" && normalizedFlow[0]?.kind === "sectionHeading" ? normalizedFlow[0].id : null;
+
+  normalizedFlow.forEach((flowItem) => {
     const spacingTop = topLevelItemCount === 0 ? 0 : gapPx;
 
     if (flowItem.kind === "sectionHeading") {
       const sectionHeading = sectionHeadingMap.get(flowItem.id);
       if (!sectionHeading) return;
+      if (flowItem.id === leadingStandardSectionHeadingId) return;
+      if (frontMatter.titlePageTemplate === "standard") {
+        if (questionSegments.at(-1)?.kind !== "page-break") {
+          questionSegments.push({
+            id: `section-title-page:${sectionHeading.id}:page-break-before`,
+            kind: "page-break",
+            spacingTop: 0,
+          });
+        }
+        questionSegments.push({
+          id: `section-title-page:${sectionHeading.id}`,
+          kind: "section-title-page",
+          spacingTop: 0,
+          sectionHeading,
+          sectionMarks: sectionMarks.get(sectionHeading.id) ?? 0,
+        });
+        questionSegments.push({
+          id: `section-title-page:${sectionHeading.id}:page-break-after`,
+          kind: "page-break",
+          spacingTop: 0,
+        });
+        topLevelItemCount += 1;
+        return;
+      }
       questionSegments.push({
         id: `section-heading:${sectionHeading.id}`,
         kind: "section-heading",

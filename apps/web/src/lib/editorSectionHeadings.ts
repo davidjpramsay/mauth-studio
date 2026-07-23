@@ -111,11 +111,14 @@ export function plannedSectionHeadingAdd({
 export function updatedSectionHeadings(
   sectionHeadings: DocumentSectionHeading[],
   sectionHeadingId: string,
-  title: string,
+  update: string | Partial<DocumentSectionHeading>,
 ): DocumentSectionHeading[] | null {
   const existing = sectionHeadings.find((heading) => heading.id === sectionHeadingId);
-  if (!existing || existing.title === title) return null;
-  return sectionHeadings.map((heading) => (heading.id === sectionHeadingId ? { ...heading, title } : heading));
+  if (!existing) return null;
+  const patch = typeof update === "string" ? { title: update } : update;
+  const nextHeading = { ...existing, ...patch, id: existing.id };
+  if (JSON.stringify(existing) === JSON.stringify(nextHeading)) return null;
+  return sectionHeadings.map((heading) => (heading.id === sectionHeadingId ? nextHeading : heading));
 }
 
 export function plannedSectionHeadingRemoval({

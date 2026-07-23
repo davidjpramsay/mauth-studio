@@ -1,9 +1,8 @@
-import { useState } from "react";
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import { DEFAULT_VECTOR_2D_GRAPH, type Vector2DLabelStyle } from "../../lib/diagramVector2d";
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
-import { inspectorNumberInputValue, inspectorOptionalNumber, vector2dLabelStylePatch } from "../../lib/moduleSettingsPatches";
+import { vector2dLabelStylePatch } from "../../lib/moduleSettingsPatches";
 import {
   vector2dAxesVisibilityPatch,
   vector2dGridVisibilityPatch,
@@ -12,71 +11,7 @@ import {
   vector2dMinorGridStepPatch,
 } from "../../lib/vector2dInspectorSelection";
 import { VECTOR_2D_LABEL_STYLES } from "./editorOptions";
-
-function spinnerMin(min?: number, step?: number) {
-  if (step === 1 && typeof min === "number" && Number.isFinite(min) && !Number.isInteger(min)) return Math.floor(min);
-  return min;
-}
-
-function spinnerValue(nextValue: string, previousValue: string | number, step?: number, nativeEvent?: Event) {
-  if (step !== 1 || nextValue === "") return nextValue;
-  const inputType = nativeEvent && "inputType" in nativeEvent ? String((nativeEvent as InputEvent).inputType) : "";
-  if (inputType) return nextValue;
-
-  const previous = Number(previousValue);
-  const next = Number(nextValue);
-  if (!Number.isFinite(previous) || !Number.isFinite(next) || Number.isInteger(previous)) return nextValue;
-  if (Math.abs(Math.abs(next - previous) - 1) > 1e-9) return nextValue;
-
-  const previousFraction = previous - Math.trunc(previous);
-  const nextFraction = next - Math.trunc(next);
-  if (Math.abs(previousFraction - nextFraction) > 1e-9) return nextValue;
-
-  return String(next > previous ? Math.ceil(previous) : Math.floor(previous));
-}
-
-function DraftNumberInput({
-  value,
-  fallbackValue,
-  min,
-  step,
-  ariaLabel,
-  className,
-  onChange,
-}: {
-  value?: number;
-  fallbackValue?: number;
-  min?: number;
-  step?: number;
-  ariaLabel: string;
-  className?: string;
-  onChange: (value: number | undefined) => void;
-}) {
-  const [draftValue, setDraftValue] = useState<string | null>(null);
-  const displayValue = draftValue ?? inspectorNumberInputValue(value ?? fallbackValue);
-
-  return (
-    <input
-      type="number"
-      min={spinnerMin(min, step)}
-      step={step}
-      value={displayValue}
-      aria-label={ariaLabel}
-      onChange={(event) => {
-        const nextValue = spinnerValue(event.target.value, displayValue, step, event.nativeEvent);
-        setDraftValue(nextValue);
-        if (nextValue === "") {
-          onChange(undefined);
-          return;
-        }
-        const parsed = Number(nextValue);
-        if (Number.isFinite(parsed)) onChange(parsed);
-      }}
-      onBlur={() => setDraftValue(null)}
-      className={className}
-    />
-  );
-}
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface Vector2DSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -147,45 +82,41 @@ export function Vector2DSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           i min
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selectedDiagramConfig.xMin)}
-            aria-label={`${selectedBlock.label} vector i min`}
-            onChange={(event) => updateCanvas({ xMin: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
+            value={selectedDiagramConfig.xMin}
+            ariaLabel={`${selectedBlock.label} vector i min`}
+            onValueChange={(value) => updateCanvas({ xMin: value ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           i max
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selectedDiagramConfig.xMax)}
-            aria-label={`${selectedBlock.label} vector i max`}
-            onChange={(event) => updateCanvas({ xMax: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
+            value={selectedDiagramConfig.xMax}
+            ariaLabel={`${selectedBlock.label} vector i max`}
+            onValueChange={(value) => updateCanvas({ xMax: value ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           j min
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selectedDiagramConfig.yMin)}
-            aria-label={`${selectedBlock.label} vector j min`}
-            onChange={(event) => updateCanvas({ yMin: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
+            value={selectedDiagramConfig.yMin}
+            ariaLabel={`${selectedBlock.label} vector j min`}
+            onValueChange={(value) => updateCanvas({ yMin: value ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           j max
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selectedDiagramConfig.yMax)}
-            aria-label={`${selectedBlock.label} vector j max`}
-            onChange={(event) => updateCanvas({ yMax: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
+            value={selectedDiagramConfig.yMax}
+            ariaLabel={`${selectedBlock.label} vector j max`}
+            onValueChange={(value) => updateCanvas({ yMax: value ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
             className={controlClassName}
           />
         </label>
@@ -193,27 +124,23 @@ export function Vector2DSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Width
-          <input
-            type="number"
+          <NumericExpressionInput
             min={160}
             step={10}
-            value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
-            aria-label={`${selectedBlock.label} vector width`}
-            onChange={(event) => updateCanvas({ widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
+            value={selectedDiagramConfig.widthPx}
+            ariaLabel={`${selectedBlock.label} vector width`}
+            onValueChange={(value) => updateCanvas({ widthPx: value ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Height
-          <input
-            type="number"
+          <NumericExpressionInput
             min={120}
             step={10}
-            value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
-            aria-label={`${selectedBlock.label} vector height`}
-            onChange={(event) =>
-              updateCanvas({ heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })
-            }
+            value={selectedDiagramConfig.heightPx}
+            ariaLabel={`${selectedBlock.label} vector height`}
+            onValueChange={(value) => updateCanvas({ heightPx: value ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
             className={controlClassName}
           />
         </label>
@@ -221,25 +148,25 @@ export function Vector2DSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           i major
-          <DraftNumberInput
+          <NumericExpressionInput
             min={0.1}
             step={1}
             value={selectedDiagramConfig.gridMajorStepX}
             fallbackValue={selectedDiagramConfig.gridMajorStep}
             ariaLabel={`${selectedBlock.label} vector i major`}
-            onChange={(value) => updateCanvas(vector2dMajorGridStepPatch("x", value))}
+            onValueChange={(value) => updateCanvas(vector2dMajorGridStepPatch("x", value))}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           j major
-          <DraftNumberInput
+          <NumericExpressionInput
             min={0.1}
             step={1}
             value={selectedDiagramConfig.gridMajorStepY}
             fallbackValue={selectedDiagramConfig.gridMajorStep}
             ariaLabel={`${selectedBlock.label} vector j major`}
-            onChange={(value) => updateCanvas(vector2dMajorGridStepPatch("y", value))}
+            onValueChange={(value) => updateCanvas(vector2dMajorGridStepPatch("y", value))}
             className={controlClassName}
           />
         </label>
@@ -256,25 +183,25 @@ export function Vector2DSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           i minor
-          <DraftNumberInput
+          <NumericExpressionInput
             min={0.1}
             step={1}
             value={selectedDiagramConfig.gridMinorStepX}
             fallbackValue={selectedDiagramConfig.gridMinorStep}
             ariaLabel={`${selectedBlock.label} vector i minor`}
-            onChange={(value) => updateCanvas(vector2dMinorGridStepPatch("x", value))}
+            onValueChange={(value) => updateCanvas(vector2dMinorGridStepPatch("x", value))}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           j minor
-          <DraftNumberInput
+          <NumericExpressionInput
             min={0.1}
             step={1}
             value={selectedDiagramConfig.gridMinorStepY}
             fallbackValue={selectedDiagramConfig.gridMinorStep}
             ariaLabel={`${selectedBlock.label} vector j minor`}
-            onChange={(value) => updateCanvas(vector2dMinorGridStepPatch("y", value))}
+            onValueChange={(value) => updateCanvas(vector2dMinorGridStepPatch("y", value))}
             className={controlClassName}
           />
         </label>

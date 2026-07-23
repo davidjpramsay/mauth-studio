@@ -42,6 +42,22 @@ export const DEFAULT_NOTES_FORMATTING_CONFIG: FormattingConfig = {
   sectionHeaders: true,
 };
 
+export const DEFAULT_INVESTIGATION_FORMATTING_CONFIG: FormattingConfig = {
+  ...DEFAULT_WORKSHEET_FORMATTING_CONFIG,
+  id: "investigation",
+  showMarks: true,
+  questionSpacing: "compact",
+  fontSize: "11pt",
+  sectionHeaders: false,
+  page: {
+    size: "A4",
+    orientation: "portrait",
+    ...DEFAULT_PAGE_FORMAT,
+    paddingXPx: 52,
+    paddingYPx: 44,
+  },
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -87,6 +103,7 @@ export function normalizeFormattingConfig(value: unknown): FormattingConfig {
 export function formattingConfigForPresetId(presetId: FormattingConfig["id"]): FormattingConfig {
   if (presetId === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FORMATTING_CONFIG);
   if (presetId === "math-notes") return cloneSerializable(DEFAULT_NOTES_FORMATTING_CONFIG);
+  if (presetId === "investigation") return cloneSerializable(DEFAULT_INVESTIGATION_FORMATTING_CONFIG);
   return {
     ...cloneSerializable(DEFAULT_FORMATTING_CONFIG),
     id: presetId ?? DEFAULT_FORMATTING_CONFIG.id,

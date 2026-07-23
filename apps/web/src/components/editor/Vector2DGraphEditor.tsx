@@ -3,6 +3,7 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import {
   DEFAULT_VECTOR_2D_GRAPH,
   VECTOR_2D_ANNOTATION_COLOR,
@@ -238,57 +239,59 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
         <section className="flex flex-wrap items-end gap-3">
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             i min
-            <input
-              type="number"
-              value={numberInputValue(config.xMin)}
-              onChange={(event) => onChange({ xMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
+            <NumericExpressionInput
+              value={config.xMin}
+              ariaLabel="Vector i minimum"
+              onValueChange={(value) => onChange({ xMin: value ?? DEFAULT_VECTOR_2D_GRAPH.xMin })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             i max
-            <input
-              type="number"
-              value={numberInputValue(config.xMax)}
-              onChange={(event) => onChange({ xMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
+            <NumericExpressionInput
+              value={config.xMax}
+              ariaLabel="Vector i maximum"
+              onValueChange={(value) => onChange({ xMax: value ?? DEFAULT_VECTOR_2D_GRAPH.xMax })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             j min
-            <input
-              type="number"
-              value={numberInputValue(config.yMin)}
-              onChange={(event) => onChange({ yMin: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
+            <NumericExpressionInput
+              value={config.yMin}
+              ariaLabel="Vector j minimum"
+              onValueChange={(value) => onChange({ yMin: value ?? DEFAULT_VECTOR_2D_GRAPH.yMin })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             j max
-            <input
-              type="number"
-              value={numberInputValue(config.yMax)}
-              onChange={(event) => onChange({ yMax: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
+            <NumericExpressionInput
+              value={config.yMax}
+              ariaLabel="Vector j maximum"
+              onValueChange={(value) => onChange({ yMax: value ?? DEFAULT_VECTOR_2D_GRAPH.yMax })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             Width
-            <input
-              type="number"
+            <NumericExpressionInput
               min={160}
-              value={numberInputValue(config.widthPx)}
-              onChange={(event) => onChange({ widthPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
+              step={10}
+              value={config.widthPx}
+              ariaLabel="Vector diagram width"
+              onValueChange={(value) => onChange({ widthPx: value ?? DEFAULT_VECTOR_2D_GRAPH.widthPx })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex w-28 flex-col gap-2 text-xs font-medium">
             Height
-            <input
-              type="number"
+            <NumericExpressionInput
               min={120}
-              value={numberInputValue(config.heightPx)}
-              onChange={(event) => onChange({ heightPx: optionalNumber(event.target.value) ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
+              step={10}
+              value={config.heightPx}
+              ariaLabel="Vector diagram height"
+              onValueChange={(value) => onChange({ heightPx: value ?? DEFAULT_VECTOR_2D_GRAPH.heightPx })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
@@ -389,55 +392,63 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
               <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(6,minmax(70px,1fr))_auto] md:items-end">
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Start i
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.start[0])}
-                    onChange={(event) => updateStart(vectorIndex, 0, optionalNumber(event.target.value) ?? 0)}
+                  <NumericExpressionInput
+                    value={vector.start[0]}
+                    ariaLabel={`Vector ${vectorIndex + 1} start i`}
+                    onValueChange={(value) => {
+                      if (value !== undefined) updateStart(vectorIndex, 0, value);
+                    }}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Start j
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.start[1])}
-                    onChange={(event) => updateStart(vectorIndex, 1, optionalNumber(event.target.value) ?? 0)}
+                  <NumericExpressionInput
+                    value={vector.start[1]}
+                    ariaLabel={`Vector ${vectorIndex + 1} start j`}
+                    onValueChange={(value) => {
+                      if (value !== undefined) updateStart(vectorIndex, 1, value);
+                    }}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   i comp.
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.components[0])}
-                    onChange={(event) => updateComponents(vectorIndex, 0, optionalNumber(event.target.value) ?? 0)}
+                  <NumericExpressionInput
+                    value={vector.components[0]}
+                    ariaLabel={`Vector ${vectorIndex + 1} i component`}
+                    onValueChange={(value) => {
+                      if (value !== undefined) updateComponents(vectorIndex, 0, value);
+                    }}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   j comp.
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.components[1])}
-                    onChange={(event) => updateComponents(vectorIndex, 1, optionalNumber(event.target.value) ?? 0)}
+                  <NumericExpressionInput
+                    value={vector.components[1]}
+                    ariaLabel={`Vector ${vectorIndex + 1} j component`}
+                    onValueChange={(value) => {
+                      if (value !== undefined) updateComponents(vectorIndex, 1, value);
+                    }}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Label i
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.labelX)}
-                    onChange={(event) => updateLabelPosition(vectorIndex, 0, optionalNumber(event.target.value))}
+                  <NumericExpressionInput
+                    value={vector.labelX}
+                    ariaLabel={`Vector ${vectorIndex + 1} label i`}
+                    onValueChange={(value) => updateLabelPosition(vectorIndex, 0, value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-medium">
                   Label j
-                  <input
-                    type="number"
-                    value={numberInputValue(vector.labelY)}
-                    onChange={(event) => updateLabelPosition(vectorIndex, 1, optionalNumber(event.target.value))}
+                  <NumericExpressionInput
+                    value={vector.labelY}
+                    ariaLabel={`Vector ${vectorIndex + 1} label j`}
+                    onValueChange={(value) => updateLabelPosition(vectorIndex, 1, value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>

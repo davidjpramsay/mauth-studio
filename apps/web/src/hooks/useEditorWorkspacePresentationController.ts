@@ -11,7 +11,7 @@ import {
   editorWorkspaceVisibility,
   type EditorPaneMode,
 } from "@/lib/editorWorkspacePresentation";
-import type { FrontMatterConfig } from "@/lib/frontMatterConfig";
+import { investigationTotalMarks, type FrontMatterConfig } from "@/lib/frontMatterConfig";
 import type { LogoAsset } from "@/lib/logoLibrary";
 import { pageFormatFromConfig } from "@/lib/previewPageFormat";
 import { previewAnchorForEditorAnchor } from "@/lib/scrollAnchors";
@@ -55,8 +55,20 @@ export function useEditorWorkspacePresentationController({
   const previewDocumentFlow = useDeferredValue(documentFlow);
   const previewFormattingConfig = useDeferredValue(formattingConfig);
   const previewLogos = useDeferredValue(logos);
-  const totalMarks = useMemo(() => questions.reduce((sum, question) => sum + questionMarks(question), 0), [questions]);
-  const previewTotalMarks = useMemo(() => previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0), [previewQuestions]);
+  const totalMarks = useMemo(
+    () =>
+      frontMatter.titlePageTemplate === "investigation"
+        ? investigationTotalMarks(frontMatter.investigation)
+        : questions.reduce((sum, question) => sum + questionMarks(question), 0),
+    [frontMatter.investigation, frontMatter.titlePageTemplate, questions],
+  );
+  const previewTotalMarks = useMemo(
+    () =>
+      previewFrontMatter.titlePageTemplate === "investigation"
+        ? investigationTotalMarks(previewFrontMatter.investigation)
+        : previewQuestions.reduce((sum, question) => sum + questionMarks(question), 0),
+    [previewFrontMatter.investigation, previewFrontMatter.titlePageTemplate, previewQuestions],
+  );
   const { showEditor, showPreview, showInspectorPane } = editorWorkspaceVisibility(paneMode, inspectorOpen);
   const currentPageFormat = useMemo(() => pageFormatFromConfig(formattingConfig), [formattingConfig]);
   const { previewFitScale, previewLayoutScale, resetPreviewZoom } = usePreviewZoomController({

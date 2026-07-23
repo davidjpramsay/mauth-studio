@@ -7,6 +7,11 @@ files:
   - desktop/**
   - package.json
 asar: true
+fileAssociations:
+  - ext: mauth
+    name: Mauth Studio Document
+    description: Structured mathematics assessment document
+    role: Editor
 extraResources:
   - from: apps/web/dist
     to: web-dist
@@ -16,6 +21,8 @@ extraResources:
     to: sidecars/mauth-api
   - from: tmp/macos/penrose-runtime
     to: penrose-runtime
+  - from: tmp/macos/mauth-agent
+    to: agent
   - from: docs/assets/mauth-icon.png
     to: mauth-icon.png
 mac:

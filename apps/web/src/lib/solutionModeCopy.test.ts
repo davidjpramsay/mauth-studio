@@ -23,3 +23,28 @@ test("solutionModeCopy labels notes documents without solution tools", () => {
     layerTitle: "Notes documents do not use a separate solution layer.",
   });
 });
+
+test("solutionModeCopy labels investigation student and teacher layers", () => {
+  assert.deepEqual(
+    solutionModeCopy({
+      supportsSolutionTools: true,
+      effectiveShowSolutions: false,
+      isInvestigationTemplate: true,
+    }),
+    {
+      layerLabel: "Student brief",
+      layerTitle: "Student mode shows the investigation task and general marking guidance.",
+    },
+  );
+  assert.deepEqual(
+    solutionModeCopy({
+      supportsSolutionTools: true,
+      effectiveShowSolutions: true,
+      isInvestigationTemplate: true,
+    }),
+    {
+      layerLabel: "Teacher rubric",
+      layerTitle: "Teacher mode adds the detailed rubric after the shared student investigation brief.",
+    },
+  );
+});

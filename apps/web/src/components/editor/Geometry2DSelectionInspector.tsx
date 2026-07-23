@@ -28,6 +28,7 @@ import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { geometry2dParentAnchor, geometryPointLabel, type SelectedGeometryChild } from "../../lib/geometry2dInspectorSelection";
 import { graphInspectorWidthPatch, inspectorNumberInputValue, inspectorOptionalNumber } from "../../lib/moduleSettingsPatches";
 import { Button } from "../ui/button";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 function csvList(value: readonly string[] | undefined) {
   return (value ?? []).join(", ");
@@ -274,14 +275,13 @@ export function Geometry2DInspector({
           ].map(([label, field]) => (
             <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               {label}
-              <input
-                type="number"
+              <NumericExpressionInput
                 step={1}
-                value={inspectorNumberInputValue(point[field as keyof Graph2DGeometryPoint] as number | undefined)}
-                aria-label={`${selectedBlock.label} point ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
-                onChange={(event) =>
+                value={point[field as keyof Graph2DGeometryPoint] as number | undefined}
+                ariaLabel={`${selectedBlock.label} point ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onValueChange={(value) =>
                   patchPoint(selectedGeometryChild.index, {
-                    [field]: inspectorOptionalNumber(event.target.value),
+                    [field]: value,
                   } as Partial<Graph2DGeometryPoint>)
                 }
                 className={controlClassName}

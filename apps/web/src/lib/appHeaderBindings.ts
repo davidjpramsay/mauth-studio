@@ -29,10 +29,14 @@ export interface AppHeaderBindingSources {
   };
   solutions: {
     supportsSolutionTools: AppHeaderProps["supportsSolutionTools"];
+    supportsSolutionValidation: AppHeaderProps["supportsSolutionValidation"];
+    isInvestigationTemplate: AppHeaderProps["isInvestigationTemplate"];
     showSolutions: AppHeaderProps["showSolutions"];
     effectiveShowSolutions: AppHeaderProps["effectiveShowSolutions"];
     printModeLabel: AppHeaderProps["printModeLabel"];
     printModeTitle: AppHeaderProps["printModeTitle"];
+    studentModeLabel: AppHeaderProps["studentModeLabel"];
+    solutionModeLabel: AppHeaderProps["solutionModeLabel"];
     solutionValidation: {
       issues: unknown[];
       errorCount: number;
@@ -70,10 +74,14 @@ export function appHeaderBindings({
     systemStatusState: systemStatus.state,
     darkMode: theme.darkMode,
     supportsSolutionTools: solutions.supportsSolutionTools,
+    supportsSolutionValidation: solutions.supportsSolutionValidation,
+    isInvestigationTemplate: solutions.isInvestigationTemplate,
     showSolutions: solutions.showSolutions,
     effectiveShowSolutions: solutions.effectiveShowSolutions,
     printModeLabel: solutions.printModeLabel,
     printModeTitle: solutions.printModeTitle,
+    studentModeLabel: solutions.studentModeLabel,
+    solutionModeLabel: solutions.solutionModeLabel,
     solutionIssueCount: solutions.solutionValidation.issues.length,
     solutionErrorCount: solutions.solutionValidation.errorCount,
     canUndo: history.canUndo,

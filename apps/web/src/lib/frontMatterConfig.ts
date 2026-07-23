@@ -1,6 +1,6 @@
 import { STARTER_LOGOS } from "./logoLibrary.ts";
 
-export type TitlePageTemplate = "standard" | "exam" | "worksheet" | "notes";
+export type TitlePageTemplate = "standard" | "exam" | "worksheet" | "notes" | "investigation";
 
 export type ExamSectionPresetId = "section-one-calculator-free" | "section-two-calculator-assumed";
 
@@ -56,6 +56,38 @@ export interface ExamTitlePageConfig {
   supplementaryPageCount: number;
 }
 
+export interface InvestigationMarkAllocationConfig {
+  id: string;
+  marks: number;
+  description: string;
+}
+
+export interface InvestigationCriterionConfig {
+  id: string;
+  heading: string;
+  guidance: string;
+  scoringMode: "additive" | "holistic";
+  allocations: InvestigationMarkAllocationConfig[];
+}
+
+export interface InvestigationConfig {
+  teacherNameLabel: string;
+  assessmentTypeLabel: string;
+  assessmentType: string;
+  weightingLabel: string;
+  weighting: string;
+  timeLabel: string;
+  time: string;
+  dateLabel: string;
+  date: string;
+  taskTitle: string;
+  taskBody: string;
+  guidanceTitle: string;
+  rubricTitle: string;
+  rubricInstructions: string;
+  criteria: InvestigationCriterionConfig[];
+}
+
 export interface FrontMatterConfig {
   titlePageTemplate: TitlePageTemplate;
   logoId: string;
@@ -76,6 +108,7 @@ export interface FrontMatterConfig {
   instructionsTitle: string;
   instructionsBody: string;
   exam?: ExamTitlePageConfig;
+  investigation?: InvestigationConfig;
 }
 
 export const DEFAULT_FRONT_MATTER: FrontMatterConfig = {
@@ -202,6 +235,83 @@ export const DEFAULT_NOTES_FRONT_MATTER: FrontMatterConfig = {
   showInstructions: false,
 };
 
+export const DEFAULT_INVESTIGATION: InvestigationConfig = {
+  teacherNameLabel: "Teacher's name",
+  assessmentTypeLabel: "Assessment type",
+  assessmentType: "Investigation",
+  weightingLabel: "Weighting",
+  weighting: "10%",
+  timeLabel: "Time",
+  time: "",
+  dateLabel: "Date",
+  date: "",
+  taskTitle: "Task",
+  taskBody:
+    "Describe the mathematical problem or relationship to be investigated. Include the required scope, any assumptions, and the role of appropriate technology.",
+  guidanceTitle: "What is expected for this investigation?",
+  rubricTitle: "Teacher rubric",
+  rubricInstructions:
+    "Allocate marks using the evidence described under each criterion. Award the highest supported mark within each allocation row.",
+  criteria: [
+    {
+      id: "planning",
+      heading: "Planning and mathematical formulation",
+      guidance: "Define the problem clearly, identify relevant variables and assumptions, and develop a suitable mathematical approach.",
+      scoringMode: "additive",
+      allocations: [
+        { id: "planning-problem", marks: 2, description: "Defines the problem, variables, constraints, and assumptions clearly." },
+        { id: "planning-method", marks: 2, description: "Develops a coherent and appropriate mathematical plan." },
+      ],
+    },
+    {
+      id: "processes",
+      heading: "Mathematical processes and use of technology",
+      guidance: "Apply accurate mathematics and use technology purposefully to generate, organise, and extend the investigation.",
+      scoringMode: "additive",
+      allocations: [
+        { id: "processes-mathematics", marks: 3, description: "Applies relevant mathematical processes accurately and efficiently." },
+        { id: "processes-technology", marks: 2, description: "Uses appropriate technology to enhance the investigation." },
+        { id: "processes-evidence", marks: 1, description: "Presents sufficient calculations, graphs, tables, or other evidence." },
+      ],
+    },
+    {
+      id: "interpretation",
+      heading: "Interpretation, testing, and refinement",
+      guidance: "Interpret results, test emerging conclusions, refine the approach where necessary, and justify the final conclusions.",
+      scoringMode: "additive",
+      allocations: [
+        { id: "interpretation-results", marks: 2, description: "Interprets mathematical results in relation to the investigation." },
+        { id: "interpretation-testing", marks: 2, description: "Tests and refines the method or conclusions using appropriate evidence." },
+        { id: "interpretation-justification", marks: 2, description: "Draws plausible conclusions and justifies them mathematically." },
+      ],
+    },
+    {
+      id: "communication",
+      heading: "Communication and presentation",
+      guidance: "Communicate the investigation coherently using appropriate notation, representations, and mathematical language.",
+      scoringMode: "additive",
+      allocations: [
+        { id: "communication-structure", marks: 2, description: "Presents a coherent, concise, and logically structured investigation." },
+        { id: "communication-language", marks: 2, description: "Uses accurate notation, representations, and mathematical language." },
+      ],
+    },
+  ],
+};
+
+export const DEFAULT_INVESTIGATION_FRONT_MATTER: FrontMatterConfig = {
+  ...DEFAULT_FRONT_MATTER,
+  titlePageTemplate: "investigation",
+  subjectTitle: "Year 12 Mathematics Methods",
+  assessmentTitle: "Investigation 1",
+  nameLabel: "Student's name",
+  markLabel: "Result",
+  showAssessmentSubtitle: true,
+  assessmentSubtitle: "2026",
+  showDeclaration: false,
+  showInstructions: false,
+  investigation: DEFAULT_INVESTIGATION,
+};
+
 export const EXAM_SECTION_PRESETS: Array<{
   id: ExamSectionPresetId;
   label: string;
@@ -258,7 +368,7 @@ export function assessmentTitleText(value: string) {
 }
 
 export function titlePageTemplateFromValue(value: unknown): TitlePageTemplate {
-  if (value === "exam" || value === "worksheet" || value === "notes") return value;
+  if (value === "exam" || value === "worksheet" || value === "notes" || value === "investigation") return value;
   return "standard";
 }
 
@@ -266,6 +376,7 @@ export function titlePageTemplateLabel(template: TitlePageTemplate) {
   if (template === "exam") return "School exam booklet";
   if (template === "worksheet") return "Worksheet";
   if (template === "notes") return "Math notes";
+  if (template === "investigation") return "Investigation";
   return "School test title page";
 }
 
@@ -390,6 +501,67 @@ export function normalizeExamTitlePage(value: unknown): ExamTitlePageConfig {
   };
 }
 
+function normalizeInvestigationMarkAllocation(
+  value: unknown,
+  fallback: InvestigationMarkAllocationConfig,
+): InvestigationMarkAllocationConfig {
+  const record = asRecord(value);
+  return {
+    id: stringOrDefault(record?.id, fallback.id || id("investigation-allocation")),
+    marks: nonNegativeNumberOrDefault(record?.marks, fallback.marks),
+    description: stringOrDefault(record?.description, fallback.description),
+  };
+}
+
+function normalizeInvestigationCriterion(value: unknown, fallback: InvestigationCriterionConfig): InvestigationCriterionConfig {
+  const record = asRecord(value);
+  const sourceAllocations = Array.isArray(record?.allocations) && record.allocations.length ? record.allocations : fallback.allocations;
+  return {
+    id: stringOrDefault(record?.id, fallback.id || id("investigation-criterion")),
+    heading: stringOrDefault(record?.heading, fallback.heading),
+    guidance: stringOrDefault(record?.guidance, fallback.guidance),
+    scoringMode: record?.scoringMode === "holistic" || record?.scoringMode === "additive" ? record.scoringMode : fallback.scoringMode,
+    allocations: sourceAllocations.map((allocation, index) =>
+      normalizeInvestigationMarkAllocation(allocation, fallback.allocations[index] ?? fallback.allocations[0]),
+    ),
+  };
+}
+
+export function normalizeInvestigation(value: unknown): InvestigationConfig {
+  const record = asRecord(value);
+  const sourceCriteria = Array.isArray(record?.criteria) && record.criteria.length ? record.criteria : DEFAULT_INVESTIGATION.criteria;
+  return {
+    teacherNameLabel: stringOrDefault(record?.teacherNameLabel, DEFAULT_INVESTIGATION.teacherNameLabel),
+    assessmentTypeLabel: stringOrDefault(record?.assessmentTypeLabel, DEFAULT_INVESTIGATION.assessmentTypeLabel),
+    assessmentType: stringOrDefault(record?.assessmentType, DEFAULT_INVESTIGATION.assessmentType),
+    weightingLabel: stringOrDefault(record?.weightingLabel, DEFAULT_INVESTIGATION.weightingLabel),
+    weighting: stringOrDefault(record?.weighting, DEFAULT_INVESTIGATION.weighting),
+    timeLabel: stringOrDefault(record?.timeLabel, DEFAULT_INVESTIGATION.timeLabel),
+    time: stringOrDefault(record?.time, DEFAULT_INVESTIGATION.time),
+    dateLabel: stringOrDefault(record?.dateLabel, DEFAULT_INVESTIGATION.dateLabel),
+    date: stringOrDefault(record?.date, DEFAULT_INVESTIGATION.date),
+    taskTitle: stringOrDefault(record?.taskTitle, DEFAULT_INVESTIGATION.taskTitle),
+    taskBody: stringOrDefault(record?.taskBody, DEFAULT_INVESTIGATION.taskBody),
+    guidanceTitle: stringOrDefault(record?.guidanceTitle, DEFAULT_INVESTIGATION.guidanceTitle),
+    rubricTitle: stringOrDefault(record?.rubricTitle, DEFAULT_INVESTIGATION.rubricTitle),
+    rubricInstructions: stringOrDefault(record?.rubricInstructions, DEFAULT_INVESTIGATION.rubricInstructions),
+    criteria: sourceCriteria.map((criterion, index) =>
+      normalizeInvestigationCriterion(criterion, DEFAULT_INVESTIGATION.criteria[index] ?? DEFAULT_INVESTIGATION.criteria[0]),
+    ),
+  };
+}
+
+export function investigationCriterionMarks(criterion: InvestigationCriterionConfig) {
+  if (criterion.scoringMode === "holistic") {
+    return criterion.allocations.reduce((maximum, allocation) => Math.max(maximum, nonNegativeNumberOrDefault(allocation.marks, 0)), 0);
+  }
+  return criterion.allocations.reduce((sum, allocation) => sum + nonNegativeNumberOrDefault(allocation.marks, 0), 0);
+}
+
+export function investigationTotalMarks(value: InvestigationConfig | unknown) {
+  return normalizeInvestigation(value).criteria.reduce((sum, criterion) => sum + investigationCriterionMarks(criterion), 0);
+}
+
 export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<FrontMatterConfig> & { showSectionHeading?: unknown; sectionHeading?: unknown };
@@ -418,7 +590,9 @@ export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
     schoolName: typeof candidate.schoolName === "string" ? candidate.schoolName : DEFAULT_FRONT_MATTER.schoolName,
     subjectTitle: typeof candidate.subjectTitle === "string" ? candidate.subjectTitle : DEFAULT_FRONT_MATTER.subjectTitle,
     assessmentTitle:
-      titlePageTemplate === "worksheet" || titlePageTemplate === "notes" ? rawAssessmentTitle : assessmentTitleText(rawAssessmentTitle),
+      titlePageTemplate === "worksheet" || titlePageTemplate === "notes" || titlePageTemplate === "investigation"
+        ? rawAssessmentTitle
+        : assessmentTitleText(rawAssessmentTitle),
     nameLabel: typeof candidate.nameLabel === "string" ? candidate.nameLabel : DEFAULT_FRONT_MATTER.nameLabel,
     markLabel: typeof candidate.markLabel === "string" ? candidate.markLabel : DEFAULT_FRONT_MATTER.markLabel,
     startQuestionNumber,
@@ -434,5 +608,8 @@ export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
       typeof candidate.instructionsTitle === "string" ? candidate.instructionsTitle : DEFAULT_FRONT_MATTER.instructionsTitle,
     instructionsBody: typeof candidate.instructionsBody === "string" ? candidate.instructionsBody : DEFAULT_FRONT_MATTER.instructionsBody,
     ...(titlePageTemplate === "exam" || candidate.exam ? { exam: normalizeExamTitlePage(candidate.exam) } : {}),
+    ...(titlePageTemplate === "investigation" || candidate.investigation
+      ? { investigation: normalizeInvestigation(candidate.investigation) }
+      : {}),
   };
 }

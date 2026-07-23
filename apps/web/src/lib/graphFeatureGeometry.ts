@@ -6,6 +6,144 @@ function distanceBetweenPoints(a: GraphPoint, b: GraphPoint) {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
+function graphFeatureId(feature: GraphFeature, index: number) {
+  return feature.id?.trim() || `feature-${index}`;
+}
+
+function manualLineSegmentEndpoints(feature: GraphFeature): [GraphPoint, GraphPoint] {
+  return [
+    [Number.isFinite(feature.x1) ? (feature.x1 as number) : 0, Number.isFinite(feature.y1) ? (feature.y1 as number) : 0],
+    [Number.isFinite(feature.x2) ? (feature.x2 as number) : 0, Number.isFinite(feature.y2) ? (feature.y2 as number) : 0],
+  ];
+}
+
+function angleBetweenVectors(first: GraphPoint, second: GraphPoint) {
+  const firstAngle = Math.atan2(first[1], first[0]);
+  const secondAngle = Math.atan2(second[1], second[0]);
+  const delta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
+  return Math.min(delta, Math.PI * 2 - delta);
+}
+
+function vectorFromPoints(from: GraphPoint, to: GraphPoint): GraphPoint {
+  return [to[0] - from[0], to[1] - from[1]];
+}
+
+interface IncidentLineSegment {
+  id: string;
+  arm: GraphPoint;
+}
+
+function lineSegmentsIncidentAtMarker(feature: GraphFeature, features: readonly GraphFeature[]) {
+  const vertex: GraphPoint = [
+    Number.isFinite(feature.x) ? (feature.x as number) : 0,
+    Number.isFinite(feature.y) ? (feature.y as number) : 0,
+  ];
+  return features.flatMap<IncidentLineSegment>((candidate, index) => {
+    if (candidate.kind !== "line_segment") return [];
+    const [start, end] = manualLineSegmentEndpoints(candidate);
+    if (distanceBetweenPoints(vertex, start) < 1e-7) return [{ id: graphFeatureId(candidate, index), arm: end }];
+    if (distanceBetweenPoints(vertex, end) < 1e-7) return [{ id: graphFeatureId(candidate, index), arm: start }];
+    return [];
+  });
+}
+
+export interface GraphAngleMarkerSegmentIds {
+  firstSegmentId: string;
+  secondSegmentId: string;
+}
+
+export function graphLineSegmentsShareEndpoint(features: readonly GraphFeature[], firstSegmentId: string, secondSegmentId: string) {
+  if (!firstSegmentId || !secondSegmentId || firstSegmentId === secondSegmentId) return false;
+  const firstIndex = features.findIndex((feature, index) => graphFeatureId(feature, index) === firstSegmentId);
+  const secondIndex = features.findIndex((feature, index) => graphFeatureId(feature, index) === secondSegmentId);
+  const first = features[firstIndex];
+  const second = features[secondIndex];
+  if (first?.kind !== "line_segment" || second?.kind !== "line_segment") return false;
+  const firstEndpoints = manualLineSegmentEndpoints(first);
+  const secondEndpoints = manualLineSegmentEndpoints(second);
+  return firstEndpoints.some((firstPoint) => secondEndpoints.some((secondPoint) => distanceBetweenPoints(firstPoint, secondPoint) < 1e-7));
+}
+
+export function graphAngleMarkerSegmentIds(feature: GraphFeature, features: readonly GraphFeature[]): GraphAngleMarkerSegmentIds | null {
+  if (feature.kind !== "angle_marker") return null;
+  const lineSegmentIds = new Set(
+    features.flatMap((candidate, index) => (candidate.kind === "line_segment" ? [graphFeatureId(candidate, index)] : [])),
+  );
+  const explicitFirst = feature.firstSegmentId?.trim();
+  const explicitSecond = feature.secondSegmentId?.trim();
+  if (
+    explicitFirst &&
+    explicitSecond &&
+    explicitFirst !== explicitSecond &&
+    lineSegmentIds.has(explicitFirst) &&
+    lineSegmentIds.has(explicitSecond)
+  ) {
+    return { firstSegmentId: explicitFirst, secondSegmentId: explicitSecond };
+  }
+
+  const incident = lineSegmentsIncidentAtMarker(feature, features);
+  if (incident.length < 2) return null;
+  const vertex: GraphPoint = [
+    Number.isFinite(feature.x) ? (feature.x as number) : 0,
+    Number.isFinite(feature.y) ? (feature.y as number) : 0,
+  ];
+  const firstTarget: GraphPoint = [
+    (Number.isFinite(feature.x1) ? (feature.x1 as number) : 1) - vertex[0],
+    (Number.isFinite(feature.y1) ? (feature.y1 as number) : 0) - vertex[1],
+  ];
+  const secondTarget: GraphPoint = [
+    (Number.isFinite(feature.x2) ? (feature.x2 as number) : 0.7) - vertex[0],
+    (Number.isFinite(feature.y2) ? (feature.y2 as number) : 0.7) - vertex[1],
+  ];
+  let best: { firstSegmentId: string; secondSegmentId: string; score: number } | null = null;
+  for (const first of incident) {
+    if (explicitFirst && first.id !== explicitFirst) continue;
+    for (const second of incident) {
+      if (first.id === second.id || (explicitSecond && second.id !== explicitSecond)) continue;
+      const score =
+        angleBetweenVectors(vectorFromPoints(vertex, first.arm), firstTarget) +
+        angleBetweenVectors(vectorFromPoints(vertex, second.arm), secondTarget);
+      if (!best || score < best.score) best = { firstSegmentId: first.id, secondSegmentId: second.id, score };
+    }
+  }
+  return best ? { firstSegmentId: best.firstSegmentId, secondSegmentId: best.secondSegmentId } : null;
+}
+
+function referencedAngleMarkerPoints(feature: GraphFeature, graphConfig: GraphConfig): [GraphPoint, GraphPoint, GraphPoint] | null {
+  const features = graphConfig.features ?? [];
+  const references = graphAngleMarkerSegmentIds(feature, features);
+  if (!references) return null;
+  const firstIndex = features.findIndex((candidate, index) => graphFeatureId(candidate, index) === references.firstSegmentId);
+  const secondIndex = features.findIndex((candidate, index) => graphFeatureId(candidate, index) === references.secondSegmentId);
+  const firstSegment = features[firstIndex];
+  const secondSegment = features[secondIndex];
+  if (firstSegment?.kind !== "line_segment" || secondSegment?.kind !== "line_segment") return null;
+  const firstEndpoints = lineSegmentFeatureEndpoints(firstSegment, graphConfig);
+  const secondEndpoints = lineSegmentFeatureEndpoints(secondSegment, graphConfig);
+  let closest: { firstEndpoint: number; secondEndpoint: number; distance: number } | null = null;
+  for (const firstEndpoint of [0, 1]) {
+    for (const secondEndpoint of [0, 1]) {
+      const distance = distanceBetweenPoints(firstEndpoints[firstEndpoint], secondEndpoints[secondEndpoint]);
+      if (!closest || distance < closest.distance) closest = { firstEndpoint, secondEndpoint, distance };
+    }
+  }
+  if (!closest || closest.distance >= 1e-7) return null;
+  const firstVertex = firstEndpoints[closest.firstEndpoint];
+  const secondVertex = secondEndpoints[closest.secondEndpoint];
+  const vertex: GraphPoint = [(firstVertex[0] + secondVertex[0]) / 2, (firstVertex[1] + secondVertex[1]) / 2];
+  return [firstEndpoints[closest.firstEndpoint === 0 ? 1 : 0], vertex, secondEndpoints[closest.secondEndpoint === 0 ? 1 : 0]];
+}
+
+export function graphAngleMarkerFeaturePoints(feature: GraphFeature, graphConfig: GraphConfig): [GraphPoint, GraphPoint, GraphPoint] {
+  const referenced = referencedAngleMarkerPoints(feature, graphConfig);
+  if (referenced) return referenced;
+  return [
+    [Number.isFinite(feature.x1) ? (feature.x1 as number) : 1, Number.isFinite(feature.y1) ? (feature.y1 as number) : 0],
+    [Number.isFinite(feature.x) ? (feature.x as number) : 0, Number.isFinite(feature.y) ? (feature.y as number) : 0],
+    [Number.isFinite(feature.x2) ? (feature.x2 as number) : 0.7, Number.isFinite(feature.y2) ? (feature.y2 as number) : 0.7],
+  ];
+}
+
 function uniqueGraphPoints(points: GraphPoint[]) {
   return points.reduce<GraphPoint[]>((uniquePoints, point) => {
     if (!uniquePoints.some((candidate) => distanceBetweenPoints(candidate, point) < 1e-7)) uniquePoints.push(point);

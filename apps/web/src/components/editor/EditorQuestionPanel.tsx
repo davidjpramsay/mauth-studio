@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { FileText, GitBranch, Trash2 } from "lucide-react";
 
 import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
+import { ContainerWordingEditor } from "@/components/editor/ContainerWordingEditor";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
 import { Badge } from "@/components/ui/badge";
@@ -196,6 +197,15 @@ export function EditorQuestionPanel({
       </div>
 
       <div className="flex flex-col gap-3">
+        {!isNotesTemplate ? (
+          <ContainerWordingEditor
+            label="Question wording"
+            value={question.text}
+            placeholder="Enter the question introduction or shared prompt"
+            minHeightClassName="min-h-[88px]"
+            onChange={(text) => updateQuestion(question.id, { text })}
+          />
+        ) : null}
         {questionItems.map((item, itemIndex) => {
           const beforeItem: ContainerOrderItem = item.kind === "block" ? { kind: "block", id: item.id } : { kind: "part", id: item.id };
           const beforeDropZone = itemDropZone({ kind: "question", questionId: question.id }, beforeItem, dragActive);

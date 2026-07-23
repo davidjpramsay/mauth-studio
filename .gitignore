@@ -11,6 +11,7 @@ dist/
 build/
 release/
 apps/web/.tmp/
+.playwright-cli/
 tmp/
 storage/
 drafts/

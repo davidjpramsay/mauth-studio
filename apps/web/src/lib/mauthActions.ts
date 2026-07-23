@@ -6,6 +6,7 @@ import {
   type MauthDiagramSettingsUpdate,
   type MauthModuleSettingsUpdate,
 } from "./mauthSettingsActions.ts";
+import { normalizeStandardSectionTitlePage, type StandardSectionTitlePageConfig } from "./standardTestTitlePage.ts";
 
 export type MauthOrderItemKind = "block" | "part" | "subpart";
 
@@ -47,6 +48,7 @@ export interface MauthQuestionLike {
 export interface MauthSectionHeadingLike {
   id: string;
   title: string;
+  titlePage?: StandardSectionTitlePageConfig;
 }
 
 export type MauthDocumentFlowItem = { kind: "sectionHeading"; id: string } | { kind: "question"; id: string };
@@ -137,7 +139,11 @@ export type MauthAction =
 export type MauthDocumentAction =
   | MauthAction
   | { type: "sectionHeading.add"; heading: MauthSectionHeadingLike; beforeItem?: MauthDocumentFlowItem; afterItem?: MauthDocumentFlowItem }
-  | { type: "sectionHeading.update"; sectionHeadingId: string; patch: { title?: string } }
+  | {
+      type: "sectionHeading.update";
+      sectionHeadingId: string;
+      patch: { title?: string; titlePage?: StandardSectionTitlePageConfig };
+    }
   | { type: "sectionHeading.delete"; sectionHeadingId: string }
   | { type: "sectionHeading.reorder"; sectionHeadingId: string; targetItem: MauthDocumentFlowItem; placement: "before" | "after" }
   | { type: "frontMatter.update"; patch: Record<string, unknown> }
@@ -406,7 +412,12 @@ function normalizedSectionHeadings<Q extends MauthQuestionLike, F extends object
   const headings: MauthSectionHeadingLike[] = [];
   for (const heading of document.sectionHeadings ?? []) {
     if (!heading.id || seen.has(heading.id)) continue;
-    headings.push({ id: heading.id, title: typeof heading.title === "string" ? heading.title : "" });
+    const titlePage = normalizeStandardSectionTitlePage(heading.titlePage);
+    headings.push({
+      id: heading.id,
+      title: typeof heading.title === "string" ? heading.title : "",
+      ...(titlePage ? { titlePage } : {}),
+    });
     seen.add(heading.id);
   }
   return headings;
@@ -1665,7 +1676,8 @@ export function applyMauthDocumentAction<Q extends MauthQuestionLike, F extends 
     if (sectionHeadings.some((candidate) => candidate.id === heading.id)) {
       return documentFail(action, document, `Section heading ${heading.id} already exists.`, heading.id);
     }
-    const nextSectionHeadings = [...sectionHeadings, { id: heading.id, title: heading.title }];
+    const titlePage = normalizeStandardSectionTitlePage(heading.titlePage);
+    const nextSectionHeadings = [...sectionHeadings, { id: heading.id, title: heading.title, ...(titlePage ? { titlePage } : {}) }];
     const currentFlow = normalizedDocumentFlow(document, nextSectionHeadings);
     const flowItem = { kind: "sectionHeading", id: heading.id } satisfies MauthDocumentFlowItem;
     const documentFlow = documentFlowWithInsertedItem(currentFlow, flowItem, action.beforeItem, action.afterItem);
@@ -1682,6 +1694,7 @@ export function applyMauthDocumentAction<Q extends MauthQuestionLike, F extends 
     const nextHeading = {
       ...current,
       ...(typeof action.patch.title === "string" ? { title: action.patch.title } : {}),
+      ...(action.patch.titlePage !== undefined ? { titlePage: normalizeStandardSectionTitlePage(action.patch.titlePage) } : {}),
     };
     if (valuesEqual(current, nextHeading)) return documentOk(action, document, []);
     const nextSectionHeadings = [...sectionHeadings];

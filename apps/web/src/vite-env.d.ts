@@ -3,6 +3,27 @@
 declare const __MAUTH_WEB_BUILD_ID__: string;
 declare const __MAUTH_WEB_VERSION__: string;
 
+interface Window {
+  mauthDesktop?: {
+    getAgentConnectorInfo: () => Promise<MauthAgentConnectorInfo>;
+    onOpenAgentSetup: (listener: () => void) => () => void;
+    onOpenDocument: (listener: (filePath: string) => void) => () => void;
+  };
+}
+
+interface MauthAgentConnectorInfo {
+  available: boolean;
+  bundled: boolean;
+  version: string;
+  connectorPath: string | null;
+  launchCommand: string;
+  launchArgs: string[];
+  codexSetupCommand: string;
+  claudeCodeSetupCommand: string;
+  claudeDesktopConfiguration: string;
+  doctorCommand: string;
+}
+
 declare module "*.css";
 
 declare module "plotly.js-dist-min" {

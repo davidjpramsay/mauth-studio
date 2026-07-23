@@ -59,7 +59,7 @@ GET  /.well-known/mauth-agent.json
 GET  /agent-docs
 ```
 
-`/api/system/status` is the process and bridge-health check for local tools. It reports the API build/version state, runtime kind, active documents folder, default project, browser bridge session count, authentication requirement, and route names. The standalone app publishes its dynamic URL and random per-launch bridge token in the mode-`0600` file `~/Library/Application Support/Mauth Studio/runtime.json`; `pnpm agent:doctor`, `pnpm agent:mcp`, and bridge smoke tooling discover them automatically before checking status.
+`/api/system/status` is the process and bridge-health check for local tools. It reports the API build/version state, runtime kind, active documents folder, default project, browser bridge session count, authentication requirement, and route names. The standalone app publishes its dynamic URL and random per-launch bridge token in the mode-`0600` file `~/Library/Application Support/Mauth Studio/runtime.json`; the bundled connector, `pnpm agent:doctor`, `pnpm agent:mcp`, and bridge smoke tooling discover them automatically before checking status.
 
 Packaged private API routes require `Authorization: Bearer <token>`. Electron injects that header into its own `/api/*` traffic without exposing the token to document state or renderer JavaScript. Codex and Claude wrappers read it from the runtime manifest, and the manifest is removed when the owning app quits. Health, discovery, and system-status routes stay readable for diagnostics, but they never return the token. Fixed-port development runs remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly configured.
 
@@ -145,9 +145,13 @@ The local agent bridge is not:
 
 Provider calls can be added later as optional tooling only after the local deterministic contract is working.
 
-## Local MCP Wrapper
+## Mauth Agent Connector
 
-Run:
+The signed app includes a self-contained stdio MCP connector under `Contents/Resources/agent`. It is built from the same `scripts/mauth-agent-mcp.mjs` entry point as development tooling, bundles the MCP SDK and validation dependencies, and launches with the Electron runtime already inside the app. Agent users therefore do not need Node, pnpm, a source checkout, or a separate agent-files download.
+
+Choose **Help > Set Up Codex or Claude...** for the one-time Codex, Claude Code, or Claude Desktop configuration. The saved client configuration contains only the connector command path. The connector discovers the dynamic URL and token on every launch; the token is not persisted in client configuration.
+
+For source development, run:
 
 ```bash
 pnpm agent:mcp
@@ -168,6 +172,6 @@ The MCP server wraps the HTTP bridge and exposes:
 - `mauth_suggestion_create`
 - `mauth_suggestion_mark`
 
-Run `pnpm agent:doctor` to check API health, web reachability, MCP dependencies, discovery docs, and active editor presence.
+Run `pnpm agent:doctor` to check API health, web reachability, MCP dependencies, discovery docs, and active editor presence. Run `pnpm macos:build:agent` followed by `pnpm smoke:agent-connector` to exercise MCP negotiation and a live snapshot through the generated self-contained bundle.
 
 Keep `pnpm test:web-actions`, `pnpm smoke:context-menu-actions`, and `pnpm smoke:file-manager` green while evolving the bridge. Comments and suggestions are intentionally non-mutating review state; applying document edits still goes through preview/apply action batches.

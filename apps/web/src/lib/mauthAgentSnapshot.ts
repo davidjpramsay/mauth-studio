@@ -7,6 +7,7 @@ import type {
   MauthAgentSnapshot,
   MauthAgentSubpartSummary,
 } from "@mauth-studio/shared";
+import { investigationTotalMarks, normalizeInvestigation } from "./frontMatterConfig.ts";
 import { tableSolutionEntryCount } from "./tableSolutionEntries.ts";
 
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "./mauthActions.ts";
@@ -142,6 +143,14 @@ function summarizeQuestion(question: MauthQuestionLike, index: number): MauthAge
   };
 }
 
+function documentTotalMarks<Q extends MauthQuestionLike, F extends object, C extends object>(document: MauthDocumentLike<Q, F, C>) {
+  const frontMatter = document.frontMatter as Record<string, unknown>;
+  if (frontMatter.titlePageTemplate === "investigation") {
+    return investigationTotalMarks(normalizeInvestigation(frontMatter.investigation));
+  }
+  return document.questions.reduce((total, question) => total + question.marks, 0);
+}
+
 function snapshotIdFor<Q extends MauthQuestionLike, F extends object, C extends object>(
   input: BuildMauthAgentSnapshotInput<Q, F, C>,
 ): string {
@@ -172,6 +181,7 @@ export function buildMauthAgentSnapshot<
   const sectionHeadings = (input.document.sectionHeadings ?? []).map((heading) => ({
     id: heading.id,
     title: heading.title,
+    ...(heading.titlePage ? { titlePage: heading.titlePage } : {}),
   }));
   const sectionHeadingTitles = new Map(sectionHeadings.map((heading) => [heading.id, heading.title]));
   const documentFlow =
@@ -199,7 +209,7 @@ export function buildMauthAgentSnapshot<
     documentFlow,
     questions,
     questionCount: questions.length,
-    totalMarks: questions.reduce((total, question) => total + question.marks, 0),
+    totalMarks: documentTotalMarks(input.document),
     validation: input.validation,
     warnings: input.warnings ?? [],
     _links: {

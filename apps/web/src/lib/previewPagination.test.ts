@@ -12,6 +12,7 @@ import {
   examStructureRows,
   frontMatterPageCount,
   groupPreviewPageSegments,
+  investigationPreviewPageCount,
   pagesAreEqual,
   previewPaginationReportsEqual,
   previewReadinessWarnings,
@@ -123,6 +124,16 @@ test("frontMatterPageCount reflects document title-page templates", () => {
   assert.equal(frontMatterPageCount(DEFAULT_EXAM_FRONT_MATTER), 2);
   assert.equal(frontMatterPageCount({ ...DEFAULT_FRONT_MATTER, titlePageTemplate: "worksheet" }), 0);
   assert.equal(frontMatterPageCount(DEFAULT_NOTES_FRONT_MATTER), 0);
+  assert.equal(frontMatterPageCount({ ...DEFAULT_FRONT_MATTER, titlePageTemplate: "investigation" }), 0);
+});
+
+test("investigation preview adds enough teacher rubric pages for the criteria", () => {
+  assert.equal(investigationPreviewPageCount(false), 1);
+  assert.equal(investigationPreviewPageCount(true), 2);
+  assert.equal(investigationPreviewPageCount(true, 3), 2);
+  assert.equal(investigationPreviewPageCount(true, 4), 3);
+  assert.equal(investigationPreviewPageCount(true, 5), 3);
+  assert.equal(investigationPreviewPageCount(true, 7), 4);
 });
 
 test("exam reserved question-page height is only used for exam booklets", () => {

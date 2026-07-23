@@ -6,8 +6,9 @@ This scan reflects the current Mauth Studio architecture after the standalone de
 
 - The full quality gate passes: formatting, ESLint, Ruff, pytest, web action tests, Plotly tests, TypeScript, and Vite build.
 - The running API exposes `/api/system/status`, which reports the API version/start time, repo root, active documents folder, default project, git branch/commit, and browser bridge sessions. The web header now has a System status panel and marks the API as stale when this route is missing.
-- `pnpm macos:build` packages the Vite editor, FastAPI maths/storage service, and Penrose runtime into one ad-hoc-signed Electron app. `pnpm macos:install` installs it at `~/Applications/Mauth Studio.app`; opening or quitting that app starts and stops its private sidecar without leaving Terminal windows running.
-- The standalone app selects a dynamic loopback port and writes its current URL and process identity to `~/Library/Application Support/Mauth Studio/runtime.json`. `pnpm agent:doctor` and `pnpm agent:mcp` discover that manifest automatically, so Codex and other external agents still operate through the normal local bridge.
+- `pnpm macos:build` packages the Vite editor, FastAPI maths/storage service, Penrose runtime, and self-contained Mauth Agent Connector into one ad-hoc-signed Electron app. `pnpm macos:install` installs it at `~/Applications/Mauth Studio.app`; opening or quitting that app starts and stops its private sidecar without leaving Terminal windows running.
+- The standalone app selects a dynamic loopback port and writes its current URL and process identity to `~/Library/Application Support/Mauth Studio/runtime.json`. The bundled connector and repository diagnostics discover that manifest automatically, so Codex and Claude can use the normal local bridge without a source checkout or persisted token.
+- **Help > Set Up Codex or Claude...** opens the System Status agent section with one-time Codex, Claude Code, and Claude Desktop setup plus a connection test. Packaging verification starts the connector through the app-owned Electron runtime, and `pnpm smoke:agent-connector` negotiates the MCP tool list and reads a live snapshot.
 - `pnpm dev:launch:desktop` remains the fixed-port browser debugging stack. It validates `/api/system/status`, replaces stale or partial Mauth-owned development runtimes, and is not required for normal app use.
 - `pnpm smoke:external-folder-autosave` starts an isolated API/web stack, opens a temporary external documents folder, proves legacy/browser files are not silently imported, and proves a stale browser draft cannot overwrite a newer disk revision.
 - The running API exposes the current local agent browser bridge endpoints, including `/api/agent/current/browser/register`. If those requests return `404`, check the System status panel first; the likely cause is a stale API process.
@@ -150,7 +151,7 @@ The first standalone Electron implementation is complete. Its next steps are ope
 
 1. Publish each signed/notarized artifact against the committed source state that produced it, with a versioned GitHub prerelease and direct download page.
 2. Verify the downloaded artifact on a clean Apple Silicon Mac without bypassing Gatekeeper.
-3. Keep the per-launch token requirement on all private packaged API routes and preserve automatic Codex/Claude discovery through the private runtime manifest.
+3. Keep the per-launch token requirement on all private packaged API routes and preserve automatic Codex/Claude discovery through the bundled connector and private runtime manifest.
 4. Keep in-app updates teacher-controlled: check automatically once after launch, ask before download, ask before restart, and publish only verified draft assets. Treat installing the prior signed DMG as rollback; do not add silent downgrades.
 5. Keep build, startup, Penrose, native quit, sidecar shutdown, external-folder, and agent-discovery smoke coverage current.
 6. Consider a true macOS-native Swift app only if deep Finder, print, iCloud Drive, accessibility, or classroom requirements cannot be met by the packaged web stack.

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   DEFAULT_FORMATTING_CONFIG,
+  DEFAULT_INVESTIGATION_FORMATTING_CONFIG,
   DEFAULT_NOTES_FORMATTING_CONFIG,
   DEFAULT_WORKSHEET_FORMATTING_CONFIG,
   formattingConfigForPresetId,
@@ -71,12 +72,14 @@ test("normalizePageFormattingConfig rejects invalid numeric fields individually"
   assert.equal(normalized.paddingYPx, 42);
 });
 
-test("formattingConfigForPresetId returns independent worksheet and notes presets", () => {
+test("formattingConfigForPresetId returns independent worksheet, notes, and investigation presets", () => {
   const worksheet = formattingConfigForPresetId("worksheet");
   const notes = formattingConfigForPresetId("math-notes");
+  const investigation = formattingConfigForPresetId("investigation");
 
   assert.deepEqual(worksheet, DEFAULT_WORKSHEET_FORMATTING_CONFIG);
   assert.deepEqual(notes, DEFAULT_NOTES_FORMATTING_CONFIG);
+  assert.deepEqual(investigation, DEFAULT_INVESTIGATION_FORMATTING_CONFIG);
 
   worksheet.page!.paddingXPx = 999;
   assert.notEqual(DEFAULT_WORKSHEET_FORMATTING_CONFIG.page?.paddingXPx, 999);

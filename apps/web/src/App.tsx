@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormattingConfig, ProjectFileSummary } from "@mauth-studio/shared";
 
 import { tocSummaryText } from "@/components/navigation/DocumentNavigator";
@@ -9,6 +9,7 @@ import { DocumentEditorWorkspaceBindings } from "@/components/shell/DocumentEdit
 import { AppOverlayWorkspace } from "@/components/shell/AppOverlayWorkspace";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
 import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
+import { useDesktopDocumentOpenController } from "@/hooks/useDesktopDocumentOpenController";
 import { useEditorAgentBridgeController } from "@/hooks/useEditorAgentBridgeController";
 import { useEditorDocumentStateController } from "@/hooks/useEditorDocumentStateController";
 import { useEditorDocumentActionsController } from "@/hooks/useEditorDocumentActionsController";
@@ -53,6 +54,8 @@ import {
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
   defaultProjectFileNameForDocument,
+  MAUTH_DOCUMENT_FORMAT,
+  MAUTH_DOCUMENT_SCHEMA_VERSION,
   parseProjectSavedDocument,
   serializeProjectDocumentSnapshot,
 } from "@/lib/projectDocumentSerialization";
@@ -269,6 +272,7 @@ export default function App() {
   );
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
   const [systemStatusPanelOpen, setSystemStatusPanelOpen] = useState(false);
+  useEffect(() => window.mauthDesktop?.onOpenAgentSetup(() => setSystemStatusPanelOpen(true)), []);
   const solutionModeController = useSolutionModeController(frontMatter);
   const {
     setShowSolutions,
@@ -284,7 +288,7 @@ export default function App() {
     const testPath = uniqueTestPath(filesForImport, "", savedTest.name, "file");
     return {
       path: projectPathForTestPath(testPath),
-      content: JSON.stringify(savedTest, null, 2),
+      content: JSON.stringify({ format: MAUTH_DOCUMENT_FORMAT, schemaVersion: MAUTH_DOCUMENT_SCHEMA_VERSION, ...savedTest }, null, 2),
     };
   }, []);
   const isVisibleProjectTestFile = useCallback((file: ProjectFileSummary) => {
@@ -807,8 +811,10 @@ export default function App() {
     saveCurrentTestToProjectFile,
     startNewTest,
     openProjectFile,
+    openExternalProjectDocument,
     syncActiveProjectFileFromDisk,
   } = documentSessionController;
+  useDesktopDocumentOpenController(useStableEvent(openExternalProjectDocument));
 
   const projectFileManagementController = useEditorProjectFileManagementController({
     activeProject,
@@ -940,6 +946,8 @@ export default function App() {
                 activeTocItemId={activeTocItemId}
                 pageBreakQuestionIds={pageBreakQuestionIds}
                 isNotesTemplate={isNotesTemplate}
+                isStandardTestTemplate={frontMatter.titlePageTemplate === "standard"}
+                isInvestigationTemplate={frontMatter.titlePageTemplate === "investigation"}
                 dragState={questionPageBreakDragState}
                 navigation={editorNavigationController}
                 questionLifecycle={questionLifecycleController}
@@ -958,7 +966,7 @@ export default function App() {
                   editorPaneRef,
                   previewPaneRef,
                 }}
-                document={{ frontMatter, questions, logos, totalMarks }}
+                document={{ frontMatter, questions, sectionHeadings, documentFlow, logos, totalMarks }}
                 selection={{ ...editorSelectionController, activeTocItemId, activePreviewAnchor, isActiveEditorAnchor }}
                 solutions={{ ...solutionModeController, ...solutionSurfaceCopyController, ...solutionSlotController }}
                 solutionValidation={solutionValidationController}

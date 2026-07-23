@@ -25,11 +25,13 @@ export function PageBreakStructurePanel({ label, active, onRemove }: { label: st
 export function SectionHeadingStructurePanel({
   heading,
   active,
+  titlePageMode = false,
   onChange,
   onRemove,
 }: {
   heading: StructureSectionHeading;
   active: boolean;
+  titlePageMode?: boolean;
   onChange: (title: string) => void;
   onRemove: () => void;
 }) {
@@ -38,7 +40,7 @@ export function SectionHeadingStructurePanel({
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor={`section-heading-${heading.id}`}>
-            Section title
+            {titlePageMode ? "Title page subtitle" : "Section title"}
           </label>
           <input
             id={`section-heading-${heading.id}`}
@@ -46,10 +48,10 @@ export function SectionHeadingStructurePanel({
             value={heading.title}
             onChange={(event) => onChange(event.target.value)}
             className="h-11 rounded-md border border-input bg-background px-3 text-base font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            placeholder="Multiple choice"
+            placeholder={titlePageMode ? "Section Two: Calculator-Assumed" : "Multiple choice"}
           />
         </div>
-        <RemoveActionButton label="Remove section heading" onRemove={onRemove} />
+        <RemoveActionButton label={titlePageMode ? "Remove section title page" : "Remove section heading"} onRemove={onRemove} />
       </div>
     </section>
   );

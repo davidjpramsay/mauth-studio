@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_EXAM_FRONT_MATTER,
   DEFAULT_FRONT_MATTER,
+  DEFAULT_INVESTIGATION_FRONT_MATTER,
   DEFAULT_NOTES_FRONT_MATTER,
   DEFAULT_WORKSHEET_FRONT_MATTER,
   type FrontMatterConfig,
@@ -396,6 +397,7 @@ export function createScreenshotStarterDocumentPlan(runtime: ScreenshotStarterRu
 
 export function frontMatterForTemplate(template: TitlePageTemplate) {
   if (template === "exam") return cloneSerializable(DEFAULT_EXAM_FRONT_MATTER);
+  if (template === "investigation") return cloneSerializable(DEFAULT_INVESTIGATION_FRONT_MATTER);
   if (template === "worksheet") return cloneSerializable(DEFAULT_WORKSHEET_FRONT_MATTER);
   if (template === "notes") return cloneSerializable(DEFAULT_NOTES_FRONT_MATTER);
   return cloneSerializable(DEFAULT_FRONT_MATTER);
@@ -418,7 +420,17 @@ export function createTemplateEditorDocumentPlan({
   const questions = template === "notes" ? [createNotesSection(id)] : [];
   const sectionHeadings: DocumentSectionHeading[] = [];
   const documentFlow = defaultDocumentFlow(questions);
-  const formattingConfig = formattingConfigForPresetId(formatPresetId ?? DEFAULT_FORMATTING_CONFIG.id);
+  const defaultPresetId =
+    template === "exam"
+      ? "exam-booklet"
+      : template === "worksheet"
+        ? "worksheet"
+        : template === "notes"
+          ? "math-notes"
+          : template === "investigation"
+            ? "investigation"
+            : DEFAULT_FORMATTING_CONFIG.id;
+  const formattingConfig = formattingConfigForPresetId(formatPresetId ?? defaultPresetId);
 
   return {
     document: {

@@ -152,8 +152,21 @@ export function groupPreviewPageSegments<TSegment extends PreviewQuestionSegment
 }
 
 export function frontMatterPageCount(frontMatter: FrontMatterConfig) {
-  if (frontMatter.titlePageTemplate === "worksheet" || frontMatter.titlePageTemplate === "notes") return 0;
+  if (
+    frontMatter.titlePageTemplate === "worksheet" ||
+    frontMatter.titlePageTemplate === "notes" ||
+    frontMatter.titlePageTemplate === "investigation"
+  )
+    return 0;
   return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
+}
+
+export const INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE = 3;
+
+export function investigationPreviewPageCount(showTeacherCopy: boolean, criterionCount = 0) {
+  if (!showTeacherCopy) return 1;
+  const rubricPageCount = Math.max(1, Math.ceil(criterionCount / INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE));
+  return 1 + rubricPageCount;
 }
 
 export function examQuestionPageReservedHeight(frontMatter: FrontMatterConfig) {

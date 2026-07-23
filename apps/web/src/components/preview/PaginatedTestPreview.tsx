@@ -16,9 +16,11 @@ import {
   SchoolExamPageFooter,
   SchoolExamRunningHeader,
   SchoolExamSupplementaryPage,
+  TestFrontMatterPreview,
   WorksheetHeaderPreview,
 } from "@/components/preview/FrontMatterPreviewPages";
 import { A4PreviewPageFrame } from "@/components/preview/PreviewPageFrame";
+import { InvestigationPreview } from "@/components/preview/InvestigationPreview";
 import { normalizeChoiceItems, normalizeChoiceListLayout, normalizeTableBlock, plainTableRows } from "@/lib/contentBlockNormalization";
 import { choiceListLabel } from "@/lib/choiceSolutionAnswers";
 import { graphHeight } from "@/lib/diagramGraph2d";
@@ -42,6 +44,7 @@ import {
 import { DEFAULT_FORMATTING_CONFIG, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
   buildPreviewSegments,
+  buildTestSectionPlans,
   contentBlocksHaveDiagram,
   contentBlocksHaveVisibilityReplacementSlot,
   previewPartBlockRowIds,
@@ -51,9 +54,10 @@ import {
 } from "@/lib/editorPreviewSegments";
 import { questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { spaceLines } from "@/lib/editorContentBlockNormalization";
-import { normalizeExamTitlePage, type FrontMatterConfig } from "@/lib/frontMatterConfig";
+import { normalizeExamTitlePage, normalizeInvestigation, type FrontMatterConfig } from "@/lib/frontMatterConfig";
 import { selectedLogoForFrontMatter, type LogoAsset } from "@/lib/logoLibrary";
 import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
+import { standardSectionTitlePageFrontMatter } from "@/lib/standardTestTitlePage";
 import {
   bookletSupplementaryPageCount,
   buildPreviewPaginationReport,
@@ -62,6 +66,7 @@ import {
   examQuestionPageReservedHeight,
   frontMatterPageCount,
   groupPreviewPageSegments,
+  investigationPreviewPageCount,
   pagesAreEqual,
   previewPaginationReportsEqual,
   type PreviewPage,
@@ -190,6 +195,23 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
         <h3>
           <FrontMatterInlineText text={segment.sectionHeading.title || "Section heading"} />
         </h3>
+      </div>
+    );
+  }
+
+  if (segment.kind === "section-title-page" && segment.sectionHeading) {
+    const anchor = sectionHeadingScrollAnchor(segment.sectionHeading.id);
+    const sectionFrontMatter = standardSectionTitlePageFrontMatter(frontMatter, segment.sectionHeading);
+    return (
+      <div className="test-preview-segment test-section-title-page" data-measure-segment={measureOnly ? "true" : undefined}>
+        <TestFrontMatterPreview
+          frontMatter={sectionFrontMatter}
+          logo={logo}
+          totalMarks={segment.sectionMarks ?? 0}
+          activePreviewAnchor={measureOnly ? undefined : activePreviewAnchor}
+          scrollAnchor={anchor}
+          measureOnly={measureOnly}
+        />
       </div>
     );
   }
@@ -469,14 +491,45 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
       }),
     [documentFlow, frontMatter, normalizeDocumentFlow, normalizedFormatting, questions, sectionHeadings, showSolutions],
   );
+  const leadingStandardSection = useMemo(() => {
+    if (frontMatter.titlePageTemplate !== "standard") return null;
+    const normalizedFlow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
+    if (normalizedFlow[0]?.kind !== "sectionHeading") return null;
+    return buildTestSectionPlans(normalizedFlow, questions, sectionHeadings)[0] ?? null;
+  }, [documentFlow, frontMatter.titlePageTemplate, normalizeDocumentFlow, questions, sectionHeadings]);
+  const titlePageFrontMatter = useMemo(
+    () => (leadingStandardSection ? standardSectionTitlePageFrontMatter(frontMatter, leadingStandardSection.heading) : frontMatter),
+    [frontMatter, leadingStandardSection],
+  );
+  const titlePageMarks = leadingStandardSection?.marks ?? totalMarks;
   const fallbackPages = useMemo<PreviewPage[]>(() => buildExplicitBreakPages(segments), [segments]);
   const [pages, setPages] = useState<PreviewPage[]>(fallbackPages);
   const frontMatterLogo = useMemo(() => selectedLogoForFrontMatter(logos, frontMatter), [frontMatter, logos]);
   const exam = useMemo(() => normalizeExamTitlePage(frontMatter.exam), [frontMatter.exam]);
   const isExamTemplate = frontMatter.titlePageTemplate === "exam";
+  const isInvestigationTemplate = frontMatter.titlePageTemplate === "investigation";
+  const investigationCriterionCount = useMemo(
+    () => normalizeInvestigation(frontMatter.investigation).criteria.length,
+    [frontMatter.investigation],
+  );
   const reservedPageHeight = examQuestionPageReservedHeight(frontMatter);
 
   useLayoutEffect(() => {
+    if (isInvestigationTemplate) {
+      const nextReport: PreviewPaginationReport = {
+        mode: showSolutions ? "solutions" : "student",
+        contentPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount),
+        supplementaryPageCount: 0,
+        totalPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount),
+        overflowPages: [],
+      };
+      if (!previewPaginationReportsEqual(lastPaginationReportRef.current, nextReport)) {
+        lastPaginationReportRef.current = nextReport;
+        onPaginationReportRef.current?.(nextReport);
+      }
+      setPages([]);
+      return;
+    }
     const measureRoot = measureRef.current;
     if (!measureRoot) return;
 
@@ -497,7 +550,17 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
       onPaginationReportRef.current?.(nextReport);
     }
     setPages((currentPages) => (pagesAreEqual(currentPages, nextPages) ? currentPages : nextPages));
-  }, [frontMatter, frontMatterLogo, pageFormat, reservedPageHeight, segments, showMarks, showSolutions]);
+  }, [
+    frontMatter,
+    frontMatterLogo,
+    investigationCriterionCount,
+    isInvestigationTemplate,
+    pageFormat,
+    reservedPageHeight,
+    segments,
+    showMarks,
+    showSolutions,
+  ]);
 
   const visiblePages = pages.length ? pages : fallbackPages;
   const supplementaryPageCount = bookletSupplementaryPageCount(frontMatter, visiblePages.length);
@@ -555,6 +618,19 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
     );
   };
 
+  if (isInvestigationTemplate) {
+    return (
+      <InvestigationPreview
+        frontMatter={frontMatter}
+        logo={frontMatterLogo}
+        showSolutions={showSolutions}
+        showPageBreaks={pageFormat.showPageBreaks}
+        activePreviewAnchor={activePreviewAnchor}
+        style={previewStyle}
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -568,12 +644,13 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
         <div className="a4-preview-stack">
           {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" ? (
             <FrontMatterPreviewPages
-              frontMatter={frontMatter}
+              frontMatter={titlePageFrontMatter}
               logo={frontMatterLogo}
-              totalMarks={totalMarks}
+              totalMarks={titlePageMarks}
               questionCount={questions.length}
               activePreviewAnchor={activePreviewAnchor}
               showPageBreaks={pageFormat.showPageBreaks}
+              standardScrollAnchor={leadingStandardSection ? sectionHeadingScrollAnchor(leadingStandardSection.heading.id) : undefined}
             />
           ) : null}
           {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" && pageFormat.showPageBreaks ? (

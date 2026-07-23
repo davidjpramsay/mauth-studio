@@ -2,9 +2,16 @@ import type { MutableRefObject } from "react";
 import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
-import { getDefaultProject, getProjectFile, listProjectFiles } from "@/lib/api";
+import { getDefaultProject, getProjectFile, listProjectFiles, openDefaultProjectDocumentsFolder } from "@/lib/api";
 import { activeProjectFileSyncPlan, type ActiveProjectFileSyncOutcome } from "@/lib/projectActiveFileSync";
-import { isProjectTestFile, testFileDisplayName, testPathBasename, testPathFromProjectPath } from "@/lib/projectFiles";
+import {
+  absoluteMauthDocumentTarget,
+  isProjectTestFile,
+  isStructuredMauthDocumentPath,
+  testFileDisplayName,
+  testPathBasename,
+  testPathFromProjectPath,
+} from "@/lib/projectFiles";
 import { isProjectFilesUnavailableError, projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 import { fileChangedProjectSaveConflict } from "@/lib/projectSaveConflicts";
 import {
@@ -37,11 +44,12 @@ interface UseProjectDocumentOpenControllerOptions<TSavedDocument> {
   setProjectFilesMessage: (message: string) => void;
   refreshProjectFiles: () => Promise<void>;
   onOpened?: () => void;
-  api?: {
+  api?: Partial<{
     getDefaultProject: typeof getDefaultProject;
     getProjectFile: typeof getProjectFile;
     listProjectFiles: typeof listProjectFiles;
-  };
+    openDefaultProjectDocumentsFolder: typeof openDefaultProjectDocumentsFolder;
+  }>;
 }
 
 function projectFileDisplayName(filePath: string) {
@@ -69,15 +77,26 @@ export function useProjectDocumentOpenController<TSavedDocument>({
   setProjectFilesMessage,
   refreshProjectFiles,
   onOpened,
-  api = { getDefaultProject, getProjectFile, listProjectFiles },
+  api,
 }: UseProjectDocumentOpenControllerOptions<TSavedDocument>) {
+  const runtimeApi = {
+    getDefaultProject,
+    getProjectFile,
+    listProjectFiles,
+    openDefaultProjectDocumentsFolder,
+    ...api,
+  };
+
   async function reloadProjectFileFromDisk(filePath: string) {
-    const project = activeProject ?? (await api.getDefaultProject());
+    const project = activeProject ?? (await runtimeApi.getDefaultProject());
     const fileName = projectFileDisplayName(filePath);
     setProjectFilesStatus("loading");
     setProjectFilesMessage(`Reloading ${fileName}`);
 
-    const [document, filesResponse] = await Promise.all([api.getProjectFile(project.id, filePath), api.listProjectFiles(project.id)]);
+    const [document, filesResponse] = await Promise.all([
+      runtimeApi.getProjectFile(project.id, filePath),
+      runtimeApi.listProjectFiles(project.id),
+    ]);
     const savedDocument = parseSavedDocument(document.content);
     if (!savedDocument) throw new Error("Unsupported project file");
 
@@ -91,13 +110,13 @@ export function useProjectDocumentOpenController<TSavedDocument>({
 
   async function openProjectFile(filePath: string) {
     try {
-      const project = activeProject ?? (await api.getDefaultProject());
+      const project = activeProject ?? (await runtimeApi.getDefaultProject());
       const summary = projectFiles.find((file) => file.path === filePath);
       if (summary && !isProjectTestFile(summary)) {
         setProjectFilesMessage("Only test files can be opened");
         return;
       }
-      if (!summary && !filePath.endsWith(".test.json")) {
+      if (!summary && !isStructuredMauthDocumentPath(filePath)) {
         setProjectFilesMessage("Only test files can be opened");
         return;
       }
@@ -108,7 +127,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
 
       setProjectFilesStatus("loading");
       setProjectFilesMessage(`Opening ${fileName}`);
-      const document = await api.getProjectFile(project.id, filePath);
+      const document = await runtimeApi.getProjectFile(project.id, filePath);
       const savedDocument = parseSavedDocument(document.content);
       if (!savedDocument) throw new Error("Unsupported project file");
 
@@ -137,6 +156,48 @@ export function useProjectDocumentOpenController<TSavedDocument>({
     }
   }
 
+  async function openExternalProjectDocument(absoluteFilePath: string) {
+    if (fileOperationBusy) return;
+
+    try {
+      const currentProject = activeProject ?? (await runtimeApi.getDefaultProject());
+      const target = absoluteMauthDocumentTarget(absoluteFilePath, currentProject.documentsPath);
+      if (!target) {
+        setProjectFilesMessage("Only .mauth documents can be opened");
+        return;
+      }
+
+      const fileName = projectFileDisplayName(target.projectFilePath);
+      const beforeOpen = await prepareCurrentProjectFileTransition(currentProject, { kind: "open-file", targetLabel: fileName });
+      if (!projectFileTransitionCanProceed(beforeOpen)) return;
+
+      setProjectFilesStatus("loading");
+      setProjectFilesMessage(`Opening ${fileName}`);
+      const project =
+        currentProject.documentsPath?.replace(/\/+$/g, "") === target.documentsPath
+          ? currentProject
+          : await runtimeApi.openDefaultProjectDocumentsFolder(target.documentsPath);
+      const filesResponse = await runtimeApi.listProjectFiles(project.id);
+      const summary = filesResponse.files.find((file) => file.path === target.projectFilePath);
+      if (!summary || !isProjectTestFile(summary)) throw new Error("Unsupported project file");
+      const document = await runtimeApi.getProjectFile(project.id, target.projectFilePath);
+      const savedDocument = parseSavedDocument(document.content);
+      if (!savedDocument) throw new Error("Unsupported project file");
+
+      setActiveProject(project);
+      setProjectFiles(filesResponse.files);
+      applySavedProjectDocument(project, target.projectFilePath, savedDocument, document.revision);
+      setProjectSaveConflict(null);
+      setProjectFilesStatus("ready");
+      setProjectFilesMessage(`Opened ${fileName}`);
+      onOpened?.();
+    } catch (error) {
+      if (error instanceof Error && error.message === revisionMissingErrorMessage) return;
+      setProjectFilesStatus("error");
+      setProjectFilesMessage(isProjectFilesUnavailableError(error) ? projectFilesUnavailableMessage(error) : "Open failed");
+    }
+  }
+
   async function syncActiveProjectFileFromDisk(): Promise<ActiveProjectFileSyncOutcome> {
     if (fileOperationBusy) return "skipped";
     const filePath = activeProjectFilePathRef.current;
@@ -145,8 +206,8 @@ export function useProjectDocumentOpenController<TSavedDocument>({
     let project: ProjectSummary;
     let filesResponse: Awaited<ReturnType<typeof listProjectFiles>>;
     try {
-      project = activeProject ?? (await api.getDefaultProject());
-      filesResponse = await api.listProjectFiles(project.id);
+      project = activeProject ?? (await runtimeApi.getDefaultProject());
+      filesResponse = await runtimeApi.listProjectFiles(project.id);
     } catch (error) {
       setProjectFilesStatus("error");
       setProjectFilesMessage(projectFilesUnavailableMessage(error));
@@ -211,6 +272,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
 
   return {
     openProjectFile,
+    openExternalProjectDocument,
     syncActiveProjectFileFromDisk,
     reloadActiveProjectFileFromDisk,
   };

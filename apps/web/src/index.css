@@ -989,6 +989,184 @@
     font-weight: 500;
   }
 
+  .investigation-page {
+    color: #172033;
+    display: flex;
+    flex-direction: column;
+    font-family: Montserrat, Arial, ui-sans-serif, system-ui, sans-serif;
+    font-size: 10.4pt;
+    line-height: 1.38;
+    min-height: calc(var(--a4-page-height, 1122.519685px) - var(--a4-page-padding-y, 48px) - var(--a4-page-padding-y, 48px));
+  }
+
+  .test-front-matter-investigation .test-front-matter-content {
+    margin-top: 1.65rem;
+  }
+
+  .test-front-matter-investigation .test-student-row {
+    margin-top: 2rem;
+  }
+
+  .investigation-student-content {
+    color: #172033;
+    font-size: 10.4pt;
+    line-height: 1.38;
+  }
+
+  .investigation-task,
+  .investigation-guidance {
+    margin: 0;
+  }
+
+  .investigation-guidance {
+    margin-top: 1.15rem;
+  }
+
+  .investigation-task h2,
+  .investigation-guidance h2,
+  .investigation-rubric-heading h2 {
+    font-size: 11.5pt;
+    font-weight: 800;
+    margin: 0 0 0.4rem;
+  }
+
+  .investigation-task .formatted-text,
+  .investigation-rubric-heading .formatted-text {
+    gap: 0.42rem;
+  }
+
+  .investigation-task .formatted-text p,
+  .investigation-rubric-heading .formatted-text p {
+    margin: 0;
+  }
+
+  .investigation-guidance ol {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0;
+    padding-left: 1.55rem;
+  }
+
+  .investigation-guidance li {
+    padding-left: 0.25rem;
+  }
+
+  .investigation-guidance li > strong {
+    display: block;
+    font-size: 10pt;
+    margin-bottom: 0.08rem;
+  }
+
+  .investigation-guidance li .formatted-text,
+  .investigation-guidance li .formatted-text p {
+    display: inline;
+    margin: 0;
+  }
+
+  .investigation-rubric-heading {
+    margin: 0.25rem 0 0;
+  }
+
+  .investigation-rubric-heading h2 {
+    font-size: 14pt;
+    margin-bottom: 0.25rem;
+  }
+
+  .investigation-rubric-continuation {
+    color: #64748b;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+
+  .investigation-rubric-page-number {
+    color: #64748b;
+    font-size: 8pt;
+    font-weight: 600;
+    margin: 0.28rem 0 0;
+  }
+
+  .investigation-rubric-context {
+    color: #64748b;
+    font-size: 8.5pt;
+    font-weight: 700;
+    margin: 0 0 0.28rem;
+    text-transform: uppercase;
+  }
+
+  .investigation-rubric {
+    border-collapse: collapse;
+    font-size: 8.8pt;
+    line-height: 1.28;
+    margin-top: 0.65rem;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .investigation-rubric th,
+  .investigation-rubric td {
+    border: 1px solid #8793a5;
+    padding: 0.42rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .investigation-rubric thead th,
+  .investigation-rubric tfoot th {
+    background: #e8eef6;
+    font-weight: 800;
+  }
+
+  .investigation-rubric th:first-child,
+  .investigation-rubric td:first-child {
+    width: 34%;
+  }
+
+  .investigation-rubric th:last-child,
+  .investigation-rubric td:last-child {
+    text-align: center;
+    vertical-align: middle;
+    width: 12%;
+  }
+
+  .investigation-rubric-score {
+    white-space: nowrap;
+  }
+
+  .investigation-rubric td:first-child > strong {
+    display: block;
+    margin-bottom: 0.22rem;
+  }
+
+  .investigation-rubric td:first-child .formatted-text,
+  .investigation-rubric td:first-child .formatted-text p {
+    display: inline;
+    margin: 0;
+  }
+
+  .investigation-rubric ul {
+    display: grid;
+    gap: 0.32rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .investigation-rubric li {
+    align-items: start;
+    display: grid;
+    gap: 0.38rem;
+    grid-template-columns: 1.2rem minmax(0, 1fr);
+  }
+
+  .investigation-rubric li > strong {
+    color: #1d4ed8;
+    text-align: center;
+  }
+
+  .investigation-rubric tfoot th:first-child {
+    text-align: right;
+  }
+
   .exam-title-page {
     color: #111827;
     display: flex;

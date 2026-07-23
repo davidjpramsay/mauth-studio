@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { FormattedText, FrontMatterInlineText } from "@/components/MathText";
 import { A4PreviewPageFrame } from "@/components/preview/PreviewPageFrame";
@@ -309,16 +309,26 @@ export function SchoolExamSupplementaryPage({ frontMatter, pageNumber }: { front
   );
 }
 
-function TestFrontMatterPreview({
+export function TestFrontMatterPreview({
   frontMatter,
   logo,
   totalMarks,
   activePreviewAnchor,
+  scrollAnchor = SCROLL_ANCHOR_FRONT_MATTER,
+  measureOnly = false,
+  className,
+  contentPosition = "before-student-row",
+  children,
 }: {
   frontMatter: FrontMatterConfig;
   logo?: LogoAsset;
   totalMarks: number;
   activePreviewAnchor?: string;
+  scrollAnchor?: string;
+  measureOnly?: boolean;
+  className?: string;
+  contentPosition?: "before-student-row" | "after-student-row";
+  children?: ReactNode;
 }) {
   const schoolNameLines = frontMatter.schoolName
     .split("\n")
@@ -329,10 +339,10 @@ function TestFrontMatterPreview({
 
   return (
     <header
-      className="test-front-matter"
-      data-scroll-anchor={SCROLL_ANCHOR_FRONT_MATTER}
-      data-preview-structure-anchor="true"
-      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FRONT_MATTER, activePreviewAnchor)}
+      className={`test-front-matter${className ? ` ${className}` : ""}`}
+      data-scroll-anchor={measureOnly ? undefined : scrollAnchor}
+      data-preview-structure-anchor={measureOnly ? undefined : "true"}
+      data-preview-selected={measureOnly ? undefined : previewSelectionAttr(scrollAnchor, activePreviewAnchor)}
     >
       <section className="test-title-panel">
         <div className="test-school-lockup">
@@ -371,6 +381,8 @@ function TestFrontMatterPreview({
         </div>
       </section>
 
+      {children && contentPosition === "before-student-row" ? <div className="test-front-matter-content">{children}</div> : null}
+
       <section className={`test-student-row ${isSolutionsTitle ? "test-student-row-solutions" : ""}`}>
         {isSolutionsTitle ? null : (
           <div className="test-name-line">
@@ -388,6 +400,8 @@ function TestFrontMatterPreview({
           <strong>{totalMarks}</strong>
         </div>
       </section>
+
+      {children && contentPosition === "after-student-row" ? <div className="test-front-matter-content">{children}</div> : null}
 
       {frontMatter.showDeclaration ? (
         <section className="test-declaration-panel">
@@ -540,6 +554,7 @@ export function FrontMatterPreviewPages({
   questionCount,
   activePreviewAnchor,
   showPageBreaks,
+  standardScrollAnchor,
 }: {
   frontMatter: FrontMatterConfig;
   logo?: LogoAsset;
@@ -547,6 +562,7 @@ export function FrontMatterPreviewPages({
   questionCount: number;
   activePreviewAnchor?: string;
   showPageBreaks: boolean;
+  standardScrollAnchor?: string;
 }) {
   if (frontMatter.titlePageTemplate === "worksheet" || frontMatter.titlePageTemplate === "notes") return null;
 
@@ -580,7 +596,13 @@ export function FrontMatterPreviewPages({
     <A4PreviewPageFrame>
       <section className="a4-page">
         <div className="a4-page-content">
-          <TestFrontMatterPreview frontMatter={frontMatter} logo={logo} totalMarks={totalMarks} activePreviewAnchor={activePreviewAnchor} />
+          <TestFrontMatterPreview
+            frontMatter={frontMatter}
+            logo={logo}
+            totalMarks={totalMarks}
+            activePreviewAnchor={activePreviewAnchor}
+            scrollAnchor={standardScrollAnchor}
+          />
         </div>
       </section>
     </A4PreviewPageFrame>

@@ -2,6 +2,7 @@ import { Fragment, type DragEvent, type ReactNode } from "react";
 import { FileText, GitBranch } from "lucide-react";
 
 import { InlineSummaryTitle } from "@/components/MathText";
+import { ContainerWordingEditor } from "@/components/editor/ContainerWordingEditor";
 import { CollapsiblePanel, ContentInsertionActions, RemoveActionButton, type InsertionAction } from "@/components/editor/EditorPanels";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
@@ -204,7 +205,7 @@ export function EditorNestedPartPanel({
         }}
       >
         <CollapsiblePanel
-          title={<InlineSummaryTitle label={partPanelLabel} summary={partPanelSummary(part.contentBlocks)} />}
+          title={<InlineSummaryTitle label={partPanelLabel} summary={part.text?.trim() || partPanelSummary(part.contentBlocks)} />}
           leading={dragHandle(partTarget, `Drag ${partPanelLabel}`)}
           onHeaderContextMenu={(event) => onHeaderContextMenu(event, partAnchor)}
           actions={
@@ -249,6 +250,14 @@ export function EditorNestedPartPanel({
           openSignal={partOpenSignal}
         >
           <div className="flex flex-col gap-3">
+            {!isNotesTemplate ? (
+              <ContainerWordingEditor
+                label="Part wording"
+                value={part.text}
+                placeholder="Enter the wording for this part"
+                onChange={(text) => updatePart(question.id, part.id, { text })}
+              />
+            ) : null}
             {partItems.map((item, partItemIndex) => {
               const beforeItem: ContainerOrderItem =
                 item.kind === "block" ? { kind: "block", id: item.id } : { kind: "subpart", id: item.id };
@@ -455,7 +464,7 @@ function EditorSubpartPanel({
       }}
     >
       <CollapsiblePanel
-        title={<InlineSummaryTitle label={subpartPanelLabel} summary={partPanelSummary(subpart.contentBlocks)} />}
+        title={<InlineSummaryTitle label={subpartPanelLabel} summary={subpart.text?.trim() || partPanelSummary(subpart.contentBlocks)} />}
         leading={dragHandle(subpartTarget, `Drag ${subpartPanelLabel}`)}
         onHeaderContextMenu={(event) => onHeaderContextMenu(event, subpartAnchor)}
         actions={
@@ -491,6 +500,13 @@ function EditorSubpartPanel({
         openSignal={subpartOpenSignal}
       >
         <div className="flex flex-col gap-3">
+          <ContainerWordingEditor
+            label={isNotesTemplate ? "Detail wording" : "Subpart wording"}
+            value={subpart.text}
+            placeholder={isNotesTemplate ? "Enter the detail text" : "Enter the wording for this subpart"}
+            minHeightClassName="min-h-[68px]"
+            onChange={(text) => updateSubpart(question.id, part.id, subpart.id, { text })}
+          />
           {subpart.contentBlocks.map((block, blockIndex) => {
             if (block.kind === "pageBreak") return null;
             const beforeItem: ContainerOrderItem = { kind: "block", id: block.id };

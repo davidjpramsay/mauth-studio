@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const KNOWN_LARGE_CHUNK_LIMIT_KB = 5000;
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET;
 
 export default defineConfig({
   plugins: [react()],
@@ -19,6 +20,13 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: apiProxyTarget
+      ? {
+          "/api": {
+            target: apiProxyTarget,
+          },
+        }
+      : undefined,
   },
   build: {
     // Plotly is intentionally lazy-loaded by StatsChartDiagram, but the generated

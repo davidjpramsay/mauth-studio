@@ -1,6 +1,6 @@
 # Mauth Local Agent Bridge
 
-Mauth exposes a local bridge for Codex, Claude Code, and MCP clients. The standalone app supplies the FastAPI sidecar, editor renderer, and one active editor session. For current handoff context, read `docs/current-state.md`; for the process and state boundaries around the bridge, read `docs/architecture.md`.
+Mauth exposes a local bridge for Codex, Claude Code, Claude Desktop, and other stdio MCP clients. The standalone app supplies the FastAPI sidecar, editor renderer, one active editor session, and a self-contained connector. For current handoff context, read `docs/current-state.md`; for the process and state boundaries around the bridge, read `docs/architecture.md`.
 
 ## Start
 
@@ -10,13 +10,13 @@ open ~/Applications/Mauth\ Studio.app
 
 The app owns its dynamic local port and sidecar. No Terminal windows need to remain open. For source development use `pnpm macos:dev`; for lower-level browser debugging, `pnpm dev:launch:desktop` or separate `pnpm dev:api` and `pnpm dev:web` processes remain available.
 
-Run:
+For a signed installed app, choose **Help > Set Up Codex or Claude...** and copy the one-time client setup. No source checkout or Node installation is required. For source development and diagnostics, run:
 
 ```bash
 pnpm agent:doctor
 ```
 
-The doctor normally discovers the packaged runtime URL and per-launch bridge token from `~/Library/Application Support/Mauth Studio/runtime.json`. If a manual Vite runtime uses another URL, pass it explicitly:
+The bundled connector and repository doctor discover the packaged runtime URL and per-launch bridge token from `~/Library/Application Support/Mauth Studio/runtime.json`. If a manual Vite runtime uses another URL, pass it explicitly:
 
 ```bash
 MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
@@ -54,7 +54,7 @@ Successful applies go through the live React action layer, editor history, autos
 
 ## MCP Tools
 
-Run:
+The installed app exposes these through its bundled connector. Repository development can start the same source entry point with:
 
 ```bash
 pnpm agent:mcp
