@@ -71,7 +71,7 @@ Then build, notarize, upload, verify, and publish with:
 pnpm macos:ship
 ```
 
-`macos:ship` fails closed unless the current branch is clean `main`, `HEAD` exactly matches `origin/main`, release notes exist, the version/tag is unused or belongs to a resumable draft targeting the same commit, and Apple/GitHub credentials are available. It runs the full quality gate before the release build, creates a draft GitHub prerelease, uploads the DMG, ZIP, `latest-mac.yml`, and blockmaps, verifies remote names, sizes, and available SHA-256 digests, and only then publishes the prerelease. A failed build or upload leaves no public partial release; an upload failure after draft creation leaves a resumable draft.
+`macos:ship` fails closed unless the current branch is clean `main`, `HEAD` exactly matches `origin/main`, release notes exist, the version/tag is unused or belongs to a resumable draft targeting the same commit, and Apple/GitHub credentials are available. Its preflight makes a live, read-only `notarytool history` request, so a missing Keychain profile or rejected Apple credential fails before the quality gate and release build. It runs the full quality gate before the release build, creates a draft GitHub prerelease, uploads the DMG, ZIP, `latest-mac.yml`, and blockmaps, verifies remote names, sizes, and available SHA-256 digests, and only then publishes the prerelease. A failed build or upload leaves no public partial release; an upload failure after draft creation leaves a resumable draft.
 
 ## Verification
 

@@ -36,6 +36,18 @@ function notarizationCredentialArgs() {
   return ["--key", process.env.APPLE_API_KEY, "--key-id", process.env.APPLE_API_KEY_ID, "--issuer", process.env.APPLE_API_ISSUER];
 }
 
+function validateNotarizationCredentials() {
+  const result = spawnSync("/usr/bin/xcrun", ["notarytool", "history", "--output-format", "json", ...notarizationCredentialArgs()], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    const detail = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+    console.error(`Apple notarization credential validation failed:\n${detail || "Unknown notarytool error."}`);
+    process.exit(result.status ?? 1);
+  }
+  console.log("Apple notarization credentials are valid.");
+}
+
 function singleDmgArtifact() {
   const releaseDir = path.resolve("release");
   const artifacts = fs.readdirSync(releaseDir).filter((name) => name.endsWith(".dmg"));
@@ -107,6 +119,8 @@ if (!hasNotaryCredentials) {
   );
   process.exit(1);
 }
+
+validateNotarizationCredentials();
 
 if (process.argv.includes("--preflight-only")) {
   console.log(`Release prerequisites are available for ${identity}.`);
