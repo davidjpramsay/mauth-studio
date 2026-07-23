@@ -86,7 +86,7 @@ Completion does not require a Swift rewrite or a restored in-app chat panel.
 - Improve Mauthdown import/export and round-trip fidelity.
 - Extract remaining render-heavy frontend boundaries, especially function graphs and preview segmentation. The navigator, workspace binding, overlay, header, and selection-inspector splits are complete.
 - Add runtime smoke tests whenever a stale-state or hidden-state regression is fixed.
-- Publish and clean-machine-test `0.1.2` on another Apple Silicon Mac, including agent setup without a source checkout, then verify an in-app update from `0.1.1`. Version `0.1.0` cannot self-update and therefore still needs one manual replacement.
+- Clean-machine-test public `0.1.2` on another Apple Silicon Mac, including agent setup without a source checkout, then verify an in-app update from `0.1.1`. Version `0.1.0` cannot self-update and therefore still needs one manual replacement.
 - Keep the public README, GitHub Pages download page, GitHub release assets, release tag, and app version aligned. Normal teacher and agent installation should use the signed DMG; source builds remain for development.
 
 ## Later
