@@ -1,0 +1,102 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="620"
+  height="430"
+  viewBox="0 0 620 430"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">Three-dimensional coordinate construction</title>
+  <desc id="desc">
+    A translucent rectangular prism drawn on a three-dimensional coordinate grid, with labelled axes, dimensions,
+    a coordinate point, and a space diagonal.
+  </desc>
+  <defs>
+    <marker id="arrow-x" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#e06b2d" />
+    </marker>
+    <marker id="arrow-y" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#14977f" />
+    </marker>
+    <marker id="arrow-z" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#2671e8" />
+    </marker>
+    <marker
+      id="arrow-vector"
+      markerWidth="8"
+      markerHeight="8"
+      refX="7"
+      refY="4"
+      orient="auto"
+      markerUnits="strokeWidth"
+    >
+      <path d="M0,0 L8,4 L0,8 Z" fill="#6d4be8" />
+    </marker>
+  </defs>
+
+  <rect width="620" height="430" fill="#ffffff" />
+
+  <g fill="none" stroke="#dbe4f1" stroke-width="1.2">
+    <path d="M278 360 L134 280 M336 370 L192 290 M394 380 L250 300 M452 390 L308 310 M510 400 L366 320" />
+    <path d="M184 330 L474 380 M148 310 L438 360 M112 290 L402 340 M76 270 L366 320" />
+  </g>
+
+  <g fill="none" stroke-linecap="round" stroke-width="2.4">
+    <line x1="220" y1="350" x2="572" y2="411" stroke="#e06b2d" marker-end="url(#arrow-x)" />
+    <line x1="220" y1="350" x2="58" y2="260" stroke="#14977f" marker-end="url(#arrow-y)" />
+    <line x1="220" y1="350" x2="220" y2="48" stroke="#2671e8" marker-end="url(#arrow-z)" />
+  </g>
+
+  <g stroke="#9aa9bd" stroke-width="1.4">
+    <path d="M242 166 L416 196 L344 156 L170 126 Z" fill="#dbeafe" fill-opacity="0.82" />
+    <path d="M242 340 L416 370 L416 196 L242 166 Z" fill="#e0f2fe" fill-opacity="0.58" />
+    <path d="M416 370 L344 330 L344 156 L416 196 Z" fill="#ede9fe" fill-opacity="0.72" />
+    <path d="M170 300 L344 330 L344 156 L170 126 Z" fill="#f5f3ff" fill-opacity="0.5" />
+  </g>
+
+  <g fill="none" stroke="#182235" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">
+    <path d="M242 340 L416 370 L416 196 L242 166 Z" />
+    <path d="M242 166 L170 126 L344 156 L416 196" />
+    <path d="M416 370 L344 330 L344 156" />
+    <path d="M170 126 L170 300" />
+  </g>
+  <g fill="none" stroke="#64748b" stroke-dasharray="6 5" stroke-linecap="round" stroke-width="1.8">
+    <path d="M242 340 L170 300 L344 330" />
+    <path d="M170 300 L170 126" />
+  </g>
+
+  <line
+    x1="242"
+    y1="340"
+    x2="341"
+    y2="161"
+    stroke="#6d4be8"
+    stroke-linecap="round"
+    stroke-width="3.5"
+    marker-end="url(#arrow-vector)"
+  />
+
+  <g fill="#182235">
+    <circle cx="242" cy="340" r="4.5" />
+    <circle cx="344" cy="156" r="5" fill="#6d4be8" />
+    <circle cx="220" cy="350" r="4" />
+  </g>
+
+  <g fill="#182235" font-family="Georgia, 'Times New Roman', serif" font-size="19">
+    <text x="582" y="418" fill="#b84c18" font-style="italic">x</text>
+    <text x="41" y="258" fill="#0c7563" font-style="italic">y</text>
+    <text x="229" y="45" fill="#1559bd" font-style="italic">z</text>
+    <text x="204" y="371" font-style="italic">O</text>
+    <text x="257" y="356" font-style="italic">A</text>
+    <text x="356" y="145" font-style="italic">P(4, 3, 3)</text>
+    <text x="318" y="376">3</text>
+    <text x="385" y="345">2</text>
+    <text x="220" y="255">3</text>
+  </g>
+
+  <g font-family="Georgia, 'Times New Roman', serif" font-size="18">
+    <rect x="254" y="226" width="124" height="30" rx="4" fill="#ffffff" fill-opacity="0.9" />
+    <text x="265" y="247" fill="#5b3fc4" font-style="italic">AP</text>
+    <text x="289" y="247" fill="#5b3fc4">= &lt;3, 2, 3&gt;</text>
+  </g>
+</svg>

@@ -87,6 +87,7 @@ export interface EditorNestedPartPanelProps extends NestedPanelDragHandlers, Nes
   draggedEditorPageBreakActive: boolean;
   openSignalForAnchor: (anchor: string) => number | undefined;
   isActiveEditorAnchor: (anchor: string) => boolean;
+  onActivateAnchor: (anchor: string) => void;
   onHeaderContextMenu: (event: React.MouseEvent<HTMLElement>, anchor: string) => void;
   onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
   onJumpSolutionIssue: (anchor: string) => void;
@@ -119,6 +120,7 @@ export function EditorNestedPartPanel({
   draggedEditorPageBreakActive,
   openSignalForAnchor,
   isActiveEditorAnchor,
+  onActivateAnchor,
   onHeaderContextMenu,
   onFixSolutionIssue,
   onJumpSolutionIssue,
@@ -186,7 +188,12 @@ export function EditorNestedPartPanel({
   };
 
   return (
-    <div key={part.id} data-scroll-anchor={partAnchor}>
+    <div
+      key={part.id}
+      data-scroll-anchor={partAnchor}
+      onPointerDownCapture={() => onActivateAnchor(partAnchor)}
+      onFocusCapture={() => onActivateAnchor(partAnchor)}
+    >
       <div
         data-drag-preview
         {...subsectionTargetDataAttributes(partTarget)}
@@ -295,6 +302,7 @@ export function EditorNestedPartPanel({
                       draggedSubsectionActive={draggedSubsectionActive}
                       openSignalForAnchor={openSignalForAnchor}
                       isActiveEditorAnchor={isActiveEditorAnchor}
+                      onActivateAnchor={onActivateAnchor}
                       onHeaderContextMenu={onHeaderContextMenu}
                       onFixSolutionIssue={onFixSolutionIssue}
                       onJumpSolutionIssue={onJumpSolutionIssue}
@@ -362,6 +370,7 @@ interface EditorSubpartPanelProps extends Omit<NestedPanelDragHandlers, "onEdito
   draggedSubsectionActive: boolean;
   openSignalForAnchor: (anchor: string) => number | undefined;
   isActiveEditorAnchor: (anchor: string) => boolean;
+  onActivateAnchor: (anchor: string) => void;
   onHeaderContextMenu: (event: React.MouseEvent<HTMLElement>, anchor: string) => void;
   onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
   onJumpSolutionIssue: (anchor: string) => void;
@@ -396,6 +405,7 @@ function EditorSubpartPanel({
   draggedSubsectionActive,
   openSignalForAnchor,
   isActiveEditorAnchor,
+  onActivateAnchor,
   onHeaderContextMenu,
   onFixSolutionIssue,
   onJumpSolutionIssue,
@@ -450,6 +460,8 @@ function EditorSubpartPanel({
       data-scroll-anchor={subpartAnchor}
       {...subsectionTargetDataAttributes(subpartTarget)}
       className={cn("rounded-md transition-all", dragClasses(subpartTarget))}
+      onPointerDownCapture={() => onActivateAnchor(subpartAnchor)}
+      onFocusCapture={() => onActivateAnchor(subpartAnchor)}
       onDragOver={(event) => {
         if (onEditorPageBreakDragOver(event, subpartTarget)) return;
         onSubsectionDragOver(event, subpartTarget);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_EXAM_FRONT_MATTER,
   DEFAULT_EXAM_TITLE_PAGE,
   DEFAULT_FRONT_MATTER,
   DEFAULT_INVESTIGATION,
@@ -115,6 +116,17 @@ test("examSectionPresetPatch switches section metadata and current structure row
       { id: "section-one", current: false },
       { id: "section-two", current: true },
     ],
+  );
+});
+
+test("default exams use school branding without external-authority language", () => {
+  const serializedExam = JSON.stringify(DEFAULT_EXAM_FRONT_MATTER);
+
+  assert.ok(DEFAULT_EXAM_FRONT_MATTER.logoId);
+  assert.ok(DEFAULT_EXAM_FRONT_MATTER.schoolName.trim());
+  assert.doesNotMatch(
+    serializedExam,
+    /Western Australian|curriculum council|standards authority|ATAR course examination|Question\/Answer booklet/i,
   );
 });
 

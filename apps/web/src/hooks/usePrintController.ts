@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 
+import { waitForPrintPreviewReady } from "@/lib/printReadiness";
+
 interface UsePrintControllerOptions {
   resolvePrintTitle: () => string;
   setPrintPreviewMounted: (mounted: boolean) => void;
@@ -8,6 +10,7 @@ interface UsePrintControllerOptions {
 
 export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted }: UsePrintControllerOptions) {
   const originalDocumentTitleRef = useRef<string | null>(null);
+  const printRequestRef = useRef(0);
 
   const setPrintDocumentTitle = useCallback(() => {
     if (originalDocumentTitleRef.current === null) {
@@ -17,10 +20,15 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted }
   }, [resolvePrintTitle]);
 
   const printDocument = useCallback(() => {
+    const requestId = ++printRequestRef.current;
     setPrintDocumentTitle();
     flushSync(() => setPrintPreviewMounted(true));
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => window.print());
+    void waitForPrintPreviewReady().then((readiness) => {
+      if (requestId !== printRequestRef.current) return;
+      if (readiness.timedOut) {
+        console.warn(`Print preview timed out with ${readiness.pending} asynchronous surface(s) still loading.`);
+      }
+      window.print();
     });
   }, [setPrintDocumentTitle, setPrintPreviewMounted]);
 
@@ -40,6 +48,7 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted }
     window.addEventListener("beforeprint", handleBeforePrint);
     window.addEventListener("afterprint", handleAfterPrint);
     return () => {
+      printRequestRef.current += 1;
       window.removeEventListener("beforeprint", handleBeforePrint);
       window.removeEventListener("afterprint", handleAfterPrint);
     };

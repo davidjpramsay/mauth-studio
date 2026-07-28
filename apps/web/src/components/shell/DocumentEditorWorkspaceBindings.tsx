@@ -218,6 +218,7 @@ export function DocumentEditorWorkspaceBindings({
       draggedEditorPageBreakActive: drag.draggedEditorPageBreakActive,
       openSignalForAnchor: navigation.openSignalForAnchor,
       isActiveEditorAnchor: selection.isActiveEditorAnchor,
+      onActivateAnchor: navigation.activateEditorAnchor,
       onHeaderContextMenu: (event, anchor) => contextMenu.openContextMenu(event, anchor, "editor"),
       dragClasses: drag.subsectionDragClasses,
       dragHandle: drag.subsectionDragHandle,

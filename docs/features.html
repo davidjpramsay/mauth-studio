@@ -329,6 +329,14 @@
         background: var(--soft);
       }
 
+      .diagrams-band .section-heading h2 {
+        font-size: clamp(2.35rem, 4vw, 4rem);
+      }
+
+      .diagrams-band .section-heading {
+        max-width: 920px;
+      }
+
       .section-heading {
         margin-bottom: clamp(46px, 7vw, 82px);
         max-width: 800px;
@@ -351,6 +359,14 @@
         height: 225px;
         object-fit: contain;
         width: 100%;
+      }
+
+      .diagram-item.geometry-showcase img {
+        height: 255px;
+      }
+
+      .diagram-item.three-d-showcase img {
+        height: 255px;
       }
 
       .diagram-item figcaption {
@@ -753,11 +769,11 @@
               <img loading="lazy" src="./assets/features/diagram-statistics.png" alt="A binomial probability distribution chart" />
               <figcaption>Statistical charts</figcaption>
             </figure>
-            <figure class="diagram-item">
+            <figure class="diagram-item geometry-showcase">
               <img
                 loading="lazy"
-                src="./assets/features/diagram-geometry.png"
-                alt="A labelled right triangle with equal side marks and an angle"
+                src="./assets/features/diagram-geometry.svg"
+                alt="An isosceles triangle on its circumcircle with an altitude, midpoint, equal-side marks, angle arcs, and a right-angle marker"
               />
               <figcaption>Geometry</figcaption>
             </figure>
@@ -769,11 +785,11 @@
               <img loading="lazy" src="./assets/features/diagram-venn.png" alt="A two-set Venn diagram with a shaded intersection" />
               <figcaption>Venn diagrams</figcaption>
             </figure>
-            <figure class="diagram-item">
+            <figure class="diagram-item three-d-showcase">
               <img
                 loading="lazy"
-                src="./assets/features/diagram-3d.png"
-                alt="A three-dimensional coordinate system with a labelled point"
+                src="./assets/features/diagram-3d.svg"
+                alt="A translucent rectangular prism on three-dimensional axes with dimensions, a coordinate point, and a space diagonal"
               />
               <figcaption>3D graphs</figcaption>
             </figure>
@@ -820,7 +836,11 @@
               <figcaption>Test</figcaption>
             </figure>
             <figure class="template-item">
-              <img loading="lazy" src="./assets/features/template-exam.png" alt="Formal examination title page" />
+              <img
+                loading="lazy"
+                src="./assets/features/template-exam.png"
+                alt="The Australian Christian College Year 10 Units 1-4 examination cover page rendered by Mauth"
+              />
               <figcaption>Exam</figcaption>
             </figure>
             <figure class="template-item">
@@ -828,11 +848,19 @@
               <figcaption>Worksheet</figcaption>
             </figure>
             <figure class="template-item">
-              <img loading="lazy" src="./assets/features/template-notes.png" alt="Mathematics notes page" />
+              <img
+                loading="lazy"
+                src="./assets/features/template-notes.svg"
+                alt="A full mathematics notes page about function transformations with a graph, parameter guide, and worked example"
+              />
               <figcaption>Math notes</figcaption>
             </figure>
             <figure class="template-item">
-              <img loading="lazy" src="./assets/features/template-investigation.png" alt="Mathematics investigation brief" />
+              <img
+                loading="lazy"
+                src="./assets/features/template-investigation.png"
+                alt="The rendered Mauth teacher marking rubric for a Year 12 mathematics investigation"
+              />
               <figcaption>Investigation</figcaption>
             </figure>
           </div>

@@ -3,6 +3,7 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import { buildStatsChartPlotlyConfig, normalizeStatsChartSpec } from "@mauth-studio/diagram-plotly";
 
 import { MathText, mathTextHasMath } from "@/components/MathText";
+import type { PrintRenderState } from "@/lib/printReadiness";
 
 function withoutAxisTitle(axis: unknown) {
   if (!axis || typeof axis !== "object") return axis;
@@ -81,6 +82,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
   }, [graphConfig, horizontalYLabel, labelMath]);
   const plotlyConfigKey = useMemo(() => JSON.stringify(plotlyConfig), [plotlyConfig]);
   const [error, setError] = useState("");
+  const [printRenderState, setPrintRenderState] = useState<PrintRenderState>("loading");
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +92,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     if (!element) return undefined;
 
     setError("");
+    setPrintRenderState("loading");
 
     import("plotly.js-dist-min")
       .then((module) => {
@@ -97,16 +100,21 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
         plotly = module.default;
         void Promise.resolve(plotly.react(element, currentPlotlyConfig.data, currentPlotlyConfig.layout, currentPlotlyConfig.config))
           .then(() => {
-            if (!cancelled) expandPlotClipRects(element, true);
+            if (!cancelled) {
+              expandPlotClipRects(element, true);
+              setPrintRenderState("ready");
+            }
           })
           .catch((renderError) => {
             if (cancelled) return;
             setError(renderError instanceof Error ? renderError.message : String(renderError));
+            setPrintRenderState("error");
           });
       })
       .catch((renderError) => {
         if (cancelled) return;
         setError(renderError instanceof Error ? renderError.message : String(renderError));
+        setPrintRenderState("error");
       });
 
     return () => {
@@ -140,7 +148,10 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
 
   if (error) {
     return (
-      <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border p-3 text-xs">
+      <div
+        className="stats-chart-diagram border-destructive/30 bg-destructive/5 text-destructive rounded-md border p-3 text-xs"
+        data-mauth-print-render-state="error"
+      >
         Statistics chart could not render.
       </div>
     );
@@ -149,6 +160,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
   return (
     <div
       className="stats-chart-diagram relative min-w-0 bg-white"
+      data-mauth-print-render-state={printRenderState}
       style={{
         width: plotlyConfig.metadata.widthPx,
         height: plotlyConfig.metadata.heightPx,

@@ -151,6 +151,15 @@ function seededDraft() {
             subparts: [],
             itemOrder: [{ kind: "block", id: "cols-ui" }],
           },
+          {
+            id: "p-second-ui",
+            label: "",
+            text: "Second editable part.",
+            marks: 1,
+            contentBlocks: [{ id: "p-second-space", kind: "space", lines: 2, visibility: "student", studentOnly: true }],
+            subparts: [],
+            itemOrder: [{ kind: "block", id: "p-second-space" }],
+          },
         ],
         itemOrder: [
           { kind: "block", id: "q-intro" },
@@ -159,6 +168,7 @@ function seededDraft() {
           { kind: "block", id: "q-diagram" },
           { kind: "block", id: "q-space" },
           { kind: "part", id: "p-columns-ui" },
+          { kind: "part", id: "p-second-ui" },
         ],
         pageBreakAfter: false,
       },
@@ -754,14 +764,15 @@ async function main() {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Manual editor mode" }).waitFor();
     const partColumnsAnchor = "q:q-columns-ui/p:p-columns-ui/b:cols-ui";
+    const secondPartAnchor = "q:q-columns-ui/p:p-second-ui";
     const diagramAnchor = "q:q-columns-ui/b:q-diagram";
     const nestedTableAnchor = `${partColumnsAnchor}/c:0/b:c1-table`;
     await page.getByRole("button", { name: "Manual editor mode" }).click();
     const inspector = page.locator("aside").filter({ hasText: "Inspector" }).first();
-    await page.getByRole("radio", { name: "Solutions" }).click();
+    await page.getByRole("button", { name: "Switch to Solutions mode" }).click();
     await page.getByText("Answer space 5", { exact: false }).waitFor();
     await page.locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="q:q-columns-ui/b:q-space"]`).waitFor();
-    await page.getByRole("radio", { name: "Student" }).click();
+    await page.getByRole("button", { name: "Switch to Student mode" }).click();
     const previewPartColumnsNode = page
       .locator(`.preview-pane [data-preview-module-anchor="true"][data-scroll-anchor="${partColumnsAnchor}"]`)
       .first();
@@ -775,10 +786,25 @@ async function main() {
     const partWording = page.getByLabel("Part wording");
     await partWording.fill("Updated part wording with $x=2$.");
     assert.equal(await partWording.inputValue(), "Updated part wording with $x=2$.", "part wording should be directly editable");
-    const previewTexts = await page.locator(".preview-pane").allTextContents();
+    await page.locator(".preview-pane").getByText("Updated part wording with", { exact: false }).first().waitFor();
+
+    const secondPartNode = page.locator(`.editor-pane [data-scroll-anchor="${secondPartAnchor}"]`).first();
+    const secondPartPanel = secondPartNode.locator(":scope > div > section");
+    await secondPartNode.getByRole("button", { name: "Expand panel" }).click();
     assert(
-      previewTexts.some((text) => text.includes("Updated part wording with")),
-      "part wording edits should update the preview",
+      (await secondPartPanel.getAttribute("class"))?.includes("border-primary/70"),
+      "clicking the Part (b) panel should select its container",
+    );
+    await page
+      .locator(
+        `.preview-pane [data-preview-structure-anchor="true"][data-scroll-anchor="${secondPartAnchor}"][data-preview-selected="true"]`,
+      )
+      .waitFor();
+    await secondPartNode.getByLabel("Part wording").fill("Updated second part wording.");
+    assert.equal(
+      await secondPartNode.getByLabel("Part wording").inputValue(),
+      "Updated second part wording.",
+      "Part (b) wording should be directly editable after selecting the panel",
     );
 
     const nestedTableNode = page.locator(`.editor-pane [data-scroll-anchor="${nestedTableAnchor}"]`).first();

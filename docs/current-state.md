@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 28 July 2026.
+Last reviewed: 29 July 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -51,7 +51,7 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1370 lines
 SelectionInspector.tsx: 107 lines after the focused basic-block, diagram-router, renderer-specific inspector extractions, and explicit Solutions-mode binding
-worktree: clean at this checkpoint; public onboarding, agent documentation, handoff, website, and display-fraction authoring rules are aligned with 0.1.3
+worktree: clean at this checkpoint; Plotly print-readiness, nested part-selection, neutral exam-default, and public feature-showcase updates are committed
 ```
 
 Observed runtime on 28 July 2026:
@@ -185,12 +185,12 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 28 July 2026:
+Latest full gate on 29 July 2026:
 
 ```text
 formatting and lint: passed
 API: 84 passed
-web/actions: 612 passed
+web/actions: 616 passed
 Plotly: 8 passed
 launcher: 47 passed
 native Quick Look: 3 passed
@@ -215,6 +215,20 @@ Run visual smoke tests when changing rendered behavior; tests alone do not prove
 ## Recent Development State
 
 The published `0.1.3` slice added native `.mauth` Finder presentation, sharper preview scaling, multi-document tabs and recovery, explicit agent document targeting, compact/native menu controls, System Status contrast repair, reusable-logo reconciliation, and ZIP-only updater metadata. The subsequent documentation slice removed the obsolete website setup prompt, made MCP explicitly optional, linked directly to the DMG, and aligned repository agent entry points. Current authoring rules also require full display-size fractions unless compact notation is deliberately requested.
+
+The latest source-development slice fixes asynchronous Plotly charts disappearing from browser print/PDF output. Statistical charts now expose an explicit loading, ready, or error state; the print controller waits for all chart surfaces, document fonts, and two settled layout frames before opening the print dialog, with stale-request suppression and a fail-open timeout. Focused readiness tests cover pending, ready, error, settled-frame, and timeout behavior. A fresh 11-page A4 print of the Year 12 logarithms and continuous-random-variables test showed both the Question 6 histogram and Question 8 density graph. This source fix is not present in the already-running installed `0.1.3` app until a deliberate rebuild/install or a later signed update.
+
+Part and subpart editor panels now activate their structural anchor on pointer or keyboard focus before a nested block takes over selection. This makes collapsed later parts such as Part (b) selectable and editable directly from their panel header while preserving nested block inspection.
+
+The public features page now replaces its sparse geometry and 3D thumbnails with larger vector constructions. The geometry card shows a coherent isosceles triangle, circumcircle, altitude, midpoint, angle arcs, equality marks, and dimensions; the 3D card shows a coordinate grid, translucent rectangular prism, dimensions, coordinate point, and space diagonal. Both SVGs remain sharp at desktop and mobile sizes without changing the surrounding diagram grid.
+
+The public Exam template example now uses the actual Australian Christian College Year 10 Units 1-4 Calculator-Free examination cover rendered by Mauth. It shows the school logo, exam identity, student-name line, timing, materials, and candidate instructions without curriculum-authority branding.
+
+The public Math Notes example is now a full original function-transformations page with a transformation rule, comparison graph, parameter guide, worked example, sketching checklist, and common mistakes. It replaces the mostly blank raster thumbnail with a sharp vector page.
+
+The public Investigation template example now uses the actual first teacher-rubric page rendered by Mauth for the current Year 12 investigation. It shows the real performance-level table and marking columns rather than a fabricated illustration or the student brief.
+
+New Exam documents now use the selected school logo and school name with neutral school-exam headings, materials, and candidate instructions. The old Western Australian external-examination and ATAR-specific default wording is removed; legacy schema fields remain readable for existing documents.
 
 Release-specific history is in `docs/releases/` and Git. Do not copy it back into this handoff.
 
