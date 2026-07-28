@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Features | Mauth Studio</title>
+    <meta
+      name="description"
+      content="See how Mauth Studio handles title pages, mark totals, mathematical typesetting, diagrams, embedded solutions, and different assessment formats."
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta property="og:title" content="Mauth Studio features" />
+    <meta property="og:description" content="A complete maths assessment workflow, from title page to worked solutions." />
+    <meta property="og:image" content="https://davidjpramsay.github.io/mauth-studio/assets/features/feature-title-page.png" />
+    <link rel="canonical" href="https://davidjpramsay.github.io/mauth-studio/features.html" />
+    <link rel="icon" href="./assets/mauth-icon.png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #101523;
+        --muted: #5e6879;
+        --quiet: #8892a2;
+        --line: #dde3ec;
+        --soft: #f2f6fc;
+        --blue: #1769f4;
+        --blue-dark: #0d4bc0;
+        --navy: #07101f;
+        --white: #ffffff;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        background: var(--white);
+        color: var(--ink);
+        letter-spacing: 0;
+        margin: 0;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      h1,
+      h2,
+      h3,
+      p,
+      figure {
+        margin-top: 0;
+      }
+
+      .site-header {
+        align-items: center;
+        background: rgba(255, 255, 255, 0.96);
+        border-bottom: 1px solid rgba(221, 227, 236, 0.8);
+        display: flex;
+        height: 66px;
+        justify-content: space-between;
+        padding: 0 clamp(20px, 5vw, 76px);
+        position: sticky;
+        top: 0;
+        z-index: 30;
+      }
+
+      .brand {
+        align-items: center;
+        display: inline-flex;
+        gap: 10px;
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        height: 36px;
+        width: 36px;
+      }
+
+      .brand-name {
+        color: var(--ink);
+        font-size: 1.24rem;
+        font-weight: 720;
+        line-height: 1;
+      }
+
+      .brand-name small {
+        color: var(--blue);
+        display: block;
+        font-size: 0.48rem;
+        font-weight: 800;
+        margin-top: 4px;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .nav {
+        align-items: center;
+        display: flex;
+        gap: clamp(18px, 3vw, 36px);
+      }
+
+      .nav a {
+        color: #394254;
+        font-size: 0.9rem;
+        font-weight: 620;
+        text-decoration: none;
+      }
+
+      .nav a[aria-current="page"],
+      .nav a:hover {
+        color: var(--blue);
+      }
+
+      .button {
+        align-items: center;
+        background: var(--blue);
+        border: 1px solid var(--blue);
+        border-radius: 7px;
+        color: var(--white) !important;
+        display: inline-flex;
+        font-size: 0.94rem;
+        font-weight: 700;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 20px;
+        text-decoration: none;
+        transition:
+          background 160ms ease,
+          border-color 160ms ease,
+          box-shadow 160ms ease,
+          transform 160ms ease;
+      }
+
+      .button:hover {
+        background: var(--blue-dark);
+        border-color: var(--blue-dark);
+        box-shadow: 0 10px 24px rgba(23, 105, 244, 0.2);
+        transform: translateY(-1px);
+      }
+
+      .button:focus-visible,
+      .nav a:focus-visible,
+      .footer-links a:focus-visible {
+        outline: 3px solid rgba(23, 105, 244, 0.28);
+        outline-offset: 4px;
+      }
+
+      .eyebrow {
+        color: var(--blue);
+        font-size: 0.78rem;
+        font-weight: 800;
+        margin-bottom: 24px;
+        text-transform: uppercase;
+      }
+
+      .feature-hero {
+        min-height: min(780px, calc(100svh - 66px));
+        overflow: hidden;
+        padding: clamp(72px, 10vw, 132px) clamp(20px, 6vw, 88px) 0;
+      }
+
+      .hero-layout {
+        align-items: center;
+        display: grid;
+        gap: clamp(54px, 8vw, 110px);
+        grid-template-columns: minmax(0, 0.88fr) minmax(430px, 1.12fr);
+        margin: 0 auto;
+        max-width: 1220px;
+      }
+
+      h1 {
+        font-size: clamp(3.6rem, 7vw, 6.8rem);
+        line-height: 0.97;
+        margin-bottom: 28px;
+      }
+
+      .hero-copy > p:last-child {
+        color: var(--muted);
+        font-size: clamp(1.08rem, 1.7vw, 1.3rem);
+        line-height: 1.65;
+        margin-bottom: 0;
+        max-width: 610px;
+      }
+
+      .hero-pages {
+        height: 640px;
+        position: relative;
+      }
+
+      .page-shot {
+        background: var(--white);
+        border: 1px solid #d8dee8;
+        border-radius: 4px;
+        box-shadow: 0 26px 60px rgba(30, 43, 65, 0.17);
+        overflow: hidden;
+      }
+
+      .hero-title-page {
+        height: 595px;
+        left: 0;
+        position: absolute;
+        top: 0;
+        width: 420px;
+      }
+
+      .hero-title-page img {
+        height: 100%;
+        object-fit: cover;
+        width: 100%;
+      }
+
+      .hero-question-page {
+        bottom: -10px;
+        height: 395px;
+        position: absolute;
+        right: 0;
+        width: 390px;
+      }
+
+      .hero-question-page img {
+        height: 100%;
+        object-fit: cover;
+        object-position: top center;
+        width: 100%;
+      }
+
+      .feature-band {
+        padding: clamp(84px, 11vw, 150px) clamp(20px, 6vw, 88px);
+      }
+
+      #marks {
+        background: var(--soft);
+        border-top: 1px solid var(--line);
+      }
+
+      .band-inner {
+        margin: 0 auto;
+        max-width: 1160px;
+      }
+
+      .split-feature {
+        align-items: center;
+        display: grid;
+        gap: clamp(58px, 10vw, 132px);
+        grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+      }
+
+      .feature-copy h2,
+      .section-heading h2,
+      .download-copy h2 {
+        font-size: clamp(2.7rem, 5vw, 5rem);
+        line-height: 1.03;
+        margin-bottom: 22px;
+      }
+
+      .feature-copy p,
+      .section-heading p,
+      .download-copy p {
+        color: var(--muted);
+        font-size: clamp(1rem, 1.5vw, 1.17rem);
+        line-height: 1.75;
+        margin-bottom: 0;
+      }
+
+      .math-visual {
+        background: var(--soft);
+        border-bottom: 1px solid var(--line);
+        border-top: 1px solid var(--line);
+        height: 520px;
+        overflow: hidden;
+        padding: 42px;
+      }
+
+      .math-visual img {
+        box-shadow: 0 24px 48px rgba(32, 44, 63, 0.12);
+        margin: 0 auto;
+        max-width: 640px;
+        width: 100%;
+      }
+
+      .mark-visual {
+        align-items: flex-start;
+        background: var(--white);
+        border-bottom: 1px solid var(--line);
+        border-top: 1px solid var(--line);
+        display: flex;
+        height: 520px;
+        justify-content: center;
+        overflow: hidden;
+        padding: 38px 42px 0;
+      }
+
+      .mark-visual img {
+        box-shadow: 0 24px 48px rgba(32, 44, 63, 0.12);
+        max-width: 360px;
+        width: 100%;
+      }
+
+      .typesetting-band {
+        border-top: 1px solid var(--line);
+      }
+
+      .split-feature.reverse {
+        grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+      }
+
+      .split-feature.reverse .feature-copy {
+        order: 2;
+      }
+
+      .diagrams-band {
+        background: var(--soft);
+      }
+
+      .section-heading {
+        margin-bottom: clamp(46px, 7vw, 82px);
+        max-width: 800px;
+      }
+
+      .diagram-grid {
+        display: grid;
+        gap: 1px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .diagram-item {
+        background: var(--white);
+        margin: 0;
+        min-height: 300px;
+        padding: 28px;
+      }
+
+      .diagram-item img {
+        height: 225px;
+        object-fit: contain;
+        width: 100%;
+      }
+
+      .diagram-item figcaption {
+        color: #445064;
+        font-size: 0.78rem;
+        font-weight: 760;
+        margin-top: 18px;
+        text-transform: uppercase;
+      }
+
+      .solutions-band {
+        background: var(--navy);
+        color: var(--white);
+      }
+
+      .solutions-band .feature-copy p {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      .solutions-band .eyebrow {
+        color: #8fbaff;
+      }
+
+      .solution-pair {
+        display: grid;
+        gap: 20px;
+      }
+
+      .solution-example {
+        margin: 0;
+      }
+
+      .solution-example figcaption {
+        color: rgba(255, 255, 255, 0.62);
+        font-size: 0.75rem;
+        font-weight: 760;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+      }
+
+      .solution-example img {
+        background: var(--white);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        width: 100%;
+      }
+
+      .templates-band {
+        overflow: hidden;
+      }
+
+      .template-strip {
+        align-items: end;
+        display: grid;
+        gap: clamp(14px, 2vw, 26px);
+        grid-template-columns: repeat(5, minmax(160px, 1fr));
+        margin-top: 54px;
+      }
+
+      .template-item {
+        margin: 0;
+        min-width: 0;
+      }
+
+      .template-item img {
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        box-shadow: 0 18px 38px rgba(35, 47, 67, 0.13);
+        width: 100%;
+      }
+
+      .template-item figcaption {
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 760;
+        margin-top: 15px;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .download-band {
+        background: var(--soft);
+        border-top: 1px solid var(--line);
+      }
+
+      .download-layout {
+        align-items: center;
+        display: grid;
+        gap: clamp(54px, 10vw, 130px);
+        grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+      }
+
+      .app-disc {
+        align-items: center;
+        aspect-ratio: 1;
+        background: var(--white);
+        border: 1px solid #cfd7e4;
+        border-radius: 50%;
+        box-shadow:
+          0 30px 54px rgba(25, 37, 59, 0.14),
+          inset 0 0 0 9px rgba(255, 255, 255, 0.78),
+          inset 0 0 0 10px rgba(173, 184, 201, 0.44);
+        display: flex;
+        justify-content: center;
+        margin: 0 auto;
+        max-width: 310px;
+        position: relative;
+      }
+
+      .app-disc::after {
+        border: 1px solid rgba(146, 158, 178, 0.28);
+        border-radius: 50%;
+        content: "";
+        inset: 17px;
+        position: absolute;
+      }
+
+      .app-disc img {
+        position: relative;
+        width: 59%;
+        z-index: 1;
+      }
+
+      .download-copy .button {
+        margin-top: 28px;
+      }
+
+      .release-line {
+        color: var(--blue-dark) !important;
+        font-size: 0.84rem !important;
+        font-weight: 760;
+        margin-bottom: 20px !important;
+      }
+
+      .site-footer {
+        align-items: center;
+        border-top: 1px solid var(--line);
+        display: flex;
+        gap: 30px;
+        justify-content: space-between;
+        min-height: 108px;
+        padding: 24px clamp(20px, 5vw, 76px);
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px;
+      }
+
+      .footer-links a {
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      .footer-links a:hover {
+        color: var(--blue);
+      }
+
+      @media (max-width: 980px) {
+        .hero-layout,
+        .split-feature,
+        .download-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .split-feature.reverse {
+          grid-template-columns: 1fr;
+        }
+
+        .split-feature.reverse .feature-copy {
+          order: 0;
+        }
+
+        .feature-hero {
+          padding-top: 72px;
+        }
+
+        .hero-copy {
+          text-align: center;
+        }
+
+        .hero-copy > p:last-child {
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .hero-pages {
+          margin: 0 auto;
+          max-width: 730px;
+          width: 100%;
+        }
+
+        .diagram-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .template-strip {
+          grid-template-columns: repeat(5, 190px);
+          overflow-x: auto;
+          padding: 0 3px 28px;
+          scroll-snap-type: x proximity;
+        }
+
+        .template-item {
+          scroll-snap-align: start;
+        }
+
+        .download-copy {
+          text-align: center;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .site-header {
+          height: 62px;
+        }
+
+        .nav a:not(.button) {
+          display: none;
+        }
+
+        .nav .button {
+          min-height: 40px;
+          padding: 0 15px;
+        }
+
+        .feature-hero {
+          min-height: 760px;
+          padding-top: 54px;
+        }
+
+        h1 {
+          font-size: clamp(3.2rem, 16vw, 4.8rem);
+        }
+
+        .hero-pages {
+          height: 410px;
+        }
+
+        .hero-title-page {
+          height: 390px;
+          width: 276px;
+        }
+
+        .hero-question-page {
+          height: 245px;
+          width: 242px;
+        }
+
+        .diagram-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .diagram-item {
+          min-height: 0;
+        }
+
+        .math-visual {
+          height: 410px;
+          padding: 24px;
+        }
+
+        .mark-visual {
+          height: 410px;
+          padding: 24px 24px 0;
+        }
+
+        .site-footer {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .brand-name {
+          display: none;
+        }
+
+        .feature-band {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+
+        .hero-title-page {
+          height: 350px;
+          width: 247px;
+        }
+
+        .hero-question-page {
+          height: 220px;
+          width: 216px;
+        }
+
+        .hero-pages {
+          height: 365px;
+        }
+
+        .solution-pair {
+          gap: 28px;
+        }
+
+        .footer-links {
+          gap: 20px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        .button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Mauth Studio home">
+        <img class="brand-mark" src="./assets/mauth-icon.png" alt="" />
+        <span class="brand-name">mauth<small>studio</small></span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="./features.html" aria-current="page">Features</a>
+        <a href="./#agents">Agent help</a>
+        <a class="button" href="./#download">Download</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="feature-hero">
+        <div class="hero-layout">
+          <div class="hero-copy">
+            <p class="eyebrow">Mauth Studio features</p>
+            <h1>Maths assessment authoring, end to end.</h1>
+            <p>
+              Design the paper, write the mathematics, build the diagrams, complete the solutions, and check the printed pages in one place.
+            </p>
+          </div>
+          <div class="hero-pages" aria-label="A Mauth title page and mathematics question">
+            <figure class="page-shot hero-title-page">
+              <img src="./assets/features/feature-title-page.png" alt="A polished Mauth Studio mathematics test title page" />
+            </figure>
+            <figure class="page-shot hero-question-page">
+              <img src="./assets/features/feature-marks-latex.png" alt="A typeset mathematics question with marks allocated to each part" />
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band" id="marks">
+        <div class="band-inner split-feature">
+          <div class="feature-copy">
+            <p class="eyebrow">Structure and marks</p>
+            <h2>The paper keeps count.</h2>
+            <p>
+              Allocate marks to questions and parts. Mauth totals them for the relevant title page, keeps the labels consistent, and carries
+              the same structure into Student and Solutions copies.
+            </p>
+          </div>
+          <div class="mark-visual">
+            <img src="./assets/features/feature-title-page.png" alt="A title page showing its automatically calculated mark total" />
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band typesetting-band" id="typesetting">
+        <div class="band-inner split-feature reverse">
+          <div class="math-visual">
+            <img src="./assets/features/feature-marks-latex.png" alt="Question 1 with sharp fractions, powers and equations" />
+          </div>
+          <div class="feature-copy">
+            <p class="eyebrow">Mathematical typesetting</p>
+            <h2>LaTeX-quality mathematics.</h2>
+            <p>
+              Write familiar LaTeX notation for fractions, powers, matrices, calculus, probability, and more. Mauth renders it as sharp SVG
+              mathematics in the editor, on the page, and in print.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band diagrams-band" id="diagrams">
+        <div class="band-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Diagrams and graphs</p>
+            <h2>Built for mathematical pictures.</h2>
+            <p>Use editable, structured diagrams instead of rebuilding every graph in another application.</p>
+          </div>
+          <div class="diagram-grid">
+            <figure class="diagram-item">
+              <img loading="lazy" src="./assets/features/diagram-graph2d.png" alt="Two functions with the area between them shaded" />
+              <figcaption>2D functions and regions</figcaption>
+            </figure>
+            <figure class="diagram-item">
+              <img loading="lazy" src="./assets/features/diagram-statistics.png" alt="A binomial probability distribution chart" />
+              <figcaption>Statistical charts</figcaption>
+            </figure>
+            <figure class="diagram-item">
+              <img
+                loading="lazy"
+                src="./assets/features/diagram-geometry.png"
+                alt="A labelled right triangle with equal side marks and an angle"
+              />
+              <figcaption>Geometry</figcaption>
+            </figure>
+            <figure class="diagram-item">
+              <img loading="lazy" src="./assets/features/diagram-vector.png" alt="Two vectors on an i and j coordinate system" />
+              <figcaption>Vectors</figcaption>
+            </figure>
+            <figure class="diagram-item">
+              <img loading="lazy" src="./assets/features/diagram-venn.png" alt="A two-set Venn diagram with a shaded intersection" />
+              <figcaption>Venn diagrams</figcaption>
+            </figure>
+            <figure class="diagram-item">
+              <img
+                loading="lazy"
+                src="./assets/features/diagram-3d.png"
+                alt="A three-dimensional coordinate system with a labelled point"
+              />
+              <figcaption>3D graphs</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band solutions-band" id="solutions">
+        <div class="band-inner split-feature">
+          <div class="feature-copy">
+            <p class="eyebrow">Embedded solutions</p>
+            <h2>Answers appear where students would write them.</h2>
+            <p>
+              Complete tables, circle choices, draw solution-only graph features, and add working directly to the Teacher layer. Shared
+              content stays black; only the answer appears in solution blue.
+            </p>
+          </div>
+          <div class="solution-pair">
+            <figure class="solution-example">
+              <figcaption>Student</figcaption>
+              <img src="./assets/features/feature-solution-student.png" alt="An incomplete trigonometric values table in Student mode" />
+            </figure>
+            <figure class="solution-example">
+              <figcaption>Solutions</figcaption>
+              <img
+                src="./assets/features/feature-solution-teacher.png"
+                alt="The same table completed with blue answer values and red mark ticks in Solutions mode"
+              />
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band templates-band" id="templates">
+        <div class="band-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Document templates</p>
+            <h2>The right page for the job.</h2>
+            <p>Start with a school test, formal exam, worksheet, mathematics notes, or an investigation with its linked teacher rubric.</p>
+          </div>
+          <div class="template-strip" aria-label="Mauth Studio document templates">
+            <figure class="template-item">
+              <img loading="lazy" src="./assets/features/template-test.png" alt="School test title page" />
+              <figcaption>Test</figcaption>
+            </figure>
+            <figure class="template-item">
+              <img loading="lazy" src="./assets/features/template-exam.png" alt="Formal examination title page" />
+              <figcaption>Exam</figcaption>
+            </figure>
+            <figure class="template-item">
+              <img loading="lazy" src="./assets/features/template-worksheet.png" alt="Compact mathematics worksheet page" />
+              <figcaption>Worksheet</figcaption>
+            </figure>
+            <figure class="template-item">
+              <img loading="lazy" src="./assets/features/template-notes.png" alt="Mathematics notes page" />
+              <figcaption>Math notes</figcaption>
+            </figure>
+            <figure class="template-item">
+              <img loading="lazy" src="./assets/features/template-investigation.png" alt="Mathematics investigation brief" />
+              <figcaption>Investigation</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-band download-band">
+        <div class="band-inner download-layout">
+          <div class="app-disc" aria-hidden="true">
+            <img src="./assets/mauth-icon.png" alt="" />
+          </div>
+          <div class="download-copy">
+            <p class="release-line">Version 0.1.3 · Apple Silicon · Signed and notarized</p>
+            <h2>Build your next assessment in Mauth.</h2>
+            <p>Use it as a standalone editor, or connect Codex or Claude when you want structured authoring help.</p>
+            <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.3/Mauth-Studio-0.1.3-arm64.dmg"
+              >Download for Apple Silicon</a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="./" aria-label="Mauth Studio home">
+        <img class="brand-mark" src="./assets/mauth-icon.png" alt="" />
+        <span class="brand-name">mauth<small>studio</small></span>
+      </a>
+      <nav class="footer-links" aria-label="Technical links">
+        <a href="./">Home</a>
+        <a href="https://github.com/davidjpramsay/mauth-studio">GitHub</a>
+        <a href="https://github.com/davidjpramsay/mauth-studio#readme">Documentation</a>
+        <a href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3">Release notes</a>
+      </nav>
+    </footer>
+  </body>
+</html>
