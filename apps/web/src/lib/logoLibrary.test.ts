@@ -10,7 +10,9 @@ import {
   mergeLogoAssets,
   normalizeLogoAsset,
   normalizeLogoAssets,
+  reconcileLogoAssets,
   removedLogoLibraryAsset,
+  resolvedImportedLogoAsset,
   schoolInitials,
   selectedLogoForFrontMatter,
   selectedLogoFromLibrary,
@@ -34,6 +36,41 @@ test("normalizeLogoAsset accepts only complete logo records", () => {
 
 test("normalizeLogoAssets drops invalid logo records", () => {
   assert.deepEqual(normalizeLogoAssets([customLogo, { id: "bad" }, null]), [customLogo]);
+});
+
+test("reconcileLogoAssets renames the legacy Grace record and removes matching logo-only copies", () => {
+  const image = "data:image/png;base64,grace";
+  const grace: LogoAsset = {
+    id: "grace-primary",
+    name: "Grace",
+    schoolName: "GRACE\nCHRISTIAN SCHOOL",
+    src: image,
+  };
+  const duplicate: LogoAsset = {
+    id: "grace-logo-only",
+    name: "Grace Logo Only",
+    src: image,
+  };
+  const unrelated: LogoAsset = {
+    id: "unique-logo-only",
+    name: "House Logo Only",
+    src: "data:image/png;base64,unique",
+  };
+
+  const reconciled = reconcileLogoAssets([grace, duplicate, unrelated]);
+
+  assert.deepEqual(
+    reconciled.map(({ id, name, schoolName }) => ({ id, name, schoolName })),
+    [
+      {
+        id: "grace-primary",
+        name: "Grace Christian College",
+        schoolName: "GRACE\nCHRISTIAN COLLEGE",
+      },
+      { id: "unique-logo-only", name: "House Logo Only", schoolName: undefined },
+    ],
+  );
+  assert.equal(resolvedImportedLogoAsset(reconciled, duplicate).id, "grace-primary");
 });
 
 test("mergeLogoAssets appends and updates logos without cloning unchanged arrays", () => {

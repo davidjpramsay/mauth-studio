@@ -16,7 +16,7 @@ interface UseNewDocumentControllerOptions<TTemplate, TDocument> {
   setActiveQuestionId: (questionId: string) => void;
   setActiveTocItemId: (anchor: string) => void;
   setActiveRailItemId: (anchor: string) => void;
-  pushHistory: () => void;
+  clearHistory: () => void;
   clearTransientEditorState: () => void;
   closeNewDocumentDialog: () => void;
   closeFileManager: () => void;
@@ -41,14 +41,14 @@ export function useNewDocumentController<TTemplate, TDocument>(options: UseNewDo
   function createNewDocumentFromTemplate(template: TTemplate) {
     const {
       createTemplateDocument,
-      pushHistory,
+      clearHistory,
       setCleanUnsavedDocumentFingerprint,
       clearTransientEditorState,
       closeNewDocumentDialog,
       closeFileManager,
       queueDocumentJump,
     } = optionsRef.current;
-    pushHistory();
+    clearHistory();
     const newDocument = createTemplateDocument(template);
     activateDocument(newDocument, true);
     setCleanUnsavedDocumentFingerprint(newDocument.cleanFingerprint ?? null);

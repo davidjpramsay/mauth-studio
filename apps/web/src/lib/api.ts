@@ -205,6 +205,14 @@ export function saveStorageAutosave<TAutosave>(autosave: TAutosave) {
   return postJson<{ autosave: TAutosave }>("/api/storage/tests/autosave", autosave);
 }
 
+export function getEditorSession<TSession>() {
+  return getJson<{ session: TSession | null }>("/api/storage/editor-session");
+}
+
+export function saveEditorSession<TSession>(session: TSession) {
+  return postJson<{ session: TSession }>("/api/storage/editor-session", session);
+}
+
 export function listStoredLogos<TLogo>() {
   return getJson<{ logos: TLogo[] }>("/api/storage/logos");
 }

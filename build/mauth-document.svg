@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <path d="M210 80h416l188 188v644c0 36-29 64-64 64H210c-36 0-64-28-64-64V144c0-36 28-64 64-64Z"
+        fill="#f8fbff" stroke="#8eafea" stroke-width="10"/>
+  <path d="M626 80v148c0 35 29 64 64 64h124Z" fill="#c9daf8" stroke="#8eafea" stroke-width="10" stroke-linejoin="round"/>
+  <image href="../docs/assets/mauth-icon.png" x="137" y="184" width="686" height="686"/>
+  <rect x="262" y="760" width="436" height="18" rx="9" fill="#c6d4ee"/>
+  <rect x="262" y="808" width="310" height="18" rx="9" fill="#d6e0f3"/>
+</svg>

@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 23 July 2026.
+Last reviewed: 28 July 2026.
 
 Use this file as the first project handoff note for a new model, agent, or development session. It summarises the current app shape, operating contracts, and next work queue. Treat the repo, tests, and runtime status as authoritative if this file and code ever disagree.
 
@@ -30,10 +30,10 @@ For development work, also inspect the relevant tests beside the changed code. F
 
 - **Product:** Mauth Studio is an alpha, local-first mathematics assessment authoring system. The React/Vite editor is the human review and print surface; the FastAPI service owns maths, storage, diagnostics, and the local agent bridge.
 - **Normal launch path:** open `~/Applications/Mauth Studio.app`. It is a standalone Electron app that owns a packaged FastAPI sidecar on a dynamic loopback port; no Terminal windows need to remain open. `pnpm macos:dev` is the source-development shell with watched Uvicorn and Vite HMR on separate dynamic ports, and `dev:launch:desktop` remains a fixed-port browser debugging path.
-- **Durable data:** visible teacher documents live in the selected documents folder. On macOS, shared state, autosave, logos, and remembered-folder identity live under `~/Library/Application Support/Mauth Studio/storage`; external selected folders keep project metadata and versions in their own `.mauth/`. Autosave is recovery state, not a saved project file.
+- **Durable data:** visible teacher documents live in the selected documents folder. On macOS, shared state, active-document autosave, recoverable open-tab state, logos, and remembered-folder identity live under `~/Library/Application Support/Mauth Studio/storage`; external selected folders keep project metadata and versions in their own `.mauth/`. Autosave and tab-session recovery are not saved project files.
 - **Authoring contract:** inspect the current snapshot, dry-run structured Mauth actions, apply with revision/idempotency protection, validate, then verify in the browser. Direct edits to teacher JSON or `.mauth` metadata are recovery-only.
-- **Current source state:** signed and notarized `v0.1.2` is the current public Apple Silicon alpha release. Its five updater and installer assets were published and independently re-read from GitHub at tag commit `aaf63ce`; the public website points to the same release. Current `main` additionally contains the overlapping-save fix described below for the next release. This Mac still has the `v0.1.1` updater bootstrap installed until the first in-app update is accepted. Release preflight validates the selected Apple credential with a live, read-only `notarytool history` request before starting the full build.
-- **Implemented direction:** launcher/status tooling, guarded file and folder lifecycle, system diagnostics, deterministic agent actions, and manual solution layers for shared choices and tables, `graph2d` functions/features, `geometry2d`, `vector2d`, `graph3d`, Plotly `statsChart` series, uploaded-image annotations, supported Penrose elements, and paired diagrams are present in the current worktree.
+- **Current source state:** signed and notarized `v0.1.2` remains the current public Apple Silicon alpha until the prepared `v0.1.3` release is shipped. This dirty `main` worktree contains the `0.1.3` source candidate: native `.mauth` Finder identity/Quick Look, sharper screen previews, multi-document tabs, explicit agent document targeting, native menu ownership of System Status/appearance/solution validation, compact toolbar controls, System Status contrast repair, and reusable-logo reconciliation. The public website and release notes are prepared for `v0.1.3` but must not be treated as live until `pnpm macos:ship` completes from clean pushed `main`. Release preflight validates the selected Apple credential with a live, read-only `notarytool history` request before starting the full build.
+- **Implemented direction:** launcher/status tooling, guarded file and folder lifecycle, multi-document tabs with independent history/revision/dirty state and crash recovery, explicit agent document targeting, system diagnostics, deterministic agent actions, native Finder icon/thumbnail/Spacebar preview support, sharp layout-scaled A4 screen previews, and manual solution layers for shared choices and tables, `graph2d` functions/features, `geometry2d`, `vector2d`, `graph3d`, Plotly `statsChart` series, uploaded-image annotations, supported Penrose elements, and paired diagrams are present in the current worktree.
 - **Saved document flow:** opening a full saved document now normalizes its explicit `documentFlow` against the incoming questions and section headings. It no longer reconciles that flow against the previously open document, so interleaved section headings retain their saved positions after reopen.
 - **Overlapping manual saves:** Save is single-flight from the filename prompt through revision refresh. A repeated click or shortcut while the first write is pending awaits that write instead of issuing another request with the stale base revision and falsely reporting `File changed on disk` after a successful save.
 - **Standard test sections:** multiple named sections use one top-level marker per section, including a leading marker for the opening title page. Later markers generate additional full test title pages, and markers are never repeated as inline headings above questions. Every title page shows only the marks belonging to its following section. Worksheet, notes, and exam section-heading behavior remains unchanged.
@@ -43,7 +43,7 @@ For development work, also inspect the relevant tests beside the changed code. F
 - **Expression-aware numeric fields:** coordinate and graph-number controls keep temporary empty or partial drafts while focused, accept safe exact expressions such as `pi/2`, `sqrt(2)`, and `1/3`, and commit only finite evaluated numbers to the document. Custom arrow controls retain aligned one-unit steps and ten-pixel diagram-size steps.
 - **Direct structured wording edits:** Question, part, and subpart prompt fields are directly editable at the top of their expanded manual-editor containers. Part and subpart summaries prefer that actual wording rather than showing the first answer or solution text block.
 - **Investigation documents:** `titlePageTemplate: "investigation"` creates a non-question assessment whose title identity and Name/Result row are followed by the task and general guidance on one standard-test title page, with linked teacher rubric pages in Teacher mode. The cover is not repeated and has no separate administration grid. Shared criterion headings and guidance appear in both copies. Teacher rows support independent additive allocations and alternative holistic performance levels; rubric pagination repeats its identifying headings and keeps the final total on the last page.
-- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, Codex Run action, teacher-confirmed alpha updater, guarded draft-first ship pipeline, and app-contained Codex/Claude MCP connector are implemented. Signed/notarized `v0.1.2`, containing the connector and current authoring slice, is public as an updater-enabled prerelease.
+- **Completed milestone:** the broad editor/lifecycle/manual-solutions goal and the standalone macOS foundation meet their completion criteria. The installed app, packaged Python/Node diagram runtime, authenticated dynamic runtime discovery, native quit confirmation, storage-state migration, Hardened Runtime local signing, Developer ID signing, app-and-DMG notarization/stapling, release verification, Codex Run action, teacher-confirmed alpha updater, guarded draft-first ship pipeline, app-contained Codex/Claude MCP connector, and native `.mauth` Finder presentation boundary are implemented. Signed/notarized `v0.1.2`, containing the connector and current authoring slice but not the uncommitted Finder work, remains public as an updater-enabled prerelease.
 - **Do not infer:** the old provider-backed chat is not the product path, the current browser tab is not automatically authoritative, and a running API alone does not mean the full app or active documents folder is healthy.
 
 ### Documentation Ownership
@@ -68,24 +68,26 @@ When a transient runtime fact conflicts with a durable architecture document, tr
 
 ## Immediate Worktree Checkpoint
 
-This checkpoint was refreshed after implementing standard-test section title pages and their T mini-TOC controls, clarifying page-space allocation as an agent authoring philosophy, adding connected graph angle markers, repairing graph-axis endpoint arrows and draggable axis labels, restoring direct question/part/subpart wording edits, adopting `.mauth` as the canonical structured document extension, adding expression-aware numeric coordinate editing, adding the Investigation assessment type, and bundling a standalone Mauth Agent Connector on 23 July 2026. Runtime and external-service facts are deliberately timestamped because they can change without a source edit.
+This checkpoint was refreshed after adding a dedicated `.mauth` Finder identity/Quick Look slice and the subsequent multi-document tab/session/agent-targeting slice on 28 July 2026. Runtime and external-service facts are deliberately timestamped because they can change without a source edit.
 
-Handoff status: standalone implementation, signed/notarized release publication, teacher-confirmed updates, and draft-first publication are implemented. Public 0.1.2 adds standard-test section title pages with one T mini-TOC item and one complete per-page editor per physical title page, keeps spare-page allocation as explicit agent judgement rather than runtime layout automation, makes graph2d angle markers derive from connected line segments, gives graph axes independent endpoint arrows plus reliable draggable axis-letter labels, restores direct structured prompt editing at question, part, and subpart level, makes `.mauth` the default JSON-backed document format with compatibility reads for `.test.json`, lets diagram numeric fields hold editable drafts and evaluate safe exact expressions without changing the numeric saved schema, adds an Investigation document type with no questions, one shared test-style title/brief page, and a linked teacher rubric, and packages the authenticated MCP connector inside the Mac app so teachers do not need the source repository or separately downloaded agent files.
+Handoff status: standalone implementation, signed/notarized release publication, teacher-confirmed updates, and draft-first publication are implemented. Public 0.1.2 adds the authoring and connector slice described below. The current uncommitted Finder slice keeps `.mauth` as versioned JSON, exports `au.edu.acc.mauth-studio.document`, adds a dedicated document icon, and packages sandboxed Swift thumbnail and preview extensions. Finder thumbnails use Core Graphics; Spacebar previews use a fully native AppKit text surface so no WebKit/network subprocess or embedded PDF is required.
 
 Repository state at the checkpoint:
 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-runtime: Electron development shell running on dynamic API/Vite ports; public 0.1.2 and its bundled connector passed signed/notarized packaged-bundle verification
+runtime: one active local Developer ID signed 0.1.2 checkpoint installed in `~/Applications` with native Finder extensions and centred document artwork; public 0.1.2 remains unchanged
 active documents folder: `/Users/djpramsay@acc.edu.au/Documents/Mauth/Documents`
 latest durable/recovery identity: `tests/Year 12 Mathematics Methods - Investigation 2.mauth`, saved revision 1 with zero questions and five holistic criteria
-current runtime state on 23 July 2026: the Electron development shell is healthy with one authenticated bridge session. Public 0.1.2 passed Hardened Runtime, notarization, stapling, Gatekeeper, updater-asset, and packaged-connector verification. The installed app remains 0.1.1 until the teacher accepts the first in-app update to 0.1.2.
-live bridge state at 8:00 pm AWST: runtime discovery and the current editor snapshot passed against saved revision 1 of Investigation 2 (`The Shape of Variation`). Its visible `.mauth` file and autosave have identical authored content, with five holistic 4/3/2/1 criteria, no questions, no validation warnings, and snapshot id `snap_187x21r`. The API log showed the original save succeed before an overlapping duplicate request produced the misleading revision conflict.
-App.tsx: 1061 lines
+current runtime state on 28 July 2026: the local installed checkpoint passes Hardened Runtime and nested-extension signature verification. The stale `/Applications` 0.1.0 copy is archived outside the application search paths, backup copies are unregistered, and Finder/Quick Look caches were reset. Public 0.1.2 remains the latest notarized release.
+live bridge state: not required for this read-only Finder slice. Recheck the packaged runtime and selected external folder before any teacher-file mutation.
+App.tsx: 1370 lines
 SelectionInspector.tsx: 107 lines after the focused basic-block, diagram-router, renderer-specific inspector extractions, and explicit Solutions-mode binding
-worktree: clean at this checkpoint; preserve any later changes and inspect Git before editing
+worktree: clean at this checkpoint; the prepared 0.1.3 Finder/Quick Look, sharp screen-preview, multi-document tab, native desktop-menu, System Status contrast, and reusable-logo reconciliation slices are committed together as the release candidate
 ```
+
+The multi-document orchestration accounts for the current `App.tsx` size; extract that controller composition only as a later coherent follow-up.
 
 Always confirm this with:
 
@@ -98,7 +100,7 @@ pnpm dev:status
 ### Model Transition Readiness
 
 - Repository branch, baseline commit, `App.tsx`/`SelectionInspector.tsx` sizes, and dirty-worktree counts were rechecked against Git.
-- The full `pnpm check` gate passes after the overlapping-save fix: API 82, web/actions 601, Plotly 8, launcher/runtime 43, formatting/lint, TypeScript, and the Vite production build. The rendered editor-inspector smoke also passes across every diagram type in wide and compact layouts.
+- Focused native Quick Look tests pass, including holistic/additive mark summarisation, document validation, the exact UTI/extension manifest contract, and the explicit view-based preview mode. The complete `pnpm check` result is recorded under **Current Verification Baseline**.
 - Documented `pnpm` project commands were checked against `package.json`; `pnpm dev` is the one intentional contextual command and is only used when already inside `apps/web`.
 - `pnpm check:handoff` verifies the required handoff files, checkpoint sections, root entry-point links, documented package scripts, and local Markdown links.
 - All documents named in the handoff reading order exist and the local documentation link audit passes.
@@ -121,7 +123,7 @@ The completion criteria in `docs/todo.md` are met: normal macOS use has one stan
 
 The document-workspace binding and workspace-presentation slices are complete. A new model should begin from the source named in **Exact Resume Point**, not search for an unfinished workspace adapter.
 
-The standalone alpha worktree contains sixty-five completed or active change groups:
+The standalone alpha worktree contains seventy completed or active change groups:
 
 1. **Completed and verified multiple-choice solution-answer work.**
    - Choice lists can store a zero-based `solutionAnswerIndex`; legacy solutions-only copies remain readable.
@@ -482,7 +484,7 @@ The standalone alpha worktree contains sixty-five completed or active change gro
 53. **Completed and verified standalone macOS foundation.**
     - `desktop/main.mjs` now owns a secure Electron window, a dynamic loopback port, the packaged FastAPI sidecar, runtime-manifest discovery, single-instance focus, external-navigation handling, logs, and child-process shutdown.
     - The API sidecar is built with PyInstaller and serves the production Vite build from the same origin. Penrose is bundled as a self-contained Node entry and runs through Electron's Node runtime, so the installed app needs neither Python nor Node on the user's `PATH`.
-    - `~/Applications/Mauth Studio.app` is installed as a valid ad-hoc-signed local bundle. The previous launcher is retained at `~/Library/Application Support/Mauth Studio/Launcher Backups/Previous Mauth Studio.app`.
+    - `~/Applications/Mauth Studio.app` is installed as a valid local bundle. Previous installers are retained as `~/Library/Application Support/Mauth Studio/Launcher Backups/Previous Mauth Studio.zip`; legacy live `.app` backups are renamed with a `.backup` suffix so Spotlight and LaunchServices cannot treat them as alternative installations.
     - Normal macOS state is shared between development and packaged runtimes under `~/Library/Application Support/Mauth Studio/storage`. The guarded installer copied existing `.mauth` state there without deleting the source; visible documents and external-folder project metadata remain in their teacher-selected locations.
     - `pnpm agent:doctor` discovers the packaged dynamic URL through `runtime.json`. Packaged system status reported `desktop-packaged`, app version `0.1.0`, the selected Google Drive folder, and one bridge session. A real packaged Venn render returned SVG.
     - Native Quit now turns the renderer's unsaved-page guard into a two-choice backed-up-draft confirmation. Choosing Close removed the runtime manifest immediately and both PyInstaller processes exited shortly afterward.
@@ -565,7 +567,35 @@ The standalone alpha worktree contains sixty-five completed or active change gro
     - `saveCurrentTestToProjectFile` now shares one in-flight operation across repeated Save actions, including the new-file name prompt and revision refresh. Genuine later saves and failed-save retries still start normally.
     - Focused tests cover overlapping success and retry after failure. The current Investigation 2 visible file and autosave were compared field-for-field and contain the same complete authored document.
 
-The full `pnpm check` gate passes after the overlapping-save fix: API 82 passed, web/actions 601 passed, Plotly 8 passed, launcher/runtime 43 passed, and TypeScript/Vite production build passed. The generated connector and packaged connector both completed live MCP snapshot smokes, and the complete signed/notarized macOS release passed packaged-app, stapling, Gatekeeper, public-asset, and updater-metadata verification. The current Investigation 2 document was visually verified as one shared standard-test title/brief page plus two linked rubric pages. The first rubric page contains three complete criteria; the second repeats the assessment context, rubric title, and column headings, contains the final two complete criteria, and shows the only `____ / 20` total. Its saved visible file and autosave now contain the same authored state: 20 marks, zero questions, five holistic criteria, and no validation or rendered-page warnings. Both standard-test T targets and the rendered leading title page were previously verified against the current Year 11 test with correct per-section totals and the complete editor. The connected-angle render was visually verified against the current Year 11 triangle with the arc meeting both referenced sides. The current Question 4(c) graph was also verified with its origin endpoint arrow suppressed, the other three arrowheads intact, and its built-in axis label successfully dragged in an isolated browser session without changing revision 15. The expression-aware graph coordinate flow was rendered in an isolated editor session with an empty draft, exact expressions, numeric commit, and aligned step controls. The development shell was verified with separate dynamic API/web URLs, two observed Vite HMR updates, and a passing bridge doctor. This Mac's installed 0.1.1 app remains the updater bootstrap until its first update to public 0.1.2 is accepted. Recheck external cloud-folder materialisation before teacher-file authoring.
+66. **Completed native `.mauth` Finder identity and Quick Look integration.**
+    - The packaged app exports the canonical `au.edu.acc.mauth-studio.document` UTI, owns `.mauth`, and supplies a dedicated Mauth document icon rather than Finder's unknown-document icon.
+    - Sandboxed Swift extensions provide generated Finder thumbnails and native Spacebar summaries from stable title, school, subject, document-type, question/section, marks, and investigation-task metadata. They are read-only, do not depend on the running API, and do not add a PDF or preview cache to teacher files.
+    - The Spacebar provider uses AppKit rather than WebKit. This avoids unsupported network/web subprocesses inside the Quick Look sandbox and keeps the preview deterministic and selectable.
+    - macOS build, signing, release, verification, and test scripts now compile, embed, sign, and validate both extensions in the required nested-code order. The verifier rejects a missing icon, mismatched UTI, wrong extension point, missing view controller, missing explicit preview mode, or absent sandbox entitlement.
+    - The local Developer ID signed checkpoint was installed and verified against the real `Year 12 Mathematics Methods - Investigation 2.mauth` file. Finder showed its generated thumbnail, and Spacebar rendered the native summary with the correct school, subject, title, subtitle, 20 marks, and task text.
+
+67. **Completed multi-document tabs and explicit agent document targeting.**
+    - The main toolbar now holds shrink-then-scroll document tabs with per-tab save-state indicators, close controls, automatic active-tab visibility, and a **Show open documents** overflow menu. The duplicate desktop close-current-file button is removed because every tab has its own guarded close cross; the hidden-tab mobile layout retains one close command. The Student/Solutions mode selector is one accessible icon toggle, Files is icon-only, and narrower desktop widths collapse the remaining brand and print labels so the rail retains a bounded interactive lane without adding a second toolbar row.
+    - Every tab captures its structured document, independent undo/redo history, navigation anchors, project/folder identity, file path and loaded revision, save fingerprints, conflict/status state, and dirty flag. Opening or creating adds/activates a tab; switching captures the outgoing state; close runs the existing save/discard/cancel guard for the selected tab and restores the adjacent document.
+    - `autosave/open-documents.json` and an equivalent browser fallback recover the open-tab set after restart. Undo/redo stacks remain memory-only. The active `current-test.json` autosave is merged into the recovered session so the latest active draft remains authoritative; neither recovery file is a visible project-file save.
+    - Agent snapshots now report `activeDocumentId` and `openDocuments`. Snapshot, preview, apply, and validation operations and the bundled MCP tools accept optional `documentId`; Mauth visibly activates that tab before reading or mutating it rather than introducing hidden background state.
+    - Pure tab identity/selection/persistence tests, API storage/bridge tests, the complete web action suite, TypeScript/Vite build, and an isolated Playwright smoke cover switching, edit preservation, nine-tab overflow, reload recovery, and guarded background-tab close. The smoke uses a disposable folder and does not touch the installed app's Desktop workspace.
+
+68. **Moved auxiliary controls into the native macOS menu.**
+    - **View -> System Status...**, **View -> Toggle Light/Dark Mode**, and **Tools -> Check Solutions...** now dispatch narrow Electron menu events through the sandboxed preload bridge to the existing status-panel, theme-controller, and solution-validation actions.
+    - Electron hides those redundant toolbar controls and the separate Layers status badge, reclaiming their grouped width for document tabs. The active Student/Solutions toggle still communicates the current authoring layer. The lower-level browser development view retains fallbacks because it has no native application menu.
+    - Focused desktop tests cover stable channels and live-window dispatch. The isolated tab smoke mocks the preload contract, proves the auxiliary toolbar controls are absent in desktop mode, opens System Status and solution validation, toggles appearance through menu events, and retains a clean browser console.
+
+69. **Fixed System Status control contrast across app themes.**
+    - System Status intentionally remains a light diagnostic sheet in both app themes. Its Refresh, Close, launcher-command Copy, and agent-setup Copy controls now use explicit light-surface foreground, border, background, and hover colours rather than inheriting dark-mode button variables from the document root.
+    - The isolated document-tab smoke opens the panel in both light and dark app themes, measures every visible button against a 4.5:1 text/icon contrast floor, captures both rendered states, and retains the existing clean-console and tab-session coverage.
+
+70. **Reconciled legacy reusable Grace logo records.**
+    - Existing logo libraries rename the known `Grace` / `GRACE CHRISTIAN SCHOOL` record to **Grace Christian College** with matching school text.
+    - A `Logo Only` placeholder is removed only when its exact image is already retained under a normally named logo. Hydration deletes the obsolete disk record and browser fallback persistence receives the reconciled list.
+    - Old saved documents that embed a removed placeholder id are remapped to the retained image before editor rendering and fingerprinting. Focused tests cover the rename, conservative duplicate removal, disk cleanup, and saved-document remap.
+
+The previous full `pnpm check` baseline after the overlapping-save fix was API 82, web/actions 601, Plotly 8, launcher/runtime 43, and a passing TypeScript/Vite production build. The current Finder slice raises launcher/runtime coverage to 45 and adds three native Quick Look tests; the final complete gate is recorded under **Current Verification Baseline**. The generated connector and packaged connector previously completed live MCP snapshot smokes, and the complete signed/notarized public macOS release passed packaged-app, stapling, Gatekeeper, public-asset, and updater-metadata verification. The current Investigation 2 document was visually verified as one shared standard-test title/brief page plus two linked rubric pages. Its saved visible file now also serves as the native Finder fixture: the installed local checkpoint rendered the dedicated thumbnail and a nonblank Spacebar summary with the correct school, subject, title, subtitle, 20 marks, and task text. This local checkpoint is not a new public release. Recheck external cloud-folder materialisation before teacher-file authoring.
 
 The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reloader parent and worker for one Mauth runtime. Do not treat that pair alone as evidence of a stale duplicate API.
 
@@ -573,7 +603,7 @@ The two API listeners shown by `pnpm dev:status` are the expected Uvicorn reload
 
 Resume follow-on development in this order:
 
-1. Use the installed `v0.1.1` app for the first complete in-app updater acceptance test against public `v0.1.2`: confirm detection, teacher approval before download, teacher approval before restart, successful replacement, preserved documents/settings, a current-version check after relaunch, and **Help -> Set Up Codex or Claude...** against the installed connector. Also clean-machine-test the public 0.1.2 DMG on another Apple Silicon Mac.
+1. Complete the prepared `0.1.3` release through the full gate, clean pushed `main`, and guarded `pnpm macos:ship` flow. Then record the published tag/assets in this handoff and clean-machine verify the downloaded DMG, dedicated icon, Finder thumbnail, Spacebar summary, tab recovery, bundled connector document targeting, and Grace logo reconciliation before calling that version shareable.
 2. Continue first-class manual solution editing through the next coherent teacher-facing ergonomic or validation gap, or build the next conservative page-flow check on the measured preview-readiness contract. Do not create a second status, mark, preview, validation, or mutation path.
 3. Continue the `App.tsx` composition split only at a coherent remaining boundary. Existing persistence, Files, bridge, manual-solution, preview, workspace, navigator, overlay, header, inspector, drag, mutation, and lifecycle slices are complete; do not duplicate controller ownership merely to reduce line count.
 4. Recheck the selected Google Drive documents folder and live editor session before authoring teacher files. The packaged app starts independently of cloud metadata, but the normal project route still correctly returns `503` while `.mauth/project.json` is dataless. Do not reset the folder or import files automatically.
@@ -591,7 +621,7 @@ Before a new model edits anything:
 2. Run `git status --short --branch`, `git log --oneline -5`, and `pnpm dev:status`.
 3. Preserve any modified and untracked source file reported by Git; the recorded checkpoint is clean, but a later user's work is never disposable generated output.
 4. Confirm the active folder and file through `/api/system/status` or the bridge snapshot before assessment-authoring actions.
-5. The current packaged `0.1.1` runtime is running. Use `pnpm dev:status` before opening another copy; do not start manual API/web terminals alongside it.
+5. A local Developer ID signed `0.1.2` checkpoint containing the earlier uncommitted Finder work is installed; it does not contain the new tabs. Use `pnpm dev:status` before opening another copy, use an isolated development runtime for tab work, and do not confuse the checkpoint with the unchanged public 0.1.2 release or start manual API/web terminals alongside it.
 6. Run `pnpm agent:doctor` and require passing web and active-editor checks before bridge mutation. The doctor discovers the packaged dynamic URL automatically; use explicit URL variables only for manual fixed-port debugging.
 7. The selected Google Drive folder identity passed launcher status at this checkpoint, but its project metadata was still a downloading File Provider placeholder. If normal project routes return `503 STORAGE_UNAVAILABLE`, treat that as an external-drive availability/download state; do not switch folders, migrate files, save, discard, or reset the open teacher document merely to make the status green.
 8. For code changes, run focused tests while iterating and `pnpm check` before handoff. For visual behavior, also verify the live browser and restore any temporary document mutation.
@@ -661,6 +691,7 @@ Normal authored files live outside the repo:
   storage/
     remembered folder identity
     autosave/current-test.json
+    autosave/open-documents.json
     reusable logo assets
     default-project metadata
     version snapshots
@@ -688,6 +719,8 @@ browser verification
 ```
 
 Large generated edits should be previewed before applying. Action application should go through editor history, autosave, validation, and project-file revision checks. Comments and suggestions are review state only; they do not mutate the document.
+
+When several documents are open, read `openDocuments` and use the desired `documentId` for snapshot, preview, apply, and validation calls. Omit it only when deliberately targeting the visible active tab.
 
 Direct project JSON edits are a recovery or migration fallback, not the default workflow.
 
@@ -779,16 +812,19 @@ pnpm check:handoff:live
 
 The live variant additionally checks the documented branch, baseline commit, dirty-worktree counts, and `App.tsx`/`SelectionInspector.tsx` line counts against Git and the working tree. It is intentionally separate from the normal `pnpm check` gate because those volatile facts change during an implementation slice.
 
-Latest handoff result on 23 July 2026:
+Latest handoff result on 28 July 2026 (`pnpm check` passed):
 
 ```text
 formatting and lint: passed
-API: 82 passed
-web/actions: 601 passed
+API: 84 passed
+web/actions: 612 passed
 Plotly: 8 passed
-launcher: 43 passed
+launcher: 47 passed
+native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```
+
+The isolated `pnpm smoke:document-tabs` workflow also passes with nine open documents, a shrinking and horizontally scrollable tab rail, overflow-menu dismissal, independent unsaved editor state, reload recovery, persisted tab closure, adjacent-tab restoration, readable System Status controls in both themes, persisted Grace-logo reconciliation, and a clean browser console.
 
 Useful narrower checks:
 
@@ -810,6 +846,7 @@ pnpm smoke:file-manager
 pnpm smoke:external-folder-autosave
 pnpm smoke:context-menu-actions
 pnpm smoke:document-session-conflict
+pnpm smoke:document-tabs
 pnpm smoke:diagram-solution-authoring
 pnpm smoke:diagram-gallery
 ```

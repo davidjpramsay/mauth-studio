@@ -14,6 +14,9 @@ import {
 import type { PreviewPaginationReport } from "@/lib/previewPagination";
 import { cn } from "@/lib/utils";
 
+const lightPanelOutlineButtonClass = "border-slate-300 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950";
+const lightPanelGhostButtonClass = "text-slate-700 hover:bg-slate-100 hover:text-slate-950";
+
 export function systemStatusTone(state: SystemStatusState) {
   if (state === "ready") return "bg-emerald-400";
   if (state === "loading") return "bg-amber-300";
@@ -74,7 +77,7 @@ function LauncherCommandRow({ command }: { command: LauncherCommand }) {
           type="button"
           variant="outline"
           size="sm"
-          className="shrink-0"
+          className={cn("shrink-0", lightPanelOutlineButtonClass)}
           title={`Copy ${command.label.toLowerCase()} command`}
           aria-label={`Copy ${command.label.toLowerCase()} command`}
           onClick={() => void copyCommand()}
@@ -116,7 +119,7 @@ function ConnectorCopyRow({ label, text, multiline = false }: { label: string; t
           type="button"
           variant="outline"
           size="sm"
-          className="shrink-0"
+          className={cn("shrink-0", lightPanelOutlineButtonClass)}
           title={`Copy ${label.toLowerCase()}`}
           aria-label={`Copy ${label.toLowerCase()}`}
           onClick={() => void copyText()}
@@ -232,11 +235,18 @@ export function SystemStatusPanel({
             <p className="mt-1 text-sm text-slate-600">{message}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
+            <Button type="button" variant="outline" size="sm" className={lightPanelOutlineButtonClass} onClick={onRefresh}>
               <RefreshCw className="size-4" aria-hidden="true" />
               Refresh
             </Button>
-            <Button type="button" variant="ghost" size="icon" aria-label="Close system status" onClick={onClose}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={lightPanelGhostButtonClass}
+              aria-label="Close system status"
+              onClick={onClose}
+            >
               <X className="size-4" aria-hidden="true" />
             </Button>
           </div>

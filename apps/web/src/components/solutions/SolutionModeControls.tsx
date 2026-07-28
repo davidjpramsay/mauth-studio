@@ -44,50 +44,32 @@ export function SolutionModeControls({
         : "border-amber-300/25 bg-amber-500/15 text-amber-50 hover:bg-amber-500/25 hover:text-white"
       : "border-blue-300/20 bg-slate-950/20 text-blue-100 hover:bg-blue-500/15 hover:text-white";
   const modeCopy = solutionModeCopy({ supportsSolutionTools, effectiveShowSolutions, isInvestigationTemplate });
+  const nativeMenuOwnsAuxiliaryControls = Boolean(window.mauthDesktop);
 
   return (
     <>
       {editorDocumentOpen && supportsSolutionTools ? (
-        <div
-          role="radiogroup"
-          aria-label="Editor mode"
-          className="flex h-8 items-center rounded-md border border-blue-300/20 bg-slate-950/20 p-0.5"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-pressed={showSolutions}
+          aria-label={showSolutions ? `Switch to ${studentModeLabel} mode` : `Switch to ${solutionModeLabel} mode`}
+          title={
+            showSolutions
+              ? `${solutionModeLabel} mode. Switch to ${studentModeLabel.toLowerCase()} mode.`
+              : `${studentModeLabel} mode. Switch to ${solutionModeLabel.toLowerCase()} mode.`
+          }
+          onClick={() => onShowSolutionsChange(!showSolutions)}
+          className={cn(
+            "h-8 w-8 shrink-0 border border-blue-300/20 bg-slate-950/20 text-blue-100 hover:bg-blue-500/15 hover:text-white",
+            showSolutions && "bg-blue-500/20 text-white",
+          )}
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            role="radio"
-            aria-checked={!showSolutions}
-            title={`Edit the ${studentModeLabel.toLowerCase()} copy`}
-            onClick={() => onShowSolutionsChange(false)}
-            className={cn(
-              "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
-              !showSolutions && "bg-blue-500/20 text-white",
-            )}
-          >
-            <EyeOff className="size-3.5" aria-hidden="true" />
-            <span>{studentModeLabel}</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            role="radio"
-            aria-checked={showSolutions}
-            title={`Edit the ${solutionModeLabel.toLowerCase()} copy`}
-            onClick={() => onShowSolutionsChange(true)}
-            className={cn(
-              "h-7 gap-1.5 px-2 text-xs text-blue-100 hover:bg-blue-500/15 hover:text-white",
-              showSolutions && "bg-blue-500/20 text-white",
-            )}
-          >
-            <Eye className="size-3.5" aria-hidden="true" />
-            <span>{solutionModeLabel}</span>
-          </Button>
-        </div>
+          {showSolutions ? <Eye className="size-4" aria-hidden="true" /> : <EyeOff className="size-4" aria-hidden="true" />}
+        </Button>
       ) : null}
-      {editorDocumentOpen ? (
+      {editorDocumentOpen && !nativeMenuOwnsAuxiliaryControls ? (
         <span
           title={modeCopy.layerTitle}
           className={cn(
@@ -99,7 +81,7 @@ export function SolutionModeControls({
           <span className="hidden 2xl:inline">{modeCopy.layerLabel}</span>
         </span>
       ) : null}
-      {editorDocumentOpen && supportsSolutionValidation ? (
+      {editorDocumentOpen && supportsSolutionValidation && !nativeMenuOwnsAuxiliaryControls ? (
         <Button
           type="button"
           variant="ghost"
@@ -134,7 +116,7 @@ export function SolutionModeControls({
       >
         <FileText className="size-4" aria-hidden="true" />
         <span className="hidden xl:inline">Print:</span>
-        <span>{printModeLabel}</span>
+        <span className="hidden xl:inline">{printModeLabel}</span>
       </button>
     </>
   );

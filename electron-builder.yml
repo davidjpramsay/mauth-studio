@@ -7,12 +7,13 @@ files:
   - desktop/**
   - package.json
 asar: true
-fileAssociations:
-  - ext: mauth
-    name: Mauth Studio Document
-    description: Structured mathematics assessment document
-    role: Editor
+afterSign: scripts/after-sign-macos.cjs
+extraFiles:
+  - from: tmp/macos/quicklook
+    to: PlugIns
 extraResources:
+  - from: build/mauth-document.icns
+    to: mauth-document.icns
   - from: apps/web/dist
     to: web-dist
   - from: configs
@@ -29,8 +30,29 @@ mac:
   category: public.app-category.education
   icon: docs/assets/mauth-icon.png
   electronUpdaterCompatibility: ">=2.16"
+  signIgnore:
+    - /Contents/PlugIns/
   extendInfo:
     NSDocumentsFolderUsageDescription: Mauth Studio needs access to the documents folders you choose for assessment files.
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Mauth Studio Document
+        CFBundleTypeRole: Editor
+        CFBundleTypeIconFile: mauth-document.icns
+        CFBundleTypeExtensions:
+          - mauth
+        LSHandlerRank: Owner
+        LSItemContentTypes:
+          - au.edu.acc.mauth-studio.document
+    UTExportedTypeDeclarations:
+      - UTTypeIdentifier: au.edu.acc.mauth-studio.document
+        UTTypeDescription: Mauth Studio Document
+        UTTypeConformsTo:
+          - public.json
+          - public.data
+        UTTypeTagSpecification:
+          public.filename-extension:
+            - mauth
+          public.mime-type: application/vnd.mauth-studio.document+json
   target:
     - target: dir
       arch:

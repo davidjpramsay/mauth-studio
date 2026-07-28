@@ -7,7 +7,10 @@ interface Window {
   mauthDesktop?: {
     getAgentConnectorInfo: () => Promise<MauthAgentConnectorInfo>;
     onOpenAgentSetup: (listener: () => void) => () => void;
+    onOpenSystemStatus: (listener: () => void) => () => void;
+    onOpenSolutionValidation: (listener: () => void) => () => void;
     onOpenDocument: (listener: (filePath: string) => void) => () => void;
+    onToggleTheme: (listener: () => void) => () => void;
   };
 }
 

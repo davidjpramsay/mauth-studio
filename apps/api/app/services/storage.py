@@ -292,6 +292,23 @@ class FileTestStorage:
             return None
         return read_json_file(path)
 
+    def save_editor_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._migrate_legacy_storage_if_needed()
+        record = {
+            "activeTabId": payload.get("activeTabId") if isinstance(payload.get("activeTabId"), str) else None,
+            "tabs": self._list(payload.get("tabs")),
+            "updatedAt": utc_now_iso(),
+        }
+        atomic_write_json(self.autosave_dir / "open-documents.json", record)
+        return record
+
+    def get_editor_session(self) -> dict[str, Any] | None:
+        self._migrate_legacy_storage_if_needed()
+        path = self.autosave_dir / "open-documents.json"
+        if not path.exists():
+            return None
+        return read_json_file(path)
+
     def _test_path(self, test_id: str) -> Path:
         return self.tests_dir / f"{safe_file_stem(test_id)}.json"
 

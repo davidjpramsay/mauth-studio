@@ -39,6 +39,22 @@ export function savedProjectDocumentState(savedTest: SavedTest, runtime: SavedPr
   };
 }
 
+export function remapSavedProjectLogo(
+  document: SavedProjectDocumentState,
+  savedLogo: LogoAsset | null | undefined,
+  importedLogo: LogoAsset | undefined,
+) {
+  if (!savedLogo || !importedLogo || document.frontMatter.logoId !== savedLogo.id || importedLogo.id === savedLogo.id) return document;
+  return {
+    ...document,
+    frontMatter: {
+      ...document.frontMatter,
+      logoId: importedLogo.id,
+      ...(typeof importedLogo.schoolName === "string" ? { schoolName: importedLogo.schoolName } : {}),
+    },
+  };
+}
+
 interface UseSavedProjectDocumentApplierOptions {
   logosRef: MutableRefObject<LogoAsset[]>;
   normalizeQuestionBlocks: SavedProjectDocumentStateRuntime["normalizeQuestionBlocks"];
@@ -52,7 +68,7 @@ interface UseSavedProjectDocumentApplierOptions {
     sectionHeadings?: DocumentSectionHeading[],
     documentFlow?: DocumentFlowItem[],
   ) => string;
-  pushEditorHistory: () => void;
+  clearEditorHistory: () => void;
   setEditorDocument: (document: SavedProjectDocumentState) => void;
   setEditorDocumentOpenState: (open: boolean) => void;
   setActiveQuestionId: (questionId: string) => void;
@@ -72,7 +88,7 @@ export function useSavedProjectDocumentApplier({
   normalizeSectionHeadings,
   normalizeDocumentFlow,
   editorDocumentFingerprint,
-  pushEditorHistory,
+  clearEditorHistory,
   setEditorDocument,
   setEditorDocumentOpenState,
   setActiveQuestionId,
@@ -86,12 +102,14 @@ export function useSavedProjectDocumentApplier({
   importLogo,
 }: UseSavedProjectDocumentApplierOptions) {
   function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedTest: SavedTest, revision: number | null) {
-    pushEditorHistory();
-    const document = savedProjectDocumentState(savedTest, {
+    clearEditorHistory();
+    let document = savedProjectDocumentState(savedTest, {
       normalizeQuestionBlocks,
       normalizeSectionHeadings,
       normalizeDocumentFlow,
     });
+    const importedLogo = savedTest.logo ? importLogo(savedTest.logo) : undefined;
+    document = remapSavedProjectLogo(document, savedTest.logo, importedLogo);
 
     setEditorDocument(document);
     setEditorDocumentOpenState(true);
@@ -107,13 +125,11 @@ export function useSavedProjectDocumentApplier({
         document.frontMatter,
         document.questions,
         document.formattingConfig,
-        savedTest.logo ?? selectedLogoFromLibrary(logosRef.current, document.frontMatter.logoId),
+        importedLogo ?? savedTest.logo ?? selectedLogoFromLibrary(logosRef.current, document.frontMatter.logoId),
         document.sectionHeadings,
         document.documentFlow,
       ),
     );
-
-    if (savedTest.logo) importLogo(savedTest.logo);
   }
 
   return { applySavedProjectDocument };

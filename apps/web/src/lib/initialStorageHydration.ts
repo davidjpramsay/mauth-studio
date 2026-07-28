@@ -32,6 +32,8 @@ export interface InitialStorageHydrationRuntime<TLegacySavedTest, TLogo, TAutosa
   }) => TLogo[];
   persistMergedStorage: (legacySavedTests: TLegacySavedTest[], logos: TLogo[]) => void;
   saveLogoToDisk: (logo: TLogo) => Promise<unknown>;
+  logoId?: (logo: TLogo) => string | undefined;
+  deleteLogoFromDisk?: (logoId: string) => Promise<unknown>;
   loadBrowserAutosave: () => TAutosave | null;
   newerAutosave: (browserAutosave: TAutosave | null, diskAutosave: TAutosave | null) => TAutosave | null;
   isClosedAutosave: (autosave: TAutosave) => boolean;
@@ -71,7 +73,15 @@ export async function hydrateInitialStorage<TLegacySavedTest, TLogo, TAutosave, 
       legacySavedTestLogos,
     });
     runtime.persistMergedStorage(mergedLegacySavedTests, mergedLogos);
-    void Promise.allSettled(mergedLogos.map((logo) => runtime.saveLogoToDisk(logo))).catch(() => undefined);
+    const logoStorageUpdates = mergedLogos.map((logo) => runtime.saveLogoToDisk(logo));
+    if (runtime.logoId && runtime.deleteLogoFromDisk) {
+      const retainedLogoIds = new Set(mergedLogos.map(runtime.logoId).filter((logoId): logoId is string => Boolean(logoId)));
+      for (const diskLogo of diskStorage.logos) {
+        const logoId = runtime.logoId(diskLogo);
+        if (logoId && !retainedLogoIds.has(logoId)) logoStorageUpdates.push(runtime.deleteLogoFromDisk(logoId));
+      }
+    }
+    void Promise.allSettled(logoStorageUpdates).catch(() => undefined);
 
     let autosave = runtime.newerAutosave(runtime.loadBrowserAutosave(), diskStorage.autosave);
     let autosaveProject: ProjectSummary | null = null;

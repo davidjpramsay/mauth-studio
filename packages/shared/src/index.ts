@@ -944,6 +944,16 @@ export type MauthAgentBridgeErrorCode =
   | "INVALID_REQUEST"
   | "IDEMPOTENCY_KEY_REUSED";
 
+export interface MauthAgentOpenDocument {
+  id: string;
+  title: string;
+  active: boolean;
+  path?: string | null;
+  revision?: number | null;
+  dirty: boolean;
+  saveStatus: MauthAgentFileState["saveStatus"];
+}
+
 export type MauthAgentRequestKind = "snapshot" | "actions.preview" | "actions.apply" | "validation.run";
 
 export interface MauthAgentMutationBase {
@@ -1041,6 +1051,8 @@ export interface MauthAgentSnapshot {
   generatedAt: string;
   mutationBase: MauthAgentMutationBase;
   file: MauthAgentFileState;
+  activeDocumentId?: string | null;
+  openDocuments?: MauthAgentOpenDocument[];
   frontMatter: Record<string, unknown>;
   formattingConfig?: Record<string, unknown>;
   sectionHeadings: MauthAgentSectionHeadingSummary[];

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import type { FormattingConfig, MauthAgentSnapshot, ProjectSummary } from "@mauth-studio/shared";
+import type { FormattingConfig, MauthAgentOpenDocument, MauthAgentSnapshot, ProjectSummary } from "@mauth-studio/shared";
 
 import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
 import { useMauthAgentFileStateController } from "@/hooks/useMauthAgentFileStateController";
@@ -43,6 +43,9 @@ interface UseEditorAgentBridgeControllerOptions {
   commitDocument: (document: EditorDocumentState) => void;
   writeEditorDocumentToProjectFile: (filePath: string, testName: string, document: EditorDocumentState) => Promise<void>;
   currentProjectFileName: string;
+  activeDocumentId?: () => string | null;
+  openDocuments?: () => MauthAgentOpenDocument[];
+  activateDocument?: (documentId: string) => Promise<boolean>;
 }
 
 export function useEditorAgentBridgeController({
@@ -65,6 +68,9 @@ export function useEditorAgentBridgeController({
   commitDocument,
   writeEditorDocumentToProjectFile,
   currentProjectFileName,
+  activeDocumentId,
+  openDocuments,
+  activateDocument,
 }: UseEditorAgentBridgeControllerOptions) {
   const { agentFileState } = useMauthAgentFileStateController<QuestionBlock, FrontMatterConfig, FormattingConfig, LogoAsset>({
     activeProject,
@@ -96,5 +102,8 @@ export function useEditorAgentBridgeController({
     saveAppliedDocument: (filePath, document) =>
       writeEditorDocumentToProjectFile(filePath, currentProjectFileName, document as EditorDocumentState),
     saveConflictMessage: (error, filePath) => editorAgentBridgeSaveConflictMessage(error, filePath, activeProjectFileRevisionRef.current),
+    activeDocumentId,
+    openDocuments,
+    activateDocument,
   });
 }

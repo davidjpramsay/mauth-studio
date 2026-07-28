@@ -10,7 +10,7 @@ test("packaged connector setup points directly into the signed app bundle", () =
     packaged: true,
     resourceRoot,
     repoRoot: "/unused",
-    version: "0.1.2",
+    version: "0.1.3",
     available: true,
   });
 
@@ -31,7 +31,7 @@ test("development setup retains the repository-backed connector", () => {
     packaged: false,
     resourceRoot: "/repo",
     repoRoot: "/repo with spaces",
-    version: "0.1.2",
+    version: "0.1.3",
     available: true,
   });
 

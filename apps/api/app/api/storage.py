@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.models.schemas import (
     AutosaveRequest,
+    EditorSessionRequest,
     LogoAssetRequest,
     ProjectFileRequest,
     ProjectRequest,
@@ -63,6 +64,16 @@ def get_autosave() -> dict:
 def save_autosave(request: AutosaveRequest) -> dict:
     autosave = storage_service.save_autosave(request.model_dump())
     return {"autosave": autosave}
+
+
+@router.get("/editor-session")
+def get_editor_session() -> dict:
+    return {"session": storage_service.get_editor_session()}
+
+
+@router.post("/editor-session")
+def save_editor_session(request: EditorSessionRequest) -> dict:
+    return {"session": storage_service.save_editor_session(request.model_dump())}
 
 
 @router.get("/tests/{test_id}")

@@ -70,9 +70,15 @@ interface UseDocumentSessionControllerOptions<TDocument, TSavedDocument, TAutosa
   setProjectFilesStatus: (status: ProjectFilesStatus) => void;
   setProjectFilesMessage: (message: string) => void;
   refreshProjectFiles: () => Promise<void>;
+  prepareOpenProjectFileTransition?: UseProjectDocumentOpenControllerOptionsForTabs;
   dialogs: MauthDialogActions;
   onOpened?: () => void;
 }
+
+type UseProjectDocumentOpenControllerOptionsForTabs = (
+  project: ProjectSummary,
+  intent: import("@/lib/projectFileBeforeOpenWorkflow").ProjectFileTransitionIntent,
+) => Promise<import("@/lib/projectFileBeforeOpenWorkflow").ProjectFileTransitionOutcome>;
 
 export function useDocumentSessionController<TDocument, TSavedDocument, TAutosave>({
   storageHydrated,
@@ -117,6 +123,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   setProjectFilesStatus,
   setProjectFilesMessage,
   refreshProjectFiles,
+  prepareOpenProjectFileTransition,
   dialogs,
   onOpened,
 }: UseDocumentSessionControllerOptions<TDocument, TSavedDocument, TAutosave>) {
@@ -151,30 +158,31 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     dialogs,
   });
 
-  const { saveCurrentTest, startNewTest, closeEditorDocument, closeCurrentDocument } = useEditorCloseController<TAutosave>({
-    editorDocumentOpenRef,
-    fileOperationBusy,
-    activeProjectFilePath,
-    hasUnsavedProjectChanges,
-    hasUnsavedDraftChanges,
-    currentProjectFileName,
-    draftAutosaveStatus,
-    createClosedSnapshot,
-    persistLocalDraft,
-    saveDiskAutosave,
-    writeCurrentTestProjectFile,
-    saveCurrentTestToProjectFile,
-    setEditorDocumentOpenState,
-    clearActiveProjectFileState,
-    setNewTestDialogOpen,
-    setFileManagerOpen,
-    closeContextMenu,
-    setDraftAutosaveStatus,
-    setDraftAutosaveMessage,
-    setProjectFilesStatus,
-    setProjectFilesMessage,
-    dialogs,
-  });
+  const { saveCurrentTest, startNewTest, closeEditorDocument, confirmCurrentDocumentClose, closeCurrentDocument } =
+    useEditorCloseController<TAutosave>({
+      editorDocumentOpenRef,
+      fileOperationBusy,
+      activeProjectFilePath,
+      hasUnsavedProjectChanges,
+      hasUnsavedDraftChanges,
+      currentProjectFileName,
+      draftAutosaveStatus,
+      createClosedSnapshot,
+      persistLocalDraft,
+      saveDiskAutosave,
+      writeCurrentTestProjectFile,
+      saveCurrentTestToProjectFile,
+      setEditorDocumentOpenState,
+      clearActiveProjectFileState,
+      setNewTestDialogOpen,
+      setFileManagerOpen,
+      closeContextMenu,
+      setDraftAutosaveStatus,
+      setDraftAutosaveMessage,
+      setProjectFilesStatus,
+      setProjectFilesMessage,
+      dialogs,
+    });
 
   const { openProjectFile, openExternalProjectDocument, syncActiveProjectFileFromDisk, reloadActiveProjectFileFromDisk } =
     useProjectDocumentOpenController<TSavedDocument>({
@@ -189,6 +197,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
       parseSavedDocument,
       applySavedProjectDocument,
       prepareCurrentProjectFileTransition,
+      prepareOpenProjectFileTransition,
       currentEditorDocumentFingerprint,
       projectFileConflictFromError,
       setActiveProject,
@@ -234,6 +243,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     saveCurrentTest,
     startNewTest,
     closeEditorDocument,
+    confirmCurrentDocumentClose,
     closeCurrentDocument,
     openProjectFile,
     openExternalProjectDocument,

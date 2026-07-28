@@ -155,6 +155,27 @@ test("hydrateInitialStorage clears project-file identity from closed autosaves",
   assert.equal(restored[0].activeProjectFileRevision, undefined);
 });
 
+test("hydrateInitialStorage deletes disk logos removed by library reconciliation", async () => {
+  const deletedLogoIds: string[] = [];
+
+  await hydrateInitialStorage(
+    runtime({
+      loadDiskStorage: async () => ({
+        legacySavedTests: [],
+        logos: [{ id: "retained" }, { id: "obsolete" }],
+        autosave: null,
+      }),
+      buildMergedLogos: () => [{ id: "retained" }],
+      logoId: (logo) => logo.id,
+      deleteLogoFromDisk: async (logoId) => {
+        deletedLogoIds.push(logoId);
+      },
+    }),
+  );
+
+  assert.deepEqual(deletedLogoIds, ["obsolete"]);
+});
+
 test("hydrateInitialStorage reports unavailable storage when disk hydration fails", async () => {
   const statuses: string[] = [];
   const messages: string[] = [];

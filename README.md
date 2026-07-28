@@ -31,6 +31,8 @@ Recommended setup:
 - Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
 - MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
 - Visible local document files in `~/Documents/Mauth/Documents` or another teacher-selected folder, with private app state in `~/Library/Application Support/Mauth Studio/storage` on macOS.
+- Multiple open documents in one window, with independent history, dirty state, loaded revision, and crash-recoverable tabs that shrink and scroll in the main toolbar.
+- Native Finder integration for `.mauth` files: a dedicated document icon, generated thumbnails, and a read-only Spacebar Quick Look summary without changing the JSON document format.
 - Agent-readable snapshots, deterministic actions, validation, comments, suggestions, presence, and events.
 
 ## Agent-Native Workflow
@@ -47,6 +49,8 @@ rendered app verification
 
 Agents should preview large edits before applying them. Successful applies go through the app action layer, editor history, autosave, and revision-aware project-file saves.
 
+Snapshots list `activeDocumentId` and `openDocuments`. Every document MCP operation accepts an optional `documentId`, so an agent can select the intended open tab before reading, previewing, applying, or validating it.
+
 Example:
 
 ```text
@@ -60,9 +64,9 @@ Example:
 
 ## Install Mauth Studio
 
-Mauth Studio 0.1.2 is the current downloadable updater-enabled alpha release:
+Mauth Studio 0.1.3 is the current downloadable updater-enabled alpha release:
 
-[Download Mauth Studio 0.1.2](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.2)
+[Download Mauth Studio 0.1.3](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3)
 
 Open the DMG under **Assets**, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
 
@@ -70,7 +74,7 @@ Version 0.1.0 predates the in-app updater, so those users must install a newer b
 
 ## Connect Codex Or Claude
 
-Mauth Studio 0.1.2 includes a self-contained MCP connector. Keep the app in Applications, open it, then choose **Help > Set Up Codex or Claude…**. Copy the one-time Codex or Claude Code command, or merge the supplied `mauth` entry into Claude Desktop's Developer configuration. Keep Mauth Studio open while the agent is working.
+Mauth Studio 0.1.3 includes a self-contained MCP connector. Keep the app in Applications, open it, then choose **Help > Set Up Codex or Claude…**. Copy the one-time Codex or Claude Code command, or merge the supplied `mauth` entry into Claude Desktop's Developer configuration. Keep Mauth Studio open while the agent is working.
 
 The saved agent configuration points only to the signed connector inside the app. On each launch, that connector discovers the current dynamic local URL and private bridge token automatically; the token is not copied into prompts or configuration files. No source checkout, Node installation, or separate agent-files download is required. See `docs/agent-local-setup.md` and `docs/agent-bridge.md`.
 
@@ -92,6 +96,8 @@ pnpm macos:dev
 ```
 
 The development shell starts watched FastAPI and Vite services on dynamic local ports. React and CSS edits update in the Electron window through Vite HMR, and API source edits trigger Uvicorn reloads. Restart `pnpm macos:dev` only after changing Electron main-process or packaging files. The installed standalone app remains a production build and receives source changes only through a deliberate install or published update.
+
+In the macOS app, use **View > System Status…** for runtime and storage diagnostics, **View > Toggle Light/Dark Mode** for appearance, and **Tools > Check Solutions…** for solution validation. These desktop commands and the redundant Layers badge are kept out of the editor toolbar to leave more room for document tabs.
 
 For a deliberate local installed-app checkpoint:
 
@@ -229,7 +235,7 @@ pnpm smoke:diagram-gallery
 
 ## Mauthdown
 
-Normal app documents use the `.mauth` extension. They are structured, versioned JSON files that preserve the full editor state and can be opened from Finder in an installed build. Mauthdown (`.mauth.md`) is the separate text authoring and interchange format: Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
+Normal app documents use the `.mauth` extension. They are structured, versioned JSON files that preserve the full editor state and can be opened from Finder in an installed build. The macOS app exports a dedicated Mauth document type, icon, thumbnail extension, and Spacebar Quick Look preview. Those native extensions read only stable document metadata and never mutate the file or embed a generated PDF. Mauthdown (`.mauth.md`) is the separate text authoring and interchange format: Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
 
 ## Storage
 

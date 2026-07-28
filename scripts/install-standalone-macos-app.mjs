@@ -12,7 +12,7 @@ const source = path.join(ROOT, "release", "mac-arm64", "Mauth Studio.app");
 const applicationsDirectory = path.join(os.homedir(), "Applications");
 const target = path.join(applicationsDirectory, "Mauth Studio.app");
 const backupDirectory = path.join(os.homedir(), "Library", "Application Support", "Mauth Studio", "Launcher Backups");
-const backup = path.join(backupDirectory, "Previous Mauth Studio.app");
+const backup = path.join(backupDirectory, "Previous Mauth Studio.zip");
 const staging = path.join(applicationsDirectory, `.Mauth Studio.installing-${process.pid}.app`);
 const legacyMetadata = path.join(os.homedir(), "Documents", "Mauth", ".mauth");
 const standaloneMetadata = path.join(os.homedir(), "Library", "Application Support", "Mauth Studio", "storage");
@@ -20,6 +20,27 @@ const standaloneMetadata = path.join(os.homedir(), "Library", "Application Suppo
 function ditto(from, to) {
   const result = spawnSync("/usr/bin/ditto", [from, to], { stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+function archiveApp(from, to) {
+  const result = spawnSync("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", from, to], { stdio: "inherit" });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+function disableLegacyAppBackups() {
+  if (!fs.existsSync(backupDirectory)) return;
+  for (const entry of fs.readdirSync(backupDirectory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.endsWith(".app")) continue;
+    const current = path.join(backupDirectory, entry.name);
+    let disabled = `${current}.backup`;
+    let suffix = 2;
+    while (fs.existsSync(disabled)) {
+      disabled = `${current}.backup-${suffix}`;
+      suffix += 1;
+    }
+    fs.renameSync(current, disabled);
+    console.log(`Disabled legacy app backup: ${disabled}`);
+  }
 }
 
 if (!fs.existsSync(source)) {
@@ -33,8 +54,10 @@ ditto(source, staging);
 
 if (fs.existsSync(target)) {
   fs.mkdirSync(backupDirectory, { recursive: true });
+  fs.closeSync(fs.openSync(path.join(backupDirectory, ".metadata_never_index"), "a"));
+  disableLegacyAppBackups();
   fs.rmSync(backup, { recursive: true, force: true });
-  ditto(target, backup);
+  archiveApp(target, backup);
   fs.rmSync(target, { recursive: true, force: true });
 }
 

@@ -35,6 +35,10 @@ interface UseProjectDocumentOpenControllerOptions<TSavedDocument> {
     project: ProjectSummary,
     intent: ProjectFileTransitionIntent,
   ) => Promise<ProjectFileTransitionOutcome>;
+  prepareOpenProjectFileTransition?: (
+    project: ProjectSummary,
+    intent: ProjectFileTransitionIntent,
+  ) => Promise<ProjectFileTransitionOutcome>;
   currentEditorDocumentFingerprint: () => string;
   projectFileConflictFromError: (error: unknown, filePath: string, localRevision: number | null) => ProjectSaveConflict | null;
   setActiveProject: (project: ProjectSummary) => void;
@@ -68,6 +72,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
   parseSavedDocument,
   applySavedProjectDocument,
   prepareCurrentProjectFileTransition,
+  prepareOpenProjectFileTransition,
   currentEditorDocumentFingerprint,
   projectFileConflictFromError,
   setActiveProject,
@@ -122,7 +127,10 @@ export function useProjectDocumentOpenController<TSavedDocument>({
       }
 
       const fileName = projectFileDisplayName(filePath);
-      const beforeOpen = await prepareCurrentProjectFileTransition(project, { kind: "open-file", targetLabel: fileName });
+      const beforeOpen = await (prepareOpenProjectFileTransition ?? prepareCurrentProjectFileTransition)(project, {
+        kind: "open-file",
+        targetLabel: fileName,
+      });
       if (!projectFileTransitionCanProceed(beforeOpen)) return;
 
       setProjectFilesStatus("loading");

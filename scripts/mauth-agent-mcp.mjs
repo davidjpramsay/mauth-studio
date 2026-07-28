@@ -86,9 +86,12 @@ server.registerTool(
   {
     title: "Mauth Snapshot",
     description: "Read the live Mauth editor snapshot through the local HTTP bridge.",
-    inputSchema: z.object({}),
+    inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id from a previous snapshot. Omit for the active tab."),
+    }),
   },
-  async () => toolResult(await bridgeRequest("/api/agent/current/snapshot")),
+  async ({ documentId }) =>
+    toolResult(await bridgeRequest(`/api/agent/current/snapshot${documentId ? `?documentId=${encodeURIComponent(documentId)}` : ""}`)),
 );
 
 server.registerTool(
@@ -97,14 +100,15 @@ server.registerTool(
     title: "Mauth Actions Preview",
     description: "Dry-run a batch of Mauth document actions against the live editor.",
     inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id to activate before previewing."),
       actions: actionSchema.describe("MauthDocumentAction array to dry-run."),
     }),
   },
-  async ({ actions }) =>
+  async ({ documentId, actions }) =>
     toolResult(
       await bridgeRequest("/api/agent/current/actions/preview", {
         method: "POST",
-        body: { actions },
+        body: { documentId, actions },
       }),
     ),
 );
@@ -115,17 +119,18 @@ server.registerTool(
     title: "Mauth Actions Apply",
     description: "Apply a validated Mauth document action batch to the live editor and active project file.",
     inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id to activate before applying."),
       baseSnapshotId: z.string().describe("Snapshot id from mauth_snapshot or preview response."),
       actions: actionSchema.describe("MauthDocumentAction array to apply."),
       idempotencyKey: z.string().optional().describe("Stable idempotency key for retrying the same apply request."),
     }),
   },
-  async ({ baseSnapshotId, actions, idempotencyKey }) => {
+  async ({ documentId, baseSnapshotId, actions, idempotencyKey }) => {
     const key = idempotencyKey || `mcp_apply_${randomUUID()}`;
     const response = await bridgeRequest("/api/agent/current/actions/apply", {
       method: "POST",
       headers: { "Idempotency-Key": key },
-      body: { baseSnapshotId, actions },
+      body: { documentId, baseSnapshotId, actions },
     });
     return toolResult(asStructuredBody(response.httpStatus, response, { idempotencyKey: key }));
   },
@@ -136,13 +141,15 @@ server.registerTool(
   {
     title: "Mauth Validation Run",
     description: "Run deterministic validation against the live Mauth editor document.",
-    inputSchema: z.object({}),
+    inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id to activate before validating."),
+    }),
   },
-  async () =>
+  async ({ documentId }) =>
     toolResult(
       await bridgeRequest("/api/agent/current/validation/run", {
         method: "POST",
-        body: {},
+        body: { documentId },
       }),
     ),
 );

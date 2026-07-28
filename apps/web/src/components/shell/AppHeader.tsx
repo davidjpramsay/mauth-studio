@@ -6,9 +6,11 @@ import { systemStatusTone } from "@/components/system/SystemStatusPanel";
 import { Button } from "@/components/ui/button";
 import type { HeaderSaveStatus } from "@/hooks/useProjectFileStatus";
 import type { SystemStatusState } from "@/hooks/useSystemStatusController";
+import type { EditorDocumentTab } from "@/lib/editorDocumentTabs";
 import { cn } from "@/lib/utils";
 
 const BRAND_LOGO_SRC = "/brand/mauth_logo_lockup.png";
+const BRAND_ICON_SRC = "/brand/mauth_icon.png";
 const HEADER_GROUP_CLASS = "ml-2 flex shrink-0 items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1";
 const HEADER_ICON_BUTTON_CLASS = "size-8 text-blue-100 hover:bg-blue-500/15 hover:text-white disabled:opacity-40";
 const HEADER_ICON_ACTIVE_CLASS = "bg-blue-500/20 text-white";
@@ -36,6 +38,8 @@ export interface AppHeaderProps {
   showInspectorPane: boolean;
   editorDocumentOpen: boolean;
   currentProjectFileName: string;
+  documentTabs: EditorDocumentTab[];
+  activeDocumentTabId: string | null;
   headerFileStatusMessage: string;
   headerFileStatusTitle: string;
   headerStorageStatus: HeaderSaveStatus;
@@ -62,6 +66,8 @@ export interface AppHeaderProps {
   onOpenFiles: () => void;
   onOpenSystemStatus: () => void;
   onCloseFile: () => void;
+  onActivateDocumentTab: (tabId: string) => void;
+  onCloseDocumentTab: (tabId: string) => void;
   onToggleTheme: () => void;
   onShowSolutionsChange: (showSolutions: boolean) => void;
   onOpenSolutionValidation: () => void;
@@ -75,6 +81,8 @@ export function AppHeader({
   showInspectorPane,
   editorDocumentOpen,
   currentProjectFileName,
+  documentTabs,
+  activeDocumentTabId,
   headerFileStatusMessage,
   headerFileStatusTitle,
   headerStorageStatus,
@@ -101,6 +109,8 @@ export function AppHeader({
   onOpenFiles,
   onOpenSystemStatus,
   onCloseFile,
+  onActivateDocumentTab,
+  onCloseDocumentTab,
   onToggleTheme,
   onShowSolutionsChange,
   onOpenSolutionValidation,
@@ -108,6 +118,8 @@ export function AppHeader({
   onUndo,
   onRedo,
 }: AppHeaderProps) {
+  const nativeMenuOwnsStatusAndTheme = Boolean(window.mauthDesktop);
+
   return (
     <header className="app-header border-b border-blue-300/15 bg-[#030817] text-white shadow-[0_14px_32px_rgba(3,8,23,0.22)]">
       <div className="flex min-h-16 items-center justify-between gap-4 px-5">
@@ -115,7 +127,12 @@ export function AppHeader({
           <img
             src={BRAND_LOGO_SRC}
             alt="Mauth Studio"
-            className="h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain"
+            className="hidden h-10 w-auto max-w-[190px] rounded-md border border-white/10 bg-[#020615] object-contain xl:block"
+          />
+          <img
+            src={BRAND_ICON_SRC}
+            alt="Mauth Studio"
+            className="size-10 rounded-md border border-white/10 bg-[#020615] object-contain xl:hidden"
           />
           <div className="flex items-center gap-1 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
             <Button
@@ -179,18 +196,20 @@ export function AppHeader({
           >
             <FolderOpen />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            title={systemStatusMessage}
-            aria-label="System status"
-            onClick={onOpenSystemStatus}
-            className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
-          >
-            <Server />
-            <span className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))} aria-hidden="true" />
-          </Button>
+          {!nativeMenuOwnsStatusAndTheme ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title={systemStatusMessage}
+              aria-label="System status"
+              onClick={onOpenSystemStatus}
+              className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
+            >
+              <Server />
+              <span className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))} aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="ghost"
@@ -211,39 +230,49 @@ export function AppHeader({
             fileStatusTitle={headerFileStatusTitle}
             saveStatus={headerStorageStatus}
             documentOpen={editorDocumentOpen}
+            tabs={documentTabs}
+            activeTabId={activeDocumentTabId}
             onNewTest={onNewTest}
             onSaveTest={onSaveTest}
             onOpenFiles={onOpenFiles}
-            onCloseFile={onCloseFile}
+            onActivateTab={onActivateDocumentTab}
+            onCloseTab={onCloseDocumentTab}
           />
-          <div className={HEADER_GROUP_CLASS}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={systemStatusMessage}
-              aria-label="System status"
-              onClick={onOpenSystemStatus}
-              className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
-            >
-              <Server />
-              <span className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))} aria-hidden="true" />
-            </Button>
-          </div>
-          <div className={HEADER_GROUP_CLASS}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={darkMode}
-              onClick={onToggleTheme}
-              className={cn(HEADER_ICON_BUTTON_CLASS, darkMode && HEADER_ICON_ACTIVE_CLASS)}
-            >
-              {darkMode ? <Sun /> : <Moon />}
-            </Button>
-          </div>
+          {!nativeMenuOwnsStatusAndTheme ? (
+            <>
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={systemStatusMessage}
+                  aria-label="System status"
+                  onClick={onOpenSystemStatus}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, "relative", systemStatusState !== "ready" && "text-red-100")}
+                >
+                  <Server />
+                  <span
+                    className={cn("absolute right-1 top-1 size-2 rounded-full", systemStatusTone(systemStatusState))}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </div>
+              <div className={HEADER_GROUP_CLASS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+                  aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+                  aria-pressed={darkMode}
+                  onClick={onToggleTheme}
+                  className={cn(HEADER_ICON_BUTTON_CLASS, darkMode && HEADER_ICON_ACTIVE_CLASS)}
+                >
+                  {darkMode ? <Sun /> : <Moon />}
+                </Button>
+              </div>
+            </>
+          ) : null}
           <div className={HEADER_GROUP_CLASS}>
             <SolutionModeControls
               editorDocumentOpen={editorDocumentOpen}

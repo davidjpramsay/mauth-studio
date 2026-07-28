@@ -27,7 +27,7 @@ MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
 Packaged `/api/agent/*` requests require the bearer token from the private runtime manifest. The supplied doctor, MCP wrapper, and smoke tooling attach it automatically. Do not copy the token into a persistent Claude/Codex configuration; it changes every time Mauth starts. Development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
 
 ```text
-GET  /api/agent/current/snapshot
+GET  /api/agent/current/snapshot?documentId=optional-open-document-id
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
@@ -49,6 +49,8 @@ GET  /agent-docs
 - `baseSnapshotId`
 - `Idempotency-Key`
 - `actions: MauthDocumentAction[]`
+
+Snapshots include `activeDocumentId` and `openDocuments`. The snapshot query and preview/apply/validation JSON bodies accept an optional `documentId`; when supplied, Mauth visibly activates that open tab before handling the operation. Omit it to use the currently selected tab.
 
 Successful applies go through the live React action layer, editor history, autosave, and project-file save logic when a file is open. The bridge must not write `storage/projects` directly.
 
@@ -74,6 +76,8 @@ Tools:
 - `mauth_suggestions_read`
 - `mauth_suggestion_create`
 - `mauth_suggestion_mark`
+
+`mauth_snapshot`, `mauth_actions_preview`, `mauth_actions_apply`, and `mauth_validation_run` accept an optional `documentId`. Read it from `openDocuments`; do not infer tab identity from title text or DOM order.
 
 ## Agent Loop
 

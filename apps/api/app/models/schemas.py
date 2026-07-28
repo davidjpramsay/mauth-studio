@@ -303,6 +303,13 @@ class AutosaveRequest(BaseModel):
     activeProjectFileRevision: int | None = None
 
 
+class EditorSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    activeTabId: str | None = None
+    tabs: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class LogoAssetRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 

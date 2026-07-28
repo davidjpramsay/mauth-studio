@@ -1,0 +1,61 @@
+name: MauthQuickLook
+options:
+  deploymentTarget:
+    macOS: "12.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    ARCHS: arm64
+    CODE_SIGNING_ALLOWED: NO
+    DEVELOPMENT_TEAM: ""
+    MACOSX_DEPLOYMENT_TARGET: "12.0"
+    ONLY_ACTIVE_ARCH: YES
+    SWIFT_VERSION: "5.0"
+targets:
+  MauthQuickLookThumbnail:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Shared
+      - path: Thumbnail
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: YES
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Thumbnail/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: au.edu.acc.mauth-studio.quicklook-thumbnail
+        PRODUCT_NAME: MauthQuickLookThumbnail
+        SKIP_INSTALL: YES
+  MauthQuickLookPreview:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Shared
+      - path: Preview
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: YES
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Preview/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: au.edu.acc.mauth-studio.quicklook-preview
+        PRODUCT_NAME: MauthQuickLookPreview
+        SKIP_INSTALL: YES
+  MauthQuickLookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Shared
+      - path: Tests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: au.edu.acc.mauth-studio.quicklook-tests
+schemes:
+  MauthQuickLook:
+    build:
+      targets:
+        MauthQuickLookThumbnail: all
+        MauthQuickLookPreview: all
+    test:
+      targets:
+        - MauthQuickLookTests

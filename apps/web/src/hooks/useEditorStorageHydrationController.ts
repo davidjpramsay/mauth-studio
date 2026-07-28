@@ -3,7 +3,7 @@ import type { ProjectSummary } from "@mauth-studio/shared";
 import { useInitialStorageHydrationController } from "@/hooks/useInitialStorageHydrationController";
 import { useProjectAutosaveResolutionController, type ProjectAutosaveResolution } from "@/hooks/useProjectAutosaveResolutionController";
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
-import { getStorageAutosave, listStoredLogos, listStoredTests, saveStoredLogo } from "@/lib/api";
+import { deleteStoredLogo, getStorageAutosave, listStoredLogos, listStoredTests, saveStoredLogo } from "@/lib/api";
 import type { AutosavedEditorSnapshot, createEditorAppPersistence, SavedTest } from "@/lib/editorAppPersistence";
 import {
   autosaveProjectFileIdentity,
@@ -96,6 +96,8 @@ export function useEditorStorageHydrationController({
       persistence.persistLegacySavedTests(mergedLegacySavedTests);
     },
     saveLogoToDisk: (logo) => saveStoredLogo<LogoAsset>(logo),
+    logoId: (logo) => logo.id,
+    deleteLogoFromDisk: deleteStoredLogo,
     loadBrowserAutosave: persistence.loadCurrentDraft,
     newerAutosave: persistence.newerAutosave,
     isClosedAutosave: (autosave) => autosave.documentOpen === false,

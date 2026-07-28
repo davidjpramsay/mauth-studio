@@ -115,7 +115,7 @@ export function useEditorCloseController<TAutosave>({
     persistClosedEditorState();
   }
 
-  async function closeCurrentDocument() {
+  async function confirmCurrentDocumentClose() {
     const closePlan = resolveEditorClosePlan({
       editorDocumentOpen: editorDocumentOpenRef.current,
       fileOperationBusy,
@@ -123,7 +123,7 @@ export function useEditorCloseController<TAutosave>({
       hasUnsavedProjectChanges,
       hasUnsavedDraftChanges,
     });
-    if (closePlan === "ignore") return;
+    if (closePlan === "ignore") return false;
 
     if (closePlan === "confirm-project-save" && activeProjectFilePath) {
       const closeChoice = await dialogs.choose({
@@ -134,14 +134,14 @@ export function useEditorCloseController<TAutosave>({
           { value: "save", label: "Save and close" },
         ],
       });
-      if (closeChoice === null) return;
+      if (closeChoice === null) return false;
       if (closeChoice === "save") {
         try {
           await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
         } catch {
           setProjectFilesStatus("error");
           setProjectFilesMessage("Close cancelled; save failed");
-          return;
+          return false;
         }
       }
     } else if (closePlan === "confirm-draft-save") {
@@ -153,23 +153,30 @@ export function useEditorCloseController<TAutosave>({
           { value: "save", label: "Save and close" },
         ],
       });
-      if (closeChoice === null) return;
+      if (closeChoice === null) return false;
       if (closeChoice === "save") {
         const saved = await saveCurrentTestToProjectFile("");
         if (!saved) {
           setProjectFilesMessage("Close cancelled; save was not completed");
-          return;
+          return false;
         }
       }
     }
 
+    return true;
+  }
+
+  async function closeCurrentDocument() {
+    if (!(await confirmCurrentDocumentClose())) return false;
     closeEditorDocument();
+    return true;
   }
 
   return {
     saveCurrentTest,
     startNewTest,
     closeEditorDocument,
+    confirmCurrentDocumentClose,
     closeCurrentDocument,
   };
 }

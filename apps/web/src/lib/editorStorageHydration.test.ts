@@ -70,6 +70,28 @@ test("mergedEditorStorageLogos falls back to the local library when disk is empt
   );
 });
 
+test("mergedEditorStorageLogos removes a legacy logo-only copy when the named image is already stored", () => {
+  const src = "data:image/png;base64,grace";
+  const merged = mergedEditorStorageLogos({
+    diskLogos: [
+      { id: "grace", name: "Grace", schoolName: "GRACE\nCHRISTIAN SCHOOL", src },
+      { id: "grace-copy", name: "Grace Logo Only", src },
+    ],
+    localLogos: [],
+    starterLogos: [],
+    legacySavedTestLogos: [],
+  });
+
+  assert.deepEqual(merged, [
+    {
+      id: "grace",
+      name: "Grace Christian College",
+      schoolName: "GRACE\nCHRISTIAN COLLEGE",
+      src,
+    },
+  ]);
+});
+
 test("autosaveSnapshotFromSavedTest carries saved content and project identity", () => {
   const source = savedTest();
   const snapshot = autosaveSnapshotFromSavedTest(source, "tests/saved.test.json", 7);

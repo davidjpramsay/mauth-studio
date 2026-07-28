@@ -6,7 +6,7 @@ For current project state and development context, read `docs/current-state.md`.
 
 ## Install The App
 
-Download the current signed DMG from the [GitHub release](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.2), move **Mauth Studio** to Applications, and open it normally.
+Download the current signed DMG from the [GitHub release](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3), move **Mauth Studio** to Applications, and open it normally.
 
 Mauth Studio starts its packaged FastAPI service on a dynamic loopback port, opens the editor in a native window, and stops the service when the app quits. No Python, Node.js, pnpm, repository checkout, or open Terminal window is required for the app or its bundled connector.
 
@@ -49,6 +49,8 @@ rendered app verification
 ```
 
 `mauth_actions_apply` requires `baseSnapshotId` from the latest snapshot and adds an idempotency key internally. Comments and suggestions are review state; they do not mutate the document.
+
+When several documents are open, `mauth_snapshot` returns `activeDocumentId` and `openDocuments`. Pass the selected entry's `id` as the optional `documentId` to snapshot, preview, apply, and validation tools; omit it to use the visible active tab.
 
 ## Source Development
 

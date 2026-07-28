@@ -1,5 +1,5 @@
 import type { AutosavedEditorSnapshot, SavedTest } from "./editorAppPersistence.ts";
-import { appendMissingLogoAssets, type LogoAsset } from "./logoLibrary.ts";
+import { appendMissingLogoAssets, reconcileLogoAssets, type LogoAsset } from "./logoLibrary.ts";
 
 export function mergedEditorStorageLogos({
   diskLogos,
@@ -13,9 +13,11 @@ export function mergedEditorStorageLogos({
   legacySavedTestLogos: Array<LogoAsset | null | undefined>;
 }) {
   const persistedLogos = diskLogos.length ? diskLogos : localLogos;
-  return appendMissingLogoAssets(
-    appendMissingLogoAssets(appendMissingLogoAssets(persistedLogos, starterLogos), localLogos),
-    legacySavedTestLogos,
+  return reconcileLogoAssets(
+    appendMissingLogoAssets(
+      appendMissingLogoAssets(appendMissingLogoAssets(persistedLogos, starterLogos), localLogos),
+      legacySavedTestLogos,
+    ),
   );
 }
 

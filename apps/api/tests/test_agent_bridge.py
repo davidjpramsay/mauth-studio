@@ -78,6 +78,41 @@ def test_broker_dispatches_request_and_returns_browser_response() -> None:
     assert response.json()["snapshotId"] == "snap_test"
 
 
+def test_snapshot_forwards_an_optional_document_id() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
+        "sessionId"
+    ]
+    result: dict[str, object] = {}
+
+    def request_snapshot() -> None:
+        result["response"] = client.get("/api/agent/current/snapshot", params={"documentId": "file:project:exam.mauth"})
+
+    thread = Thread(target=request_snapshot)
+    thread.start()
+
+    browser_request = client.get(
+        "/api/agent/current/browser/requests",
+        params={"sessionId": session_id, "timeoutSeconds": 2},
+    ).json()["request"]
+    assert browser_request["kind"] == "snapshot"
+    assert browser_request["payload"] == {"documentId": "file:project:exam.mauth"}
+
+    client.post(
+        "/api/agent/current/browser/respond",
+        json={
+            "sessionId": session_id,
+            "requestId": browser_request["requestId"],
+            "status": 200,
+            "body": {"success": True, "activeDocumentId": "file:project:exam.mauth"},
+        },
+    )
+    thread.join(timeout=3)
+
+    response = result["response"]
+    assert response.status_code == 200
+    assert response.json()["activeDocumentId"] == "file:project:exam.mauth"
+
+
 def test_unregister_removes_browser_session() -> None:
     client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"})
 

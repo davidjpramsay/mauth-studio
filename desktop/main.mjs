@@ -17,6 +17,12 @@ import {
 } from "./agent-connector.mjs";
 import { developmentRuntimePlan } from "./development-runtime.mjs";
 import {
+  MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL,
+  MAUTH_SYSTEM_STATUS_OPEN_CHANNEL,
+  MAUTH_THEME_TOGGLE_CHANNEL,
+  sendDesktopMenuCommand,
+} from "./menu-commands.mjs";
+import {
   desktopRuntimeFile,
   isAllowedAppNavigation,
   removeOwnedRuntimeManifest,
@@ -202,6 +208,21 @@ function openAgentSetup() {
   mainWindow.focus();
 }
 
+function openSystemStatus() {
+  if (!sendDesktopMenuCommand(mainWindow, MAUTH_SYSTEM_STATUS_OPEN_CHANNEL)) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function toggleTheme() {
+  sendDesktopMenuCommand(mainWindow, MAUTH_THEME_TOGGLE_CHANNEL);
+}
+
+function openSolutionValidation() {
+  sendDesktopMenuCommand(mainWindow, MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL);
+}
+
 function createApplicationMenu() {
   return Menu.buildFromTemplate([
     {
@@ -232,8 +253,18 @@ function createApplicationMenu() {
     },
     {
       label: "View",
-      submenu: [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }],
+      submenu: [
+        { label: "System Status…", click: openSystemStatus },
+        { label: "Toggle Light/Dark Mode", click: toggleTheme },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
     },
+    { label: "Tools", submenu: [{ label: "Check Solutions…", click: openSolutionValidation }] },
     { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] },
     {
       role: "help",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormattingConfig, ProjectFileSummary } from "@mauth-studio/shared";
+import type { FormattingConfig, MauthAgentOpenDocument, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import { tocSummaryText } from "@/components/navigation/DocumentNavigator";
 import { DocumentNavigationWorkspace } from "@/components/navigation/DocumentNavigationWorkspace";
@@ -12,6 +12,7 @@ import { useDocumentSessionController } from "@/hooks/useDocumentSessionControll
 import { useDesktopDocumentOpenController } from "@/hooks/useDesktopDocumentOpenController";
 import { useEditorAgentBridgeController } from "@/hooks/useEditorAgentBridgeController";
 import { useEditorDocumentStateController } from "@/hooks/useEditorDocumentStateController";
+import { useEditorDocumentTabsController } from "@/hooks/useEditorDocumentTabsController";
 import { useEditorDocumentActionsController } from "@/hooks/useEditorDocumentActionsController";
 import { useEditorProjectFileManagementController } from "@/hooks/useEditorProjectFileManagementController";
 import { useEditorManualSolutionController } from "@/hooks/useEditorManualSolutionController";
@@ -21,7 +22,7 @@ import { useLogoLibraryController } from "@/hooks/useLogoLibraryController";
 import { useNestedEditorDragController, useNestedEditorDragState } from "@/hooks/useNestedEditorDragController";
 import { useNewDocumentController } from "@/hooks/useNewDocumentController";
 import { useQuestionPageBreakDragController, useQuestionPageBreakDragState } from "@/hooks/useQuestionPageBreakDragController";
-import { saveStorageAutosave } from "@/lib/api";
+import { getEditorSession, listProjectFiles, openDefaultProjectDocumentsFolder, saveEditorSession, saveStorageAutosave } from "@/lib/api";
 import { parseMauthDocumentActionProposal } from "@/lib/mauthActionProposal";
 import { useEditorProjectPersistenceController } from "@/hooks/useEditorProjectPersistenceController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
@@ -39,6 +40,7 @@ import { useSolutionModeController } from "@/hooks/useSolutionModeController";
 import { useSavedProjectDocumentApplier } from "@/hooks/useSavedProjectDocumentApplier";
 import { useSystemStatusController } from "@/hooks/useSystemStatusController";
 import { useThemeController } from "@/hooks/useThemeController";
+import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
 import { useProjectFilesController } from "@/hooks/useProjectFilesController";
 import { useStableEvent } from "@/hooks/useStableEvent";
 import { missingProjectRevisionConflict, projectFileConflictFromError } from "@/lib/projectSaveConflicts";
@@ -52,6 +54,18 @@ import {
   uniqueTestPath,
 } from "@/lib/projectFiles";
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
+import {
+  loadBrowserDocumentTabsSession,
+  normalizePersistedEditorDocumentTabsSession,
+  saveBrowserDocumentTabsSession,
+} from "@/lib/editorDocumentTabPersistence";
+import {
+  draftDocumentTabId,
+  persistedDocumentTabsSession,
+  savedDocumentTabId,
+  type EditorDocumentTab,
+  type PersistedEditorDocumentTabsSession,
+} from "@/lib/editorDocumentTabs";
 import {
   defaultProjectFileNameForDocument,
   MAUTH_DOCUMENT_FORMAT,
@@ -144,6 +158,42 @@ const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeDocumentTabDocument(value: unknown): EditorDocumentState | null {
+  const snapshot = editorAppPersistence.normalizeEditorSnapshot(value);
+  if (!snapshot) return null;
+  return {
+    frontMatter: snapshot.frontMatter,
+    questions: snapshot.questions,
+    sectionHeadings: snapshot.sectionHeadings,
+    documentFlow: snapshot.documentFlow,
+    formattingConfig: snapshot.formattingConfig,
+  };
+}
+
+function agentDocumentTabSummary(tab: EditorDocumentTab, activeTabId: string | null): MauthAgentOpenDocument {
+  const saveStatus: MauthAgentOpenDocument["saveStatus"] =
+    tab.saveStatus === "saved"
+      ? "saved"
+      : tab.saveStatus === "dirty"
+        ? "dirty"
+        : tab.saveStatus === "draft"
+          ? "draft"
+          : tab.saveStatus === "conflict" || tab.saveStatus === "error"
+            ? "conflict"
+            : tab.saveStatus === "loading" || tab.saveStatus === "saving"
+              ? "loading"
+              : "unknown";
+  return {
+    id: tab.id,
+    title: tab.title,
+    active: tab.id === activeTabId,
+    path: tab.filePath,
+    revision: tab.revision,
+    dirty: tab.dirty,
+    saveStatus,
+  };
 }
 
 export default function App() {
@@ -256,7 +306,6 @@ export default function App() {
     setQuestionsWithHistory,
     setEditorDocumentWithHistory,
     setSectionFlowWithHistory,
-    pushEditorHistory,
   } = editorDocumentStateController;
   const cleanUnsavedDocumentFingerprintRef = useRef<string | null>(
     initialEditorDraft
@@ -272,13 +321,21 @@ export default function App() {
   );
   const [newTestDialogOpen, setNewTestDialogOpen] = useState(false);
   const [systemStatusPanelOpen, setSystemStatusPanelOpen] = useState(false);
-  useEffect(() => window.mauthDesktop?.onOpenAgentSetup(() => setSystemStatusPanelOpen(true)), []);
+  useEffect(() => {
+    const removeAgentSetupListener = window.mauthDesktop?.onOpenAgentSetup(() => setSystemStatusPanelOpen(true));
+    const removeSystemStatusListener = window.mauthDesktop?.onOpenSystemStatus(() => setSystemStatusPanelOpen(true));
+    return () => {
+      removeAgentSetupListener?.();
+      removeSystemStatusListener?.();
+    };
+  }, []);
   const solutionModeController = useSolutionModeController(frontMatter);
   const {
     setShowSolutions,
     showSolutionsRef,
     isNotesTemplate,
     supportsSolutionTools,
+    supportsSolutionValidation,
     effectiveShowSolutions,
     previewShowSolutions,
     insertedBlockVisibilityForKind: solutionInsertedBlockVisibilityForKind,
@@ -324,6 +381,7 @@ export default function App() {
     refreshProjectFiles,
   } = projectFilesController;
   const themeController = useThemeController();
+  useEffect(() => window.mauthDesktop?.onToggleTheme(themeController.toggleTheme), [themeController.toggleTheme]);
   const [printPreviewMounted, setPrintPreviewMounted] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const editorPaneRef = useRef<HTMLElement>(null);
@@ -468,8 +526,168 @@ export default function App() {
     currentProjectFileName,
     fileOperationBusy,
     headerStorageStatus,
+    headerFileStatusMessage,
+    headerFileStatusTitle,
     hasUnsavedDraftChanges,
   } = projectFileStatusController;
+  const documentTabsController = useEditorDocumentTabsController({
+    captureCurrentTab: (existing, forcedId) => {
+      const filePath = activeProjectFilePathRef.current;
+      const tabId =
+        forcedId ??
+        existing?.id ??
+        (filePath
+          ? savedDocumentTabId(activeProject?.documentsPath ?? activeProject?.id, filePath)
+          : draftDocumentTabId(() => id("document")));
+      return {
+        id: tabId,
+        title: filePath ? currentProjectFileName : defaultSavedTestName(frontMatterRef.current),
+        project: activeProject,
+        filePath,
+        revision: activeProjectFileRevisionRef.current,
+        document: currentEditorDocument(),
+        history: editorDocumentStateController.captureEditorHistory(),
+        navigation: { activeQuestionId, activeTocItemId, activeRailItemId },
+        lastSaveFingerprint: lastProjectSaveFingerprintRef.current,
+        cleanUnsavedFingerprint: cleanUnsavedDocumentFingerprintRef.current,
+        conflict: activeProjectRevisionIssue ?? projectSaveConflict,
+        saveStatus: headerStorageStatus,
+        statusMessage: headerFileStatusMessage,
+        statusTitle: headerFileStatusTitle,
+        dirty: hasUnsavedProjectChanges || hasUnsavedDraftChanges,
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    restoreTab: async (tab) => {
+      const targetDocumentsPath = tab.project?.documentsPath?.replace(/\/+$/g, "");
+      const currentDocumentsPath = activeProject?.documentsPath?.replace(/\/+$/g, "");
+      if (tab.project && targetDocumentsPath && targetDocumentsPath !== currentDocumentsPath) {
+        const project = await openDefaultProjectDocumentsFolder(targetDocumentsPath);
+        const filesResponse = await listProjectFiles(project.id);
+        setActiveProject(project);
+        setProjectFiles(filesResponse.files);
+      } else if (tab.project && tab.project.id !== activeProject?.id) {
+        const filesResponse = await listProjectFiles(tab.project.id);
+        setActiveProject(tab.project);
+        setProjectFiles(filesResponse.files);
+      } else if (tab.project) {
+        setActiveProject(tab.project);
+      }
+      setEditorDocument(tab.document);
+      setEditorDocumentOpenState(true);
+      setActiveProjectFileState(tab.filePath, tab.revision);
+      setProjectSaveConflict(tab.conflict);
+      updateLastProjectSaveFingerprint(tab.lastSaveFingerprint);
+      cleanUnsavedDocumentFingerprintRef.current = tab.cleanUnsavedFingerprint;
+      editorDocumentStateController.restoreEditorHistory(tab.history);
+      setActiveQuestionId(tab.navigation.activeQuestionId);
+      setActiveTocItemId(tab.navigation.activeTocItemId);
+      setActiveRailItemId(tab.navigation.activeRailItemId);
+      clearEditorTransientState();
+    },
+  });
+  const captureCurrentDocumentTab = useStableEvent(documentTabsController.captureCurrentDocument);
+  const replaceDocumentTabsFromPersistence = useStableEvent(documentTabsController.replaceTabsFromPersistence);
+  const currentDocumentTabsSnapshot = useStableEvent(documentTabsController.currentTabsSnapshot);
+  const [documentTabsHydrated, setDocumentTabsHydrated] = useState(false);
+  useEffect(() => {
+    if (!storageHydrated || documentTabsHydrated) return;
+    let cancelled = false;
+
+    void getEditorSession<PersistedEditorDocumentTabsSession>()
+      .then(
+        (response) =>
+          normalizePersistedEditorDocumentTabsSession(response.session, normalizeDocumentTabDocument) ??
+          loadBrowserDocumentTabsSession(normalizeDocumentTabDocument),
+      )
+      .catch(() => loadBrowserDocumentTabsSession(normalizeDocumentTabDocument))
+      .then((session) => {
+        if (cancelled) return;
+        const currentFilePath = activeProjectFilePathRef.current;
+        const matchingTab = session?.tabs.find(
+          (tab) =>
+            tab.filePath === currentFilePath && (!tab.project?.documentsPath || tab.project.documentsPath === activeProject?.documentsPath),
+        );
+        const currentTabId =
+          matchingTab?.id ??
+          (!currentFilePath && session?.activeTabId ? session.activeTabId : null) ??
+          (currentFilePath
+            ? savedDocumentTabId(activeProject?.documentsPath ?? activeProject?.id, currentFilePath)
+            : draftDocumentTabId(() => id("document")));
+        const currentTab = editorDocumentOpenRef.current ? captureCurrentDocumentTab(currentTabId) : null;
+        replaceDocumentTabsFromPersistence(session ?? { activeTabId: null, tabs: [] }, currentTab);
+        setDocumentTabsHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeProject?.documentsPath,
+    activeProject?.id,
+    activeProjectFilePathRef,
+    captureCurrentDocumentTab,
+    documentTabsHydrated,
+    editorDocumentOpenRef,
+    replaceDocumentTabsFromPersistence,
+    storageHydrated,
+  ]);
+
+  useEffect(() => {
+    if (!storageHydrated || !documentTabsHydrated) return;
+    const timeout = window.setTimeout(() => {
+      const currentTabs = editorDocumentOpenRef.current ? currentDocumentTabsSnapshot() : documentTabsController.tabsRef.current;
+      const session = persistedDocumentTabsSession(currentTabs, documentTabsController.activeTabIdRef.current);
+      saveBrowserDocumentTabsSession(session);
+      void saveEditorSession(session).catch(() => undefined);
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [
+    activeProjectFileRevision,
+    currentDocumentFingerprint,
+    currentDocumentTabsSnapshot,
+    documentTabsHydrated,
+    documentTabsController.activeTabId,
+    documentTabsController.activeTabIdRef,
+    documentTabsController.tabs,
+    documentTabsController.tabsRef,
+    editorDocumentOpenRef,
+    headerStorageStatus,
+    storageHydrated,
+  ]);
+  const visibleDocumentTabs = useMemo(
+    () =>
+      documentTabsController.tabs.map((tab) =>
+        tab.id === documentTabsController.activeTabId
+          ? {
+              ...tab,
+              title: activeProjectFilePath ? currentProjectFileName : defaultSavedTestName(frontMatter),
+              saveStatus: headerStorageStatus,
+              statusMessage: headerFileStatusMessage,
+              statusTitle: headerFileStatusTitle,
+              dirty: hasUnsavedProjectChanges || hasUnsavedDraftChanges,
+            }
+          : tab,
+      ),
+    [
+      activeProjectFilePath,
+      currentProjectFileName,
+      documentTabsController.activeTabId,
+      documentTabsController.tabs,
+      frontMatter,
+      hasUnsavedDraftChanges,
+      hasUnsavedProjectChanges,
+      headerFileStatusMessage,
+      headerFileStatusTitle,
+      headerStorageStatus,
+    ],
+  );
+  useUnsavedChangesBeforeUnloadController({
+    editorDocumentOpen: visibleDocumentTabs.length > 0,
+    fileOperationBusy,
+    hasUnsavedProjectChanges: visibleDocumentTabs.some((tab) => tab.filePath !== null && tab.dirty),
+    hasUnsavedDraftChanges: visibleDocumentTabs.some((tab) => tab.filePath === null && tab.dirty),
+  });
   const editorSelectionController = useEditorSelectionController<
     QuestionBlock,
     DocumentSectionHeading,
@@ -640,6 +858,14 @@ export default function App() {
     queueDocumentJump,
   });
   const { createSolutionCopyForSelectedBlock } = solutionSurfaceCopyController;
+  const { setSolutionValidationOpen } = solutionValidationController;
+  useEffect(
+    () =>
+      window.mauthDesktop?.onOpenSolutionValidation(() => {
+        if (supportsSolutionValidation) setSolutionValidationOpen(true);
+      }),
+    [setSolutionValidationOpen, supportsSolutionValidation],
+  );
 
   const { contextActionsForAnchor } = useEditorContextActionsController({
     questions,
@@ -719,20 +945,20 @@ export default function App() {
     setActiveQuestionId,
     setActiveTocItemId,
     setActiveRailItemId,
-    pushHistory: pushEditorHistory,
+    clearHistory: editorDocumentStateController.clearEditorHistory,
     clearTransientEditorState: clearEditorTransientState,
     closeNewDocumentDialog: () => setNewTestDialogOpen(false),
     closeFileManager: () => setFileManagerOpen(false),
     queueDocumentJump,
   });
 
-  const { applySavedProjectDocument } = useSavedProjectDocumentApplier({
+  const { applySavedProjectDocument: applySavedProjectDocumentToEditor } = useSavedProjectDocumentApplier({
     logosRef,
     normalizeQuestionBlocks,
     normalizeSectionHeadings,
     normalizeDocumentFlow,
     editorDocumentFingerprint,
-    pushEditorHistory,
+    clearEditorHistory: editorDocumentStateController.clearEditorHistory,
     setEditorDocument,
     setEditorDocumentOpenState,
     setActiveQuestionId,
@@ -745,6 +971,23 @@ export default function App() {
     updateLastProjectSaveFingerprint,
     importLogo,
   });
+
+  function createNewTestFromTemplateInTab(template: TitlePageTemplate) {
+    documentTabsController.captureActiveTab();
+    createNewTestFromTemplate(template);
+    documentTabsController.addCurrentDocumentAsTab(draftDocumentTabId(() => id("document")));
+  }
+
+  function applySavedProjectDocument(project: ProjectSummary, filePath: string, savedDocument: SavedTest, revision: number | null) {
+    documentTabsController.captureActiveTab();
+    applySavedProjectDocumentToEditor(project, filePath, savedDocument, revision);
+    documentTabsController.addCurrentDocumentAsTab(savedDocumentTabId(project.documentsPath ?? project.id, filePath), {
+      project,
+      filePath,
+      revision,
+      title: testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath)),
+    });
+  }
 
   const documentSessionController = useDocumentSessionController<EditorDocumentState, SavedTest, AutosavedEditorSnapshot>({
     storageHydrated,
@@ -801,6 +1044,10 @@ export default function App() {
     setProjectFilesStatus,
     setProjectFilesMessage,
     refreshProjectFiles,
+    prepareOpenProjectFileTransition: async () => {
+      documentTabsController.captureActiveTab();
+      return "unchanged";
+    },
     dialogs: mauthDialogs,
     onOpened: () => setFileManagerOpen(false),
   });
@@ -813,8 +1060,50 @@ export default function App() {
     openProjectFile,
     openExternalProjectDocument,
     syncActiveProjectFileFromDisk,
+    closeEditorDocument,
+    confirmCurrentDocumentClose,
   } = documentSessionController;
   useDesktopDocumentOpenController(useStableEvent(openExternalProjectDocument));
+
+  const activateDocumentTab = useStableEvent(async (tabId: string) => {
+    await documentTabsController.activateTab(tabId);
+    setFileManagerOpen(false);
+  });
+  const confirmActiveDocumentTabClose = useStableEvent(confirmCurrentDocumentClose);
+
+  async function openProjectFileInTab(filePath: string) {
+    const openTab = documentTabsController.tabForFile(activeProject, filePath);
+    if (openTab) {
+      await activateDocumentTab(openTab.id);
+      return;
+    }
+    await openProjectFile(filePath);
+  }
+
+  async function closeDocumentTab(tabId: string) {
+    if (tabId !== documentTabsController.activeTabIdRef.current) {
+      await activateDocumentTab(tabId);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+    }
+    if (!(await confirmActiveDocumentTabClose())) return;
+
+    const nextTabId = documentTabsController.removeTab(tabId);
+    if (nextTabId) {
+      await activateDocumentTab(nextTabId);
+      return;
+    }
+    documentTabsController.clearTabs();
+    closeEditorDocument();
+  }
+
+  function closeCurrentDocumentTab() {
+    const activeTabId = documentTabsController.activeTabIdRef.current;
+    if (!activeTabId) {
+      closeEditorDocument();
+      return;
+    }
+    void closeDocumentTab(activeTabId);
+  }
 
   const projectFileManagementController = useEditorProjectFileManagementController({
     activeProject,
@@ -861,6 +1150,16 @@ export default function App() {
     commitDocument: setEditorDocumentWithHistory,
     writeEditorDocumentToProjectFile,
     currentProjectFileName,
+    activeDocumentId: () => documentTabsController.activeTabIdRef.current,
+    openDocuments: () => {
+      const activeTabId = documentTabsController.activeTabIdRef.current;
+      return currentDocumentTabsSnapshot().map((tab) => agentDocumentTabSummary(tab, activeTabId));
+    },
+    activateDocument: async (documentId) => {
+      if (!documentTabsController.tabsRef.current.some((tab) => tab.id === documentId)) return false;
+      await activateDocumentTab(documentId);
+      return true;
+    },
   });
 
   function isActiveEditorAnchor(anchor: string) {
@@ -928,7 +1227,17 @@ export default function App() {
       <div className="app-shell min-h-screen bg-background text-foreground">
         <AppHeaderWorkspace
           pane={{ paneMode, showInspectorPane, ...editorNavigationController }}
-          document={{ editorDocumentOpen, ...projectFileStatusController, ...documentSessionController, ...projectFilesController }}
+          document={{
+            editorDocumentOpen,
+            ...projectFileStatusController,
+            ...documentSessionController,
+            ...projectFilesController,
+            documentTabs: visibleDocumentTabs,
+            activeDocumentTabId: documentTabsController.activeTabId,
+            activateDocumentTab: (tabId) => void activateDocumentTab(tabId),
+            closeDocumentTab: (tabId) => void closeDocumentTab(tabId),
+            closeCurrentDocument: closeCurrentDocumentTab,
+          }}
           systemStatus={{ ...systemStatusController, openPanel: () => setSystemStatusPanelOpen(true) }}
           theme={themeController}
           solutions={{ ...solutionModeController, ...solutionValidationController }}
@@ -1012,14 +1321,14 @@ export default function App() {
           ...projectFilesController,
           ...projectFileManagementController,
           startNewTest,
-          openProjectFile,
+          openProjectFile: openProjectFileInTab,
           buildVersionPreview: projectFileVersionPreview,
         }}
         dialogNode={mauthDialogs.dialogNode}
         newDocument={{
           open: newTestDialogOpen,
           setOpen: setNewTestDialogOpen,
-          create: createNewTestFromTemplate,
+          create: createNewTestFromTemplateInTab,
         }}
         systemStatus={{
           ...systemStatusController,

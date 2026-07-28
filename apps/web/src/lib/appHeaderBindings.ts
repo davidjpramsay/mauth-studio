@@ -10,6 +10,8 @@ export interface AppHeaderBindingSources {
   document: {
     editorDocumentOpen: AppHeaderProps["editorDocumentOpen"];
     currentProjectFileName: AppHeaderProps["currentProjectFileName"];
+    documentTabs: AppHeaderProps["documentTabs"];
+    activeDocumentTabId: AppHeaderProps["activeDocumentTabId"];
     headerFileStatusMessage: AppHeaderProps["headerFileStatusMessage"];
     headerFileStatusTitle: AppHeaderProps["headerFileStatusTitle"];
     headerStorageStatus: AppHeaderProps["headerStorageStatus"];
@@ -17,6 +19,8 @@ export interface AppHeaderBindingSources {
     saveCurrentTest: AppHeaderProps["onSaveTest"];
     openFileManager: AppHeaderProps["onOpenFiles"];
     closeCurrentDocument: () => void | Promise<unknown>;
+    activateDocumentTab: AppHeaderProps["onActivateDocumentTab"];
+    closeDocumentTab: AppHeaderProps["onCloseDocumentTab"];
   };
   systemStatus: {
     message: AppHeaderProps["systemStatusMessage"];
@@ -67,6 +71,8 @@ export function appHeaderBindings({
     showInspectorPane: pane.showInspectorPane,
     editorDocumentOpen: document.editorDocumentOpen,
     currentProjectFileName: document.currentProjectFileName,
+    documentTabs: document.documentTabs,
+    activeDocumentTabId: document.activeDocumentTabId,
     headerFileStatusMessage: document.headerFileStatusMessage,
     headerFileStatusTitle: document.headerFileStatusTitle,
     headerStorageStatus: document.headerStorageStatus,
@@ -93,6 +99,8 @@ export function appHeaderBindings({
     onOpenFiles: document.openFileManager,
     onOpenSystemStatus: systemStatus.openPanel,
     onCloseFile: () => void document.closeCurrentDocument(),
+    onActivateDocumentTab: document.activateDocumentTab,
+    onCloseDocumentTab: document.closeDocumentTab,
     onToggleTheme: theme.toggleTheme,
     onShowSolutionsChange: solutions.setShowSolutions,
     onOpenSolutionValidation: () => solutions.setSolutionValidationOpen(true),

@@ -67,6 +67,49 @@ test("buildMauthAgentSnapshot emits a stable mutation base for unchanged documen
   assert.equal(first.mutationBase.activeProjectFileRevision, 7);
 });
 
+test("buildMauthAgentSnapshot exposes the active document and open tab list", () => {
+  const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
+    document: {
+      frontMatter: { assessmentTitle: "Calculus", logoId: "school" },
+      formattingConfig: { showMarks: true },
+      questions: [question([textBlock("b1", "Find $f'(x)$. ")])],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: "tests/calculus.mauth",
+      activeRevision: 7,
+      dirty: false,
+      saveStatus: "saved",
+    },
+    activeDocumentId: "file:project-1:tests/calculus.mauth",
+    openDocuments: [
+      {
+        id: "file:project-1:tests/calculus.mauth",
+        title: "Calculus",
+        active: true,
+        path: "tests/calculus.mauth",
+        revision: 7,
+        dirty: false,
+        saveStatus: "saved",
+      },
+      {
+        id: "draft:new-test",
+        title: "New test",
+        active: false,
+        path: null,
+        revision: null,
+        dirty: true,
+        saveStatus: "draft",
+      },
+    ],
+  });
+
+  assert.equal(snapshot.activeDocumentId, "file:project-1:tests/calculus.mauth");
+  assert.equal(snapshot.openDocuments?.length, 2);
+  assert.equal(snapshot.openDocuments?.[1]?.title, "New test");
+});
+
 test("buildMauthAgentSnapshot changes snapshot id when editable content changes", () => {
   const first = snapshotFor([textBlock("b1", "Find $f'(x)$.")]);
   const second = snapshotFor([textBlock("b1", "Find $g'(x)$.")]);

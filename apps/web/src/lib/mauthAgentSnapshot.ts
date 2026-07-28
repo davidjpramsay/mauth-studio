@@ -2,6 +2,7 @@ import type {
   ContentBlock,
   MauthAgentFileState,
   MauthAgentModuleSummary,
+  MauthAgentOpenDocument,
   MauthAgentPartSummary,
   MauthAgentQuestionSummary,
   MauthAgentSnapshot,
@@ -21,6 +22,8 @@ export interface BuildMauthAgentSnapshotInput<
   file: MauthAgentFileState;
   validation?: unknown;
   warnings?: MauthAgentSnapshot["warnings"];
+  activeDocumentId?: string | null;
+  openDocuments?: MauthAgentOpenDocument[];
   generatedAt?: string;
 }
 
@@ -161,6 +164,7 @@ function snapshotIdFor<Q extends MauthQuestionLike, F extends object, C extends 
         activePath: input.file.activePath,
         activeRevision: input.file.activeRevision,
       },
+      activeDocumentId: input.activeDocumentId,
       frontMatter: input.document.frontMatter,
       formattingConfig: input.document.formattingConfig,
       sectionHeadings: input.document.sectionHeadings,
@@ -203,6 +207,8 @@ export function buildMauthAgentSnapshot<
       preferredPrecondition: "baseSnapshotId",
     },
     file: input.file,
+    activeDocumentId: input.activeDocumentId,
+    openDocuments: input.openDocuments,
     frontMatter: input.document.frontMatter as Record<string, unknown>,
     formattingConfig: input.document.formattingConfig as Record<string, unknown> | undefined,
     sectionHeadings,

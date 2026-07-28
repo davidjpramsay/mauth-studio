@@ -434,6 +434,33 @@ def test_autosave_file_storage_round_trip(tmp_path, monkeypatch):
     assert load_response.json()["autosave"]["documentOpen"] is False
 
 
+def test_editor_session_file_storage_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_api, "storage_service", FileTestStorage(tmp_path))
+
+    response = client.post(
+        "/api/storage/editor-session",
+        json={
+            "activeTabId": "file:default:tests/demo.mauth",
+            "tabs": [
+                {
+                    "id": "file:default:tests/demo.mauth",
+                    "title": "Demo",
+                    "filePath": "tests/demo.mauth",
+                    "document": {"frontMatter": {}, "questions": []},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["session"]["activeTabId"] == "file:default:tests/demo.mauth"
+    assert response.json()["session"]["tabs"][0]["filePath"] == "tests/demo.mauth"
+
+    load_response = client.get("/api/storage/editor-session")
+    assert load_response.status_code == 200
+    assert load_response.json()["session"]["tabs"][0]["title"] == "Demo"
+
+
 def test_logo_file_storage_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(storage_api, "logo_storage_service", FileLogoStorage(tmp_path))
 

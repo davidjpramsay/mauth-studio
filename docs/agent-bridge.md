@@ -37,7 +37,7 @@ If the bridge is unavailable in a given runtime, agents should prefer the closes
 The implemented bridge surface is local and deterministic:
 
 ```text
-GET  /api/agent/current/snapshot
+GET  /api/agent/current/snapshot?documentId=optional-open-document-id
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
@@ -69,6 +69,7 @@ The browser registers when the editor loads and unregisters with a beacon-safe r
 
 The snapshot is compact, stable, and targeted at agent planning. Its contract includes:
 
+- the active document id and compact list of open document tabs, including title, path, revision, dirty state, save state, and active flag
 - active project id, file path, saved revision, dirty state, and autosave state
 - front matter, formatting config, page format, and selected logo summary
 - question, part, subpart, and module ids with labels and text previews
@@ -80,6 +81,8 @@ The snapshot is compact, stable, and targeted at agent planning. Its contract in
 
 Agents should target ids from this snapshot. They should not infer document identity from DOM order, React component state, browser localStorage, or raw JSON file paths.
 
+Snapshot, action preview, action apply, and validation operations accept an optional `documentId`. The GET snapshot route uses a query parameter; the POST routes use the same field in their JSON body. Mauth activates that open tab through the normal visible tab controller before reading or mutating it. An unknown id returns `404 INVALID_REQUEST`. Omitting the field targets the currently selected tab. This is explicit foreground targeting rather than hidden background editing: only one document drives preview, print, autosave, file synchronization, and the live React action layer at a time.
+
 Layout warnings are measured browser evidence, not speculative action validation. After a Student or Solutions preview has rendered, its page totals and oversized-page results are retained for the current document fingerprint and exposed as `rendered-page-overflow` warnings. Editing or opening another document clears those reports until the new preview is measured. A dry-run or applied-action result snapshot does not reuse warnings measured against the previous rendered document; verify the changed document in the browser to obtain fresh layout evidence.
 
 ## Mutation Rules
@@ -87,6 +90,7 @@ Layout warnings are measured browser evidence, not speculative action validation
 Action application is safe to retry and safe under stale state:
 
 - require `baseSnapshotId`
+- include `documentId` when the action is intended for a non-active open tab
 - require `Idempotency-Key` for write routes
 - return `409 STALE_SNAPSHOT` with a fresh snapshot when the document changed
 - return field-level validation issues for malformed action payloads

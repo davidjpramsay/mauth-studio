@@ -8,7 +8,13 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 dist/
-build/
+build/*
+!build/entitlements.mac.plist
+!build/entitlements.mac.inherit.plist
+!build/entitlements.quicklook.plist
+!build/mauth-document.svg
+!build/mauth-document.png
+!build/mauth-document.icns
 release/
 apps/web/.tmp/
 .playwright-cli/
@@ -16,6 +22,7 @@ tmp/
 storage/
 drafts/
 output/
+outputs/
 workspace/*
 !workspace/.gitignore
 !workspace/README.md

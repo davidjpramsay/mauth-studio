@@ -28,6 +28,43 @@ export const STARTER_LOGOS: LogoAsset[] = [
   },
 ];
 
+const LEGACY_GRACE_NAME = "Grace";
+const LEGACY_GRACE_SCHOOL_NAME = "GRACE CHRISTIAN SCHOOL";
+const GRACE_CHRISTIAN_COLLEGE_NAME = "Grace Christian College";
+const GRACE_CHRISTIAN_COLLEGE_SCHOOL_NAME = "GRACE\nCHRISTIAN COLLEGE";
+
+function normalizedSchoolName(value?: string) {
+  return value?.replace(/\s+/g, " ").trim().toUpperCase() ?? "";
+}
+
+function isLegacyLogoOnlyAsset(logo: LogoAsset) {
+  return /\slogo only$/i.test(logo.name.trim()) && !logo.schoolName?.trim();
+}
+
+function canonicalLogoAsset(logo: LogoAsset): LogoAsset {
+  if (logo.name.trim() !== LEGACY_GRACE_NAME || normalizedSchoolName(logo.schoolName) !== LEGACY_GRACE_SCHOOL_NAME) {
+    return logo;
+  }
+  return {
+    ...logo,
+    name: GRACE_CHRISTIAN_COLLEGE_NAME,
+    schoolName: GRACE_CHRISTIAN_COLLEGE_SCHOOL_NAME,
+  };
+}
+
+function logoAssetsEqual(left: LogoAsset[], right: LogoAsset[]) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (logo, index) =>
+        logo.id === right[index]?.id &&
+        logo.name === right[index]?.name &&
+        logo.src === right[index]?.src &&
+        logo.schoolName === right[index]?.schoolName,
+    )
+  );
+}
+
 function localStorageItem(key: string, legacyKey?: string) {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(key) ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
@@ -55,13 +92,25 @@ export function normalizeLogoAssets(value: unknown): LogoAsset[] {
   });
 }
 
+export function reconcileLogoAssets(value: unknown): LogoAsset[] {
+  const normalized = normalizeLogoAssets(value);
+  const logos = normalized.map(canonicalLogoAsset);
+  const reconciled = logos.filter((logo) => {
+    if (!isLegacyLogoOnlyAsset(logo) || !logo.src) return true;
+    return !logos.some((candidate) => candidate.id !== logo.id && candidate.src === logo.src && !isLegacyLogoOnlyAsset(candidate));
+  });
+  return Array.isArray(value) && value.length === normalized.length && logoAssetsEqual(normalized, reconciled)
+    ? (value as LogoAsset[])
+    : reconciled;
+}
+
 export function loadLogoLibrary(): LogoAsset[] {
   if (typeof window === "undefined") return STARTER_LOGOS;
 
   try {
     const stored = localStorageItem(LOGO_LIBRARY_STORAGE_KEY, LEGACY_LOGO_LIBRARY_STORAGE_KEY);
     if (!stored) return STARTER_LOGOS;
-    const storedLogos = normalizeLogoAssets(JSON.parse(stored) as unknown);
+    const storedLogos = reconcileLogoAssets(JSON.parse(stored) as unknown);
     return storedLogos.length ? storedLogos : STARTER_LOGOS;
   } catch {
     return STARTER_LOGOS;
@@ -141,7 +190,18 @@ export function mergeLogoAssets(current: LogoAsset[], assets: Array<LogoAsset | 
     }
   }
 
-  return changed ? next : current;
+  const reconciled = reconcileLogoAssets(changed ? next : current);
+  return logoAssetsEqual(current, reconciled) ? current : reconciled;
+}
+
+export function resolvedImportedLogoAsset(logos: LogoAsset[], importedLogo: LogoAsset) {
+  return (
+    logos.find((logo) => logo.id === importedLogo.id) ??
+    (isLegacyLogoOnlyAsset(importedLogo)
+      ? logos.find((logo) => logo.src === importedLogo.src && !isLegacyLogoOnlyAsset(logo))
+      : undefined) ??
+    importedLogo
+  );
 }
 
 export function updatedLogoLibraryAsset(current: LogoAsset[], logoId: string, patch: { name: string; schoolName: string }) {

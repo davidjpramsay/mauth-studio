@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 
 export type ThemeMode = "light" | "dark";
 
@@ -35,6 +35,7 @@ function applyTheme(theme: ThemeMode) {
 export function useThemeController() {
   const [theme, setTheme] = useState<ThemeMode>(loadInitialTheme);
   const darkMode = theme === "dark";
+  const toggleTheme = useCallback(() => setTheme(nextThemeMode), []);
 
   useLayoutEffect(() => {
     applyTheme(theme);
@@ -48,6 +49,6 @@ export function useThemeController() {
   return {
     theme,
     darkMode,
-    toggleTheme: () => setTheme(nextThemeMode),
+    toggleTheme,
   };
 }

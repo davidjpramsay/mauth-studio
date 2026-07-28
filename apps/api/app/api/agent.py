@@ -507,8 +507,9 @@ def respond_to_agent_request(payload: dict[str, Any] = JSON_BODY) -> JSONRespons
 
 
 @agent_router.get("/snapshot")
-def get_current_snapshot() -> JSONResponse:
-    status_code, body = _dispatch_to_browser("snapshot", {})
+def get_current_snapshot(document_id: str | None = Query(default=None, alias="documentId")) -> JSONResponse:
+    payload = {"documentId": document_id} if document_id else {}
+    status_code, body = _dispatch_to_browser("snapshot", payload)
     return _json_response(status_code, body)
 
 

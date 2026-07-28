@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+.document-tab-rail {
+  scrollbar-width: none;
+}
+
+.document-tab-rail::-webkit-scrollbar {
+  display: none;
+}
+
 @font-face {
   font-display: swap;
   font-family: "Montserrat";
@@ -469,9 +477,12 @@
 
   @media screen {
     .a4-page-frame {
-      contain-intrinsic-size: var(--a4-preview-page-width, var(--a4-page-width, 793.700787px))
-        var(--a4-preview-page-height, var(--a4-page-height, 1122.519685px));
+      contain-intrinsic-size: var(--a4-page-width, 793.700787px) var(--a4-page-height, 1122.519685px);
       content-visibility: auto;
+      height: var(--a4-page-height, 1122.519685px);
+      width: var(--a4-page-width, 793.700787px);
+      /* Layout zoom keeps text and MathJax SVGs sharp at fractional fit-to-pane sizes. */
+      zoom: var(--a4-preview-scale, 1);
     }
   }
 
@@ -556,8 +567,6 @@
     left: 0;
     position: absolute;
     top: 0;
-    transform: scale(var(--a4-preview-scale, 1));
-    transform-origin: left top;
   }
 
   .a4-page-content {
@@ -1000,17 +1009,27 @@
   }
 
   .test-front-matter-investigation .test-front-matter-content {
-    margin-top: 1.65rem;
+    margin-top: 0.9rem;
+  }
+
+  .test-front-matter-investigation .test-title-main > p:first-of-type {
+    font-size: 1.2rem;
+    margin-top: 1.75rem;
+  }
+
+  .test-front-matter-investigation .test-title-main .test-assessment-subtitle {
+    font-size: 0.92rem;
+    margin-top: 0.35rem;
   }
 
   .test-front-matter-investigation .test-student-row {
-    margin-top: 2rem;
+    margin-top: 1.15rem;
   }
 
   .investigation-student-content {
     color: #172033;
-    font-size: 10.4pt;
-    line-height: 1.38;
+    font-size: 10pt;
+    line-height: 1.3;
   }
 
   .investigation-task,
@@ -1019,20 +1038,20 @@
   }
 
   .investigation-guidance {
-    margin-top: 1.15rem;
+    margin-top: 0.7rem;
   }
 
   .investigation-task h2,
   .investigation-guidance h2,
   .investigation-rubric-heading h2 {
-    font-size: 11.5pt;
+    font-size: 11pt;
     font-weight: 800;
-    margin: 0 0 0.4rem;
+    margin: 0 0 0.28rem;
   }
 
   .investigation-task .formatted-text,
   .investigation-rubric-heading .formatted-text {
-    gap: 0.42rem;
+    gap: 0.28rem;
   }
 
   .investigation-task .formatted-text p,
@@ -1042,8 +1061,8 @@
 
   .investigation-guidance ol {
     display: grid;
-    gap: 0.5rem;
-    margin: 0.5rem 0 0;
+    gap: 0.32rem;
+    margin: 0.35rem 0 0;
     padding-left: 1.55rem;
   }
 
@@ -1053,8 +1072,8 @@
 
   .investigation-guidance li > strong {
     display: block;
-    font-size: 10pt;
-    margin-bottom: 0.08rem;
+    font-size: 9.6pt;
+    margin-bottom: 0.04rem;
   }
 
   .investigation-guidance li .formatted-text,

@@ -162,11 +162,12 @@ export function useEditorDocumentStateController<
     clearTransientEditorState?.();
   }
 
-  const { canUndo, canRedo, pushEditorHistory, undoEdit, redoEdit } = useEditorHistoryController<TSnapshot>({
-    historyLimit,
-    currentSnapshot: currentEditorSnapshot,
-    restoreSnapshot: restoreEditorSnapshot,
-  });
+  const { canUndo, canRedo, pushEditorHistory, undoEdit, redoEdit, captureEditorHistory, restoreEditorHistory, clearEditorHistory } =
+    useEditorHistoryController<TSnapshot>({
+      historyLimit,
+      currentSnapshot: currentEditorSnapshot,
+      restoreSnapshot: restoreEditorSnapshot,
+    });
 
   function setQuestionsWithHistory(updater: TQuestion[] | ((current: TQuestion[]) => TQuestion[])) {
     pushEditorHistory();
@@ -267,6 +268,9 @@ export function useEditorDocumentStateController<
     pushEditorHistory,
     undoEdit,
     redoEdit,
+    captureEditorHistory,
+    restoreEditorHistory,
+    clearEditorHistory,
   };
 }
 

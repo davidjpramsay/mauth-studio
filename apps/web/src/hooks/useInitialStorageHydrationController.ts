@@ -22,6 +22,8 @@ interface UseInitialStorageHydrationControllerOptions<TLegacySavedTest, TLogo, T
   }) => TLogo[];
   persistMergedStorage: (legacySavedTests: TLegacySavedTest[], logos: TLogo[]) => void;
   saveLogoToDisk: (logo: TLogo) => Promise<unknown>;
+  logoId?: (logo: TLogo) => string | undefined;
+  deleteLogoFromDisk?: (logoId: string) => Promise<unknown>;
   loadBrowserAutosave: () => TAutosave | null;
   newerAutosave: (browserAutosave: TAutosave | null, diskAutosave: TAutosave | null) => TAutosave | null;
   isClosedAutosave: (autosave: TAutosave) => boolean;

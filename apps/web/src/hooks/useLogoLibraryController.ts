@@ -10,6 +10,7 @@ import {
   normalizeLogoAssets,
   persistLogoLibrary,
   removedLogoLibraryAsset,
+  resolvedImportedLogoAsset,
   updatedLogoLibraryAsset,
   type LogoAsset,
 } from "@/lib/logoLibrary";
@@ -69,9 +70,10 @@ export function useLogoLibraryController({
     (value: unknown) => {
       const logo = normalizeLogoAsset(value);
       if (!logo) return undefined;
-      mergeLogosIntoLibrary([logo]);
-      writeLogoToDisk(logo);
-      return logo;
+      const nextLogos = mergeLogosIntoLibrary([logo]);
+      const importedLogo = resolvedImportedLogoAsset(nextLogos, logo);
+      if (importedLogo.id === logo.id) writeLogoToDisk(importedLogo);
+      return importedLogo;
     },
     [mergeLogosIntoLibrary, writeLogoToDisk],
   );

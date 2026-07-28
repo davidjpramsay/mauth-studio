@@ -1,4 +1,4 @@
-import type { MauthAgentFileState, MauthAgentSnapshot } from "@mauth-studio/shared";
+import type { MauthAgentFileState, MauthAgentOpenDocument, MauthAgentSnapshot } from "@mauth-studio/shared";
 
 import {
   type MauthDocumentAction,
@@ -30,6 +30,9 @@ interface UseMauthAgentBridgeControllerOptions<
   activeFilePath: () => string | null;
   saveAppliedDocument: (filePath: string, document: MauthDocumentLike<Q, F, C>) => Promise<void>;
   saveConflictMessage: (error: unknown, filePath: string) => string;
+  activeDocumentId?: () => string | null;
+  openDocuments?: () => MauthAgentOpenDocument[];
+  activateDocument?: (documentId: string) => Promise<boolean>;
 }
 
 function agentBridgeError(status: number, code: string, error: string, extra: Record<string, unknown> = {}): MauthAgentBridgeHandlerResult {
@@ -55,6 +58,9 @@ export function useMauthAgentBridgeController<
   activeFilePath,
   saveAppliedDocument,
   saveConflictMessage,
+  activeDocumentId,
+  openDocuments,
+  activateDocument,
 }: UseMauthAgentBridgeControllerOptions<Q, F, C>) {
   function buildCurrentAgentSnapshot(validation: unknown = validate(), document?: MauthDocumentLike<Q, F, C>): MauthAgentSnapshot {
     const current = document ?? currentDocument();
@@ -63,7 +69,21 @@ export function useMauthAgentBridgeController<
       file: fileState(current),
       validation,
       warnings: document ? [] : warnings?.(),
+      activeDocumentId: activeDocumentId?.(),
+      openDocuments: openDocuments?.(),
     });
+  }
+
+  async function ensureTargetDocument(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult | null> {
+    const targetId = payload.documentId;
+    if (targetId === undefined || targetId === null || targetId === activeDocumentId?.()) return null;
+    if (typeof targetId !== "string" || !targetId) {
+      return agentBridgeError(400, "INVALID_REQUEST", "documentId must be a non-empty string when provided.");
+    }
+    if (!activateDocument || !(await activateDocument(targetId))) {
+      return agentBridgeError(404, "INVALID_REQUEST", `Open document tab not found: ${targetId}`);
+    }
+    return null;
   }
 
   function readAgentDocumentActions(
@@ -91,14 +111,18 @@ export function useMauthAgentBridgeController<
     return { ok: true, actions: typedMauthDocumentActions(rawActions) };
   }
 
-  function handleAgentSnapshot(): MauthAgentBridgeHandlerResult {
+  async function handleAgentSnapshot(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
+    const targetError = await ensureTargetDocument(payload);
+    if (targetError) return targetError;
     return {
       status: 200,
       body: buildCurrentAgentSnapshot() as unknown as Record<string, unknown>,
     };
   }
 
-  function handleAgentActionsPreview(payload: Record<string, unknown>): MauthAgentBridgeHandlerResult {
+  async function handleAgentActionsPreview(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
+    const targetError = await ensureTargetDocument(payload);
+    if (targetError) return targetError;
     const parsed = readAgentDocumentActions(payload);
     if (!parsed.ok) return parsed.response;
 
@@ -121,6 +145,8 @@ export function useMauthAgentBridgeController<
   }
 
   async function handleAgentActionsApply(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
+    const targetError = await ensureTargetDocument(payload);
+    if (targetError) return targetError;
     const baseSnapshotId = payload.baseSnapshotId;
     if (typeof baseSnapshotId !== "string" || !baseSnapshotId) {
       return agentBridgeError(400, "INVALID_REQUEST", "actions.apply requires baseSnapshotId.");
@@ -170,7 +196,9 @@ export function useMauthAgentBridgeController<
     };
   }
 
-  function handleAgentValidation(): MauthAgentBridgeHandlerResult {
+  async function handleAgentValidation(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
+    const targetError = await ensureTargetDocument(payload);
+    if (targetError) return targetError;
     const validation = validate();
     return {
       status: 200,

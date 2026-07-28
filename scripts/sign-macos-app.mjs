@@ -33,5 +33,11 @@ run([
   identity === "-" ? "--timestamp=none" : "--timestamp",
   appBundle,
 ]);
+const quickLookSigning = spawnSync(
+  process.execPath,
+  [path.join(ROOT, "scripts", "sign-macos-quicklook.cjs"), appBundle, identity, identity === "-" ? "--timestamp=none" : "--timestamp"],
+  { stdio: "inherit" },
+);
+if (quickLookSigning.status !== 0) process.exit(quickLookSigning.status ?? 1);
 run(["--verify", "--deep", "--strict", "--verbose=2", appBundle]);
 console.log(`${identity === "-" ? "Hardened ad-hoc" : "Developer ID"} signed Mauth Studio: ${appBundle}`);

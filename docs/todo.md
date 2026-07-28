@@ -1,6 +1,6 @@
 # Mauth Roadmap
 
-Last reviewed: 19 July 2026. Read `docs/current-state.md` for the exact dirty-worktree checkpoint and `docs/architecture.md` for the system map.
+Last reviewed: 26 July 2026. Read `docs/current-state.md` for the exact dirty-worktree checkpoint and `docs/architecture.md` for the system map.
 
 ## Current Direction
 
@@ -20,6 +20,8 @@ The app should be excellent for:
 - Shared macOS state, autosave, logos, and remembered-folder identity under Application Support, while visible documents and external-folder project metadata remain where the teacher selected them.
 - Cloud-safe launcher status, ownership-scoped shutdown escalation, and active-file outage/reconnect handling that preserves editor drafts.
 - Visible local document folders with revision-aware saves, autosave recovery, versions, backup/import, recents, and external-folder selection.
+- Multi-document tabs in one editor window, with independent history/revision/dirty state, shrink-then-scroll toolbar behavior, overflow selection, guarded per-tab close, and disk/browser session recovery.
+- Native `.mauth` Finder identity with a dedicated document icon, generated thumbnails, and a read-only Spacebar Quick Look summary while keeping the canonical file as plain versioned JSON.
 - Structured Mauth action dry runs and applies through editor history.
 - Local HTTP agent bridge plus MCP wrapper for snapshots, actions, validation, comments, suggestions, presence, and events.
 - Immediate browser-session unregister on normal page exit, with pending bridge requests released instead of timing out.
@@ -56,12 +58,13 @@ The app should be excellent for:
 - Direct **Complete in solutions** controls for shared root and nested tables without duplication, plus idempotent paired copies for diagrams and legacy student-only tables.
 - Compact Solutions-mode status on marked question, part, and subpart headers, with deterministic leaf fixes, parent issue summaries, ready-state feedback, and validation for blank worked text and incomplete shared or legacy paired completion tables.
 - Diagram-answer completeness that recognises supported structured `solutionOnly` elements on shared diagrams, preserves and prints their surface ticks, and keeps copied paired diagrams incomplete until mathematical answer content changes rather than presentation alone.
-- Focused smoke tests for the bridge, file manager, external folders/autosave conflicts, document-session conflicts, context actions, and diagram gallery.
+- Focused smoke tests for the bridge, file manager, multi-document tabs, external folders/autosave conflicts, document-session conflicts, context actions, and diagram gallery.
 
 ## Now
 
 - Keep reducing the frontend composition surfaces. `SelectionInspector.tsx` is a focused shell, the stateless editor runtime is configured outside the shell, and workspace presentation, navigator, document-workspace rendering and binding, header, overlay, project persistence, Files-drawer project management, editor-agent bridge, and manual-solution composition are extracted; continue from `App.tsx`, currently 1075 lines, only where another coherent controller or presentation boundary exists.
 - Keep active folder, active file, loaded revision, autosave state, bridge state, and external-folder outage/reconnect state consistently legible.
+- Keep tab identity explicit across human and agent workflows; agents should target `documentId`, and only the selected tab should render, print, sync, or receive actions.
 - Keep save, close, discard, reload, recovery-copy, and stale-revision decisions under the existing shared document-session outcome model.
 - Continue first-class manual solution editing beyond the completed shared-choice and shared-table answer layers, scoped status, recursive mark-total validation, nested-column repairs, deterministic diagram-answer completeness, `graph2d` functions/features, `geometry2d`, `vector2d`, `graph3d`, `statsChart`, uploaded-image annotations, supported Penrose, and paired-diagram controls. Improve remaining teacher ergonomics and surface-specific checks, and use paired solution diagrams for custom Penrose Substance or unsupported complex construction predicates.
 - Preserve structured Mauth actions as the only normal mutation contract for both human controls and agents.
@@ -86,13 +89,13 @@ Completion does not require a Swift rewrite or a restored in-app chat panel.
 - Improve Mauthdown import/export and round-trip fidelity.
 - Extract remaining render-heavy frontend boundaries, especially function graphs and preview segmentation. The navigator, workspace binding, overlay, header, and selection-inspector splits are complete.
 - Add runtime smoke tests whenever a stale-state or hidden-state regression is fixed.
-- Clean-machine-test public `0.1.2` on another Apple Silicon Mac, including agent setup without a source checkout, then verify an in-app update from `0.1.1`. Version `0.1.0` cannot self-update and therefore still needs one manual replacement.
+- Clean-machine-test public `0.1.3` on another Apple Silicon Mac, including Finder/Quick Look, tab recovery, and agent setup without a source checkout, then verify an in-app update from `0.1.2`. Version `0.1.0` cannot self-update and therefore still needs one manual replacement.
 - Keep the public README, GitHub Pages download page, GitHub release assets, release tag, and app version aligned. Normal teacher and agent installation should use the signed DMG; source builds remain for development.
 
 ## Later
 
 - Reintroduce an optional in-app assistant as a client of the same bridge and action contracts, never as a hidden mutation path.
-- Evaluate deeper Finder, iCloud Drive, printing, and classroom integrations after the local file model is stable.
+- Evaluate deeper iCloud Drive, printing, and classroom integrations after the local file model is stable; the first Finder icon/thumbnail/Quick Look slice is complete.
 - Consider a native Swift implementation only if those integrations justify a rewrite.
 
 ## Agent Workflow Goals

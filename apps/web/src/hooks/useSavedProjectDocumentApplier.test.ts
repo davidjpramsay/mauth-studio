@@ -8,7 +8,11 @@ import { type DocumentFlowItem, type DocumentSectionHeading, type QuestionBlock 
 import { DEFAULT_FORMATTING_CONFIG } from "../lib/editorFormattingConfig.ts";
 import { DEFAULT_FRONT_MATTER } from "../lib/frontMatterConfig.ts";
 
-import { savedProjectDocumentState, type SavedProjectDocumentStateRuntime } from "./useSavedProjectDocumentApplier.ts";
+import {
+  remapSavedProjectLogo,
+  savedProjectDocumentState,
+  type SavedProjectDocumentStateRuntime,
+} from "./useSavedProjectDocumentApplier.ts";
 
 function question(id: string): QuestionBlock {
   return {
@@ -110,4 +114,28 @@ test("savedProjectDocumentState falls back for invalid formatting config", () =>
   assert.equal(state.formattingConfig.id, "custom");
   assert.equal(state.formattingConfig.showMarks, DEFAULT_FORMATTING_CONFIG.showMarks);
   assert.equal(state.formattingConfig.page?.widthPx, 999);
+});
+
+test("remapSavedProjectLogo redirects a removed embedded-logo id to its retained library asset", () => {
+  const document = savedProjectDocumentState(
+    savedTest({
+      frontMatter: { ...DEFAULT_FRONT_MATTER, logoId: "legacy-copy", schoolName: "" },
+    }),
+    runtime,
+  );
+
+  const remapped = remapSavedProjectLogo(
+    document,
+    { id: "legacy-copy", name: "Grace Logo Only", src: "data:image/png;base64,grace" },
+    {
+      id: "grace-primary",
+      name: "Grace Christian College",
+      schoolName: "GRACE\nCHRISTIAN COLLEGE",
+      src: "data:image/png;base64,grace",
+    },
+  );
+
+  assert.notEqual(remapped, document);
+  assert.equal(remapped.frontMatter.logoId, "grace-primary");
+  assert.equal(remapped.frontMatter.schoolName, "GRACE\nCHRISTIAN COLLEGE");
 });

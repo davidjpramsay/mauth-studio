@@ -129,8 +129,16 @@ if (process.argv.includes("--preflight-only")) {
 
 prepareReleaseDirectory();
 run("pnpm", ["build:web"]);
+run("pnpm", ["macos:build:document-icon"]);
+run("pnpm", ["macos:build:quicklook"], {
+  env: {
+    ...process.env,
+    MAUTH_CODESIGN_IDENTITY: identity,
+  },
+});
 run("pnpm", ["macos:build:sidecar"]);
 run("pnpm", ["macos:build:penrose"]);
+run("pnpm", ["macos:build:agent"]);
 run(
   "pnpm",
   [
@@ -153,6 +161,7 @@ run(
       ...process.env,
       CSC_IDENTITY_AUTO_DISCOVERY: "true",
       CSC_NAME: electronBuilderIdentity,
+      MAUTH_QUICKLOOK_AFTER_SIGN: "1",
     },
   },
 );
