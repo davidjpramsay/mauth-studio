@@ -59,9 +59,8 @@ function sha256(file) {
 
 function releaseAssets(releaseDirectory, version) {
   const names = macReleaseArtifactNames(version);
-  const required = [names.dmg, names.zip, names.metadata];
-  const generated = fs.readdirSync(releaseDirectory).filter((name) => name.endsWith(".blockmap"));
-  const files = [...required, ...generated].map((name) => path.join(releaseDirectory, name));
+  const required = [names.dmg, names.zip, names.metadata, names.zipBlockmap];
+  const files = required.map((name) => path.join(releaseDirectory, name));
   const missing = files.filter((file) => !fs.existsSync(file));
   if (missing.length) throw new Error(`Missing release artifacts:\n${missing.join("\n")}`);
   return files.map((file) => ({

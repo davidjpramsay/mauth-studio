@@ -8,6 +8,7 @@ export function macReleaseArtifactNames(version) {
   return {
     dmg: `Mauth-Studio-${version}-arm64.dmg`,
     zip: `Mauth-Studio-${version}-arm64.zip`,
+    zipBlockmap: `Mauth-Studio-${version}-arm64.zip.blockmap`,
     metadata: "latest-mac.yml",
   };
 }
@@ -80,5 +81,11 @@ export function macUpdateMetadataProblems(metadata, zipArtifact) {
   if (Number(entry.size) !== zipArtifact.size) problems.push(`metadata size does not match ${zipArtifact.name}`);
   if (decoded(metadata.path) !== zipArtifact.name) problems.push(`metadata path does not reference ${zipArtifact.name}`);
   if (metadata.sha512 !== zipArtifact.sha512) problems.push(`metadata top-level SHA-512 does not match ${zipArtifact.name}`);
+  const unexpectedEntries = Array.isArray(metadata?.files)
+    ? metadata.files.filter((candidate) => decoded(candidate?.url) !== zipArtifact.name)
+    : [];
+  for (const unexpected of unexpectedEntries) {
+    problems.push(`metadata unexpectedly references ${decoded(unexpected?.url) || "an unnamed artifact"}`);
+  }
   return problems;
 }

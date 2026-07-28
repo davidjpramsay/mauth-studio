@@ -120,7 +120,7 @@ The guarded end-to-end publication command is:
 pnpm macos:ship
 ```
 
-It requires a clean, pushed `main`, a new package version, matching release notes, Apple credentials, and GitHub authentication. It keeps the GitHub prerelease in draft until the signed DMG, signed ZIP, updater metadata, and blockmaps have uploaded and verified. Do not run either release command for routine edit-test cycles. See `docs/macos-release.md` for the complete contract.
+It requires a clean, pushed `main`, a new package version, matching release notes, Apple credentials, and GitHub authentication. It keeps the GitHub prerelease in draft until the signed DMG, signed ZIP, ZIP-only updater metadata, and ZIP blockmap have uploaded and verified. Do not run either release command for routine edit-test cycles. See `docs/macos-release.md` for the complete contract.
 
 The older browser launcher remains available for lower-level runtime debugging:
 

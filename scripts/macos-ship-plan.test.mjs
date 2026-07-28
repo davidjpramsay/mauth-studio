@@ -26,6 +26,7 @@ test("mac release names use the package version", () => {
   assert.deepEqual(macReleaseArtifactNames("0.1.1"), {
     dmg: "Mauth-Studio-0.1.1-arm64.dmg",
     zip: "Mauth-Studio-0.1.1-arm64.zip",
+    zipBlockmap: "Mauth-Studio-0.1.1-arm64.zip.blockmap",
     metadata: "latest-mac.yml",
   });
 });
@@ -88,7 +89,10 @@ test("mac updater metadata must point to the exact ZIP bytes", () => {
       {
         path: "Wrong.zip",
         sha512: "wrong",
-        files: [{ url: "Mauth-Studio-0.1.1-arm64.zip", size: 99, sha512: "wrong" }],
+        files: [
+          { url: "Mauth-Studio-0.1.1-arm64.zip", size: 99, sha512: "wrong" },
+          { url: "Mauth-Studio-0.1.1-arm64.dmg", size: 101, sha512: "stale" },
+        ],
       },
       zip,
     ),
@@ -97,6 +101,7 @@ test("mac updater metadata must point to the exact ZIP bytes", () => {
       "metadata size does not match Mauth-Studio-0.1.1-arm64.zip",
       "metadata path does not reference Mauth-Studio-0.1.1-arm64.zip",
       "metadata top-level SHA-512 does not match Mauth-Studio-0.1.1-arm64.zip",
+      "metadata unexpectedly references Mauth-Studio-0.1.1-arm64.dmg",
     ],
   );
 });

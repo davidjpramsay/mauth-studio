@@ -47,7 +47,7 @@ The command deliberately fails before building when it cannot find:
 - an installed `Developer ID Application` identity; or
 - notarization credentials through a keychain profile, Apple ID variables, or App Store Connect API-key variables.
 
-When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look extensions, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extensions before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. It preserves `latest-mac.yml` and generated blockmaps, verifies that the metadata hash and size match the signed ZIP used by the updater, and starts the packaged connector with the app-owned runtime as part of app verification.
+When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look extensions, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extensions before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. After DMG stapling it normalizes `latest-mac.yml` to the signed ZIP used by the updater, removes the inapplicable pre-stapling DMG blockmap, verifies that the ZIP metadata hash and size match the published bytes, and starts the packaged connector with the app-owned runtime as part of app verification.
 
 This command does not publish anything. It is useful for inspecting a release bundle, but the normal public-release path is the guarded ship command below.
 
@@ -73,7 +73,7 @@ Then build, notarize, upload, verify, and publish with:
 pnpm macos:ship
 ```
 
-`macos:ship` fails closed unless the current branch is clean `main`, `HEAD` exactly matches `origin/main`, release notes exist, the version/tag is unused or belongs to a resumable draft targeting the same commit, and Apple/GitHub credentials are available. Its preflight makes a live, read-only `notarytool history` request, so a missing Keychain profile or rejected Apple credential fails before the quality gate and release build. It runs the full quality gate before the release build, creates a draft GitHub prerelease, uploads the DMG, ZIP, `latest-mac.yml`, and blockmaps, verifies remote names, sizes, and available SHA-256 digests, and only then publishes the prerelease. A failed build or upload leaves no public partial release; an upload failure after draft creation leaves a resumable draft.
+`macos:ship` fails closed unless the current branch is clean `main`, `HEAD` exactly matches `origin/main`, release notes exist, the version/tag is unused or belongs to a resumable draft targeting the same commit, and Apple/GitHub credentials are available. Its preflight makes a live, read-only `notarytool history` request, so a missing Keychain profile or rejected Apple credential fails before the quality gate and release build. It runs the full quality gate before the release build, creates a draft GitHub prerelease, uploads the DMG, ZIP, `latest-mac.yml`, and ZIP blockmap, verifies remote names, sizes, and available SHA-256 digests, and only then publishes the prerelease. A failed build or upload leaves no public partial release; an upload failure after draft creation leaves a resumable draft.
 
 ## Verification
 
@@ -128,7 +128,7 @@ Signing and notarization are release operations, not routine development steps:
 
 ## Publish A GitHub Release
 
-Do not upload a DMG built from an untraceable dirty worktree and do not manually publish a partial updater release. Use `pnpm macos:ship`; its draft-first boundary ensures the DMG, ZIP, metadata, and blockmaps become public together. After publication:
+Do not upload a DMG built from an untraceable dirty worktree and do not manually publish a partial updater release. Use `pnpm macos:ship`; its draft-first boundary ensures the DMG, ZIP, ZIP-only metadata, and ZIP blockmap become public together. After publication:
 
 1. keep README and GitHub Pages download links pinned to the same version;
 2. download the public DMG through a browser and complete the clean-Mac checks above; and

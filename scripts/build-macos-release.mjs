@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { macUpdateMetadataProblems } from "./macos-ship-plan.mjs";
 
 function run(command, args, options = {}) {
@@ -78,17 +78,37 @@ function sha512(file) {
   return createHash("sha512").update(fs.readFileSync(file)).digest("base64");
 }
 
-function validateUpdateMetadata(zipArtifact) {
+function normalizeUpdateMetadata(zipArtifact, dmgArtifact) {
   const metadataPath = path.resolve("release", "latest-mac.yml");
   if (!fs.existsSync(metadataPath)) {
     console.error("Expected release/latest-mac.yml for in-app updates.");
     process.exit(1);
   }
   const metadata = parseYaml(fs.readFileSync(metadataPath, "utf8"));
+  const decoded = (value) => {
+    try {
+      return decodeURIComponent(String(value || ""));
+    } catch {
+      return String(value || "");
+    }
+  };
+  const zipName = path.basename(zipArtifact);
+  const zipEntry = Array.isArray(metadata?.files) ? metadata.files.find((candidate) => decoded(candidate?.url) === zipName) : null;
+  if (!zipEntry) {
+    console.error(`Update metadata does not reference ${zipName}.`);
+    process.exit(1);
+  }
+  const zipDetails = { name: zipName, sha512: sha512(zipArtifact), size: fs.statSync(zipArtifact).size };
+  metadata.files = [{ ...zipEntry, url: zipName, sha512: zipDetails.sha512, size: zipDetails.size }];
+  metadata.path = zipName;
+  metadata.sha512 = zipDetails.sha512;
+  fs.writeFileSync(metadataPath, stringifyYaml(metadata, { lineWidth: 0 }));
+  fs.rmSync(`${dmgArtifact}.blockmap`, { force: true });
+
   const problems = macUpdateMetadataProblems(metadata, {
-    name: path.basename(zipArtifact),
-    sha512: sha512(zipArtifact),
-    size: fs.statSync(zipArtifact).size,
+    name: zipDetails.name,
+    sha512: zipDetails.sha512,
+    size: zipDetails.size,
   });
   if (problems.length) {
     console.error(`Update metadata validation failed:\n- ${problems.join("\n- ")}`);
@@ -172,7 +192,7 @@ run("/usr/bin/xcrun", ["notarytool", "submit", dmgArtifact, "--wait", ...notariz
 run("/usr/bin/xcrun", ["stapler", "staple", dmgArtifact]);
 run("/usr/bin/xcrun", ["stapler", "validate", dmgArtifact]);
 run("/usr/sbin/spctl", ["-a", "-vvv", "-t", "install", dmgArtifact]);
-validateUpdateMetadata(zipArtifact);
+normalizeUpdateMetadata(zipArtifact, dmgArtifact);
 run("node", ["scripts/verify-macos-app.mjs", "--distribution"]);
 
 console.log("Mauth Studio release artifacts were signed, notarized, and written to release/.");

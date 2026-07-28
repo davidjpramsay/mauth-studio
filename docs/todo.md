@@ -15,7 +15,7 @@ The app should be excellent for:
 ## Implemented Foundation
 
 - Standalone Electron macOS app with a packaged Vite editor, FastAPI sidecar, bundled Penrose runtime, dynamic loopback port, native quit confirmation, ad-hoc signing, and local installer.
-- Teacher-confirmed in-app alpha updates plus a guarded `macos:ship` pipeline that publishes only after signed DMG, ZIP, metadata, and blockmap verification.
+- Teacher-confirmed in-app alpha updates plus a guarded `macos:ship` pipeline that publishes only after signed DMG, ZIP, ZIP-only metadata, and ZIP blockmap verification.
 - Authenticated runtime-manifest discovery for Codex/MCP tools, with a random per-launch bridge token, a self-contained connector in the signed app, one-time setup details under the Help menu, and the fixed-port browser launcher retained only for development diagnostics.
 - Shared macOS state, autosave, logos, and remembered-folder identity under Application Support, while visible documents and external-folder project metadata remain where the teacher selected them.
 - Cloud-safe launcher status, ownership-scoped shutdown escalation, and active-file outage/reconnect handling that preserves editor drafts.
