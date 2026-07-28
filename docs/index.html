@@ -354,6 +354,24 @@
         margin-bottom: 0;
       }
 
+      .showcase-frame {
+        background: #091221;
+        border: 1px solid rgba(11, 22, 40, 0.42);
+        border-radius: 12px;
+        box-shadow: 0 28px 68px rgba(31, 43, 64, 0.16);
+        margin: 0 0 clamp(54px, 8vw, 92px);
+        overflow: hidden;
+        padding-top: 10px;
+        position: relative;
+      }
+
+      .showcase-frame img {
+        aspect-ratio: 8 / 5;
+        object-fit: cover;
+        object-position: top center;
+        width: 100%;
+      }
+
       .benefits {
         border-bottom: 1px solid var(--line);
         border-top: 1px solid var(--line);
@@ -696,6 +714,13 @@
             <h2>Made for maths teachers.</h2>
             <p>Precise pages. Editable solutions. Local files.</p>
           </div>
+          <figure class="showcase-frame">
+            <div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <img
+              src="./assets/mauth-product-preview.png"
+              alt="Mauth Studio displaying a Year 10 mathematics assessment beside its editing controls"
+            />
+          </figure>
           <div class="benefits">
             <article class="benefit">
               <span class="benefit-number">01</span>
