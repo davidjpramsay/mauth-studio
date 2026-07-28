@@ -1,18 +1,10 @@
-# External Agent Workflow
+# Agent Workflow
 
-Mauth is now designed for a Codex/Claude Code style workflow instead of a built-in provider chat panel.
-
-Use this guide when an external or local agent is helping author, inspect, convert, or improve Mauth assessments.
+Use this guide when Codex, Claude, or another local agent is helping author assessments or develop Mauth. The app works without an agent; MCP is the optional local connection between the running app and an agent.
 
 ## Read First
 
-1. `AGENTS.md`
-2. `docs/current-state.md`
-3. `docs/architecture.md`
-4. `docs/agent-bridge.md`
-5. `docs/mauth-actions.md`
-6. `docs/ai-brains.md`
-7. `README.md`
+For repository development, read `AGENTS.md`, `docs/current-state.md`, and the relevant subsystem guide. For ordinary assessment authoring, the installed app and its bundled connector are sufficient.
 
 These files define the contract for document edits, diagram rules, validation, file operations, and generated-artifact hygiene.
 
@@ -21,7 +13,7 @@ These files define the contract for document edits, diagram rules, validation, f
 - `Development`: app code, schemas, editor behaviour, tests, docs, local agent bridge work, and repository maintenance.
 - `Authoring`: teacher-facing Mauth use, assessment creation, source conversion, diagram/layout polishing, and validation.
 
-The `Authoring` name replaces the rough “Mauth Use” label. It is shorter and describes the actual job: using Mauth to author maths assessment material.
+Separate chats are optional organisation, not a setup requirement.
 
 ## What Lives Where
 
@@ -36,7 +28,7 @@ Do not upload workspace data, browser profiles, generated PDFs, logs, or tempora
 
 ## Working Loop
 
-1. Identify whether the task is `Development` or `Authoring`.
+1. Identify whether the task changes the app (`Development`) or an assessment (`Authoring`).
 2. Inspect the current document/app state before editing.
 3. For app development, edit source files directly and run the relevant tests.
 4. For assessment authoring, prefer the local agent bridge when available; otherwise use structured Mauth actions, the project-file API, or the visible Files drawer.

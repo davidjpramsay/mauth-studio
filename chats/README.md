@@ -1,6 +1,6 @@
-# Agent Work Streams
+# Optional Agent Work Streams
 
-Use these files as the starting prompts for the two Mauth agent lanes.
+These short files help keep a long-running Mauth project organised. They are not required for installation or MCP setup.
 
 - `Development.md`: code, architecture, tests, docs, and repository maintenance.
 - `Authoring.md`: teacher-facing use of Mauth to create, inspect, convert, and polish assessments.
@@ -9,4 +9,4 @@ Use these files as the starting prompts for the two Mauth agent lanes.
 
 Authoring should move toward the local agent bridge loop in `docs/agent-bridge.md`: snapshot, action dry-run, validation, apply, then browser verification.
 
-For a model handoff or fresh session, read `docs/current-state.md` before choosing a work stream.
+For a repository handoff, read `docs/current-state.md` before choosing a work stream. For ordinary assessment authoring, connect through **Help > Set Up Codex or Claude...** and ask for the work directly.

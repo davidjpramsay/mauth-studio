@@ -8,6 +8,7 @@
       name="description"
       content="Mauth Studio is a standalone local-first macOS app for creating high-school mathematics assessments, with optional structured Codex and Claude integration."
     />
+    <link rel="icon" href="./assets/mauth-icon.png" />
     <style>
       :root {
         color-scheme: light;
@@ -293,47 +294,56 @@
         grid-template-columns: minmax(0, 0.72fr) minmax(320px, 1.28fr);
       }
 
-      .prompt-card {
-        background: #0d1320;
-        border: 1px solid #22304b;
-        color: white;
-        padding: clamp(20px, 4vw, 32px);
+      .setup-steps {
+        counter-reset: setup;
+        display: grid;
+        gap: 18px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
       }
 
-      .prompt-head {
+      .setup-steps li {
+        color: var(--muted);
+        counter-increment: setup;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 42px minmax(0, 1fr);
+        line-height: 1.55;
+      }
+
+      .setup-steps li::before {
         align-items: center;
+        background: var(--blue);
+        color: white;
+        content: counter(setup);
         display: flex;
-        gap: 16px;
-        justify-content: space-between;
-        margin-bottom: 18px;
+        font-weight: 800;
+        height: 36px;
+        justify-content: center;
+        width: 36px;
       }
 
-      .prompt-head h3 {
-        color: white;
+      .setup-note {
+        background: var(--soft);
+        border-left: 4px solid var(--blue);
+        margin-top: 26px;
+        padding: 18px 20px;
+      }
+
+      .setup-note p {
         margin: 0;
       }
 
-      .copy-button {
-        background: white;
-        border-color: white;
-        color: var(--ink);
-        cursor: pointer;
-        flex: 0 0 auto;
-      }
-
-      #install-prompt {
-        background: #060b15;
-        border: 1px solid #263654;
+      .example-request {
+        background: #0d1320;
         color: #d8e6ff;
-        display: block;
         font:
-          700 0.88rem/1.6 "SFMono-Regular",
+          650 0.92rem/1.7 "SFMono-Regular",
           Consolas,
           monospace;
-        min-height: 430px;
-        padding: 18px;
-        resize: vertical;
-        width: 100%;
+        margin-top: 20px;
+        padding: 20px;
       }
 
       .links {
@@ -393,11 +403,6 @@
         .prompt-layout {
           grid-template-columns: 1fr;
         }
-
-        .prompt-head {
-          align-items: flex-start;
-          flex-direction: column;
-        }
       }
     </style>
   </head>
@@ -438,10 +443,10 @@
           <div class="workflow">
             <p>
               Mauth Studio is a work-in-progress tool for teachers who make maths assessments. The app shows printable A4 pages in the same
-              window where you edit questions, diagrams, tables, and solutions. Your AI helper can create tests, fix layout, improve
-              diagrams, or change the app itself through the local bridge.
+              window where you edit questions, diagrams, tables, and solutions. When you want help, a connected agent can create content,
+              fix layout, improve diagrams, and check the rendered result.
             </p>
-            <code>teacher reviews in Mauth -> AI helper uses the structured local bridge</code>
+            <code>teacher edits and reviews -> optional agent uses structured local tools</code>
           </div>
         </div>
       </section>
@@ -463,39 +468,12 @@
             </ul>
           </article>
           <article class="surface">
-            <h3>For AI helpers</h3>
-            <p>Use two chats if you can. This keeps app changes separate from test-writing work.</p>
+            <h3>Optional agent help</h3>
+            <p>Mauth works on its own. When you want help, Codex or Claude can use the app's structured local tools.</p>
             <ul>
-              <li><strong>Mauth Development:</strong> change app code, tests, docs, and setup.</li>
-              <li><strong>Mauth Authoring:</strong> make or polish tests using the running app.</li>
-              <li><strong>Use the app:</strong> do not edit saved project files directly.</li>
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="section-inner two-column">
-          <article class="surface">
-            <h3>Still in development</h3>
-            <p>
-              Mauth Studio is alpha software. The signed Apple Silicon app is ready for early use, while the public source remains open for
-              inspection and improvement.
-            </p>
-            <ul>
-              <li><strong>Download:</strong> use the signed and Apple-notarized Mac app.</li>
-              <li><strong>Connect agents:</strong> use the connector bundled inside the app.</li>
-              <li><strong>Clone:</strong> only when developing or contributing to Mauth itself.</li>
-              <li><strong>Expect changes:</strong> the app, docs, and agent workflow will keep improving.</li>
-            </ul>
-          </article>
-          <article class="surface">
-            <h3>What your agent can change</h3>
-            <p>Your agent is allowed to work on the app, not just use it.</p>
-            <ul>
-              <li><strong>App code:</strong> React, FastAPI, shared types, tests, and docs.</li>
-              <li><strong>Assessment content:</strong> questions, diagrams, formatting, and solutions.</li>
-              <li><strong>Setup:</strong> install problems, checks, local servers, and GitHub Pages docs.</li>
+              <li><strong>Write and revise:</strong> create questions, solutions, tables, and diagrams.</li>
+              <li><strong>Check:</strong> validate structure and inspect Student and Solutions views.</li>
+              <li><strong>Stay local:</strong> the connector talks to the Mauth app running on your Mac.</li>
             </ul>
           </article>
         </div>
@@ -510,7 +488,9 @@
               Python, Node.js, repository checkout, or open Terminal windows are required for teacher use or agent connection.
             </p>
             <div class="hero-actions">
-              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3">Download version 0.1.3</a>
+              <a class="button" href="https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.3/Mauth-Studio-0.1.3-arm64.dmg"
+                >Download version 0.1.3</a
+              >
               <a class="button secondary" href="https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3">Release notes</a>
             </div>
           </div>
@@ -531,35 +511,32 @@
       <section class="section" id="agent-setup">
         <div class="section-inner prompt-layout">
           <div>
-            <h2>Connect Codex or Claude.</h2>
+            <h2>Connect an agent, if you want one.</h2>
             <p>
-              The downloaded app works by itself and contains the Mauth Agent Connector. For structured AI authoring, open Mauth Studio and
-              choose <strong>Help &gt; Set Up Codex or Claude...</strong>. The app gives you the one-time command or configuration for the
-              agent you use; no separate agent-files download or source checkout is required.
+              Mauth works without AI. MCP is simply the local connection that lets Codex or Claude use structured Mauth tools. The connector
+              is already inside the signed app.
             </p>
-          </div>
-          <article class="prompt-card" aria-label="Copyable local setup prompt">
-            <div class="prompt-head">
-              <h3>Local setup prompt</h3>
-              <button class="button copy-button" type="button" data-copy-prompt>Copy prompt</button>
+            <div class="setup-note">
+              <p><strong>You do not need to paste a setup prompt</strong>, find a token, clone the repository, or download agent files.</p>
             </div>
-            <textarea id="install-prompt" readonly spellcheck="false">
-Set up Mauth Studio and its local agent tools for me. I am a novice, so explain what you are doing in plain language and do as much of the setup as you can.
-
-Mauth Studio is alpha software. The normal app is a signed, notarized Apple Silicon download with a self-contained local agent connector. A repository checkout is only needed for app development.
-
-Please help me use two separate chats/work streams where practical:
-- Mauth Development: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
-- Mauth Authoring: create, inspect, convert, and polish assessments through the running app.
-
-1. Open https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3 and download the signed Apple Silicon DMG under Assets. Install it in Applications and open it. Do not build from source for normal use or agent authoring.
-2. In Mauth Studio choose Help > Set Up Codex or Claude. Copy and run the Codex or Claude Code setup command once, or merge the shown mauth entry into Claude Desktop's Developer configuration and restart Claude Desktop.
-3. Keep Mauth Studio open while authoring. Use mauth_snapshot, dry-run structured actions, apply against the current snapshot, run validation, and verify the rendered Student and Teacher/Solutions previews.
-4. Do not ask me to copy the bridge token. The bundled connector discovers the current dynamic local address and private per-launch token automatically.
-5. Only if I ask to develop the app, clone https://github.com/davidjpramsay/mauth-studio, read AGENTS.md and docs/current-state.md first, install the Node and Python dependencies, and use `pnpm macos:dev` while iterating. Reserve `pnpm macos:release` for local signed release artifacts and `pnpm macos:ship` for guarded publication from clean, pushed main.
-
-Do not edit the selected documents folder, its .mauth metadata, ~/Library/Application Support/Mauth Studio/storage, or legacy storage/projects files directly unless I ask for recovery work. Use the app, bridge, or project-file API so revisions and autosave stay safe. Keep local storage, drafts, screenshots, and temporary output out of Git unless I explicitly ask for them.</textarea
-            >
+            <div class="example-request">
+              “Inspect the open Mauth assessment, fix its formatting, validate it, and check both previews.”
+            </div>
+          </div>
+          <article class="surface" aria-label="Agent setup steps">
+            <ol class="setup-steps">
+              <li><span>Open Mauth Studio.</span></li>
+              <li>
+                <span>Choose <strong>Help &gt; Set Up Codex or Claude...</strong></span>
+              </li>
+              <li><span>Copy and run the one-time setup for your agent.</span></li>
+              <li><span>Keep Mauth open, then ask the agent for the assessment work you need.</span></li>
+            </ol>
+            <p>
+              <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/agent-local-setup.md"
+                >Detailed setup and troubleshooting</a
+              >
+            </p>
           </article>
         </div>
       </section>
@@ -568,10 +545,7 @@ Do not edit the selected documents folder, its .mauth metadata, ~/Library/Applic
         <div class="section-inner docs">
           <div>
             <h2>Want the technical details?</h2>
-            <p>
-              Most teachers can start with the signed download. These docs are for agents, contributors, and anyone who wants to understand
-              the deeper app contract.
-            </p>
+            <p>Most teachers only need the signed download. These links are for contributors and technical agent integrations.</p>
           </div>
           <div class="links">
             <a href="https://github.com/davidjpramsay/mauth-studio#readme">README.md <span>overview</span></a>
@@ -587,35 +561,12 @@ Do not edit the selected documents folder, its .mauth metadata, ~/Library/Applic
             <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/agent-bridge.md"
               >agent-bridge.md <span>bridge contract</span></a
             >
-            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/mauth-actions.md"
-              >mauth-actions.md <span>action schema</span></a
-            >
-            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/docs/ai-brains.md">ai-brains.md <span>agent rules</span></a>
+            <a href="https://github.com/davidjpramsay/mauth-studio/blob/main/AGENTS.md">AGENTS.md <span>development rules</span></a>
           </div>
         </div>
       </section>
     </main>
 
-    <footer>Mauth Studio is a local app for making maths assessments with help from external AI coding agents.</footer>
-    <script>
-      const copyButton = document.querySelector("[data-copy-prompt]");
-      const installPrompt = document.querySelector("#install-prompt");
-
-      copyButton?.addEventListener("click", async () => {
-        if (!(installPrompt instanceof HTMLTextAreaElement) || !(copyButton instanceof HTMLButtonElement)) return;
-        try {
-          await navigator.clipboard.writeText(installPrompt.value.trim());
-          copyButton.textContent = "Copied";
-        } catch {
-          installPrompt.focus();
-          installPrompt.select();
-          copyButton.textContent = document.execCommand("copy") ? "Copied" : "Select prompt";
-        }
-
-        window.setTimeout(() => {
-          copyButton.textContent = "Copy prompt";
-        }, 1800);
-      });
-    </script>
+    <footer>Mauth Studio is a local-first app for creating printable mathematics assessments.</footer>
   </body>
 </html>

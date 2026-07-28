@@ -32,6 +32,7 @@ Avoid brain bloat. Do not add examples that only repeat existing rules, source-s
 ## Shared Conventions
 
 - Use `$...$` for inline maths and `$$...$$` for display maths.
+- Use full display-size fractions by default. Ordinary `\frac` is fine when the surrounding maths style already renders it at display size; use `\dfrac` or explicit `\displaystyle` in `cases`, arrays, matrices, nested expressions, table cells, diagram labels, and any other context where the fraction would otherwise shrink. Use compact `\tfrac` or `\textstyle` fractions only when the teacher requests them or a genuine layout constraint requires them.
 - Write simple prose values as normal text, such as `7%`, `15`, `18 months`, and `5.7% p.a.`; reserve LaTeX for real formulae, equations, coordinates, variables, symbolic notation, and mathematical answer options in choices blocks.
 - In a choices block, keep mathematical typography consistent: if some options are algebraic LaTeX, wrap simple numeric options such as `$18$`, `$-3$`, and `$24$` in inline maths too.
 - Do not emit `\(...\)`, `\[...\]`, escaped-dollar artefacts, or currency symbols inside maths delimiters.

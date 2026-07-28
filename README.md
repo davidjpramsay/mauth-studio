@@ -1,84 +1,62 @@
 # Mauth Studio
 
-Mauth Studio is a standalone, local-first macOS app for creating printable mathematics tests, exams, worksheets, notes, and solutions.
-
-Teachers work in the Mauth Studio app. It includes the editor, A4 preview, files, validation, diagrams, solutions, and print workflow in one window, and starts its own local mathematics service without leaving Terminal windows open. Codex, Claude Code, Cursor, or another local agent can optionally connect through the authenticated local HTTP/MCP bridge to inspect and edit the live document.
+Mauth Studio is a local-first macOS app for creating printable mathematics tests, exams, worksheets, notes, investigations, and solutions.
 
 ![Mauth Studio preview](docs/assets/mauth-bridge-smoke.png)
 
-## Development Status
+## Download
 
-Mauth Studio is alpha software. Expect active changes to app code, schemas, docs, tests, and agent workflows.
+The current public build is the signed and Apple-notarized `0.1.3` alpha for Apple Silicon Macs.
 
-For a model or developer joining an existing worktree, `docs/current-state.md` is the authoritative handoff: it records the source checkpoint, runtime, storage warning, completed and active work, verification baseline, and exact resume point. Read it before starting or restarting services. Its **Documentation Ownership** table identifies which document owns each durable contract, so transient status, architecture, storage rules, and roadmap intent do not get mixed together.
+[Download Mauth Studio 0.1.3](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.3/Mauth-Studio-0.1.3-arm64.dmg)
 
-For a model transition, read `AGENTS.md`, `docs/current-state.md`, and `docs/architecture.md` first. Then read only the subsystem guide named by the current resume point. Inspect and preserve any current uncommitted work unless the handoff explicitly says otherwise.
+Open the DMG, move **Mauth Studio** to Applications, and launch it normally. The app starts and stops its own local mathematics service. Python, Node.js, a repository checkout, and open Terminal windows are not required.
 
-If you are new to Mauth, start with the public download page:
+Mauth asks before downloading an update and again before restarting to install it. You can also choose **Mauth Studio > Check for Updates...**.
 
-[davidjpramsay.github.io/mauth-studio](https://davidjpramsay.github.io/mauth-studio/)
+## What It Does
 
-The current public build supports Apple Silicon Macs and is alpha software. Downloading the signed app is enough for normal teacher use and for connecting Codex or Claude through the bundled Mauth Agent Connector. Clone the repository only when developing Mauth itself.
+- Creates printable A4 assessments with title pages, sections, questions, parts, diagrams, tables, working space, and solutions.
+- Supports tests, exams, worksheets, notes, and linked student/teacher investigation documents.
+- Renders maths with MathJax SVG, coordinate diagrams with JSXGraph, geometry/set/network diagrams with Penrose, and statistics charts with Plotly.
+- Keeps visible `.mauth` documents in a teacher-selected folder, with revision-aware saves, versions, autosave recovery, and multiple open tabs.
+- Integrates with Finder through a Mauth document icon, thumbnail, and read-only Quick Look summary.
 
-Recommended setup:
+Mauth Studio is alpha software. Keep backups of important assessment files and expect the interface and schema to continue improving.
 
-- `Mauth Development`: app code, architecture, schemas, tests, docs, CI, and repository maintenance.
-- `Mauth Authoring`: creating, inspecting, converting, and polishing assessments through the app, bridge, MCP tools, or browser.
+## Optional Codex Or Claude Connection
 
-## What It Builds
+The app works without AI. To let Codex, Claude Code, or Claude Desktop inspect and edit the open Mauth document:
 
-- Printable maths tests, exams, and worksheets.
-- Title pages, questions, parts, subparts, diagrams, tables, choices, working space, and solutions.
-- MathJax SVG maths, JSXGraph diagrams, Penrose diagrams, and Plotly charts.
-- Visible local document files in `~/Documents/Mauth/Documents` or another teacher-selected folder, with private app state in `~/Library/Application Support/Mauth Studio/storage` on macOS.
-- Multiple open documents in one window, with independent history, dirty state, loaded revision, and crash-recoverable tabs that shrink and scroll in the main toolbar.
-- Native Finder integration for `.mauth` files: a dedicated document icon, generated thumbnails, and a read-only Spacebar Quick Look summary without changing the JSON document format.
-- Agent-readable snapshots, deterministic actions, validation, comments, suggestions, presence, and events.
+1. Open Mauth Studio.
+2. Choose **Help > Set Up Codex or Claude...**.
+3. Copy and run the one-time setup for your agent.
+4. Keep Mauth Studio open while the agent is working.
 
-## Agent-Native Workflow
+No separate prompt, token, agent-files download, source checkout, or Node installation is required. MCP is the local connection that exposes structured Mauth tools to the agent. See [Connect Codex or Claude](docs/agent-local-setup.md).
 
-Mauth avoids hidden UI state and raw JSON edits. The target loop is:
+The revision-safe authoring loop is:
 
 ```text
 mauth_snapshot
 mauth_actions_preview
 mauth_actions_apply
 mauth_validation_run
-rendered app verification
+rendered Student and Solutions/Teacher verification
 ```
 
-Agents should preview large edits before applying them. Successful applies go through the app action layer, editor history, autosave, and revision-aware project-file saves.
+Snapshots include `activeDocumentId` and `openDocuments`, so agents can target the intended tab explicitly.
 
-Snapshots list `activeDocumentId` and `openDocuments`. Every document MCP operation accepts an optional `documentId`, so an agent can select the intended open tab before reading, previewing, applying, or validating it.
+## Develop Mauth
 
-Example:
+A repository checkout is needed only to change the app itself.
 
-```text
-1. Call mauth_snapshot.
-2. Build a MauthDocumentAction batch.
-3. Call mauth_actions_preview.
-4. Apply the same batch with mauth_actions_apply.
-5. Run mauth_validation_run.
-6. Check the rendered preview in Mauth Studio.
-```
+Before editing, read:
 
-## Install Mauth Studio
-
-Mauth Studio 0.1.3 is the current downloadable updater-enabled alpha release:
-
-[Download Mauth Studio 0.1.3](https://github.com/davidjpramsay/mauth-studio/releases/tag/v0.1.3)
-
-Open the DMG under **Assets**, move **Mauth Studio** to Applications, then launch it from Finder, Spotlight, or the Dock. The app starts and stops its own local service. Python, Node.js, a repository checkout, and open Terminal windows are not required for ordinary use.
-
-Version 0.1.0 predates the in-app updater, so those users must install a newer build manually once. Updater-enabled Mauth builds check the public alpha channel shortly after launch, ask before downloading, and ask again before restarting to install. You can also use **Mauth Studio > Check for Updates…**.
-
-## Connect Codex Or Claude
-
-Mauth Studio 0.1.3 includes a self-contained MCP connector. Keep the app in Applications, open it, then choose **Help > Set Up Codex or Claude…**. Copy the one-time Codex or Claude Code command, or merge the supplied `mauth` entry into Claude Desktop's Developer configuration. Keep Mauth Studio open while the agent is working.
-
-The saved agent configuration points only to the signed connector inside the app. On each launch, that connector discovers the current dynamic local URL and private bridge token automatically; the token is not copied into prompts or configuration files. No source checkout, Node installation, or separate agent-files download is required. See `docs/agent-local-setup.md` and `docs/agent-bridge.md`.
-
-## Develop From Source
+1. `AGENTS.md`
+2. `docs/current-state.md`
+3. `docs/architecture.md`
+4. the subsystem guide named by the current task
 
 Install dependencies from the project root:
 
@@ -89,158 +67,66 @@ uv sync
 cd ../..
 ```
 
-Use the Electron development shell while changing the app:
+Run the watched Electron development app:
 
 ```bash
 pnpm macos:dev
 ```
 
-The development shell starts watched FastAPI and Vite services on dynamic local ports. React and CSS edits update in the Electron window through Vite HMR, and API source edits trigger Uvicorn reloads. Restart `pnpm macos:dev` only after changing Electron main-process or packaging files. The installed standalone app remains a production build and receives source changes only through a deliberate install or published update.
+React/CSS edits use Vite HMR and API edits reload through Uvicorn. Restart `pnpm macos:dev` after Electron main-process, preload, startup, or packaging changes.
 
-In the macOS app, use **View > System Status…** for runtime and storage diagnostics, **View > Toggle Light/Dark Mode** for appearance, and **Tools > Check Solutions…** for solution validation. These desktop commands and the redundant Layers badge are kept out of the editor toolbar to leave more room for document tabs.
-
-For a deliberate local installed-app checkpoint:
+Use a deliberate local installed-app checkpoint only when needed:
 
 ```bash
 pnpm macos:build
 pnpm macos:install
 ```
 
-This installs an ad-hoc-signed development build at `~/Applications/Mauth Studio.app`. It is not a shareable release.
+That build is not a shareable release. External releases use the guarded process in `docs/macos-release.md`; `pnpm macos:release` and `pnpm macos:ship` are not routine development commands.
 
-Only versioned external releases use Developer ID signing and Apple notarization. Build a local release bundle with:
+## Repository Map
 
-```bash
-pnpm macos:release
-```
+- `apps/api`: FastAPI maths, storage, diagnostics, and agent bridge services.
+- `apps/web`: React/Vite editor, preview, files, diagrams, solutions, and print UI.
+- `packages/question-engine`: question generation.
+- `packages/marking-engine`: marking rules and equivalence.
+- `packages/formatting-engine`: formatting rules and render blocks.
+- `packages/diagram-penrose`: Penrose diagram adapter.
+- `packages/diagram-plotly`: Plotly statistics-chart adapter.
+- `configs/ai-brains`: durable question, formatting, diagram, and solution authoring rules.
+- `workspace`: ignored scratch space for PDFs, crops, screenshots, reports, and generated artifacts.
 
-The guarded end-to-end publication command is:
+Normal teacher documents and private app state do not belong in Git. See `docs/storage.md`.
 
-```bash
-pnpm macos:ship
-```
+## Verification
 
-It requires a clean, pushed `main`, a new package version, matching release notes, Apple credentials, and GitHub authentication. It keeps the GitHub prerelease in draft until the signed DMG, signed ZIP, ZIP-only updater metadata, and ZIP blockmap have uploaded and verified. Do not run either release command for routine edit-test cycles. See `docs/macos-release.md` for the complete contract.
-
-The older browser launcher remains available for lower-level runtime debugging:
-
-```bash
-pnpm dev:launch:desktop
-pnpm dev:status
-pnpm dev:stop
-```
-
-Use `pnpm macos:install-launcher` only when testing the legacy Terminal-backed launcher. It is no longer the normal installed app.
-
-For a deliberate clean browser-runtime restart, use:
-
-```bash
-pnpm dev:launch:replace
-```
-
-That command applies only to the legacy development launcher. The standalone app owns a dynamic loopback port and its child service lifecycle directly.
-
-For lower-level debugging, start the API and web app in two terminals:
-
-```bash
-pnpm dev:api
-pnpm dev:web
-```
-
-Open the web URL printed by the launcher or by `pnpm dev:web` (usually `http://localhost:5173`) only for lower-level browser debugging, then check the local bridge:
-
-```bash
-pnpm agent:doctor
-pnpm smoke:agent-bridge
-```
-
-If Vite prints a different web URL, pass it to the doctor:
-
-```bash
-MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
-```
-
-Claude/Codex MCP clients can use:
-
-```bash
-pnpm agent:mcp
-```
-
-See `docs/current-state.md`, `docs/architecture.md`, `docs/agent-local-setup.md`, `docs/agent-bridge.md`, `docs/macos-release.md`, and `docs/index.html`.
-
-## Repo Map
-
-- `apps/api`: FastAPI services for maths, formatting, diagrams, storage, and project files.
-- `apps/web`: Vite, React, TypeScript, Tailwind, MathJax SVG math rendering, JSXGraph, Penrose SVG rendering, and Plotly charts.
-- `packages/question-engine`: JSON-configured question registry and Python plugins.
-- `packages/marking-engine`: configurable marking rules and SymPy answer equivalence.
-- `packages/formatting-engine`: configurable HTML and structured render blocks.
-- `packages/shared`: TypeScript API contracts used by the web app.
-- `packages/diagram-penrose`: Penrose Domain/Style files and JSON-to-Substance/SVG rendering for static geometric construction diagrams.
-- `packages/diagram-plotly`: Plotly chart-spec adapter for statistics diagrams.
-- `configs`: JSON rules for question types, formatting, marking, and AI-readable authoring brains.
-- `workspace`: ignored local scratch space for generated artifacts.
-- `chats`: starter prompts for the intended agent work streams.
-
-## Agent Workflow
-
-Use Mauth through the standalone app, local app APIs, MCP tools, and rendered app verification. The old provider-backed in-app chat panel is not the product path.
-
-- Use the `Development` work stream for app code, schemas, tests, docs, CI, and repo maintenance.
-- Use the `Authoring` work stream for creating, inspecting, converting, or polishing assessments.
-- Keep these as separate chats where practical so code changes and assessment authoring do not get mixed together.
-- Read `AGENTS.md`, `docs/current-state.md`, `docs/local-ai-workflow.md`, `docs/agent-bridge.md`, `docs/mauth-actions.md`, and `docs/ai-brains.md`.
-- Read `docs/architecture.md` when changing process, state, storage, rendering, or package boundaries.
-- Keep generated PDFs, crops, eval output, browser screenshots, and temporary scripts in `workspace/`.
-
-Comments and suggestions are review state only. They do not mutate the document until an explicit action batch is previewed and applied.
-
-## Verify
+Run the full repository gate before committing shared changes:
 
 ```bash
 pnpm check
 ```
 
-For a quick model-transition documentation audit without running the code suites:
-
-```bash
-pnpm check:handoff
-```
-
-Immediately before changing models, also compare the volatile checkpoint with the checkout:
-
-```bash
-pnpm check:handoff:live
-```
-
-This stricter transition check verifies the documented branch, baseline commit, dirty-worktree counts, and key source line counts. It is not part of the normal full gate because those values change during active implementation.
-
-Useful narrower checks:
+Useful focused checks:
 
 ```bash
 pnpm test:api
 pnpm test:web-actions
+pnpm test:plotly
+pnpm test:launcher
 pnpm build:web
 ```
 
-With the API and web app running, useful smoke checks include:
+Use `pnpm check:handoff:live` only at a model/developer transition after the checkpoint in `docs/current-state.md` has been updated to match Git.
 
-```bash
-pnpm smoke:file-manager
-pnpm smoke:context-menu-actions
-pnpm smoke:document-session-conflict
-pnpm smoke:diagram-solution-authoring
-pnpm smoke:diagram-gallery
-```
+## Documentation
 
-## Mauthdown
-
-Normal app documents use the `.mauth` extension. They are structured, versioned JSON files that preserve the full editor state and can be opened from Finder in an installed build. The macOS app exports a dedicated Mauth document type, icon, thumbnail extension, and Spacebar Quick Look preview. Those native extensions read only stable document metadata and never mutate the file or embed a generated PDF. Mauthdown (`.mauth.md`) is the separate text authoring and interchange format: Markdown plus explicit containers for title pages, worksheet headings, questions, parts, subparts, text, choice lists, tables, diagrams, columns, spaces, and page breaks. See `docs/mauthdown.md`.
-
-## Storage
-
-Project files are visible `.mauth` teacher documents under `~/Documents/Mauth/Documents` by default or in another selected folder. Existing `.test.json` documents remain readable and retain their extension until deliberately renamed. On macOS, shared app state, autosave, reusable logos, and the remembered folder identity live under `~/Library/Application Support/Mauth Studio/storage`; project metadata and versions for an external selected folder remain in that folder's `.mauth` directory. Browser storage is only a fallback cache. Legacy repo-local `storage/` data is migration input or test data, not the normal save location. See `docs/storage.md`.
-
-## Print
-
-PDF output uses the browser print dialog and Save as PDF from the same A4 preview pages shown on screen. The app owns page content and page breaks; the browser owns physical paper output.
+- `AGENTS.md`: agent rules and authoring conventions.
+- `docs/current-state.md`: current handoff, verification baseline, and next work.
+- `docs/architecture.md`: durable runtime and component boundaries.
+- `docs/storage.md`: files, folders, autosave, versions, and recovery.
+- `docs/agent-local-setup.md`: installed-app Codex/Claude setup.
+- `docs/agent-bridge.md`: technical HTTP/MCP contract.
+- `docs/mauth-actions.md`: structured mutation contract.
+- `docs/mauthdown.md`: AI-friendly text interchange format.
+- `docs/ai-brains.md`: focused authoring rule sets.
+- `docs/macos-release.md`: signing, notarization, and publication.

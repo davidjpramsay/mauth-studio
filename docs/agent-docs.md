@@ -1,6 +1,6 @@
 # Mauth Local Agent Bridge
 
-Mauth exposes a local bridge for Codex, Claude Code, Claude Desktop, and other stdio MCP clients. The standalone app supplies the FastAPI sidecar, editor renderer, one active editor session, and a self-contained connector. For current handoff context, read `docs/current-state.md`; for the process and state boundaries around the bridge, read `docs/architecture.md`.
+Mauth exposes a local bridge for Codex, Claude Code, Claude Desktop, and other stdio MCP clients. The standalone app supplies the FastAPI sidecar, editor renderer, multi-document session, and self-contained connector. For current handoff context, read `docs/current-state.md`; for process and state boundaries, read `docs/architecture.md`.
 
 ## Start
 
@@ -8,9 +8,9 @@ Mauth exposes a local bridge for Codex, Claude Code, Claude Desktop, and other s
 open ~/Applications/Mauth\ Studio.app
 ```
 
-The app owns its dynamic local port and sidecar. No Terminal windows need to remain open. For source development use `pnpm macos:dev`; for lower-level browser debugging, `pnpm dev:launch:desktop` or separate `pnpm dev:api` and `pnpm dev:web` processes remain available.
+The app owns its dynamic local port and sidecar. No Terminal windows need to remain open. For source development use `pnpm macos:dev`; lower-level browser runtimes remain diagnostic paths.
 
-For a signed installed app, choose **Help > Set Up Codex or Claude...** and copy the one-time client setup. No source checkout or Node installation is required. For source development and diagnostics, run:
+For a signed installed app, choose **Help > Set Up Codex or Claude...** and copy the one-time client setup. No source checkout or Node installation is required. Source developers can run:
 
 ```bash
 pnpm agent:doctor

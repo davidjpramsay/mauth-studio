@@ -4,7 +4,7 @@ Purpose: build and maintain the Mauth app.
 
 Start here for app code, architecture, schemas, docs, tests, repository maintenance, CI, and release work.
 
-Required context:
+Required repository context:
 
 1. Read `AGENTS.md`.
 2. Read `docs/current-state.md`.
