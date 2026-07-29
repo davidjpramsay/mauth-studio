@@ -228,6 +228,8 @@ The public Math Notes example is now a full original function-transformations pa
 
 The public Investigation template example now uses the actual first teacher-rubric page rendered by Mauth for the current Year 12 investigation. It shows the real performance-level table and marking columns rather than a fabricated illustration or the student brief.
 
+The public Home and Features pages now use one restrained responsive heading hierarchy with fixed desktop, tablet, and phone sizes. Hero headings cap at 72 px on wide screens and 44 px on phones; section headings cap at 52 px and 33.6 px respectively, avoiding the previous viewport-scaled headings that became oversized on wide displays.
+
 New Exam documents now use the selected school logo and school name with neutral school-exam headings, materials, and candidate instructions. The old Western Australian external-examination and ATAR-specific default wording is removed; legacy schema fields remain readable for existing documents.
 
 Release-specific history is in `docs/releases/` and Git. Do not copy it back into this handoff.
