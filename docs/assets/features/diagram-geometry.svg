@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="620" height="430" viewBox="0 0 620 430" role="img" aria-labelledby="title desc">
   <title id="title">Structured geometry construction</title>
-  <desc id="desc">An isosceles triangle on its circumcircle with an altitude, midpoint, side lengths, equal-length marks, angle arcs, and a right-angle marker.</desc>
+  <desc id="desc">An isosceles triangle on its circumcircle with an altitude, midpoint, equal-length marks, angle arcs, and a right-angle marker.</desc>
   <rect width="620" height="430" fill="#ffffff" />
 
   <circle cx="310" cy="205" r="170" fill="#f7faff" stroke="#9bb4dc" stroke-width="2.5" />
@@ -36,11 +36,7 @@
     <text x="298" y="25">C</text>
     <text x="296" y="278">D</text>
     <text x="321" y="202">O</text>
-    <text x="196" y="177">5</text>
-    <text x="414" y="177">5</text>
     <text x="291" y="151" fill="#1769f4">4</text>
-    <text x="218" y="283">3</text>
-    <text x="391" y="283">3</text>
     <text x="175" y="235" fill="#1769f4">α</text>
     <text x="433" y="235" fill="#1769f4">α</text>
   </g>
