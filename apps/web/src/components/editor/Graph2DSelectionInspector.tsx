@@ -6,10 +6,8 @@ import {
   GRAPH_INTERSECTION_TARGETS,
   GRAPH_LINE_STYLES,
   graphFunctionLabel,
-  graphHeight,
   isRegionFeatureKind,
   isStrokeStyledFeatureKind,
-  lockedAspectHeight,
 } from "../../lib/diagramGraph2d";
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import {
@@ -22,10 +20,9 @@ import {
   graphFunctionSolutionOnlyPatch,
   type Graph2DInspectorSelection,
 } from "../../lib/graph2dInspectorSelection";
-import { graphInspectorWidthPatch } from "../../lib/moduleSettingsPatches";
 import { cn } from "../../lib/utils";
 import { GraphAngleMarkerControls } from "./GraphAngleMarkerControls";
-import { GraphAxisArrowControls } from "./GraphAxisArrowControls";
+import { Graph2DCanvasSettings } from "./Graph2DCanvasSettings";
 import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface Graph2DSelectionInspectorProps {
@@ -56,63 +53,6 @@ export function Graph2DSelectionInspector({
 
   return (
     <div className="space-y-3 border-t pt-3">
-      {!selectedGraphFunction && !selectedGraphFeature ? (
-        <>
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Graph settings</div>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showAxes ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxes: event.target.checked }),
-                })
-              }
-            />
-            Axes
-          </label>
-          <GraphAxisArrowControls
-            config={selectedDiagramConfig}
-            onChange={(patch) => onBlockChange(selectedBlock, { graphConfig: updateGraphConfig(selectedDiagramConfig, patch) })}
-          />
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showAxisLabels ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxisLabels: event.target.checked }),
-                })
-              }
-            />
-            Axis labels
-          </label>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showAxisNumbers ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showAxisNumbers: event.target.checked }),
-                })
-              }
-            />
-            Axis numbers
-          </label>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showFunctionArrows ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showFunctionArrows: event.target.checked }),
-                })
-              }
-            />
-            Function arrows
-          </label>
-        </>
-      ) : null}
       {selectedGraphFunction ? (
         <div className="space-y-2 border-t pt-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Function display</div>
@@ -932,244 +872,13 @@ export function Graph2DSelectionInspector({
         </div>
       ) : null}
       {!selectedGraphFunction && !selectedGraphFeature ? (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Domain min
-              <NumericExpressionInput
-                step={1}
-                value={selectedDiagramConfig.xMin}
-                ariaLabel={`${selectedBlock.label} domain minimum`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, { xMin: value }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Domain max
-              <NumericExpressionInput
-                step={1}
-                value={selectedDiagramConfig.xMax}
-                ariaLabel={`${selectedBlock.label} domain maximum`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, { xMax: value }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Range min
-              <NumericExpressionInput
-                step={1}
-                value={selectedDiagramConfig.yMin}
-                ariaLabel={`${selectedBlock.label} range minimum`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, { yMin: value }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Range max
-              <NumericExpressionInput
-                step={1}
-                value={selectedDiagramConfig.yMax}
-                ariaLabel={`${selectedBlock.label} range maximum`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, { yMax: value }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Width
-              <NumericExpressionInput
-                min={240}
-                step={10}
-                value={selectedDiagramConfig.widthPx}
-                ariaLabel={`${selectedBlock.label} graph width`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(
-                      selectedDiagramConfig,
-                      graphInspectorWidthPatch(selectedDiagramConfig, value === undefined ? "" : String(value), lockedAspectHeight),
-                    ),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            {selectedDiagramConfig.equalScale || selectedDiagramConfig.lockAspectRatio ? (
-              <div className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                Height
-                <div className="flex h-9 items-center rounded-md border border-input bg-muted px-2 text-sm font-normal text-muted-foreground">
-                  {Math.round(graphHeight(selectedDiagramConfig))} px
-                </div>
-              </div>
-            ) : (
-              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-                Height
-                <NumericExpressionInput
-                  min={160}
-                  step={10}
-                  value={selectedDiagramConfig.heightPx}
-                  ariaLabel={`${selectedBlock.label} graph height`}
-                  onValueChange={(value) =>
-                    onBlockChange(selectedBlock, {
-                      graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                        heightPx: value,
-                      }),
-                    })
-                  }
-                  className={controlClassName}
-                />
-              </label>
-            )}
-          </div>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={(selectedDiagramConfig.lockAspectRatio ?? false) && !(selectedDiagramConfig.equalScale ?? false)}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                    lockAspectRatio: event.target.checked,
-                    equalScale: event.target.checked ? false : selectedDiagramConfig.equalScale,
-                  }),
-                })
-              }
-            />
-            Lock ratio
-          </label>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.equalScale ?? false}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                    equalScale: event.target.checked,
-                    lockAspectRatio: event.target.checked ? false : selectedDiagramConfig.lockAspectRatio,
-                  }),
-                })
-              }
-            />
-            1:1 scale
-          </label>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showMajorGrid ?? true}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showMajorGrid: event.target.checked, showGrid: true }),
-                })
-              }
-            />
-            Major grid
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              X major
-              <NumericExpressionInput
-                min={0.1}
-                step={1}
-                value={selectedDiagramConfig.gridMajorStepX}
-                fallbackValue={selectedDiagramConfig.gridMajorStep}
-                ariaLabel={`${selectedBlock.label} x major step`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                      gridMajorStepX: value,
-                      axisLabelStepX: value,
-                    }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Y major
-              <NumericExpressionInput
-                min={0.1}
-                step={1}
-                value={selectedDiagramConfig.gridMajorStepY}
-                fallbackValue={selectedDiagramConfig.gridMajorStep}
-                ariaLabel={`${selectedBlock.label} y major step`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                      gridMajorStepY: value,
-                      axisLabelStepY: value,
-                    }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-          </div>
-          <label className={checkboxLabelClassName}>
-            <input
-              type="checkbox"
-              checked={selectedDiagramConfig.showMinorGrid ?? false}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, { showMinorGrid: event.target.checked, showGrid: true }),
-                })
-              }
-            />
-            Minor grid
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              X minor
-              <NumericExpressionInput
-                min={0.1}
-                step={1}
-                value={selectedDiagramConfig.gridMinorStepX}
-                fallbackValue={selectedDiagramConfig.gridMinorStep}
-                ariaLabel={`${selectedBlock.label} x minor step`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                      gridMinorStepX: value,
-                    }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Y minor
-              <NumericExpressionInput
-                min={0.1}
-                step={1}
-                value={selectedDiagramConfig.gridMinorStepY}
-                fallbackValue={selectedDiagramConfig.gridMinorStep}
-                ariaLabel={`${selectedBlock.label} y minor step`}
-                onValueChange={(value) =>
-                  onBlockChange(selectedBlock, {
-                    graphConfig: updateGraphConfig(selectedDiagramConfig, {
-                      gridMinorStepY: value,
-                    }),
-                  })
-                }
-                className={controlClassName}
-              />
-            </label>
-          </div>
-        </>
+        <Graph2DCanvasSettings
+          blockLabel={selectedBlock.label}
+          config={selectedDiagramConfig}
+          controlClassName={controlClassName}
+          checkboxLabelClassName={checkboxLabelClassName}
+          onChange={(patch) => onBlockChange(selectedBlock, { graphConfig: updateGraphConfig(selectedDiagramConfig, patch) })}
+        />
       ) : null}
     </div>
   );

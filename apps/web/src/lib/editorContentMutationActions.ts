@@ -95,6 +95,7 @@ export function createEditorContentMutationActions({
   }
 
   function updateSelectedBlock(selection: SelectedEditorBlock, patch: Partial<EditorContentBlock>) {
+    if (selection.scope.kind === "investigationDiagram") return;
     const scope = selection.scope.kind === "column" ? selection.scope.rootScope : selection.scope;
     applyAction({
       type: "module.update",

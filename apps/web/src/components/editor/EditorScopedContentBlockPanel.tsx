@@ -22,7 +22,7 @@ export interface EditorScopedContentBlockPanelProps {
   activeAnchor: string;
   openSignal?: number;
   dragClasses: (target: SubsectionDragTarget) => string;
-  dragHandle: (target: SubsectionDragTarget, label: string) => ReactNode;
+  dragHandle: (target: SubsectionDragTarget, label: string, anchor: string) => ReactNode;
   openSignalForAnchor: (anchor: string) => number | undefined;
   contentBlockForKind: (kind: SolutionInsertionBlockKind, visibility?: ContentBlockVisibility) => EditorContentBlock;
   diagramBlockForType: (type: string, visibility?: ContentBlockVisibility) => EditorContentBlock;
@@ -92,7 +92,7 @@ export function EditorScopedContentBlockPanel({
         active={blockActive}
         openSignal={openSignal}
         solutionEntryMask={tableSolutionEntryMasks?.[block.id]}
-        dragHandleForLabel={(label) => dragHandle(target, label)}
+        dragHandleForLabel={(label) => dragHandle(target, label, anchor)}
         openSignalForAnchor={openSignalForAnchor}
         contentBlockForKind={contentBlockForKind}
         diagramBlockForType={diagramBlockForType}

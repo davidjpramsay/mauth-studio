@@ -4,6 +4,7 @@ import { FileText, GitBranch } from "lucide-react";
 import { InlineSummaryTitle } from "@/components/MathText";
 import { ContainerWordingEditor } from "@/components/editor/ContainerWordingEditor";
 import { CollapsiblePanel, ContentInsertionActions, RemoveActionButton, type InsertionAction } from "@/components/editor/EditorPanels";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
 import type {
@@ -40,7 +41,7 @@ export interface NestedPanelDragHandlers {
 
 export interface NestedPanelRenderers {
   dragClasses: (target: SubsectionDragTarget) => string;
-  dragHandle: (target: SubsectionDragTarget, label: string) => ReactNode;
+  dragHandle: (target: SubsectionDragTarget, label: string, anchor: string) => ReactNode;
   itemDropZone: (container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible?: boolean) => ReactNode;
   containerDropZone: (container: SubsectionContainerRef, placement: "start" | "end", visible?: boolean) => ReactNode;
   renderPartContentBlock: (
@@ -213,7 +214,7 @@ export function EditorNestedPartPanel({
       >
         <CollapsiblePanel
           title={<InlineSummaryTitle label={partPanelLabel} summary={part.text?.trim() || partPanelSummary(part.contentBlocks)} />}
-          leading={dragHandle(partTarget, `Drag ${partPanelLabel}`)}
+          leading={dragHandle(partTarget, `Drag ${partPanelLabel}`, partAnchor)}
           onHeaderContextMenu={(event) => onHeaderContextMenu(event, partAnchor)}
           actions={
             <>
@@ -238,11 +239,12 @@ export function EditorNestedPartPanel({
               {!isNotesTemplate && !subparts.length ? (
                 <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                   Marks
-                  <input
-                    type="number"
+                  <NumericExpressionInput
                     min={0}
+                    step={1}
                     value={part.marks}
-                    onChange={(event) => updatePart(question.id, part.id, { marks: Number(event.target.value) })}
+                    ariaLabel={`${partPanelLabel} marks`}
+                    onValueChange={(value) => updatePart(question.id, part.id, { marks: Math.max(0, Math.floor(value ?? part.marks)) })}
                     className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -375,7 +377,7 @@ interface EditorSubpartPanelProps extends Omit<NestedPanelDragHandlers, "onEdito
   onFixSolutionIssue: (issue: SolutionValidationIssue) => void;
   onJumpSolutionIssue: (anchor: string) => void;
   dragClasses: (target: SubsectionDragTarget) => string;
-  dragHandle: (target: SubsectionDragTarget, label: string) => ReactNode;
+  dragHandle: (target: SubsectionDragTarget, label: string, anchor: string) => ReactNode;
   itemDropZone: (container: SubsectionContainerRef, beforeItem: ContainerOrderItem, visible?: boolean) => ReactNode;
   containerDropZone: (container: SubsectionContainerRef, placement: "start" | "end", visible?: boolean) => ReactNode;
   renderSubpartContentBlock: (
@@ -477,7 +479,7 @@ function EditorSubpartPanel({
     >
       <CollapsiblePanel
         title={<InlineSummaryTitle label={subpartPanelLabel} summary={subpart.text?.trim() || partPanelSummary(subpart.contentBlocks)} />}
-        leading={dragHandle(subpartTarget, `Drag ${subpartPanelLabel}`)}
+        leading={dragHandle(subpartTarget, `Drag ${subpartPanelLabel}`, subpartAnchor)}
         onHeaderContextMenu={(event) => onHeaderContextMenu(event, subpartAnchor)}
         actions={
           <>
@@ -493,11 +495,14 @@ function EditorSubpartPanel({
             {!isNotesTemplate ? (
               <label className="flex flex-col gap-1 text-[11px] font-medium leading-none">
                 Marks
-                <input
-                  type="number"
+                <NumericExpressionInput
                   min={0}
+                  step={1}
                   value={subpart.marks}
-                  onChange={(event) => updateSubpart(question.id, part.id, subpart.id, { marks: Number(event.target.value) })}
+                  ariaLabel={`${subpartPanelLabel} marks`}
+                  onValueChange={(value) =>
+                    updateSubpart(question.id, part.id, subpart.id, { marks: Math.max(0, Math.floor(value ?? subpart.marks)) })
+                  }
                   className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>

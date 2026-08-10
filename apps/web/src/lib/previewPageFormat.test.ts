@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { FormattingConfig } from "@mauth-studio/shared";
 
-import { DEFAULT_PAGE_FORMAT, pageFormatFromConfig, pageStyle } from "./previewPageFormat.ts";
+import { DEFAULT_PAGE_FORMAT, pageFormatFromConfig, pageStyle, printPageRule } from "./previewPageFormat.ts";
 
 test("pageFormatFromConfig falls back to the default A4 preview format", () => {
   assert.deepEqual(pageFormatFromConfig(), DEFAULT_PAGE_FORMAT);
@@ -51,4 +51,19 @@ test("pageStyle publishes scaled preview CSS variables", () => {
   assert.equal(style["--a4-preview-page-width"], "350px");
   assert.equal(style["--a4-preview-page-height"], "450px");
   assert.equal(style["--a4-preview-page-gap"], "8px");
+  assert.equal(style["--a4-print-content-width"], "186mm");
+  assert.equal(style["--a4-print-content-height"], "264mm");
+});
+
+test("printPageRule keeps physical print margins aligned with the configured preview padding", () => {
+  assert.equal(
+    printPageRule({
+      widthPx: 793.700787,
+      heightPx: 1122.519685,
+      paddingXPx: 52,
+      paddingYPx: 44,
+      showPageBreaks: true,
+    }),
+    "@page { size: A4; margin: 11.641667mm 13.758333mm; }",
+  );
 });

@@ -47,7 +47,6 @@ mac:
       - UTTypeIdentifier: au.edu.acc.mauth-studio.document
         UTTypeDescription: Mauth Studio Document
         UTTypeConformsTo:
-          - public.json
           - public.data
         UTTypeTagSpecification:
           public.filename-extension:

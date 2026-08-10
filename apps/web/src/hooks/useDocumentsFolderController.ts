@@ -82,6 +82,18 @@ export function useDocumentsFolderController({
       if (!(await projectBeforeFolderSwitch())) return;
       setProjectFilesStatus("loading");
       setProjectFilesMessage("Choose a folder");
+      const desktopResult = await window.mauthDesktop?.chooseDocumentsFolder();
+      if (desktopResult) {
+        if (desktopResult.cancelled) {
+          setProjectFilesStatus("ready");
+          setProjectFilesMessage("Folder selection cancelled");
+          return;
+        }
+        if (!desktopResult.path) throw new Error("Folder picker did not return a folder");
+        const nextProject = await openDefaultProjectDocumentsFolder(desktopResult.path);
+        await loadProjectFolder(nextProject, `Opened folder ${nextProject.documentsPath ?? desktopResult.path}`);
+        return;
+      }
       const result = await chooseDefaultProjectDocumentsFolder();
       if (result.cancelled) {
         setProjectFilesStatus("ready");

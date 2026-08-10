@@ -3,6 +3,7 @@ import { ImagePlus, Save, Trash2 } from "lucide-react";
 
 import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -251,12 +252,14 @@ export function FrontMatterTitleEditor({
         {titlePageTemplate !== "notes" && titlePageTemplate !== "investigation" ? (
           <label className="flex flex-col gap-2 text-xs font-medium">
             Start questions at
-            <input
-              type="number"
+            <NumericExpressionInput
               min={1}
               step={1}
               value={frontMatter.startQuestionNumber}
-              onChange={(event) => onChange({ startQuestionNumber: Math.max(1, Math.floor(Number(event.target.value) || 1)) })}
+              ariaLabel="Start question number"
+              onValueChange={(value) =>
+                onChange({ startQuestionNumber: Math.max(1, Math.floor(value ?? frontMatter.startQuestionNumber)) })
+              }
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>

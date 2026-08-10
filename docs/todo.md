@@ -1,6 +1,6 @@
 # Mauth Roadmap
 
-Last reviewed: 28 July 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
+Last reviewed: 31 July 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
 
 ## Current Direction
 
@@ -11,12 +11,13 @@ Mauth is a standalone teacher app with optional local agent authoring. Human con
 - Signed/notarized Apple Silicon app, packaged sidecars, guarded publication, and teacher-confirmed updater.
 - Visible `.mauth` files, external folders, versions, revision-aware saves, autosave, recovery, and backup/import.
 - Multi-document tabs with independent history/state and explicit MCP `documentId` targeting.
-- Native `.mauth` icon, thumbnail, and read-only Quick Look summary.
-- Snapshot, dry-run/apply, validation, comments, suggestions, presence, and events through one local bridge.
+- Native PDF-style `.mauth` document icon with the Mauth M and a read-only Spacebar Quick Look summary.
+- Revision-safe document list/create/open/guarded-close plus snapshot, dry-run/apply, validation, comments, suggestions, presence, and events through one local bridge.
 - Bundled Codex/Claude MCP connector with one-time Help-menu setup and no copied token.
 - Student/Solutions authoring with structured shared and solution-only answer layers across supported surfaces.
 - Browser-measured page totals and overflow evidence.
 - Focused composition boundaries and regression smokes for high-risk workflows.
+- Platform-neutral runtime discovery, development process paths, helper naming, and Electron-native folder selection, without consuming hosted CI minutes.
 
 ## Now
 
@@ -45,11 +46,12 @@ Completion does not require a Swift rewrite or restored in-app chat.
 - Expand surface-specific solution completeness checks.
 - Strengthen cloud-folder outage/reconnect and stale-autosave smoke coverage.
 - Add preview repair suggestions for oversized or poorly distributed pages.
-- Build a Windows packaging/test plan before promising Windows distribution.
+- Build and verify a Windows sidecar, MCP launcher, installer, signing/update path, and native smoke matrix before promising Windows distribution.
 
 ## Later
 
 - Optional in-app assistant as a visible client of the existing bridge.
+- Linux packaging only after demonstrated user demand and a support/test owner.
 - Deeper iCloud, printing, classroom, and accessibility integrations.
 - Universal/Intel builds only with a complete native and sidecar test matrix.
 - Native Swift rewrite only if proven platform requirements justify it.

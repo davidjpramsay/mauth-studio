@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
+
+import { desktopRuntimeManifestPath } from "../desktop/platform-paths.mjs";
 
 const DEFAULT_API_URL = "http://127.0.0.1:8000";
 const DEFAULT_WEB_URL = "http://127.0.0.1:5173";
 
-export function defaultDesktopRuntimeFile(homeDirectory = os.homedir()) {
-  return path.join(homeDirectory, "Library", "Application Support", "Mauth Studio", "runtime.json");
+export function defaultDesktopRuntimeFile(homeDirectory = os.homedir(), platform = process.platform, env = process.env) {
+  return desktopRuntimeManifestPath({ platform, homeDirectory, env });
 }
 
 function localHttpUrl(value) {
@@ -44,7 +45,7 @@ export function readDesktopRuntime(filePath) {
   }
 }
 
-export function resolveMauthRuntime(env = process.env, homeDirectory = os.homedir()) {
+export function resolveMauthRuntime(env = process.env, homeDirectory = os.homedir(), platform = process.platform) {
   const explicitApi = localHttpUrl(env.MAUTH_AGENT_API_URL || env.VITE_API_URL);
   const explicitWeb = localHttpUrl(env.MAUTH_WEB_URL);
   if (explicitApi || explicitWeb) {
@@ -57,7 +58,7 @@ export function resolveMauthRuntime(env = process.env, homeDirectory = os.homedi
     };
   }
 
-  const runtimeFile = env.MAUTH_RUNTIME_FILE || defaultDesktopRuntimeFile(homeDirectory);
+  const runtimeFile = env.MAUTH_RUNTIME_FILE || defaultDesktopRuntimeFile(homeDirectory, platform, env);
   const desktopRuntime = readDesktopRuntime(runtimeFile);
   if (desktopRuntime) {
     return {

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface SpaceBlockEditorProps {
   label: string;
@@ -53,12 +54,12 @@ export function SpaceBlockEditor({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,11rem)_minmax(0,10rem)]">
           <label className="flex max-w-40 flex-col gap-2 text-xs font-medium">
             Lines
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0}
               step={1}
               value={normalizedLines}
-              onChange={(event) => onChange({ lines: normalizeSpaceLines(event.target.value) })}
+              ariaLabel={`${label} lines`}
+              onValueChange={(value) => onChange({ lines: normalizeSpaceLines(value ?? normalizedLines) })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>

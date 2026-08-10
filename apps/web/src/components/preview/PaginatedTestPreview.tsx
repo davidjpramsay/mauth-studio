@@ -54,9 +54,14 @@ import {
 } from "@/lib/editorPreviewSegments";
 import { questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import { spaceLines } from "@/lib/editorContentBlockNormalization";
-import { normalizeExamTitlePage, normalizeInvestigation, type FrontMatterConfig } from "@/lib/frontMatterConfig";
+import {
+  investigationStudentPageCount,
+  normalizeExamTitlePage,
+  normalizeInvestigation,
+  type FrontMatterConfig,
+} from "@/lib/frontMatterConfig";
 import { selectedLogoForFrontMatter, type LogoAsset } from "@/lib/logoLibrary";
-import { pageFormatFromConfig, pageStyle } from "@/lib/previewPageFormat";
+import { pageFormatFromConfig, pageStyle, printPageRule } from "@/lib/previewPageFormat";
 import { standardSectionTitlePageFrontMatter } from "@/lib/standardTestTitlePage";
 import {
   bookletSupplementaryPageCount,
@@ -67,6 +72,7 @@ import {
   frontMatterPageCount,
   groupPreviewPageSegments,
   investigationPreviewPageCount,
+  isEndOfTestMarkerText,
   pagesAreEqual,
   previewPaginationReportsEqual,
   type PreviewPage,
@@ -251,9 +257,10 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
 
   if (segment.kind === "question-block" && segment.question && segment.block) {
     const question = segment.question;
+    const isEndOfTestMarker = segment.block.kind === "text" && isEndOfTestMarkerText(segment.block.text);
     return (
       <div
-        className="test-preview-segment test-question-block"
+        className={cn("test-preview-segment test-question-block", isEndOfTestMarker && "test-end-of-test-segment")}
         data-scroll-anchor={measureOnly ? undefined : questionBlockScrollAnchor(question.id, segment.block.id)}
         data-measure-segment={measureOnly ? "true" : undefined}
         style={{ paddingTop }}
@@ -347,6 +354,7 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                     : undefined;
                 const rowBlocks = diagramReplacementBlocks ?? replacementBlocks ?? pairedBlocks ?? [item.block];
                 const rowHasVisibilitySlot = Boolean(diagramReplacementBlocks || replacementBlocks);
+                const rowHasSolutionText = rowBlocks.some(isSolutionTextBlock);
                 rows.push(
                   <div
                     key={rowBlocks.length > 1 ? `${item.id}:${rowBlocks[1].id}` : item.id}
@@ -355,7 +363,7 @@ const TestPreviewSegment = memo(function TestPreviewSegment({
                       "test-question-part",
                       item.block.kind === "diagram" && "test-question-row-with-diagram",
                       rowHasVisibilitySlot && "test-question-row-with-visibility-slot",
-                      item.block.kind === "text" && isSolutionTextBlock(item.block) && "test-solution-row",
+                      rowHasSolutionText && "test-solution-row",
                     )}
                   >
                     <span className="test-part-label">
@@ -478,6 +486,7 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
   const pageFormat = useMemo(() => pageFormatFromConfig(normalizedFormatting), [normalizedFormatting]);
   const showMarks = normalizedFormatting.showMarks ?? DEFAULT_FORMATTING_CONFIG.showMarks ?? true;
   const previewStyle = useMemo(() => pageStyle(pageFormat, scale), [pageFormat, scale]);
+  const printPageCss = useMemo(() => printPageRule(pageFormat), [pageFormat]);
   const segments = useMemo(
     () =>
       buildPreviewSegments({
@@ -512,15 +521,16 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
     () => normalizeInvestigation(frontMatter.investigation).criteria.length,
     [frontMatter.investigation],
   );
+  const investigationBriefPageCount = useMemo(() => investigationStudentPageCount(frontMatter.investigation), [frontMatter.investigation]);
   const reservedPageHeight = examQuestionPageReservedHeight(frontMatter);
 
   useLayoutEffect(() => {
     if (isInvestigationTemplate) {
       const nextReport: PreviewPaginationReport = {
         mode: showSolutions ? "solutions" : "student",
-        contentPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount),
+        contentPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount, investigationBriefPageCount),
         supplementaryPageCount: 0,
-        totalPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount),
+        totalPageCount: investigationPreviewPageCount(showSolutions, investigationCriterionCount, investigationBriefPageCount),
         overflowPages: [],
       };
       if (!previewPaginationReportsEqual(lastPaginationReportRef.current, nextReport)) {
@@ -553,6 +563,7 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
   }, [
     frontMatter,
     frontMatterLogo,
+    investigationBriefPageCount,
     investigationCriterionCount,
     isInvestigationTemplate,
     pageFormat,
@@ -620,115 +631,133 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
 
   if (isInvestigationTemplate) {
     return (
-      <InvestigationPreview
-        frontMatter={frontMatter}
-        logo={frontMatterLogo}
-        showSolutions={showSolutions}
-        showPageBreaks={pageFormat.showPageBreaks}
-        activePreviewAnchor={activePreviewAnchor}
-        style={previewStyle}
-      />
+      <>
+        <style data-mauth-print-page>{printPageCss}</style>
+        <InvestigationPreview
+          frontMatter={frontMatter}
+          logo={frontMatterLogo}
+          showSolutions={showSolutions}
+          showPageBreaks={pageFormat.showPageBreaks}
+          activePreviewAnchor={activePreviewAnchor}
+          style={previewStyle}
+        />
+      </>
     );
   }
 
   return (
-    <div
-      className={cn(
-        "a4-preview-root",
-        frontMatter.titlePageTemplate === "worksheet" && "a4-preview-root-worksheet",
-        frontMatter.titlePageTemplate === "notes" && "a4-preview-root-notes",
-      )}
-      style={previewStyle}
-    >
-      <div className="a4-preview-shell">
-        <div className="a4-preview-stack">
-          {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" ? (
-            <FrontMatterPreviewPages
-              frontMatter={titlePageFrontMatter}
-              logo={frontMatterLogo}
-              totalMarks={titlePageMarks}
-              questionCount={questions.length}
-              activePreviewAnchor={activePreviewAnchor}
-              showPageBreaks={pageFormat.showPageBreaks}
-              standardScrollAnchor={leadingStandardSection ? sectionHeadingScrollAnchor(leadingStandardSection.heading.id) : undefined}
-            />
-          ) : null}
-          {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" && pageFormat.showPageBreaks ? (
-            <div className="a4-page-break" aria-hidden="true">
-              <span>A4 page break</span>
-            </div>
-          ) : null}
-          {visiblePageGroups.map(({ page, groups }, pageIndex) => {
-            const isLastQuestionPage = pageIndex === visiblePages.length - 1;
-            const isLastRenderedPage = isLastQuestionPage && supplementaryPageCount === 0;
-            const pageNumber = frontMatterPageCount(frontMatter) + pageIndex + 1;
-            return (
-              <Fragment key={`page-${pageIndex}`}>
-                <A4PreviewPageFrame last={isLastRenderedPage}>
-                  <section className={cn("a4-page", isExamTemplate && "school-exam-question-page", isLastRenderedPage && "a4-page-last")}>
-                    <div className="a4-page-content">
-                      {isExamTemplate ? <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} /> : null}
-                      <div className={cn("test-preview-flow", isExamTemplate && "school-exam-question-flow")}>
-                        <div className="test-preview-question-list">{groups.map(renderPreviewGroup)}</div>
-                      </div>
-                      {page.overflow ? (
-                        <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
-                          A single block in this question is taller than the available A4 page space.
+    <>
+      <style data-mauth-print-page>{printPageCss}</style>
+      <div
+        className={cn(
+          "a4-preview-root",
+          frontMatter.titlePageTemplate === "worksheet" && "a4-preview-root-worksheet",
+          frontMatter.titlePageTemplate === "notes" && "a4-preview-root-notes",
+        )}
+        style={previewStyle}
+      >
+        <div className="a4-preview-shell">
+          <div className="a4-preview-stack">
+            {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" ? (
+              <FrontMatterPreviewPages
+                frontMatter={titlePageFrontMatter}
+                logo={frontMatterLogo}
+                totalMarks={titlePageMarks}
+                questionCount={questions.length}
+                activePreviewAnchor={activePreviewAnchor}
+                showPageBreaks={pageFormat.showPageBreaks}
+                standardScrollAnchor={leadingStandardSection ? sectionHeadingScrollAnchor(leadingStandardSection.heading.id) : undefined}
+              />
+            ) : null}
+            {frontMatter.titlePageTemplate !== "worksheet" && frontMatter.titlePageTemplate !== "notes" && pageFormat.showPageBreaks ? (
+              <div className="a4-page-break" aria-hidden="true">
+                <span>A4 page break</span>
+              </div>
+            ) : null}
+            {visiblePageGroups.map(({ page, groups }, pageIndex) => {
+              const isLastQuestionPage = pageIndex === visiblePages.length - 1;
+              const isLastRenderedPage = isLastQuestionPage && supplementaryPageCount === 0;
+              const lastPageSegment = segments[page.segmentIndexes.at(-1) ?? -1];
+              const pageEndsWithEndOfTestMarker =
+                lastPageSegment?.kind === "question-block" &&
+                lastPageSegment.block?.kind === "text" &&
+                isEndOfTestMarkerText(lastPageSegment.block.text);
+              const pageNumber = frontMatterPageCount(frontMatter) + pageIndex + 1;
+              return (
+                <Fragment key={`page-${pageIndex}`}>
+                  <A4PreviewPageFrame last={isLastRenderedPage}>
+                    <section
+                      className={cn(
+                        "a4-page",
+                        isExamTemplate && "school-exam-question-page",
+                        isLastRenderedPage && "a4-page-last",
+                        pageEndsWithEndOfTestMarker && "a4-page-with-end-of-test",
+                      )}
+                    >
+                      <div className="a4-page-content">
+                        {isExamTemplate ? <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} /> : null}
+                        <div className={cn("test-preview-flow", isExamTemplate && "school-exam-question-flow")}>
+                          <div className="test-preview-question-list">{groups.map(renderPreviewGroup)}</div>
                         </div>
-                      ) : null}
-                      {isExamTemplate ? (
-                        <SchoolExamPageFooter text={isLastQuestionPage ? exam.endOfQuestionsFooterText : exam.footerText} />
-                      ) : null}
+                        {page.overflow ? (
+                          <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                            A single block in this question is taller than the available A4 page space.
+                          </div>
+                        ) : null}
+                        {isExamTemplate ? (
+                          <SchoolExamPageFooter text={isLastQuestionPage ? exam.endOfQuestionsFooterText : exam.footerText} />
+                        ) : null}
+                      </div>
+                    </section>
+                  </A4PreviewPageFrame>
+                  {pageFormat.showPageBreaks && !isLastRenderedPage ? (
+                    <div className="a4-page-break" aria-hidden="true">
+                      <span>A4 page break</span>
                     </div>
-                  </section>
-                </A4PreviewPageFrame>
-                {pageFormat.showPageBreaks && !isLastRenderedPage ? (
-                  <div className="a4-page-break" aria-hidden="true">
-                    <span>A4 page break</span>
-                  </div>
-                ) : null}
-              </Fragment>
-            );
-          })}
-          {Array.from({ length: supplementaryPageCount }).map((_, supplementaryPageIndex) => {
-            const finalPage = supplementaryPageIndex === supplementaryPageCount - 1;
-            const pageNumber = frontMatterPageCount(frontMatter) + visiblePages.length + supplementaryPageIndex + 1;
-            return (
-              <Fragment key={`exam-supplementary-page-${supplementaryPageIndex}`}>
-                <A4PreviewPageFrame last={finalPage}>
-                  <SchoolExamSupplementaryPage frontMatter={frontMatter} pageNumber={pageNumber} />
-                </A4PreviewPageFrame>
-                {pageFormat.showPageBreaks && !finalPage ? (
-                  <div className="a4-page-break" aria-hidden="true">
-                    <span>A4 page break</span>
-                  </div>
-                ) : null}
-              </Fragment>
-            );
-          })}
+                  ) : null}
+                </Fragment>
+              );
+            })}
+            {Array.from({ length: supplementaryPageCount }).map((_, supplementaryPageIndex) => {
+              const finalPage = supplementaryPageIndex === supplementaryPageCount - 1;
+              const pageNumber = frontMatterPageCount(frontMatter) + visiblePages.length + supplementaryPageIndex + 1;
+              return (
+                <Fragment key={`exam-supplementary-page-${supplementaryPageIndex}`}>
+                  <A4PreviewPageFrame last={finalPage}>
+                    <SchoolExamSupplementaryPage frontMatter={frontMatter} pageNumber={pageNumber} />
+                  </A4PreviewPageFrame>
+                  {pageFormat.showPageBreaks && !finalPage ? (
+                    <div className="a4-page-break" aria-hidden="true">
+                      <span>A4 page break</span>
+                    </div>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+
+        <div ref={measureRef} className="a4-measure" aria-hidden="true">
+          <section className="a4-page">
+            <div className="a4-page-content">
+              <div className="test-preview-flow">
+                {segments.map((segment) => (
+                  <TestPreviewSegment
+                    key={segment.id}
+                    segment={segment}
+                    frontMatter={frontMatter}
+                    logo={frontMatterLogo}
+                    totalMarks={totalMarks}
+                    measureOnly
+                    showSolutions={showSolutions}
+                    showMarks={showMarks}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       </div>
-
-      <div ref={measureRef} className="a4-measure" aria-hidden="true">
-        <section className="a4-page">
-          <div className="a4-page-content">
-            <div className="test-preview-flow">
-              {segments.map((segment) => (
-                <TestPreviewSegment
-                  key={segment.id}
-                  segment={segment}
-                  frontMatter={frontMatter}
-                  logo={frontMatterLogo}
-                  totalMarks={totalMarks}
-                  measureOnly
-                  showSolutions={showSolutions}
-                  showMarks={showMarks}
-                />
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
+    </>
   );
 });

@@ -5,12 +5,24 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  defaultRuntimeFile,
   desktopRuntimeFile,
   isAllowedAppNavigation,
   removeOwnedRuntimeManifest,
   runtimeManifestRecord,
   writeRuntimeManifest,
 } from "./runtime.mjs";
+
+test("default runtime manifest location follows the operating system", () => {
+  assert.equal(
+    defaultRuntimeFile("/Users/teacher", "darwin", {}),
+    path.join("/Users/teacher", "Library", "Application Support", "Mauth Studio", "runtime.json"),
+  );
+  assert.equal(
+    defaultRuntimeFile("C:\\Users\\teacher", "win32", { APPDATA: "C:\\Users\\teacher\\AppData\\Roaming" }),
+    path.join("C:\\Users\\teacher\\AppData\\Roaming", "Mauth Studio", "runtime.json"),
+  );
+});
 
 test("runtime manifest is private and removed only by its owning app", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mauth-desktop-runtime-"));

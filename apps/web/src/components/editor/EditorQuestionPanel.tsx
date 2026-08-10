@@ -1,8 +1,9 @@
 import { Fragment, type ReactNode } from "react";
-import { FileText, GitBranch, Trash2 } from "lucide-react";
+import { FileText, GitBranch, ScanSearch, Trash2 } from "lucide-react";
 
 import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
 import { ContainerWordingEditor } from "@/components/editor/ContainerWordingEditor";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
 import { SolutionScopeStatus } from "@/components/solutions/SolutionScopeStatus";
 import { Badge } from "@/components/ui/badge";
@@ -121,21 +122,27 @@ export function EditorQuestionPanel({
         onContextMenu={(event) => onHeaderContextMenu(event, questionAnchor)}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div
+            className={cn(
+              "flex h-9 shrink-0 items-center whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-semibold",
+              active && "border-primary bg-primary text-primary-foreground",
+            )}
+          >
+            {label}
+          </div>
           <Button
             type="button"
-            variant="outline"
-            title={`Jump preview to ${label}`}
-            aria-label={`Jump preview to ${label}`}
+            variant="ghost"
+            size="icon"
+            title={`Show ${label} in preview`}
+            aria-label={`Show ${label} in preview`}
             onClick={(event) => {
               event.stopPropagation();
               onJumpPreview(question.id);
             }}
-            className={cn(
-              "h-9 shrink-0 whitespace-nowrap px-3 text-sm font-semibold",
-              active && "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-            )}
+            className="size-9 shrink-0"
           >
-            {label}
+            <ScanSearch />
           </Button>
           {isNotesTemplate ? (
             <label className="flex h-9 min-w-[14rem] flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
@@ -156,15 +163,15 @@ export function EditorQuestionPanel({
             </Badge>
           ) : null}
           {!isNotesTemplate && !hasParts ? (
-            <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+            <label className="flex h-9 w-28 shrink-0 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
               <span className="font-medium text-muted-foreground">Marks</span>
-              <input
-                aria-label={`${label} marks`}
-                type="number"
+              <NumericExpressionInput
+                ariaLabel={`${label} marks`}
                 min={0}
+                step={1}
                 value={question.marks}
-                onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
-                className="h-7 w-14 bg-transparent text-sm font-semibold outline-none"
+                onValueChange={(value) => updateQuestion(question.id, { marks: Math.max(0, Math.floor(value ?? question.marks)) })}
+                className="h-7 border-0 bg-transparent px-1 text-sm font-semibold outline-none focus-visible:ring-0"
               />
             </label>
           ) : null}

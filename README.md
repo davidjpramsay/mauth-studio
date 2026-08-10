@@ -38,6 +38,7 @@ No separate prompt, token, agent-files download, source checkout, or Node instal
 The revision-safe authoring loop is:
 
 ```text
+mauth_documents_list / mauth_document_create / mauth_document_open
 mauth_snapshot
 mauth_actions_preview
 mauth_actions_apply
@@ -45,7 +46,7 @@ mauth_validation_run
 rendered Student and Solutions/Teacher verification
 ```
 
-Snapshots include `activeDocumentId` and `openDocuments`, so agents can target the intended tab explicitly.
+Agents can create and open saved documents without raw file edits. Snapshots include `activeDocumentId` and `openDocuments`, so agents can target the intended tab explicitly; guarded close refuses dirty tabs unless save or discard is explicit.
 
 ## Develop Mauth
 

@@ -112,6 +112,7 @@ export function solutionSurfaceCopyPlan({
   solutionSurfaceContentBlock,
   solutionSurfaceColumnBlockCopyAtPath,
 }: SolutionSurfaceCopyPlanOptions): SolutionSurfaceCopyPlan | null {
+  if (selection.scope.kind === "investigationDiagram") return null;
   if (solutionBlockVisibility(selection.block) === "solution") return null;
 
   if (selection.scope.kind === "column") {

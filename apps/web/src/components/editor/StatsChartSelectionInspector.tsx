@@ -8,7 +8,6 @@ import {
 import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
-import { inspectorNumberInputValue, inspectorOptionalNumber } from "../../lib/moduleSettingsPatches";
 import {
   statsChartDataPatch,
   statsChartFillOpacity,
@@ -17,6 +16,7 @@ import {
 } from "../../lib/statsChartInspectorSelection";
 import { cn } from "../../lib/utils";
 import { defaultStatsDataForType } from "./StatsChartEditor";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface StatsChartSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -62,33 +62,25 @@ export function StatsChartSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Width
-          <input
-            type="number"
+          <NumericExpressionInput
             min={240}
             step={10}
-            value={inspectorNumberInputValue(selection.spec.options?.widthPx)}
-            aria-label={`${selectedBlock.label} chart width`}
-            onChange={(event) =>
-              updateOptions({
-                widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_STATS_CHART_SPEC.options?.widthPx,
-              })
-            }
+            value={selection.spec.options?.widthPx}
+            fallbackValue={DEFAULT_STATS_CHART_SPEC.options?.widthPx}
+            ariaLabel={`${selectedBlock.label} chart width`}
+            onValueChange={(value) => updateOptions({ widthPx: value ?? DEFAULT_STATS_CHART_SPEC.options?.widthPx })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Height
-          <input
-            type="number"
+          <NumericExpressionInput
             min={180}
             step={10}
-            value={inspectorNumberInputValue(selection.spec.options?.heightPx)}
-            aria-label={`${selectedBlock.label} chart height`}
-            onChange={(event) =>
-              updateOptions({
-                heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_STATS_CHART_SPEC.options?.heightPx,
-              })
-            }
+            value={selection.spec.options?.heightPx}
+            fallbackValue={DEFAULT_STATS_CHART_SPEC.options?.heightPx}
+            ariaLabel={`${selectedBlock.label} chart height`}
+            onValueChange={(value) => updateOptions({ heightPx: value ?? DEFAULT_STATS_CHART_SPEC.options?.heightPx })}
             className={controlClassName}
           />
         </label>
@@ -125,15 +117,14 @@ export function StatsChartSelectionInspector({
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Opacity
-          <input
-            type="number"
+          <NumericExpressionInput
             min={0}
             max={1}
             step={1}
-            value={inspectorNumberInputValue(selection.fillOpacity)}
-            aria-label={`${selectedBlock.label} fill opacity`}
+            value={selection.fillOpacity}
+            ariaLabel={`${selectedBlock.label} fill opacity`}
             disabled={selection.fillDisabled}
-            onChange={(event) => updateOptions({ fillOpacity: statsChartFillOpacity(event.target.value), showFill: true })}
+            onValueChange={(value) => updateOptions({ fillOpacity: statsChartFillOpacity(value), showFill: true })}
             className={cn(controlClassName, "disabled:opacity-45")}
           />
         </label>

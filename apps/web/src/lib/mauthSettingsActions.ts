@@ -226,6 +226,8 @@ interface Bounded2DSettingsUpdate extends SizedSettingsUpdate {
   showMajorGrid?: boolean;
   showAxisLabels?: boolean;
   showAxisNumbers?: boolean;
+  showXAxisNumbers?: boolean;
+  showYAxisNumbers?: boolean;
   equalScale?: boolean;
 }
 
@@ -418,6 +420,8 @@ function graph2dSettingsPatch(config: GraphConfig, settings: Graph2DBaseSettings
   setIfDefined(patch, "showGrid", settings.showGrid);
   setIfDefined(patch, "showAxisLabels", settings.showAxisLabels);
   setIfDefined(patch, "showAxisNumbers", settings.showAxisNumbers);
+  setIfDefined(patch, "showXAxisNumbers", settings.showXAxisNumbers);
+  setIfDefined(patch, "showYAxisNumbers", settings.showYAxisNumbers);
   setIfDefined(patch, "showArrows", settings.showArrows);
   setIfDefined(patch, "showXAxisMinArrow", settings.showXAxisMinArrow);
   setIfDefined(patch, "showXAxisMaxArrow", settings.showXAxisMaxArrow);
@@ -713,6 +717,8 @@ function vector2dBaseSettingsPatch(config: GraphConfig, settings: Vector2DSettin
   setIfDefined(patch, "showArrows", settings.showArrows);
   setIfDefined(patch, "showAxisLabels", settings.showAxisLabels);
   setIfDefined(patch, "showAxisNumbers", settings.showAxisNumbers);
+  setIfDefined(patch, "showXAxisNumbers", settings.showXAxisNumbers);
+  setIfDefined(patch, "showYAxisNumbers", settings.showYAxisNumbers);
   setIfDefined(patch, "showMajorGrid", settings.showMajorGrid);
   setIfDefined(patch, "equalScale", settings.equalScale);
   if (settings.showAxes === false) patch.showArrows = false;

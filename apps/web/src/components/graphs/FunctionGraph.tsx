@@ -24,13 +24,7 @@ import {
 import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
-import {
-  GRAPH_LABEL_FONT_CSS,
-  GRAPH_LABEL_FONT_SIZE_PT,
-  GRAPH_LABEL_FONT_UNIT,
-  graphLabelSourceLatex,
-  graphLabelAttributes,
-} from "./graphTypography";
+import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
 
 interface FunctionGraphProps {
   graphConfig?: GraphConfig | null;
@@ -171,7 +165,7 @@ const ARROW_SCAN_STEPS = 180;
 const AXIS_ARROW_SIZE = 4;
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_TEXT_FONT_SIZE = GRAPH_LABEL_FONT_SIZE_PT;
-const X_TICK_LABEL_OFFSET_PX = -18;
+const X_TICK_LABEL_OFFSET_PX = -8;
 const Y_TICK_LABEL_OFFSET_PX = -10;
 const FUNCTION_ARROW_LENGTH_PX = 9;
 const FUNCTION_ARROW_HALF_WIDTH_PX = 4.5;
@@ -327,6 +321,18 @@ function numericRange(min: number, max: number, step: number) {
     values.push(Number(value.toFixed(8)));
   }
   return values;
+}
+
+function axisNumberValues(min: number, max: number, step: number) {
+  const edgeTolerance = step / 1000;
+  return numericRange(min, max, step).filter(
+    (value) => Math.abs(value) > edgeTolerance && value > min + edgeTolerance && value < max - edgeTolerance,
+  );
+}
+
+function axisNumberLatex(value: number) {
+  const normalized = Math.abs(value) < 1e-10 ? 0 : Number(value.toFixed(8));
+  return `$${normalized}$`;
 }
 
 function isMultiple(value: number, step: number) {
@@ -1264,7 +1270,7 @@ function renderLatexLabelHtml(latex: string, color: string, attributes: Record<s
   const interactionCss = PASSIVE_GRAPH_DECORATION_CSS;
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": normalizedLatex, ...attributes });
   try {
-    const html = renderMathJaxSvg(normalizedLatex, false);
+    const html = renderMathJaxSvg(normalizedLatex, { display: false, plainSimpleInlineLatex: false });
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
@@ -1320,9 +1326,10 @@ function createAxisLabelText(
   anchorX: "left" | "middle" | "right",
   anchorY: "top" | "middle" | "bottom",
   onMove?: (x: number, y: number) => void,
+  attributes: Record<string, string | undefined> = {},
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;${onMove ? " pointer-events:auto; cursor:move;" : ""}`;
-  const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR)], {
+  const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
     fixed: !onMove,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -3505,6 +3512,8 @@ export function FunctionGraph({
     const axisArrows = graphAxisArrowVisibility(graphConfig);
     const showAxisLabels = graphConfig.showAxisLabels ?? true;
     const showAxisNumbers = graphConfig.showAxisNumbers ?? true;
+    const showXAxisNumbers = graphConfig.showXAxisNumbers ?? showAxisNumbers;
+    const showYAxisNumbers = graphConfig.showYAxisNumbers ?? showAxisNumbers;
     const showFunctionArrows = graphConfig.showFunctionArrows ?? true;
     const gridMajorColor = graphConfig.gridMajorColor || GRID_MAJOR_COLOR;
     const gridMinorColor = graphConfig.gridMinorColor || GRID_MINOR_COLOR;
@@ -3630,9 +3639,8 @@ export function FunctionGraph({
         layer: GRAPH_LAYERS.axis,
       } as Record<string, unknown>;
       const ticksAttributes = {
-        drawLabels: showAxisNumbers,
+        drawLabels: false,
         drawZero: false,
-        majorHeight: showAxisNumbers ? 8 : 0,
         strokeColor: AXIS_COLOR,
         layer: GRAPH_LAYERS.axis,
       };
@@ -3652,16 +3660,9 @@ export function FunctionGraph({
             withLabel: false,
             ticks: {
               ...ticksAttributes,
+              majorHeight: showXAxisNumbers ? 8 : 0,
               ticksDistance: xLabelStep,
               minorTicks: 0,
-              label: {
-                anchorX: "middle",
-                anchorY: "top",
-                offset: [0, X_TICK_LABEL_OFFSET_PX],
-                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
-                strokeColor: AXIS_COLOR,
-                layer: GRAPH_LAYERS.axisLabel,
-              },
             },
           } as Record<string, unknown>,
         ),
@@ -3681,20 +3682,29 @@ export function FunctionGraph({
             withLabel: false,
             ticks: {
               ...ticksAttributes,
+              majorHeight: showYAxisNumbers ? 8 : 0,
               ticksDistance: yLabelStep,
               minorTicks: 0,
-              label: {
-                anchorX: "right",
-                anchorY: "middle",
-                offset: [Y_TICK_LABEL_OFFSET_PX, 0],
-                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
-                strokeColor: AXIS_COLOR,
-                layer: GRAPH_LAYERS.axisLabel,
-              },
             },
           } as Record<string, unknown>,
         ),
       );
+
+      if (showXAxisNumbers && yMin <= 0 && yMax >= 0) {
+        axisNumberValues(xMin, xMax, xLabelStep).forEach((x) =>
+          createAxisLabelText(board, x, 0, axisNumberLatex(x), [0, X_TICK_LABEL_OFFSET_PX], "middle", "top", undefined, {
+            "data-mauth-axis-number": "x",
+          }),
+        );
+      }
+
+      if (showYAxisNumbers && xMin <= 0 && xMax >= 0) {
+        axisNumberValues(yMin, yMax, yLabelStep).forEach((y) =>
+          createAxisLabelText(board, 0, y, axisNumberLatex(y), [Y_TICK_LABEL_OFFSET_PX, 0], "right", "middle", undefined, {
+            "data-mauth-axis-number": "y",
+          }),
+        );
+      }
 
       if (showAxisLabels) {
         const [defaultXAxisLabelX, defaultXAxisLabelY] = defaultXAxisLabelPosition(xMax, xAxisExtension);

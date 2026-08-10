@@ -6,6 +6,7 @@ import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import type { SelectedGeometryChild } from "../../lib/geometry2dInspectorSelection";
 import type { graph2dInspectorSelection } from "../../lib/graph2dInspectorSelection";
 import { isInspectorPenroseDiagramType } from "../../lib/moduleSettingsPatches";
+import type { MauthDialogActions } from "../../hooks/useMauthDialogController";
 import { Geometry2DInspector } from "./Geometry2DSelectionInspector";
 import { Graph2DSelectionInspector } from "./Graph2DSelectionInspector";
 import { Graph3DSelectionInspector } from "./Graph3DSelectionInspector";
@@ -26,6 +27,7 @@ interface DiagramSelectionInspectorProps {
   checkboxLabelClassName: string;
   onActivateAnchor?: (anchor: string) => void;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<ContentBlock>) => void;
+  confirmDiagramTypeChange: MauthDialogActions["confirm"];
   diagramTypePatch: (type: string, current: GraphConfig) => Partial<GraphConfig>;
   updateGraphConfig: (graphConfig: GraphConfig, patch: Partial<GraphConfig>) => GraphConfig;
 }
@@ -41,6 +43,7 @@ export function DiagramSelectionInspector({
   checkboxLabelClassName,
   onActivateAnchor,
   onBlockChange,
+  confirmDiagramTypeChange,
   diagramTypePatch,
   updateGraphConfig,
 }: DiagramSelectionInspectorProps) {
@@ -49,38 +52,26 @@ export function DiagramSelectionInspector({
     hasSelectedFeature: Boolean(selectedGraphSelection?.selectedFeature),
     hasSelectedGeometryChild: Boolean(selectedGeometryChild),
   });
+  const changeDiagramType = async (nextType: string) => {
+    if (nextType === selectedDiagramConfig.type) return;
+    const currentLabel = DIAGRAM_TYPES.find((candidate) => candidate.value === selectedDiagramConfig.type)?.label ?? "current diagram";
+    const nextLabel = DIAGRAM_TYPES.find((candidate) => candidate.value === nextType)?.label ?? nextType;
+    const confirmed = await confirmDiagramTypeChange({
+      title: `Change ${currentLabel} to ${nextLabel}?`,
+      description: "Diagram-specific content that cannot be converted will be replaced.",
+      confirmLabel: "Change diagram type",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    onBlockChange(selectedBlock, {
+      graphConfig: updateGraphConfig(selectedDiagramConfig, diagramTypePatch(nextType, selectedDiagramConfig)),
+    });
+  };
 
   return (
     <div className="space-y-3 p-3">
       {showBaseSettings ? (
         <>
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-            Type
-            <select
-              value={selectedDiagramConfig.type ?? "graph2d"}
-              aria-label={`${selectedBlock.label} type`}
-              onChange={(event) =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, diagramTypePatch(event.target.value, selectedDiagramConfig)),
-                })
-              }
-              className={controlClassName}
-            >
-              {DIAGRAM_TYPE_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.values.map((value) => {
-                    const diagramType = DIAGRAM_TYPES.find((candidate) => candidate.value === value);
-                    if (!diagramType) return null;
-                    return (
-                      <option key={diagramType.value} value={diagramType.value}>
-                        {diagramType.label}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              ))}
-            </select>
-          </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Position
             <select
@@ -96,6 +87,35 @@ export function DiagramSelectionInspector({
               ))}
             </select>
           </label>
+          <details className="border-t pt-3">
+            <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Change diagram type</summary>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs leading-5 text-muted-foreground">Changing type can replace diagram-specific content.</p>
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                New type
+                <select
+                  value={selectedDiagramConfig.type ?? "graph2d"}
+                  aria-label={`${selectedBlock.label} new type`}
+                  onChange={(event) => void changeDiagramType(event.target.value)}
+                  className={controlClassName}
+                >
+                  {DIAGRAM_TYPE_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.values.map((value) => {
+                        const diagramType = DIAGRAM_TYPES.find((candidate) => candidate.value === value);
+                        if (!diagramType) return null;
+                        return (
+                          <option key={diagramType.value} value={diagramType.value}>
+                            {diagramType.label}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </details>
         </>
       ) : null}
       {selectedDiagramConfig.type === "geometry2d" ? (

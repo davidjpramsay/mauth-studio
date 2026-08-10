@@ -14,6 +14,8 @@ function bindingSources(events: string[]): AppHeaderBindingSources {
     document: {
       editorDocumentOpen: true,
       currentProjectFileName: "Current exam",
+      documentTabs: [],
+      activeDocumentTabId: null,
       headerFileStatusMessage: "Saved",
       headerFileStatusTitle: "Saved at revision 4",
       headerStorageStatus: "saved",
@@ -21,6 +23,9 @@ function bindingSources(events: string[]): AppHeaderBindingSources {
       saveCurrentTest: () => events.push("save"),
       openFileManager: () => events.push("files"),
       closeCurrentDocument: async () => events.push("close"),
+      activateDocumentTab: (tabId) => events.push(`activate:${tabId}`),
+      closeDocumentTab: (tabId) => events.push(`close-tab:${tabId}`),
+      reorderDocumentTab: (tabId, targetTabId, placement) => events.push(`reorder:${tabId}:${targetTabId}:${placement}`),
     },
     systemStatus: {
       message: "Mauth is ready",
@@ -80,6 +85,9 @@ test("header bindings keep every command on its owning controller path", () => {
   props.onOpenFiles();
   props.onOpenSystemStatus();
   props.onCloseFile();
+  props.onActivateDocumentTab("tab-2");
+  props.onCloseDocumentTab("tab-1");
+  props.onReorderDocumentTab("tab-2", "tab-1", "before");
   props.onToggleTheme();
   props.onShowSolutionsChange(true);
   props.onOpenSolutionValidation();
@@ -95,6 +103,9 @@ test("header bindings keep every command on its owning controller path", () => {
     "files",
     "status",
     "close",
+    "activate:tab-2",
+    "close-tab:tab-1",
+    "reorder:tab-2:tab-1:before",
     "theme",
     "solutions:true",
     "validation:true",

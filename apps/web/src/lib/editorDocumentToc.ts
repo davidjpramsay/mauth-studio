@@ -14,10 +14,14 @@ import {
   type QuestionBlock,
 } from "./editorDocumentNormalization.ts";
 import { questionDisplayNumber } from "./editorSolutionValidationRuntime.ts";
-import { assessmentTitleText, type FrontMatterConfig } from "./frontMatterConfig.ts";
+import { assessmentTitleText, investigationTotalMarks, normalizeInvestigation, type FrontMatterConfig } from "./frontMatterConfig.ts";
 import type { DocumentTocItem } from "./documentNavigation.ts";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
+  SCROLL_ANCHOR_INVESTIGATION_RUBRIC,
+  investigationDiagramScrollAnchor,
+  investigationPageScrollAnchor,
+  investigationTextSectionScrollAnchor,
   partBlockScrollAnchor,
   partScrollAnchor,
   questionBlockScrollAnchor,
@@ -196,6 +200,58 @@ export function buildDocumentToc({
       previewAnchor: SCROLL_ANCHOR_FRONT_MATTER,
     },
   ];
+
+  if (isInvestigationTemplate) {
+    const investigation = normalizeInvestigation(frontMatter.investigation);
+    investigation.studentPages.forEach((page, pageIndex) => {
+      const pageAnchor = investigationPageScrollAnchor(page.id);
+      items.push({
+        id: pageAnchor,
+        label: `Student page ${pageIndex + 1}`,
+        summary: page.title,
+        kind: "investigationPage",
+        depth: 0,
+        editorAnchor: pageAnchor,
+        previewAnchor: pageAnchor,
+      });
+      page.sections.forEach((section, sectionIndex) => {
+        const sectionAnchor = investigationTextSectionScrollAnchor(page.id, section.id);
+        items.push({
+          id: sectionAnchor,
+          label: section.heading.trim() || `Text section ${sectionIndex + 1}`,
+          summary: section.body,
+          kind: "investigationText",
+          depth: 1,
+          editorAnchor: sectionAnchor,
+          previewAnchor: sectionAnchor,
+        });
+      });
+      investigation.diagrams
+        .filter((diagram) => diagram.pageId === page.id)
+        .forEach((diagram) => {
+          const diagramAnchor = investigationDiagramScrollAnchor(page.id, diagram.id);
+          items.push({
+            id: diagramAnchor,
+            label: diagram.title,
+            summary: diagram.caption,
+            kind: "diagram",
+            depth: 1,
+            editorAnchor: diagramAnchor,
+            previewAnchor: diagramAnchor,
+          });
+        });
+    });
+    items.push({
+      id: SCROLL_ANCHOR_INVESTIGATION_RUBRIC,
+      label: "Teacher rubric",
+      summary: `${investigation.criteria.length} criteria, ${investigationTotalMarks(investigation)} marks`,
+      kind: "investigationRubric",
+      depth: 0,
+      editorAnchor: SCROLL_ANCHOR_INVESTIGATION_RUBRIC,
+      previewAnchor: SCROLL_ANCHOR_INVESTIGATION_RUBRIC,
+    });
+    return items;
+  }
 
   const questionMap = new Map(questions.map((question, index) => [question.id, { question, questionIndex: index }]));
   const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));

@@ -1,5 +1,6 @@
 import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Textarea } from "@/components/ui/textarea";
 import { nonNegativeNumberOrDefault, type ExamTitlePageConfig } from "@/lib/frontMatterConfig";
 
@@ -186,12 +187,14 @@ export function ExamInstructionsEditor({ exam, onUpdateExam }: ExamDetailsEditor
         />
         <label className="flex flex-col gap-2 text-xs font-medium">
           Minimum supplementary pages
-          <input
-            type="number"
+          <NumericExpressionInput
             min={0}
             step={1}
             value={exam.supplementaryPageCount}
-            onChange={(event) => onUpdateExam({ supplementaryPageCount: nonNegativeNumberOrDefault(Number(event.target.value), 0) })}
+            ariaLabel="Minimum supplementary pages"
+            onValueChange={(value) =>
+              onUpdateExam({ supplementaryPageCount: nonNegativeNumberOrDefault(value, exam.supplementaryPageCount) })
+            }
             className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
           />
         </label>

@@ -22,20 +22,6 @@
                ReferencedContainer = "container:MauthQuickLook.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "69AAF2A922714B0ACDA019C0"
-               BuildableName = "MauthQuickLookThumbnail.appex"
-               BlueprintName = "MauthQuickLookThumbnail"
-               ReferencedContainer = "container:MauthQuickLook.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

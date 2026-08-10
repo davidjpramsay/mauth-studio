@@ -30,8 +30,8 @@ function signQuickLookExtensions(appBundle, requestedIdentity = "", timestampOve
         .filter((name) => name.endsWith(".appex"))
         .map((name) => path.join(plugins, name))
     : [];
-  if (extensions.length !== 2) {
-    console.error(`Expected two Quick Look extensions in ${plugins}, found ${extensions.length}.`);
+  if (extensions.length !== 1 || path.basename(extensions[0]) !== "MauthQuickLookPreview.appex") {
+    console.error(`Expected only the Mauth Quick Look preview extension in ${plugins}.`);
     process.exit(1);
   }
 

@@ -9,10 +9,10 @@ interface GraphAxisArrowControlsProps {
 }
 
 const ARROW_CONTROLS: Array<{ key: GraphAxisArrowKey; visibilityKey: "xMin" | "xMax" | "yMin" | "yMax"; label: string }> = [
-  { key: "showXAxisMinArrow", visibilityKey: "xMin", label: "x min" },
-  { key: "showXAxisMaxArrow", visibilityKey: "xMax", label: "x max" },
-  { key: "showYAxisMinArrow", visibilityKey: "yMin", label: "y min" },
-  { key: "showYAxisMaxArrow", visibilityKey: "yMax", label: "y max" },
+  { key: "showXAxisMinArrow", visibilityKey: "xMin", label: "Left" },
+  { key: "showXAxisMaxArrow", visibilityKey: "xMax", label: "Right" },
+  { key: "showYAxisMinArrow", visibilityKey: "yMin", label: "Down" },
+  { key: "showYAxisMaxArrow", visibilityKey: "yMax", label: "Up" },
 ];
 
 export function GraphAxisArrowControls({ config, onChange, className = "" }: GraphAxisArrowControlsProps) {

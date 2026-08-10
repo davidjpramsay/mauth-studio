@@ -26,7 +26,7 @@ import {
 import { GRAPH_LINE_STYLES } from "../../lib/diagramGraph2d";
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { geometry2dParentAnchor, geometryPointLabel, type SelectedGeometryChild } from "../../lib/geometry2dInspectorSelection";
-import { graphInspectorWidthPatch, inspectorNumberInputValue, inspectorOptionalNumber } from "../../lib/moduleSettingsPatches";
+import { graphInspectorWidthPatch } from "../../lib/moduleSettingsPatches";
 import { Button } from "../ui/button";
 import { NumericExpressionInput } from "./NumericExpressionInput";
 
@@ -132,45 +132,41 @@ export function Geometry2DInspector({
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             x min
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={inspectorNumberInputValue(selectedDiagramConfig.xMin)}
-              aria-label={`${selectedBlock.label} 2D diagram x min`}
-              onChange={(event) => updateCanvas({ xMin: inspectorOptionalNumber(event.target.value) })}
+              value={selectedDiagramConfig.xMin}
+              ariaLabel={`${selectedBlock.label} 2D diagram x min`}
+              onValueChange={(value) => updateCanvas({ xMin: value })}
               className={controlClassName}
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             x max
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={inspectorNumberInputValue(selectedDiagramConfig.xMax)}
-              aria-label={`${selectedBlock.label} 2D diagram x max`}
-              onChange={(event) => updateCanvas({ xMax: inspectorOptionalNumber(event.target.value) })}
+              value={selectedDiagramConfig.xMax}
+              ariaLabel={`${selectedBlock.label} 2D diagram x max`}
+              onValueChange={(value) => updateCanvas({ xMax: value })}
               className={controlClassName}
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             y min
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={inspectorNumberInputValue(selectedDiagramConfig.yMin)}
-              aria-label={`${selectedBlock.label} 2D diagram y min`}
-              onChange={(event) => updateCanvas({ yMin: inspectorOptionalNumber(event.target.value) })}
+              value={selectedDiagramConfig.yMin}
+              ariaLabel={`${selectedBlock.label} 2D diagram y min`}
+              onValueChange={(value) => updateCanvas({ yMin: value })}
               className={controlClassName}
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             y max
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={inspectorNumberInputValue(selectedDiagramConfig.yMax)}
-              aria-label={`${selectedBlock.label} 2D diagram y max`}
-              onChange={(event) => updateCanvas({ yMax: inspectorOptionalNumber(event.target.value) })}
+              value={selectedDiagramConfig.yMax}
+              ariaLabel={`${selectedBlock.label} 2D diagram y max`}
+              onValueChange={(value) => updateCanvas({ yMax: value })}
               className={controlClassName}
             />
           </label>
@@ -178,15 +174,18 @@ export function Geometry2DInspector({
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Width
-            <input
-              type="number"
+            <NumericExpressionInput
               min={120}
               step={10}
-              value={inspectorNumberInputValue(selectedDiagramConfig.widthPx)}
-              aria-label={`${selectedBlock.label} 2D diagram width`}
-              onChange={(event) =>
+              value={selectedDiagramConfig.widthPx}
+              ariaLabel={`${selectedBlock.label} 2D diagram width`}
+              onValueChange={(value) =>
                 updateCanvas(
-                  graphInspectorWidthPatch(selectedDiagramConfig, event.target.value, () => selectedDiagramConfig.heightPx ?? 340),
+                  graphInspectorWidthPatch(
+                    selectedDiagramConfig,
+                    value === undefined ? "" : String(value),
+                    () => selectedDiagramConfig.heightPx ?? 340,
+                  ),
                 )
               }
               className={controlClassName}
@@ -194,13 +193,12 @@ export function Geometry2DInspector({
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Height
-            <input
-              type="number"
+            <NumericExpressionInput
               min={120}
               step={10}
-              value={inspectorNumberInputValue(selectedDiagramConfig.heightPx)}
-              aria-label={`${selectedBlock.label} 2D diagram height`}
-              onChange={(event) => updateCanvas({ heightPx: inspectorOptionalNumber(event.target.value) })}
+              value={selectedDiagramConfig.heightPx}
+              ariaLabel={`${selectedBlock.label} 2D diagram height`}
+              onValueChange={(value) => updateCanvas({ heightPx: value })}
               className={controlClassName}
             />
           </label>
@@ -377,13 +375,12 @@ export function Geometry2DInspector({
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Weight
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0.5}
               step={1}
-              value={inspectorNumberInputValue(segment.strokeWidth)}
-              aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} weight`}
-              onChange={(event) => patchSegment(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
+              value={segment.strokeWidth}
+              ariaLabel={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} weight`}
+              onValueChange={(value) => patchSegment(selectedGeometryChild.index, { strokeWidth: value })}
               className={controlClassName}
             />
           </label>
@@ -393,14 +390,13 @@ export function Geometry2DInspector({
           ].map(([label, field]) => (
             <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               {label}
-              <input
-                type="number"
+              <NumericExpressionInput
                 step={1}
-                value={inspectorNumberInputValue(segment[field as keyof Graph2DGeometrySegment] as number | undefined)}
-                aria-label={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
-                onChange={(event) =>
+                value={segment[field as keyof Graph2DGeometrySegment] as number | undefined}
+                ariaLabel={`${selectedBlock.label} segment ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onValueChange={(value) =>
                   patchSegment(selectedGeometryChild.index, {
-                    [field]: inspectorOptionalNumber(event.target.value),
+                    [field]: value,
                   } as Partial<Graph2DGeometrySegment>)
                 }
                 className={controlClassName}
@@ -495,13 +491,12 @@ export function Geometry2DInspector({
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Weight
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0.5}
               step={1}
-              value={inspectorNumberInputValue(arc.strokeWidth)}
-              aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} weight`}
-              onChange={(event) => patchArc(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
+              value={arc.strokeWidth}
+              ariaLabel={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} weight`}
+              onValueChange={(value) => patchArc(selectedGeometryChild.index, { strokeWidth: value })}
               className={controlClassName}
             />
           </label>
@@ -511,14 +506,13 @@ export function Geometry2DInspector({
           ].map(([label, field]) => (
             <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               {label}
-              <input
-                type="number"
+              <NumericExpressionInput
                 step={1}
-                value={inspectorNumberInputValue(arc[field as keyof Graph2DGeometryArc] as number | undefined)}
-                aria-label={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
-                onChange={(event) =>
+                value={arc[field as keyof Graph2DGeometryArc] as number | undefined}
+                ariaLabel={`${selectedBlock.label} arc ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onValueChange={(value) =>
                   patchArc(selectedGeometryChild.index, {
-                    [field]: inspectorOptionalNumber(event.target.value),
+                    [field]: value,
                   } as Partial<Graph2DGeometryArc>)
                 }
                 className={controlClassName}
@@ -602,26 +596,24 @@ export function Geometry2DInspector({
           ))}
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Radius
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0.05}
               step={1}
-              value={inspectorNumberInputValue(angle.radius)}
-              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} radius`}
-              onChange={(event) => patchAngle(selectedGeometryChild.index, { radius: inspectorOptionalNumber(event.target.value) })}
+              value={angle.radius}
+              ariaLabel={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} radius`}
+              onValueChange={(value) => patchAngle(selectedGeometryChild.index, { radius: value })}
               className={controlClassName}
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Count
-            <input
-              type="number"
+            <NumericExpressionInput
               min={1}
               max={4}
               step={1}
-              value={inspectorNumberInputValue(angle.arcCount)}
-              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} count`}
-              onChange={(event) => patchAngle(selectedGeometryChild.index, { arcCount: inspectorOptionalNumber(event.target.value) })}
+              value={angle.arcCount}
+              ariaLabel={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} count`}
+              onValueChange={(value) => patchAngle(selectedGeometryChild.index, { arcCount: value })}
               className={controlClassName}
             />
           </label>
@@ -642,13 +634,12 @@ export function Geometry2DInspector({
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Weight
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0.5}
               step={1}
-              value={inspectorNumberInputValue(angle.strokeWidth)}
-              aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} weight`}
-              onChange={(event) => patchAngle(selectedGeometryChild.index, { strokeWidth: inspectorOptionalNumber(event.target.value) })}
+              value={angle.strokeWidth}
+              ariaLabel={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} weight`}
+              onValueChange={(value) => patchAngle(selectedGeometryChild.index, { strokeWidth: value })}
               className={controlClassName}
             />
           </label>
@@ -658,14 +649,13 @@ export function Geometry2DInspector({
           ].map(([label, field]) => (
             <label key={field} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
               {label}
-              <input
-                type="number"
+              <NumericExpressionInput
                 step={1}
-                value={inspectorNumberInputValue(angle[field as keyof Graph2DGeometryAngle] as number | undefined)}
-                aria-label={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
-                onChange={(event) =>
+                value={angle[field as keyof Graph2DGeometryAngle] as number | undefined}
+                ariaLabel={`${selectedBlock.label} angle ${selectedGeometryChild.index + 1} ${label.toLowerCase()}`}
+                onValueChange={(value) =>
                   patchAngle(selectedGeometryChild.index, {
-                    [field]: inspectorOptionalNumber(event.target.value),
+                    [field]: value,
                   } as Partial<Graph2DGeometryAngle>)
                 }
                 className={controlClassName}
@@ -770,20 +760,14 @@ export function Geometry2DInspector({
         {decoration.kind !== "rightAngle" ? (
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
             Count
-            <input
-              type="number"
+            <NumericExpressionInput
               min={1}
               max={4}
               step={1}
-              value={inspectorNumberInputValue(decoration.kind === "equalAngle" ? decoration.arcCount : decoration.tickCount)}
-              aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} count`}
-              onChange={(event) =>
-                patchDecoration(
-                  selectedGeometryChild.index,
-                  decoration.kind === "equalAngle"
-                    ? { arcCount: inspectorOptionalNumber(event.target.value) }
-                    : { tickCount: inspectorOptionalNumber(event.target.value) },
-                )
+              value={decoration.kind === "equalAngle" ? decoration.arcCount : decoration.tickCount}
+              ariaLabel={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} count`}
+              onValueChange={(value) =>
+                patchDecoration(selectedGeometryChild.index, decoration.kind === "equalAngle" ? { arcCount: value } : { tickCount: value })
               }
               className={controlClassName}
             />
@@ -791,19 +775,13 @@ export function Geometry2DInspector({
         ) : null}
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Size
-          <input
-            type="number"
+          <NumericExpressionInput
             min={0.05}
             step={1}
-            value={inspectorNumberInputValue(decoration.size ?? decoration.radius)}
-            aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} size`}
-            onChange={(event) =>
-              patchDecoration(
-                selectedGeometryChild.index,
-                decoration.kind === "equalAngle"
-                  ? { radius: inspectorOptionalNumber(event.target.value) }
-                  : { size: inspectorOptionalNumber(event.target.value) },
-              )
+            value={decoration.size ?? decoration.radius}
+            ariaLabel={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} size`}
+            onValueChange={(value) =>
+              patchDecoration(selectedGeometryChild.index, decoration.kind === "equalAngle" ? { radius: value } : { size: value })
             }
             className={controlClassName}
           />

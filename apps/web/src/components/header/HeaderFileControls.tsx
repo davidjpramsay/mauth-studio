@@ -29,6 +29,7 @@ interface HeaderFileControlsProps {
   onOpenFiles: () => void;
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onReorderTab: (tabId: string, targetTabId: string, placement: "before" | "after") => void;
 }
 
 export function HeaderFileControls({
@@ -44,11 +45,18 @@ export function HeaderFileControls({
   onOpenFiles,
   onActivateTab,
   onCloseTab,
+  onReorderTab,
 }: HeaderFileControlsProps) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-blue-300/20 bg-white/[0.05] p-1">
       {tabs.length ? (
-        <DocumentTabRail tabs={tabs} activeTabId={activeTabId} onActivateTab={onActivateTab} onCloseTab={onCloseTab} />
+        <DocumentTabRail
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onActivateTab={onActivateTab}
+          onCloseTab={onCloseTab}
+          onReorderTab={onReorderTab}
+        />
       ) : (
         <>
           <span

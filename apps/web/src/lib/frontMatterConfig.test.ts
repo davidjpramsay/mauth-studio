@@ -8,6 +8,7 @@ import {
   DEFAULT_INVESTIGATION,
   assessmentTitleText,
   examSectionPresetPatch,
+  investigationStudentPageCount,
   investigationTotalMarks,
   normalizeExamTitlePage,
   normalizeFrontMatter,
@@ -73,6 +74,48 @@ test("holistic investigation criteria use the highest performance level as the c
 
   assert.equal(investigation.criteria[0]?.scoringMode, "holistic");
   assert.equal(investigationTotalMarks(investigation), 4);
+});
+
+test("investigation continuation text and diagrams create an explicit second student page", () => {
+  const investigation = normalizeInvestigation({
+    taskBody: "Opening task.",
+    taskBodyContinuation: "Continue the task.",
+    diagrams: [
+      {
+        id: "closest-paths",
+        title: "Closest paths",
+        caption: "The connecting line is perpendicular to both tangents.",
+        page: 2,
+        alignment: "right",
+        graphConfig: { type: "graph2d", expression: "x^2" },
+      },
+    ],
+  });
+
+  assert.equal(investigation.taskBodyContinuation, "Continue the task.");
+  assert.equal(investigation.studentPages.length, 2);
+  assert.equal(investigation.studentPages[1]?.sections[0]?.body, "Continue the task.");
+  assert.equal(investigation.diagrams[0]?.pageId, investigation.studentPages[1]?.id);
+  assert.equal(investigation.diagrams[0]?.page, 2);
+  assert.equal(investigation.diagrams[0]?.alignment, "right");
+  assert.equal(investigation.diagrams[0]?.graphConfig.type, "graph2d");
+  assert.equal(investigationStudentPageCount(investigation), 2);
+  assert.equal(investigationStudentPageCount({ taskBodyContinuation: "", diagrams: [] }), 1);
+});
+
+test("structured investigation pages preserve several pages and text sections", () => {
+  const investigation = normalizeInvestigation({
+    studentPages: [
+      { id: "page-a", title: "Story", sections: [{ id: "text-a", heading: "Brief", body: "Meet Pilot Poole." }] },
+      { id: "page-b", title: "Models", sections: [{ id: "text-b", heading: "Your model", body: "Choose a quadratic." }] },
+      { id: "page-c", title: "Report", sections: [] },
+    ],
+    diagrams: [{ id: "diagram-a", title: "Paths", pageId: "page-c", graphConfig: { type: "graph2d" } }],
+  });
+
+  assert.equal(investigationStudentPageCount(investigation), 3);
+  assert.equal(investigation.studentPages[1]?.sections[0]?.heading, "Your model");
+  assert.equal(investigation.diagrams[0]?.pageId, "page-c");
 });
 
 test("normalizeFrontMatter uppercases standard test titles and preserves legacy section fields", () => {

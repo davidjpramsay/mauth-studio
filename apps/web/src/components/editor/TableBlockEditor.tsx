@@ -8,6 +8,7 @@ import { sharedTableSolutionPresentation, tableSolutionEntryPatch, type TableSol
 import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import { cn } from "@/lib/utils";
 import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 type TableBlock = Extract<ContentBlock, { kind: "table" }>;
 
@@ -131,7 +132,7 @@ export function TableBlockEditor({
       leading={dragHandle}
       actions={
         <>
-          {onCompleteInSolutions && solutionSurfaceState.canCreateSolutionCopy ? (
+          {showInlineSettings && onCompleteInSolutions && solutionSurfaceState.canCreateSolutionCopy ? (
             <Button
               type="button"
               variant="outline"
@@ -144,7 +145,7 @@ export function TableBlockEditor({
               className="h-8 gap-2"
             >
               <PencilLine className="size-4" aria-hidden="true" />
-              Complete in solutions
+              {solutionSurfaceState.copyLabel}
             </Button>
           ) : null}
           <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
@@ -188,23 +189,25 @@ export function TableBlockEditor({
             </label>
             <label className="flex flex-col gap-2 text-xs font-medium">
               Rows
-              <input
-                type="number"
+              <NumericExpressionInput
                 min={MIN_TABLE_ROWS}
                 max={MAX_TABLE_ROWS}
+                step={1}
                 value={tableRows.length}
-                onChange={(event) => resizeRows(event.currentTarget.valueAsNumber)}
+                ariaLabel={`${label} rows`}
+                onValueChange={(value) => resizeRows(value ?? tableRows.length)}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
               />
             </label>
             <label className="flex flex-col gap-2 text-xs font-medium">
               Columns
-              <input
-                type="number"
+              <NumericExpressionInput
                 min={MIN_TABLE_COLUMNS}
                 max={MAX_TABLE_COLUMNS}
+                step={1}
                 value={columnCount}
-                onChange={(event) => resizeColumns(event.currentTarget.valueAsNumber)}
+                ariaLabel={`${label} columns`}
+                onValueChange={(value) => resizeColumns(value ?? columnCount)}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
               />
             </label>

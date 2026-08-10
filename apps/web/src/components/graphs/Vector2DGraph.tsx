@@ -4,13 +4,7 @@ import JXG from "jsxgraph";
 
 import { renderMathJaxSvg } from "@/lib/mathjax";
 
-import {
-  GRAPH_LABEL_FONT_CSS,
-  GRAPH_LABEL_FONT_SIZE_PT,
-  GRAPH_LABEL_FONT_UNIT,
-  graphLabelAttributes,
-  stripGraphLatexDelimiters,
-} from "./graphTypography";
+import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, stripGraphLatexDelimiters } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
@@ -22,7 +16,7 @@ const AXIS_ARROW_SIZE = 4;
 const AUTO_AXIS_EXTENSION_RATIO = 0.055;
 const BOARD_EDGE_PADDING_RATIO = 0.022;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
-const X_TICK_LABEL_OFFSET_PX = -18;
+const X_TICK_LABEL_OFFSET_PX = -8;
 const Y_TICK_LABEL_OFFSET_PX = -10;
 const VECTOR_ARROW_LENGTH_PX = 18;
 const VECTOR_ARROW_HALF_WIDTH_PX = 7;
@@ -132,6 +126,18 @@ function numericRange(min: number, max: number, step: number) {
   return values;
 }
 
+function axisNumberValues(min: number, max: number, step: number) {
+  const edgeTolerance = step / 1000;
+  return numericRange(min, max, step).filter(
+    (value) => Math.abs(value) > edgeTolerance && value > min + edgeTolerance && value < max - edgeTolerance,
+  );
+}
+
+function axisNumberLatex(value: number) {
+  const normalized = Math.abs(value) < 1e-10 ? 0 : Number(value.toFixed(8));
+  return `$${normalized}$`;
+}
+
 function isMultiple(value: number, step: number) {
   if (!Number.isFinite(step) || step <= 0) return false;
   return Math.abs(value / step - Math.round(value / step)) < 0.001;
@@ -214,7 +220,7 @@ function renderLatexLabelHtml(latex: string, color: string, attributes: Record<s
   if (!source) return "";
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": source, ...attributes });
   try {
-    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, false)}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, { display: false, plainSimpleInlineLatex: false })}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
   }
@@ -660,9 +666,10 @@ function createAxisLabelText(
   offset: [number, number],
   anchorX: "left" | "middle" | "right",
   anchorY: "top" | "middle" | "bottom",
+  attributes: Record<string, string | undefined> = { "data-mauth-label-role": "axis-label" },
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
-  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, { "data-mauth-label-role": "axis-label" })], {
+  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
     fixed: true,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -758,6 +765,8 @@ export function Vector2DGraph({
     const showArrows = graphConfig?.showArrows ?? true;
     const showAxisLabels = graphConfig?.showAxisLabels ?? true;
     const showAxisNumbers = graphConfig?.showAxisNumbers ?? true;
+    const showXAxisNumbers = graphConfig?.showXAxisNumbers ?? showAxisNumbers;
+    const showYAxisNumbers = graphConfig?.showYAxisNumbers ?? showAxisNumbers;
     const gridMajorColor = graphConfig?.gridMajorColor || GRID_MAJOR_COLOR;
     const gridMinorColor = graphConfig?.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH;
@@ -896,9 +905,8 @@ export function Vector2DGraph({
         layer: GRAPH_LAYERS.axis,
       } as Record<string, unknown>;
       const ticksAttributes = {
-        drawLabels: showAxisNumbers,
+        drawLabels: false,
         drawZero: false,
-        majorHeight: showAxisNumbers ? 8 : 0,
         strokeColor: AXIS_COLOR,
         layer: GRAPH_LAYERS.axis,
       };
@@ -916,16 +924,9 @@ export function Vector2DGraph({
             withLabel: false,
             ticks: {
               ...ticksAttributes,
+              majorHeight: showXAxisNumbers ? 8 : 0,
               ticksDistance: xLabelStep,
               minorTicks: 0,
-              label: {
-                anchorX: "middle",
-                anchorY: "top",
-                offset: [0, X_TICK_LABEL_OFFSET_PX],
-                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
-                strokeColor: AXIS_COLOR,
-                layer: GRAPH_LAYERS.axisLabel,
-              },
             },
           } as Record<string, unknown>,
         ),
@@ -943,20 +944,29 @@ export function Vector2DGraph({
             withLabel: false,
             ticks: {
               ...ticksAttributes,
+              majorHeight: showYAxisNumbers ? 8 : 0,
               ticksDistance: yLabelStep,
               minorTicks: 0,
-              label: {
-                anchorX: "right",
-                anchorY: "middle",
-                offset: [Y_TICK_LABEL_OFFSET_PX, 0],
-                ...graphLabelAttributes(`${PASSIVE_GRAPH_DECORATION_CSS} color:${AXIS_COLOR};`),
-                strokeColor: AXIS_COLOR,
-                layer: GRAPH_LAYERS.axisLabel,
-              },
             },
           } as Record<string, unknown>,
         ),
       );
+
+      if (showXAxisNumbers && yMin <= 0 && yMax >= 0) {
+        axisNumberValues(xMin, xMax, xLabelStep).forEach((x) =>
+          createAxisLabelText(board, x, 0, axisNumberLatex(x), [0, X_TICK_LABEL_OFFSET_PX], "middle", "top", {
+            "data-mauth-axis-number": "x",
+          }),
+        );
+      }
+
+      if (showYAxisNumbers && xMin <= 0 && xMax >= 0) {
+        axisNumberValues(yMin, yMax, yLabelStep).forEach((y) =>
+          createAxisLabelText(board, 0, y, axisNumberLatex(y), [Y_TICK_LABEL_OFFSET_PX, 0], "right", "middle", {
+            "data-mauth-axis-number": "y",
+          }),
+        );
+      }
 
       if (showAxisLabels) {
         createAxisLabelText(

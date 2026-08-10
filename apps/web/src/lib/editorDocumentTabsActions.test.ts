@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   documentTabIdentity,
   nextActiveDocumentTabId,
+  documentTabDropPlacement,
   persistedDocumentTabsSession,
+  reorderDocumentTabs,
   savedDocumentTabId,
   upsertDocumentTab,
   type EditorDocumentTab,
@@ -56,6 +58,27 @@ test("closing selection prefers the following tab then the preceding tab", () =>
   assert.equal(nextActiveDocumentTabId(tabs, "two"), "three");
   assert.equal(nextActiveDocumentTabId(tabs, "three"), "two");
   assert.equal(nextActiveDocumentTabId([tab("one")], "one"), null);
+});
+
+test("tab drop placement follows the horizontal midpoint", () => {
+  const rect = { left: 100, width: 80 };
+  assert.equal(documentTabDropPlacement(rect, 139), "before");
+  assert.equal(documentTabDropPlacement(rect, 140), "after");
+});
+
+test("reorders document tabs without changing their state", () => {
+  const one = tab("one");
+  const two = tab("two");
+  const three = tab("three");
+
+  const moved = reorderDocumentTabs([one, two, three], "three", "one", "before");
+  assert.deepEqual(
+    moved.map((item) => item.id),
+    ["three", "one", "two"],
+  );
+  assert.equal(moved[0], three);
+  assert.equal(reorderDocumentTabs(moved, "three", "one", "before"), moved);
+  assert.equal(reorderDocumentTabs(moved, "missing", "one", "after"), moved);
 });
 
 test("persisted sessions omit undo and redo history", () => {

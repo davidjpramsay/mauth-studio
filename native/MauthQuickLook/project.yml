@@ -12,20 +12,6 @@ settings:
     ONLY_ACTIVE_ARCH: YES
     SWIFT_VERSION: "5.0"
 targets:
-  MauthQuickLookThumbnail:
-    type: app-extension
-    platform: macOS
-    sources:
-      - path: Shared
-      - path: Thumbnail
-    settings:
-      base:
-        APPLICATION_EXTENSION_API_ONLY: YES
-        GENERATE_INFOPLIST_FILE: NO
-        INFOPLIST_FILE: Thumbnail/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: au.edu.acc.mauth-studio.quicklook-thumbnail
-        PRODUCT_NAME: MauthQuickLookThumbnail
-        SKIP_INSTALL: YES
   MauthQuickLookPreview:
     type: app-extension
     platform: macOS
@@ -54,7 +40,6 @@ schemes:
   MauthQuickLook:
     build:
       targets:
-        MauthQuickLookThumbnail: all
         MauthQuickLookPreview: all
     test:
       targets:

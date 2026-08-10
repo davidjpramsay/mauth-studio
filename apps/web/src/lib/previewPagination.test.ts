@@ -13,6 +13,7 @@ import {
   frontMatterPageCount,
   groupPreviewPageSegments,
   investigationPreviewPageCount,
+  isEndOfTestMarkerText,
   pagesAreEqual,
   previewPaginationReportsEqual,
   previewReadinessWarnings,
@@ -134,6 +135,16 @@ test("investigation preview adds enough teacher rubric pages for the criteria", 
   assert.equal(investigationPreviewPageCount(true, 4), 3);
   assert.equal(investigationPreviewPageCount(true, 5), 3);
   assert.equal(investigationPreviewPageCount(true, 7), 4);
+  assert.equal(investigationPreviewPageCount(false, 5, 2), 2);
+  assert.equal(investigationPreviewPageCount(true, 5, 2), 4);
+});
+
+test("isEndOfTestMarkerText recognises only the dedicated final marker", () => {
+  assert.equal(isEndOfTestMarkerText("**End of Test**"), true);
+  assert.equal(isEndOfTestMarkerText("__End of test.__"), true);
+  assert.equal(isEndOfTestMarkerText(" End of Test! "), true);
+  assert.equal(isEndOfTestMarkerText("This is the end of the test."), false);
+  assert.equal(isEndOfTestMarkerText("End of examination"), false);
 });
 
 test("exam reserved question-page height is only used for exam booklets", () => {

@@ -9,18 +9,13 @@
 /* Begin PBXBuildFile section */
 		0715DB36E6919417A2E40B34 /* MauthDocumentSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBF721777D7DF7D92E2258B /* MauthDocumentSummary.swift */; };
 		329EA34A9526D6862C7FE6BF /* MauthDocumentSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D476D3C81898FCA7C813B216 /* MauthDocumentSummaryTests.swift */; };
-		36CDFDE63CABE6FE3FD0B9ED /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6960EBE2C040F7FAF7EA1310 /* ThumbnailProvider.swift */; };
 		4E57EC2C89B5367504EEC360 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2E18F6360A107ACD90ECDD /* PreviewProvider.swift */; };
-		654602D4D9ACAA724025D52F /* MauthDocumentSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBF721777D7DF7D92E2258B /* MauthDocumentSummary.swift */; };
 		DC4EABBB1C3DE2A4FEA98E9F /* MauthDocumentSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBF721777D7DF7D92E2258B /* MauthDocumentSummary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2DBF721777D7DF7D92E2258B /* MauthDocumentSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MauthDocumentSummary.swift; sourceTree = "<group>"; };
-		499366C1C02A3E329E6680BC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		6960EBE2C040F7FAF7EA1310 /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		71AA76F703A7F1BC89DF1364 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		9AB93F8FC13454DA7D6CA1FC /* MauthQuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MauthQuickLookThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E2E18F6360A107ACD90ECDD /* PreviewProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
 		9F88587E55E855ABD089D078 /* MauthQuickLookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MauthQuickLookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D476D3C81898FCA7C813B216 /* MauthDocumentSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MauthDocumentSummaryTests.swift; sourceTree = "<group>"; };
@@ -42,7 +37,6 @@
 				AD7FF541D474CE254B5BCE6D /* Preview */,
 				F1EDFE96E5BE4B52150B8E89 /* Shared */,
 				17F32A58A8A612A7CFE1B162 /* Tests */,
-				E888C9C8A9407016D494D3DF /* Thumbnail */,
 				E13C068C2ECC02CC0C33F4F2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,18 +55,8 @@
 			children = (
 				F2B37DFE84E6E6713E347D40 /* MauthQuickLookPreview.appex */,
 				9F88587E55E855ABD089D078 /* MauthQuickLookTests.xctest */,
-				9AB93F8FC13454DA7D6CA1FC /* MauthQuickLookThumbnail.appex */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		E888C9C8A9407016D494D3DF /* Thumbnail */ = {
-			isa = PBXGroup;
-			children = (
-				499366C1C02A3E329E6680BC /* Info.plist */,
-				6960EBE2C040F7FAF7EA1310 /* ThumbnailProvider.swift */,
-			);
-			path = Thumbnail;
 			sourceTree = "<group>";
 		};
 		F1EDFE96E5BE4B52150B8E89 /* Shared */ = {
@@ -101,23 +85,6 @@
 			);
 			productName = MauthQuickLookPreview;
 			productReference = F2B37DFE84E6E6713E347D40 /* MauthQuickLookPreview.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		69AAF2A922714B0ACDA019C0 /* MauthQuickLookThumbnail */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E7F24DB4AB2969E5055456AD /* Build configuration list for PBXNativeTarget "MauthQuickLookThumbnail" */;
-			buildPhases = (
-				7BEA2F72D7E89D1EFFB2D1E7 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = MauthQuickLookThumbnail;
-			packageProductDependencies = (
-			);
-			productName = MauthQuickLookThumbnail;
-			productReference = 9AB93F8FC13454DA7D6CA1FC /* MauthQuickLookThumbnail.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		9D7841EA970FE6EC3AE77896 /* MauthQuickLookTests */ = {
@@ -149,9 +116,6 @@
 					01D22E2CF7CF7839855BEEEE = {
 						DevelopmentTeam = "";
 					};
-					69AAF2A922714B0ACDA019C0 = {
-						DevelopmentTeam = "";
-					};
 					9D7841EA970FE6EC3AE77896 = {
 						DevelopmentTeam = "";
 					};
@@ -173,7 +137,6 @@
 			targets = (
 				01D22E2CF7CF7839855BEEEE /* MauthQuickLookPreview */,
 				9D7841EA970FE6EC3AE77896 /* MauthQuickLookTests */,
-				69AAF2A922714B0ACDA019C0 /* MauthQuickLookThumbnail */,
 			);
 		};
 /* End PBXProject section */
@@ -197,37 +160,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7BEA2F72D7E89D1EFFB2D1E7 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				654602D4D9ACAA724025D52F /* MauthDocumentSummary.swift in Sources */,
-				36CDFDE63CABE6FE3FD0B9ED /* ThumbnailProvider.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		227BEFDF341F20C70232CC75 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Thumbnail/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@executable_path/../../../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "au.edu.acc.mauth-studio.quicklook-thumbnail";
-				PRODUCT_NAME = MauthQuickLookThumbnail;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-			};
-			name = Release;
-		};
 		2C72B254538BAF4EF6F24670 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -326,25 +261,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "au.edu.acc.mauth-studio.quicklook-tests";
 				SDKROOT = macosx;
-			};
-			name = Debug;
-		};
-		8E7B3E98A09AB95E59EBC096 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Thumbnail/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@executable_path/../../../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "au.edu.acc.mauth-studio.quicklook-thumbnail";
-				PRODUCT_NAME = MauthQuickLookThumbnail;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
 			};
 			name = Debug;
 		};
@@ -469,15 +385,6 @@
 			buildConfigurations = (
 				41A28C00CA64543F7E60773E /* Debug */,
 				DDAD4C85618F2158796F2E14 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		E7F24DB4AB2969E5055456AD /* Build configuration list for PBXNativeTarget "MauthQuickLookThumbnail" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				8E7B3E98A09AB95E59EBC096 /* Debug */,
-				227BEFDF341F20C70232CC75 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

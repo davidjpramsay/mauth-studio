@@ -16,12 +16,15 @@ interface FrontMatterEditorProps {
   frontMatter: FrontMatterConfig;
   logos: LogoAsset[];
   openSignal?: number;
+  activeAnchor?: string;
+  openSignalForAnchor?: (anchor: string) => number | undefined;
   questionCount: number;
   totalMarks: number;
   onChange: (patch: Partial<FrontMatterConfig>) => void;
   onAddLogo: (file: File) => void;
   onUpdateLogo: (logoId: string, patch: { name: string; schoolName: string }) => void;
   onRemoveLogo: (logoId: string) => void;
+  onActivateAnchor?: (anchor: string) => void;
 }
 
 function id(prefix: string) {
@@ -32,12 +35,15 @@ export function FrontMatterEditor({
   frontMatter,
   logos,
   openSignal,
+  activeAnchor,
+  openSignalForAnchor,
   questionCount,
   totalMarks,
   onChange,
   onAddLogo,
   onUpdateLogo,
   onRemoveLogo,
+  onActivateAnchor,
 }: FrontMatterEditorProps) {
   const titlePageTemplate = frontMatter.titlePageTemplate ?? "standard";
   const exam = normalizeExamTitlePage(frontMatter.exam);
@@ -108,7 +114,15 @@ export function FrontMatterEditor({
       ) : null}
 
       {titlePageTemplate === "standard" ? <StandardFrontMatterEditor frontMatter={frontMatter} onChange={onChange} /> : null}
-      {titlePageTemplate === "investigation" ? <InvestigationEditor frontMatter={frontMatter} onChange={onChange} /> : null}
+      {titlePageTemplate === "investigation" ? (
+        <InvestigationEditor
+          frontMatter={frontMatter}
+          activeAnchor={activeAnchor}
+          openSignalForAnchor={openSignalForAnchor}
+          onActivateAnchor={onActivateAnchor}
+          onChange={onChange}
+        />
+      ) : null}
     </div>
   );
 }

@@ -219,7 +219,11 @@ export function DocumentEditorWorkspace({ style, paneMode, editor, inspectorProp
   ]);
 
   return (
-    <div className="app-workspace grid min-h-0 min-w-0 bg-background" style={style}>
+    <div
+      className="app-workspace relative grid min-h-0 min-w-0 bg-background"
+      data-inspector-open={inspectorProps.open && inspectorProps.visible ? "true" : "false"}
+      style={style}
+    >
       {editor.show ? (
         <section
           ref={editor.paneRef}

@@ -7,7 +7,7 @@ This document describes the current Mauth Studio system from process startup to 
 Mauth Studio is a local-first desktop application with a React editor, a local FastAPI sidecar, and an external-agent control plane.
 
 ```text
-Electron macOS app
+Electron desktop app (macOS distributed today)
   -> packaged Vite/React editor
   -> packaged FastAPI sidecar on a dynamic loopback port
        -> maths and formatting services
@@ -36,13 +36,15 @@ open ~/Applications/Mauth\ Studio.app
 1. reserves a dynamic `127.0.0.1` port;
 2. starts the packaged FastAPI executable as a child process;
 3. waits for `/api/system/status` before opening the editor window;
-4. generates a random per-launch bridge token and writes it with the URL in a mode-`0600` runtime manifest under Application Support for Codex/MCP discovery;
+4. generates a random per-launch bridge token and writes it with the URL in a private runtime manifest under the operating system's application-data directory for Codex/MCP discovery;
 5. serves the built editor and API from one local origin;
 6. removes the manifest and stops the sidecar when the app quits.
 
 Update-enabled packaged releases use `electron-updater` against the public GitHub alpha channel. A check runs once shortly after launch and is also available from the application menu. Downloads and restart/install actions each require teacher confirmation; source-development and ad-hoc directory builds without `app-update.yml` never check. The updater consumes the signed ZIP and `latest-mac.yml` published beside the signed DMG. The first updater-enabled release after 0.1.0 remains a manual bootstrap install because 0.1.0 did not contain an updater.
 
 Electron owns desktop-only application commands that should not consume editor toolbar space. **View > System Status…**, **View > Toggle Light/Dark Mode**, and **Tools > Check Solutions…** cross the sandboxed preload boundary as narrow command events and invoke the same React status-panel, theme-controller, and solution-validation paths as the browser-development fallback buttons. The active Student/Solutions toggle communicates the authoring layer without a second Layers badge. The renderer never receives Node or unrestricted IPC access.
+
+Desktop portability is an explicit boundary rather than a claim that every package is already shipped. `desktop/platform-paths.mjs` owns application-data discovery and development/packaged helper names for macOS, Windows, and Linux. The source shell starts Vite through Electron's Node mode instead of a Unix `.bin` shim and selects the correct virtual-environment Python path for the host. Folder selection uses Electron's native directory dialog through narrow preload IPC; the older AppleScript API route remains only a browser-development fallback on macOS. Quick Look, Finder registration, Apple signing/notarization, and `latest-mac.yml` remain macOS adapters. A Windows or Linux release still requires native sidecar builds, installer/update metadata, connector launchers, signing, and real platform QA.
 
 The packaged sidecar includes the Python maths stack and a bundled Penrose renderer. Electron supplies the Node runtime used by Penrose. The BrowserWindow uses context isolation, renderer sandboxing, no Node integration, and main-process authorization-header injection for local API traffic. When the desktop token is configured, every `/api/*` route except health and system status requires it; discovery docs remain public. External tools discover the token through the private runtime manifest. Unauthenticated local requests receive `401 AGENT_AUTH_REQUIRED` for bridge routes or `401 API_AUTH_REQUIRED` for other private APIs. Navigation outside the local app origin opens in the system browser.
 
@@ -166,29 +168,31 @@ Any lifecycle change must preserve these distinctions and keep the loaded revisi
 
 ## Storage
 
-The default visible document workspace and macOS app state are:
+The default visible document workspace and app state are:
 
 ```text
 ~/Documents/Mauth/
   Documents/       visible teacher files and folders
 
-~/Library/Application Support/Mauth Studio/
+platform application-data/Mauth Studio/
   storage/         active-folder identity, autosave, logos, default-project metadata
   runtime.json     live packaged-app discovery record
   desktop.log      desktop-shell diagnostics
 ```
 
+On macOS, the platform application-data directory is `~/Library/Application Support`. Windows uses the current user's roaming application-data directory and Linux follows `XDG_CONFIG_HOME` or `~/.config`.
+
 `apps/api/app/services/storage.py` implements file-backed legacy, logo, and project storage. `apps/api/app/api/storage.py` exposes the HTTP routes.
 
-The Files drawer can switch to an external documents folder. That operation changes the active workspace identity; it must not import browser fallback data or unrelated legacy files into the selected folder. Canonical `.mauth` documents are versioned JSON editor snapshots; `.test.json` remains a compatibility format and `.mauth.md` remains the separate text interchange format. The packaged macOS shell registers `.mauth` with Finder and forwards document-open events through a narrow preload bridge into the normal guarded editor lifecycle. Project metadata and versions for that selected folder remain in its hidden `.mauth` directory, while global autosave, logos, and the remembered path remain in Application Support.
+The Files drawer can switch to an external documents folder. That operation changes the active workspace identity; it must not import browser fallback data or unrelated legacy files into the selected folder. Canonical `.mauth` documents are versioned JSON editor snapshots; `.test.json` remains a compatibility format and `.mauth.md` remains the separate text interchange format. The desktop shell chooses folders through a native Electron dialog and forwards document-open events through a narrow preload bridge into the normal guarded editor lifecycle. The packaged macOS shell additionally registers `.mauth` with Finder. Project metadata and versions for that selected folder remain in its hidden `.mauth` directory, while global autosave, logos, and the remembered path remain in the platform application-data directory.
 
-The packaged app also owns the native Finder presentation boundary for `.mauth`. Electron exports the `au.edu.acc.mauth-studio.document` UTI and a dedicated document icon. Two sandboxed Swift Quick Look app extensions under `native/MauthQuickLook` generate Finder thumbnails and read-only Spacebar previews from stable JSON metadata such as title, school, subject, assessment type, marks, questions, sections, and investigation task. The preview uses an AppKit text view inside a Quick Look view controller; the thumbnail uses Core Graphics. Neither extension starts a WebKit or network process, uses the running API, mutates documents, resolves autosave state, or embeds preview/PDF caches in the file. Full visual page rendering remains owned by the React preview and browser print pipeline.
+The packaged app also owns the native Finder presentation boundary for `.mauth`. Electron exports the `au.edu.acc.mauth-studio.document` UTI and a dedicated portrait document icon with the Mauth M. Finder uses that icon directly; Mauth does not register a thumbnail provider because macOS applies inconsistent framing to generated thumbnails. A sandboxed Swift Spacebar Quick Look preview extension under `native/MauthQuickLook` presents stable JSON metadata such as title, school, subject, assessment type, marks, questions, sections, and investigation task in an AppKit text view. The extension does not start a WebKit or network process, use the running API, mutate documents, resolve autosave state, or embed preview/PDF caches in the file. Full visual page rendering remains owned by the React preview and browser print pipeline.
 
 Project saves use base revisions. A stale editor cannot silently overwrite a file changed by another process. See `docs/storage.md` for the full storage contract and recovery rules.
 
 ## Local Agent Bridge
 
-The bridge is implemented by FastAPI coordination routes in `apps/api/app/api/agent.py` and a browser-side controller in the web app. It requires one active browser editor session to register with the API; that editor session may contain several document tabs. Snapshots report the active document id and compact open-document list. Snapshot, preview, apply, and validation requests accept an optional `documentId`; the browser visibly activates that tab before handling the request, so agent work stays on the same document state and history path as teacher work. The browser session unregisters on normal page exit; the API removes it and releases pending requests immediately so a closed app page does not remain as a false active editor until the TTL expires.
+The bridge is implemented by FastAPI coordination routes in `apps/api/app/api/agent.py` and a browser-side controller in the web app. It requires one active browser editor session to register with the API; that editor session may contain several document tabs. The bridge can list, template-create, open, and guarded-close documents through the existing selected-folder, project-file, revision, and tab controllers. It does not own a second document store. Snapshots report the active document id and compact open-document list. Snapshot, preview, apply, and validation requests accept an optional `documentId`; the browser visibly activates that tab before handling the request, so agent work stays on the same document state and history path as teacher work. The browser session unregisters on normal page exit; the API removes it and releases pending requests immediately so a closed app page does not remain as a false active editor until the TTL expires.
 
 The external authoring loop is:
 
@@ -200,7 +204,9 @@ mauth_validation_run
 browser verification
 ```
 
-The MCP process in `scripts/mauth-agent-mcp.mjs` is a wrapper over this local HTTP bridge. Release builds bundle it and its JavaScript dependencies into `Contents/Resources/agent/mauth-agent-mcp.mjs`, with an executable launcher that uses the app-owned Electron runtime in Node mode. The human setup surface receives only the connector path and client commands through narrow preload IPC; the renderer never receives the bridge token. The repository wrapper and generated connector share the same source and are not separate document implementations. Comments, suggestions, presence, and events are collaboration/review state; only an applied action batch mutates the document.
+Lifecycle operations precede or follow that loop as needed: list/open selects an existing file, create uses the UI template factory plus `baseRevision: null`, and close defaults to refusing dirty state. Create, apply, and close are idempotency-keyed. Relative path validation and project-file revisions remain enforced before the editor tab changes.
+
+The MCP process in `scripts/mauth-agent-mcp.mjs` is a wrapper over this local HTTP bridge. Release builds bundle it and its JavaScript dependencies into `Contents/Resources/agent/mauth-agent-mcp.mjs`, with an executable launcher that uses the app-owned Electron runtime in Node mode. Tool definitions expose explicit input/output schemas, local-only annotations, structured results plus equivalent JSON text, and MCP error flags for failed bridge responses. The human setup surface receives only the connector path and client commands through narrow preload IPC; the renderer never receives the bridge token. The repository wrapper and generated connector share the same source and are not separate document implementations. Comments, suggestions, presence, and events are collaboration/review state; document mutations occur only through revision-safe lifecycle operations or an applied action batch.
 
 See `docs/agent-bridge.md`, `docs/agent-docs.md`, and `docs/mauth-actions.md`.
 
@@ -256,7 +262,7 @@ Rendering systems remain separate by design:
 
 Do not move Plotly or Penrose behavior into JSXGraph or React-only overlays. Solution graph annotations should be stored as editable diagram features, not one-off SVG markup.
 
-Browser preview uses generated A4 page boxes. Print uses the browser print dialog and physical `@page` rules. Preview and print must consume the same page segmentation rather than maintaining separate layouts.
+Browser preview uses generated A4 page boxes. Print uses the browser print dialog and physical `@page` rules whose margins are derived from the active document's stored page padding. The print content box must match the preview content box in both width and height so line wrapping cannot create print-only pages. Preview and print consume the same page segmentation rather than maintaining separate layouts.
 
 `PaginatedTestPreview` emits a measured pagination report after DOM measurement. `usePreviewReadinessController` keeps separate Student and Solutions reports for the current document fingerprint, projects the active copy into System Status, and supplies measured `rendered-page-overflow` warnings to the current agent snapshot. Document edits reset this evidence until the new preview is measured. Action-result snapshots deliberately omit the previous rendered document's warnings, and solution validation remains a separate mathematical/answer-layer contract.
 

@@ -22,7 +22,15 @@ import { useLogoLibraryController } from "@/hooks/useLogoLibraryController";
 import { useNestedEditorDragController, useNestedEditorDragState } from "@/hooks/useNestedEditorDragController";
 import { useNewDocumentController } from "@/hooks/useNewDocumentController";
 import { useQuestionPageBreakDragController, useQuestionPageBreakDragState } from "@/hooks/useQuestionPageBreakDragController";
-import { getEditorSession, listProjectFiles, openDefaultProjectDocumentsFolder, saveEditorSession, saveStorageAutosave } from "@/lib/api";
+import {
+  getDefaultProject,
+  getEditorSession,
+  listProjectFiles,
+  openDefaultProjectDocumentsFolder,
+  saveEditorSession,
+  saveProjectFile,
+  saveStorageAutosave,
+} from "@/lib/api";
 import { parseMauthDocumentActionProposal } from "@/lib/mauthActionProposal";
 import { useEditorProjectPersistenceController } from "@/hooks/useEditorProjectPersistenceController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
@@ -45,7 +53,9 @@ import { useProjectFilesController } from "@/hooks/useProjectFilesController";
 import { useStableEvent } from "@/hooks/useStableEvent";
 import { missingProjectRevisionConflict, projectFileConflictFromError } from "@/lib/projectSaveConflicts";
 import {
+  ensureTestFileName,
   isProjectTestFile,
+  joinTestPath,
   projectPathForTestPath,
   testFileDisplayName,
   testFilePathKey,
@@ -53,6 +63,8 @@ import {
   testPathFromProjectPath,
   uniqueTestPath,
 } from "@/lib/projectFiles";
+import { listMauthAgentDocuments, mauthAgentProjectFilePath, normalizeMauthAgentFolderPath } from "@/lib/mauthAgentDocuments";
+import { isProjectFilesUnavailableError } from "@/lib/projectFilesActions";
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
   loadBrowserDocumentTabsSession,
@@ -88,7 +100,7 @@ import {
   type EditorPart,
   type QuestionBlock,
 } from "@/lib/editorDocumentNormalization";
-import type { EditorPaneMode } from "@/lib/editorWorkspacePresentation";
+import { editorWorkspaceGridStyle, type EditorPaneMode } from "@/lib/editorWorkspacePresentation";
 import { questionHasPageBreak } from "@/lib/editorQuestionLifecycle";
 import { createEditorQuestionLifecycleController } from "@/lib/editorQuestionLifecycleController";
 import { DEFAULT_FORMATTING_CONFIG, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
@@ -100,8 +112,13 @@ import {
   type TitlePageTemplate,
 } from "@/lib/frontMatterConfig";
 import { createFrontMatterLogoActions } from "@/lib/frontMatterLogoActions";
+import {
+  addInvestigationStudentPage,
+  selectedInvestigationDiagramFromAnchor,
+  updateInvestigationDiagramFromInspector,
+} from "@/lib/investigationDocument";
 import { selectedLogoForFrontMatter } from "@/lib/logoLibrary";
-import { type DocumentTocItem } from "@/lib/documentNavigation";
+import { documentNavigationShowsTeacherRubric, type DocumentTocItem } from "@/lib/documentNavigation";
 import { diagramTypePatch, updateGraphConfig, withGraphDefaults } from "@/lib/editorDiagramConfig";
 import { createTemplateEditorDocumentPlan } from "@/lib/editorStarterDocuments";
 import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
@@ -158,6 +175,10 @@ const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function afterEditorStateSettles() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
 }
 
 function normalizeDocumentTabDocument(value: unknown): EditorDocumentState | null {
@@ -488,7 +509,6 @@ export default function App() {
     previewFitScale,
     previewLayoutScale,
     resetPreviewZoom,
-    workspaceStyle,
     appShellStyle,
     documentTocItems,
     activePreviewAnchor,
@@ -715,6 +735,7 @@ export default function App() {
   });
   const { pageBreakQuestionIds } = editorSelectionController;
 
+  const editorNavigationDocumentLayoutKey = useMemo(() => [questions, previewShowSolutions] as const, [questions, previewShowSolutions]);
   const editorNavigationController = useEditorNavigationController<DocumentTocItem>({
     editorPaneRef,
     previewPaneRef,
@@ -725,7 +746,7 @@ export default function App() {
     activeQuestionId,
     activeTocItemId,
     previewFitScale,
-    documentLayoutKey: questions,
+    documentLayoutKey: editorNavigationDocumentLayoutKey,
     previewEditClickMoveTolerancePx: PREVIEW_EDIT_CLICK_MOVE_TOLERANCE_PX,
     setPaneMode,
     setInspectorOpen,
@@ -925,6 +946,20 @@ export default function App() {
     deleteLogoFromDisk,
   });
 
+  const selectInvestigationAnchor = (anchor: string) => {
+    setActiveTocItemId(anchor);
+    setActiveRailItemId(anchor);
+    revealEditorAnchor(anchor);
+    queueDocumentJump(anchor, anchor, { preservePaneMode: true });
+  };
+  const investigationNavigationLifecycle = {
+    addPage: () => {
+      const change = addInvestigationStudentPage(frontMatterRef.current.investigation, id);
+      frontMatterLogoActions.updateFrontMatter({ investigation: change.investigation });
+      selectInvestigationAnchor(change.anchor);
+    },
+  };
+
   const { createNewDocumentFromTemplate: createNewTestFromTemplate } = useNewDocumentController<TitlePageTemplate, EditorDocumentState>({
     createTemplateDocument: (template) => {
       return createTemplateEditorDocumentPlan({
@@ -1075,9 +1110,19 @@ export default function App() {
     const openTab = documentTabsController.tabForFile(activeProject, filePath);
     if (openTab) {
       await activateDocumentTab(openTab.id);
+      return true;
+    }
+    return await openProjectFile(filePath);
+  }
+
+  async function removeDocumentTabWithoutPrompt(tabId: string) {
+    const nextTabId = documentTabsController.removeTab(tabId);
+    if (nextTabId) {
+      await activateDocumentTab(nextTabId);
       return;
     }
-    await openProjectFile(filePath);
+    documentTabsController.clearTabs();
+    closeEditorDocument();
   }
 
   async function closeDocumentTab(tabId: string) {
@@ -1087,13 +1132,7 @@ export default function App() {
     }
     if (!(await confirmActiveDocumentTabClose())) return;
 
-    const nextTabId = documentTabsController.removeTab(tabId);
-    if (nextTabId) {
-      await activateDocumentTab(nextTabId);
-      return;
-    }
-    documentTabsController.clearTabs();
-    closeEditorDocument();
+    await removeDocumentTabWithoutPrompt(tabId);
   }
 
   function closeCurrentDocumentTab() {
@@ -1130,6 +1169,227 @@ export default function App() {
     dialogs: mauthDialogs,
   });
 
+  const currentAgentOpenDocuments = () => {
+    const activeTabId = documentTabsController.activeTabIdRef.current;
+    return currentDocumentTabsSnapshot().map((tab) => agentDocumentTabSummary(tab, activeTabId));
+  };
+
+  const agentLifecycleError = (status: number, code: string, error: string, extra: Record<string, unknown> = {}) => ({
+    status,
+    body: { success: false, code, error, ...extra },
+  });
+
+  const agentDocumentLifecycle = {
+    list: async (payload: Record<string, unknown>) => {
+      const folderPath = normalizeMauthAgentFolderPath(payload.folderPath);
+      if (folderPath === null) return agentLifecycleError(400, "INVALID_REQUEST", "folderPath must be relative to the documents folder.");
+      const recursive = payload.recursive !== false;
+      try {
+        const project = activeProject ?? (await getDefaultProject());
+        const filesResponse = await listProjectFiles(project.id);
+        return {
+          status: 200,
+          body: listMauthAgentDocuments({
+            project,
+            files: filesResponse.files,
+            openDocuments: currentAgentOpenDocuments(),
+            folderPath,
+            recursive,
+          }),
+        };
+      } catch (error) {
+        return agentLifecycleError(
+          isProjectFilesUnavailableError(error) ? 503 : 500,
+          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
+          error instanceof Error ? error.message : "Could not list Mauth documents.",
+        );
+      }
+    },
+    create: async (payload: Record<string, unknown>) => {
+      const title = typeof payload.title === "string" ? payload.title.trim() : "";
+      const template = titlePageTemplateFromValue(payload.template) ?? "standard";
+      const folderPath = normalizeMauthAgentFolderPath(payload.folderPath);
+      const onConflict = payload.onConflict === "unique" ? "unique" : "error";
+      const idempotencyKey = typeof payload.idempotencyKey === "string" ? payload.idempotencyKey : "";
+      if (!title) return agentLifecycleError(400, "INVALID_REQUEST", "Document title is required.");
+      if (folderPath === null) return agentLifecycleError(400, "INVALID_REQUEST", "folderPath must be relative to the documents folder.");
+
+      try {
+        const project = activeProject ?? (await getDefaultProject());
+        const filesResponse = await listProjectFiles(project.id);
+        const replayedFile = idempotencyKey
+          ? filesResponse.files.find(
+              (file) => file.kind === "file" && file.metadata.agentCreateIdempotencyKey === idempotencyKey && isProjectTestFile(file),
+            )
+          : undefined;
+        if (replayedFile) {
+          const opened = await openProjectFileInTab(replayedFile.path);
+          await afterEditorStateSettles();
+          return {
+            status: opened ? 200 : 500,
+            body: opened
+              ? {
+                  success: true,
+                  replayed: true,
+                  path: testPathFromProjectPath(replayedFile.path),
+                  projectPath: replayedFile.path,
+                  revision: replayedFile.revision,
+                  documentId: savedDocumentTabId(project.documentsPath ?? project.id, replayedFile.path),
+                }
+              : { success: false, code: "ACTION_FAILED", error: "The created document could not be reopened." },
+          };
+        }
+
+        const requestedTestPath = joinTestPath(folderPath, ensureTestFileName(title));
+        const requestedProjectPath = projectPathForTestPath(requestedTestPath);
+        const existingPath = filesResponse.files.find((file) => file.path === requestedProjectPath);
+        if (existingPath && onConflict === "error") {
+          return agentLifecycleError(409, "FILE_EXISTS", `A Mauth document already exists at ${requestedTestPath}.`, {
+            path: requestedTestPath,
+            revision: existingPath.revision,
+          });
+        }
+        const testPath =
+          existingPath && onConflict === "unique" ? uniqueTestPath(filesResponse.files, folderPath, title, "file") : requestedTestPath;
+        const filePath = projectPathForTestPath(testPath);
+        const plan = createTemplateEditorDocumentPlan({
+          template,
+          formatPresetId: NEW_TEST_TEMPLATES.find((item) => item.id === template)?.formatPresetId,
+          id,
+          logos: logosRef.current,
+          currentFrontMatter: frontMatterRef.current,
+          editorDocumentFingerprint,
+        });
+        const document = {
+          ...plan.document,
+          frontMatter: { ...plan.document.frontMatter, assessmentTitle: title },
+        };
+        const serialized = serializeProjectDocumentSnapshot({
+          filePath,
+          testName: title,
+          document,
+          logos: logosRef.current,
+          runtime: { createSavedTestSnapshot, editorDocumentFingerprint },
+        });
+        const savedDocument = await saveProjectFile(project.id, filePath, {
+          content: serialized.content,
+          kind: "file",
+          fileType: serialized.fileType,
+          metadata: {
+            format: "mauth-document",
+            source: "mauth-agent",
+            agentCreateIdempotencyKey: idempotencyKey,
+          },
+          baseRevision: null,
+        });
+        const parsedDocument = parseProjectSavedDocument(savedDocument.content, normalizeSavedTest);
+        if (!parsedDocument) throw new Error("The new Mauth document could not be parsed after saving.");
+        const refreshedFiles = await listProjectFiles(project.id);
+        setActiveProject(project);
+        setProjectFiles(refreshedFiles.files);
+        applySavedProjectDocument(project, filePath, parsedDocument, savedDocument.revision);
+        await afterEditorStateSettles();
+        return {
+          status: 200,
+          body: {
+            success: true,
+            path: testPath,
+            projectPath: filePath,
+            revision: savedDocument.revision,
+            documentId: savedDocumentTabId(project.documentsPath ?? project.id, filePath),
+            template,
+          },
+        };
+      } catch (error) {
+        return agentLifecycleError(
+          isProjectFilesUnavailableError(error) ? 503 : 500,
+          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
+          error instanceof Error ? error.message : "Could not create the Mauth document.",
+        );
+      }
+    },
+    open: async (payload: Record<string, unknown>) => {
+      const filePath = mauthAgentProjectFilePath(payload.path);
+      if (!filePath) return agentLifecycleError(400, "INVALID_REQUEST", "path must name a relative .mauth document.");
+      try {
+        const project = activeProject ?? (await getDefaultProject());
+        const filesResponse = await listProjectFiles(project.id);
+        const summary = filesResponse.files.find((file) => file.path === filePath && isProjectTestFile(file));
+        if (!summary) return agentLifecycleError(404, "DOCUMENT_NOT_FOUND", `Mauth document not found: ${String(payload.path)}`);
+        setActiveProject(project);
+        setProjectFiles(filesResponse.files);
+        const opened = await openProjectFileInTab(filePath);
+        if (!opened) return agentLifecycleError(500, "ACTION_FAILED", `Could not open ${String(payload.path)}.`);
+        await afterEditorStateSettles();
+        return {
+          status: 200,
+          body: {
+            success: true,
+            path: testPathFromProjectPath(filePath),
+            projectPath: filePath,
+            revision: summary.revision,
+            documentId: savedDocumentTabId(project.documentsPath ?? project.id, filePath),
+          },
+        };
+      } catch (error) {
+        return agentLifecycleError(
+          isProjectFilesUnavailableError(error) ? 503 : 500,
+          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
+          error instanceof Error ? error.message : "Could not open the Mauth document.",
+        );
+      }
+    },
+    close: async (payload: Record<string, unknown>) => {
+      const targetId =
+        typeof payload.documentId === "string" && payload.documentId ? payload.documentId : documentTabsController.activeTabIdRef.current;
+      const policy = payload.policy === "save" || payload.policy === "discard" ? payload.policy : "require-clean";
+      if (!targetId) return agentLifecycleError(404, "DOCUMENT_NOT_FOUND", "There is no open Mauth document to close.");
+      let target = currentDocumentTabsSnapshot().find((tab) => tab.id === targetId);
+      if (!target) return agentLifecycleError(404, "DOCUMENT_NOT_FOUND", `Open document tab not found: ${targetId}`);
+      if (target.id !== documentTabsController.activeTabIdRef.current) {
+        await activateDocumentTab(target.id);
+        await afterEditorStateSettles();
+        target = currentDocumentTabsSnapshot().find((tab) => tab.id === targetId) ?? target;
+      }
+      if (target.dirty && policy === "require-clean") {
+        return agentLifecycleError(409, "UNSAVED_CHANGES", "The document has unsaved changes; use policy save or discard explicitly.", {
+          documentId: target.id,
+          path: target.filePath,
+        });
+      }
+      if (target.dirty && policy === "save") {
+        if (!target.filePath) {
+          return agentLifecycleError(
+            409,
+            "UNSAVED_CHANGES",
+            "This is an unsaved draft. Save it from the app or create a saved document before closing it through MCP.",
+            { documentId: target.id },
+          );
+        }
+        try {
+          await writeCurrentTestProjectFile(target.filePath, target.title);
+        } catch (error) {
+          return agentLifecycleError(409, "SAVE_CONFLICT", error instanceof Error ? error.message : "The document could not be saved.", {
+            documentId: target.id,
+            path: target.filePath,
+          });
+        }
+      }
+      await removeDocumentTabWithoutPrompt(target.id);
+      await afterEditorStateSettles();
+      return {
+        status: 200,
+        body: {
+          success: true,
+          closedDocumentId: target.id,
+          policy,
+          activeDocumentId: documentTabsController.activeTabIdRef.current,
+          openDocuments: currentAgentOpenDocuments(),
+        },
+      };
+    },
+  };
+
   useEditorAgentBridgeController({
     enabled: storageHydrated,
     activeProject,
@@ -1152,14 +1412,14 @@ export default function App() {
     currentProjectFileName,
     activeDocumentId: () => documentTabsController.activeTabIdRef.current,
     openDocuments: () => {
-      const activeTabId = documentTabsController.activeTabIdRef.current;
-      return currentDocumentTabsSnapshot().map((tab) => agentDocumentTabSummary(tab, activeTabId));
+      return currentAgentOpenDocuments();
     },
     activateDocument: async (documentId) => {
       if (!documentTabsController.tabsRef.current.some((tab) => tab.id === documentId)) return false;
       await activateDocumentTab(documentId);
       return true;
     },
+    documentLifecycle: agentDocumentLifecycle,
   });
 
   function isActiveEditorAnchor(anchor: string) {
@@ -1196,6 +1456,22 @@ export default function App() {
   const { updatePreviewGraphConfig, removeQuestionBlock, removePart, removeSubpart, removePartBlock, removeSubpartBlock } =
     contentMutationController;
   const handlePreviewGraphConfigChange = useStableEvent(updatePreviewGraphConfig);
+  const selectedInvestigationDiagram = selectedInvestigationDiagramFromAnchor(frontMatter.investigation, activeTocItemId);
+  const selectedWorkspaceBlock = selectedInvestigationDiagram ?? editorSelectionController.selectedEditorBlock;
+  const selectionInspectorVisible = showInspectorPane && Boolean(selectedWorkspaceBlock);
+  const activeWorkspaceStyle = editorWorkspaceGridStyle(paneMode, selectionInspectorVisible);
+  const workspaceContentMutationController = {
+    ...contentMutationController,
+    updateSelectedBlock: (selection: SelectedEditorBlock, patch: Parameters<typeof contentMutationController.updateSelectedBlock>[1]) => {
+      if (selection.scope.kind === "investigationDiagram") {
+        frontMatterLogoActions.updateFrontMatter({
+          investigation: updateInvestigationDiagramFromInspector(frontMatterRef.current.investigation, selection, patch),
+        });
+        return;
+      }
+      contentMutationController.updateSelectedBlock(selection, patch);
+    },
+  };
 
   const questionPageBreakDragController = useQuestionPageBreakDragController({
     questions,
@@ -1236,6 +1512,7 @@ export default function App() {
             activeDocumentTabId: documentTabsController.activeTabId,
             activateDocumentTab: (tabId) => void activateDocumentTab(tabId),
             closeDocumentTab: (tabId) => void closeDocumentTab(tabId),
+            reorderDocumentTab: documentTabsController.reorderTab,
             closeCurrentDocument: closeCurrentDocumentTab,
           }}
           systemStatus={{ ...systemStatusController, openPanel: () => setSystemStatusPanelOpen(true) }}
@@ -1258,16 +1535,25 @@ export default function App() {
                 isStandardTestTemplate={frontMatter.titlePageTemplate === "standard"}
                 isInvestigationTemplate={frontMatter.titlePageTemplate === "investigation"}
                 dragState={questionPageBreakDragState}
-                navigation={editorNavigationController}
+                navigation={{
+                  ...editorNavigationController,
+                  jumpToTocItem: (item) => {
+                    if (documentNavigationShowsTeacherRubric(frontMatter.titlePageTemplate === "investigation", item)) {
+                      setShowSolutions(true);
+                    }
+                    editorNavigationController.jumpToTocItem(item);
+                  },
+                }}
                 questionLifecycle={questionLifecycleController}
                 sectionHeadingLifecycle={sectionHeadingLifecycleController}
+                investigationLifecycle={investigationNavigationLifecycle}
                 questionPageBreakDrag={questionPageBreakDragController}
                 onOpenChange={setTocOpen}
                 onContextMenu={openContextMenu}
               />
               <DocumentEditorWorkspaceBindings
                 layout={{
-                  style: workspaceStyle,
+                  style: activeWorkspaceStyle,
                   paneMode,
                   showEditor,
                   showInspectorPane,
@@ -1276,13 +1562,20 @@ export default function App() {
                   previewPaneRef,
                 }}
                 document={{ frontMatter, questions, sectionHeadings, documentFlow, logos, totalMarks }}
-                selection={{ ...editorSelectionController, activeTocItemId, activePreviewAnchor, isActiveEditorAnchor }}
+                selection={{
+                  ...editorSelectionController,
+                  activeTocItemId,
+                  activePreviewAnchor,
+                  isActiveEditorAnchor,
+                  selectedEditorBlock: selectedWorkspaceBlock,
+                  selectionInspectorVisible,
+                }}
                 solutions={{ ...solutionModeController, ...solutionSurfaceCopyController, ...solutionSlotController }}
                 solutionValidation={solutionValidationController}
                 navigation={editorNavigationController}
                 contextMenu={contextMenuController}
                 drag={nestedEditorDragController}
-                mutations={contentMutationController}
+                mutations={workspaceContentMutationController}
                 questionLifecycle={questionLifecycleController}
                 sectionHeadings={sectionHeadingLifecycleController}
                 frontMatterActions={frontMatterLogoActions}
@@ -1291,6 +1584,7 @@ export default function App() {
                   contentBlockForKind,
                   diagramBlockForType,
                   createTextBlock: textBlock,
+                  confirmDiagramTypeChange: mauthDialogs.confirm,
                   diagramTypePatch,
                   updateGraphConfig,
                   withGraphDefaults,

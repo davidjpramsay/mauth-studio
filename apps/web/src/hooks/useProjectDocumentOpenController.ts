@@ -119,11 +119,11 @@ export function useProjectDocumentOpenController<TSavedDocument>({
       const summary = projectFiles.find((file) => file.path === filePath);
       if (summary && !isProjectTestFile(summary)) {
         setProjectFilesMessage("Only test files can be opened");
-        return;
+        return false;
       }
       if (!summary && !isStructuredMauthDocumentPath(filePath)) {
         setProjectFilesMessage("Only test files can be opened");
-        return;
+        return false;
       }
 
       const fileName = projectFileDisplayName(filePath);
@@ -131,7 +131,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
         kind: "open-file",
         targetLabel: fileName,
       });
-      if (!projectFileTransitionCanProceed(beforeOpen)) return;
+      if (!projectFileTransitionCanProceed(beforeOpen)) return false;
 
       setProjectFilesStatus("loading");
       setProjectFilesMessage(`Opening ${fileName}`);
@@ -143,12 +143,13 @@ export function useProjectDocumentOpenController<TSavedDocument>({
       setProjectFilesStatus("ready");
       setProjectFilesMessage(`Opened ${fileName}`);
       onOpened?.();
+      return true;
     } catch (error) {
-      if (error instanceof Error && error.message === revisionMissingErrorMessage) return;
+      if (error instanceof Error && error.message === revisionMissingErrorMessage) return false;
       if (isProjectFilesUnavailableError(error)) {
         setProjectFilesStatus("error");
         setProjectFilesMessage(projectFilesUnavailableMessage(error));
-        return;
+        return false;
       }
       const conflictTarget = activeProjectFilePath ?? filePath;
       const conflict = projectFileConflictFromError(error, conflictTarget, activeProjectFileRevisionRef.current);
@@ -157,10 +158,11 @@ export function useProjectDocumentOpenController<TSavedDocument>({
         setProjectFilesStatus("error");
         setProjectFilesMessage("File changed on disk");
         void refreshProjectFiles();
-        return;
+        return false;
       }
       setProjectFilesStatus("error");
       setProjectFilesMessage("Open failed");
+      return false;
     }
   }
 

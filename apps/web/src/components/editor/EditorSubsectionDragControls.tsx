@@ -72,12 +72,14 @@ export function EditorSubsectionDragHandle({
   target,
   label,
   onPointerDown,
+  onMoveByKeyboard,
   onDragStart,
   onDragEnd,
 }: {
   target: SubsectionDragTarget;
   label: string;
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>, target: SubsectionDragTarget) => void;
+  onMoveByKeyboard: (target: SubsectionDragTarget, direction: -1 | 1) => boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>, target: SubsectionDragTarget) => void;
   onDragEnd: () => void;
 }) {
@@ -87,12 +89,16 @@ export function EditorSubsectionDragHandle({
       tabIndex={0}
       draggable
       data-subsection-drag-handle="true"
-      title={label}
-      aria-label={label}
+      title={`${label}. Press Alt+Up or Alt+Down to reorder.`}
+      aria-label={`${label}. Press Alt+Up or Alt+Down to reorder.`}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => onPointerDown(event, target)}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          event.preventDefault();
+          event.stopPropagation();
+          onMoveByKeyboard(target, event.key === "ArrowUp" ? -1 : 1);
+        } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           event.stopPropagation();
         }

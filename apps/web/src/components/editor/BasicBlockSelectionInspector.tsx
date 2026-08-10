@@ -21,6 +21,7 @@ import {
   DIAGRAM_ALIGNMENTS,
   TABLE_CELL_ALIGNMENTS,
 } from "./editorOptions";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface BasicBlockSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -136,33 +137,30 @@ export function BasicBlockSelectionInspector({
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Rows
-          <input
-            type="number"
+          <NumericExpressionInput
             min={INSPECTOR_MIN_TABLE_ROWS}
             max={INSPECTOR_MAX_TABLE_ROWS}
+            step={1}
             value={selection.rowCount}
-            aria-label={`${selectedBlock.label} rows`}
-            onChange={(event) =>
-              onBlockChange(
-                selectedBlock,
-                tableRowsCountPatch(selectedBlock.block as InspectorTableBlock, event.currentTarget.valueAsNumber),
-              )
+            ariaLabel={`${selectedBlock.label} rows`}
+            onValueChange={(value) =>
+              onBlockChange(selectedBlock, tableRowsCountPatch(selectedBlock.block as InspectorTableBlock, value ?? selection.rowCount))
             }
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Columns
-          <input
-            type="number"
+          <NumericExpressionInput
             min={INSPECTOR_MIN_TABLE_COLUMNS}
             max={INSPECTOR_MAX_TABLE_COLUMNS}
+            step={1}
             value={selection.columnCount}
-            aria-label={`${selectedBlock.label} columns`}
-            onChange={(event) =>
+            ariaLabel={`${selectedBlock.label} columns`}
+            onValueChange={(value) =>
               onBlockChange(
                 selectedBlock,
-                tableColumnCountPatch(selectedBlock.block as InspectorTableBlock, event.currentTarget.valueAsNumber),
+                tableColumnCountPatch(selectedBlock.block as InspectorTableBlock, value ?? selection.columnCount),
               )
             }
             className={controlClassName}
@@ -176,13 +174,12 @@ export function BasicBlockSelectionInspector({
     <div className="space-y-3 p-3">
       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
         Lines
-        <input
-          type="number"
+        <NumericExpressionInput
           min={0}
           step={1}
           value={selection.lines}
-          aria-label={`${selectedBlock.label} lines`}
-          onChange={(event) => onBlockChange(selectedBlock, { lines: inspectorSpaceLines(event.currentTarget.valueAsNumber) })}
+          ariaLabel={`${selectedBlock.label} lines`}
+          onValueChange={(value) => onBlockChange(selectedBlock, { lines: inspectorSpaceLines(value) })}
           className={controlClassName}
         />
       </label>

@@ -2,20 +2,13 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import { PlusCircle, Trash2 } from "lucide-react";
 
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
 import { DEFAULT_NETWORK_DATA, normalizedNetworkDiagramData, penroseIdentifier, networkDataForSave } from "@/lib/diagramNetwork";
 import { penroseAuthoringLayer } from "@/lib/diagramPenroseSolution";
-
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
 
 type NetworkDiagramEditorProps = {
   config: GraphConfig;
@@ -142,13 +135,13 @@ export function NetworkDiagramEditor({
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex w-36 flex-col gap-2 text-xs font-medium">
             Diagram scale
-            <input
-              type="number"
+            <NumericExpressionInput
               min={25}
               max={250}
               step={1}
-              value={numberInputValue(scalePercent)}
-              onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+              value={scalePercent}
+              ariaLabel="Network diagram scale"
+              onValueChange={(value) => updateScale(value ?? DEFAULT_PENROSE_SCALE_PERCENT)}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>

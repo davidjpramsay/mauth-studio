@@ -113,6 +113,149 @@ def test_snapshot_forwards_an_optional_document_id() -> None:
     assert response.json()["activeDocumentId"] == "file:project:exam.mauth"
 
 
+def test_document_list_forwards_folder_and_recursion_options() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
+        "sessionId"
+    ]
+    result: dict[str, object] = {}
+
+    def request_documents() -> None:
+        result["response"] = client.get(
+            "/api/agent/current/documents",
+            params={"folderPath": "Past exams", "recursive": "false"},
+        )
+
+    thread = Thread(target=request_documents)
+    thread.start()
+    browser_request = client.get(
+        "/api/agent/current/browser/requests",
+        params={"sessionId": session_id, "timeoutSeconds": 2},
+    ).json()["request"]
+    assert browser_request["kind"] == "documents.list"
+    assert browser_request["payload"] == {"folderPath": "Past exams", "recursive": False}
+
+    client.post(
+        "/api/agent/current/browser/respond",
+        json={
+            "sessionId": session_id,
+            "requestId": browser_request["requestId"],
+            "status": 200,
+            "body": {"success": True, "documents": []},
+        },
+    )
+    thread.join(timeout=3)
+    assert result["response"].status_code == 200
+
+
+def test_document_create_is_idempotent_and_forwards_the_key() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
+        "sessionId"
+    ]
+    payload = {"title": "Functions test", "template": "standard", "onConflict": "error"}
+    result: dict[str, object] = {}
+
+    def request_create() -> None:
+        result["response"] = client.post(
+            "/api/agent/current/documents/create",
+            json=payload,
+            headers={"Idempotency-Key": "create-once"},
+        )
+
+    thread = Thread(target=request_create)
+    thread.start()
+    browser_request = client.get(
+        "/api/agent/current/browser/requests",
+        params={"sessionId": session_id, "timeoutSeconds": 2},
+    ).json()["request"]
+    assert browser_request["kind"] == "document.create"
+    assert browser_request["payload"] == {**payload, "idempotencyKey": "create-once"}
+    response_body = {"success": True, "path": "Functions test.mauth", "revision": 1}
+    client.post(
+        "/api/agent/current/browser/respond",
+        json={
+            "sessionId": session_id,
+            "requestId": browser_request["requestId"],
+            "status": 200,
+            "body": response_body,
+        },
+    )
+    thread.join(timeout=3)
+
+    replay = client.post(
+        "/api/agent/current/documents/create",
+        json=payload,
+        headers={"Idempotency-Key": "create-once"},
+    )
+    assert replay.status_code == 200
+    assert replay.json() == response_body
+
+    mismatch = client.post(
+        "/api/agent/current/documents/create",
+        json={**payload, "title": "Different test"},
+        headers={"Idempotency-Key": "create-once"},
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_document_open_and_close_forward_explicit_lifecycle_policies() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"}).json()[
+        "sessionId"
+    ]
+
+    def dispatch(
+        path: str, payload: dict[str, object], expected_kind: str, headers: dict[str, str] | None = None
+    ) -> None:
+        result: dict[str, object] = {}
+
+        def request() -> None:
+            result["response"] = client.post(path, json=payload, headers=headers or {})
+
+        thread = Thread(target=request)
+        thread.start()
+        browser_request = client.get(
+            "/api/agent/current/browser/requests",
+            params={"sessionId": session_id, "timeoutSeconds": 2},
+        ).json()["request"]
+        assert browser_request["kind"] == expected_kind
+        client.post(
+            "/api/agent/current/browser/respond",
+            json={
+                "sessionId": session_id,
+                "requestId": browser_request["requestId"],
+                "status": 200,
+                "body": {"success": True},
+            },
+        )
+        thread.join(timeout=3)
+        assert result["response"].status_code == 200
+
+    dispatch(
+        "/api/agent/current/documents/open",
+        {"path": "Tests/Functions.mauth"},
+        "document.open",
+    )
+    dispatch(
+        "/api/agent/current/documents/close",
+        {"documentId": "file:project:tests/Functions.mauth", "policy": "require-clean"},
+        "document.close",
+        {"Idempotency-Key": "close-once"},
+    )
+
+
+def test_document_lifecycle_payloads_are_validated_before_dispatch() -> None:
+    assert client.post("/api/agent/current/documents/create", json={}).status_code == 400
+    assert client.post("/api/agent/current/documents/open", json={}).status_code == 400
+    assert (
+        client.post(
+            "/api/agent/current/documents/close",
+            json={"policy": "mystery"},
+            headers={"Idempotency-Key": "close-invalid"},
+        ).status_code
+        == 400
+    )
+
+
 def test_unregister_removes_browser_session() -> None:
     client.post("/api/agent/current/browser/register", json={"sessionId": "test-editor"})
 

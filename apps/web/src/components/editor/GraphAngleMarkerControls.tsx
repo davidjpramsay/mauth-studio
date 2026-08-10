@@ -2,6 +2,7 @@ import type { GraphFeature } from "@mauth-studio/shared";
 
 import { graphAngleMarkerSegmentIds, graphLineSegmentsShareEndpoint } from "../../lib/graphFeatureGeometry";
 import { cn } from "../../lib/utils";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface GraphAngleMarkerControlsProps {
   feature: GraphFeature;
@@ -115,13 +116,12 @@ export function GraphAngleMarkerControls({
       </label>
       <label className={labelClassName}>
         Radius
-        <input
-          type="number"
+        <NumericExpressionInput
           min={0.05}
           step={1}
-          value={typeof feature.size === "number" && Number.isFinite(feature.size) ? feature.size : ""}
-          aria-label={`${ariaPrefix} radius`}
-          onChange={(event) => applyPatch({ size: event.target.value === "" ? undefined : Number(event.target.value) })}
+          value={feature.size}
+          ariaLabel={`${ariaPrefix} radius`}
+          onValueChange={(value) => applyPatch({ size: value })}
           className={controlClassName}
         />
       </label>

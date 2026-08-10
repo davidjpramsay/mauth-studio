@@ -317,6 +317,8 @@ export interface GraphConfig {
   showYAxisMaxArrow?: boolean;
   showAxisLabels?: boolean;
   showAxisNumbers?: boolean;
+  showXAxisNumbers?: boolean;
+  showYAxisNumbers?: boolean;
   xAxisLabel?: string;
   yAxisLabel?: string;
   xAxisLabelX?: number;
@@ -940,6 +942,10 @@ export type MauthAgentBridgeErrorCode =
   | "VALIDATION_FAILED"
   | "ACTION_FAILED"
   | "SAVE_CONFLICT"
+  | "DOCUMENT_NOT_FOUND"
+  | "FILE_EXISTS"
+  | "UNSAVED_CHANGES"
+  | "STORAGE_UNAVAILABLE"
   | "BRIDGE_TIMEOUT"
   | "INVALID_REQUEST"
   | "IDEMPOTENCY_KEY_REUSED";
@@ -954,7 +960,19 @@ export interface MauthAgentOpenDocument {
   saveStatus: MauthAgentFileState["saveStatus"];
 }
 
-export type MauthAgentRequestKind = "snapshot" | "actions.preview" | "actions.apply" | "validation.run";
+export type MauthAgentDocumentTemplate = "standard" | "exam" | "worksheet" | "notes" | "investigation";
+
+export type MauthAgentDocumentClosePolicy = "require-clean" | "save" | "discard";
+
+export type MauthAgentRequestKind =
+  | "snapshot"
+  | "actions.preview"
+  | "actions.apply"
+  | "validation.run"
+  | "documents.list"
+  | "document.create"
+  | "document.open"
+  | "document.close";
 
 export interface MauthAgentMutationBase {
   snapshotId: string;
@@ -1067,6 +1085,10 @@ export interface MauthAgentSnapshot {
     preview: { method: "POST"; href: string };
     apply: { method: "POST"; href: string };
     validation: { method: "POST"; href: string };
+    documents: { method: "GET"; href: string };
+    documentCreate: { method: "POST"; href: string };
+    documentOpen: { method: "POST"; href: string };
+    documentClose: { method: "POST"; href: string };
     presence: { method: "POST"; href: string };
     events: string;
     comments: string;

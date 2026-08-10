@@ -12,6 +12,7 @@ test("packaged connector setup points directly into the signed app bundle", () =
     repoRoot: "/unused",
     version: "0.1.3",
     available: true,
+    platform: "darwin",
   });
 
   assert.equal(info.connectorPath, path.join(resourceRoot, "agent", "mauth-agent-mcp"));
@@ -49,5 +50,9 @@ test("packagedAgentConnectorPath is stable", () => {
   assert.equal(
     packagedAgentConnectorPath("/Applications/Mauth Studio.app/Contents/Resources"),
     "/Applications/Mauth Studio.app/Contents/Resources/agent/mauth-agent-mcp",
+  );
+  assert.equal(
+    packagedAgentConnectorPath("C:\\Program Files\\Mauth Studio\\resources", "win32"),
+    path.join("C:\\Program Files\\Mauth Studio\\resources", "agent", "mauth-agent-mcp.cmd"),
   );
 });

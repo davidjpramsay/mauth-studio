@@ -775,12 +775,13 @@ export function useNestedEditorDragController({
     );
   }
 
-  function subsectionDragHandle(target: SubsectionDragTarget, label: string) {
+  function subsectionDragHandle(target: SubsectionDragTarget, label: string, anchor: string) {
     return (
       <EditorSubsectionDragHandle
         target={target}
         label={label}
         onPointerDown={(event) => handleSubsectionPointerDown(event, target)}
+        onMoveByKeyboard={(keyboardTarget, direction) => moveSubsectionByKeyboard(keyboardTarget, direction, anchor)}
         onDragStart={(event) => handleSubsectionDragStart(event, target)}
         onDragEnd={handleSubsectionDragEnd}
       />

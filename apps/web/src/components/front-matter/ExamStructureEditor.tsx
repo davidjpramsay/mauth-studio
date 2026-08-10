@@ -3,6 +3,7 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { markLabel } from "@/lib/editorDocumentToc";
@@ -104,54 +105,61 @@ export function ExamStructureEditor({
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Available
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={0}
+                      step={1}
                       value={rowQuestionsAvailable}
                       disabled={row.useCurrentDocument === true}
-                      onChange={(event) => onUpdateRowNumber(row.id, "questionsAvailable", event.target.value)}
+                      ariaLabel={`Row ${index + 1} questions available`}
+                      onValueChange={(value) => onUpdateRowNumber(row.id, "questionsAvailable", String(value ?? rowQuestionsAvailable))}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Answered
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={0}
+                      step={1}
                       value={rowQuestionsToBeAnswered}
                       disabled={row.useCurrentDocument === true}
-                      onChange={(event) => onUpdateRowNumber(row.id, "questionsToBeAnswered", event.target.value)}
+                      ariaLabel={`Row ${index + 1} questions answered`}
+                      onValueChange={(value) =>
+                        onUpdateRowNumber(row.id, "questionsToBeAnswered", String(value ?? rowQuestionsToBeAnswered))
+                      }
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Minutes
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={0}
+                      step={1}
                       value={row.workingTimeMinutes}
-                      onChange={(event) => onUpdateRowNumber(row.id, "workingTimeMinutes", event.target.value)}
+                      ariaLabel={`Row ${index + 1} working time minutes`}
+                      onValueChange={(value) => onUpdateRowNumber(row.id, "workingTimeMinutes", String(value ?? row.workingTimeMinutes))}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Marks
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={0}
+                      step={1}
                       value={rowMarks}
                       disabled={row.useCurrentDocument === true}
-                      onChange={(event) => onUpdateRowNumber(row.id, "marksAvailable", event.target.value)}
+                      ariaLabel={`Row ${index + 1} marks available`}
+                      onValueChange={(value) => onUpdateRowNumber(row.id, "marksAvailable", String(value ?? rowMarks))}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal disabled:bg-muted disabled:text-muted-foreground"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Percentage
-                    <input
-                      type="number"
+                    <NumericExpressionInput
                       min={0}
+                      step={1}
                       value={row.percentage}
-                      onChange={(event) => onUpdateRowNumber(row.id, "percentage", event.target.value)}
+                      ariaLabel={`Row ${index + 1} percentage`}
+                      onValueChange={(value) => onUpdateRowNumber(row.id, "percentage", String(value ?? row.percentage))}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                     />
                   </label>

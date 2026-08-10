@@ -2,17 +2,10 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import { Shuffle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Textarea } from "@/components/ui/textarea";
 import { PenroseSolutionElementsEditor } from "@/components/editor/PenroseSolutionElementsEditor";
 import { DEFAULT_PENROSE_SCALE_PERCENT, PENROSE_ORIGINAL_WIDTH, penroseOptions, penroseScalePercent } from "@/lib/diagramPenrose";
-
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
 
 function penroseVariationId() {
   return `penrose-layout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -62,13 +55,13 @@ export function GeometricConstructionEditor({
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex w-36 flex-col gap-2 text-xs font-medium">
               Diagram scale
-              <input
-                type="number"
+              <NumericExpressionInput
                 min={25}
                 max={250}
                 step={1}
-                value={numberInputValue(scalePercent)}
-                onChange={(event) => updateScale(optionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT)}
+                value={scalePercent}
+                ariaLabel="Geometric diagram scale"
+                onValueChange={(value) => updateScale(value ?? DEFAULT_PENROSE_SCALE_PERCENT)}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
               />
             </label>

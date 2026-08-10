@@ -3,13 +3,9 @@ import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 import { DEFAULT_3D_GRAPH, DEFAULT_3D_VIEW_STATE } from "../../lib/diagram3d";
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { graph3dInspectorSelection } from "../../lib/graph3dInspectorSelection";
-import {
-  graph3dResetViewPatch,
-  graph3dViewPatch,
-  inspectorNumberInputValue,
-  inspectorOptionalNumber,
-} from "../../lib/moduleSettingsPatches";
+import { graph3dResetViewPatch, graph3dViewPatch } from "../../lib/moduleSettingsPatches";
 import { Button } from "../ui/button";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface Graph3DSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -36,25 +32,25 @@ export function Graph3DSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Width
-          <input
-            type="number"
+          <NumericExpressionInput
             min={240}
             step={10}
-            value={inspectorNumberInputValue(selection.widthPx)}
-            aria-label={`${selectedBlock.label} 3D width`}
-            onChange={(event) => updateCanvas({ widthPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.widthPx })}
+            value={selection.widthPx}
+            fallbackValue={DEFAULT_3D_GRAPH.widthPx}
+            ariaLabel={`${selectedBlock.label} 3D width`}
+            onValueChange={(value) => updateCanvas({ widthPx: value ?? DEFAULT_3D_GRAPH.widthPx })}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Height
-          <input
-            type="number"
+          <NumericExpressionInput
             min={180}
             step={10}
-            value={inspectorNumberInputValue(selection.heightPx)}
-            aria-label={`${selectedBlock.label} 3D height`}
-            onChange={(event) => updateCanvas({ heightPx: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_GRAPH.heightPx })}
+            value={selection.heightPx}
+            fallbackValue={DEFAULT_3D_GRAPH.heightPx}
+            ariaLabel={`${selectedBlock.label} 3D height`}
+            onValueChange={(value) => updateCanvas({ heightPx: value ?? DEFAULT_3D_GRAPH.heightPx })}
             className={controlClassName}
           />
         </label>
@@ -62,52 +58,34 @@ export function Graph3DSelectionInspector({
       <div className="grid grid-cols-3 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Azimuth
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selection.view.az)}
-            aria-label={`${selectedBlock.label} 3D azimuth`}
-            onChange={(event) =>
-              updateCanvas(
-                graph3dViewPatch(selectedDiagramConfig, {
-                  az: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.az,
-                }),
-              )
-            }
+            value={selection.view.az}
+            fallbackValue={DEFAULT_3D_VIEW_STATE.az}
+            ariaLabel={`${selectedBlock.label} 3D azimuth`}
+            onValueChange={(value) => updateCanvas(graph3dViewPatch(selectedDiagramConfig, { az: value ?? DEFAULT_3D_VIEW_STATE.az }))}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Elevation
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selection.view.el)}
-            aria-label={`${selectedBlock.label} 3D elevation`}
-            onChange={(event) =>
-              updateCanvas(
-                graph3dViewPatch(selectedDiagramConfig, {
-                  el: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.el,
-                }),
-              )
-            }
+            value={selection.view.el}
+            fallbackValue={DEFAULT_3D_VIEW_STATE.el}
+            ariaLabel={`${selectedBlock.label} 3D elevation`}
+            onValueChange={(value) => updateCanvas(graph3dViewPatch(selectedDiagramConfig, { el: value ?? DEFAULT_3D_VIEW_STATE.el }))}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Bank
-          <input
-            type="number"
+          <NumericExpressionInput
             step={1}
-            value={inspectorNumberInputValue(selection.view.bank)}
-            aria-label={`${selectedBlock.label} 3D bank`}
-            onChange={(event) =>
-              updateCanvas(
-                graph3dViewPatch(selectedDiagramConfig, {
-                  bank: inspectorOptionalNumber(event.target.value) ?? DEFAULT_3D_VIEW_STATE.bank,
-                }),
-              )
-            }
+            value={selection.view.bank}
+            fallbackValue={DEFAULT_3D_VIEW_STATE.bank}
+            ariaLabel={`${selectedBlock.label} 3D bank`}
+            onValueChange={(value) => updateCanvas(graph3dViewPatch(selectedDiagramConfig, { bank: value ?? DEFAULT_3D_VIEW_STATE.bank }))}
             className={controlClassName}
           />
         </label>

@@ -14,10 +14,6 @@ const connector = path.join(appBundle, "Contents", "Resources", "agent", "mauth-
 const documentIcon = path.join(appBundle, "Contents", "Resources", "mauth-document.icns");
 const quickLookExtensions = [
   {
-    path: path.join(appBundle, "Contents", "PlugIns", "MauthQuickLookThumbnail.appex"),
-    extensionPoint: "com.apple.quicklook.thumbnail",
-  },
-  {
     path: path.join(appBundle, "Contents", "PlugIns", "MauthQuickLookPreview.appex"),
     extensionPoint: "com.apple.quicklook.preview",
     principalClass: "MauthQuickLookPreview.PreviewViewController",

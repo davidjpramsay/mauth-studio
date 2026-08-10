@@ -16,6 +16,8 @@ import {
   packagedAgentConnectorPath,
 } from "./agent-connector.mjs";
 import { developmentRuntimePlan } from "./development-runtime.mjs";
+import { MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, chooseDocumentsFolder } from "./native-dialogs.mjs";
+import { packagedSidecarExecutable } from "./platform-paths.mjs";
 import {
   MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL,
   MAUTH_SYSTEM_STATUS_OPEN_CHANNEL,
@@ -83,12 +85,12 @@ function desktopPaths() {
   return {
     resourceRoot,
     webDist: app.isPackaged ? path.join(resourceRoot, "web-dist") : path.join(REPO_ROOT, "apps", "web", "dist"),
-    apiExecutable: app.isPackaged
-      ? path.join(resourceRoot, "sidecars", "mauth-api")
-      : path.join(REPO_ROOT, "apps", "api", ".venv", "bin", "python"),
+    apiExecutable: app.isPackaged ? packagedSidecarExecutable(resourceRoot, process.platform) : null,
     icon: app.isPackaged ? path.join(resourceRoot, "mauth-icon.png") : path.join(REPO_ROOT, "docs", "assets", "mauth-icon.png"),
     preload: path.join(DESKTOP_DIR, "preload.cjs"),
-    agentConnector: app.isPackaged ? packagedAgentConnectorPath(resourceRoot) : path.join(REPO_ROOT, "scripts", "mauth-agent-mcp.mjs"),
+    agentConnector: app.isPackaged
+      ? packagedAgentConnectorPath(resourceRoot, process.platform)
+      : path.join(REPO_ROOT, "scripts", "mauth-agent-mcp.mjs"),
   };
 }
 
@@ -100,6 +102,7 @@ function currentAgentConnectorInfo() {
     repoRoot: REPO_ROOT,
     version: app.getVersion(),
     available: fs.existsSync(paths.agentConnector),
+    platform: process.platform,
   });
 }
 
@@ -156,7 +159,7 @@ function startApi(port, agentToken, developmentPlan = null) {
     ...(app.isPackaged ? { MAUTH_WORKSPACE_STATE_ROOT: path.join(app.getPath("userData"), "storage") } : {}),
   };
 
-  apiProcess = spawn(paths.apiExecutable, args, {
+  apiProcess = spawn(app.isPackaged ? paths.apiExecutable : developmentPlan.api.executable, args, {
     cwd: app.isPackaged ? paths.resourceRoot : developmentPlan.api.cwd,
     env,
     stdio: ["ignore", apiLog, apiLog],
@@ -368,7 +371,15 @@ async function launch() {
   if (!apiPort) throw new Error("Could not reserve a local API port for Mauth Studio.");
   const webPort = app.isPackaged ? null : await findAvailablePort();
   if (!app.isPackaged && !webPort) throw new Error("Could not reserve a local web development port for Mauth Studio.");
-  const developmentPlan = app.isPackaged ? null : developmentRuntimePlan({ repoRoot: REPO_ROOT, apiPort, webPort });
+  const developmentPlan = app.isPackaged
+    ? null
+    : developmentRuntimePlan({
+        repoRoot: REPO_ROOT,
+        apiPort,
+        webPort,
+        platform: process.platform,
+        nodeExecutable: process.execPath,
+      });
   const agentToken = randomBytes(32).toString("base64url");
   const { apiUrl, webUrl, paths } = startApi(apiPort, agentToken, developmentPlan);
   desktopLog(`api spawned pid=${apiProcess?.pid ?? "unknown"} url=${apiUrl}`);
@@ -405,6 +416,10 @@ async function launch() {
   });
   ipcMain.removeHandler(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
   ipcMain.handle(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL, currentAgentConnectorInfo);
+  ipcMain.removeHandler(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL);
+  ipcMain.handle(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, () =>
+    chooseDocumentsFolder({ dialog, window: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null }),
+  );
   if (app.isPackaged && !updatesEnabled) desktopLog("updater disabled because app-update.yml is unavailable");
   refreshApplicationMenu();
   createWindow(webUrl, apiUrl, paths.icon, paths.preload, agentToken);

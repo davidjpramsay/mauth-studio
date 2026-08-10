@@ -6,7 +6,7 @@ This is the distribution contract for sharing Mauth Studio outside the developme
 
 - macOS on Apple Silicon (`arm64`).
 - Standalone Electron app with packaged FastAPI, Penrose, and self-contained MCP connector runtimes.
-- Native `.mauth` document identity with a dedicated icon plus sandboxed Finder thumbnail and Spacebar Quick Look extensions.
+- Native `.mauth` document identity with a dedicated PDF-style Mauth document icon plus a sandboxed Spacebar Quick Look extension.
 - No Python, Node.js, repo checkout, or Terminal window is required for ordinary use.
 - Codex, Claude Code, and MCP clients remain supported through the authenticated local bridge.
 
@@ -16,7 +16,7 @@ Intel support is not currently built. Do not label an artifact universal until t
 
 1. Join or use an Apple Developer Program team.
 2. Install a **Developer ID Application** certificate in the login keychain.
-3. Install the full Xcode app and accept its first-launch components. Release builds compile the Swift Quick Look extensions with `xcodebuild`; Command Line Tools alone are not the supported release environment.
+3. Install the full Xcode app and accept its first-launch components. Release builds compile the Swift Quick Look preview extension with `xcodebuild`; Command Line Tools alone are not the supported release environment.
 4. Store notarization credentials without putting secrets in the repo. For a local keychain profile:
 
 ```bash
@@ -47,7 +47,7 @@ The command deliberately fails before building when it cannot find:
 - an installed `Developer ID Application` identity; or
 - notarization credentials through a keychain profile, Apple ID variables, or App Store Connect API-key variables.
 
-When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look extensions, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extensions before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. After DMG stapling it normalizes `latest-mac.yml` to the signed ZIP used by the updater, removes the inapplicable pre-stapling DMG blockmap, verifies that the ZIP metadata hash and size match the published bytes, and starts the packaged connector with the app-owned runtime as part of app verification.
+When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look preview extension, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extension before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. After DMG stapling it normalizes `latest-mac.yml` to the signed ZIP used by the updater, removes the inapplicable pre-stapling DMG blockmap, verifies that the ZIP metadata hash and size match the published bytes, and starts the packaged connector with the app-owned runtime as part of app verification.
 
 This command does not publish anything. It is useful for inspecting a release bundle, but the normal public-release path is the guarded ship command below.
 
@@ -96,7 +96,7 @@ Before sharing a release, also test the downloaded artifact on a clean Apple Sil
 3. Confirm Gatekeeper identifies the developer and accepts the app.
 4. Create, save, close, reopen, print, and export a disposable document.
 5. Open an external documents folder and confirm no unrelated files are copied.
-6. Save a `.mauth` document, confirm Finder uses the dedicated icon/thumbnail, and press Spacebar to verify the title, assessment summary, and marks render without launching Mauth.
+6. Save a `.mauth` document, confirm Finder uses the portrait Mauth document icon, and press Spacebar to verify the title, assessment summary, and marks render without launching Mauth.
 7. Choose **Help > Set Up Codex or Claude...**, configure a disposable agent client, and run the shown connection test without a source checkout.
 8. Confirm an unauthenticated request to `/api/agent/current/snapshot` is rejected.
 

@@ -239,6 +239,40 @@ test("graph2d function settings accept structured solution-layer patches", () =>
   assert.equal(result.ok, true);
 });
 
+test("coordinate graph settings accept independent axis-number visibility", () => {
+  const result = validateMauthDocumentActionPayloads([
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "graph",
+      settings: { renderer: "graph2d", showXAxisNumbers: false, showYAxisNumbers: true },
+    },
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "vector",
+      settings: { renderer: "vector2d", showXAxisNumbers: true, showYAxisNumbers: false },
+    },
+  ]);
+
+  assert.equal(result.ok, true);
+});
+
+test("coordinate graph settings reject non-boolean axis-number visibility", () => {
+  const result = validateMauthDocumentActionPayloads([
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "graph",
+      settings: { renderer: "graph2d", showXAxisNumbers: "no", showYAxisNumbers: 1 },
+    },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.showXAxisNumbers"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.showYAxisNumbers"));
+});
+
 test("graph2d function settings reject missing targets and invalid solution-layer values", () => {
   const result = validateMauthDocumentActionPayloads([
     {

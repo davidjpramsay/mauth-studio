@@ -163,10 +163,22 @@ export function frontMatterPageCount(frontMatter: FrontMatterConfig) {
 
 export const INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE = 3;
 
-export function investigationPreviewPageCount(showTeacherCopy: boolean, criterionCount = 0) {
-  if (!showTeacherCopy) return 1;
+export function isEndOfTestMarkerText(text?: string) {
+  if (!text) return false;
+  const normalized = text
+    .trim()
+    .replace(/^(?:\*\*|__)\s*/, "")
+    .replace(/\s*(?:\*\*|__)$/, "")
+    .replace(/[.!]\s*$/, "")
+    .trim()
+    .toLowerCase();
+  return normalized === "end of test";
+}
+
+export function investigationPreviewPageCount(showTeacherCopy: boolean, criterionCount = 0, studentPageCount = 1) {
+  if (!showTeacherCopy) return studentPageCount;
   const rubricPageCount = Math.max(1, Math.ceil(criterionCount / INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE));
-  return 1 + rubricPageCount;
+  return studentPageCount + rubricPageCount;
 }
 
 export function examQuestionPageReservedHeight(frontMatter: FrontMatterConfig) {

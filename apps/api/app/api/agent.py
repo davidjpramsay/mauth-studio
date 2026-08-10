@@ -48,6 +48,7 @@ class BrowserEditorSession:
 
 @dataclass
 class IdempotencyCacheEntry:
+    kind: str
     request_hash: str
     status_code: int
     body: dict[str, Any]
@@ -164,6 +165,75 @@ def _validate_action_payload(
             _error_body("INVALID_REQUEST", "actions.apply requires baseSnapshotId."),
         )
     return None
+
+
+def _validate_document_create_payload(body: dict[str, Any]) -> tuple[int, dict[str, Any]] | None:
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return (400, _error_body("INVALID_REQUEST", "document.create requires a non-empty title."))
+    template = body.get("template", "standard")
+    if template not in {"standard", "exam", "worksheet", "notes", "investigation"}:
+        return (400, _error_body("INVALID_REQUEST", "document.create template is not supported."))
+    on_conflict = body.get("onConflict", "error")
+    if on_conflict not in {"error", "unique"}:
+        return (400, _error_body("INVALID_REQUEST", "onConflict must be error or unique."))
+    return None
+
+
+def _validate_document_path_payload(body: dict[str, Any], operation: str) -> tuple[int, dict[str, Any]] | None:
+    path = body.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return (400, _error_body("INVALID_REQUEST", f"{operation} requires a non-empty relative path."))
+    return None
+
+
+def _validate_document_close_payload(body: dict[str, Any]) -> tuple[int, dict[str, Any]] | None:
+    document_id = body.get("documentId")
+    if document_id is not None and (not isinstance(document_id, str) or not document_id):
+        return (400, _error_body("INVALID_REQUEST", "documentId must be a non-empty string when provided."))
+    policy = body.get("policy", "require-clean")
+    if policy not in {"require-clean", "save", "discard"}:
+        return (400, _error_body("INVALID_REQUEST", "policy must be require-clean, save, or discard."))
+    return None
+
+
+def _dispatch_idempotent_browser_request(
+    *, kind: str, payload: dict[str, Any], idempotency_key: str | None, operation: str
+) -> JSONResponse:
+    if not idempotency_key:
+        return _json_response(400, _error_body("INVALID_REQUEST", f"{operation} requires an Idempotency-Key header."))
+
+    request_payload = {**payload, "idempotencyKey": idempotency_key}
+    request_hash = _request_hash(request_payload)
+    with _lock:
+        cached = _idempotency_cache.get(idempotency_key)
+        if cached:
+            if cached.kind != kind or cached.request_hash != request_hash:
+                return _json_response(
+                    409,
+                    _error_body(
+                        "IDEMPOTENCY_KEY_REUSED",
+                        f"That Idempotency-Key was already used for a different {operation} request.",
+                    ),
+                )
+            _append_event_unlocked(
+                "request.replayed",
+                request_id=idempotency_key,
+                data={"kind": kind, "status": cached.status_code},
+            )
+            return _json_response(cached.status_code, cached.body)
+
+    status_code, body = _dispatch_to_browser(kind, request_payload)
+    if status_code not in {503, 504}:
+        with _lock:
+            _idempotency_cache[idempotency_key] = IdempotencyCacheEntry(
+                kind=kind,
+                request_hash=request_hash,
+                status_code=status_code,
+                body=body,
+                created_at=_now(),
+            )
+    return _json_response(status_code, body)
 
 
 def _active_editor_error_unlocked() -> tuple[int, dict[str, Any]] | None:
@@ -528,49 +598,79 @@ def apply_current_actions(
     payload: dict[str, Any] = JSON_BODY,
     idempotency_key: str | None = IDEMPOTENCY_KEY_HEADER,
 ) -> JSONResponse:
-    if not idempotency_key:
-        return _json_response(400, _error_body("INVALID_REQUEST", "actions.apply requires an Idempotency-Key header."))
-
     invalid = _validate_action_payload(payload, require_base_snapshot=True)
     if invalid:
         status_code, body = invalid
         return _json_response(status_code, body)
 
-    request_hash = _request_hash(payload)
-    with _lock:
-        cached = _idempotency_cache.get(idempotency_key)
-        if cached:
-            if cached.request_hash != request_hash:
-                return _json_response(
-                    409,
-                    _error_body(
-                        "IDEMPOTENCY_KEY_REUSED",
-                        "That Idempotency-Key was already used for a different actions.apply payload.",
-                    ),
-                )
-            _append_event_unlocked(
-                "request.replayed",
-                request_id=idempotency_key,
-                data={"kind": "actions.apply", "status": cached.status_code},
-            )
-            return _json_response(cached.status_code, cached.body)
-
-    status_code, body = _dispatch_to_browser("actions.apply", payload)
-    if status_code not in {503, 504}:
-        with _lock:
-            _idempotency_cache[idempotency_key] = IdempotencyCacheEntry(
-                request_hash=request_hash,
-                status_code=status_code,
-                body=body,
-                created_at=_now(),
-            )
-    return _json_response(status_code, body)
+    return _dispatch_idempotent_browser_request(
+        kind="actions.apply",
+        payload=payload,
+        idempotency_key=idempotency_key,
+        operation="actions.apply",
+    )
 
 
 @agent_router.post("/validation/run")
 def run_current_validation(payload: dict[str, Any] = JSON_BODY) -> JSONResponse:
     status_code, body = _dispatch_to_browser("validation.run", payload)
     return _json_response(status_code, body)
+
+
+@agent_router.get("/documents")
+def list_current_documents(
+    folder_path: str | None = Query(default=None, alias="folderPath"),
+    recursive: bool = Query(default=True),
+) -> JSONResponse:
+    payload: dict[str, Any] = {"recursive": recursive}
+    if folder_path is not None:
+        payload["folderPath"] = folder_path
+    status_code, body = _dispatch_to_browser("documents.list", payload)
+    return _json_response(status_code, body)
+
+
+@agent_router.post("/documents/create")
+def create_current_document(
+    payload: dict[str, Any] = JSON_BODY,
+    idempotency_key: str | None = IDEMPOTENCY_KEY_HEADER,
+) -> JSONResponse:
+    invalid = _validate_document_create_payload(payload)
+    if invalid:
+        status_code, body = invalid
+        return _json_response(status_code, body)
+    return _dispatch_idempotent_browser_request(
+        kind="document.create",
+        payload=payload,
+        idempotency_key=idempotency_key,
+        operation="document.create",
+    )
+
+
+@agent_router.post("/documents/open")
+def open_current_document(payload: dict[str, Any] = JSON_BODY) -> JSONResponse:
+    invalid = _validate_document_path_payload(payload, "document.open")
+    if invalid:
+        status_code, body = invalid
+        return _json_response(status_code, body)
+    status_code, body = _dispatch_to_browser("document.open", payload)
+    return _json_response(status_code, body)
+
+
+@agent_router.post("/documents/close")
+def close_current_document(
+    payload: dict[str, Any] = JSON_BODY,
+    idempotency_key: str | None = IDEMPOTENCY_KEY_HEADER,
+) -> JSONResponse:
+    invalid = _validate_document_close_payload(payload)
+    if invalid:
+        status_code, body = invalid
+        return _json_response(status_code, body)
+    return _dispatch_idempotent_browser_request(
+        kind="document.close",
+        payload=payload,
+        idempotency_key=idempotency_key,
+        operation="document.close",
+    )
 
 
 @agent_router.post("/presence")
@@ -722,7 +822,7 @@ def reject_agent_suggestion(suggestion_id: str, payload: dict[str, Any] = JSON_B
 def mauth_agent_discovery() -> dict[str, Any]:
     return {
         "name": "Mauth Studio Local Agent Bridge",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "localOnly": True,
         "requiresActiveEditor": True,
         "authentication": {
@@ -734,6 +834,10 @@ def mauth_agent_discovery() -> dict[str, Any]:
         "docs": "/agent-docs",
         "endpoints": {
             "snapshot": "/api/agent/current/snapshot",
+            "documents": "/api/agent/current/documents",
+            "documentCreate": "/api/agent/current/documents/create",
+            "documentOpen": "/api/agent/current/documents/open",
+            "documentClose": "/api/agent/current/documents/close",
             "actionsPreview": "/api/agent/current/actions/preview",
             "actionsApply": "/api/agent/current/actions/apply",
             "validationRun": "/api/agent/current/validation/run",

@@ -32,14 +32,6 @@ const VECTOR_2D_LABEL_STYLES: Array<{ value: Vector2DLabelStyle; label: string }
   { value: "custom", label: "Custom LaTeX" },
 ];
 
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
-
 type Vector2DGraphEditorProps = {
   config: GraphConfig;
   showSolutions?: boolean;
@@ -547,15 +539,15 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Position
-                      <input
-                        type="number"
+                      <NumericExpressionInput
                         min={0.05}
                         max={0.95}
                         step={0.05}
-                        value={numberInputValue(segmentLabel.position)}
-                        onChange={(event) =>
+                        value={segmentLabel.position}
+                        ariaLabel={`Segment label ${segmentLabelIndex + 1} position`}
+                        onValueChange={(value) =>
                           updateSegmentLabel(segmentLabelIndex, {
-                            position: Math.max(0.05, Math.min(0.95, optionalNumber(event.target.value) ?? 0.55)),
+                            position: Math.max(0.05, Math.min(0.95, value ?? 0.55)),
                           })
                         }
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
@@ -563,10 +555,10 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Offset px
-                      <input
-                        type="number"
-                        value={numberInputValue(segmentLabel.offsetPx)}
-                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { offsetPx: optionalNumber(event.target.value) ?? 18 })}
+                      <NumericExpressionInput
+                        value={segmentLabel.offsetPx}
+                        ariaLabel={`Segment label ${segmentLabelIndex + 1} offset`}
+                        onValueChange={(value) => updateSegmentLabel(segmentLabelIndex, { offsetPx: value ?? 18 })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
@@ -594,19 +586,19 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(2,minmax(90px,1fr))_auto] md:items-end">
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Label i
-                      <input
-                        type="number"
-                        value={numberInputValue(segmentLabel.labelX)}
-                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { labelX: optionalNumber(event.target.value) })}
+                      <NumericExpressionInput
+                        value={segmentLabel.labelX}
+                        ariaLabel={`Segment label ${segmentLabelIndex + 1} i position`}
+                        onValueChange={(value) => updateSegmentLabel(segmentLabelIndex, { labelX: value })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Label j
-                      <input
-                        type="number"
-                        value={numberInputValue(segmentLabel.labelY)}
-                        onChange={(event) => updateSegmentLabel(segmentLabelIndex, { labelY: optionalNumber(event.target.value) })}
+                      <NumericExpressionInput
+                        value={segmentLabel.labelY}
+                        ariaLabel={`Segment label ${segmentLabelIndex + 1} j position`}
+                        onValueChange={(value) => updateSegmentLabel(segmentLabelIndex, { labelY: value })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
@@ -720,14 +712,12 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Radius
-                      <input
-                        type="number"
+                      <NumericExpressionInput
                         min={0.05}
                         step={1}
-                        value={numberInputValue(marker.radius)}
-                        onChange={(event) =>
-                          updateAngleMarker(markerIndex, { radius: Math.max(0.05, optionalNumber(event.target.value) ?? 0.45) })
-                        }
+                        value={marker.radius}
+                        ariaLabel={`Angle marker ${markerIndex + 1} radius`}
+                        onValueChange={(value) => updateAngleMarker(markerIndex, { radius: Math.max(0.05, value ?? 0.45) })}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
@@ -742,19 +732,19 @@ export function Vector2DGraphEditor({ config, showSolutions = true, settingsMode
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Label i
-                      <input
-                        type="number"
-                        value={numberInputValue(marker.labelX)}
-                        onChange={(event) => updateAngleLabelPosition(markerIndex, 0, optionalNumber(event.target.value))}
+                      <NumericExpressionInput
+                        value={marker.labelX}
+                        ariaLabel={`Angle marker ${markerIndex + 1} label i position`}
+                        onValueChange={(value) => updateAngleLabelPosition(markerIndex, 0, value)}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-medium">
                       Label j
-                      <input
-                        type="number"
-                        value={numberInputValue(marker.labelY)}
-                        onChange={(event) => updateAngleLabelPosition(markerIndex, 1, optionalNumber(event.target.value))}
+                      <NumericExpressionInput
+                        value={marker.labelY}
+                        ariaLabel={`Angle marker ${markerIndex + 1} label j position`}
+                        onValueChange={(value) => updateAngleLabelPosition(markerIndex, 1, value)}
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                       />
                     </label>

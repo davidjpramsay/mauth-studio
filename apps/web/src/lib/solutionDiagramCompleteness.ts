@@ -51,6 +51,8 @@ const PRESENTATION_ONLY_KEYS = new Set([
   "showAxes",
   "showAxisLabels",
   "showAxisNumbers",
+  "showXAxisNumbers",
+  "showYAxisNumbers",
   "showFunctionArrows",
   "showGrid",
   "showGridBorder",

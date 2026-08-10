@@ -877,6 +877,8 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
         "showMajorGrid",
         "showAxisLabels",
         "showAxisNumbers",
+        "showXAxisNumbers",
+        "showYAxisNumbers",
         "showArrows",
         "showXAxisMinArrow",
         "showXAxisMaxArrow",
@@ -903,7 +905,17 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
     numberFields(value, ["widthPx", "heightPx", "xMin", "xMax", "yMin", "yMax"], path, issues);
     booleanFields(
       value,
-      ["showAxes", "showGrid", "showMajorGrid", "showAxisLabels", "showAxisNumbers", "showArrows", "equalScale"],
+      [
+        "showAxes",
+        "showGrid",
+        "showMajorGrid",
+        "showAxisLabels",
+        "showAxisNumbers",
+        "showXAxisNumbers",
+        "showYAxisNumbers",
+        "showArrows",
+        "equalScale",
+      ],
       path,
       issues,
     );

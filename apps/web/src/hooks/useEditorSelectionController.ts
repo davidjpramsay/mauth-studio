@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from "react";
 
+import { isFrontMatterScrollAnchor } from "@/lib/scrollAnchors";
+
 interface UseEditorSelectionControllerOptions<
   TQuestion extends { id: string },
   TSectionHeading extends { id: string },
@@ -55,7 +57,7 @@ export function useEditorSelectionController<
   const activeSectionHeadingId = sectionHeadingIdFromScrollAnchor(activeTocItemId);
   const activeSectionHeading = sectionHeadings.find((heading) => heading.id === activeSectionHeadingId) ?? null;
   const editingSectionHeading = Boolean(activeSectionHeading);
-  const editingFrontMatter = activeTocItemId === frontMatterAnchor;
+  const editingFrontMatter = activeTocItemId === frontMatterAnchor || isFrontMatterScrollAnchor(activeTocItemId);
   const pageBreakQuestionIds = useMemo(
     () => new Set(questions.filter(questionHasPageBreak).map((question) => question.id)),
     [questionHasPageBreak, questions],

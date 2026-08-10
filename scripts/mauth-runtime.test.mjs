@@ -73,3 +73,16 @@ test("runtime resolution accepts an explicit bridge token", () => {
     Authorization: "Bearer explicit-agent-token-that-is-at-least-32-characters",
   });
 });
+
+test("runtime discovery follows Windows and Linux application-data conventions", () => {
+  assert.equal(
+    defaultDesktopRuntimeFile("C:\\Users\\teacher", "win32", {
+      APPDATA: "C:\\Users\\teacher\\AppData\\Roaming",
+    }),
+    path.join("C:\\Users\\teacher\\AppData\\Roaming", "Mauth Studio", "runtime.json"),
+  );
+  assert.equal(
+    defaultDesktopRuntimeFile("/home/teacher", "linux", { XDG_CONFIG_HOME: "/home/teacher/.config-test" }),
+    path.join("/home/teacher/.config-test", "Mauth Studio", "runtime.json"),
+  );
+});

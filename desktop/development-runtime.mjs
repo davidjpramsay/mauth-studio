@@ -1,6 +1,8 @@
 import path from "node:path";
 
-export function developmentRuntimePlan({ repoRoot, apiPort, webPort }) {
+import { developmentPythonExecutable } from "./platform-paths.mjs";
+
+export function developmentRuntimePlan({ repoRoot, apiPort, webPort, platform = process.platform, nodeExecutable = process.execPath }) {
   const apiUrl = `http://127.0.0.1:${apiPort}`;
   const webUrl = `http://127.0.0.1:${webPort}`;
   return {
@@ -8,6 +10,7 @@ export function developmentRuntimePlan({ repoRoot, apiPort, webPort }) {
     webUrl,
     api: {
       cwd: path.join(repoRoot, "apps", "api"),
+      executable: developmentPythonExecutable(repoRoot, platform),
       args: [
         "-m",
         "uvicorn",
@@ -27,9 +30,17 @@ export function developmentRuntimePlan({ repoRoot, apiPort, webPort }) {
     },
     web: {
       cwd: path.join(repoRoot, "apps", "web"),
-      executable: path.join(repoRoot, "apps", "web", "node_modules", ".bin", "vite"),
-      args: ["--host", "127.0.0.1", "--port", String(webPort), "--strictPort"],
+      executable: nodeExecutable,
+      args: [
+        path.join(repoRoot, "apps", "web", "node_modules", "vite", "bin", "vite.js"),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(webPort),
+        "--strictPort",
+      ],
       env: {
+        ELECTRON_RUN_AS_NODE: "1",
         VITE_API_URL: "",
         VITE_API_PROXY_TARGET: apiUrl,
       },

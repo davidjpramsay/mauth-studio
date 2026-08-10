@@ -28,6 +28,10 @@ Packaged `/api/agent/*` requests require the bearer token from the private runti
 
 ```text
 GET  /api/agent/current/snapshot?documentId=optional-open-document-id
+GET  /api/agent/current/documents?folderPath=optional&recursive=true
+POST /api/agent/current/documents/create
+POST /api/agent/current/documents/open
+POST /api/agent/current/documents/close
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
@@ -44,7 +48,7 @@ GET  /.well-known/mauth-agent.json
 GET  /agent-docs
 ```
 
-`actions.apply` requires:
+`actions.apply`, `documents/create`, and `documents/close` require an `Idempotency-Key`. `actions.apply` also requires:
 
 - `baseSnapshotId`
 - `Idempotency-Key`
@@ -64,6 +68,10 @@ pnpm agent:mcp
 
 Tools:
 
+- `mauth_documents_list`
+- `mauth_document_create`
+- `mauth_document_open`
+- `mauth_document_close`
 - `mauth_snapshot`
 - `mauth_actions_preview`
 - `mauth_actions_apply`
@@ -78,6 +86,8 @@ Tools:
 - `mauth_suggestion_mark`
 
 `mauth_snapshot`, `mauth_actions_preview`, `mauth_actions_apply`, and `mauth_validation_run` accept an optional `documentId`. Read it from `openDocuments`; do not infer tab identity from title text or DOM order.
+
+Use `mauth_documents_list` to obtain stable relative file paths. `mauth_document_create` creates and revision-saves a blank template document before opening its tab. `mauth_document_open` opens or activates a saved path. `mauth_document_close` defaults to `require-clean`; use `save` or `discard` only when that outcome is explicit. The connector returns validated structured output and marks HTTP failures as MCP errors without throwing away Mauth's error code or recovery details.
 
 ## Agent Loop
 

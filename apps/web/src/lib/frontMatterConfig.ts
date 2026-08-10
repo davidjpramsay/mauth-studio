@@ -1,3 +1,5 @@
+import type { DiagramAlignment, GraphConfig } from "@mauth-studio/shared";
+
 import { STARTER_LOGOS } from "./logoLibrary.ts";
 
 export type TitlePageTemplate = "standard" | "exam" | "worksheet" | "notes" | "investigation";
@@ -70,6 +72,29 @@ export interface InvestigationCriterionConfig {
   allocations: InvestigationMarkAllocationConfig[];
 }
 
+export interface InvestigationTextSectionConfig {
+  id: string;
+  heading: string;
+  body: string;
+}
+
+export interface InvestigationStudentPageConfig {
+  id: string;
+  title: string;
+  sections: InvestigationTextSectionConfig[];
+}
+
+export interface InvestigationDiagramConfig {
+  id: string;
+  title: string;
+  caption: string;
+  pageId: string;
+  /** Legacy two-page location retained for older documents and app builds. */
+  page: 1 | 2;
+  alignment: DiagramAlignment;
+  graphConfig: GraphConfig;
+}
+
 export interface InvestigationConfig {
   teacherNameLabel: string;
   assessmentTypeLabel: string;
@@ -82,6 +107,9 @@ export interface InvestigationConfig {
   date: string;
   taskTitle: string;
   taskBody: string;
+  taskBodyContinuation: string;
+  studentPages: InvestigationStudentPageConfig[];
+  diagrams: InvestigationDiagramConfig[];
   guidanceTitle: string;
   rubricTitle: string;
   rubricInstructions: string;
@@ -247,6 +275,21 @@ export const DEFAULT_INVESTIGATION: InvestigationConfig = {
   taskTitle: "Task",
   taskBody:
     "Describe the mathematical problem or relationship to be investigated. Include the required scope, any assumptions, and the role of appropriate technology.",
+  taskBodyContinuation: "",
+  studentPages: [
+    {
+      id: "investigation-page-1",
+      title: "Task",
+      sections: [
+        {
+          id: "investigation-text-1",
+          heading: "",
+          body: "Describe the mathematical problem or relationship to be investigated. Include the required scope, any assumptions, and the role of appropriate technology.",
+        },
+      ],
+    },
+  ],
+  diagrams: [],
   guidanceTitle: "What is expected for this investigation?",
   rubricTitle: "Teacher rubric",
   rubricInstructions:
@@ -526,9 +569,95 @@ function normalizeInvestigationCriterion(value: unknown, fallback: Investigation
   };
 }
 
+function normalizeInvestigationTextSection(value: unknown, pageIndex: number, sectionIndex: number): InvestigationTextSectionConfig {
+  const record = asRecord(value);
+  return {
+    id: stringOrDefault(record?.id, `investigation-text-${pageIndex + 1}-${sectionIndex + 1}`),
+    heading: stringOrDefault(record?.heading, ""),
+    body: stringOrDefault(record?.body, ""),
+  };
+}
+
+function normalizeInvestigationStudentPage(value: unknown, pageIndex: number): InvestigationStudentPageConfig {
+  const record = asRecord(value);
+  const sourceSections = Array.isArray(record?.sections) ? record.sections : [];
+  return {
+    id: stringOrDefault(record?.id, `investigation-page-${pageIndex + 1}`),
+    title: stringOrDefault(record?.title, pageIndex === 0 ? "Task" : `Task (continued)`),
+    sections: sourceSections.map((section, sectionIndex) => normalizeInvestigationTextSection(section, pageIndex, sectionIndex)),
+  };
+}
+
+function legacyInvestigationStudentPages({
+  taskTitle,
+  taskBody,
+  taskBodyContinuation,
+  sourceDiagrams,
+}: {
+  taskTitle: string;
+  taskBody: string;
+  taskBodyContinuation: string;
+  sourceDiagrams: unknown[];
+}): InvestigationStudentPageConfig[] {
+  const pages: InvestigationStudentPageConfig[] = [
+    {
+      id: "investigation-page-1",
+      title: taskTitle,
+      sections: [{ id: "investigation-text-1", heading: "", body: taskBody }],
+    },
+  ];
+  const hasSecondPage = taskBodyContinuation.trim() || sourceDiagrams.some((diagram) => asRecord(diagram)?.page === 2);
+  if (hasSecondPage) {
+    pages.push({
+      id: "investigation-page-2",
+      title: `${taskTitle} (continued)`,
+      sections: taskBodyContinuation ? [{ id: "investigation-text-2", heading: "", body: taskBodyContinuation }] : [],
+    });
+  }
+  return pages;
+}
+
+function normalizeInvestigationDiagram(
+  value: unknown,
+  index: number,
+  studentPages: InvestigationStudentPageConfig[],
+): InvestigationDiagramConfig {
+  const record = asRecord(value);
+  const graphConfig = asRecord(record?.graphConfig);
+  const alignment = record?.alignment;
+  const legacyPageIndex = record?.page === 2 ? 1 : 0;
+  const explicitPageId = typeof record?.pageId === "string" ? record.pageId : "";
+  const pageIndex = Math.max(
+    0,
+    studentPages.findIndex((page) => page.id === explicitPageId),
+  );
+  const resolvedPageIndex = explicitPageId && studentPages[pageIndex]?.id === explicitPageId ? pageIndex : legacyPageIndex;
+  const pageId = studentPages[resolvedPageIndex]?.id ?? studentPages[0]?.id ?? "investigation-page-1";
+  return {
+    id: stringOrDefault(record?.id, `investigation-diagram-${index + 1}`),
+    title: stringOrDefault(record?.title, `Diagram ${index + 1}`),
+    caption: stringOrDefault(record?.caption, ""),
+    pageId,
+    page: resolvedPageIndex === 1 ? 2 : 1,
+    alignment: alignment === "left" || alignment === "right" || alignment === "center" ? alignment : "center",
+    graphConfig: {
+      ...(graphConfig ?? {}),
+      type: typeof graphConfig?.type === "string" ? graphConfig.type : "graph2d",
+    } as GraphConfig,
+  };
+}
+
 export function normalizeInvestigation(value: unknown): InvestigationConfig {
   const record = asRecord(value);
   const sourceCriteria = Array.isArray(record?.criteria) && record.criteria.length ? record.criteria : DEFAULT_INVESTIGATION.criteria;
+  const sourceDiagrams = Array.isArray(record?.diagrams) ? record.diagrams : DEFAULT_INVESTIGATION.diagrams;
+  const taskTitle = stringOrDefault(record?.taskTitle, DEFAULT_INVESTIGATION.taskTitle);
+  const taskBody = stringOrDefault(record?.taskBody, DEFAULT_INVESTIGATION.taskBody);
+  const taskBodyContinuation = stringOrDefault(record?.taskBodyContinuation, DEFAULT_INVESTIGATION.taskBodyContinuation);
+  const studentPages =
+    Array.isArray(record?.studentPages) && record.studentPages.length
+      ? record.studentPages.map(normalizeInvestigationStudentPage)
+      : legacyInvestigationStudentPages({ taskTitle, taskBody, taskBodyContinuation, sourceDiagrams });
   return {
     teacherNameLabel: stringOrDefault(record?.teacherNameLabel, DEFAULT_INVESTIGATION.teacherNameLabel),
     assessmentTypeLabel: stringOrDefault(record?.assessmentTypeLabel, DEFAULT_INVESTIGATION.assessmentTypeLabel),
@@ -539,8 +668,11 @@ export function normalizeInvestigation(value: unknown): InvestigationConfig {
     time: stringOrDefault(record?.time, DEFAULT_INVESTIGATION.time),
     dateLabel: stringOrDefault(record?.dateLabel, DEFAULT_INVESTIGATION.dateLabel),
     date: stringOrDefault(record?.date, DEFAULT_INVESTIGATION.date),
-    taskTitle: stringOrDefault(record?.taskTitle, DEFAULT_INVESTIGATION.taskTitle),
-    taskBody: stringOrDefault(record?.taskBody, DEFAULT_INVESTIGATION.taskBody),
+    taskTitle,
+    taskBody,
+    taskBodyContinuation,
+    studentPages,
+    diagrams: sourceDiagrams.map((diagram, index) => normalizeInvestigationDiagram(diagram, index, studentPages)),
     guidanceTitle: stringOrDefault(record?.guidanceTitle, DEFAULT_INVESTIGATION.guidanceTitle),
     rubricTitle: stringOrDefault(record?.rubricTitle, DEFAULT_INVESTIGATION.rubricTitle),
     rubricInstructions: stringOrDefault(record?.rubricInstructions, DEFAULT_INVESTIGATION.rubricInstructions),
@@ -559,6 +691,35 @@ export function investigationCriterionMarks(criterion: InvestigationCriterionCon
 
 export function investigationTotalMarks(value: InvestigationConfig | unknown) {
   return normalizeInvestigation(value).criteria.reduce((sum, criterion) => sum + investigationCriterionMarks(criterion), 0);
+}
+
+export function investigationStudentPageCount(value: InvestigationConfig | unknown) {
+  return normalizeInvestigation(value).studentPages.length;
+}
+
+function legacyTextForInvestigationPage(page: InvestigationStudentPageConfig | undefined) {
+  if (!page) return "";
+  return page.sections
+    .map((section) => [section.heading.trim() ? `**${section.heading.trim()}**` : "", section.body.trim()].filter(Boolean).join("\n"))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Keep the original two-page fields coherent while the structured page model becomes the source of truth. */
+export function withInvestigationLegacyMirrors(value: InvestigationConfig | unknown): InvestigationConfig {
+  const investigation = normalizeInvestigation(value);
+  const firstPage = investigation.studentPages[0];
+  const secondPage = investigation.studentPages[1];
+  return {
+    ...investigation,
+    taskTitle: firstPage?.title || investigation.taskTitle,
+    taskBody: legacyTextForInvestigationPage(firstPage),
+    taskBodyContinuation: legacyTextForInvestigationPage(secondPage),
+    diagrams: investigation.diagrams.map((diagram) => {
+      const pageIndex = investigation.studentPages.findIndex((page) => page.id === diagram.pageId);
+      return { ...diagram, page: pageIndex === 1 ? 2 : 1 };
+    }),
+  };
 }
 
 export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {

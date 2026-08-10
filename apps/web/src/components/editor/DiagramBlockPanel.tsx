@@ -62,7 +62,7 @@ export function DiagramBlockPanel({
   const showInlineSettings = settingsMode === "inline";
   const actions = (
     <>
-      {onCompleteInSolutions ? (
+      {showInlineSettings && onCompleteInSolutions ? (
         <Button
           type="button"
           variant="outline"
@@ -75,7 +75,7 @@ export function DiagramBlockPanel({
           className="h-8 gap-2"
         >
           <CopyPlus className="size-4" aria-hidden="true" />
-          Complete in solutions
+          Create solution copy
         </Button>
       ) : null}
       {showInlineSettings ? (
@@ -94,26 +94,28 @@ export function DiagramBlockPanel({
           </select>
         </>
       ) : null}
-      <select
-        aria-label={`${label} type`}
-        value={type}
-        onChange={(event) => onTypeChange(event.target.value)}
-        className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
-      >
-        {diagramTypeGroups.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.values.map((value) => {
-              const diagramType = diagramTypes.find((candidate) => candidate.value === value);
-              if (!diagramType) return null;
-              return (
-                <option key={diagramType.value} value={diagramType.value}>
-                  {diagramType.label}
-                </option>
-              );
-            })}
-          </optgroup>
-        ))}
-      </select>
+      {showInlineSettings ? (
+        <select
+          aria-label={`${label} type`}
+          value={type}
+          onChange={(event) => onTypeChange(event.target.value)}
+          className="h-9 w-52 max-w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+        >
+          {diagramTypeGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.values.map((value) => {
+                const diagramType = diagramTypes.find((candidate) => candidate.value === value);
+                if (!diagramType) return null;
+                return (
+                  <option key={diagramType.value} value={diagramType.value}>
+                    {diagramType.label}
+                  </option>
+                );
+              })}
+            </optgroup>
+          ))}
+        </select>
+      ) : null}
       <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
     </>
   );

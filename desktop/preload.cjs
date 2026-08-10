@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const MAUTH_DOCUMENT_OPEN_CHANNEL = "mauth:open-document";
 const MAUTH_AGENT_CONNECTOR_INFO_CHANNEL = "mauth:agent-connector-info";
+const MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL = "mauth:choose-documents-folder";
 const MAUTH_AGENT_SETUP_OPEN_CHANNEL = "mauth:open-agent-setup";
 const MAUTH_SYSTEM_STATUS_OPEN_CHANNEL = "mauth:open-system-status";
 const MAUTH_THEME_TOGGLE_CHANNEL = "mauth:toggle-theme";
@@ -41,6 +42,9 @@ ipcRenderer.on(MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL, () => {
 contextBridge.exposeInMainWorld("mauthDesktop", {
   getAgentConnectorInfo() {
     return ipcRenderer.invoke(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
+  },
+  chooseDocumentsFolder() {
+    return ipcRenderer.invoke(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL);
   },
   onOpenAgentSetup(listener) {
     if (typeof listener !== "function") return () => {};

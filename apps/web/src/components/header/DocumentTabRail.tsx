@@ -1,8 +1,8 @@
 import { ChevronDown, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { EditorDocumentTab } from "@/lib/editorDocumentTabs";
+import { documentTabDropPlacement, type DocumentTabDropPlacement, type EditorDocumentTab } from "@/lib/editorDocumentTabs";
 import { cn } from "@/lib/utils";
 
 interface DocumentTabRailProps {
@@ -10,6 +10,7 @@ interface DocumentTabRailProps {
   activeTabId: string | null;
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onReorderTab: (tabId: string, targetTabId: string, placement: DocumentTabDropPlacement) => void;
 }
 
 function tabStatusTone(tab: EditorDocumentTab) {
@@ -19,10 +20,39 @@ function tabStatusTone(tab: EditorDocumentTab) {
   return "bg-emerald-400";
 }
 
-export function DocumentTabRail({ tabs, activeTabId, onActivateTab, onCloseTab }: DocumentTabRailProps) {
+export function DocumentTabRail({ tabs, activeTabId, onActivateTab, onCloseTab, onReorderTab }: DocumentTabRailProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const dropTargetRef = useRef<{ tabId: string; placement: DocumentTabDropPlacement } | null>(null);
+  const pointerDragRef = useRef<{ pointerId: number; startX: number; tabId: string; dragging: boolean } | null>(null);
+  const suppressActivationRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ tabId: string; placement: DocumentTabDropPlacement } | null>(null);
+
+  const clearTabDrag = useCallback(() => {
+    dropTargetRef.current = null;
+    pointerDragRef.current = null;
+    setDraggedTabId(null);
+    setDropTarget(null);
+  }, []);
+
+  const updateDropTarget = useCallback((clientX: number, sourceTabId: string) => {
+    const tabElements = Array.from(railRef.current?.querySelectorAll<HTMLElement>("[data-document-tab-id]") ?? []);
+    const targetElement = tabElements.find((element) => clientX <= element.getBoundingClientRect().right) ?? tabElements.at(-1);
+    const targetTabId = targetElement?.dataset.documentTabId;
+    if (!targetElement || !targetTabId || targetTabId === sourceTabId) {
+      dropTargetRef.current = null;
+      setDropTarget(null);
+      return;
+    }
+    const nextTarget = {
+      tabId: targetTabId,
+      placement: documentTabDropPlacement(targetElement.getBoundingClientRect(), clientX),
+    };
+    dropTargetRef.current = nextTarget;
+    setDropTarget(nextTarget);
+  }, []);
 
   useEffect(() => {
     const rail = railRef.current;
@@ -50,6 +80,47 @@ export function DocumentTabRail({ tabs, activeTabId, onActivateTab, onCloseTab }
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const pointerDrag = pointerDragRef.current;
+      if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+      if (!pointerDrag.dragging) {
+        if (Math.abs(event.clientX - pointerDrag.startX) < 5) return;
+        pointerDrag.dragging = true;
+        setDraggedTabId(pointerDrag.tabId);
+        setMenuOpen(false);
+      }
+      event.preventDefault();
+      updateDropTarget(event.clientX, pointerDrag.tabId);
+    }
+
+    function handlePointerEnd(event: PointerEvent) {
+      const pointerDrag = pointerDragRef.current;
+      if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+      const completedDrag = pointerDrag.dragging;
+      const target = dropTargetRef.current;
+      clearTabDrag();
+      if (!completedDrag) return;
+      suppressActivationRef.current = true;
+      window.setTimeout(() => {
+        suppressActivationRef.current = false;
+      }, 0);
+      event.preventDefault();
+      if (target && target.tabId !== pointerDrag.tabId) {
+        onReorderTab(pointerDrag.tabId, target.tabId, target.placement);
+      }
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerEnd, { passive: false });
+    window.addEventListener("pointercancel", handlePointerEnd, { passive: false });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+    };
+  }, [clearTabDrag, onReorderTab, updateDropTarget]);
+
   return (
     <div ref={rootRef} className="relative flex min-w-0 flex-1 items-center gap-1">
       <div
@@ -67,20 +138,35 @@ export function DocumentTabRail({ tabs, activeTabId, onActivateTab, onCloseTab }
               aria-selected={active}
               data-document-tab-id={tab.id}
               className={cn(
-                "group flex h-8 min-w-[7.5rem] max-w-[14rem] flex-[1_1_13rem] items-center gap-1 rounded-md border px-1.5 text-sm transition-colors",
+                "group relative flex h-8 min-w-[7.5rem] max-w-[14rem] flex-[1_1_13rem] cursor-grab items-center gap-1 rounded-md border px-1.5 text-sm transition-colors active:cursor-grabbing",
                 active
                   ? "border-blue-400/70 bg-blue-500/15 text-white shadow-[inset_0_-2px_0_rgba(96,165,250,0.8)]"
                   : "border-blue-300/15 bg-[#050b1d] text-blue-100/80 hover:border-blue-300/35 hover:bg-blue-500/10 hover:text-white",
+                draggedTabId === tab.id && "opacity-45",
+                dropTarget?.tabId === tab.id &&
+                  (dropTarget.placement === "before" ? "document-tab-drop-before" : "document-tab-drop-after"),
               )}
-              title={`${tab.title}\n${tab.statusTitle}`}
+              title={`${tab.title}\n${tab.statusTitle}\nDrag to reorder`}
             >
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none"
-                onClick={() => onActivateTab(tab.id)}
+                className="flex min-w-0 flex-1 touch-none select-none items-center gap-1.5 text-left focus-visible:outline-none"
+                onClick={(event) => {
+                  if (suppressActivationRef.current) {
+                    suppressActivationRef.current = false;
+                    event.preventDefault();
+                    return;
+                  }
+                  onActivateTab(tab.id);
+                }}
                 aria-label={`Open ${tab.title}`}
+                onPointerDown={(event) => {
+                  if (tabs.length < 2 || event.button !== 0) return;
+                  pointerDragRef.current = { pointerId: event.pointerId, startX: event.clientX, tabId: tab.id, dragging: false };
+                }}
+                onDragStart={(event) => event.preventDefault()}
               >
-                <img src="/brand/mauth_icon.png" alt="" className="size-4 shrink-0 object-contain" aria-hidden="true" />
+                <img src="/brand/mauth_icon.png" alt="" className="size-4 shrink-0 object-contain" aria-hidden="true" draggable={false} />
                 <span className="truncate font-medium">{tab.title}</span>
                 <span className={cn("size-1.5 shrink-0 rounded-full", tabStatusTone(tab))} aria-label={tab.statusMessage} />
               </button>

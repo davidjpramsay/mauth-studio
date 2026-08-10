@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_FRONT_MATTER, DEFAULT_NOTES_FRONT_MATTER } from "./frontMatterConfig.ts";
+import { DEFAULT_FRONT_MATTER, DEFAULT_INVESTIGATION_FRONT_MATTER, DEFAULT_NOTES_FRONT_MATTER } from "./frontMatterConfig.ts";
 import {
   buildDocumentToc,
   isOrderedBlockVisible,
@@ -156,6 +156,54 @@ test("notes TOC uses note heading labels and question titles", () => {
   assert.equal(items[1].label, "Section heading");
   assert.equal(items[1].summary, "Notes section");
   assert.equal(items[2].label, "Finance revision");
+});
+
+test("investigation TOC exposes real pages, text sections, diagrams, and the linked rubric", () => {
+  const items = buildDocumentToc({
+    frontMatter: {
+      ...DEFAULT_INVESTIGATION_FRONT_MATTER,
+      investigation: {
+        ...DEFAULT_INVESTIGATION_FRONT_MATTER.investigation!,
+        studentPages: [
+          {
+            id: "page-1",
+            title: "The flight plan",
+            sections: [{ id: "story", heading: "The story", body: "Pilot Poole needs a safe route." }],
+          },
+          { id: "page-2", title: "Your report", sections: [] },
+        ],
+        diagrams: [
+          {
+            id: "paths",
+            title: "Two flight paths",
+            caption: "Compare the paths.",
+            pageId: "page-1",
+            page: 1,
+            alignment: "center",
+            graphConfig: { type: "graph2d" },
+          },
+        ],
+      },
+    },
+    questions: [],
+    sectionHeadings: [],
+    documentFlow: [],
+    showSolutions: false,
+    normalizeDocumentFlow,
+    tocBlockSummary,
+  });
+
+  assert.deepEqual(
+    items.map((item) => [item.label, item.kind, item.depth]),
+    [
+      ["Investigation", "title", 0],
+      ["Student page 1", "investigationPage", 0],
+      ["The story", "investigationText", 1],
+      ["Two flight paths", "diagram", 1],
+      ["Student page 2", "investigationPage", 0],
+      ["Teacher rubric", "investigationRubric", 0],
+    ],
+  );
 });
 
 test("ordered visibility hides student replacement surfaces in solution mode", () => {

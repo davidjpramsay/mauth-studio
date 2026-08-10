@@ -31,8 +31,8 @@ export function statsChartOptionsPatch(spec: StatsChartSpec, patch: Partial<Stat
   };
 }
 
-export function statsChartFillOpacity(value: string) {
-  if (value === "") return undefined;
+export function statsChartFillOpacity(value: string | number | undefined) {
+  if (value === undefined || value === "") return undefined;
   const nextOpacity = Number(value);
   return Number.isFinite(nextOpacity) ? Math.min(1, Math.max(0, nextOpacity)) : undefined;
 }

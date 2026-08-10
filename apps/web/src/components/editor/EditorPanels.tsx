@@ -23,6 +23,31 @@ const INSERT_MENU_OPEN_EVENT = "mauth-studio:insert-menu-open";
 
 let nextInsertMenuId = 0;
 
+function enabledMenuItems(menu: HTMLElement | null) {
+  if (!menu) return [];
+  return Array.from(
+    menu.querySelectorAll<HTMLButtonElement>(
+      ':scope > div > button[role="menuitem"]:not(:disabled), :scope > button[role="menuitem"]:not(:disabled)',
+    ),
+  );
+}
+
+function focusMenuItem(menu: HTMLElement | null, target: "first" | "last" | "next" | "previous", current?: HTMLElement) {
+  const items = enabledMenuItems(menu);
+  if (!items.length) return;
+  if (target === "first") {
+    items[0].focus();
+    return;
+  }
+  if (target === "last") {
+    items[items.length - 1].focus();
+    return;
+  }
+  const currentIndex = current ? items.indexOf(current as HTMLButtonElement) : -1;
+  const offset = target === "next" ? 1 : -1;
+  items[(currentIndex + offset + items.length) % items.length].focus();
+}
+
 interface CollapsiblePanelProps {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -157,6 +182,9 @@ export function ContentInsertionActions({
   extraActions?: InsertionAction[];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const submenuRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const menuIdRef = useRef<string | null>(null);
   if (!menuIdRef.current) {
     nextInsertMenuId += 1;
@@ -246,6 +274,12 @@ export function ContentInsertionActions({
     return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => focusMenuItem(menuRef.current, "first"));
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+
   if (!actions.length) return null;
 
   return (
@@ -260,6 +294,7 @@ export function ContentInsertionActions({
         }}
       >
         <Button
+          ref={triggerRef}
           type="button"
           variant="outline"
           size="sm"
@@ -282,6 +317,14 @@ export function ContentInsertionActions({
             if (event.key === "Escape") {
               setOpen(false);
               setOpenSubmenuIndex(null);
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!open) {
+                window.dispatchEvent(new CustomEvent(INSERT_MENU_OPEN_EVENT, { detail: menuId }));
+                setOpen(true);
+              } else {
+                focusMenuItem(menuRef.current, event.key === "ArrowDown" ? "first" : "last");
+              }
             }
           }}
         >
@@ -291,6 +334,7 @@ export function ContentInsertionActions({
         </Button>
         {open ? (
           <div
+            ref={menuRef}
             id={menuId}
             role="menu"
             className="absolute left-0 top-full z-[100] mt-2 min-w-52 overflow-visible rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
@@ -313,6 +357,7 @@ export function ContentInsertionActions({
                   <button
                     type="button"
                     role="menuitem"
+                    data-insert-menu-index={index}
                     aria-haspopup={hasSubmenu ? "menu" : undefined}
                     aria-expanded={hasSubmenu ? submenuOpen : undefined}
                     disabled={action.disabled}
@@ -320,9 +365,27 @@ export function ContentInsertionActions({
                       if (!hasSubmenu) setOpenSubmenuIndex(null);
                     }}
                     onKeyDown={(event) => {
+                      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        focusMenuItem(menuRef.current, event.key === "ArrowDown" ? "next" : "previous", event.currentTarget);
+                        return;
+                      }
+                      if (event.key === "Home" || event.key === "End") {
+                        event.preventDefault();
+                        focusMenuItem(menuRef.current, event.key === "Home" ? "first" : "last");
+                        return;
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setOpen(false);
+                        setOpenSubmenuIndex(null);
+                        triggerRef.current?.focus();
+                        return;
+                      }
                       if (hasSubmenu && (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ")) {
                         event.preventDefault();
                         setOpenSubmenuIndex(index);
+                        window.requestAnimationFrame(() => focusMenuItem(submenuRefs.current.get(index) ?? null, "first"));
                       }
                     }}
                     onClick={() => {
@@ -343,6 +406,10 @@ export function ContentInsertionActions({
                   </button>
                   {hasSubmenu && submenuOpen ? (
                     <div
+                      ref={(node) => {
+                        if (node) submenuRefs.current.set(index, node);
+                        else submenuRefs.current.delete(index);
+                      }}
                       role="menu"
                       className="absolute left-full top-0 z-[110] min-w-56 overflow-hidden rounded-md border border-border bg-card p-1 text-card-foreground shadow-2xl ring-1 ring-slate-900/5 dark:ring-blue-300/10"
                     >
@@ -352,6 +419,25 @@ export function ContentInsertionActions({
                           type="button"
                           role="menuitem"
                           disabled={subAction.disabled}
+                          onKeyDown={(event) => {
+                            const submenu = submenuRefs.current.get(index) ?? null;
+                            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                              event.preventDefault();
+                              focusMenuItem(submenu, event.key === "ArrowDown" ? "next" : "previous", event.currentTarget);
+                            } else if (event.key === "Home" || event.key === "End") {
+                              event.preventDefault();
+                              focusMenuItem(submenu, event.key === "Home" ? "first" : "last");
+                            } else if (event.key === "ArrowLeft") {
+                              event.preventDefault();
+                              setOpenSubmenuIndex(null);
+                              menuRef.current?.querySelector<HTMLButtonElement>(`[data-insert-menu-index="${index}"]`)?.focus();
+                            } else if (event.key === "Escape") {
+                              event.preventDefault();
+                              setOpen(false);
+                              setOpenSubmenuIndex(null);
+                              triggerRef.current?.focus();
+                            }
+                          }}
                           onClick={() => {
                             if (subAction.disabled) return;
                             setOpen(false);

@@ -1,6 +1,6 @@
 # App Scan And Direction
 
-Last reviewed: 28 July 2026. Read `docs/current-state.md` for the live checkpoint and `docs/architecture.md` for durable boundaries.
+Last reviewed: 31 July 2026. Read `docs/current-state.md` for the live checkpoint and `docs/architecture.md` for durable boundaries.
 
 ## Current Health
 
@@ -42,16 +42,17 @@ The app must remain complete without AI. External agents are first-class clients
 
 ## Current Product Decisions
 
-| Area           | Decision                                                                                         | Revisit when                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Desktop        | Continue with Electron plus packaged FastAPI and web UI.                                         | A proven native-only requirement cannot be met reliably.                  |
-| Files          | Keep visible teacher files in a selected folder and private shared state in Application Support. | Sandbox/cloud constraints require another explicit boundary.              |
-| Agents         | Keep MCP thin over the authenticated HTTP bridge and Mauth action layer.                         | A required workflow cannot be represented as state/actions/validation.    |
-| Solutions      | Manual structured solution data is authoritative; AI may draft it.                               | Never move to AI-only solutions.                                          |
-| Preview/print  | Use the same paginated A4 render tree for screen evidence and browser print.                     | A specific compatibility failure proves another path is necessary.        |
-| Updates        | Keep signed, notarized, teacher-confirmed alpha updates.                                         | Distribution broadens beyond Apple Silicon/GitHub releases.               |
-| In-app chat    | Optional future client of the same bridge only.                                                  | Shared contracts are stable and a clear teacher need remains.             |
-| Native rewrite | Not a near-term objective.                                                                       | Deep Finder, iCloud, print, classroom, or accessibility needs justify it. |
+| Area           | Decision                                                                                                          | Revisit when                                                                                             |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Desktop        | Keep one Electron desktop product with packaged FastAPI and web UI; macOS is the only distributed build today.    | A proven native-only requirement cannot be met reliably.                                                 |
+| Hosted web     | Do not create a second public product yet; keep the browser build as the shared renderer and development surface. | There is a clear need and capacity for accounts, hosted storage, privacy, tenancy, compute, and support. |
+| Files          | Keep visible teacher files in a selected folder and private shared state in Application Support.                  | Sandbox/cloud constraints require another explicit boundary.                                             |
+| Agents         | Keep MCP thin over the authenticated HTTP bridge and Mauth action layer.                                          | A required workflow cannot be represented as state/actions/validation.                                   |
+| Solutions      | Manual structured solution data is authoritative; AI may draft it.                                                | Never move to AI-only solutions.                                                                         |
+| Preview/print  | Use the same paginated A4 render tree for screen evidence and browser print.                                      | A specific compatibility failure proves another path is necessary.                                       |
+| Updates        | Keep signed, notarized, teacher-confirmed alpha updates.                                                          | Distribution broadens beyond Apple Silicon/GitHub releases.                                              |
+| In-app chat    | Optional future client of the same bridge only.                                                                   | Shared contracts are stable and a clear teacher need remains.                                            |
+| Native rewrite | Not a near-term objective.                                                                                        | Deep Finder, iCloud, print, classroom, or accessibility needs justify it.                                |
 
 ## Recommended Roadmap
 
@@ -83,8 +84,10 @@ The app must remain complete without AI. External agents are first-class clients
 
 - Clean-machine verify `0.1.3` and an in-app update from `0.1.2`.
 - Keep website, README, release notes, app version, and public assets aligned.
-- Consider Windows only after a dedicated package, sidecar, native integration, installer, and update test matrix exists.
+- Keep platform-neutral runtime paths, process launch, folder selection, storage contracts, and MCP discovery covered by local tests.
+- Add Windows next only when there is a dedicated native sidecar, connector launcher, installer, signing/update plan, and Windows test machine.
+- Add Linux only after actual user demand; its packaging diversity and support burden are not free just because Electron can render there.
 
 ## Strategic Call
 
-Continue the current architecture. Prioritise authoring reliability, explicit state, and measured evidence over another platform rewrite or a new chat layer.
+Continue the current architecture. The right near-term product is one local desktop app, with macOS distributed first and Windows prepared as the next port. A hosted web product would add authentication, tenancy, cloud storage, privacy, server-side maths/diagram compute, agent connectivity, and support obligations; it is not a cheaper substitute for the desktop app. Keep the shared web renderer portable, but do not split the product until a real deployment need justifies that second operating model.

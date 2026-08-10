@@ -5,7 +5,7 @@ import { ListTree, Plus, SeparatorHorizontal } from "lucide-react";
 import { SectionSymbolIcon } from "@/components/navigation/DocumentNavigator";
 import { Button } from "@/components/ui/button";
 import type { DocumentTocItem, MoveDirection, PageBreakDropPreview, QuestionDropPreview } from "@/lib/documentNavigation";
-import { documentNavigationRailItems } from "@/lib/documentNavigation";
+import { activeDocumentNavigationRailItemId, documentNavigationRailItems } from "@/lib/documentNavigation";
 import { keyboardDeleteRequested, keyboardMoveDirection } from "@/lib/editorKeyboardShortcuts";
 import {
   pageBreakQuestionIdFromScrollAnchor,
@@ -30,25 +30,12 @@ function tocRailPageBreakItem(questionItem: DocumentTocItem, questionId: string)
 
 function tocRailLabel(item: DocumentTocItem, sectionItemPresentation: "section" | "titlePage") {
   if (item.kind === "title") return "T";
+  if (item.kind === "investigationPage") return item.label.replace(/^Student page\s+/i, "P");
+  if (item.kind === "investigationRubric") return "R";
   if (item.kind === "sectionHeading") return sectionItemPresentation === "titlePage" ? "T" : "§";
   if (item.kind === "pageBreak") return "";
   if (!/^Question\s+/i.test(item.label)) return "H";
   return item.label.replace(/^Question\s+/i, "");
-}
-
-function activeTocRailItemId(items: DocumentTocItem[], railItems: DocumentTocItem[], activeItemId: string) {
-  const activeIndex = items.findIndex((item) => item.id === activeItemId);
-  if (activeIndex === -1) return activeItemId;
-
-  for (let index = activeIndex; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item.kind === "title" || item.kind === "sectionHeading" || (item.kind === "question" && item.depth === 0)) {
-      if (railItems.some((railItem) => railItem.id === item.id)) return item.id;
-      return railItems.find((railItem) => railItem.previewAnchor === item.previewAnchor)?.id ?? item.id;
-    }
-  }
-
-  return activeItemId;
 }
 
 export function DocumentNavigatorRail({
@@ -71,6 +58,8 @@ export function DocumentNavigatorRail({
   questionItemLabel = "question",
   sectionItemPresentation = "section",
   showStructureControls = true,
+  showInvestigationControls = false,
+  onAddInvestigationPage,
   onAddPageBreakAfterQuestion,
   onMoveQuestion,
   onMoveSectionHeading,
@@ -111,6 +100,8 @@ export function DocumentNavigatorRail({
   questionItemLabel?: string;
   sectionItemPresentation?: "section" | "titlePage";
   showStructureControls?: boolean;
+  showInvestigationControls?: boolean;
+  onAddInvestigationPage?: () => void;
   onAddPageBreakAfterQuestion: (questionId: string) => void;
   onMoveQuestion: (questionId: string, direction: MoveDirection) => void;
   onMoveSectionHeading: (sectionHeadingId: string, direction: MoveDirection) => void;
@@ -141,7 +132,10 @@ export function DocumentNavigatorRail({
       }),
     [items, pageBreakQuestionIds, sectionItemPresentation],
   );
-  const activeRailItemId = useMemo(() => activeTocRailItemId(items, railItems, activeItemId), [activeItemId, items, railItems]);
+  const activeRailItemId = useMemo(
+    () => activeDocumentNavigationRailItemId(items, railItems, activeItemId),
+    [activeItemId, items, railItems],
+  );
   const selectedQuestionId = questionIdFromScrollAnchor(activeRailItemId);
   const canAddPageBreak = Boolean(selectedQuestionId && !pageBreakQuestionIds.has(selectedQuestionId));
 
@@ -232,7 +226,12 @@ export function DocumentNavigatorRail({
           const questionId = questionIdFromScrollAnchor(item.editorAnchor);
           const sectionHeadingId = sectionHeadingIdFromScrollAnchor(item.editorAnchor);
           const movableItemId = questionId || sectionHeadingId;
-          const togglesEditor = item.kind === "title" || item.kind === "sectionHeading" || Boolean(questionId);
+          const togglesEditor =
+            item.kind === "title" ||
+            item.kind === "sectionHeading" ||
+            item.kind === "investigationPage" ||
+            item.kind === "investigationRubric" ||
+            Boolean(questionId);
           const draggable = Boolean(questionId);
           const dragging = draggedQuestionId === questionId;
           const dropPlacement =
@@ -263,7 +262,11 @@ export function DocumentNavigatorRail({
               }
               aria-current={active ? "location" : undefined}
               aria-keyshortcuts={movableItemId ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
-              onClick={() => (item.kind === "title" || item.kind === "sectionHeading" || questionId ? onPreviewJump(item) : onJump(item))}
+              onClick={() =>
+                item.kind === "title" || item.kind === "sectionHeading" || item.kind === "investigationPage" || questionId
+                  ? onPreviewJump(item)
+                  : onJump(item)
+              }
               onContextMenu={(event) => onContextMenu(event, item)}
               onDoubleClick={togglesEditor ? () => onToggleEditorAtItem(item) : undefined}
               onKeyDown={
@@ -376,6 +379,19 @@ export function DocumentNavigatorRail({
             className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-border disabled:hover:bg-background disabled:hover:text-muted-foreground"
           >
             <SeparatorHorizontal className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+      {showInvestigationControls ? (
+        <div className="flex h-14 shrink-0 items-center justify-center border-t">
+          <button
+            type="button"
+            title="Add student page"
+            aria-label="Add student page"
+            onClick={onAddInvestigationPage}
+            className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-xs font-semibold text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
+          >
+            P+
           </button>
         </div>
       ) : null}

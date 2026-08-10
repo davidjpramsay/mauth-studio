@@ -6,14 +6,17 @@ import { basicBlockInspectorSelection } from "../../lib/basicBlockInspectorSelec
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { geometry2dInspectorSelection } from "../../lib/geometry2dInspectorSelection";
 import { graph2dInspectorSelection } from "../../lib/graph2dInspectorSelection";
+import type { MauthDialogActions } from "../../hooks/useMauthDialogController";
 
 export interface SelectionInspectorProps {
   selectedBlock: SelectedEditorBlock | null;
   showSolutions: boolean;
+  showSolutionControls?: boolean;
   activeAnchor?: string;
   onActivateAnchor?: (anchor: string) => void;
   onBlockChange: (selection: SelectedEditorBlock, patch: Partial<ContentBlock>) => void;
   onCreateSolutionCopy?: (selection: SelectedEditorBlock) => void;
+  confirmDiagramTypeChange: MauthDialogActions["confirm"];
   createTextBlock: () => ContentBlock;
   diagramTypePatch: (type: string, current: GraphConfig) => Partial<GraphConfig>;
   updateGraphConfig: (graphConfig: GraphConfig, patch: Partial<GraphConfig>) => GraphConfig;
@@ -23,6 +26,7 @@ export interface SelectionInspectorProps {
 export function SelectionInspector({
   selectedBlock,
   showSolutions,
+  showSolutionControls = true,
   activeAnchor,
   onActivateAnchor,
   createTextBlock,
@@ -31,6 +35,7 @@ export function SelectionInspector({
   withGraphDefaults,
   onBlockChange,
   onCreateSolutionCopy,
+  confirmDiagramTypeChange,
 }: SelectionInspectorProps) {
   if (!selectedBlock) return null;
 
@@ -68,13 +73,15 @@ export function SelectionInspector({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SolutionSurfaceControls
-          selectedBlock={selectedBlock}
-          showSolutions={showSolutions}
-          controlClassName={controlClassName}
-          onBlockChange={onBlockChange}
-          onCreateSolutionCopy={onCreateSolutionCopy}
-        />
+        {showSolutionControls ? (
+          <SolutionSurfaceControls
+            selectedBlock={selectedBlock}
+            showSolutions={showSolutions}
+            controlClassName={controlClassName}
+            onBlockChange={onBlockChange}
+            onCreateSolutionCopy={onCreateSolutionCopy}
+          />
+        ) : null}
         {selectedBasicBlock ? (
           <BasicBlockSelectionInspector
             selectedBlock={selectedBlock}
@@ -95,6 +102,7 @@ export function SelectionInspector({
             checkboxLabelClassName={checkboxLabelClassName}
             onActivateAnchor={onActivateAnchor}
             onBlockChange={onBlockChange}
+            confirmDiagramTypeChange={confirmDiagramTypeChange}
             diagramTypePatch={diagramTypePatch}
             updateGraphConfig={updateGraphConfig}
           />

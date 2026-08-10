@@ -1,4 +1,5 @@
 export const SCROLL_ANCHOR_FRONT_MATTER = "front-matter";
+export const SCROLL_ANCHOR_INVESTIGATION_RUBRIC = "ir:rubric";
 export const SCROLL_ANCHOR_TOP_OFFSET_PX = 12;
 export const SCROLL_ANCHOR_SELECTOR = "[data-scroll-anchor]";
 
@@ -9,6 +10,10 @@ export interface ScrollAnchorPosition {
 
 export type ParsedScrollAnchorKind =
   | "frontMatter"
+  | "investigationPage"
+  | "investigationText"
+  | "investigationDiagram"
+  | "investigationRubric"
   | "sectionHeading"
   | "pageBreak"
   | "question"
@@ -30,6 +35,9 @@ export type ScrollAnchorColumnPath = ScrollAnchorColumnPathEntry[];
 export interface ParsedScrollAnchor {
   kind: ParsedScrollAnchorKind;
   sectionHeadingId?: string;
+  investigationPageId?: string;
+  investigationTextSectionId?: string;
+  investigationDiagramId?: string;
   questionId?: string;
   partId?: string;
   subpartId?: string;
@@ -49,6 +57,27 @@ export function scrollableRange(element: HTMLElement) {
 
 export function questionScrollAnchor(questionId: string) {
   return `q:${questionId}`;
+}
+
+export function investigationPageScrollAnchor(pageId: string) {
+  return `ip:${pageId}`;
+}
+
+export function investigationTextSectionScrollAnchor(pageId: string, sectionId: string) {
+  return `${investigationPageScrollAnchor(pageId)}/it:${sectionId}`;
+}
+
+export function investigationDiagramScrollAnchor(pageId: string, diagramId: string) {
+  return `${investigationPageScrollAnchor(pageId)}/id:${diagramId}`;
+}
+
+export function investigationPageIdFromScrollAnchor(anchor: string) {
+  const [pageSegment] = anchor.split("/");
+  return pageSegment?.startsWith("ip:") ? pageSegment.slice(3) : "";
+}
+
+export function isFrontMatterScrollAnchor(anchor: string) {
+  return anchor === SCROLL_ANCHOR_FRONT_MATTER || anchor === SCROLL_ANCHOR_INVESTIGATION_RUBRIC || anchor.startsWith("ip:");
 }
 
 export function sectionHeadingScrollAnchor(sectionHeadingId: string) {
@@ -154,6 +183,18 @@ export function previewAnchorFromEventTarget(target: EventTarget | null, contain
 
 export function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
   if (anchor === SCROLL_ANCHOR_FRONT_MATTER) return { kind: "frontMatter" };
+  if (anchor === SCROLL_ANCHOR_INVESTIGATION_RUBRIC) return { kind: "investigationRubric" };
+  if (anchor.startsWith("ip:")) {
+    const [pageSegment, childSegment] = anchor.split("/");
+    const investigationPageId = pageSegment.slice(3);
+    if (childSegment?.startsWith("it:")) {
+      return { kind: "investigationText", investigationPageId, investigationTextSectionId: childSegment.slice(3) };
+    }
+    if (childSegment?.startsWith("id:")) {
+      return { kind: "investigationDiagram", investigationPageId, investigationDiagramId: childSegment.slice(3) };
+    }
+    return { kind: "investigationPage", investigationPageId };
+  }
   if (anchor.startsWith("sh:")) return { kind: "sectionHeading", sectionHeadingId: sectionHeadingIdFromScrollAnchor(anchor) };
   if (anchor.startsWith("pb:")) return { kind: "pageBreak", questionId: pageBreakQuestionIdFromScrollAnchor(anchor) };
 

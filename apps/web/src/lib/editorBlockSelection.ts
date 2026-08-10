@@ -17,7 +17,8 @@ export type ColumnBlockPath = ColumnBlockPathEntry[];
 
 export type SelectedEditorBlockScope =
   | SelectedEditorBaseBlockScope
-  | { kind: "column"; rootScope: SelectedEditorBaseBlockScope; rootBlockId: string; path: ColumnBlockPath };
+  | { kind: "column"; rootScope: SelectedEditorBaseBlockScope; rootBlockId: string; path: ColumnBlockPath }
+  | { kind: "investigationDiagram"; pageId: string; diagramId: string };
 
 export interface SelectedEditorBlock {
   scope: SelectedEditorBlockScope;

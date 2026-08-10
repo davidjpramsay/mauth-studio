@@ -149,7 +149,7 @@ interface WorkspaceConflictBindings {
 interface WorkspaceFactoryBindings
   extends
     Pick<ScopedPanelProps, "contentBlockForKind" | "diagramBlockForType">,
-    Pick<InspectorProps, "createTextBlock" | "diagramTypePatch" | "updateGraphConfig" | "withGraphDefaults"> {}
+    Pick<InspectorProps, "createTextBlock" | "confirmDiagramTypeChange" | "diagramTypePatch" | "updateGraphConfig" | "withGraphDefaults"> {}
 
 export interface DocumentEditorWorkspaceBindingsProps {
   layout: WorkspaceLayoutBindings;
@@ -282,12 +282,15 @@ export function DocumentEditorWorkspaceBindings({
             frontMatter: document.frontMatter,
             logos: document.logos,
             openSignal: navigation.openSignalForAnchor(SCROLL_ANCHOR_FRONT_MATTER),
+            activeAnchor: selection.activeTocItemId,
+            openSignalForAnchor: navigation.openSignalForAnchor,
             questionCount: document.questions.length,
             totalMarks: document.totalMarks,
             onChange: frontMatterActions.updateFrontMatter,
             onAddLogo: frontMatterActions.addLogo,
             onUpdateLogo: frontMatterActions.updateLogo,
             onRemoveLogo: frontMatterActions.removeLogo,
+            onActivateAnchor: navigation.activateEditorAnchor,
           },
           questionPanelBindings: {
             isNotesTemplate: solutions.isNotesTemplate,
@@ -324,11 +327,13 @@ export function DocumentEditorWorkspaceBindings({
         visible: selection.selectionInspectorVisible,
         selectedBlock: selection.selectedEditorBlock,
         showSolutions: solutions.effectiveShowSolutions,
+        showSolutionControls: selection.selectedEditorBlock?.scope.kind !== "investigationDiagram",
         activeAnchor: selection.activeTocItemId,
         onActivateAnchor: navigation.activateEditorAnchor,
         onBlockChange: mutations.updateSelectedBlock,
         onCreateSolutionCopy: solutions.createSolutionCopyForSelectedBlock,
         createTextBlock: factories.createTextBlock,
+        confirmDiagramTypeChange: factories.confirmDiagramTypeChange,
         diagramTypePatch: factories.diagramTypePatch,
         updateGraphConfig: factories.updateGraphConfig,
         withGraphDefaults: factories.withGraphDefaults,

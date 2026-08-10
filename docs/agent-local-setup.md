@@ -34,12 +34,16 @@ The installed configuration points to the connector inside **Mauth Studio.app**.
 The normal authoring loop is:
 
 ```text
+mauth_documents_list / mauth_document_create / mauth_document_open
 mauth_snapshot
 mauth_actions_preview
 mauth_actions_apply
 mauth_validation_run
 rendered Student and Solutions/Teacher verification
+mauth_document_close when deliberately finished
 ```
+
+Document close is guarded: the default refuses unsaved changes. Agents must explicitly save or discard a dirty tab, so MCP never leaves an invisible save dialog waiting for input.
 
 Agent actions pass through Mauth's editor history, autosave, validation, and revision checks. Direct edits to teacher files or private Application Support state are recovery-only.
 
@@ -48,6 +52,8 @@ Agent actions pass through Mauth's editor history, autosave, validation, and rev
 - `APP_NOT_CONNECTED`: open Mauth Studio, wait for the editor, then retry.
 - `STALE_SNAPSHOT`: read a new snapshot and rebuild the action batch.
 - `SAVE_CONFLICT`: resolve or reload the active file in Mauth before retrying.
+- `UNSAVED_CHANGES`: save the tab, or explicitly choose discard only when that is intended.
+- `STORAGE_UNAVAILABLE`: reconnect or finish downloading the selected documents folder, then retry.
 - Mauth moved or was reinstalled elsewhere: repeat **Help > Set Up Codex or Claude...**.
 
 Developers should clone the repository and follow `AGENTS.md` and `docs/current-state.md`. Technical connector details live in `docs/agent-bridge.md`; source diagnostics such as `pnpm agent:doctor` and `pnpm agent:mcp` are not end-user installation steps.

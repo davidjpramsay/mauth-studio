@@ -304,10 +304,18 @@ export function FunctionGraphEditor({
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={config.showAxisNumbers ?? true}
-                    onChange={(event) => patchConfig({ showAxisNumbers: event.target.checked })}
+                    checked={config.showXAxisNumbers ?? config.showAxisNumbers ?? true}
+                    onChange={(event) => patchConfig({ showXAxisNumbers: event.target.checked })}
                   />
-                  Axis numbers
+                  X-axis numbers
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={config.showYAxisNumbers ?? config.showAxisNumbers ?? true}
+                    onChange={(event) => patchConfig({ showYAxisNumbers: event.target.checked })}
+                  />
+                  Y-axis numbers
                 </label>
               </div>
             </div>

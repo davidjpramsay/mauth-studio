@@ -21,6 +21,7 @@ export interface AppHeaderBindingSources {
     closeCurrentDocument: () => void | Promise<unknown>;
     activateDocumentTab: AppHeaderProps["onActivateDocumentTab"];
     closeDocumentTab: AppHeaderProps["onCloseDocumentTab"];
+    reorderDocumentTab: AppHeaderProps["onReorderDocumentTab"];
   };
   systemStatus: {
     message: AppHeaderProps["systemStatusMessage"];
@@ -101,6 +102,7 @@ export function appHeaderBindings({
     onCloseFile: () => void document.closeCurrentDocument(),
     onActivateDocumentTab: document.activateDocumentTab,
     onCloseDocumentTab: document.closeDocumentTab,
+    onReorderDocumentTab: document.reorderDocumentTab,
     onToggleTheme: theme.toggleTheme,
     onShowSolutionsChange: solutions.setShowSolutions,
     onOpenSolutionValidation: () => solutions.setSolutionValidationOpen(true),

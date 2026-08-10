@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { GraphConfig, ImageDiagramAnnotation, ImageDiagramAnnotationKind } from "@mauth-studio/shared";
 import { Circle, MoveUpRight, Trash2, Type } from "lucide-react";
 
 import { ImageDiagramCanvas } from "@/components/diagrams/ImageDiagramCanvas";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,11 +19,6 @@ const ANNOTATION_TYPES: Array<{ kind: ImageDiagramAnnotationKind; label: string;
   { kind: "ellipse", label: "Ellipse", icon: Circle },
   { kind: "arrow", label: "Arrow", icon: MoveUpRight },
 ];
-
-function numberValue(value: unknown, fallback: number) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
-}
 
 function annotationPatchForKind(kind: ImageDiagramAnnotationKind): Partial<ImageDiagramAnnotation> {
   if (kind === "arrow") return { kind, endXPercent: 70, endYPercent: 30, text: undefined };
@@ -45,24 +41,17 @@ function NumberField({
   step?: number;
   onChange: (value: number) => void;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
   return (
     <label className="flex flex-col gap-1.5 text-xs font-medium">
       {label}
-      <input
-        type="number"
+      <NumericExpressionInput
         min={min}
         max={max}
         step={step}
-        value={draft}
-        onChange={(event) => {
-          const nextDraft = event.target.value;
-          setDraft(nextDraft);
-          if (nextDraft.trim()) onChange(numberValue(nextDraft, value));
-        }}
-        onBlur={() => {
-          if (!draft.trim()) setDraft(String(value));
+        value={value}
+        ariaLabel={label}
+        onValueChange={(nextValue) => {
+          if (nextValue !== undefined) onChange(nextValue);
         }}
         className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
       />

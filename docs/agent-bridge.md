@@ -14,7 +14,7 @@ Local Mauth API and web app
   Assessment authoring state, project files, autosave, validation, preview, and browser review.
 
 Local agent bridge
-  Snapshot, dry-run, apply, validate, comments, suggestions, presence, and events for external agents.
+  Document lifecycle, snapshot, dry-run, apply, validate, comments, suggestions, presence, and events for external agents.
 ```
 
 This is still a local-first workflow. The app does not need hosted collaboration before the bridge is useful. If Mauth becomes hosted later, the same contract can become the hosted collaboration/API boundary.
@@ -38,6 +38,10 @@ The implemented bridge surface is local and deterministic:
 
 ```text
 GET  /api/agent/current/snapshot?documentId=optional-open-document-id
+GET  /api/agent/current/documents?folderPath=optional&recursive=true
+POST /api/agent/current/documents/create
+POST /api/agent/current/documents/open
+POST /api/agent/current/documents/close
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
 POST /api/agent/current/validation/run
@@ -64,6 +68,8 @@ GET  /agent-docs
 Packaged private API routes require `Authorization: Bearer <token>`. Electron injects that header into its own `/api/*` traffic without exposing the token to document state or renderer JavaScript. Codex and Claude wrappers read it from the runtime manifest, and the manifest is removed when the owning app quits. Health, discovery, and system-status routes stay readable for diagnostics, but they never return the token. Fixed-port development runs remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly configured.
 
 The browser registers when the editor loads and unregisters with a beacon-safe request on normal page exit. Unregistering removes the session and releases requests assigned to it immediately. A crashed browser still falls back to the server-side session TTL.
+
+The browser treats a missing registration route or an authentication/permission response as an incompatible runtime and stops that bridge loop, avoiding repeated requests against a stale API. A lost registered session is recoverable and registers again. Temporary network failures retry with bounded exponential backoff.
 
 ## Snapshot Shape
 
@@ -99,6 +105,17 @@ Action application is safe to retry and safe under stale state:
 - return changed ids, warnings, validation results, and the next snapshot
 
 File operations should keep using the project-file API and loaded revision checks. The bridge must not create a second hidden save path that bypasses project metadata, version snapshots, autosave alignment, or stale-file protection.
+
+## Document Lifecycle
+
+Agents can work without a teacher first opening every file:
+
+- `documents.list` reads saved `.mauth` files from the selected documents folder and reports relative path, revision, size, update time, and matching open-tab state.
+- `document.create` builds a blank document through the same template factory as **New document**, saves it with `baseRevision: null`, records a project-file version, and opens it as a normal tab. It requires an `Idempotency-Key`; `onConflict: "error"` is the default and `"unique"` deliberately chooses a new name.
+- `document.open` accepts a relative path returned by the list operation and opens or activates the matching tab through the normal file controller.
+- `document.close` requires an `Idempotency-Key` and an explicit policy. `require-clean` is the default and refuses dirty tabs; `save` revision-saves a named file before closing; `discard` deliberately drops unsaved tab changes. An unsaved draft cannot be silently named by close.
+
+Lifecycle paths are relative to the teacher-selected documents folder. Absolute paths, parent traversal, non-Mauth files, missing files, and collisions are rejected with structured errors. Create requests persist their idempotency key in project-file metadata so an interrupted retry can recover the already-created file rather than duplicate it.
 
 ## Comments And Suggestions
 
@@ -163,6 +180,10 @@ pnpm agent:mcp
 
 The MCP server wraps the HTTP bridge and exposes:
 
+- `mauth_documents_list`
+- `mauth_document_create`
+- `mauth_document_open`
+- `mauth_document_close`
 - `mauth_snapshot`
 - `mauth_actions_preview`
 - `mauth_actions_apply`
@@ -175,6 +196,8 @@ The MCP server wraps the HTTP bridge and exposes:
 - `mauth_suggestions_read`
 - `mauth_suggestion_create`
 - `mauth_suggestion_mark`
+
+Every MCP tool declares a JSON output schema and local-only tool annotations. Results are returned both as `structuredContent` and equivalent JSON text for client compatibility; non-2xx bridge responses set the MCP error flag while retaining the structured Mauth error body. This follows the OpenAI MCP guidance for validated tool definitions and structured results: <https://developers.openai.com/api/docs/mcp/>.
 
 Run `pnpm agent:doctor` to check API health, web reachability, MCP dependencies, discovery docs, and active editor presence. Run `pnpm macos:build:agent` followed by `pnpm smoke:agent-connector` to exercise MCP negotiation and a live snapshot through the generated self-contained bundle.
 

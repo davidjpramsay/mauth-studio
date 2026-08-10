@@ -32,6 +32,10 @@ interface SectionHeadingNavigationLifecycle {
   removeSectionHeading: (sectionHeadingId: string) => void;
 }
 
+interface InvestigationNavigationLifecycle {
+  addPage: () => void;
+}
+
 interface QuestionPageBreakDragActions {
   moveQuestionByKeyboard: (questionId: string, direction: MoveDirection) => void;
   movePageBreakByKeyboard: (questionId: string, direction: MoveDirection) => void;
@@ -63,6 +67,7 @@ export interface DocumentNavigationWorkspaceProps {
   navigation: DocumentNavigationActions;
   questionLifecycle: QuestionNavigationLifecycle;
   sectionHeadingLifecycle: SectionHeadingNavigationLifecycle;
+  investigationLifecycle?: InvestigationNavigationLifecycle;
   questionPageBreakDrag: QuestionPageBreakDragActions;
   onOpenChange: (open: boolean) => void;
   onContextMenu: (event: ReactMouseEvent<HTMLElement>, anchor: string, surface: "miniToc") => void;
@@ -81,6 +86,7 @@ export function DocumentNavigationWorkspace({
   navigation,
   questionLifecycle,
   sectionHeadingLifecycle,
+  investigationLifecycle,
   questionPageBreakDrag,
   onOpenChange,
   onContextMenu,
@@ -111,6 +117,8 @@ export function DocumentNavigationWorkspace({
         questionItemLabel={presentation.questionItemLabel}
         sectionItemPresentation={presentation.sectionItemPresentation}
         showStructureControls={presentation.showStructureControls}
+        showInvestigationControls={presentation.showInvestigationControls}
+        onAddInvestigationPage={investigationLifecycle?.addPage}
         onAddPageBreakAfterQuestion={questionLifecycle.addPageBreakAfterQuestion}
         onMoveQuestion={questionPageBreakDrag.moveQuestionByKeyboard}
         onMoveSectionHeading={sectionHeadingLifecycle.moveSectionHeadingByKeyboard}

@@ -14,6 +14,13 @@ import {
 import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
 import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
 
+export interface MauthAgentDocumentLifecycleHandlers {
+  list: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  create: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  open: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  close: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+}
+
 interface UseMauthAgentBridgeControllerOptions<
   Q extends MauthQuestionLike,
   F extends object = Record<string, unknown>,
@@ -33,6 +40,7 @@ interface UseMauthAgentBridgeControllerOptions<
   activeDocumentId?: () => string | null;
   openDocuments?: () => MauthAgentOpenDocument[];
   activateDocument?: (documentId: string) => Promise<boolean>;
+  documentLifecycle: MauthAgentDocumentLifecycleHandlers;
 }
 
 function agentBridgeError(status: number, code: string, error: string, extra: Record<string, unknown> = {}): MauthAgentBridgeHandlerResult {
@@ -61,6 +69,7 @@ export function useMauthAgentBridgeController<
   activeDocumentId,
   openDocuments,
   activateDocument,
+  documentLifecycle,
 }: UseMauthAgentBridgeControllerOptions<Q, F, C>) {
   function buildCurrentAgentSnapshot(validation: unknown = validate(), document?: MauthDocumentLike<Q, F, C>): MauthAgentSnapshot {
     const current = document ?? currentDocument();
@@ -217,6 +226,10 @@ export function useMauthAgentBridgeController<
       preview: handleAgentActionsPreview,
       apply: handleAgentActionsApply,
       validation: handleAgentValidation,
+      documentsList: documentLifecycle.list,
+      documentCreate: documentLifecycle.create,
+      documentOpen: documentLifecycle.open,
+      documentClose: documentLifecycle.close,
     },
   });
 }

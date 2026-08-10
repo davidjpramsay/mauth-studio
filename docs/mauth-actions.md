@@ -58,7 +58,7 @@ Bridge writes should:
 - apply batches atomically through the existing editor history/autosave path
 - return changed ids, warnings, validation output, and the next snapshot
 
-The bridge should not create a second document-save path. Project-file saves, loaded revisions, autosave drafts, and version snapshots must remain aligned with the existing storage API.
+The bridge should not create a second document-save path. High-level list/create/open/close operations must compose the existing template factory, project-file API, loaded revisions, tab controller, autosave drafts, and version snapshots. Content edits continue through document actions.
 
 Action warnings and measured preview warnings have different lifetimes. Action previews report deterministic action/validation output for their returned document. The current editor snapshot may also include browser-measured `rendered-page-overflow` warnings after that exact document has rendered; action-result snapshots must not inherit layout warnings measured against the previous document state.
 
@@ -148,6 +148,8 @@ Current diagram systems:
 - `geometricConstruction`, `network`, and `setDiagram`: Penrose-backed static diagrams.
 - `statsChart`: Plotly-backed statistics charts.
 - `image`: uploaded/imported bitmap diagrams.
+
+For `graph2d` and `vector2d`, `showAxisNumbers` remains the shared compatibility switch. `showXAxisNumbers` and `showYAxisNumbers` optionally override it per axis. Use the per-axis switches when, for example, the x-axis uses custom symbolic free labels while the y-axis retains renderer-owned numeric labels. The renderer-owned labels use MathJax and remain anchored to their exact major-grid values; do not recreate ordinary numeric ticks with coordinate-offset label features.
 
 For existing Venn diagrams, prefer `diagram.settings.update` with `renderer: "setDiagram"` for focused edits. It supports `setCount: 2 | 3`, `labels`, and `shading`, so agents can switch between two-set and three-set Venn diagrams without replacing the whole `graphConfig`.
 

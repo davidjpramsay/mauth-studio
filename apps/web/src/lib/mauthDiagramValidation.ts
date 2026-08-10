@@ -86,6 +86,8 @@ const GRAPH2D_DATA_TOP_LEVEL_FIELDS = new Map([
   ["showAxes", "graphConfig.showAxes"],
   ["showAxisLabels", "graphConfig.showAxisLabels"],
   ["showAxisNumbers", "graphConfig.showAxisNumbers"],
+  ["showXAxisNumbers", "graphConfig.showXAxisNumbers"],
+  ["showYAxisNumbers", "graphConfig.showYAxisNumbers"],
 ]);
 const GRAPH2D_OPTIONS_TOP_LEVEL_FIELDS = new Map([
   ...GRAPH2D_DATA_TOP_LEVEL_FIELDS,
@@ -508,6 +510,8 @@ function validateCommonGraphConfig(config: Record<string, unknown>, path: string
   optionalBoolean(config, "showYAxisMaxArrow", path, issues);
   optionalBoolean(config, "showAxisLabels", path, issues);
   optionalBoolean(config, "showAxisNumbers", path, issues);
+  optionalBoolean(config, "showXAxisNumbers", path, issues);
+  optionalBoolean(config, "showYAxisNumbers", path, issues);
   optionalBoolean(config, "showFunctionArrows", path, issues);
   optionalEnum(config, "axisLabelIntervalMode", path, GRAPH_AXIS_LABEL_INTERVAL_MODES, issues);
   optionalEnum(config, "axisExtensionMode", path, GRAPH_EXTENSION_MODES, issues);

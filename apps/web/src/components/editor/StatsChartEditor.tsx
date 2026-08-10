@@ -8,16 +8,9 @@ import {
 } from "@mauth-studio/diagram-plotly";
 
 import { Textarea } from "@/components/ui/textarea";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { cn } from "@/lib/utils";
 import { StatsChartSeriesEditor } from "./StatsChartSeriesEditor";
-
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -165,23 +158,23 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Width
-            <input
-              type="number"
+            <NumericExpressionInput
               min={240}
-              step={1}
-              value={numberInputValue(options.widthPx)}
-              onChange={(event) => updateOptions({ widthPx: optionalNumber(event.target.value) })}
+              step={10}
+              value={options.widthPx}
+              ariaLabel="Statistics chart width"
+              onValueChange={(value) => updateOptions({ widthPx: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Height
-            <input
-              type="number"
+            <NumericExpressionInput
               min={180}
-              step={1}
-              value={numberInputValue(options.heightPx)}
-              onChange={(event) => updateOptions({ heightPx: optionalNumber(event.target.value) })}
+              step={10}
+              value={options.heightPx}
+              ariaLabel="Statistics chart height"
+              onValueChange={(value) => updateOptions({ heightPx: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
@@ -307,17 +300,16 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
           </label>
           <label className="flex items-center gap-2 text-xs font-medium">
             Opacity
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0}
               max={1}
               step={1}
-              value={numberInputValue(typeof options.fillOpacity === "number" ? options.fillOpacity : 1)}
+              value={typeof options.fillOpacity === "number" ? options.fillOpacity : 1}
+              ariaLabel="Chart fill opacity"
               disabled={options.showFill === false}
-              onChange={(event) => {
-                const nextOpacity = optionalNumber(event.target.value);
+              onValueChange={(value) => {
                 updateOptions({
-                  fillOpacity: typeof nextOpacity === "number" && Number.isFinite(nextOpacity) ? clamp(nextOpacity, 0, 1) : undefined,
+                  fillOpacity: typeof value === "number" && Number.isFinite(value) ? clamp(value, 0, 1) : undefined,
                   showFill: true,
                 });
               }}
@@ -331,42 +323,42 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
         <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
           <label className="flex flex-col gap-2 text-xs font-medium">
             Mean
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={numberInputValue(data.mean)}
-              onChange={(event) => updateData({ mean: optionalNumber(event.target.value) })}
+              value={data.mean}
+              ariaLabel="Normal distribution mean"
+              onValueChange={(value) => updateData({ mean: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Standard deviation
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0.01}
               step={1}
-              value={numberInputValue(data.stdDev)}
-              onChange={(event) => updateData({ stdDev: optionalNumber(event.target.value) })}
+              value={data.stdDev}
+              ariaLabel="Normal distribution standard deviation"
+              onValueChange={(value) => updateData({ stdDev: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Range min
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={numberInputValue(range[0])}
-              onChange={(event) => updateData({ range: [optionalNumber(event.target.value) ?? range[0], range[1]] })}
+              value={range[0]}
+              ariaLabel="Normal distribution range minimum"
+              onValueChange={(value) => updateData({ range: [value ?? range[0], range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Range max
-            <input
-              type="number"
+            <NumericExpressionInput
               step={1}
-              value={numberInputValue(range[1])}
-              onChange={(event) => updateData({ range: [range[0], optionalNumber(event.target.value) ?? range[1]] })}
+              value={range[1]}
+              ariaLabel="Normal distribution range maximum"
+              onValueChange={(value) => updateData({ range: [range[0], value ?? range[1]] })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
@@ -375,24 +367,24 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
         <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-2">
           <label className="flex flex-col gap-2 text-xs font-medium">
             Trials
-            <input
-              type="number"
+            <NumericExpressionInput
               min={1}
               step={1}
-              value={numberInputValue(data.trials)}
-              onChange={(event) => updateData({ trials: optionalNumber(event.target.value) })}
+              value={data.trials}
+              ariaLabel="Binomial trials"
+              onValueChange={(value) => updateData({ trials: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
           <label className="flex flex-col gap-2 text-xs font-medium">
             Probability
-            <input
-              type="number"
+            <NumericExpressionInput
               min={0}
               max={1}
               step={1}
-              value={numberInputValue(data.probability)}
-              onChange={(event) => updateData({ probability: optionalNumber(event.target.value) })}
+              value={data.probability}
+              ariaLabel="Binomial probability"
+              onValueChange={(value) => updateData({ probability: value })}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
             />
           </label>
@@ -443,23 +435,23 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
             <>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Bin size
-                <input
-                  type="number"
+                <NumericExpressionInput
                   min={0}
                   step={1}
-                  value={numberInputValue(data.binSize)}
-                  onChange={(event) => updateData({ binSize: optionalNumber(event.target.value) })}
+                  value={data.binSize}
+                  ariaLabel="Histogram bin size"
+                  onValueChange={(value) => updateData({ binSize: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-medium">
                 Bins
-                <input
-                  type="number"
+                <NumericExpressionInput
                   min={1}
                   step={1}
-                  value={numberInputValue(data.bins)}
-                  onChange={(event) => updateData({ bins: optionalNumber(event.target.value) })}
+                  value={data.bins}
+                  ariaLabel="Histogram bin count"
+                  onValueChange={(value) => updateData({ bins: value })}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                 />
               </label>

@@ -45,7 +45,7 @@ run("/usr/bin/xcodebuild", [
 ]);
 
 const products = path.join(derivedData, "Build", "Products", "Release");
-for (const bundleName of ["MauthQuickLookThumbnail.appex", "MauthQuickLookPreview.appex"]) {
+for (const bundleName of ["MauthQuickLookPreview.appex"]) {
   const source = path.join(products, bundleName);
   const destination = path.join(output, bundleName);
   if (!fs.existsSync(source)) {
@@ -57,4 +57,4 @@ for (const bundleName of ["MauthQuickLookThumbnail.appex", "MauthQuickLookPrevie
   run("/usr/bin/codesign", ["--verify", "--strict", "--verbose=2", destination]);
 }
 
-console.log(`Built and signed Quick Look extensions: ${output}`);
+console.log(`Built and signed Quick Look preview extension: ${output}`);

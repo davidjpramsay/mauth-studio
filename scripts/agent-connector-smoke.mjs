@@ -28,8 +28,21 @@ try {
   await client.connect(transport);
   const tools = await client.listTools(undefined, { signal: AbortSignal.timeout(10_000) });
   const toolNames = new Set(tools.tools.map((tool) => tool.name));
-  for (const expected of ["mauth_snapshot", "mauth_actions_preview", "mauth_actions_apply", "mauth_validation_run"]) {
+  for (const expected of [
+    "mauth_snapshot",
+    "mauth_actions_preview",
+    "mauth_actions_apply",
+    "mauth_validation_run",
+    "mauth_documents_list",
+    "mauth_document_create",
+    "mauth_document_open",
+    "mauth_document_close",
+  ]) {
     assert.equal(toolNames.has(expected), true, `Missing MCP tool: ${expected}`);
+  }
+  for (const tool of tools.tools) {
+    assert.equal(tool.outputSchema?.type, "object", `Missing MCP output schema: ${tool.name}`);
+    assert.equal(tool.annotations?.openWorldHint, false, `MCP tool must remain local-only: ${tool.name}`);
   }
 
   const snapshot = await client.callTool({ name: "mauth_snapshot", arguments: {} }, undefined, {
@@ -37,6 +50,11 @@ try {
   });
   assert.equal(snapshot.structuredContent?.httpStatus, 200, JSON.stringify(snapshot.structuredContent));
   assert.equal(snapshot.structuredContent?.success, true, JSON.stringify(snapshot.structuredContent));
+  const documents = await client.callTool({ name: "mauth_documents_list", arguments: {} }, undefined, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  assert.equal(documents.structuredContent?.httpStatus, 200, JSON.stringify(documents.structuredContent));
+  assert.equal(documents.structuredContent?.success, true, JSON.stringify(documents.structuredContent));
   console.log(`Mauth Agent Connector MCP smoke passed (${tools.tools.length} tools; live snapshot connected).`);
 } finally {
   await client.close();

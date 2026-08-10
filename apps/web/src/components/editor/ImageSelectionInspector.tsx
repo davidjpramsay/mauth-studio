@@ -2,7 +2,8 @@ import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { imageInspectorDimensionPatch, imageInspectorSelection } from "../../lib/imageInspectorSelection";
-import { imageDataPatch, inspectorNumberInputValue } from "../../lib/moduleSettingsPatches";
+import { imageDataPatch } from "../../lib/moduleSettingsPatches";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface ImageSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -47,25 +48,23 @@ export function ImageSelectionInspector({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Width
-          <input
-            type="number"
+          <NumericExpressionInput
             min={40}
             step={10}
-            value={inspectorNumberInputValue(selection.widthPx)}
-            aria-label={`${selectedBlock.label} image width`}
-            onChange={(event) => updateCanvas(imageInspectorDimensionPatch("widthPx", event.target.value))}
+            value={selection.widthPx}
+            ariaLabel={`${selectedBlock.label} image width`}
+            onValueChange={(value) => updateCanvas(imageInspectorDimensionPatch("widthPx", value))}
             className={controlClassName}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Height
-          <input
-            type="number"
+          <NumericExpressionInput
             min={40}
             step={10}
-            value={inspectorNumberInputValue(selection.heightPx)}
-            aria-label={`${selectedBlock.label} image height`}
-            onChange={(event) => updateCanvas(imageInspectorDimensionPatch("heightPx", event.target.value))}
+            value={selection.heightPx}
+            ariaLabel={`${selectedBlock.label} image height`}
+            onValueChange={(value) => updateCanvas(imageInspectorDimensionPatch("heightPx", value))}
             className={controlClassName}
           />
         </label>

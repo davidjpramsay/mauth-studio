@@ -19,6 +19,32 @@ const API_BASE = runtime.apiUrl;
 const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
 
 const actionSchema = z.array(z.record(z.string(), z.unknown()));
+const bridgeOutputSchema = z
+  .object({
+    httpStatus: z.number(),
+    success: z.boolean().optional(),
+    code: z.string().optional(),
+    error: z.string().optional(),
+  })
+  .passthrough();
+const readOnlyAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const nonDestructiveWriteAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+const idempotentWriteAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
 const reviewTargetSchema = z
   .object({
     kind: z.enum(["document", "question", "part", "subpart", "module", "textRange"]),
@@ -73,6 +99,7 @@ function toolResult(output) {
   return {
     content: [{ type: "text", text }],
     structuredContent: output,
+    ...(output.httpStatus === 0 || output.httpStatus >= 400 ? { isError: true } : {}),
   };
 }
 
@@ -89,6 +116,8 @@ server.registerTool(
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id from a previous snapshot. Omit for the active tab."),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ documentId }) =>
     toolResult(await bridgeRequest(`/api/agent/current/snapshot${documentId ? `?documentId=${encodeURIComponent(documentId)}` : ""}`)),
@@ -103,6 +132,8 @@ server.registerTool(
       documentId: z.string().optional().describe("Open document id to activate before previewing."),
       actions: actionSchema.describe("MauthDocumentAction array to dry-run."),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ documentId, actions }) =>
     toolResult(
@@ -124,6 +155,8 @@ server.registerTool(
       actions: actionSchema.describe("MauthDocumentAction array to apply."),
       idempotencyKey: z.string().optional().describe("Stable idempotency key for retrying the same apply request."),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: idempotentWriteAnnotations,
   },
   async ({ documentId, baseSnapshotId, actions, idempotencyKey }) => {
     const key = idempotencyKey || `mcp_apply_${randomUUID()}`;
@@ -144,6 +177,8 @@ server.registerTool(
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id to activate before validating."),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ documentId }) =>
     toolResult(
@@ -152,6 +187,100 @@ server.registerTool(
         body: { documentId },
       }),
     ),
+);
+
+server.registerTool(
+  "mauth_documents_list",
+  {
+    title: "List Mauth Documents",
+    description: "List saved Mauth documents in the teacher-selected documents folder, including open-tab and revision state.",
+    inputSchema: z.object({
+      folderPath: z.string().optional().describe("Optional folder relative to the selected Mauth documents folder."),
+      recursive: z.boolean().default(true).describe("Include documents in nested folders."),
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
+  },
+  async ({ folderPath, recursive }) => {
+    const query = new URLSearchParams({ recursive: String(recursive) });
+    if (folderPath) query.set("folderPath", folderPath);
+    return toolResult(await bridgeRequest(`/api/agent/current/documents?${query.toString()}`));
+  },
+);
+
+server.registerTool(
+  "mauth_document_create",
+  {
+    title: "Create Mauth Document",
+    description: "Create, revision-save, and open a blank Mauth document in the selected documents folder using a Mauth template.",
+    inputSchema: z.object({
+      title: z.string().min(1).describe("Document title and default file name."),
+      template: z.enum(["standard", "exam", "worksheet", "notes", "investigation"]).default("standard"),
+      folderPath: z.string().optional().describe("Optional folder relative to the selected Mauth documents folder."),
+      onConflict: z.enum(["error", "unique"]).default("error").describe("Fail or choose a unique file name if the path exists."),
+      idempotencyKey: z.string().optional().describe("Stable key for retrying the same create request."),
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: nonDestructiveWriteAnnotations,
+  },
+  async ({ title, template, folderPath, onConflict, idempotencyKey }) => {
+    const key = idempotencyKey || `mcp_create_${randomUUID()}`;
+    const response = await bridgeRequest("/api/agent/current/documents/create", {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: { title, template, folderPath, onConflict },
+    });
+    return toolResult(asStructuredBody(response.httpStatus, response, { idempotencyKey: key }));
+  },
+);
+
+server.registerTool(
+  "mauth_document_open",
+  {
+    title: "Open Mauth Document",
+    description: "Open or activate a saved Mauth document tab by its path from mauth_documents_list.",
+    inputSchema: z.object({
+      path: z.string().min(1).describe("Document path relative to the selected Mauth documents folder."),
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: idempotentWriteAnnotations,
+  },
+  async ({ path }) =>
+    toolResult(
+      await bridgeRequest("/api/agent/current/documents/open", {
+        method: "POST",
+        body: { path },
+      }),
+    ),
+);
+
+server.registerTool(
+  "mauth_document_close",
+  {
+    title: "Close Mauth Document",
+    description: "Close an open Mauth tab with an explicit non-interactive save policy. The default refuses to close dirty documents.",
+    inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id. Omit to target the active tab."),
+      policy: z.enum(["require-clean", "save", "discard"]).default("require-clean"),
+      idempotencyKey: z.string().optional().describe("Stable key for retrying the same close request."),
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async ({ documentId, policy, idempotencyKey }) => {
+    const key = idempotencyKey || `mcp_close_${randomUUID()}`;
+    const response = await bridgeRequest("/api/agent/current/documents/close", {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: { documentId, policy },
+    });
+    return toolResult(asStructuredBody(response.httpStatus, response, { idempotencyKey: key }));
+  },
 );
 
 server.registerTool(
@@ -165,6 +294,8 @@ server.registerTool(
       status: z.string().default("active"),
       details: z.string().optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: nonDestructiveWriteAnnotations,
   },
   async ({ agentId, name, status, details }) =>
     toolResult(
@@ -183,6 +314,8 @@ server.registerTool(
     inputSchema: z.object({
       after: z.number().int().nonnegative().default(0),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ after }) => toolResult(await bridgeRequest(`/api/agent/current/events?after=${encodeURIComponent(String(after))}`)),
 );
@@ -195,6 +328,8 @@ server.registerTool(
     inputSchema: z.object({
       status: z.enum(["open", "resolved"]).optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ status }) =>
     toolResult(await bridgeRequest(`/api/agent/current/comments${status ? `?status=${encodeURIComponent(status)}` : ""}`)),
@@ -212,6 +347,8 @@ server.registerTool(
       target: reviewTargetSchema,
       snapshotId: z.string().optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: nonDestructiveWriteAnnotations,
   },
   async ({ actor, body, severity, target, snapshotId }) =>
     toolResult(
@@ -232,6 +369,8 @@ server.registerTool(
       actor: z.string().optional(),
       details: z.string().optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: idempotentWriteAnnotations,
   },
   async ({ commentId, actor, details }) =>
     toolResult(
@@ -250,6 +389,8 @@ server.registerTool(
     inputSchema: z.object({
       status: z.enum(["proposed", "accepted", "rejected"]).optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
   },
   async ({ status }) =>
     toolResult(await bridgeRequest(`/api/agent/current/suggestions${status ? `?status=${encodeURIComponent(status)}` : ""}`)),
@@ -269,6 +410,8 @@ server.registerTool(
       replacementText: z.string().optional(),
       snapshotId: z.string().optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: nonDestructiveWriteAnnotations,
   },
   async ({ actor, title, body, target, actions, replacementText, snapshotId }) =>
     toolResult(
@@ -290,6 +433,8 @@ server.registerTool(
       actor: z.string().optional(),
       details: z.string().optional(),
     }),
+    outputSchema: bridgeOutputSchema,
+    annotations: idempotentWriteAnnotations,
   },
   async ({ suggestionId, status, actor, details }) =>
     toolResult(

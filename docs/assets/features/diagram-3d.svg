@@ -8,7 +8,7 @@
 >
   <title id="title">Three-dimensional coordinate construction</title>
   <desc id="desc">
-    A translucent rectangular prism drawn on a three-dimensional coordinate grid, with labelled axes, dimensions,
+    A shaded rectangular prism drawn on a three-dimensional coordinate grid, with labelled axes, dimensions,
     a coordinate point, and a space diagonal.
   </desc>
   <defs>
@@ -36,6 +36,7 @@
 
   <rect width="620" height="430" fill="#ffffff" />
 
+  <!-- The coordinate plane and horizontal axes form one rear layer. -->
   <g fill="none" stroke="#dbe4f1" stroke-width="1.2">
     <path d="M278 360 L134 280 M336 370 L192 290 M394 380 L250 300 M452 390 L308 310 M510 400 L366 320" />
     <path d="M184 330 L474 380 M148 310 L438 360 M112 290 L402 340 M76 270 L366 320" />
@@ -44,26 +45,37 @@
   <g fill="none" stroke-linecap="round" stroke-width="2.4">
     <line x1="220" y1="350" x2="572" y2="411" stroke="#e06b2d" marker-end="url(#arrow-x)" />
     <line x1="220" y1="350" x2="58" y2="260" stroke="#14977f" marker-end="url(#arrow-y)" />
-    <line x1="220" y1="350" x2="220" y2="48" stroke="#2671e8" marker-end="url(#arrow-z)" />
   </g>
 
-  <g stroke="#9aa9bd" stroke-width="1.4">
-    <path d="M242 166 L416 196 L344 156 L170 126 Z" fill="#dbeafe" fill-opacity="0.82" />
-    <path d="M242 340 L416 370 L416 196 L242 166 Z" fill="#e0f2fe" fill-opacity="0.58" />
-    <path d="M416 370 L344 330 L344 156 L416 196 Z" fill="#ede9fe" fill-opacity="0.72" />
-    <path d="M170 300 L344 330 L344 156 L170 126 Z" fill="#f5f3ff" fill-opacity="0.5" />
+  <!-- Opaque near faces consistently occlude both the grid and axes behind the solid. -->
+  <g stroke="#9aa9bd" stroke-width="1.4" stroke-linejoin="round">
+    <path d="M170 126 L242 166 L242 340 L170 300 Z" fill="#f2f0ff" />
+    <path d="M242 166 L416 196 L416 370 L242 340 Z" fill="#eef6ff" />
+    <path d="M170 126 L344 156 L416 196 L242 166 Z" fill="#e3edff" />
   </g>
 
   <g fill="none" stroke="#182235" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">
-    <path d="M242 340 L416 370 L416 196 L242 166 Z" />
-    <path d="M242 166 L170 126 L344 156 L416 196" />
-    <path d="M416 370 L344 330 L344 156" />
-    <path d="M170 126 L170 300" />
+    <path d="M170 126 L344 156 L416 196 L242 166 Z" />
+    <path d="M170 126 L242 166 L242 340 L170 300 Z" />
+    <path d="M242 166 L416 196 L416 370 L242 340 Z" />
   </g>
   <g fill="none" stroke="#64748b" stroke-dasharray="6 5" stroke-linecap="round" stroke-width="1.8">
-    <path d="M242 340 L170 300 L344 330" />
-    <path d="M170 300 L170 126" />
+    <path d="M170 300 L344 330 L416 370" />
+    <path d="M344 156 L344 330" />
   </g>
+
+  <!-- The vertical axis is deliberately foregrounded over the prism. -->
+  <line
+    x1="220"
+    y1="350"
+    x2="220"
+    y2="48"
+    fill="none"
+    stroke="#2671e8"
+    stroke-linecap="round"
+    stroke-width="2.4"
+    marker-end="url(#arrow-z)"
+  />
 
   <line
     x1="242"
@@ -94,9 +106,4 @@
     <text x="220" y="255">3</text>
   </g>
 
-  <g font-family="Georgia, 'Times New Roman', serif" font-size="18">
-    <rect x="254" y="226" width="124" height="30" rx="4" fill="#ffffff" fill-opacity="0.9" />
-    <text x="265" y="247" fill="#5b3fc4" font-style="italic">AP</text>
-    <text x="289" y="247" fill="#5b3fc4">= &lt;3, 2, 3&gt;</text>
-  </g>
 </svg>

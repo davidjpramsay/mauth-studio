@@ -3,6 +3,7 @@ import { CopyPlus, PencilLine } from "lucide-react";
 
 import { ChoiceSolutionAnswerSelect } from "@/components/solutions/ChoiceSolutionAnswerSelect";
 import { Button } from "@/components/ui/button";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { CONTENT_BLOCK_DISPLAY_OPTIONS, contentBlockMarkTicksPatch, contentBlockVisibilityPatch } from "@/lib/moduleSettingsPatches";
 import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 
@@ -31,9 +32,9 @@ export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelect
 
   return (
     <div className="space-y-3 border-b p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Student / Solutions</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Copies</div>
       <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-        Shown in
+        Appears in
         <select
           value={state.visibility}
           aria-label={`${selectedBlock.label} display`}
@@ -60,20 +61,19 @@ export function SolutionSurfaceControls<TSelection extends SolutionSurfaceSelect
           className="justify-start gap-2"
         >
           <CompleteIcon className="size-4" aria-hidden="true" />
-          Complete in solutions
+          {state.copyLabel}
         </Button>
       ) : null}
       {state.showSurfaceTicks ? (
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground" title={state.tickHelp}>
           {state.tickLabel}
-          <input
-            type="number"
+          <NumericExpressionInput
             min={0}
             max={20}
             step={1}
             value={state.markTicks}
-            aria-label={`${selectedBlock.label} solution surface ticks`}
-            onChange={(event) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(event.currentTarget.value))}
+            ariaLabel={`${selectedBlock.label} solution surface ticks`}
+            onValueChange={(value) => onBlockChange(selectedBlock, contentBlockMarkTicksPatch(value))}
             className={controlClassName}
           />
         </label>

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { desktopRuntimeManifestPath } from "./platform-paths.mjs";
+
 export const RUNTIME_FILE_NAME = "runtime.json";
 
 export function desktopRuntimeFile(userDataPath) {
@@ -43,8 +45,8 @@ export function removeOwnedRuntimeManifest(filePath, appPid) {
   }
 }
 
-export function defaultRuntimeFile() {
-  return path.join(os.homedir(), "Library", "Application Support", "Mauth Studio", RUNTIME_FILE_NAME);
+export function defaultRuntimeFile(homeDirectory = os.homedir(), platform = process.platform, env = process.env) {
+  return desktopRuntimeManifestPath({ platform, homeDirectory, env });
 }
 
 export function isAllowedAppNavigation(candidateUrl, appOrigin) {

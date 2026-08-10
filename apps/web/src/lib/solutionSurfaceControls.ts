@@ -25,7 +25,13 @@ export interface SolutionSurfaceControlState {
   tickLabel: string;
   tickHelp: string;
   canCreateSolutionCopy: boolean;
+  copyLabel: string;
   copyTitle: string;
+}
+
+export function solutionSurfaceCopyLabel(block: ContentBlock, visibility = contentBlockDisplayVisibility(block)) {
+  if (block.kind === "table" && visibility === "always") return "Add answers to table";
+  return "Create solution copy";
 }
 
 export function solutionSurfaceControlState(block: ContentBlock, showSolutions = false): SolutionSurfaceControlState {
@@ -48,6 +54,7 @@ export function solutionSurfaceControlState(block: ContentBlock, showSolutions =
     tickLabel: contentBlockSolutionTickLabel(block),
     tickHelp: contentBlockSolutionTickHelp(block),
     canCreateSolutionCopy,
+    copyLabel: solutionSurfaceCopyLabel(block, visibility),
     copyTitle: canCreateSolutionCopy
       ? block.kind === "table" && visibility === "always"
         ? SOLUTION_TABLE_EDIT_ENABLED_TITLE

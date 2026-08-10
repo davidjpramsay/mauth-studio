@@ -23,6 +23,42 @@ test("graph2d validation rejects non-boolean function solution-layer state", () 
   assert.ok(issues.some((issue) => issue.path === "diagram.functions[0].solutionOnly"));
 });
 
+test("coordinate graph validation accepts independent axis-number visibility", () => {
+  for (const type of ["graph2d", "vector2d"] as const) {
+    const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+    validateMauthDiagramConfig(
+      {
+        type,
+        showAxisNumbers: false,
+        showXAxisNumbers: false,
+        showYAxisNumbers: true,
+        functions: [],
+        features: [],
+      },
+      "diagram",
+      issues,
+    );
+    assert.deepEqual(issues, []);
+  }
+});
+
+test("coordinate graph validation rejects non-boolean per-axis number visibility", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "graph2d",
+      showXAxisNumbers: "no",
+      showYAxisNumbers: 1,
+      functions: [],
+      features: [],
+    },
+    "diagram",
+    issues,
+  );
+  assert.ok(issues.some((issue) => issue.path === "diagram.showXAxisNumbers"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.showYAxisNumbers"));
+});
+
 test("graph2d validation accepts angle markers attached to connected line segments", () => {
   const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
   validateMauthDiagramConfig(

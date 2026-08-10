@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   Columns3,
   FileText,
   GitBranch,
@@ -19,7 +20,7 @@ import { scrollAnchorContains } from "@/lib/scrollAnchors";
 import { cn } from "@/lib/utils";
 
 function isTocBranchItem(item: DocumentTocItem, items: DocumentTocItem[]) {
-  if (item.kind !== "question" && item.kind !== "part" && item.kind !== "subpart") return false;
+  if (item.kind !== "question" && item.kind !== "part" && item.kind !== "subpart" && item.kind !== "investigationPage") return false;
   const index = items.findIndex((candidate) => candidate.id === item.id);
   return index >= 0 && (items[index + 1]?.depth ?? -1) > item.depth;
 }
@@ -57,6 +58,8 @@ export function tocSummaryText(source: string) {
 
 function TocItemIcon({ kind, sectionItemPresentation }: { kind: TocItemKind; sectionItemPresentation: "section" | "titlePage" }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
+  if (kind === "investigationPage") return <FileText className="size-4" aria-hidden="true" />;
+  if (kind === "investigationRubric") return <ClipboardList className="size-4" aria-hidden="true" />;
   if (kind === "sectionHeading") {
     return sectionItemPresentation === "titlePage" ? (
       <FileText className="size-4" aria-hidden="true" />

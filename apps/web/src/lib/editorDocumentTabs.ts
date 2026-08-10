@@ -38,6 +38,8 @@ export interface PersistedEditorDocumentTabsSession {
   updatedAt?: string;
 }
 
+export type DocumentTabDropPlacement = "before" | "after";
+
 export function savedDocumentTabId(projectId: string | null | undefined, filePath: string) {
   return `file:${projectId ?? "default"}:${filePath}`;
 }
@@ -54,6 +56,32 @@ export function nextActiveDocumentTabId(tabs: readonly EditorDocumentTab[], clos
   const closingIndex = tabs.findIndex((tab) => tab.id === closingTabId);
   if (closingIndex < 0 || tabs.length <= 1) return null;
   return tabs[closingIndex + 1]?.id ?? tabs[closingIndex - 1]?.id ?? null;
+}
+
+export function documentTabDropPlacement(rect: Pick<DOMRect, "left" | "width">, clientX: number): DocumentTabDropPlacement {
+  if (rect.width <= 0) return "after";
+  return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}
+
+export function reorderDocumentTabs(
+  tabs: EditorDocumentTab[],
+  draggedTabId: string,
+  targetTabId: string,
+  placement: DocumentTabDropPlacement,
+) {
+  if (draggedTabId === targetTabId) return tabs;
+  const draggedIndex = tabs.findIndex((tab) => tab.id === draggedTabId);
+  const targetIndex = tabs.findIndex((tab) => tab.id === targetTabId);
+  if (draggedIndex < 0 || targetIndex < 0) return tabs;
+
+  const draggedTab = tabs[draggedIndex];
+  if (!draggedTab) return tabs;
+  const next = tabs.filter((tab) => tab.id !== draggedTabId);
+  const remainingTargetIndex = next.findIndex((tab) => tab.id === targetTabId);
+  const insertionIndex = remainingTargetIndex + (placement === "after" ? 1 : 0);
+  next.splice(insertionIndex, 0, draggedTab);
+
+  return next.every((tab, index) => tab === tabs[index]) ? tabs : next;
 }
 
 export function upsertDocumentTab(tabs: readonly EditorDocumentTab[], tab: EditorDocumentTab) {

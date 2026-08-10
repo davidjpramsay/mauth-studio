@@ -4,8 +4,6 @@ import { Shuffle } from "lucide-react";
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/diagramPenrose";
 import {
-  inspectorNumberInputValue,
-  inspectorOptionalNumber,
   inspectorSetShadingOptions,
   networkPresetPatch,
   networkVisibilityPatch,
@@ -18,6 +16,7 @@ import {
 } from "../../lib/moduleSettingsPatches";
 import { penroseInspectorSelection } from "../../lib/penroseInspectorSelection";
 import { Button } from "../ui/button";
+import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface PenroseSelectionInspectorProps {
   selectedBlock: SelectedEditorBlock;
@@ -44,18 +43,17 @@ export function PenroseSelectionInspector({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Scale
-          <input
-            type="number"
+          <NumericExpressionInput
             min={25}
             max={250}
             step={1}
-            value={inspectorNumberInputValue(penroseScalePercent(selectedDiagramConfig))}
-            aria-label={`${selectedBlock.label} Penrose scale`}
-            onChange={(event) =>
+            value={penroseScalePercent(selectedDiagramConfig)}
+            ariaLabel={`${selectedBlock.label} Penrose scale`}
+            onValueChange={(value) =>
               onBlockChange(selectedBlock, {
                 graphConfig: updateGraphConfig(
                   selectedDiagramConfig,
-                  penroseScalePatch(selectedDiagramConfig, inspectorOptionalNumber(event.target.value) ?? DEFAULT_PENROSE_SCALE_PERCENT),
+                  penroseScalePatch(selectedDiagramConfig, value ?? DEFAULT_PENROSE_SCALE_PERCENT),
                 ),
               })
             }

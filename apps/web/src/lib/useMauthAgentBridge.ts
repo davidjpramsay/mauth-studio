@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 import type { MauthAgentQueuedRequest } from "@mauth-studio/shared";
 
 import {
-  ApiError,
   pollMauthAgentRequests,
   registerMauthAgentEditorSession,
   respondMauthAgentRequest,
   unregisterMauthAgentEditorSession,
 } from "@/lib/api";
+import { bridgeRetryDelayMs, isLostBrowserSession } from "@/lib/mauthAgentBridgeRetry";
 
 const EDITOR_SESSION_STORAGE_KEY = "mauth-agent-editor-session-id";
 
@@ -21,6 +21,10 @@ export interface MauthAgentBridgeHandlers {
   preview: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
   apply: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
   validation: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  documentsList: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  documentCreate: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  documentOpen: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
+  documentClose: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
 }
 
 export interface UseMauthAgentBridgeOptions {
@@ -49,11 +53,6 @@ function unknownErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The browser bridge failed while handling the agent request.";
 }
 
-function isLostBrowserSession(error: unknown) {
-  if (!(error instanceof ApiError) || error.status !== 404 || !error.detail || typeof error.detail !== "object") return false;
-  return (error.detail as Record<string, unknown>).code === "APP_NOT_CONNECTED";
-}
-
 async function runHandler(request: MauthAgentQueuedRequest, handlers: MauthAgentBridgeHandlers): Promise<MauthAgentBridgeHandlerResult> {
   try {
     switch (request.kind) {
@@ -65,6 +64,14 @@ async function runHandler(request: MauthAgentQueuedRequest, handlers: MauthAgent
         return await handlers.apply(request.payload);
       case "validation.run":
         return await handlers.validation(request.payload);
+      case "documents.list":
+        return await handlers.documentsList(request.payload);
+      case "document.create":
+        return await handlers.documentCreate(request.payload);
+      case "document.open":
+        return await handlers.documentOpen(request.payload);
+      case "document.close":
+        return await handlers.documentClose(request.payload);
       default:
         return {
           status: 400,
@@ -91,6 +98,7 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
     let stopped = false;
     let registered = false;
     let unregistering = false;
+    let retryAttempt = 0;
 
     async function runBridgeLoop() {
       while (!stopped) {
@@ -98,9 +106,11 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
           if (!registered) {
             await registerMauthAgentEditorSession(sessionId, "Mauth web editor", abortController.signal);
             registered = true;
+            retryAttempt = 0;
           }
 
           const response = await pollMauthAgentRequests(sessionId, abortController.signal);
+          retryAttempt = 0;
           if (!response.request) continue;
 
           const handlerResult = await runHandler(response.request, handlersRef.current);
@@ -116,7 +126,10 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
         } catch (error) {
           if (stopped || abortController.signal.aborted) return;
           if (isLostBrowserSession(error)) registered = false;
-          await delay(registered ? 1000 : 1500);
+          const retryDelay = bridgeRetryDelayMs(error, registered, retryAttempt);
+          if (retryDelay === null) return;
+          retryAttempt += 1;
+          await delay(retryDelay);
         }
       }
     }

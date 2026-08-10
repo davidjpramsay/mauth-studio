@@ -6,6 +6,7 @@ declare const __MAUTH_WEB_VERSION__: string;
 interface Window {
   mauthDesktop?: {
     getAgentConnectorInfo: () => Promise<MauthAgentConnectorInfo>;
+    chooseDocumentsFolder: () => Promise<MauthDocumentsFolderSelection>;
     onOpenAgentSetup: (listener: () => void) => () => void;
     onOpenSystemStatus: (listener: () => void) => () => void;
     onOpenSolutionValidation: (listener: () => void) => () => void;
@@ -25,6 +26,11 @@ interface MauthAgentConnectorInfo {
   claudeCodeSetupCommand: string;
   claudeDesktopConfiguration: string;
   doctorCommand: string;
+}
+
+interface MauthDocumentsFolderSelection {
+  cancelled: boolean;
+  path: string | null;
 }
 
 declare module "*.css";

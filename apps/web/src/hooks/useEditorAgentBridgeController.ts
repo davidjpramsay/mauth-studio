@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { FormattingConfig, MauthAgentOpenDocument, MauthAgentSnapshot, ProjectSummary } from "@mauth-studio/shared";
 
-import { useMauthAgentBridgeController } from "@/hooks/useMauthAgentBridgeController";
+import { useMauthAgentBridgeController, type MauthAgentDocumentLifecycleHandlers } from "@/hooks/useMauthAgentBridgeController";
 import { useMauthAgentFileStateController } from "@/hooks/useMauthAgentFileStateController";
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import { editorAgentBridgeSaveConflictMessage } from "@/lib/editorAgentBridge";
@@ -46,6 +46,7 @@ interface UseEditorAgentBridgeControllerOptions {
   activeDocumentId?: () => string | null;
   openDocuments?: () => MauthAgentOpenDocument[];
   activateDocument?: (documentId: string) => Promise<boolean>;
+  documentLifecycle: MauthAgentDocumentLifecycleHandlers;
 }
 
 export function useEditorAgentBridgeController({
@@ -71,6 +72,7 @@ export function useEditorAgentBridgeController({
   activeDocumentId,
   openDocuments,
   activateDocument,
+  documentLifecycle,
 }: UseEditorAgentBridgeControllerOptions) {
   const { agentFileState } = useMauthAgentFileStateController<QuestionBlock, FrontMatterConfig, FormattingConfig, LogoAsset>({
     activeProject,
@@ -105,5 +107,6 @@ export function useEditorAgentBridgeController({
     activeDocumentId,
     openDocuments,
     activateDocument,
+    documentLifecycle,
   });
 }

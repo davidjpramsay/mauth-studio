@@ -3,6 +3,7 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Textarea } from "@/components/ui/textarea";
 import {
   isSolutionOnlyStatsChartSeries,
@@ -26,14 +27,6 @@ function parseNumberList(value: string, fallback: number[]) {
     .map((item) => Number(item.trim()))
     .filter(Number.isFinite);
   return values.length ? values : fallback;
-}
-
-function optionalNumber(value: string) {
-  return value === "" ? undefined : Number(value);
-}
-
-function numberInputValue(value?: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
 }
 
 function nextSeriesId(series: StatsChartSeriesData[]) {
@@ -226,12 +219,12 @@ export function StatsChartSeriesEditor({
               {entry.seriesType === "line" || entry.seriesType === "linePoints" ? (
                 <label className="flex w-28 flex-col gap-2 text-xs font-medium">
                   Line width
-                  <input
-                    type="number"
+                  <NumericExpressionInput
                     min={0.5}
                     step={1}
-                    value={numberInputValue(entry.lineWidth)}
-                    onChange={(event) => updateSeries(index, { lineWidth: optionalNumber(event.target.value) })}
+                    value={entry.lineWidth}
+                    ariaLabel={`${entry.name} line width`}
+                    onValueChange={(value) => updateSeries(index, { lineWidth: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -239,12 +232,12 @@ export function StatsChartSeriesEditor({
               {entry.seriesType === "points" || entry.seriesType === "linePoints" ? (
                 <label className="flex w-28 flex-col gap-2 text-xs font-medium">
                   Point size
-                  <input
-                    type="number"
+                  <NumericExpressionInput
                     min={1}
                     step={1}
-                    value={numberInputValue(entry.markerSize)}
-                    onChange={(event) => updateSeries(index, { markerSize: optionalNumber(event.target.value) })}
+                    value={entry.markerSize}
+                    ariaLabel={`${entry.name} point size`}
+                    onValueChange={(value) => updateSeries(index, { markerSize: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>
@@ -252,12 +245,12 @@ export function StatsChartSeriesEditor({
               {entry.seriesType === "bars" ? (
                 <label className="flex w-28 flex-col gap-2 text-xs font-medium">
                   Bar width
-                  <input
-                    type="number"
+                  <NumericExpressionInput
                     min={0.01}
                     step={1}
-                    value={numberInputValue(entry.barWidth)}
-                    onChange={(event) => updateSeries(index, { barWidth: optionalNumber(event.target.value) })}
+                    value={entry.barWidth}
+                    ariaLabel={`${entry.name} bar width`}
+                    onValueChange={(value) => updateSeries(index, { barWidth: value })}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
                   />
                 </label>

@@ -68,6 +68,7 @@ export interface AppHeaderProps {
   onCloseFile: () => void;
   onActivateDocumentTab: (tabId: string) => void;
   onCloseDocumentTab: (tabId: string) => void;
+  onReorderDocumentTab: (tabId: string, targetTabId: string, placement: "before" | "after") => void;
   onToggleTheme: () => void;
   onShowSolutionsChange: (showSolutions: boolean) => void;
   onOpenSolutionValidation: () => void;
@@ -111,6 +112,7 @@ export function AppHeader({
   onCloseFile,
   onActivateDocumentTab,
   onCloseDocumentTab,
+  onReorderDocumentTab,
   onToggleTheme,
   onShowSolutionsChange,
   onOpenSolutionValidation,
@@ -237,6 +239,7 @@ export function AppHeader({
             onOpenFiles={onOpenFiles}
             onActivateTab={onActivateDocumentTab}
             onCloseTab={onCloseDocumentTab}
+            onReorderTab={onReorderDocumentTab}
           />
           {!nativeMenuOwnsStatusAndTheme ? (
             <>

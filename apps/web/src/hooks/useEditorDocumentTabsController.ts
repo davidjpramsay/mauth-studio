@@ -4,6 +4,7 @@ import {
   documentTabIdentity,
   draftDocumentTabId,
   nextActiveDocumentTabId,
+  reorderDocumentTabs,
   savedDocumentTabId,
   upsertDocumentTab,
   type EditorDocumentTab,
@@ -101,6 +102,10 @@ export function useEditorDocumentTabsController({ initialTab, captureCurrentTab,
     return nextActiveId;
   }
 
+  function reorderTab(tabId: string, targetTabId: string, placement: "before" | "after") {
+    setTabs(reorderDocumentTabs(tabsRef.current, tabId, targetTabId, placement));
+  }
+
   function replaceTabsFromPersistence(session: PersistedEditorDocumentTabsSession, currentTab?: EditorDocumentTab | null) {
     const restoredTabs = session.tabs.map((tab) => ({ ...tab, history: { undo: [], redo: [] } }));
     const currentIdentity = currentTab ? documentTabIdentity(currentTab) : null;
@@ -132,6 +137,7 @@ export function useEditorDocumentTabsController({ initialTab, captureCurrentTab,
     addCurrentDocumentAsTab,
     tabForFile,
     activateTab,
+    reorderTab,
     removeTab,
     replaceTabsFromPersistence,
     clearTabs,

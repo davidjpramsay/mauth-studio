@@ -13,6 +13,13 @@ export const DEFAULT_PAGE_FORMAT = {
 
 export type PageFormat = typeof DEFAULT_PAGE_FORMAT;
 
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+
+function fixedMillimetres(value: number) {
+  return `${Number(value.toFixed(6))}mm`;
+}
+
 export function pageFormatFromConfig(formattingConfig?: FormattingConfig): PageFormat {
   const page = formattingConfig?.page;
   return {
@@ -25,6 +32,10 @@ export function pageFormatFromConfig(formattingConfig?: FormattingConfig): PageF
 }
 
 export function pageStyle(pageFormat: PageFormat, scale = 1) {
+  const printMarginX = (pageFormat.paddingXPx / pageFormat.widthPx) * A4_WIDTH_MM;
+  const printMarginY = (pageFormat.paddingYPx / pageFormat.heightPx) * A4_HEIGHT_MM;
+  const printContentWidth = A4_WIDTH_MM - 2 * printMarginX;
+  const printContentHeight = A4_HEIGHT_MM - 2 * printMarginY;
   return {
     "--a4-page-width": `${pageFormat.widthPx}px`,
     "--a4-page-height": `${pageFormat.heightPx}px`,
@@ -34,5 +45,13 @@ export function pageStyle(pageFormat: PageFormat, scale = 1) {
     "--a4-preview-page-width": `${pageFormat.widthPx * scale}px`,
     "--a4-preview-page-height": `${pageFormat.heightPx * scale}px`,
     "--a4-preview-page-gap": `${16 * scale}px`,
+    "--a4-print-content-width": fixedMillimetres(printContentWidth),
+    "--a4-print-content-height": fixedMillimetres(printContentHeight),
   } as CSSProperties & Record<`--${string}`, string>;
+}
+
+export function printPageRule(pageFormat: PageFormat) {
+  const marginX = (pageFormat.paddingXPx / pageFormat.widthPx) * A4_WIDTH_MM;
+  const marginY = (pageFormat.paddingYPx / pageFormat.heightPx) * A4_HEIGHT_MM;
+  return `@page { size: A4; margin: ${fixedMillimetres(marginY)} ${fixedMillimetres(marginX)}; }`;
 }
