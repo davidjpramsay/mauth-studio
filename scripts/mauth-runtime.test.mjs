@@ -18,7 +18,9 @@ test("runtime resolution prefers explicit environment URLs", () => {
 
 test("runtime resolution discovers a live packaged desktop app", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mauth-runtime-home-"));
-  const runtimeFile = defaultDesktopRuntimeFile(home);
+  const env = {};
+  const runtimeFile = defaultDesktopRuntimeFile(home, process.platform, env);
+  test.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.mkdirSync(path.dirname(runtimeFile), { recursive: true });
   fs.writeFileSync(
     runtimeFile,
@@ -33,21 +35,23 @@ test("runtime resolution discovers a live packaged desktop app", () => {
     }),
   );
 
-  assert.deepEqual(resolveMauthRuntime({}, home), {
+  assert.deepEqual(resolveMauthRuntime(env, home), {
     apiUrl: "http://127.0.0.1:43123",
     webUrl: "http://127.0.0.1:43123",
     source: "desktop-packaged",
     runtimeFile,
     agentToken: "packaged-agent-token-that-is-at-least-32-characters",
   });
-  assert.deepEqual(agentAuthorizationHeaders(resolveMauthRuntime({}, home)), {
+  assert.deepEqual(agentAuthorizationHeaders(resolveMauthRuntime(env, home)), {
     Authorization: "Bearer packaged-agent-token-that-is-at-least-32-characters",
   });
 });
 
 test("runtime resolution ignores stale and non-local manifests", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mauth-runtime-stale-"));
-  const runtimeFile = defaultDesktopRuntimeFile(home);
+  const env = {};
+  const runtimeFile = defaultDesktopRuntimeFile(home, process.platform, env);
+  test.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.mkdirSync(path.dirname(runtimeFile), { recursive: true });
   fs.writeFileSync(
     runtimeFile,
@@ -60,7 +64,7 @@ test("runtime resolution ignores stale and non-local manifests", () => {
     }),
   );
 
-  assert.equal(resolveMauthRuntime({}, home).source, "development-default");
+  assert.equal(resolveMauthRuntime(env, home).source, "development-default");
 });
 
 test("runtime resolution accepts an explicit bridge token", () => {
