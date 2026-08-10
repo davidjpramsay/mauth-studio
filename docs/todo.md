@@ -21,7 +21,7 @@ Mauth is a standalone teacher app with optional local agent authoring. Human con
 
 ## Now
 
-1. Clean-machine verify public `0.1.3`, including Finder/Quick Look, tab recovery, connector setup, and update from `0.1.2`.
+1. Clean-machine verify public `0.1.4`, including Finder/Quick Look, tab recovery, connector setup, and update from `0.1.3`.
 2. Improve the next concrete teacher-facing manual-solution or authoring ergonomics gap.
 3. Keep active folder, tab, file, revision, autosave, and bridge state obvious.
 4. Add conservative measured-preview layout checks and explicit repair actions.

@@ -6,9 +6,9 @@ Mauth Studio is a local-first macOS app for creating printable mathematics tests
 
 ## Download
 
-The current public build is the signed and Apple-notarized `0.1.3` alpha for Apple Silicon Macs.
+The current public build is the signed and Apple-notarized `0.1.4` alpha for Apple Silicon Macs.
 
-[Download Mauth Studio 0.1.3](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.3/Mauth-Studio-0.1.3-arm64.dmg)
+[Download Mauth Studio 0.1.4](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.4/Mauth-Studio-0.1.4-arm64.dmg)
 
 Open the DMG, move **Mauth Studio** to Applications, and launch it normally. The app starts and stops its own local mathematics service. Python, Node.js, a repository checkout, and open Terminal windows are not required.
 

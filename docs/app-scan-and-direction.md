@@ -82,7 +82,7 @@ The app must remain complete without AI. External agents are first-class clients
 
 ### 5. Distribution
 
-- Clean-machine verify `0.1.3` and an in-app update from `0.1.2`.
+- Clean-machine verify `0.1.4` and an in-app update from `0.1.3`.
 - Keep website, README, release notes, app version, and public assets aligned.
 - Keep platform-neutral runtime paths, process launch, folder selection, storage contracts, and MCP discovery covered by local tests.
 - Add Windows next only when there is a dedicated native sidecar, connector launcher, installer, signing/update plan, and Windows test machine.

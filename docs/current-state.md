@@ -34,7 +34,7 @@ For assessment authoring, inspect the live document through the installed app's 
 ### Project Snapshot At A Glance
 
 - **Product:** local-first desktop mathematics assessment authoring, with optional external-agent authoring through the same structured action layer as the UI. macOS is the only distributed build today.
-- **Current release:** signed and notarized Apple Silicon alpha `v0.1.3`; the public DMG, ZIP updater artifact, metadata, blockmap, release notes, and GitHub Pages download page are published.
+- **Current release:** signed and notarized Apple Silicon alpha `v0.1.4`; the public DMG, ZIP updater artifact, metadata, blockmap, release notes, and GitHub Pages download page are published.
 - **Normal use:** open **Mauth Studio.app**. It owns its local FastAPI sidecar and needs no open Terminal window.
 - **Development:** use `pnpm desktop:dev`; `pnpm macos:dev` remains an alias. React/CSS and API edits are watched, while Electron main-process and packaging edits require a restart.
 - **Documents:** visible `.mauth` files live in the selected folder. Shared state and recovery live under `~/Library/Application Support/Mauth Studio/storage`.
@@ -109,7 +109,7 @@ Investigation diagrams now use the same selected-module Inspector path as Test d
 
 Choose the first item relevant to the next request:
 
-1. Clean-Mac verify the public `0.1.3` DMG, Finder/Quick Look behavior, tab recovery, bundled connector setup, and an in-app update from `0.1.2`.
+1. Clean-Mac verify the public `0.1.4` DMG, Finder/Quick Look behavior, tab recovery, bundled connector setup, and an in-app update from `0.1.3`.
 2. Improve the next concrete manual-solution editing or completeness gap using structured solution data and focused tests.
 3. Add conservative measured-preview layout checks or repair actions without turning intentional answer spaces into generic automatic filler.
 4. Continue reducing `App.tsx` only at a coherent ownership boundary; existing persistence, Files, bridge, preview, navigation, header, overlay, drag, lifecycle, and inspector owners must not be duplicated.
@@ -251,9 +251,9 @@ Run visual smoke tests when changing rendered behavior; tests alone do not prove
 
 The published `0.1.3` slice added native `.mauth` Finder presentation, sharper preview scaling, multi-document tabs and recovery, explicit agent document targeting, compact/native menu controls, System Status contrast repair, reusable-logo reconciliation, and ZIP-only updater metadata. The subsequent documentation slice removed the obsolete website setup prompt, made MCP explicitly optional, linked directly to the DMG, and aligned repository agent entry points. Current authoring rules also require full display-size fractions unless compact notation is deliberately requested.
 
-The latest source-development MCP slice adds `mauth_documents_list`, `mauth_document_create`, `mauth_document_open`, and guarded `mauth_document_close` to the bundled connector. Lifecycle requests use the authenticated browser bridge and existing project/tab/revision systems instead of direct file edits. The connector now returns schema-valid structured results for every tool, marks unsuccessful HTTP results as MCP errors, and exposes local-only behavioural annotations. Focused API, web, connector-contract, and isolated live stdio lifecycle tests pass. This source change is not in the public `0.1.3` installed app until a later signed release is shipped.
+Release `0.1.4` adds `mauth_documents_list`, `mauth_document_create`, `mauth_document_open`, and guarded `mauth_document_close` to the bundled connector. Lifecycle requests use the authenticated browser bridge and existing project/tab/revision systems instead of direct file edits. The connector returns schema-valid structured results for every tool, marks unsuccessful HTTP results as MCP errors, and exposes local-only behavioural annotations. Focused API, web, connector-contract, and isolated live stdio lifecycle tests pass.
 
-The latest source-development slice fixes asynchronous Plotly charts disappearing from browser print/PDF output. Statistical charts now expose an explicit loading, ready, or error state; the print controller waits for all chart surfaces, document fonts, and two settled layout frames before opening the print dialog, with stale-request suppression and a fail-open timeout. Focused readiness tests cover pending, ready, error, settled-frame, and timeout behavior. A fresh 11-page A4 print of the Year 12 logarithms and continuous-random-variables test showed both the Question 6 histogram and Question 8 density graph. This source fix is not present in the already-running installed `0.1.3` app until a deliberate rebuild/install or a later signed update.
+Release `0.1.4` fixes asynchronous Plotly charts disappearing from browser print/PDF output. Statistical charts expose an explicit loading, ready, or error state; the print controller waits for all chart surfaces, document fonts, and two settled layout frames before opening the print dialog, with stale-request suppression and a fail-open timeout. Focused readiness tests cover pending, ready, error, settled-frame, and timeout behavior. A fresh 11-page A4 print of the Year 12 logarithms and continuous-random-variables test showed both the Question 6 histogram and Question 8 density graph.
 
 Part and subpart editor panels now activate their structural anchor on pointer or keyboard focus before a nested block takes over selection. This makes collapsed later parts such as Part (b) selectable and editable directly from their panel header while preserving nested block inspection.
 
@@ -273,7 +273,7 @@ Release-specific history is in `docs/releases/` and Git. Do not copy it back int
 
 ## Near-Term Work Queue
 
-1. Clean-machine and in-app-update verification for `0.1.3`.
+1. Clean-machine and in-app-update verification for `0.1.4`.
 2. Focused teacher-facing authoring and manual-solution ergonomics.
 3. Measured-preview overflow/readiness checks and explicit repair actions.
 4. External/cloud-folder availability and stale-autosave smoke coverage.
