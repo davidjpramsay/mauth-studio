@@ -37,6 +37,7 @@ interface WorkspaceDocumentBindings {
 interface WorkspaceSelectionBindings extends Pick<
   EditorSurfaceProps,
   | "editingFrontMatter"
+  | "editingFormulaSheet"
   | "editingPageBreak"
   | "editingSectionHeading"
   | "activePageBreakQuestion"
@@ -74,6 +75,7 @@ interface WorkspaceNavigationBindings {
   jumpPreviewToQuestion: QuestionPanelProps["onJumpPreview"];
   handlePreviewPointerDown: PreviewProps["onPointerDownCapture"];
   handlePreviewClick: PreviewProps["onClickCapture"];
+  openSettingsPane: WorkspaceProps["onRequestSettings"];
 }
 
 interface WorkspaceContextMenuBindings {
@@ -256,6 +258,7 @@ export function DocumentEditorWorkspaceBindings({
     <DocumentEditorWorkspace
       style={layout.style}
       paneMode={layout.paneMode}
+      onRequestSettings={navigation.openSettingsPane}
       editor={{
         show: layout.showEditor,
         paneRef: layout.editorPaneRef,
@@ -267,6 +270,7 @@ export function DocumentEditorWorkspaceBindings({
         },
         surface: {
           editingFrontMatter: selection.editingFrontMatter,
+          editingFormulaSheet: selection.editingFormulaSheet,
           editingPageBreak: selection.editingPageBreak,
           editingSectionHeading: selection.editingSectionHeading,
           activePageBreakQuestion: selection.activePageBreakQuestion,

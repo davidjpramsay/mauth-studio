@@ -122,6 +122,13 @@ test("groupPreviewPageSegments keeps adjacent question segments together", () =>
 
 test("frontMatterPageCount reflects document title-page templates", () => {
   assert.equal(frontMatterPageCount(DEFAULT_FRONT_MATTER), 1);
+  assert.equal(
+    frontMatterPageCount({
+      ...DEFAULT_FRONT_MATTER,
+      formulaSheet: { enabled: true, title: "Formula Sheet", body: "Area: $A=lw$" },
+    }),
+    2,
+  );
   assert.equal(frontMatterPageCount(DEFAULT_EXAM_FRONT_MATTER), 2);
   assert.equal(frontMatterPageCount({ ...DEFAULT_FRONT_MATTER, titlePageTemplate: "worksheet" }), 0);
   assert.equal(frontMatterPageCount(DEFAULT_NOTES_FRONT_MATTER), 0);

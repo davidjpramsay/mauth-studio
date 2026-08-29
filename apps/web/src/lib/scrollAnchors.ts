@@ -1,4 +1,5 @@
 export const SCROLL_ANCHOR_FRONT_MATTER = "front-matter";
+export const SCROLL_ANCHOR_FORMULA_SHEET = "formula-sheet";
 export const SCROLL_ANCHOR_INVESTIGATION_RUBRIC = "ir:rubric";
 export const SCROLL_ANCHOR_TOP_OFFSET_PX = 12;
 export const SCROLL_ANCHOR_SELECTOR = "[data-scroll-anchor]";
@@ -10,6 +11,7 @@ export interface ScrollAnchorPosition {
 
 export type ParsedScrollAnchorKind =
   | "frontMatter"
+  | "formulaSheet"
   | "investigationPage"
   | "investigationText"
   | "investigationDiagram"
@@ -121,7 +123,7 @@ export function columnBlockParentScrollAnchor(anchor: string) {
 }
 
 export function graphChildParentScrollAnchor(anchor: string) {
-  const parentAnchor = anchor.replace(/\/g(?:f|feat|pt|seg|arc|ang|dec):\d+$/, "");
+  const parentAnchor = anchor.replace(/\/(?:g(?:f|feat|pt|seg|arc|ang|dec)|g3(?:pt|seg|dim|face|solid)):\d+$/, "");
   return parentAnchor === anchor ? null : parentAnchor;
 }
 
@@ -183,6 +185,7 @@ export function previewAnchorFromEventTarget(target: EventTarget | null, contain
 
 export function parseScrollAnchor(anchor: string): ParsedScrollAnchor {
   if (anchor === SCROLL_ANCHOR_FRONT_MATTER) return { kind: "frontMatter" };
+  if (anchor === SCROLL_ANCHOR_FORMULA_SHEET) return { kind: "formulaSheet" };
   if (anchor === SCROLL_ANCHOR_INVESTIGATION_RUBRIC) return { kind: "investigationRubric" };
   if (anchor.startsWith("ip:")) {
     const [pageSegment, childSegment] = anchor.split("/");

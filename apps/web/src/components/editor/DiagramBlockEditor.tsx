@@ -157,7 +157,15 @@ export function DiagramBlockEditor({
     return renderDiagramPanel(
       diagramConfigSummary(config),
       "graph-editor-controls p-3",
-      <Graph3DGraphEditor config={config} showSolutions={showSolutions} settingsMode={settingsMode} onChange={patchConfig} />,
+      <Graph3DGraphEditor
+        config={config}
+        showSolutions={showSolutions}
+        settingsMode={settingsMode}
+        anchor={anchor}
+        activeAnchor={activeAnchor}
+        onActivateAnchor={onActivateAnchor}
+        onChange={patchConfig}
+      />,
     );
   }
 

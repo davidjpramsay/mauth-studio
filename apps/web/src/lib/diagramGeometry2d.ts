@@ -24,6 +24,8 @@ export type Geometry2DPrimitive =
   | Graph2DGeometryAngle
   | Graph2DGeometryDecoration;
 
+export type Geometry2DLabelPrimitiveKind = Exclude<Geometry2DPrimitiveKind, "decoration">;
+
 export const GEOMETRY_2D_CHILD_SEGMENTS = {
   points: "gpt",
   segments: "gseg",
@@ -146,6 +148,29 @@ export function updateGeometry2DPrimitive(
   if (target.kind === "arc") return updateGeometry2DArc(data, target.index, patch as Partial<Graph2DGeometryArc>);
   if (target.kind === "angle") return updateGeometry2DAngle(data, target.index, patch as Partial<Graph2DGeometryAngle>);
   return updateGeometry2DDecoration(data, target.index, patch as Partial<Graph2DGeometryDecoration>);
+}
+
+export function geometry2dConfigWithLabelPosition(
+  graphConfig: GraphConfig,
+  kind: Geometry2DLabelPrimitiveKind,
+  idValue: string,
+  x: number,
+  y: number,
+) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return graphConfig;
+  const data = geometry2dData(graphConfig);
+  const targetIndex = geometry2dPrimitiveIndexById(data, kind, idValue);
+  const target = geometry2dPrimitiveTarget(kind, targetIndex);
+  if (!target) return graphConfig;
+
+  const nextData = updateGeometry2DPrimitive(data, target, {
+    labelX: Number(x.toFixed(6)),
+    labelY: Number(y.toFixed(6)),
+  });
+  if (graphConfig.type === "geometry2d") return { ...graphConfig, data: nextData };
+
+  const configData = graphConfig.data && typeof graphConfig.data === "object" && !Array.isArray(graphConfig.data) ? graphConfig.data : {};
+  return { ...graphConfig, data: { ...configData, geometry2d: nextData } };
 }
 
 function id(prefix: string) {

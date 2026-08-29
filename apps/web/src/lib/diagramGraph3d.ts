@@ -8,6 +8,12 @@ import type {
   GraphConfig,
 } from "@mauth-studio/shared";
 
+import {
+  GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX,
+  graph3dDimensionFaceRightAngleMarkerPoints,
+  type Graph3DPoint,
+} from "./graph3dPresentation.ts";
+
 export type Graph3DElementKind = "point" | "segment" | "dimension" | "face" | "solid";
 export type Graph3DElementListKey =
   | "points"
@@ -20,6 +26,7 @@ export type Graph3DElementListKey =
   | "solids"
   | "surfaces";
 export type Graph3DElement = Graph3DPointData | Graph3DSegmentData | Graph3DDimensionData | Graph3DFaceData | Graph3DSolidData;
+export type Graph3DLabelElementKind = Exclude<Graph3DElementKind, "solid">;
 
 export interface Graph3DElementTarget {
   kind: Graph3DElementKind;
@@ -59,6 +66,111 @@ function finiteTriple(value: unknown, fallback: [number, number, number]): [numb
 
 function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function graph3dPointReferenceKey(value: unknown) {
+  if (typeof value === "string" && value.trim()) return `id:${value.trim()}`;
+  if (Array.isArray(value) && value.length >= 3) {
+    const coords = value.slice(0, 3).map(Number);
+    if (coords.every(Number.isFinite)) return `coords:${coords.join(",")}`;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = stringValue(record.id, stringValue(record.name));
+  if (id) return `id:${id}`;
+  const coords = finiteTriple(record.coords ?? record.coordinates ?? record.position ?? [record.x, record.y, record.z], [NaN, NaN, NaN]);
+  return coords.every(Number.isFinite) ? `coords:${coords.join(",")}` : null;
+}
+
+export function graph3dDimensionsShareEndpoint(left: Graph3DDimensionData, right: Graph3DDimensionData) {
+  const leftPoints = [left.from ?? left.start ?? left.points?.[0], left.to ?? left.end ?? left.points?.[1]]
+    .map(graph3dPointReferenceKey)
+    .filter((value): value is string => Boolean(value));
+  const rightPoints = [right.from ?? right.start ?? right.points?.[0], right.to ?? right.end ?? right.points?.[1]]
+    .map(graph3dPointReferenceKey)
+    .filter((value): value is string => Boolean(value));
+  return leftPoints.some((point) => rightPoints.includes(point));
+}
+
+export interface Graph3DConnectedDimensionOption {
+  id: string;
+  index: number;
+  label: string;
+}
+
+export interface Graph3DPerpendicularTargetOption extends Graph3DConnectedDimensionOption {
+  kind: "dimension" | "face";
+}
+
+export function graph3dConnectedDimensionOptions(config: GraphConfig, dimensionIndex: number): Graph3DConnectedDimensionOption[] {
+  const dimensions = normalizedGraph3DElements(config, "dimension");
+  const dimension = dimensions[dimensionIndex];
+  if (!dimension) return [];
+
+  return dimensions.flatMap((candidate, candidateIndex) => {
+    if (candidateIndex === dimensionIndex || !graph3dDimensionsShareEndpoint(dimension, candidate)) return [];
+    const id = graph3dElementId(candidate, "dimension", candidateIndex);
+    const fallbackId = `dimension-${candidateIndex + 1}`;
+    return [
+      {
+        id,
+        index: candidateIndex,
+        label: id === fallbackId ? `Dimension ${candidateIndex + 1}` : `Dimension ${candidateIndex + 1} (${id})`,
+      },
+    ];
+  });
+}
+
+function graph3dPointCoords(value: unknown, pointMap: Map<string, Graph3DPoint>): Graph3DPoint | null {
+  if (typeof value === "string") return pointMap.get(value) ?? null;
+  if (Array.isArray(value) && value.length >= 3) {
+    const coords = value.slice(0, 3).map(Number);
+    return coords.every(Number.isFinite) ? (coords as Graph3DPoint) : null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = stringValue(record.id, stringValue(record.name));
+  if (id && pointMap.has(id)) return pointMap.get(id) ?? null;
+  const coords = finiteTriple(record.coords ?? record.coordinates ?? record.position ?? [record.x, record.y, record.z], [NaN, NaN, NaN]);
+  return coords.every(Number.isFinite) ? coords : null;
+}
+
+export function graph3dPerpendicularTargetOptions(config: GraphConfig, dimensionIndex: number): Graph3DPerpendicularTargetOption[] {
+  const dimensions = normalizedGraph3DElements(config, "dimension");
+  const dimension = dimensions[dimensionIndex];
+  if (!dimension) return [];
+  const dimensionOptions = graph3dConnectedDimensionOptions(config, dimensionIndex).map((option) => ({
+    ...option,
+    kind: "dimension" as const,
+  }));
+
+  const points = normalizedGraph3DElements(config, "point");
+  const pointMap = new Map(points.map((point, index) => [graph3dElementId(point, "point", index), point.coords as Graph3DPoint]));
+  const dimensionPoints = Array.isArray(dimension.points) ? dimension.points : [];
+  const from = graph3dPointCoords(dimension.from ?? dimension.start ?? dimensionPoints[0], pointMap);
+  const to = graph3dPointCoords(dimension.to ?? dimension.end ?? dimensionPoints[1], pointMap);
+  if (!from || !to) return dimensionOptions;
+
+  const faces = normalizedGraph3DElements(config, "face");
+  const faceOptions = faces.flatMap((face, faceIndex): Graph3DPerpendicularTargetOption[] => {
+    const pointReferences = Array.isArray(face.points) ? face.points : Array.isArray(face.vertices) ? face.vertices : [];
+    const facePoints = pointReferences.flatMap((reference) => {
+      const coords = graph3dPointCoords(reference, pointMap);
+      return coords ? [coords] : [];
+    });
+    if (!graph3dDimensionFaceRightAngleMarkerPoints(from, to, facePoints, dimension.rightAngleSize)) return [];
+    const faceId = graph3dElementId(face, "face", faceIndex);
+    const fallbackId = `face-${faceIndex + 1}`;
+    return [
+      {
+        id: `${GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX}${faceId}`,
+        index: faceIndex,
+        kind: "face",
+        label: faceId === fallbackId ? `Face ${faceIndex + 1}` : `Face ${faceIndex + 1} (${faceId})`,
+      },
+    ];
+  });
+  return [...dimensionOptions, ...faceOptions];
 }
 
 export function graph3dData(config?: GraphConfig | null): Graph3DData {
@@ -180,6 +292,21 @@ export function updateGraph3DElement(config: GraphConfig, target: Graph3DElement
     target.kind,
     elements.map((entry, index) => (index === target.index ? { ...entry, ...patch } : entry)),
   );
+}
+
+export function graph3dConfigWithLabelScreenOffset(
+  config: GraphConfig,
+  kind: Graph3DLabelElementKind,
+  id: string,
+  labelScreenOffsetPx: [number, number] | undefined,
+): GraphConfig {
+  const index = graph3dElementIndexById(config, kind, id);
+  const target = index >= 0 ? graph3dElementTarget(config, kind, index) : null;
+  if (!target) return config;
+  return {
+    ...config,
+    data: updateGraph3DElement(config, target, { labelScreenOffsetPx }),
+  };
 }
 
 function renamedPointReference(value: unknown, oldId: string, nextId: string) {

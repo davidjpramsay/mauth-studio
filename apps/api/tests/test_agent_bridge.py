@@ -4,7 +4,12 @@ from threading import Thread
 
 from fastapi.testclient import TestClient
 
-from app.api.agent import _reset_agent_bridge_for_tests
+from app.api.agent import (
+    MUTATION_REQUEST_TIMEOUT_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+    _request_timeout_seconds,
+    _reset_agent_bridge_for_tests,
+)
 from app.main import app
 
 client = TestClient(app)
@@ -12,6 +17,15 @@ client = TestClient(app)
 
 def setup_function() -> None:
     _reset_agent_bridge_for_tests()
+
+
+def test_mutating_bridge_requests_allow_revision_saves_to_finish() -> None:
+    assert _request_timeout_seconds("snapshot") == REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout_seconds("validation.run") == REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout_seconds("actions.apply") == MUTATION_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout_seconds("document.create") == MUTATION_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout_seconds("document.open") == MUTATION_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout_seconds("document.close") == MUTATION_REQUEST_TIMEOUT_SECONDS
 
 
 def test_snapshot_without_editor_returns_setup_error() -> None:

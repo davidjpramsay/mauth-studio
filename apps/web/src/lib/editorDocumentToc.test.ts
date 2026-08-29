@@ -137,6 +137,48 @@ test("buildDocumentToc includes title, section, question, part, subpart, and mod
   assert.notEqual(items.find((item) => item.label === "Short answer")?.previewAnchor, items[0].previewAnchor);
 });
 
+test("standard formula sheet follows the physical opening title page in document navigation", () => {
+  const formulaSheet = { enabled: true, title: "Reference Formulae", body: "$A = \\pi r^2$" };
+  const question = baseQuestion();
+  const sectionHeadings = [{ id: "section-1", title: "Measurement" }];
+  const sectionedItems = buildDocumentToc({
+    frontMatter: { ...DEFAULT_FRONT_MATTER, formulaSheet },
+    questions: [question],
+    sectionHeadings,
+    documentFlow: [
+      { kind: "sectionHeading", id: "section-1" },
+      { kind: "question", id: "q1" },
+    ],
+    showSolutions: false,
+    normalizeDocumentFlow,
+    tocBlockSummary,
+  });
+
+  assert.deepEqual(
+    sectionedItems.slice(0, 4).map((item) => [item.label, item.kind, item.editorAnchor]),
+    [
+      ["Title Page", "title", "front-matter"],
+      ["Measurement", "sectionHeading", "sh:section-1"],
+      ["Reference Formulae", "formulaSheet", "formula-sheet"],
+      ["Question 1", "question", "q:q1"],
+    ],
+  );
+
+  const unsectionedItems = buildDocumentToc({
+    frontMatter: { ...DEFAULT_FRONT_MATTER, formulaSheet },
+    questions: [question],
+    sectionHeadings: [],
+    documentFlow: [{ kind: "question", id: "q1" }],
+    showSolutions: false,
+    normalizeDocumentFlow,
+    tocBlockSummary,
+  });
+  assert.deepEqual(
+    unsectionedItems.slice(0, 3).map((item) => item.kind),
+    ["title", "formulaSheet", "question"],
+  );
+});
+
 test("notes TOC uses note heading labels and question titles", () => {
   const question = baseQuestion({ text: "Finance revision" });
   const items = buildDocumentToc({

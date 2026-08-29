@@ -3,7 +3,7 @@ import type { GraphConfig, GraphFeature, GraphFunction, GraphFunctionPiece } fro
 import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
-import { CollapsiblePanel } from "@/components/editor/EditorPanels";
+import { CollapsiblePanel, OpenSettingsActionButton } from "@/components/editor/EditorPanels";
 import { snapImplicitRelationPointAtX, snapImplicitRelationPointAtY } from "@/components/graphs/FunctionGraph";
 import { Button } from "@/components/ui/button";
 import { GraphAngleMarkerControls } from "@/components/editor/GraphAngleMarkerControls";
@@ -60,7 +60,7 @@ type GraphFeatureEntry = {
   featureIndex: number;
 };
 
-type GraphFeatureGroupId = "points" | "segments" | "markers" | "shading" | "labels" | "other";
+type GraphFeatureGroupId = "points" | "segments" | "annotations" | "shading" | "other";
 
 const GRAPH_FEATURE_GROUPS: Array<{
   id: GraphFeatureGroupId;
@@ -78,19 +78,14 @@ const GRAPH_FEATURE_GROUPS: Array<{
     description: "Line segments and tangent lines",
   },
   {
-    id: "markers",
-    label: "Markers",
-    description: "Angle and construction markers",
+    id: "annotations",
+    label: "Annotations",
+    description: "Angle marks, construction marks, and free labels",
   },
   {
     id: "shading",
     label: "Shading",
     description: "Regions between curves or against an axis",
-  },
-  {
-    id: "labels",
-    label: "Labels",
-    description: "Free labels and graph annotations",
   },
   {
     id: "other",
@@ -100,9 +95,9 @@ const GRAPH_FEATURE_GROUPS: Array<{
 ];
 
 function graphFeatureGroupId(feature: GraphFeature): GraphFeatureGroupId {
-  if (feature.kind === "label") return "labels";
+  if (feature.kind === "label") return "annotations";
   if (feature.kind === "line_segment" || feature.kind === "tangent") return "segments";
-  if (feature.kind === "angle_marker") return "markers";
+  if (feature.kind === "angle_marker") return "annotations";
   if (isRegionFeatureKind(feature.kind) || feature.kind === "region_clipped_by_curve") return "shading";
   if (
     feature.kind === "point" ||
@@ -573,16 +568,21 @@ export function FunctionGraphEditor({
               bodyClassName="p-2"
               active={functionAnchor === activeAnchor}
               actions={
-                <Button
-                  variant="outline"
-                  size="icon"
-                  title={`Remove function ${functionIndex + 1}`}
-                  aria-label={`Remove function ${functionIndex + 1}`}
-                  onClick={() => removeFunction(functionIndex)}
-                  className="size-8"
-                >
-                  <Trash2 />
-                </Button>
+                <>
+                  {!showInlineSettings ? (
+                    <OpenSettingsActionButton label={`${functionTitleLabel.toLowerCase()} ${functionIndex + 1}`} />
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    title={`Remove function ${functionIndex + 1}`}
+                    aria-label={`Remove function ${functionIndex + 1}`}
+                    onClick={() => removeFunction(functionIndex)}
+                    className="size-8"
+                  >
+                    <Trash2 />
+                  </Button>
+                </>
               }
             >
               <div className="graph-auto-grid graph-auto-grid-function">
@@ -937,16 +937,19 @@ export function FunctionGraphEditor({
                       bodyClassName="p-2"
                       active={featureAnchor === activeAnchor}
                       actions={
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          title={`Remove feature ${featureIndex + 1}`}
-                          aria-label={`Remove feature ${featureIndex + 1}`}
-                          onClick={() => removeFeature(featureIndex)}
-                          className="size-8"
-                        >
-                          <Trash2 />
-                        </Button>
+                        <>
+                          {!showInlineSettings ? <OpenSettingsActionButton label={`feature ${featureIndex + 1}`} /> : null}
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title={`Remove feature ${featureIndex + 1}`}
+                            aria-label={`Remove feature ${featureIndex + 1}`}
+                            onClick={() => removeFeature(featureIndex)}
+                            className="size-8"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </>
                       }
                     >
                       <div className={cn("graph-auto-grid", isFreeLabel && "graph-auto-grid-free-label")}>

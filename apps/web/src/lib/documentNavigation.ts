@@ -3,6 +3,7 @@ export type MoveDirection = -1 | 1;
 
 export type TocItemKind =
   | "title"
+  | "formulaSheet"
   | "investigationPage"
   | "investigationText"
   | "investigationRubric"
@@ -59,6 +60,7 @@ export function documentNavigationRailItems(
   const topLevelItems = items.filter(
     (item) =>
       item.kind === "title" ||
+      item.kind === "formulaSheet" ||
       item.kind === "investigationPage" ||
       item.kind === "investigationRubric" ||
       item.kind === "sectionHeading" ||
@@ -79,6 +81,7 @@ export function activeDocumentNavigationRailItemId(items: DocumentTocItem[], rai
     const item = items[index];
     if (
       item.kind === "title" ||
+      item.kind === "formulaSheet" ||
       item.kind === "investigationPage" ||
       item.kind === "sectionHeading" ||
       (item.kind === "question" && item.depth === 0)

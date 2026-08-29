@@ -6,12 +6,13 @@ import {
   DEFAULT_EXAM_TITLE_PAGE,
   assessmentTitleText,
   normalizeExamTitlePage,
+  normalizeFormulaSheet,
   type ExamTitlePageConfig,
   type FrontMatterConfig,
 } from "@/lib/frontMatterConfig";
 import { schoolInitials, type LogoAsset } from "@/lib/logoLibrary";
 import { examStructurePercentageTotal, examStructureRows } from "@/lib/previewPagination";
-import { SCROLL_ANCHOR_FRONT_MATTER, previewSelectionAttr } from "@/lib/scrollAnchors";
+import { SCROLL_ANCHOR_FORMULA_SHEET, SCROLL_ANCHOR_FRONT_MATTER, previewSelectionAttr } from "@/lib/scrollAnchors";
 
 function ExamTextLines({ text }: { text: string }) {
   return (
@@ -547,6 +548,29 @@ export function NotesHeaderPreview({
   );
 }
 
+export function FormulaSheetPage({ frontMatter, activePreviewAnchor }: { frontMatter: FrontMatterConfig; activePreviewAnchor?: string }) {
+  const formulaSheet = normalizeFormulaSheet(frontMatter.formulaSheet);
+  return (
+    <article
+      className="formula-sheet-page"
+      data-mauth-formula-sheet="true"
+      data-scroll-anchor={SCROLL_ANCHOR_FORMULA_SHEET}
+      data-preview-structure-anchor="true"
+      data-preview-selected={previewSelectionAttr(SCROLL_ANCHOR_FORMULA_SHEET, activePreviewAnchor)}
+    >
+      <header className="formula-sheet-header">
+        <p>
+          <FrontMatterInlineText text={`${frontMatter.subjectTitle} - ${assessmentTitleText(frontMatter.assessmentTitle)}`} />
+        </p>
+        <h1>
+          <FrontMatterInlineText text={formulaSheet.title || "Formula Sheet"} />
+        </h1>
+      </header>
+      <FormattedText text={formulaSheet.body} className="formula-sheet-body" />
+    </article>
+  );
+}
+
 export function FrontMatterPreviewPages({
   frontMatter,
   logo,
@@ -592,19 +616,38 @@ export function FrontMatterPreviewPages({
     );
   }
 
+  const formulaSheet = normalizeFormulaSheet(frontMatter.formulaSheet);
   return (
-    <A4PreviewPageFrame>
-      <section className="a4-page">
-        <div className="a4-page-content">
-          <TestFrontMatterPreview
-            frontMatter={frontMatter}
-            logo={logo}
-            totalMarks={totalMarks}
-            activePreviewAnchor={activePreviewAnchor}
-            scrollAnchor={standardScrollAnchor}
-          />
-        </div>
-      </section>
-    </A4PreviewPageFrame>
+    <>
+      <A4PreviewPageFrame>
+        <section className="a4-page">
+          <div className="a4-page-content">
+            <TestFrontMatterPreview
+              frontMatter={frontMatter}
+              logo={logo}
+              totalMarks={totalMarks}
+              activePreviewAnchor={activePreviewAnchor}
+              scrollAnchor={standardScrollAnchor}
+            />
+          </div>
+        </section>
+      </A4PreviewPageFrame>
+      {formulaSheet.enabled ? (
+        <>
+          {showPageBreaks ? (
+            <div className="a4-page-break" aria-hidden="true">
+              <span>A4 page break</span>
+            </div>
+          ) : null}
+          <A4PreviewPageFrame>
+            <section className="a4-page">
+              <div className="a4-page-content">
+                <FormulaSheetPage frontMatter={frontMatter} activePreviewAnchor={activePreviewAnchor} />
+              </div>
+            </section>
+          </A4PreviewPageFrame>
+        </>
+      ) : null}
+    </>
   );
 }

@@ -1,10 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { clampPreviewZoom, previewFitScaleForViewport, previewMaxZoomForViewport } from "@/lib/previewZoom";
 
-const PREVIEW_FIT_PADDING_PX = 40;
-const MIN_PREVIEW_SCALE = 0.55;
-const MAX_PREVIEW_FIT_SCALE = 1;
-const MIN_PREVIEW_ZOOM = 0.7;
-const MAX_PREVIEW_ZOOM = 3;
 const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0018;
 const PREVIEW_ZOOM_STATE_SYNC_DELAY_MS = 160;
 const WHEEL_DELTA_LINE = 1;
@@ -25,11 +21,6 @@ interface UsePreviewZoomControllerOptions<TPageFormat extends PreviewPageFormat>
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function clampPreviewZoom(value: number, maxZoom = MAX_PREVIEW_ZOOM) {
-  if (!Number.isFinite(value)) return 1;
-  return Math.round(clamp(value, MIN_PREVIEW_ZOOM, maxZoom) * 10000) / 10000;
 }
 
 function normalizedPreviewWheelDelta(event: globalThis.WheelEvent, pageHeight: number) {
@@ -116,16 +107,16 @@ export function usePreviewZoomController<TPageFormat extends PreviewPageFormat>(
   const previewZoomStateSyncTimerRef = useRef<number | null>(null);
 
   const previewFitScale = useMemo(() => {
-    if (!previewViewport.width) return 1;
-    const widthScale = (previewViewport.width - PREVIEW_FIT_PADDING_PX) / currentPageFormat.widthPx;
-    return clamp(Math.min(widthScale, MAX_PREVIEW_FIT_SCALE), MIN_PREVIEW_SCALE, MAX_PREVIEW_FIT_SCALE);
+    return previewFitScaleForViewport(previewViewport.width, currentPageFormat.widthPx);
   }, [currentPageFormat.widthPx, previewViewport.width]);
 
   const previewMaxZoom = useMemo(() => {
-    if (!previewViewport.width || previewFitScale <= 0) return 1;
-    const maxTotalScale = MAX_PREVIEW_FIT_SCALE;
-    return clampPreviewZoom(maxTotalScale / previewFitScale);
-  }, [previewFitScale, previewViewport.width]);
+    return previewMaxZoomForViewport({
+      viewportWidth: previewViewport.width,
+      pageWidth: currentPageFormat.widthPx,
+      previewFitScale,
+    });
+  }, [currentPageFormat.widthPx, previewFitScale, previewViewport.width]);
 
   const previewLayoutScale = previewFitScale * previewZoomRef.current;
 

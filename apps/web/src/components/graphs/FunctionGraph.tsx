@@ -23,6 +23,7 @@ import {
 } from "@/lib/graphFunctionDomains";
 import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
+import { geometry2dConfigWithLabelPosition, type Geometry2DLabelPrimitiveKind } from "@/lib/diagramGeometry2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
 
@@ -202,6 +203,8 @@ interface IntervalPiece {
 }
 
 type GraphPoint = [number, number];
+
+type CommitGeometry2DLabelPosition = (kind: Geometry2DLabelPrimitiveKind, id: string, x: number, y: number) => void;
 
 interface PointDragResult {
   x: number;
@@ -1362,6 +1365,7 @@ function createFeaturePoint(
   value?: number | null,
   onPointMove?: (x: number, y: number, previousX: number, previousY: number) => void,
   onPointDrag?: (x: number, y: number) => PointDragResult | null,
+  labelAttributes: Record<string, string | undefined> = {},
 ) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   let currentLabelPoint: GraphPoint = [x, y];
@@ -1383,6 +1387,7 @@ function createFeaturePoint(
     () => featureLabelLatex(feature, currentLabelPoint, undefined, currentValue),
     color,
     onLabelMove,
+    labelAttributes,
   );
 
   if (onPointMove) {
@@ -1724,6 +1729,7 @@ function drawGeometryArc(
   points: Map<string, Graph2DGeometryPoint>,
   solutionColor?: string,
   attributes: Record<string, string | undefined> = {},
+  onLabelMove?: (x: number, y: number) => void,
 ) {
   if (!arc || arc.show === false) return;
   const center = geometryPointTuple(points.get(arc.center));
@@ -1766,8 +1772,12 @@ function drawGeometryArc(
       Number.isFinite(arc.labelY) ? (arc.labelY as number) : center[1] + Math.sin(middleTheta) * radius,
       arc.label,
       color,
-      undefined,
-      { ...attributes, "data-mauth-label-role": "geometry2d-arc-label" },
+      onLabelMove,
+      {
+        ...attributes,
+        "data-mauth-label-role": "geometry2d-arc-label",
+        "data-mauth-draggable-geometry2d-label": onLabelMove ? "true" : undefined,
+      },
     );
   }
 }
@@ -1874,7 +1884,12 @@ function createAngleMarkerFeature(
   );
 }
 
-function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solutionColor?: string) {
+function renderGraph2DGeometry(
+  board: JXG.Board,
+  graphConfig: GraphConfig,
+  solutionColor?: string,
+  onLabelMove?: CommitGeometry2DLabelPosition,
+) {
   const geometry = graph2DGeometryData(graphConfig);
   if (!geometry) return;
   const points = geometryPointMap(geometry);
@@ -1907,13 +1922,26 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
         Number.isFinite(segment.labelY) ? (segment.labelY as number) : (start[1] + end[1]) / 2,
         segment.label,
         color,
-        undefined,
-        { ...attributes, "data-mauth-label-role": "geometry2d-segment-label" },
+        onLabelMove ? (x, y) => onLabelMove("segment", segment.id, x, y) : undefined,
+        {
+          ...attributes,
+          "data-mauth-label-role": "geometry2d-segment-label",
+          "data-mauth-draggable-geometry2d-label": onLabelMove ? "true" : undefined,
+        },
       );
     }
   });
 
-  arcs.forEach((arc) => drawGeometryArc(board, arc, points, solutionColor, geometry2DRenderedAttributes("arc", arc.id)));
+  arcs.forEach((arc) =>
+    drawGeometryArc(
+      board,
+      arc,
+      points,
+      solutionColor,
+      geometry2DRenderedAttributes("arc", arc.id),
+      onLabelMove ? (x, y) => onLabelMove("arc", arc.id, x, y) : undefined,
+    ),
+  );
 
   (geometry.decorations ?? []).forEach((decoration) => {
     if (decoration.show === false) return;
@@ -1996,8 +2024,12 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
       Number.isFinite(angle.labelY) ? (angle.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
       angle.label,
       color,
-      undefined,
-      { ...attributes, "data-mauth-label-role": "geometry2d-angle-label" },
+      onLabelMove ? (x, y) => onLabelMove("angle", angle.id, x, y) : undefined,
+      {
+        ...attributes,
+        "data-mauth-label-role": "geometry2d-angle-label",
+        "data-mauth-draggable-geometry2d-label": onLabelMove ? "true" : undefined,
+      },
     );
   });
 
@@ -2017,6 +2049,15 @@ function renderGraph2DGeometry(board: JXG.Board, graphConfig: GraphConfig, solut
         size: 0.15,
       },
       color,
+      onLabelMove ? (x, y) => onLabelMove("point", point.id, x, y) : undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        ...geometry2DRenderedAttributes("point", point.id),
+        "data-mauth-label-role": "geometry2d-point-label",
+        "data-mauth-draggable-geometry2d-label": onLabelMove ? "true" : undefined,
+      },
     );
     setRenderedDataAttributes(renderedPoint, geometry2DRenderedAttributes("point", point.id));
   });
@@ -3764,6 +3805,10 @@ export function FunctionGraph({
       onGraphConfigChange({ ...graphConfig, features: nextFeatures });
     };
 
+    const commitGeometry2DLabelPosition: CommitGeometry2DLabelPosition | undefined = onGraphConfigChange
+      ? (kind, id, x, y) => onGraphConfigChange(geometry2dConfigWithLabelPosition(graphConfig, kind, id, x, y))
+      : undefined;
+
     const commitFeaturePointPosition = (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => {
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
@@ -3901,7 +3946,7 @@ export function FunctionGraph({
       );
     });
 
-    renderGraph2DGeometry(board, graphConfig, solutionColor);
+    renderGraph2DGeometry(board, graphConfig, solutionColor, commitGeometry2DLabelPosition);
 
     functions.forEach((graphFunction, index) => {
       if (!shouldShowGraphItem(graphFunction) || !graphFunction.showLabel) return;

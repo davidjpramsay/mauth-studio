@@ -116,6 +116,12 @@ export interface InvestigationConfig {
   criteria: InvestigationCriterionConfig[];
 }
 
+export interface FormulaSheetConfig {
+  enabled: boolean;
+  title: string;
+  body: string;
+}
+
 export interface FrontMatterConfig {
   titlePageTemplate: TitlePageTemplate;
   logoId: string;
@@ -135,9 +141,16 @@ export interface FrontMatterConfig {
   showInstructions: boolean;
   instructionsTitle: string;
   instructionsBody: string;
+  formulaSheet?: FormulaSheetConfig;
   exam?: ExamTitlePageConfig;
   investigation?: InvestigationConfig;
 }
+
+export const DEFAULT_FORMULA_SHEET: FormulaSheetConfig = {
+  enabled: false,
+  title: "Formula Sheet",
+  body: "",
+};
 
 export const DEFAULT_FRONT_MATTER: FrontMatterConfig = {
   titlePageTemplate: "standard",
@@ -722,6 +735,16 @@ export function withInvestigationLegacyMirrors(value: InvestigationConfig | unkn
   };
 }
 
+export function normalizeFormulaSheet(value: unknown): FormulaSheetConfig {
+  if (!value || typeof value !== "object") return { ...DEFAULT_FORMULA_SHEET };
+  const candidate = value as Partial<FormulaSheetConfig>;
+  return {
+    enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : DEFAULT_FORMULA_SHEET.enabled,
+    title: typeof candidate.title === "string" ? candidate.title : DEFAULT_FORMULA_SHEET.title,
+    body: typeof candidate.body === "string" ? candidate.body : DEFAULT_FORMULA_SHEET.body,
+  };
+}
+
 export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<FrontMatterConfig> & { showSectionHeading?: unknown; sectionHeading?: unknown };
@@ -767,6 +790,7 @@ export function normalizeFrontMatter(value: unknown): FrontMatterConfig | null {
     instructionsTitle:
       typeof candidate.instructionsTitle === "string" ? candidate.instructionsTitle : DEFAULT_FRONT_MATTER.instructionsTitle,
     instructionsBody: typeof candidate.instructionsBody === "string" ? candidate.instructionsBody : DEFAULT_FRONT_MATTER.instructionsBody,
+    ...(candidate.formulaSheet ? { formulaSheet: normalizeFormulaSheet(candidate.formulaSheet) } : {}),
     ...(titlePageTemplate === "exam" || candidate.exam ? { exam: normalizeExamTitlePage(candidate.exam) } : {}),
     ...(titlePageTemplate === "investigation" || candidate.investigation
       ? { investigation: normalizeInvestigation(candidate.investigation) }

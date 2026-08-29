@@ -681,13 +681,13 @@ export function Geometry2DInspector({
   if (!decoration) return null;
   return (
     <div className="space-y-3 border-t pt-3">
-      {primitiveHeader("Marker")}
+      {primitiveHeader("Annotation")}
       {solutionLayerControl}
       <label className={checkboxLabelClassName}>
         <input
           type="checkbox"
           checked={decoration.show ?? true}
-          aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} visible`}
+          aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} visible`}
           onChange={(event) => patchDecoration(selectedGeometryChild.index, { show: event.target.checked })}
         />
         Visible
@@ -697,7 +697,7 @@ export function Geometry2DInspector({
           Type
           <select
             value={decoration.kind}
-            aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} type`}
+            aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} type`}
             onChange={(event) =>
               writeData(
                 updateGeometry2DDecoration(
@@ -719,7 +719,7 @@ export function Geometry2DInspector({
             Segments
             <input
               value={csvList(decoration.segments)}
-              aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} segments`}
+              aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} segments`}
               list={`${selectedBlock.label}-geometry-segments`}
               onChange={(event) => patchDecoration(selectedGeometryChild.index, { segments: parseCsvList(event.target.value) })}
               className={controlClassName}
@@ -730,7 +730,7 @@ export function Geometry2DInspector({
             Angles
             <input
               value={csvList(decoration.angles)}
-              aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} angles`}
+              aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} angles`}
               onChange={(event) => patchDecoration(selectedGeometryChild.index, { angles: parseCsvList(event.target.value) })}
               className={controlClassName}
             />
@@ -740,7 +740,7 @@ export function Geometry2DInspector({
             Angle
             <select
               value={decoration.angle ?? ""}
-              aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} angle`}
+              aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} angle`}
               onChange={(event) => patchDecoration(selectedGeometryChild.index, { angle: event.target.value })}
               className={controlClassName}
             >
@@ -765,7 +765,7 @@ export function Geometry2DInspector({
               max={4}
               step={1}
               value={decoration.kind === "equalAngle" ? decoration.arcCount : decoration.tickCount}
-              ariaLabel={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} count`}
+              ariaLabel={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} count`}
               onValueChange={(value) =>
                 patchDecoration(selectedGeometryChild.index, decoration.kind === "equalAngle" ? { arcCount: value } : { tickCount: value })
               }
@@ -779,7 +779,7 @@ export function Geometry2DInspector({
             min={0.05}
             step={1}
             value={decoration.size ?? decoration.radius}
-            ariaLabel={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} size`}
+            ariaLabel={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} size`}
             onValueChange={(value) =>
               patchDecoration(selectedGeometryChild.index, decoration.kind === "equalAngle" ? { radius: value } : { size: value })
             }
@@ -791,7 +791,7 @@ export function Geometry2DInspector({
           <input
             type="color"
             value={decoration.color ?? "#000000"}
-            aria-label={`${selectedBlock.label} marker ${selectedGeometryChild.index + 1} colour`}
+            aria-label={`${selectedBlock.label} annotation ${selectedGeometryChild.index + 1} colour`}
             onChange={(event) => patchDecoration(selectedGeometryChild.index, { color: event.target.value })}
             className="h-9 w-full rounded-md border border-input bg-background p-1"
           />

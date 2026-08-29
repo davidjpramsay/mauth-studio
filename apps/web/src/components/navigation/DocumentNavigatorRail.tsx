@@ -30,6 +30,7 @@ function tocRailPageBreakItem(questionItem: DocumentTocItem, questionId: string)
 
 function tocRailLabel(item: DocumentTocItem, sectionItemPresentation: "section" | "titlePage") {
   if (item.kind === "title") return "T";
+  if (item.kind === "formulaSheet") return "F";
   if (item.kind === "investigationPage") return item.label.replace(/^Student page\s+/i, "P");
   if (item.kind === "investigationRubric") return "R";
   if (item.kind === "sectionHeading") return sectionItemPresentation === "titlePage" ? "T" : "§";
@@ -54,10 +55,12 @@ export function DocumentNavigatorRail({
   onSelectPageBreak,
   onToggleEditorAtItem,
   onAddSectionHeading,
+  onAddFormulaSheet,
   onAddQuestion,
   questionItemLabel = "question",
   sectionItemPresentation = "section",
   showStructureControls = true,
+  showFormulaSheetControl = false,
   showInvestigationControls = false,
   onAddInvestigationPage,
   onAddPageBreakAfterQuestion,
@@ -96,10 +99,12 @@ export function DocumentNavigatorRail({
   onSelectPageBreak: (item: DocumentTocItem) => void;
   onToggleEditorAtItem: (item: DocumentTocItem) => void;
   onAddSectionHeading: () => void;
+  onAddFormulaSheet?: () => void;
   onAddQuestion: () => void;
   questionItemLabel?: string;
   sectionItemPresentation?: "section" | "titlePage";
   showStructureControls?: boolean;
+  showFormulaSheetControl?: boolean;
   showInvestigationControls?: boolean;
   onAddInvestigationPage?: () => void;
   onAddPageBreakAfterQuestion: (questionId: string) => void;
@@ -138,6 +143,7 @@ export function DocumentNavigatorRail({
   );
   const selectedQuestionId = questionIdFromScrollAnchor(activeRailItemId);
   const canAddPageBreak = Boolean(selectedQuestionId && !pageBreakQuestionIds.has(selectedQuestionId));
+  const canAddFormulaSheet = showFormulaSheetControl && !items.some((item) => item.kind === "formulaSheet");
 
   return (
     <aside className="flex min-h-0 w-[3.25rem] flex-col border-r bg-card/95 shadow-panel">
@@ -228,6 +234,7 @@ export function DocumentNavigatorRail({
           const movableItemId = questionId || sectionHeadingId;
           const togglesEditor =
             item.kind === "title" ||
+            item.kind === "formulaSheet" ||
             item.kind === "sectionHeading" ||
             item.kind === "investigationPage" ||
             item.kind === "investigationRubric" ||
@@ -263,7 +270,11 @@ export function DocumentNavigatorRail({
               aria-current={active ? "location" : undefined}
               aria-keyshortcuts={movableItemId ? "Alt+ArrowUp Alt+ArrowDown Delete Backspace" : undefined}
               onClick={() =>
-                item.kind === "title" || item.kind === "sectionHeading" || item.kind === "investigationPage" || questionId
+                item.kind === "title" ||
+                item.kind === "formulaSheet" ||
+                item.kind === "sectionHeading" ||
+                item.kind === "investigationPage" ||
+                questionId
                   ? onPreviewJump(item)
                   : onJump(item)
               }
@@ -343,7 +354,18 @@ export function DocumentNavigatorRail({
         })}
       </nav>
       {showStructureControls ? (
-        <div className="flex h-28 shrink-0 flex-col items-center justify-center gap-1 border-t">
+        <div className="flex min-h-28 shrink-0 flex-col items-center justify-center gap-1 border-t py-2">
+          {canAddFormulaSheet ? (
+            <button
+              type="button"
+              title="Add formula sheet after the opening title page"
+              aria-label="Add formula sheet after the opening title page"
+              onClick={onAddFormulaSheet}
+              className="flex size-8 shrink-0 touch-manipulation items-center justify-center rounded-md border border-dashed border-border bg-background text-xs font-semibold text-muted-foreground transition-colors hover:border-primary/60 hover:bg-accent hover:text-primary"
+            >
+              F+
+            </button>
+          ) : null}
           <button
             type="button"
             title={sectionItemPresentation === "titlePage" ? "Add section title page" : "Add section"}

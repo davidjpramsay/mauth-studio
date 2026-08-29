@@ -7,6 +7,7 @@ test("document workspace surface precedence preserves the existing selection mod
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: true,
+      editingFormulaSheet: true,
       editingPageBreak: true,
       editingSectionHeading: true,
       hasActivePageBreak: true,
@@ -18,6 +19,7 @@ test("document workspace surface precedence preserves the existing selection mod
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: false,
+      editingFormulaSheet: false,
       editingPageBreak: true,
       editingSectionHeading: true,
       hasActivePageBreak: true,
@@ -29,6 +31,7 @@ test("document workspace surface precedence preserves the existing selection mod
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: false,
+      editingFormulaSheet: false,
       editingPageBreak: false,
       editingSectionHeading: true,
       hasActivePageBreak: false,
@@ -40,6 +43,7 @@ test("document workspace surface precedence preserves the existing selection mod
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: false,
+      editingFormulaSheet: false,
       editingPageBreak: false,
       editingSectionHeading: false,
       hasActivePageBreak: false,
@@ -50,10 +54,26 @@ test("document workspace surface precedence preserves the existing selection mod
   );
 });
 
+test("formula sheet selection owns its dedicated document editor surface", () => {
+  assert.equal(
+    documentEditorSurfaceKind({
+      editingFrontMatter: false,
+      editingFormulaSheet: true,
+      editingPageBreak: true,
+      editingSectionHeading: true,
+      hasActivePageBreak: true,
+      hasActiveSectionHeading: true,
+      hasActiveQuestion: true,
+    }),
+    "formulaSheet",
+  );
+});
+
 test("missing selected entities keep stale editor modes empty", () => {
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: false,
+      editingFormulaSheet: false,
       editingPageBreak: true,
       editingSectionHeading: false,
       hasActivePageBreak: false,
@@ -65,6 +85,7 @@ test("missing selected entities keep stale editor modes empty", () => {
   assert.equal(
     documentEditorSurfaceKind({
       editingFrontMatter: false,
+      editingFormulaSheet: false,
       editingPageBreak: false,
       editingSectionHeading: true,
       hasActivePageBreak: false,

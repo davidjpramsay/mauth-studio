@@ -9,6 +9,9 @@ type Graph3DGraphEditorProps = {
   config: GraphConfig;
   showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
+  anchor?: string;
+  activeAnchor?: string;
+  onActivateAnchor?: (anchor: string) => void;
   onChange: (patch: Partial<GraphConfig>) => void;
 };
 
@@ -36,7 +39,15 @@ function graph3dObjectSummary(config: GraphConfig) {
   return parts.join(", ");
 }
 
-export function Graph3DGraphEditor({ config, showSolutions = true, settingsMode = "inline", onChange }: Graph3DGraphEditorProps) {
+export function Graph3DGraphEditor({
+  config,
+  showSolutions = true,
+  settingsMode = "inline",
+  anchor,
+  activeAnchor,
+  onActivateAnchor,
+  onChange,
+}: Graph3DGraphEditorProps) {
   const view = graph3dViewState(config);
   const showInlineSettings = settingsMode === "inline";
   const updateView = (patch: Partial<Graph3DViewState>) =>
@@ -63,29 +74,48 @@ export function Graph3DGraphEditor({ config, showSolutions = true, settingsMode 
         <>
           <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-2">
             <label className="flex flex-col gap-2 text-xs font-medium">
-              Diagram width
+              Frame width
               <NumericExpressionInput
                 min={240}
                 step={10}
                 value={config.widthPx}
                 fallbackValue={DEFAULT_3D_GRAPH.widthPx}
-                ariaLabel="3D diagram width"
+                ariaLabel="3D frame width"
                 onValueChange={(value) => onChange({ widthPx: value ?? DEFAULT_3D_GRAPH.widthPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
               />
             </label>
             <label className="flex flex-col gap-2 text-xs font-medium">
-              Diagram height
+              Frame height
               <NumericExpressionInput
                 min={180}
                 step={10}
                 value={config.heightPx}
                 fallbackValue={DEFAULT_3D_GRAPH.heightPx}
-                ariaLabel="3D diagram height"
+                ariaLabel="3D frame height"
                 onValueChange={(value) => onChange({ heightPx: value ?? DEFAULT_3D_GRAPH.heightPx })}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
               />
             </label>
+            <p className="text-xs leading-5 text-muted-foreground md:col-span-2">
+              Frame size only. The 3D horizontal and vertical scale stays 1:1.
+            </p>
+            <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
+              Object size (%)
+              <NumericExpressionInput
+                min={50}
+                max={300}
+                step={10}
+                value={view.zoom * 100}
+                fallbackValue={DEFAULT_3D_VIEW_STATE.zoom * 100}
+                ariaLabel="3D object size"
+                onValueChange={(value) => updateView({ zoom: (value ?? DEFAULT_3D_VIEW_STATE.zoom * 100) / 100 })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              />
+            </label>
+            <p className="text-xs leading-5 text-muted-foreground md:col-span-2">
+              Changes the geometry size inside the frame without distorting its scale.
+            </p>
           </section>
 
           <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
@@ -127,7 +157,15 @@ export function Graph3DGraphEditor({ config, showSolutions = true, settingsMode 
       ) : (
         <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">{graph3dObjectSummary(config)}</div>
       )}
-      <Graph3DElementsEditor config={config} showSolutions={showSolutions} onChange={onChange} />
+      <Graph3DElementsEditor
+        config={config}
+        showSolutions={showSolutions}
+        settingsMode={settingsMode}
+        anchor={anchor}
+        activeAnchor={activeAnchor}
+        onActivateAnchor={onActivateAnchor}
+        onChange={onChange}
+      />
     </div>
   );
 }

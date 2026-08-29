@@ -126,6 +126,44 @@ test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
   assert.equal(snapshot.questions[0].modules[1].lines, 6);
 });
 
+test("buildMauthAgentSnapshot totals nested part and subpart marks", () => {
+  const partQuestion: MauthQuestionLike = {
+    id: "q-parts",
+    marks: 0,
+    contentBlocks: [],
+    parts: [
+      { id: "p1", label: "a", marks: 2, contentBlocks: [] },
+      {
+        id: "p2",
+        label: "b",
+        marks: 0,
+        contentBlocks: [],
+        subparts: [
+          { id: "sp1", label: "i", marks: 1, contentBlocks: [] },
+          { id: "sp2", label: "ii", marks: 3, contentBlocks: [] },
+        ],
+      },
+    ],
+  };
+  const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter, TestFormattingConfig>({
+    document: {
+      frontMatter: { assessmentTitle: "Measurement", logoId: "school" },
+      formattingConfig: { showMarks: true },
+      questions: [partQuestion],
+    },
+    file: {
+      projectId: "project-1",
+      projectName: "Project",
+      activePath: "tests/measurement.mauth",
+      activeRevision: 2,
+      dirty: false,
+      saveStatus: "saved",
+    },
+  });
+
+  assert.equal(snapshot.totalMarks, 6);
+});
+
 test("buildMauthAgentSnapshot reports holistic investigation marks without questions", () => {
   const snapshot = buildMauthAgentSnapshot<MauthQuestionLike, TestFrontMatter & Record<string, unknown>, TestFormattingConfig>({
     document: {

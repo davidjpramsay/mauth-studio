@@ -18,6 +18,8 @@ import { selectedLogoForFrontMatter, type LogoAsset } from "@/lib/logoLibrary";
 import type { MauthDocumentAction, MauthDocumentActionResult } from "@/lib/mauthActions";
 import { validateSolutionCompleteness } from "@/lib/solutionValidation";
 import type { QuestionBlock } from "@/lib/editorDocumentNormalization";
+import { editorDocumentValidationResult } from "@/lib/questionWordingValidation";
+import { titlePageTemplateFromValue } from "@/lib/frontMatterConfig";
 
 type EditorAgentActionEvaluator = (
   actions: MauthDocumentAction[],
@@ -95,7 +97,15 @@ export function useEditorAgentBridgeController({
     enabled,
     currentDocument,
     fileState: agentFileState,
-    validate: () => validateSolutionCompleteness(questionsRef.current, solutionValidationRuntime(frontMatterRef.current)),
+    validate: () =>
+      editorDocumentValidationResult(
+        validateSolutionCompleteness(questionsRef.current, solutionValidationRuntime(frontMatterRef.current)),
+        questionsRef.current,
+        {
+          notesDocument: titlePageTemplateFromValue(frontMatterRef.current.titlePageTemplate) === "notes",
+          startQuestionNumber: frontMatterRef.current.startQuestionNumber,
+        },
+      ),
     warnings: () => previewWarnings,
     previewActions,
     applyActionsWithoutCommit,

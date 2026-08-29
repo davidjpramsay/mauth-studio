@@ -1,4 +1,4 @@
-import type { GraphFeature } from "@mauth-studio/shared";
+import { GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX, type GraphFeature } from "@mauth-studio/shared";
 
 import { graphLineSegmentsShareEndpoint } from "./graphFeatureGeometry.ts";
 import type { MauthActionValidationIssue } from "./mauthActionValidation.ts";
@@ -113,6 +113,7 @@ const GRAPH3D_UNSUPPORTED_METADATA_FIELDS = new Map([
   ["scalePercent", "Graph3d scale belongs on top-level graphConfig.scalePercent, not metadata."],
 ]);
 const GRAPH3D_RESERVED_AXIS_POINT_IDS = new Set(["xaxis", "yaxis", "zaxis"]);
+const GRAPH3D_DIMENSION_DISPLAYS = new Set(["label", "guide", "bracket"]);
 const GRAPH3D_VIEW_LIMITS = {
   az: Math.PI * 2,
   el: Math.PI,
@@ -1203,6 +1204,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       }
       optionalString(entry, "label", entryPath, issues);
       optionalString(entry, "color", entryPath, issues);
+      if (hasOwn(entry, "labelScreenOffsetPx")) numberPair(entry.labelScreenOffsetPx, `${entryPath}.labelScreenOffsetPx`, issues);
       rejectGraph3DVisibleAlias(entry, entryPath, issues);
       optionalBoolean(entry, "show", entryPath, issues);
       optionalBoolean(entry, "solutionOnly", entryPath, issues);
@@ -1231,6 +1233,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         addIssue(issues, `${entryPath}.to`, "must reference a named 3D vertex/point, not an axis helper", "omit axis helper segments");
       optionalString(entry, "label", entryPath, issues);
       optionalString(entry, "color", entryPath, issues);
+      if (hasOwn(entry, "labelScreenOffsetPx")) numberPair(entry.labelScreenOffsetPx, `${entryPath}.labelScreenOffsetPx`, issues);
       if (hasOwn(entry, "style"))
         addIssue(issues, `${entryPath}.style`, "must use graph3d segment strokeStyle or dashed", "strokeStyle or dashed");
       optionalString(entry, "strokeStyle", entryPath, issues);
@@ -1241,10 +1244,25 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       optionalBoolean(entry, "solutionOnly", entryPath, issues);
     });
 
+    const faces = optionalArray(data, "faces", `${path}.data`, issues);
+    const faceIds = new Set(
+      (faces ?? []).flatMap((entry, index) => {
+        if (!isRecord(entry)) return [];
+        return [typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `face-${index + 1}`];
+      }),
+    );
     const dimensionLists = [
       { key: "dimensions", values: optionalArray(data, "dimensions", `${path}.data`, issues) },
       { key: "dimensionLines", values: optionalArray(data, "dimensionLines", `${path}.data`, issues) },
     ];
+    const dimensionIds = new Set(
+      dimensionLists.flatMap((dimensionList) =>
+        (dimensionList.values ?? []).flatMap((entry, index) => {
+          if (!isRecord(entry)) return [];
+          return [typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `dimension-${index + 1}`];
+        }),
+      ),
+    );
     for (const dimensionList of dimensionLists) {
       dimensionList.values?.forEach((entry, index) => {
         const entryPath = `${path}.data.${dimensionList.key}[${index}]`;
@@ -1257,6 +1275,26 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         graph3dPointReference(entry.from ?? entry.start ?? pointsValue?.[0], `${entryPath}.from`, pointNames, issues);
         graph3dPointReference(entry.to ?? entry.end ?? pointsValue?.[1], `${entryPath}.to`, pointNames, issues);
         optionalString(entry, "label", entryPath, issues);
+        if (hasOwn(entry, "labelPosition")) numberTriple(entry.labelPosition, `${entryPath}.labelPosition`, issues);
+        if (hasOwn(entry, "labelAt")) numberTriple(entry.labelAt, `${entryPath}.labelAt`, issues);
+        optionalEnum(entry, "display", entryPath, GRAPH3D_DIMENSION_DISPLAYS, issues);
+        optionalNumber(entry, "labelOffsetPx", entryPath, issues, { positive: true, max: 160 });
+        if (hasOwn(entry, "labelScreenOffsetPx")) numberPair(entry.labelScreenOffsetPx, `${entryPath}.labelScreenOffsetPx`, issues);
+        optionalString(entry, "rightAngleWith", entryPath, issues);
+        if (typeof entry.rightAngleWith === "string") {
+          const ownId = typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : `dimension-${index + 1}`;
+          if (entry.rightAngleWith.startsWith(GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX)) {
+            const faceId = entry.rightAngleWith.slice(GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX.length);
+            if (!faceIds.has(faceId)) {
+              addIssue(issues, `${entryPath}.rightAngleWith`, "must reference a graph3d face", "face:<declared face id>");
+            }
+          } else if (entry.rightAngleWith === ownId) {
+            addIssue(issues, `${entryPath}.rightAngleWith`, "must reference another graph3d dimension or a face", "connected target id");
+          } else if (!dimensionIds.has(entry.rightAngleWith)) {
+            addIssue(issues, `${entryPath}.rightAngleWith`, "must reference a graph3d dimension or face", "declared target id");
+          }
+        }
+        optionalNumber(entry, "rightAngleSize", entryPath, issues, { positive: true });
         optionalString(entry, "color", entryPath, issues);
         optionalString(entry, "strokeColor", entryPath, issues);
         optionalString(entry, "strokeStyle", entryPath, issues);
@@ -1268,7 +1306,6 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
       });
     }
 
-    const faces = optionalArray(data, "faces", `${path}.data`, issues);
     faces?.forEach((entry, index) => {
       const entryPath = `${path}.data.faces[${index}]`;
       if (!isRecord(entry)) {
@@ -1287,6 +1324,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
         );
       }
       optionalString(entry, "label", entryPath, issues);
+      if (hasOwn(entry, "labelScreenOffsetPx")) numberPair(entry.labelScreenOffsetPx, `${entryPath}.labelScreenOffsetPx`, issues);
       optionalString(entry, "color", entryPath, issues);
       optionalString(entry, "fillColor", entryPath, issues);
       optionalString(entry, "strokeColor", entryPath, issues);

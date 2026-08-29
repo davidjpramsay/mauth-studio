@@ -332,7 +332,46 @@ test("graph3d element settings accept structured solution-layer patches", () => 
       blockId: "d1",
       settings: {
         renderer: "graph3d",
-        element: { kind: "dimension", id: "length", patch: { label: "d", from: "A", to: "B", solutionOnly: true } },
+        showAxes: false,
+        showAxisLabels: false,
+        element: {
+          kind: "dimension",
+          id: "length",
+          patch: {
+            label: "d",
+            from: "A",
+            to: "B",
+            display: "guide",
+            labelOffsetPx: 14,
+            labelPosition: [1, 2, 3],
+            labelScreenOffsetPx: [24, -12],
+            rightAngleWith: "radius",
+            rightAngleSize: 0.5,
+            solutionOnly: true,
+          },
+        },
+      },
+    },
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "d1",
+      settings: {
+        renderer: "graph3d",
+        element: {
+          kind: "solid",
+          id: "sphere",
+          patch: { renderStyle: "surface", fillOpacity: 0.08, stepsU: 12, stepsV: 6 },
+        },
+      },
+    },
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "d1",
+      settings: {
+        renderer: "graph3d",
+        element: { kind: "point", id: "A", patch: { labelScreenOffsetPx: null } },
       },
     },
   ]);
@@ -347,14 +386,26 @@ test("graph3d element settings reject invalid targets and solution-layer values"
       blockId: "d1",
       settings: {
         renderer: "graph3d",
-        element: { kind: "unknown", patch: { coords: [1, 2], solutionOnly: "yes" } },
+        element: {
+          kind: "unknown",
+          patch: {
+            coords: [1, 2],
+            labelScreenOffsetPx: [10, "far"],
+            rightAngleWith: 2,
+            renderStyle: "glossy",
+            solutionOnly: "yes",
+          },
+        },
       },
     },
   ]);
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.kind"));
   assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.renderStyle"));
   assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.solutionOnly"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.labelScreenOffsetPx[1]"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.rightAngleWith"));
 });
 
 test("statsChart series settings accept structured solution-layer patches", () => {

@@ -119,6 +119,24 @@
       sans-serif;
   }
 
+  select,
+  select option {
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  select option {
+    line-height: 1.25;
+  }
+
   .dark body {
     background: #142033;
   }
@@ -521,20 +539,163 @@
     scrollbar-gutter: stable both-edges;
   }
 
-  @media screen and (max-width: 1280px) {
-    .app-workspace[data-inspector-open="true"] {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  .workspace-tool-dock {
+    display: contents;
+  }
+
+  .workspace-tool-switcher {
+    display: none;
+  }
+
+  .workspace-tool-resize-handle {
+    display: none;
+  }
+
+  .settings-back-button {
+    display: none;
+  }
+
+  .editor-pane,
+  .selection-inspector-pane {
+    container-name: workspace-pane;
+    container-type: inline-size;
+  }
+
+  .workspace-control-surface .grid,
+  .workspace-control-surface .grid > * {
+    min-width: 0;
+  }
+
+  .workspace-control-surface label,
+  .workspace-control-surface p,
+  .workspace-control-surface summary {
+    overflow-wrap: anywhere;
+  }
+
+  .workspace-control-surface button {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .workspace-control-surface input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+  .workspace-control-surface select,
+  .workspace-control-surface textarea {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .app-workspace[data-responsive-mode="compact"],
+  .app-workspace[data-responsive-mode="overlay"] {
+    grid-template-columns: clamp(24rem, var(--workspace-tool-dock-width, 28rem), 32.5rem) minmax(0, 1fr) !important;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-dock,
+  .app-workspace[data-responsive-mode="overlay"] .workspace-tool-dock {
+    background: hsl(var(--card));
+    border-right: 1px solid hsl(var(--border));
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-switcher,
+  .app-workspace[data-responsive-mode="overlay"] .workspace-tool-switcher {
+    align-items: center;
+    background: hsl(var(--card));
+    border-bottom: 1px solid hsl(var(--border));
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.35rem;
+    padding: 0.45rem;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .editor-pane,
+  .app-workspace[data-responsive-mode="compact"] .selection-inspector-pane,
+  .app-workspace[data-responsive-mode="overlay"] .editor-pane,
+  .app-workspace[data-responsive-mode="overlay"] .selection-inspector-pane {
+    border-bottom: 0;
+    border-right: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .editor-pane,
+  .app-workspace[data-responsive-mode="overlay"] .editor-pane {
+    padding: 0.75rem;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-dock[data-active-tool="content"] > .selection-inspector-pane,
+  .app-workspace[data-responsive-mode="overlay"] .workspace-tool-dock[data-active-tool="content"] > .selection-inspector-pane,
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-dock[data-active-tool="settings"] > .editor-pane,
+  .app-workspace[data-responsive-mode="overlay"] .workspace-tool-dock[data-active-tool="settings"] > .editor-pane {
+    display: none;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .settings-back-button,
+  .app-workspace[data-responsive-mode="overlay"] .settings-back-button {
+    display: inline-flex;
+  }
+
+  .app-workspace[data-responsive-mode="overlay"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-workspace[data-responsive-mode="overlay"] .workspace-tool-dock {
+    bottom: 0;
+    box-shadow: 14px 0 34px rgb(8 22 55 / 0.24);
+    left: 0;
+    max-width: calc(100% - 1rem);
+    position: absolute;
+    top: 0;
+    width: min(31rem, calc(100% - 1rem));
+    z-index: 20;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-resize-handle {
+    bottom: 0;
+    cursor: col-resize;
+    display: block;
+    outline: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 8px;
+    z-index: 3;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-resize-handle::after {
+    background: hsl(var(--primary) / 0.55);
+    border-radius: 999px;
+    bottom: 0.75rem;
+    content: "";
+    opacity: 0;
+    position: absolute;
+    right: 3px;
+    top: 0.75rem;
+    transition: opacity 120ms ease;
+    width: 2px;
+  }
+
+  .app-workspace[data-responsive-mode="compact"] .workspace-tool-resize-handle:is(:hover, :focus-visible)::after {
+    opacity: 1;
+  }
+
+  @container workspace-pane (max-width: 31rem) {
+    .workspace-control-surface .grid[class*="sm:grid-cols-"],
+    .workspace-control-surface .grid[class*="md:grid-cols-"],
+    .workspace-control-surface .grid[class*="lg:grid-cols-"],
+    .workspace-control-surface .grid[class*="xl:grid-cols-"],
+    .workspace-control-surface .grid[class*="2xl:grid-cols-"] {
+      grid-template-columns: minmax(0, 1fr) !important;
     }
 
-    .app-workspace[data-inspector-open="true"] .selection-inspector-pane {
-      bottom: 0;
-      box-shadow: 12px 0 28px rgb(8 22 55 / 0.22);
-      left: 0;
-      max-width: 50%;
-      position: absolute;
-      top: 0;
-      width: 19rem;
-      z-index: 20;
+    .workspace-control-surface .editor-authored-columns-grid {
+      grid-template-columns: minmax(0, 1fr) !important;
     }
   }
 
@@ -618,6 +779,61 @@
     flex-direction: column;
     font-family: Montserrat, Arial, ui-sans-serif, system-ui, sans-serif;
     min-height: calc(var(--a4-page-height, 1122.519685px) - var(--a4-page-padding-y, 48px) - var(--a4-page-padding-y, 48px));
+  }
+
+  .formula-sheet-page {
+    color: #1f2937;
+    font-family: Montserrat, Arial, ui-sans-serif, system-ui, sans-serif;
+    min-height: calc(var(--a4-page-height, 1122.519685px) - var(--a4-page-padding-y, 48px) - var(--a4-page-padding-y, 48px));
+  }
+
+  .formula-sheet-header {
+    border-bottom: 2px solid #245985;
+    margin-bottom: 1.05rem;
+    padding-bottom: 0.8rem;
+    text-align: center;
+  }
+
+  .formula-sheet-header p {
+    color: #526170;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin: 0 0 0.4rem;
+    text-transform: uppercase;
+  }
+
+  .formula-sheet-header h1 {
+    color: #1f2937;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+
+  .formula-sheet-body {
+    column-count: 2;
+    column-gap: 2rem;
+    column-rule: 1px solid #d7dee7;
+    display: block !important;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .formula-sheet-body > div {
+    break-inside: avoid-column;
+    margin: 0 0 0.8rem;
+  }
+
+  .formula-sheet-body .mixed-math {
+    white-space: pre-wrap;
+  }
+
+  .formula-sheet-body .mixed-math > strong:first-child {
+    color: #245985;
+    display: inline-block;
+    font-size: 0.96rem;
+    margin-bottom: 0.22rem;
   }
 
   .test-title-panel {
@@ -782,7 +998,7 @@
     background: #fbfcfe;
     border: 1px solid #dce3ec;
     border-left: 5px solid #245985;
-    border-radius: 8px;
+    border-radius: 0 8px 8px 0;
     display: grid;
     gap: 1.65rem;
     grid-template-columns: minmax(0, 1fr) 236px;
@@ -832,7 +1048,7 @@
     background: #fbfcfe;
     border: 1px solid #dce3ec;
     border-left: 5px solid #245985;
-    border-radius: 8px;
+    border-radius: 0 8px 8px 0;
     color: #2a333c;
     font-size: 0.94rem;
     line-height: 1.42;
@@ -2394,9 +2610,15 @@
     width: 100%;
   }
 
-  .test-diagram-wrap {
+  .test-diagram-layout {
     margin: 0.3rem 0 0.18rem;
     max-width: 100%;
+    width: 100%;
+  }
+
+  .test-diagram-wrap {
+    max-width: 100%;
+    width: fit-content;
   }
 
   .test-diagram-text-right {
@@ -2681,6 +2903,7 @@
 
   .print-preview-stage .a4-page-content,
   .print-preview-stage .test-front-matter,
+  .print-preview-stage .formula-sheet-page,
   .print-preview-stage .exam-title-page {
     min-height: var(--a4-print-content-height, calc(297mm - 40.216666mm));
   }

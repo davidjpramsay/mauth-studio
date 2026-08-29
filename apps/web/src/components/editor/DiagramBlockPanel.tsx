@@ -4,7 +4,7 @@ import { CopyPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { CollapsiblePanel, OpenSettingsActionButton, RemoveActionButton } from "./EditorPanels";
 
 interface DiagramTypeOption {
   value: string;
@@ -62,6 +62,7 @@ export function DiagramBlockPanel({
   const showInlineSettings = settingsMode === "inline";
   const actions = (
     <>
+      {!showInlineSettings ? <OpenSettingsActionButton label={label} /> : null}
       {showInlineSettings && onCompleteInSolutions ? (
         <Button
           type="button"

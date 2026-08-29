@@ -2,6 +2,28 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
+import {
+  GRAPH3D_BOARD_BOUNDING_BOX,
+  GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX,
+  GRAPH3D_VIEW_ORIGIN,
+  GRAPH3D_VIEW_SIZE,
+  graph3dAxesVisible,
+  graph3dAxisLabelsVisible,
+  graph3dCircularSilhouetteAngles,
+  graph3dDimensionDisplay,
+  graph3dDimensionFaceRightAngleMarkerPoints,
+  graph3dDimensionLabelScreenOffset,
+  graph3dDraggedLabelScreenOffset,
+  graph3dDimensionTickDirection,
+  graph3dDimensionTickEndpoints,
+  graph3dEqualScaleRanges,
+  graph3dRadialLabelScreenOffset,
+  graph3dRightAngleMarkerPoints,
+  graph3dSphereCapSilhouetteArc,
+  graph3dViewDirection,
+} from "@/lib/graph3dPresentation";
+import { DEFAULT_3D_VIEW_STATE } from "@/lib/diagram3d";
+import { graph3dConfigWithLabelScreenOffset, type Graph3DLabelElementKind } from "@/lib/diagramGraph3d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
 
@@ -9,11 +31,6 @@ const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
 const AXIS_3D_LABEL_OFFSET_MULTIPLIER = 1.3;
 const LABEL_ATTRIBUTES = graphLabelAttributes();
-const DEFAULT_3D_VIEW_STATE = {
-  az: 1,
-  el: 0.3,
-  bank: 0,
-};
 type Point3DCoords = [number, number, number];
 type Point2DCoords = [number, number];
 type Graph3DRanges = [[number, number], [number, number], [number, number]];
@@ -23,6 +40,7 @@ type Graph3DPointEntry = {
   coords: Point3DCoords;
   show: boolean;
   color?: string;
+  labelScreenOffsetPx?: Point2DCoords;
 };
 type Graph3DSegmentEntry = {
   id: string;
@@ -30,6 +48,7 @@ type Graph3DSegmentEntry = {
   to: string;
   label?: string;
   color?: string;
+  labelScreenOffsetPx?: Point2DCoords;
   dashed?: boolean;
   show: boolean;
 };
@@ -38,6 +57,12 @@ type Graph3DDimensionEntry = {
   from: Point3DCoords;
   to: Point3DCoords;
   label?: string;
+  labelPosition?: Point3DCoords;
+  display: "label" | "guide" | "bracket";
+  labelOffsetPx: number;
+  labelScreenOffsetPx?: Point2DCoords;
+  rightAngleWith?: string;
+  rightAngleSize?: number;
   color?: string;
   dashed?: boolean;
   strokeWidth?: number;
@@ -47,6 +72,7 @@ type Graph3DFaceEntry = {
   id: string;
   coords: Point3DCoords[];
   label?: string;
+  labelScreenOffsetPx?: Point2DCoords;
   fillColor?: string;
   fillOpacity: number;
   strokeColor?: string;
@@ -56,6 +82,15 @@ type Graph3DFaceEntry = {
 };
 type Graph3DSolidKind = "circle" | "cone" | "cylinder" | "sphere" | "spherecap" | "sphericalcap";
 type Graph3DRenderStyle = "surface" | "wireframe" | "outline";
+type Graph3DSurfaceFace = number[] | [number[], Record<string, unknown>];
+type Graph3DSurfaceMesh = {
+  vertices: Point3DCoords[];
+  faces: number[][];
+};
+type Graph3DJoinedSurfaceMesh = Graph3DSurfaceMesh & {
+  coneFaces: number[][];
+  capFaces: number[][];
+};
 type Graph3DSolidEntry = {
   id: string;
   kind: Graph3DSolidKind;
@@ -77,7 +112,8 @@ type Graph3DSolidEntry = {
 };
 type Graph3DLabelContext = {
   viewState: Basic3DViewState;
-  frame: { minX: number; maxX: number; minY: number; maxY: number; center: Point2DCoords };
+  screenScale: { x: number; y: number };
+  sceneCenter: Point3DCoords;
 };
 const AXIS_3D_LABEL_ATTRIBUTES = {
   label: LABEL_ATTRIBUTES,
@@ -93,11 +129,11 @@ const HIDDEN_3D_PLANE_AXIS_ATTRIBUTES = {
 const POINT_3D_ATTRIBUTES = {
   fillColor: "#2563eb",
   strokeColor: "#0f172a",
-  highlightFillColor: "#60a5fa",
-  highlightStrokeColor: "#0f172a",
   size: 4,
   label: LABEL_ATTRIBUTES,
   withLabel: false,
+  fixed: true,
+  highlight: false,
 };
 const HIDDEN_3D_POINT_ATTRIBUTES = {
   visible: false,
@@ -118,6 +154,7 @@ interface Basic3DViewState {
   az: number;
   el: number;
   bank: number;
+  zoom: number;
 }
 
 interface Basic3DSlider {
@@ -126,10 +163,37 @@ interface Basic3DSlider {
 
 interface Basic3DView {
   create: (type: string, parents: unknown[], attributes?: Record<string, unknown>) => unknown;
+  board?: {
+    create: (type: string, parents: unknown[], attributes?: Record<string, unknown>) => unknown;
+    unitX: number;
+    unitY: number;
+  };
+  project3DTo2D?: (coords: Point3DCoords) => [number, number, number];
   az_slide?: Basic3DSlider;
   el_slide?: Basic3DSlider;
   bank_slide?: Basic3DSlider;
 }
+
+interface Basic2DElement {
+  prepareUpdate?: () => Basic2DElement;
+  update?: () => Basic2DElement;
+  updateRenderer?: () => Basic2DElement;
+  rendNode?: HTMLElement;
+}
+
+interface BasicLiveGraphElement extends Basic2DElement {
+  element2D?: Basic2DElement;
+}
+
+interface BasicStaticGraphElement extends BasicLiveGraphElement {
+  isDraggable?: boolean;
+  borders?: BasicStaticGraphElement[];
+  vertices?: BasicStaticGraphElement[];
+  faces?: BasicStaticGraphElement[];
+}
+
+type RegisterLiveGraphElement = (element: BasicLiveGraphElement) => void;
+type CommitGraph3DLabelScreenOffset = (kind: Graph3DLabelElementKind, id: string, offset: Point2DCoords | undefined) => void;
 
 function finiteNumber(value: unknown, fallback: number) {
   const numeric = Number(value);
@@ -146,6 +210,13 @@ function finiteTuple3(value: unknown): Point3DCoords | null {
   const y = Number(value[1]);
   const z = Number(value[2]);
   return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? [x, y, z] : null;
+}
+
+function finiteTuple2(value: unknown): Point2DCoords | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const x = Number(value[0]);
+  const y = Number(value[1]);
+  return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
 }
 
 function positiveNumber(value: unknown, fallback: number) {
@@ -188,6 +259,10 @@ function vectorScale(vector: Point3DCoords, scalar: number): Point3DCoords {
 
 function vectorLength(vector: Point3DCoords) {
   return Math.hypot(vector[0], vector[1], vector[2]);
+}
+
+function dotProduct(left: Point3DCoords, right: Point3DCoords) {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
 }
 
 function normalizeVector(vector: Point3DCoords, fallback: Point3DCoords = [0, 0, 1]): Point3DCoords {
@@ -239,10 +314,15 @@ function graph3dPoints(graphConfig?: GraphConfig | null): Graph3DPointEntry[] {
         coords,
         show: point.show !== false,
         color: typeof point.color === "string" ? point.color : undefined,
+        labelScreenOffsetPx: finiteTuple2(point.labelScreenOffsetPx) ?? undefined,
       },
     ];
   });
-  return points.length ? points : [{ id: "P", label: "P", coords: [2, 2, 2], show: true }];
+  if (points.length) return points;
+  const hasAuthoredContent = ["segments", "edges", "dimensions", "dimensionLines", "faces", "solids", "surfaces"].some(
+    (key) => Array.isArray(data[key]) && data[key].length > 0,
+  );
+  return hasAuthoredContent ? [] : [{ id: "P", label: "P", coords: [2, 2, 2], show: true }];
 }
 
 function pointCoordsFromValue(value: unknown, pointMap: Map<string, Graph3DPointEntry>): Point3DCoords | null {
@@ -280,6 +360,7 @@ function graph3dSegments(graphConfig: GraphConfig | null | undefined, pointIds: 
         to,
         label: typeof segment.label === "string" ? segment.label : undefined,
         color: typeof segment.color === "string" ? segment.color : undefined,
+        labelScreenOffsetPx: finiteTuple2(segment.labelScreenOffsetPx) ?? undefined,
         dashed: segment.dashed === true || segment.strokeStyle === "dashed",
         show: segment.show !== false,
       },
@@ -303,7 +384,13 @@ function graph3dDimensions(graphConfig: GraphConfig | null | undefined, pointMap
         from,
         to,
         label: typeof dimension.label === "string" ? dimension.label : undefined,
-        color: colorValue(dimension.color, colorValue(dimension.strokeColor, "#6b7280")),
+        labelPosition: finiteTuple3(dimension.labelPosition ?? dimension.labelAt) ?? undefined,
+        display: graph3dDimensionDisplay(dimension.display),
+        labelOffsetPx: positiveNumber(dimension.labelOffsetPx, 12),
+        labelScreenOffsetPx: finiteTuple2(dimension.labelScreenOffsetPx) ?? undefined,
+        rightAngleWith: typeof dimension.rightAngleWith === "string" ? dimension.rightAngleWith.trim() || undefined : undefined,
+        rightAngleSize: positiveNumber(dimension.rightAngleSize, 0) || undefined,
+        color: colorValue(dimension.color, colorValue(dimension.strokeColor, "#000000")),
         dashed: dimension.dashed === true || dimension.strokeStyle === "dashed",
         strokeWidth: positiveNumber(dimension.strokeWidth, 1.3),
         show: dimension.show !== false,
@@ -329,6 +416,7 @@ function graph3dFaces(graphConfig: GraphConfig | null | undefined, pointMap: Map
         id: stringValue(face.id, `face-${index + 1}`),
         coords,
         label: typeof face.label === "string" ? face.label : undefined,
+        labelScreenOffsetPx: finiteTuple2(face.labelScreenOffsetPx) ?? undefined,
         fillColor: colorValue(face.fillColor, colorValue(face.color, "#93c5fd")),
         fillOpacity: clampedOpacity(face.fillOpacity ?? face.opacity, 0.14),
         strokeColor: colorValue(face.strokeColor, colorValue(face.color, "#1f2937")),
@@ -409,106 +497,31 @@ function rangeFromPoints(points: Graph3DPointEntry[], axisIndex: number, fallbac
 
 function graph3dRanges(graphConfig: GraphConfig | null | undefined, points: Graph3DPointEntry[]): Graph3DRanges {
   const data = graph3dData(graphConfig);
-  return [
+  const ranges = graph3dEqualScaleRanges([
     rangeFromValue(data.xRange) ?? rangeFromPoints(points, 0, [-5, 5]),
     rangeFromValue(data.yRange) ?? rangeFromPoints(points, 1, [-5, 5]),
     rangeFromValue(data.zRange) ?? rangeFromPoints(points, 2, [-5, 5]),
-  ] as Graph3DRanges;
+  ]);
+  const zoom = graph3dViewState(graphConfig).zoom;
+  return ranges.map(([minimum, maximum]) => {
+    const centre = (minimum + maximum) / 2;
+    const halfSpan = (maximum - minimum) / (2 * zoom);
+    return [centre - halfSpan, centre + halfSpan] as [number, number];
+  }) as Graph3DRanges;
 }
 
-const GRAPH_3D_LABEL_DIRECTIONS: Point3DCoords[] = [
-  [1, 1, 1],
-  [1, 1, -1],
-  [1, -1, 1],
-  [1, -1, -1],
-  [-1, 1, 1],
-  [-1, 1, -1],
-  [-1, -1, 1],
-  [-1, -1, -1],
-];
-
-function graph3dFrameCorners(ranges: Graph3DRanges): Point3DCoords[] {
-  return ranges[0].flatMap((x) => ranges[1].flatMap((y) => ranges[2].map((z) => [x, y, z] as Point3DCoords)));
-}
-
-function projectGraph3DPoint(coords: Point3DCoords, viewState: Basic3DViewState): Point2DCoords {
-  const azCos = Math.cos(viewState.az);
-  const azSin = Math.sin(viewState.az);
-  const elCos = Math.cos(viewState.el);
-  const elSin = Math.sin(viewState.el);
-  const rawX = -coords[0] * azCos + coords[1] * azSin;
-  const rawY = coords[0] * azSin * elSin + coords[1] * azCos * elSin - coords[2] * elCos;
-  if (Math.abs(viewState.bank) <= 1e-9) return [rawX, rawY];
-  const bankCos = Math.cos(viewState.bank);
-  const bankSin = Math.sin(viewState.bank);
-  return [rawX * bankCos - rawY * bankSin, rawX * bankSin + rawY * bankCos];
-}
-
-function graph3dLabelContext(ranges: Graph3DRanges, viewState: Basic3DViewState): Graph3DLabelContext {
-  const projectedCorners = graph3dFrameCorners(ranges).map((corner) => projectGraph3DPoint(corner, viewState));
-  const xValues = projectedCorners.map((corner) => corner[0]);
-  const yValues = projectedCorners.map((corner) => corner[1]);
-  const minX = Math.min(...xValues);
-  const maxX = Math.max(...xValues);
-  const minY = Math.min(...yValues);
-  const maxY = Math.max(...yValues);
+function graph3dLabelContext(ranges: Graph3DRanges, viewState: Basic3DViewState, widthPx: number, heightPx: number): Graph3DLabelContext {
+  const sceneSpan = Math.max(...ranges.map(([minimum, maximum]) => maximum - minimum));
+  const equalScreenScale = Math.min(widthPx, heightPx) / Math.max(1e-9, sceneSpan);
+  const screenScale = {
+    x: equalScreenScale,
+    y: equalScreenScale,
+  };
   return {
     viewState,
-    frame: {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      center: [(minX + maxX) / 2, (minY + maxY) / 2],
-    },
+    screenScale,
+    sceneCenter: [(ranges[0][0] + ranges[0][1]) / 2, (ranges[1][0] + ranges[1][1]) / 2, (ranges[2][0] + ranges[2][1]) / 2],
   };
-}
-
-function screenDistance(left: Point2DCoords, right: Point2DCoords) {
-  return Math.hypot(left[0] - right[0], left[1] - right[1]);
-}
-
-function normalizedScreenDot(left: Point2DCoords, right: Point2DCoords) {
-  const denominator = Math.hypot(left[0], left[1]) * Math.hypot(right[0], right[1]);
-  if (denominator <= 1e-9) return 0;
-  return (left[0] * right[0] + left[1] * right[1]) / denominator;
-}
-
-function graph3dLabelPoint(
-  coords: Point3DCoords,
-  context: Graph3DLabelContext,
-  labelOffset: number,
-  avoidCoords: Point3DCoords[] = [],
-): Point3DCoords {
-  const source = projectGraph3DPoint(coords, context.viewState);
-  const avoidPoints = avoidCoords.map((point) => projectGraph3DPoint(point, context.viewState));
-  const sourceOutward: Point2DCoords = [source[0] - context.frame.center[0], source[1] - context.frame.center[1]];
-  let bestPoint = vectorAdd(coords, vectorScale(GRAPH_3D_LABEL_DIRECTIONS[0], labelOffset));
-  let bestScore = Number.NEGATIVE_INFINITY;
-
-  for (const direction of GRAPH_3D_LABEL_DIRECTIONS) {
-    const candidate = vectorAdd(coords, vectorScale(direction, labelOffset));
-    const projected = projectGraph3DPoint(candidate, context.viewState);
-    const edgeClearance = Math.min(
-      projected[0] - context.frame.minX,
-      context.frame.maxX - projected[0],
-      projected[1] - context.frame.minY,
-      context.frame.maxY - projected[1],
-    );
-    const nearestAvoidPoint = avoidPoints.length
-      ? Math.min(...avoidPoints.map((point) => screenDistance(projected, point)))
-      : screenDistance(projected, source);
-    const candidateVector: Point2DCoords = [projected[0] - source[0], projected[1] - source[1]];
-    const outwardScore = normalizedScreenDot(candidateVector, sourceOutward);
-    const outsidePenalty = edgeClearance < 0 ? Math.abs(edgeClearance) * 5 : 0;
-    const score = edgeClearance * 1.8 + nearestAvoidPoint * 1.4 + outwardScore * 0.35 - outsidePenalty;
-    if (score > bestScore) {
-      bestScore = score;
-      bestPoint = candidate;
-    }
-  }
-
-  return bestPoint;
 }
 
 function roundedViewValue(value: number) {
@@ -523,19 +536,39 @@ function graph3dViewState(graphConfig?: GraphConfig | null): Basic3DViewState {
     az: finiteNumber(viewRecord.az, DEFAULT_3D_VIEW_STATE.az),
     el: finiteNumber(viewRecord.el, DEFAULT_3D_VIEW_STATE.el),
     bank: finiteNumber(viewRecord.bank, DEFAULT_3D_VIEW_STATE.bank),
+    zoom: Math.min(3, Math.max(0.5, finiteNumber(viewRecord.zoom, DEFAULT_3D_VIEW_STATE.zoom))),
   };
 }
 
-function currentViewState(view: Basic3DView): Basic3DViewState {
+function currentViewState(view: Basic3DView, zoom = DEFAULT_3D_VIEW_STATE.zoom): Basic3DViewState {
   return {
     az: roundedViewValue(finiteNumber(view.az_slide?.Value(), DEFAULT_3D_VIEW_STATE.az)),
     el: roundedViewValue(finiteNumber(view.el_slide?.Value(), DEFAULT_3D_VIEW_STATE.el)),
     bank: roundedViewValue(finiteNumber(view.bank_slide?.Value(), DEFAULT_3D_VIEW_STATE.bank)),
+    zoom,
   };
 }
 
 function sameViewState(left: Basic3DViewState, right: Basic3DViewState) {
   return left.az === right.az && left.el === right.el && left.bank === right.bank;
+}
+
+function viewStateKey(viewState: Basic3DViewState) {
+  return `${viewState.az}:${viewState.el}:${viewState.bank}`;
+}
+
+function liveViewValue<T>(view: Basic3DView, derive: (viewState: Basic3DViewState) => T) {
+  let cachedKey = "";
+  let cachedValue: T | undefined;
+  return () => {
+    const viewState = currentViewState(view);
+    const nextKey = viewStateKey(viewState);
+    if (cachedValue === undefined || nextKey !== cachedKey) {
+      cachedKey = nextKey;
+      cachedValue = derive(viewState);
+    }
+    return cachedValue;
+  };
 }
 
 function escapeHtml(value: string) {
@@ -579,8 +612,191 @@ function render3DLatexLabel(label: string, attributes: Record<string, string | u
   }
 }
 
+function projectedUserPoint(view: Basic3DView, coords: Point3DCoords): Point2DCoords {
+  const projected = view.project3DTo2D?.(coords);
+  return projected ? [projected[1], projected[2]] : [coords[0], coords[1]];
+}
+
+function projectedScreenPoint(view: Basic3DView, coords: Point3DCoords): Point2DCoords {
+  const userPoint = projectedUserPoint(view, coords);
+  const unitX = Math.max(1e-9, Math.abs(view.board?.unitX ?? 1));
+  const unitY = Math.max(1e-9, Math.abs(view.board?.unitY ?? 1));
+  return [userPoint[0] * unitX, -userPoint[1] * unitY];
+}
+
+function userPointWithScreenOffset(view: Basic3DView, point: Point2DCoords, offset: Point2DCoords): Point2DCoords {
+  const unitX = Math.max(1e-9, Math.abs(view.board?.unitX ?? 1));
+  const unitY = Math.max(1e-9, Math.abs(view.board?.unitY ?? 1));
+  return [point[0] + offset[0] / unitX, point[1] - offset[1] / unitY];
+}
+
+function radialProjectedLabelPoint(
+  view: Basic3DView,
+  anchor: Point3DCoords,
+  sceneCenter: Point3DCoords,
+  distancePx: number,
+): Point2DCoords {
+  const anchorUser = projectedUserPoint(view, anchor);
+  const offset = graph3dRadialLabelScreenOffset(projectedScreenPoint(view, anchor), projectedScreenPoint(view, sceneCenter), distancePx);
+  return userPointWithScreenOffset(view, anchorUser, offset);
+}
+
+function segmentProjectedLabelPoint(
+  view: Basic3DView,
+  from: Point3DCoords,
+  to: Point3DCoords,
+  sceneCenter: Point3DCoords,
+  distancePx: number,
+  anchorFraction = 0.5,
+): Point2DCoords {
+  const fromUser = projectedUserPoint(view, from);
+  const toUser = projectedUserPoint(view, to);
+  const anchorUser: Point2DCoords = [
+    fromUser[0] + (toUser[0] - fromUser[0]) * anchorFraction,
+    fromUser[1] + (toUser[1] - fromUser[1]) * anchorFraction,
+  ];
+  const offset = graph3dDimensionLabelScreenOffset(
+    projectedScreenPoint(view, from),
+    projectedScreenPoint(view, to),
+    projectedScreenPoint(view, sceneCenter),
+    distancePx,
+    anchorFraction,
+  );
+  return userPointWithScreenOffset(view, anchorUser, offset);
+}
+
+function enableProjectedLabelDragging(
+  board: JXG.Board,
+  text: Basic2DElement,
+  screenOffset: Point2DCoords,
+  onMove: (offset: Point2DCoords | undefined) => void,
+) {
+  const node = text.rendNode;
+  if (!node) return () => undefined;
+  let activePointerId: number | null = null;
+  let removeWindowListeners: () => void = () => undefined;
+
+  const updateOffsetAttributes = () => {
+    node.dataset.mauthLabelScreenOffsetX = String(screenOffset[0]);
+    node.dataset.mauthLabelScreenOffsetY = String(screenOffset[1]);
+  };
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    activePointerId = event.pointerId;
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startOffset: Point2DCoords = [...screenOffset];
+    let moved = false;
+
+    event.preventDefault();
+    event.stopPropagation();
+    node.setPointerCapture?.(event.pointerId);
+
+    const removeListeners = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      removeWindowListeners = () => undefined;
+    };
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== activePointerId) return;
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startClientX;
+      const deltaY = moveEvent.clientY - startClientY;
+      moved = moved || Math.hypot(deltaX, deltaY) >= 1;
+      const nextOffset = graph3dDraggedLabelScreenOffset(startOffset, deltaX, deltaY);
+      screenOffset[0] = nextOffset[0];
+      screenOffset[1] = nextOffset[1];
+      updateOffsetAttributes();
+      board.update();
+    };
+    const finish = (finishEvent: PointerEvent, commit: boolean) => {
+      if (finishEvent.pointerId !== activePointerId) return;
+      removeListeners();
+      node.releasePointerCapture?.(finishEvent.pointerId);
+      activePointerId = null;
+      if (!commit) {
+        screenOffset[0] = startOffset[0];
+        screenOffset[1] = startOffset[1];
+        updateOffsetAttributes();
+        board.update();
+      }
+      if (commit && moved) onMove([...screenOffset]);
+    };
+    const handlePointerUp = (upEvent: PointerEvent) => finish(upEvent, true);
+    const handlePointerCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, false);
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    removeWindowListeners = removeListeners;
+  };
+  const handleDoubleClick = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    screenOffset[0] = 0;
+    screenOffset[1] = 0;
+    updateOffsetAttributes();
+    board.update();
+    onMove(undefined);
+  };
+
+  node.dataset.mauthDraggableGraph3dLabel = "true";
+  node.title = "Drag to move this label. Double-click to reset its position.";
+  node.style.setProperty("cursor", "move");
+  node.style.setProperty("pointer-events", "auto");
+  node.style.setProperty("user-select", "none");
+  node.style.setProperty("-webkit-user-select", "none");
+  node.style.setProperty("touch-action", "none");
+  updateOffsetAttributes();
+  node.addEventListener("pointerdown", handlePointerDown);
+  node.addEventListener("dblclick", handleDoubleClick);
+
+  return () => {
+    removeWindowListeners();
+    node.removeEventListener("pointerdown", handlePointerDown);
+    node.removeEventListener("dblclick", handleDoubleClick);
+  };
+}
+
+function renderProjectedGraph3DLabel({
+  board,
+  view,
+  basePoint,
+  labelHtml,
+  elementKind,
+  elementId,
+  labelScreenOffsetPx,
+  onMove,
+  registerCleanup,
+}: {
+  board: JXG.Board;
+  view: Basic3DView;
+  basePoint: () => Point2DCoords;
+  labelHtml: string;
+  elementKind: Graph3DLabelElementKind;
+  elementId: string;
+  labelScreenOffsetPx?: Point2DCoords;
+  onMove?: (offset: Point2DCoords | undefined) => void;
+  registerCleanup: (cleanup: () => void) => void;
+}) {
+  const screenOffset: Point2DCoords = [...(labelScreenOffsetPx ?? [0, 0])];
+  const labelPoint = () => userPointWithScreenOffset(view, basePoint(), screenOffset);
+  const text = board.create(
+    "text",
+    [() => labelPoint()[0], () => labelPoint()[1], labelHtml],
+    LATEX_3D_LABEL_ATTRIBUTES,
+  ) as unknown as Basic2DElement;
+  if (text.rendNode) {
+    text.rendNode.dataset.mauthGraph3dLabelKind = elementKind;
+    text.rendNode.dataset.mauthGraph3dElementId = elementId;
+  }
+  if (onMove) registerCleanup(enableProjectedLabelDragging(board, text, screenOffset, onMove));
+  else text.rendNode?.style.setProperty("pointer-events", "none");
+  return text;
+}
+
 function renderCurve3D(view: Basic3DView, from: Point3DCoords, to: Point3DCoords, attributes: Record<string, unknown>) {
-  view.create(
+  return view.create(
     "curve3d",
     [
       (t: number) => from[0] + t * (to[0] - from[0]),
@@ -589,6 +805,116 @@ function renderCurve3D(view: Basic3DView, from: Point3DCoords, to: Point3DCoords
       [0, 1],
     ],
     attributes,
+  ) as BasicLiveGraphElement;
+}
+
+function renderLiveCurve3D(
+  view: Basic3DView,
+  pointAt: (parameter: number) => Point3DCoords,
+  range: [number, number],
+  attributes: Record<string, unknown>,
+) {
+  return view.create("curve3d", [pointAt, range], attributes) as unknown as BasicLiveGraphElement;
+}
+
+function interpolatePoint(from: Point3DCoords, to: Point3DCoords, parameter: number): Point3DCoords {
+  return [from[0] + parameter * (to[0] - from[0]), from[1] + parameter * (to[1] - from[1]), from[2] + parameter * (to[2] - from[2])];
+}
+
+function liveCircularSilhouetteAngles(view: Basic3DView, center: Point3DCoords, axis: Point3DCoords, radius: number) {
+  return liveViewValue(view, (viewState) => graph3dCircularSilhouetteAngles(center, axis, radius, viewState));
+}
+
+function renderLiveCircularSilhouetteLines(
+  view: Basic3DView,
+  center: Point3DCoords,
+  axis: Point3DCoords,
+  radius: number,
+  pointAt: (angle: number, parameter: number) => Point3DCoords,
+  attributes: Record<string, unknown>,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  const angles = liveCircularSilhouetteAngles(view, center, axis, radius);
+  for (const angleIndex of [0, 1] as const) {
+    registerLiveElement(renderLiveCurve3D(view, (parameter) => pointAt(angles()[angleIndex], parameter), [0, 1], attributes));
+  }
+}
+
+function renderLiveCircularSilhouetteJoinedAtEnd(
+  view: Basic3DView,
+  center: Point3DCoords,
+  axis: Point3DCoords,
+  radius: number,
+  pointAt: (angle: number, parameter: number) => Point3DCoords,
+  attributes: Record<string, unknown>,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  const angles = liveCircularSilhouetteAngles(view, center, axis, radius);
+  registerLiveElement(
+    renderLiveCurve3D(
+      view,
+      (parameter) => {
+        const currentAngles = angles();
+        return parameter <= 1 ? pointAt(currentAngles[0], parameter) : pointAt(currentAngles[1], 2 - parameter);
+      },
+      [0, 2],
+      attributes,
+    ),
+  );
+}
+
+function renderLiveSphereSilhouette(
+  view: Basic3DView,
+  center: Point3DCoords,
+  radius: number,
+  attributes: Record<string, unknown>,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  const basis = liveViewValue(view, (viewState) => basisFromNormal(graph3dViewDirection(viewState)));
+  registerLiveElement(
+    renderLiveCurve3D(
+      view,
+      (angle) => {
+        const currentBasis = basis();
+        return circlePoint(center, currentBasis.u, currentBasis.v, radius, angle);
+      },
+      [0, Math.PI * 2],
+      attributes,
+    ),
+  );
+}
+
+function renderLiveSphereCapSilhouette(
+  view: Basic3DView,
+  center: Point3DCoords,
+  axis: Point3DCoords,
+  radius: number,
+  baseZ: number,
+  attributes: Record<string, unknown>,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  const capAxis = normalizeVector(axis);
+  const silhouette = liveViewValue(view, (viewState) => {
+    const { u, v } = basisFromNormal(graph3dViewDirection(viewState));
+    const arc = graph3dSphereCapSilhouetteArc(capAxis, radius, baseZ, viewState);
+    return {
+      u,
+      v,
+      ...arc,
+    };
+  });
+
+  registerLiveElement(
+    renderLiveCurve3D(
+      view,
+      (parameter) => {
+        const current = silhouette();
+        const angle = current.firstAngle + parameter * (current.secondAngle - current.firstAngle);
+        return circlePoint(center, current.u, current.v, radius, angle);
+      },
+      [0, 1],
+      attributes,
+    ),
   );
 }
 
@@ -600,16 +926,20 @@ function renderCircleCurve3D(
   attributes: Record<string, unknown>,
 ) {
   const { u, v } = basisFromNormal(normal);
-  view.create(
+  // JSXGraph renders curve3d circles as sampled open paths. Extending the
+  // parameter range by one small sample overlaps the stroke at 2π so a butt
+  // line cap cannot leave a visible hairline gap after projection or rotation.
+  const closureOverlap = (Math.PI * 2) / 96;
+  return view.create(
     "curve3d",
     [
       (t: number) => circlePoint(center, u, v, radius, t)[0],
       (t: number) => circlePoint(center, u, v, radius, t)[1],
       (t: number) => circlePoint(center, u, v, radius, t)[2],
-      [0, Math.PI * 2],
+      [0, Math.PI * 2 + closureOverlap],
     ],
     attributes,
-  );
+  ) as BasicLiveGraphElement;
 }
 
 function solidStrokeAttributes(solid: Graph3DSolidEntry) {
@@ -617,8 +947,22 @@ function solidStrokeAttributes(solid: Graph3DSolidEntry) {
     strokeColor: solid.strokeColor ?? "#1f2937",
     strokeWidth: solid.strokeWidth,
     strokeOpacity: 0.8,
+    layer: 15,
+    fixed: true,
     highlight: false,
   };
+}
+
+function preventGraph3DPrimitiveDragging(
+  element: BasicStaticGraphElement | null | undefined,
+  visited = new Set<BasicStaticGraphElement>(),
+) {
+  if (!element || visited.has(element)) return;
+  visited.add(element);
+  element.isDraggable = false;
+  preventGraph3DPrimitiveDragging(element.element2D as BasicStaticGraphElement | undefined, visited);
+  element.vertices?.forEach((vertex) => preventGraph3DPrimitiveDragging(vertex, visited));
+  element.borders?.forEach((border) => preventGraph3DPrimitiveDragging(border, visited));
 }
 
 function surfaceAttributes(solid: Graph3DSolidEntry) {
@@ -635,55 +979,320 @@ function surfaceAttributes(solid: Graph3DSolidEntry) {
   };
 }
 
+function surfaceShader(fillColor: string | undefined) {
+  const normalized = fillColor?.trim().match(/^#([0-9a-f]{6})$/i)?.[1];
+  let hue = 212;
+  let saturation = 38;
+  let lightness = 84;
+  if (normalized) {
+    const red = Number.parseInt(normalized.slice(0, 2), 16) / 255;
+    const green = Number.parseInt(normalized.slice(2, 4), 16) / 255;
+    const blue = Number.parseInt(normalized.slice(4, 6), 16) / 255;
+    const maximum = Math.max(red, green, blue);
+    const minimum = Math.min(red, green, blue);
+    const delta = maximum - minimum;
+    lightness = ((maximum + minimum) / 2) * 100;
+    if (delta > 1e-6) {
+      saturation = (delta / (1 - Math.abs(2 * ((maximum + minimum) / 2) - 1))) * 100;
+      if (maximum === red) hue = 60 * (((green - blue) / delta) % 6);
+      else if (maximum === green) hue = 60 * ((blue - red) / delta + 2);
+      else hue = 60 * ((red - green) / delta + 4);
+      if (hue < 0) hue += 360;
+    }
+  }
+  return {
+    enabled: true,
+    type: "angle",
+    hue,
+    saturation: Math.min(48, Math.max(18, saturation * 0.55)),
+    minLightness: Math.min(92, Math.max(76, lightness + 4)),
+    maxLightness: Math.min(98, Math.max(90, lightness + 15)),
+  };
+}
+
+function renderSurfacePolyhedron3D(
+  view: Basic3DView,
+  vertices: Point3DCoords[],
+  faces: Graph3DSurfaceFace[],
+  solid: Graph3DSolidEntry,
+  { fillOpacity, surfaceGroup = solid.id }: { fillOpacity?: number; surfaceGroup?: string } = {},
+) {
+  try {
+    const surface = view.create("polyhedron3d", [vertices, faces], {
+      fillColorArray: [solid.fillColor ?? "#93c5fd"],
+      fillOpacity: fillOpacity ?? Math.max(0.82, solid.fillOpacity),
+      strokeColor: solid.strokeColor ?? "#1f2937",
+      strokeWidth: 0,
+      strokeOpacity: 0,
+      layer: 8,
+      fixed: true,
+      highlight: false,
+      shader: surfaceShader(solid.fillColor),
+    });
+    const staticSurface = surface as BasicStaticGraphElement;
+    preventGraph3DPrimitiveDragging(staticSurface);
+    staticSurface.faces?.forEach((face) => {
+      const node = face.element2D?.rendNode ?? face.rendNode;
+      node?.setAttribute("data-mauth-graph3d-surface-face", "true");
+      node?.setAttribute("data-mauth-graph3d-surface-group", surfaceGroup);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderCircularBaseFace3D(
+  view: Basic3DView,
+  center: Point3DCoords,
+  normal: Point3DCoords,
+  radius: number,
+  solid: Graph3DSolidEntry,
+) {
+  const { u, v } = basisFromNormal(normal);
+  const steps = Math.min(36, Math.max(16, solid.stepsU));
+  const vertices = Array.from({ length: steps }, (_, index) => circlePoint(center, u, v, radius, (index / steps) * Math.PI * 2));
+  return renderSurfacePolyhedron3D(view, vertices, [vertices.map((_, index) => index)], solid);
+}
+
+function coneSurfaceMesh(solid: Graph3DSolidEntry): Graph3DSurfaceMesh | null {
+  if (!solid.baseCenter || !solid.apex) return null;
+  const axis = vectorSubtract(solid.apex, solid.baseCenter);
+  const { u, v } = basisFromNormal(axis);
+  const steps = Math.min(36, Math.max(16, solid.stepsU));
+  const vertices = Array.from({ length: steps }, (_, index) =>
+    circlePoint(solid.baseCenter!, u, v, solid.radius, (index / steps) * Math.PI * 2),
+  );
+  const apexIndex = vertices.push(solid.apex) - 1;
+  const faces = Array.from({ length: steps }, (_, index) => [index, (index + 1) % steps, apexIndex]);
+  return { vertices, faces };
+}
+
+function renderConeSurface3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+  const mesh = coneSurfaceMesh(solid);
+  return mesh ? renderSurfacePolyhedron3D(view, mesh.vertices, mesh.faces, solid) : false;
+}
+
+function sphereCapSurfaceMesh(solid: Graph3DSolidEntry, capPoint: (angle: number, t: number) => Point3DCoords): Graph3DSurfaceMesh {
+  const angularSteps = Math.min(32, Math.max(16, solid.stepsU));
+  const ringCount = Math.min(8, Math.max(4, solid.stepsV));
+  const vertices: Point3DCoords[] = [];
+  for (let ring = 0; ring < ringCount; ring += 1) {
+    const t = ring / ringCount;
+    for (let index = 0; index < angularSteps; index += 1) {
+      vertices.push(capPoint((index / angularSteps) * Math.PI * 2, t));
+    }
+  }
+  const tipIndex = vertices.push(capPoint(0, 1)) - 1;
+  const faces: number[][] = [];
+  for (let ring = 0; ring < ringCount - 1; ring += 1) {
+    for (let index = 0; index < angularSteps; index += 1) {
+      const next = (index + 1) % angularSteps;
+      const lower = ring * angularSteps;
+      const upper = (ring + 1) * angularSteps;
+      faces.push([lower + index, lower + next, upper + next, upper + index]);
+    }
+  }
+  const finalRing = (ringCount - 1) * angularSteps;
+  for (let index = 0; index < angularSteps; index += 1) {
+    faces.push([finalRing + index, finalRing + ((index + 1) % angularSteps), tipIndex]);
+  }
+  return { vertices, faces };
+}
+
+function faceCentroid(vertices: Point3DCoords[], face: number[]) {
+  const total = face.reduce<Point3DCoords>((sum, index) => vectorAdd(sum, vertices[index]), [0, 0, 0]);
+  return vectorScale(total, 1 / Math.max(1, face.length));
+}
+
+function outwardFace(vertices: Point3DCoords[], face: number[], outwardAt: (centroid: Point3DCoords) => Point3DCoords) {
+  if (face.length < 3) return face;
+  const first = vertices[face[0]];
+  const second = vertices[face[1]];
+  const third = vertices[face[2]];
+  const normal = crossProduct(vectorSubtract(second, first), vectorSubtract(third, first));
+  return dotProduct(normal, outwardAt(faceCentroid(vertices, face))) < 0 ? [...face].reverse() : face;
+}
+
+function joinedConeSphereCapSurfaceMesh(cone: Graph3DSolidEntry, cap: Graph3DSolidEntry): Graph3DJoinedSurfaceMesh | null {
+  if (!cone.baseCenter || !cone.apex || !cap.center) return null;
+  const capGeometry = sphereCapGeometry(cap);
+  if (!capGeometry) return null;
+  const { height, u, v, w, baseZ, baseRadius, baseCenter } = capGeometry;
+  const angularSteps = Math.min(36, Math.max(16, cone.stepsU, cap.stepsU));
+  const ringCount = Math.min(8, Math.max(4, cap.stepsV));
+  const vertices = Array.from({ length: angularSteps }, (_, index) =>
+    circlePoint(baseCenter, u, v, baseRadius, (index / angularSteps) * Math.PI * 2),
+  );
+  const apexIndex = vertices.push(cone.apex) - 1;
+  const coneFaces = Array.from({ length: angularSteps }, (_, index) => [index, (index + 1) % angularSteps, apexIndex]);
+  const capPoint = (angle: number, t: number): Point3DCoords => {
+    const z = baseZ + height * t;
+    const sectionRadius = Math.sqrt(Math.max(0, cap.radius * cap.radius - z * z));
+    return vectorAdd(
+      cap.center!,
+      vectorAdd(
+        vectorScale(w, z),
+        vectorAdd(vectorScale(u, sectionRadius * Math.cos(angle)), vectorScale(v, sectionRadius * Math.sin(angle))),
+      ),
+    );
+  };
+
+  const ringStarts = [0];
+  for (let ring = 1; ring < ringCount; ring += 1) {
+    ringStarts.push(vertices.length);
+    const t = ring / ringCount;
+    for (let index = 0; index < angularSteps; index += 1) {
+      vertices.push(capPoint((index / angularSteps) * Math.PI * 2, t));
+    }
+  }
+  const tipIndex = vertices.push(capPoint(0, 1)) - 1;
+  const capFaces: number[][] = [];
+  for (let ring = 0; ring < ringStarts.length - 1; ring += 1) {
+    const lower = ringStarts[ring];
+    const upper = ringStarts[ring + 1];
+    for (let index = 0; index < angularSteps; index += 1) {
+      const next = (index + 1) % angularSteps;
+      capFaces.push([lower + index, lower + next, upper + next, upper + index]);
+    }
+  }
+  const finalRing = ringStarts[ringStarts.length - 1];
+  for (let index = 0; index < angularSteps; index += 1) {
+    capFaces.push([finalRing + index, finalRing + ((index + 1) % angularSteps), tipIndex]);
+  }
+
+  const coneAxis = normalizeVector(vectorSubtract(cone.apex, cone.baseCenter));
+  const orientedConeFaces = coneFaces.map((face) =>
+    outwardFace(vertices, face, (centroid) => {
+      const fromBase = vectorSubtract(centroid, cone.baseCenter!);
+      const axisPoint = vectorAdd(cone.baseCenter!, vectorScale(coneAxis, dotProduct(fromBase, coneAxis)));
+      return vectorSubtract(centroid, axisPoint);
+    }),
+  );
+  const orientedCapFaces = capFaces.map((face) => outwardFace(vertices, face, (centroid) => vectorSubtract(centroid, cap.center!)));
+  return {
+    vertices,
+    faces: [...orientedConeFaces, ...orientedCapFaces],
+    coneFaces: orientedConeFaces,
+    capFaces: orientedCapFaces,
+  };
+}
+
+function convexHull2D(points: Point2DCoords[]) {
+  const unique = Array.from(new Map(points.map((point) => [`${point[0].toFixed(9)}:${point[1].toFixed(9)}`, point])).values()).sort(
+    (left, right) => left[0] - right[0] || left[1] - right[1],
+  );
+  if (unique.length <= 2) return unique;
+  const turn = (a: Point2DCoords, b: Point2DCoords, c: Point2DCoords) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const half = (source: Point2DCoords[]) => {
+    const result: Point2DCoords[] = [];
+    source.forEach((point) => {
+      while (result.length >= 2 && turn(result[result.length - 2], result[result.length - 1], point) <= 0) result.pop();
+      result.push(point);
+    });
+    return result;
+  };
+  const lower = half(unique);
+  const upper = half([...unique].reverse());
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function closedHullPoint(points: Point2DCoords[], parameter: number): Point2DCoords {
+  if (!points.length) return [0, 0];
+  if (points.length === 1) return points[0];
+  const scaled = Math.min(1, Math.max(0, parameter)) * points.length;
+  const index = Math.min(points.length - 1, Math.floor(scaled));
+  const fraction = scaled >= points.length ? 1 : scaled - index;
+  const next = (index + 1) % points.length;
+  return [
+    points[index][0] + fraction * (points[next][0] - points[index][0]),
+    points[index][1] + fraction * (points[next][1] - points[index][1]),
+  ];
+}
+
+function renderLiveProjectedCompositeSilhouette(
+  view: Basic3DView,
+  vertices: Point3DCoords[],
+  attributes: Record<string, unknown>,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  if (!view.board) return;
+  const hull = liveViewValue(view, () => convexHull2D(vertices.map((vertex) => projectedUserPoint(view, vertex))));
+  const rendered = view.board.create(
+    "curve",
+    [(parameter: number) => closedHullPoint(hull(), parameter)[0], (parameter: number) => closedHullPoint(hull(), parameter)[1], 0, 1],
+    attributes,
+  ) as BasicLiveGraphElement;
+  rendered.rendNode?.setAttribute("data-mauth-graph3d-composite-silhouette", "true");
+  registerLiveElement(rendered);
+}
+
+function renderSphereCapSurface3D(view: Basic3DView, solid: Graph3DSolidEntry, capPoint: (angle: number, t: number) => Point3DCoords) {
+  const mesh = sphereCapSurfaceMesh(solid, capPoint);
+  return renderSurfacePolyhedron3D(view, mesh.vertices, mesh.faces, solid);
+}
+
 function renderGraph3DFace(
   view: Basic3DView,
+  board: JXG.Board,
   face: Graph3DFaceEntry,
   labelContext: Graph3DLabelContext,
-  labelOffset: number,
-  avoidCoords: Point3DCoords[],
+  onLabelMove: CommitGraph3DLabelScreenOffset | undefined,
+  registerCleanup: (cleanup: () => void) => void,
 ) {
   if (!face.show) return;
   try {
-    view.create("polygon3d", face.coords, {
+    const renderedFace = view.create("polygon3d", face.coords, {
       fillColor: face.fillColor ?? "#93c5fd",
       fillOpacity: face.fillOpacity,
       gradient: null,
+      fixed: true,
       borders: {
         strokeColor: face.strokeColor ?? "#1f2937",
         strokeWidth: face.strokeWidth ?? 1,
         dash: face.dashed ? 2 : 0,
+        fixed: true,
         highlight: false,
       },
       vertices: {
         visible: false,
         withLabel: false,
         size: 0,
+        fixed: true,
+        highlight: false,
       },
       highlight: false,
-    });
+    }) as BasicStaticGraphElement;
+    // JSXGraph marks polygon3d and its generated 2D polygon as draggable during
+    // construction. Explicitly lock the complete primitive tree so a face can
+    // never translate briefly before the next 3D projection update restores it.
+    preventGraph3DPrimitiveDragging(renderedFace);
+    renderedFace.element2D?.rendNode?.setAttribute("data-mauth-static-graph3d-face", "true");
     if (face.label?.trim()) {
-      const centroid = face.coords.reduce<Point3DCoords>(
+      const centroidSum = face.coords.reduce<Point3DCoords>(
         (sum, coords) => [sum[0] + coords[0], sum[1] + coords[1], sum[2] + coords[2]],
         [0, 0, 0],
       );
-      const labelPoint = graph3dLabelPoint(
-        [centroid[0] / face.coords.length, centroid[1] / face.coords.length, centroid[2] / face.coords.length],
-        labelContext,
-        labelOffset,
-        avoidCoords,
-      );
-      view.create(
-        "text3d",
-        [
-          labelPoint,
-          render3DLatexLabel(
-            face.label,
-            { "data-mauth-label-role": "graph3d-face-label", "data-mauth-graph3d-element-id": face.id },
-            face.strokeColor ?? face.fillColor ?? "#0f172a",
-          ),
-        ],
-        LATEX_3D_LABEL_ATTRIBUTES,
-      );
+      const centroid: Point3DCoords = [
+        centroidSum[0] / face.coords.length,
+        centroidSum[1] / face.coords.length,
+        centroidSum[2] / face.coords.length,
+      ];
+      renderProjectedGraph3DLabel({
+        board,
+        view,
+        basePoint: () => radialProjectedLabelPoint(view, centroid, labelContext.sceneCenter, 12),
+        labelHtml: render3DLatexLabel(
+          face.label,
+          { "data-mauth-label-role": "graph3d-face-label", "data-mauth-graph3d-element-id": face.id },
+          face.strokeColor ?? face.fillColor ?? "#0f172a",
+        ),
+        elementKind: "face",
+        elementId: face.id,
+        labelScreenOffsetPx: face.labelScreenOffsetPx,
+        onMove: onLabelMove ? (offset) => onLabelMove("face", face.id, offset) : undefined,
+        registerCleanup,
+      });
     }
   } catch {
     // Keep the rest of the 3D diagram rendering even if an optional face primitive is unsupported.
@@ -692,54 +1301,169 @@ function renderGraph3DFace(
 
 function renderGraph3DDimension(
   view: Basic3DView,
+  board: JXG.Board,
   dimension: Graph3DDimensionEntry,
   labelContext: Graph3DLabelContext,
   labelOffset: number,
-  avoidCoords: Point3DCoords[],
+  onLabelMove: CommitGraph3DLabelScreenOffset | undefined,
+  registerCleanup: (cleanup: () => void) => void,
 ) {
-  if (!dimension.show) return;
-  const color = dimension.color ?? "#6b7280";
-  renderCurve3D(view, dimension.from, dimension.to, {
-    strokeColor: color,
-    strokeWidth: dimension.strokeWidth ?? 1.3,
-    dash: dimension.dashed ? 2 : 0,
-    highlight: false,
-  });
-  for (const coords of [dimension.from, dimension.to]) {
-    view.create("point3d", coords, {
-      ...POINT_3D_ATTRIBUTES,
-      fillColor: color,
+  if (!dimension.show) return null;
+  const color = dimension.color ?? "#000000";
+  if (dimension.display !== "label") {
+    renderCurve3D(view, dimension.from, dimension.to, {
       strokeColor: color,
-      size: 2,
-      withLabel: false,
+      strokeWidth: dimension.strokeWidth ?? 1.3,
+      dash: dimension.display === "guide" || dimension.dashed ? 2 : 0,
+      layer: 18,
+      fixed: true,
+      highlight: false,
     });
   }
+  if (dimension.display === "bracket") {
+    const tickDirection = graph3dDimensionTickDirection(dimension.from, dimension.to, labelContext.viewState, labelContext.screenScale);
+    const tickLength = Math.max(0.12, labelOffset * 1.35);
+    for (const coords of [dimension.from, dimension.to]) {
+      const [tickStart, tickEnd] = graph3dDimensionTickEndpoints(coords, tickDirection, tickLength);
+      renderCurve3D(view, tickStart, tickEnd, {
+        strokeColor: color,
+        strokeWidth: dimension.strokeWidth ?? 1.3,
+        layer: 18,
+        fixed: true,
+        highlight: false,
+      });
+    }
+  }
   if (dimension.label?.trim()) {
-    const midpoint: Point3DCoords = [
-      (dimension.from[0] + dimension.to[0]) / 2,
-      (dimension.from[1] + dimension.to[1]) / 2,
-      (dimension.from[2] + dimension.to[2]) / 2,
-    ];
-    view.create(
-      "text3d",
-      [
-        graph3dLabelPoint(midpoint, labelContext, labelOffset * 1.6, avoidCoords),
-        render3DLatexLabel(
-          dimension.label,
-          { "data-mauth-label-role": "graph3d-dimension-label", "data-mauth-graph3d-element-id": dimension.id },
-          color,
-        ),
-      ],
-      LATEX_3D_LABEL_ATTRIBUTES,
+    const labelHtml = render3DLatexLabel(
+      dimension.label,
+      {
+        "data-mauth-label-role": "graph3d-dimension-label",
+        "data-mauth-graph3d-element-id": dimension.id,
+        "data-mauth-graph3d-dimension-display": dimension.display,
+      },
+      color,
     );
+    const anchorFraction = dimension.display === "guide" ? 0.62 : 0.5;
+    return renderProjectedGraph3DLabel({
+      board,
+      view,
+      basePoint: () =>
+        dimension.display === "bracket" && dimension.labelPosition
+          ? projectedUserPoint(view, dimension.labelPosition)
+          : segmentProjectedLabelPoint(
+              view,
+              dimension.from,
+              dimension.to,
+              labelContext.sceneCenter,
+              dimension.labelOffsetPx,
+              anchorFraction,
+            ),
+      labelHtml,
+      elementKind: "dimension",
+      elementId: dimension.id,
+      labelScreenOffsetPx: dimension.labelScreenOffsetPx,
+      onMove: onLabelMove ? (offset) => onLabelMove("dimension", dimension.id, offset) : undefined,
+      registerCleanup,
+    });
+  }
+  return null;
+}
+
+function renderGraph3DRightAngleMarkers(view: Basic3DView, dimensions: Graph3DDimensionEntry[], faces: Graph3DFaceEntry[]) {
+  const dimensionMap = new Map(dimensions.map((dimension) => [dimension.id, dimension]));
+  const faceMap = new Map(faces.map((face) => [face.id, face]));
+  const renderedPairs = new Set<string>();
+  for (const dimension of dimensions) {
+    if (!dimension.show || !dimension.rightAngleWith) continue;
+    if (dimension.rightAngleWith.startsWith(GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX)) {
+      const faceId = dimension.rightAngleWith.slice(GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX.length);
+      const face = faceMap.get(faceId);
+      if (!face?.show) continue;
+      const pairKey = `${dimension.id}::${GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX}${face.id}`;
+      const marker = graph3dDimensionFaceRightAngleMarkerPoints(dimension.from, dimension.to, face.coords, dimension.rightAngleSize);
+      if (!marker) continue;
+      const attributes = {
+        strokeColor: dimension.color ?? face.strokeColor ?? "#000000",
+        strokeWidth: Math.max(dimension.strokeWidth ?? 1.3, face.strokeWidth ?? 1),
+        dash: 0,
+        layer: 18,
+        highlight: false,
+        fixed: true,
+      };
+      for (const element of [
+        renderCurve3D(view, marker.vertex, marker.secondArm, attributes),
+        renderCurve3D(view, marker.firstArm, marker.corner, attributes),
+        renderCurve3D(view, marker.corner, marker.secondArm, attributes),
+      ]) {
+        const renderedNode = element.element2D?.rendNode ?? element.rendNode;
+        if (renderedNode) renderedNode.dataset.mauthGraph3dRightAngle = pairKey;
+      }
+      continue;
+    }
+    const other = dimensionMap.get(dimension.rightAngleWith);
+    if (!other?.show || other.id === dimension.id) continue;
+    const pairKey = [dimension.id, other.id].sort().join("::");
+    if (renderedPairs.has(pairKey)) continue;
+    const marker = graph3dRightAngleMarkerPoints(dimension.from, dimension.to, other.from, other.to, dimension.rightAngleSize);
+    if (!marker) continue;
+    renderedPairs.add(pairKey);
+    const attributes = {
+      strokeColor: dimension.color ?? other.color ?? "#000000",
+      strokeWidth: Math.max(dimension.strokeWidth ?? 1.3, other.strokeWidth ?? 1.3),
+      dash: 0,
+      layer: 18,
+      highlight: false,
+      fixed: true,
+    };
+    for (const element of [
+      renderCurve3D(view, marker.firstArm, marker.corner, attributes),
+      renderCurve3D(view, marker.corner, marker.secondArm, attributes),
+    ]) {
+      const renderedNode = element.element2D?.rendNode ?? element.rendNode;
+      if (renderedNode) renderedNode.dataset.mauthGraph3dRightAngle = pairKey;
+    }
   }
 }
 
-function renderCone3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+function renderCone3D(
+  view: Basic3DView,
+  solid: Graph3DSolidEntry,
+  registerLiveElement: RegisterLiveGraphElement,
+  {
+    renderBaseCircle = true,
+    renderBaseFace = true,
+    renderSurface = true,
+    renderSilhouette = true,
+  }: { renderBaseCircle?: boolean; renderBaseFace?: boolean; renderSurface?: boolean; renderSilhouette?: boolean } = {},
+) {
   if (!solid.baseCenter || !solid.apex) return;
   const axis = vectorSubtract(solid.apex, solid.baseCenter);
   const { u, v } = basisFromNormal(axis);
-  if (solid.renderStyle !== "outline") {
+  if (solid.renderStyle === "surface" && renderSurface) {
+    const renderedSurface = renderConeSurface3D(view, solid);
+    if (!renderedSurface) {
+      try {
+        view.create(
+          "parametricsurface3d",
+          [
+            (angle: number, t: number) =>
+              solid.baseCenter![0] + axis[0] * t + solid.radius * (1 - t) * (u[0] * Math.cos(angle) + v[0] * Math.sin(angle)),
+            (angle: number, t: number) =>
+              solid.baseCenter![1] + axis[1] * t + solid.radius * (1 - t) * (u[1] * Math.cos(angle) + v[1] * Math.sin(angle)),
+            (angle: number, t: number) =>
+              solid.baseCenter![2] + axis[2] * t + solid.radius * (1 - t) * (u[2] * Math.cos(angle) + v[2] * Math.sin(angle)),
+            [0, Math.PI * 2],
+            [0, 1],
+          ],
+          surfaceAttributes(solid),
+        );
+      } catch {
+        // The silhouette below remains available when the 3D surface is unsupported.
+      }
+    }
+    if (renderBaseFace) renderCircularBaseFace3D(view, solid.baseCenter, axis, solid.radius, solid);
+  } else if (solid.renderStyle === "wireframe") {
     try {
       view.create(
         "parametricsurface3d",
@@ -759,13 +1483,21 @@ function renderCone3D(view: Basic3DView, solid: Graph3DSolidEntry) {
       // The outline fallback below still communicates the source solid faithfully.
     }
   }
-  renderCircleCurve3D(view, solid.baseCenter, axis, solid.radius, solidStrokeAttributes(solid));
-  for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
-    renderCurve3D(view, circlePoint(solid.baseCenter, u, v, solid.radius, angle), solid.apex, solidStrokeAttributes(solid));
+  if (renderBaseCircle) renderCircleCurve3D(view, solid.baseCenter, axis, solid.radius, solidStrokeAttributes(solid));
+  if (renderSilhouette) {
+    renderLiveCircularSilhouetteJoinedAtEnd(
+      view,
+      solid.baseCenter,
+      axis,
+      solid.radius,
+      (angle, parameter) => interpolatePoint(circlePoint(solid.baseCenter!, u, v, solid.radius, angle), solid.apex!, parameter),
+      solidStrokeAttributes(solid),
+      registerLiveElement,
+    );
   }
 }
 
-function renderCylinder3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+function renderCylinder3D(view: Basic3DView, solid: Graph3DSolidEntry, registerLiveElement: RegisterLiveGraphElement) {
   if (!solid.baseCenter || !solid.topCenter) return;
   const axis = vectorSubtract(solid.topCenter, solid.baseCenter);
   const { u, v } = basisFromNormal(axis);
@@ -791,17 +1523,23 @@ function renderCylinder3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   }
   renderCircleCurve3D(view, solid.baseCenter, axis, solid.radius, solidStrokeAttributes(solid));
   renderCircleCurve3D(view, solid.topCenter, axis, solid.radius, solidStrokeAttributes(solid));
-  for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
-    renderCurve3D(
-      view,
-      circlePoint(solid.baseCenter, u, v, solid.radius, angle),
-      circlePoint(solid.topCenter, u, v, solid.radius, angle),
-      solidStrokeAttributes(solid),
-    );
-  }
+  renderLiveCircularSilhouetteLines(
+    view,
+    solid.baseCenter,
+    axis,
+    solid.radius,
+    (angle, parameter) =>
+      interpolatePoint(
+        circlePoint(solid.baseCenter!, u, v, solid.radius, angle),
+        circlePoint(solid.topCenter!, u, v, solid.radius, angle),
+        parameter,
+      ),
+    solidStrokeAttributes(solid),
+    registerLiveElement,
+  );
 }
 
-function renderSphere3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+function renderSphere3D(view: Basic3DView, solid: Graph3DSolidEntry, registerLiveElement: RegisterLiveGraphElement) {
   if (!solid.center) return;
   if (solid.renderStyle !== "outline") {
     try {
@@ -811,17 +1549,40 @@ function renderSphere3D(view: Basic3DView, solid: Graph3DSolidEntry) {
         [solid.center[0] + solid.radius, solid.center[1], solid.center[2]],
         HIDDEN_3D_POINT_ATTRIBUTES,
       );
-      view.create("sphere3d", [centerPoint, radiusPoint], surfaceAttributes(solid));
+      view.create("sphere3d", [centerPoint, radiusPoint], {
+        fillColor: solid.fillColor ?? "#93c5fd",
+        fillOpacity: solid.renderStyle === "wireframe" ? 0 : solid.fillOpacity,
+        strokeOpacity: 0,
+        strokeWidth: 0,
+        highlight: false,
+      });
+      const sphereGuideAttributes = {
+        ...solidStrokeAttributes(solid),
+        strokeWidth: Math.min(0.9, solid.strokeWidth ?? 0.9),
+        strokeOpacity: solid.renderStyle === "wireframe" ? 0.5 : 0.24,
+      };
+      const guideNormals: Point3DCoords[] =
+        solid.renderStyle === "wireframe"
+          ? [
+              [1, 0, 0],
+              [0, 1, 0],
+              [0, 0, 1],
+            ]
+          : [
+              [1, 0, 0],
+              [0, 0, 1],
+            ];
+      for (const normal of guideNormals) {
+        renderCircleCurve3D(view, solid.center, normal, solid.radius, sphereGuideAttributes);
+      }
     } catch {
-      // The three great circles below are a stable wireframe fallback.
+      // The live silhouette below remains available if the optional sphere projection is unsupported.
     }
   }
-  renderCircleCurve3D(view, solid.center, [0, 0, 1], solid.radius, solidStrokeAttributes(solid));
-  renderCircleCurve3D(view, solid.center, [0, 1, 0], solid.radius, solidStrokeAttributes(solid));
-  renderCircleCurve3D(view, solid.center, [1, 0, 0], solid.radius, solidStrokeAttributes(solid));
+  renderLiveSphereSilhouette(view, solid.center, solid.radius, solidStrokeAttributes(solid), registerLiveElement);
 }
 
-function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
+function sphereCapGeometry(solid: Graph3DSolidEntry) {
   if (!solid.center || !solid.height) return;
   const height = Math.min(solid.radius * 2, Math.max(1e-6, solid.height));
   const axis = solid.normal ?? [0, 0, 1];
@@ -829,6 +1590,68 @@ function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
   const baseZ = solid.radius - height;
   const baseRadius = Math.sqrt(Math.max(0, solid.radius * solid.radius - baseZ * baseZ));
   const baseCenter = vectorAdd(solid.center, vectorScale(w, baseZ));
+  return { height, u, v, w, baseZ, baseRadius, baseCenter };
+}
+
+function joinedSurfaceFace(face: number[], offset: number, solid: Graph3DSolidEntry): Graph3DSurfaceFace {
+  return [
+    face.map((index) => index + offset),
+    {
+      fillColor: solid.fillColor ?? "#93c5fd",
+      fillOpacity: 1,
+      strokeWidth: 0,
+      strokeOpacity: 0,
+      shader: surfaceShader(solid.fillColor),
+    },
+  ];
+}
+
+function renderJoinedConeSphereCapSurface3D(
+  view: Basic3DView,
+  cone: Graph3DSolidEntry,
+  cap: Graph3DSolidEntry,
+  registerLiveElement: RegisterLiveGraphElement,
+) {
+  const mesh = joinedConeSphereCapSurfaceMesh(cone, cap);
+  if (!mesh) return false;
+  const faces: Graph3DSurfaceFace[] = [
+    ...mesh.coneFaces.map((face) => joinedSurfaceFace(face, 0, cone)),
+    ...mesh.capFaces.map((face) => joinedSurfaceFace(face, 0, cap)),
+  ];
+  const rendered = renderSurfacePolyhedron3D(view, mesh.vertices, faces, cone, {
+    fillOpacity: 1,
+    surfaceGroup: `joined:${cone.id}:${cap.id}`,
+  });
+  if (!rendered) return false;
+  renderLiveProjectedCompositeSilhouette(view, mesh.vertices, solidStrokeAttributes(cone), registerLiveElement);
+  const sharedSeam = renderCircleCurve3D(view, cone.baseCenter!, vectorSubtract(cone.apex!, cone.baseCenter!), cone.radius, {
+    ...solidStrokeAttributes(cone),
+    dash: 2,
+  });
+  (sharedSeam.rendNode ?? sharedSeam.element2D?.rendNode)?.setAttribute("data-mauth-graph3d-shared-seam", "true");
+  return true;
+}
+
+function renderSphereCap3D(
+  view: Basic3DView,
+  solid: Graph3DSolidEntry,
+  registerLiveElement: RegisterLiveGraphElement,
+  {
+    renderBaseCircle = true,
+    renderBaseFace = true,
+    renderSurface = true,
+    silhouette = "sphere",
+  }: {
+    renderBaseCircle?: boolean;
+    renderBaseFace?: boolean;
+    renderSurface?: boolean;
+    silhouette?: "sphere" | "profile" | "none";
+  } = {},
+) {
+  if (!solid.center) return;
+  const geometry = sphereCapGeometry(solid);
+  if (!geometry) return;
+  const { height, u, v, w, baseZ, baseRadius, baseCenter } = geometry;
   const capPoint = (angle: number, t: number) => {
     const z = baseZ + height * t;
     const sectionRadius = Math.sqrt(Math.max(0, solid.radius * solid.radius - z * z));
@@ -841,7 +1664,26 @@ function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
     );
   };
 
-  if (solid.renderStyle !== "outline") {
+  if (solid.renderStyle === "surface" && renderSurface) {
+    const renderedSurface = renderSphereCapSurface3D(view, solid, capPoint);
+    if (!renderedSurface) {
+      try {
+        view.create(
+          "parametricsurface3d",
+          [
+            (angle: number, t: number) => capPoint(angle, t)[0],
+            (angle: number, t: number) => capPoint(angle, t)[1],
+            (angle: number, t: number) => capPoint(angle, t)[2],
+            [0, Math.PI * 2],
+            [0, 1],
+          ],
+          surfaceAttributes(solid),
+        );
+      } catch {
+        // The silhouette below still shows the cap depth and circular section.
+      }
+    }
+  } else if (solid.renderStyle === "wireframe") {
     try {
       view.create(
         "parametricsurface3d",
@@ -859,7 +1701,9 @@ function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
     }
   }
 
-  if (solid.renderStyle !== "outline") {
+  if (renderBaseFace && solid.renderStyle === "surface") {
+    renderCircularBaseFace3D(view, baseCenter, w, baseRadius, solid);
+  } else if (renderBaseFace && solid.renderStyle === "wireframe") {
     try {
       view.create(
         "parametricsurface3d",
@@ -880,28 +1724,87 @@ function renderSphereCap3D(view: Basic3DView, solid: Graph3DSolidEntry) {
     }
   }
 
-  renderCircleCurve3D(view, baseCenter, w, baseRadius, solidStrokeAttributes(solid));
-  for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
-    view.create(
-      "curve3d",
-      [(t: number) => capPoint(angle, t)[0], (t: number) => capPoint(angle, t)[1], (t: number) => capPoint(angle, t)[2], [0, 1]],
+  if (renderBaseCircle) renderCircleCurve3D(view, baseCenter, w, baseRadius, solidStrokeAttributes(solid));
+  if (silhouette === "profile") {
+    renderLiveCircularSilhouetteJoinedAtEnd(
+      view,
+      baseCenter,
+      w,
+      baseRadius,
+      (angle, parameter) => capPoint(angle, parameter),
       solidStrokeAttributes(solid),
+      registerLiveElement,
     );
+  } else if (silhouette === "sphere") {
+    renderLiveSphereCapSilhouette(view, solid.center, w, solid.radius, baseZ, solidStrokeAttributes(solid), registerLiveElement);
   }
 }
 
-function renderGraph3DSolid(view: Basic3DView, solid: Graph3DSolidEntry) {
+function matchingJoinedSolids(solids: Graph3DSolidEntry[]) {
+  const coneIds = new Set<string>();
+  const capIds = new Set<string>();
+  const pairs: Array<{ cone: Graph3DSolidEntry; cap: Graph3DSolidEntry }> = [];
+  const cones = solids.filter((solid) => solid.show && solid.kind === "cone" && solid.baseCenter && solid.apex);
+
+  for (const cap of solids) {
+    if (!cap.show || (cap.kind !== "spherecap" && cap.kind !== "sphericalcap")) continue;
+    const capGeometry = sphereCapGeometry(cap);
+    if (!capGeometry) continue;
+    const tolerance = Math.max(1e-6, cap.radius * 1e-6);
+    const matchingCone = cones.find((cone) => {
+      if (coneIds.has(cone.id)) return false;
+      if (!cone.baseCenter || !cone.apex) return false;
+      const coneAxis = normalizeVector(vectorSubtract(cone.apex, cone.baseCenter));
+      return (
+        vectorLength(vectorSubtract(cone.baseCenter, capGeometry.baseCenter)) <= tolerance &&
+        Math.abs(cone.radius - capGeometry.baseRadius) <= tolerance &&
+        dotProduct(coneAxis, capGeometry.w) <= -1 + 1e-6
+      );
+    });
+    if (matchingCone) {
+      coneIds.add(matchingCone.id);
+      capIds.add(cap.id);
+      pairs.push({ cone: matchingCone, cap });
+    }
+  }
+
+  return { coneIds, capIds, pairs };
+}
+
+function renderGraph3DSolid(
+  view: Basic3DView,
+  solid: Graph3DSolidEntry,
+  registerLiveElement: RegisterLiveGraphElement,
+  {
+    renderBaseCircle = true,
+    renderBaseFace = true,
+    renderSurface = true,
+    renderSilhouette = true,
+    sphereCapSilhouette = "sphere",
+  }: {
+    renderBaseCircle?: boolean;
+    renderBaseFace?: boolean;
+    renderSurface?: boolean;
+    renderSilhouette?: boolean;
+    sphereCapSilhouette?: "sphere" | "profile" | "none";
+  } = {},
+) {
   if (!solid.show) return;
   if (solid.kind === "circle" && solid.center) {
     renderCircleCurve3D(view, solid.center, solid.normal ?? [0, 0, 1], solid.radius, solidStrokeAttributes(solid));
   } else if (solid.kind === "cone") {
-    renderCone3D(view, solid);
+    renderCone3D(view, solid, registerLiveElement, { renderBaseCircle, renderBaseFace, renderSurface, renderSilhouette });
   } else if (solid.kind === "cylinder") {
-    renderCylinder3D(view, solid);
+    renderCylinder3D(view, solid, registerLiveElement);
   } else if (solid.kind === "sphere") {
-    renderSphere3D(view, solid);
+    renderSphere3D(view, solid, registerLiveElement);
   } else if (solid.kind === "spherecap" || solid.kind === "sphericalcap") {
-    renderSphereCap3D(view, solid);
+    renderSphereCap3D(view, solid, registerLiveElement, {
+      renderBaseCircle,
+      renderBaseFace,
+      renderSurface,
+      silhouette: sphereCapSilhouette,
+    });
   }
 }
 
@@ -918,6 +1821,7 @@ export function Basic3DGraph({
   const initialAz = initialViewState.az;
   const initialEl = initialViewState.el;
   const initialBank = initialViewState.bank;
+  const initialZoom = initialViewState.zoom;
   const renderSignature = JSON.stringify({
     data: graphConfig?.data ?? null,
     widthPx: graphConfig?.widthPx ?? null,
@@ -927,7 +1831,13 @@ export function Basic3DGraph({
     const points = graph3dPoints(graphConfig);
     const pointMap = new Map(points.map((point) => [point.id, point]));
     const pointIds = new Set(pointMap.keys());
+    const axesVisible = graph3dAxesVisible(
+      graphConfig,
+      points.some((point) => point.show),
+    );
     return {
+      axesVisible,
+      axisLabelsVisible: graph3dAxisLabelsVisible(graphConfig, axesVisible),
       pointLabelCount: points.filter((point) => point.show && point.label.trim()).length,
       segmentLabelCount: graph3dSegments(graphConfig, pointIds).filter((segment) => segment.show && segment.label?.trim()).length,
       faceLabelCount: graph3dFaces(graphConfig, pointMap).filter((face) => face.show && face.label?.trim()).length,
@@ -940,13 +1850,16 @@ export function Basic3DGraph({
   });
 
   useEffect(() => {
-    const persistedViewState = { az: initialAz, el: initialEl, bank: initialBank };
+    const persistedViewState = { az: initialAz, el: initialEl, bank: initialBank, zoom: initialZoom };
     let commitTimer = 0;
     let lastCommittedViewState = persistedViewState;
     let pointerActive = false;
+    const liveProjectionElements: BasicLiveGraphElement[] = [];
+    const labelDragCleanups: Array<() => void> = [];
     const board = JXG.JSXGraph.initBoard(boardId, {
-      boundingbox: [-6, 6, 6, -6],
+      boundingbox: GRAPH3D_BOARD_BOUNDING_BOX,
       axis: false,
+      keepAspectRatio: true,
       showCopyright: false,
       showNavigation: false,
       text: LABEL_ATTRIBUTES,
@@ -955,10 +1868,23 @@ export function Basic3DGraph({
     const renderGraphConfig = graphConfigRef.current;
     const graphPoints = graph3dPoints(renderGraphConfig);
     const graphRanges = graph3dRanges(renderGraphConfig, graphPoints);
+    const axesVisible = graph3dAxesVisible(
+      renderGraphConfig,
+      graphPoints.some((point) => point.show),
+    );
+    const axisLabelsVisible = graph3dAxisLabelsVisible(renderGraphConfig, axesVisible);
+    const registerLabelDragCleanup = (cleanup: () => void) => labelDragCleanups.push(cleanup);
+    const commitLabelScreenOffset: CommitGraph3DLabelScreenOffset | undefined = onGraphConfigChange
+      ? (kind, id, offset) => {
+          const currentGraphConfig = graphConfigRef.current;
+          if (!currentGraphConfig) return;
+          onGraphConfigChange(graph3dConfigWithLabelScreenOffset(currentGraphConfig, kind, id, offset));
+        }
+      : undefined;
 
     const commitViewState = () => {
       if (!view || !onGraphConfigChange) return;
-      const nextViewState = currentViewState(view);
+      const nextViewState = currentViewState(view, persistedViewState.zoom);
       if (sameViewState(nextViewState, lastCommittedViewState)) return;
       lastCommittedViewState = nextViewState;
       const currentGraphConfig = graphConfigRef.current;
@@ -987,44 +1913,38 @@ export function Basic3DGraph({
     };
 
     try {
-      view = board.create(
-        "view3d",
-        [
-          [-4, -3],
-          [8, 8],
-          [graphRanges[0], graphRanges[1], graphRanges[2]],
-        ],
-        {
-          az: { slider: { visible: false, start: persistedViewState.az } },
-          el: { slider: { visible: false, start: persistedViewState.el } },
-          bank: { slider: { visible: false, start: persistedViewState.bank } },
-          xAxis: { point2: { name: "", withLabel: false } },
-          yAxis: { point2: { name: "", withLabel: false } },
-          zAxis: { point2: { name: "", withLabel: false } },
-          xAxisBorder: AXIS_3D_LABEL_ATTRIBUTES,
-          yAxisBorder: AXIS_3D_LABEL_ATTRIBUTES,
-          zAxisBorder: AXIS_3D_LABEL_ATTRIBUTES,
-          xPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
-          yPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
-          zPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
-          xPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
-          yPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
-          zPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
-          xPlaneRearYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          xPlaneRearZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          xPlaneFrontYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          xPlaneFrontZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          yPlaneRearXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          yPlaneRearZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          yPlaneFrontXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          yPlaneFrontZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          zPlaneRearXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          zPlaneRearYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          zPlaneFrontXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          zPlaneFrontYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
-          ticks3d: { label: LABEL_ATTRIBUTES },
-        } as Record<string, unknown>,
-      ) as unknown as Basic3DView;
+      view = board.create("view3d", [GRAPH3D_VIEW_ORIGIN, GRAPH3D_VIEW_SIZE, [graphRanges[0], graphRanges[1], graphRanges[2]]], {
+        projection: "parallel",
+        depthOrder: { enabled: true },
+        az: { slider: { visible: false, start: persistedViewState.az } },
+        el: { slider: { visible: false, start: persistedViewState.el } },
+        bank: { slider: { visible: false, start: persistedViewState.bank } },
+        xAxis: axesVisible ? { point2: { name: "", withLabel: false } } : { visible: false },
+        yAxis: axesVisible ? { point2: { name: "", withLabel: false } } : { visible: false },
+        zAxis: axesVisible ? { point2: { name: "", withLabel: false } } : { visible: false },
+        xAxisBorder: axesVisible ? AXIS_3D_LABEL_ATTRIBUTES : { visible: false },
+        yAxisBorder: axesVisible ? AXIS_3D_LABEL_ATTRIBUTES : { visible: false },
+        zAxisBorder: axesVisible ? AXIS_3D_LABEL_ATTRIBUTES : { visible: false },
+        xPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
+        yPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
+        zPlaneRear: HIDDEN_3D_PLANE_ATTRIBUTES,
+        xPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
+        yPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
+        zPlaneFront: HIDDEN_3D_PLANE_ATTRIBUTES,
+        xPlaneRearYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        xPlaneRearZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        xPlaneFrontYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        xPlaneFrontZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        yPlaneRearXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        yPlaneRearZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        yPlaneFrontXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        yPlaneFrontZAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        zPlaneRearXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        zPlaneRearYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        zPlaneFrontXAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        zPlaneFrontYAxis: HIDDEN_3D_PLANE_AXIS_ATTRIBUTES,
+        ticks3d: { label: LABEL_ATTRIBUTES },
+      } as Record<string, unknown>) as unknown as Basic3DView;
       const points = graphPoints;
       const pointMap = new Map(points.map((point) => [point.id, point]));
       const faces = graph3dFaces(renderGraphConfig, pointMap);
@@ -1037,17 +1957,38 @@ export function Basic3DGraph({
         Math.max(ranges[0][1] - ranges[0][0], ranges[1][1] - ranges[1][0], ranges[2][1] - ranges[2][0]) * 0.035,
       );
       const axisLabelOffset = labelOffset * AXIS_3D_LABEL_OFFSET_MULTIPLIER;
-      const labelContext = graph3dLabelContext(ranges, persistedViewState);
-      const pointCoords = points.map((point) => point.coords);
-      const axisLabelCoords: Point3DCoords[] = [
-        [ranges[0][1] + axisLabelOffset, 0, 0],
-        [0, ranges[1][1] + axisLabelOffset, 0],
-        [0, 0, ranges[2][1] + axisLabelOffset],
-      ];
-      const commonLabelAvoidCoords = [...pointCoords, ...axisLabelCoords];
-
-      solids.forEach((solid) => renderGraph3DSolid(view!, solid));
-      faces.forEach((face) => renderGraph3DFace(view!, face, labelContext, labelOffset, commonLabelAvoidCoords));
+      const labelContext = graph3dLabelContext(
+        ranges,
+        persistedViewState,
+        renderGraphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH,
+        renderGraphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT,
+      );
+      const axisLabelCoords: Point3DCoords[] = axisLabelsVisible
+        ? [
+            [ranges[0][1] + axisLabelOffset, 0, 0],
+            [0, ranges[1][1] + axisLabelOffset, 0],
+            [0, 0, ranges[2][1] + axisLabelOffset],
+          ]
+        : [];
+      const joinedSolids = matchingJoinedSolids(solids);
+      const joinedSurfaceIds = new Set<string>();
+      joinedSolids.pairs.forEach(({ cone, cap }) => {
+        if (cone.renderStyle !== "surface" || cap.renderStyle !== "surface") return;
+        if (renderJoinedConeSphereCapSurface3D(view!, cone, cap, (element) => liveProjectionElements.push(element))) {
+          joinedSurfaceIds.add(cone.id);
+          joinedSurfaceIds.add(cap.id);
+        }
+      });
+      solids.forEach((solid) =>
+        renderGraph3DSolid(view!, solid, (element) => liveProjectionElements.push(element), {
+          renderBaseCircle: !joinedSolids.capIds.has(solid.id) && !joinedSolids.coneIds.has(solid.id),
+          renderBaseFace: !joinedSolids.capIds.has(solid.id) && !joinedSolids.coneIds.has(solid.id),
+          renderSurface: !joinedSurfaceIds.has(solid.id),
+          renderSilhouette: !joinedSurfaceIds.has(solid.id),
+          sphereCapSilhouette: joinedSurfaceIds.has(solid.id) ? "none" : joinedSolids.capIds.has(solid.id) ? "profile" : "sphere",
+        }),
+      );
+      faces.forEach((face) => renderGraph3DFace(view!, board, face, labelContext, commitLabelScreenOffset, registerLabelDragCleanup));
 
       segments
         .filter((segment) => segment.show)
@@ -1062,31 +2003,41 @@ export function Basic3DGraph({
             highlight: false,
           });
           if (segment.label?.trim()) {
-            const midpoint: Point3DCoords = [
-              (from.coords[0] + to.coords[0]) / 2,
-              (from.coords[1] + to.coords[1]) / 2,
-              (from.coords[2] + to.coords[2]) / 2,
-            ];
-            view?.create(
-              "text3d",
-              [
-                graph3dLabelPoint(midpoint, labelContext, labelOffset * 2.2, commonLabelAvoidCoords),
-                render3DLatexLabel(
-                  segment.label,
-                  {
-                    "data-mauth-label-role": "graph3d-segment-label",
-                    "data-mauth-graph3d-element-id": segment.id,
-                    "data-mauth-segment-from": segment.from,
-                    "data-mauth-segment-to": segment.to,
-                  },
-                  segment.color ?? "#0f172a",
-                ),
-              ],
-              LATEX_3D_LABEL_ATTRIBUTES,
-            );
+            renderProjectedGraph3DLabel({
+              board,
+              view: view!,
+              basePoint: () => segmentProjectedLabelPoint(view!, from.coords, to.coords, labelContext.sceneCenter, 12),
+              labelHtml: render3DLatexLabel(
+                segment.label,
+                {
+                  "data-mauth-label-role": "graph3d-segment-label",
+                  "data-mauth-graph3d-element-id": segment.id,
+                  "data-mauth-segment-from": segment.from,
+                  "data-mauth-segment-to": segment.to,
+                },
+                segment.color ?? "#0f172a",
+              ),
+              elementKind: "segment",
+              elementId: segment.id,
+              labelScreenOffsetPx: segment.labelScreenOffsetPx,
+              onMove: commitLabelScreenOffset ? (offset) => commitLabelScreenOffset("segment", segment.id, offset) : undefined,
+              registerCleanup: registerLabelDragCleanup,
+            });
           }
         });
-      dimensions.forEach((dimension) => renderGraph3DDimension(view!, dimension, labelContext, labelOffset, commonLabelAvoidCoords));
+      dimensions.forEach((dimension) => {
+        const liveProjectionElement = renderGraph3DDimension(
+          view!,
+          board,
+          dimension,
+          labelContext,
+          labelOffset,
+          commitLabelScreenOffset,
+          registerLabelDragCleanup,
+        );
+        if (liveProjectionElement) liveProjectionElements.push(liveProjectionElement);
+      });
+      renderGraph3DRightAngleMarkers(view!, dimensions, faces);
 
       points
         .filter((point) => point.show)
@@ -1097,39 +2048,40 @@ export function Basic3DGraph({
             fillColor: point.color ?? POINT_3D_ATTRIBUTES.fillColor,
           });
           if (point.label.trim()) {
-            const otherPointCoords = [
-              ...points.filter((otherPoint) => otherPoint.id !== point.id).map((otherPoint) => otherPoint.coords),
-              ...axisLabelCoords,
-            ];
-            view?.create(
-              "text3d",
-              [
-                graph3dLabelPoint(point.coords, labelContext, labelOffset * 1.35, otherPointCoords),
-                render3DLatexLabel(
-                  point.label,
-                  { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id },
-                  point.color ?? "#0f172a",
-                ),
-              ],
-              LATEX_3D_LABEL_ATTRIBUTES,
-            );
+            renderProjectedGraph3DLabel({
+              board,
+              view: view!,
+              basePoint: () => radialProjectedLabelPoint(view!, point.coords, labelContext.sceneCenter, 12),
+              labelHtml: render3DLatexLabel(
+                point.label,
+                { "data-mauth-label-role": "graph3d-point-label", "data-mauth-point-id": point.id },
+                point.color ?? "#0f172a",
+              ),
+              elementKind: "point",
+              elementId: point.id,
+              labelScreenOffsetPx: point.labelScreenOffsetPx,
+              onMove: commitLabelScreenOffset ? (offset) => commitLabelScreenOffset("point", point.id, offset) : undefined,
+              registerCleanup: registerLabelDragCleanup,
+            });
           }
         });
-      view.create(
-        "text3d",
-        [axisLabelCoords[0], render3DLatexLabel("x", { "data-mauth-label-role": "axis-label" })],
-        LATEX_3D_LABEL_ATTRIBUTES,
-      );
-      view.create(
-        "text3d",
-        [axisLabelCoords[1], render3DLatexLabel("y", { "data-mauth-label-role": "axis-label" })],
-        LATEX_3D_LABEL_ATTRIBUTES,
-      );
-      view.create(
-        "text3d",
-        [axisLabelCoords[2], render3DLatexLabel("z", { "data-mauth-label-role": "axis-label" })],
-        LATEX_3D_LABEL_ATTRIBUTES,
-      );
+      if (axisLabelsVisible) {
+        view.create(
+          "text3d",
+          [axisLabelCoords[0], render3DLatexLabel("x", { "data-mauth-label-role": "axis-label" })],
+          LATEX_3D_LABEL_ATTRIBUTES,
+        );
+        view.create(
+          "text3d",
+          [axisLabelCoords[1], render3DLatexLabel("y", { "data-mauth-label-role": "axis-label" })],
+          LATEX_3D_LABEL_ATTRIBUTES,
+        );
+        view.create(
+          "text3d",
+          [axisLabelCoords[2], render3DLatexLabel("z", { "data-mauth-label-role": "axis-label" })],
+          LATEX_3D_LABEL_ATTRIBUTES,
+        );
+      }
     } catch {
       board.create("text", [-4.8, 4.8, "3D graph adapter"], LABEL_ATTRIBUTES);
     }
@@ -1138,9 +2090,28 @@ export function Basic3DGraph({
       on?: (eventName: string, handler: () => void) => void;
       off?: (eventName: string, handler: () => void) => void;
     };
-    eventBoard.on?.("update", scheduleViewStateCommit);
+    const handleBoardUpdate = () => {
+      for (const element of liveProjectionElements) {
+        element.prepareUpdate?.();
+        element.update?.();
+        element.updateRenderer?.();
+        element.element2D?.prepareUpdate?.();
+        element.element2D?.update?.();
+        element.element2D?.updateRenderer?.();
+      }
+      scheduleViewStateCommit();
+    };
+    eventBoard.on?.("update", handleBoardUpdate);
 
     const container = document.getElementById(boardId);
+    const renderedRangeSpans = graphRanges.map(([minimum, maximum]) => maximum - minimum);
+    const minimumRangeSpan = Math.min(...renderedRangeSpans);
+    const maximumRangeSpan = Math.max(...renderedRangeSpans);
+    container?.setAttribute(
+      "data-mauth-graph3d-screen-scale-ratio",
+      (Math.abs(board.unitX) / Math.max(1e-9, Math.abs(board.unitY))).toFixed(6),
+    );
+    container?.setAttribute("data-mauth-graph3d-range-span-ratio", (maximumRangeSpan / Math.max(1e-9, minimumRangeSpan)).toFixed(6));
     const handlePointerDown = () => {
       pointerActive = true;
       window.addEventListener("pointerup", commitViewStateSoon, { once: true });
@@ -1151,20 +2122,23 @@ export function Basic3DGraph({
 
     return () => {
       window.clearTimeout(commitTimer);
-      eventBoard.off?.("update", scheduleViewStateCommit);
+      labelDragCleanups.forEach((cleanup) => cleanup());
+      eventBoard.off?.("update", handleBoardUpdate);
       container?.removeEventListener("pointerdown", handlePointerDown, true);
       window.removeEventListener("pointerup", commitViewStateSoon);
       window.removeEventListener("pointercancel", commitViewStateSoon);
       window.removeEventListener("beforeprint", commitViewState);
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, initialAz, initialBank, initialEl, onGraphConfigChange, renderSignature]);
+  }, [boardId, initialAz, initialBank, initialEl, initialZoom, onGraphConfigChange, renderSignature]);
 
   return (
     <div
       id={boardId}
       className="overflow-hidden bg-white"
       data-mauth-diagram-type="graph3d"
+      data-mauth-graph3d-axes-visible={String(labelExpectations.axesVisible)}
+      data-mauth-graph3d-axis-labels-visible={String(labelExpectations.axisLabelsVisible)}
       data-mauth-graph3d-point-label-count={labelExpectations.pointLabelCount}
       data-mauth-graph3d-segment-label-count={labelExpectations.segmentLabelCount}
       data-mauth-graph3d-face-label-count={labelExpectations.faceLabelCount}

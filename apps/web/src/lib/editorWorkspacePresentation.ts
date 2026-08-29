@@ -1,6 +1,20 @@
 import type { DocumentTocItem } from "./documentNavigation.ts";
 
 export type EditorPaneMode = "split" | "preview";
+export type EditorWorkspaceResponsiveMode = "wide" | "compact" | "overlay";
+
+export function editorWorkspaceResponsiveMode(width: number): EditorWorkspaceResponsiveMode {
+  if (width < 840) return "overlay";
+  if (width < 1240) return "compact";
+  return "wide";
+}
+
+export function clampEditorWorkspaceToolDockWidth(requestedWidth: number, workspaceWidth: number) {
+  const minimumDockWidth = 384;
+  const minimumPreviewWidth = 360;
+  const maximumDockWidth = Math.min(520, Math.max(minimumDockWidth, workspaceWidth - minimumPreviewWidth));
+  return Math.min(maximumDockWidth, Math.max(minimumDockWidth, Math.round(requestedWidth)));
+}
 
 export function editorWorkspaceVisibility(paneMode: EditorPaneMode, inspectorOpen: boolean) {
   const showEditor = paneMode === "split";
@@ -17,8 +31,15 @@ export function editorWorkspaceGridStyle(paneMode: EditorPaneMode, showInspector
       paneMode === "preview"
         ? "minmax(0, 1fr)"
         : showInspectorPane
-          ? "minmax(17rem, 0.9fr) minmax(17rem, 19rem) minmax(0, 1.1fr)"
+          ? "minmax(22rem, 0.9fr) minmax(19rem, 21rem) minmax(0, 1.1fr)"
           : "minmax(0, 1fr) minmax(0, 1fr)",
+  };
+}
+
+export function editorWorkspaceInspectorPresentation(inspectorOpen: boolean, hasSelection: boolean) {
+  return {
+    showPane: inspectorOpen,
+    showSelection: inspectorOpen && hasSelection,
   };
 }
 

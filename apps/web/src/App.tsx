@@ -64,6 +64,7 @@ import {
   uniqueTestPath,
 } from "@/lib/projectFiles";
 import { listMauthAgentDocuments, mauthAgentProjectFilePath, normalizeMauthAgentFolderPath } from "@/lib/mauthAgentDocuments";
+import { afterEditorStateSettles } from "@/lib/mauthAgentBridgeRetry";
 import { isProjectFilesUnavailableError } from "@/lib/projectFilesActions";
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
@@ -100,12 +101,13 @@ import {
   type EditorPart,
   type QuestionBlock,
 } from "@/lib/editorDocumentNormalization";
-import { editorWorkspaceGridStyle, type EditorPaneMode } from "@/lib/editorWorkspacePresentation";
+import { editorWorkspaceGridStyle, editorWorkspaceInspectorPresentation, type EditorPaneMode } from "@/lib/editorWorkspacePresentation";
 import { questionHasPageBreak } from "@/lib/editorQuestionLifecycle";
 import { createEditorQuestionLifecycleController } from "@/lib/editorQuestionLifecycleController";
 import { DEFAULT_FORMATTING_CONFIG, normalizeFormattingConfig } from "@/lib/editorFormattingConfig";
 import {
   DEFAULT_FRONT_MATTER,
+  normalizeFormulaSheet,
   normalizeFrontMatter,
   titlePageTemplateFromValue,
   type FrontMatterConfig,
@@ -123,8 +125,10 @@ import { diagramTypePatch, updateGraphConfig, withGraphDefaults } from "@/lib/ed
 import { createTemplateEditorDocumentPlan } from "@/lib/editorStarterDocuments";
 import { nativeKeyboardDeleteRequested } from "@/lib/editorKeyboardShortcuts";
 import { validateSolutionCompleteness } from "@/lib/solutionValidation";
+import { editorDocumentValidationResult } from "@/lib/questionWordingValidation";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
+  SCROLL_ANCHOR_FORMULA_SHEET,
   graphChildParentScrollAnchor,
   pageBreakQuestionIdFromScrollAnchor,
   previewAnchorForEditorAnchor,
@@ -175,10 +179,6 @@ const ACTIVE_PROJECT_FILE_SYNC_INTERVAL_MS = 4000;
 
 function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function afterEditorStateSettles() {
-  return new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
 }
 
 function normalizeDocumentTabDocument(value: unknown): EditorDocumentState | null {
@@ -724,6 +724,8 @@ export default function App() {
     setActiveRailItemId,
     showInspectorPane,
     frontMatterAnchor: SCROLL_ANCHOR_FRONT_MATTER,
+    formulaSheetAnchor: SCROLL_ANCHOR_FORMULA_SHEET,
+    formulaSheetEnabled: frontMatter.titlePageTemplate === "standard" && normalizeFormulaSheet(frontMatter.formulaSheet).enabled,
     questionScrollAnchor,
     sectionHeadingIdFromScrollAnchor,
     pageBreakQuestionIdFromScrollAnchor,
@@ -789,7 +791,15 @@ export default function App() {
     normalizeFrontMatter: (nextFrontMatter) => normalizeFrontMatter(nextFrontMatter) ?? DEFAULT_FRONT_MATTER,
     normalizeFormattingConfig: normalizeFormattingConfig,
     validateSolutions: (nextQuestions) => validateSolutionCompleteness(nextQuestions, solutionValidationRuntime(frontMatterRef.current)),
-    validateDocument: (document) => validateSolutionCompleteness(document.questions, solutionValidationRuntime(document.frontMatter)),
+    validateDocument: (document) =>
+      editorDocumentValidationResult(
+        validateSolutionCompleteness(document.questions, solutionValidationRuntime(document.frontMatter)),
+        document.questions,
+        {
+          notesDocument: titlePageTemplateFromValue(document.frontMatter.titlePageTemplate) === "notes",
+          startQuestionNumber: document.frontMatter.startQuestionNumber,
+        },
+      ),
     setQuestionsWithHistory,
     setDocumentWithHistory: setEditorDocumentWithHistory,
   });
@@ -957,6 +967,16 @@ export default function App() {
       const change = addInvestigationStudentPage(frontMatterRef.current.investigation, id);
       frontMatterLogoActions.updateFrontMatter({ investigation: change.investigation });
       selectInvestigationAnchor(change.anchor);
+    },
+  };
+  const formulaSheetNavigationLifecycle = {
+    add: () => {
+      const formulaSheet = normalizeFormulaSheet(frontMatterRef.current.formulaSheet);
+      frontMatterLogoActions.updateFrontMatter({ formulaSheet: { ...formulaSheet, enabled: true } });
+      setActiveTocItemId(SCROLL_ANCHOR_FORMULA_SHEET);
+      setActiveRailItemId(SCROLL_ANCHOR_FORMULA_SHEET);
+      revealEditorAnchor(SCROLL_ANCHOR_FORMULA_SHEET);
+      queueDocumentJump(SCROLL_ANCHOR_FORMULA_SHEET, SCROLL_ANCHOR_FORMULA_SHEET);
     },
   };
 
@@ -1458,8 +1478,9 @@ export default function App() {
   const handlePreviewGraphConfigChange = useStableEvent(updatePreviewGraphConfig);
   const selectedInvestigationDiagram = selectedInvestigationDiagramFromAnchor(frontMatter.investigation, activeTocItemId);
   const selectedWorkspaceBlock = selectedInvestigationDiagram ?? editorSelectionController.selectedEditorBlock;
-  const selectionInspectorVisible = showInspectorPane && Boolean(selectedWorkspaceBlock);
-  const activeWorkspaceStyle = editorWorkspaceGridStyle(paneMode, selectionInspectorVisible);
+  const inspectorPresentation = editorWorkspaceInspectorPresentation(showInspectorPane, Boolean(selectedWorkspaceBlock));
+  const selectionInspectorVisible = inspectorPresentation.showSelection;
+  const activeWorkspaceStyle = editorWorkspaceGridStyle(paneMode, inspectorPresentation.showPane);
   const workspaceContentMutationController = {
     ...contentMutationController,
     updateSelectedBlock: (selection: SelectedEditorBlock, patch: Parameters<typeof contentMutationController.updateSelectedBlock>[1]) => {
@@ -1547,6 +1568,7 @@ export default function App() {
                 questionLifecycle={questionLifecycleController}
                 sectionHeadingLifecycle={sectionHeadingLifecycleController}
                 investigationLifecycle={investigationNavigationLifecycle}
+                formulaSheetLifecycle={formulaSheetNavigationLifecycle}
                 questionPageBreakDrag={questionPageBreakDragController}
                 onOpenChange={setTocOpen}
                 onContextMenu={openContextMenu}

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { CollapsiblePanel, OpenSettingsActionButton, RemoveActionButton } from "./EditorPanels";
 import { NumericExpressionInput } from "./NumericExpressionInput";
 
 interface SpaceBlockEditorProps {
@@ -43,7 +43,12 @@ export function SpaceBlockEditor({
     <CollapsiblePanel
       title={title}
       leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
+      actions={
+        <>
+          {!showInlineSettings ? <OpenSettingsActionButton label={label} /> : null}
+          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+        </>
+      }
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName={showInlineSettings ? "p-3" : "hidden"}
       collapsible={false}

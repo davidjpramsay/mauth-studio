@@ -359,9 +359,9 @@ async function main() {
     const appHeader = page.locator("header.app-header");
     await appHeader.screenshot({ path: path.join(outputDir, "app-header-workspace.png") });
 
-    await page.getByRole("button", { name: "Hide inspector" }).click();
+    await page.getByRole("button", { name: "Hide settings" }).click();
     await page.locator(".selection-inspector-pane").waitFor({ state: "detached" });
-    await page.getByRole("button", { name: "Show inspector" }).click();
+    await page.getByRole("button", { name: "Show settings" }).click();
     await page.locator(".selection-inspector-pane").waitFor({ state: "visible" });
     await page.locator(".app-workspace").screenshot({ path: path.join(outputDir, "document-editor-workspace.png") });
 

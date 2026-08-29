@@ -190,16 +190,87 @@ test("graph3d validation accepts boolean solution-layer state on structured elem
       data: {
         points: [
           { id: "A", coords: [0, 0, 0] },
-          { id: "B", coords: [1, 1, 1], solutionOnly: true },
+          { id: "B", coords: [1, 1, 1], labelScreenOffsetPx: [18, -9], solutionOnly: true },
         ],
-        segments: [{ id: "answer", from: "A", to: "B", solutionOnly: true }],
-        dimensions: [{ id: "length", from: "A", to: "B", label: "d", solutionOnly: true }],
+        segments: [{ id: "answer", from: "A", to: "B", labelScreenOffsetPx: [4, 7], solutionOnly: true }],
+        dimensions: [
+          {
+            id: "length",
+            from: "A",
+            to: "B",
+            label: "d",
+            display: "guide",
+            labelOffsetPx: 14,
+            labelScreenOffsetPx: [-6, 11],
+            rightAngleWith: "radius",
+            rightAngleSize: 0.4,
+            solutionOnly: true,
+          },
+          { id: "radius", from: "A", to: [1, 0, 0], label: "r", display: "guide" },
+        ],
       },
     },
     "diagram",
     issues,
   );
   assert.deepEqual(issues, []);
+});
+
+test("graph3d validation accepts a namespaced face perpendicular target", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "graph3d",
+      data: {
+        dimensions: [{ id: "height", from: [0, 0, 0], to: [0, 0, 10], rightAngleWith: "face:base" }],
+        faces: [
+          {
+            id: "base",
+            points: [
+              [0, 0, 0],
+              [6, 0, 0],
+              [6, 6, 0],
+              [0, 6, 0],
+            ],
+          },
+        ],
+      },
+    },
+    "diagram",
+    issues,
+  );
+  assert.deepEqual(issues, []);
+});
+
+test("graph3d validation rejects unsupported dimension display styles", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "graph3d",
+      data: {
+        dimensions: [
+          {
+            id: "length",
+            from: [0, 0, 0],
+            to: [1, 0, 0],
+            label: "d",
+            display: "floating",
+            labelOffsetPx: -1,
+            labelScreenOffsetPx: [10, 20, 30],
+            rightAngleWith: "missing",
+            rightAngleSize: -1,
+          },
+        ],
+      },
+    },
+    "diagram",
+    issues,
+  );
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.dimensions[0].display"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.dimensions[0].labelOffsetPx"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.dimensions[0].labelScreenOffsetPx"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.dimensions[0].rightAngleWith"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.dimensions[0].rightAngleSize"));
 });
 
 test("graph3d validation rejects non-boolean solution-layer state", () => {

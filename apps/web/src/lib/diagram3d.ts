@@ -4,6 +4,7 @@ export const DEFAULT_3D_VIEW_STATE = {
   az: 1,
   el: 0.3,
   bank: 0,
+  zoom: 1.3,
 };
 
 export type Graph3DViewState = typeof DEFAULT_3D_VIEW_STATE;
@@ -34,5 +35,6 @@ export function graph3dViewState(config: GraphConfig): Graph3DViewState {
     az: finiteNumberOrDefault(viewRecord.az, DEFAULT_3D_VIEW_STATE.az),
     el: finiteNumberOrDefault(viewRecord.el, DEFAULT_3D_VIEW_STATE.el),
     bank: finiteNumberOrDefault(viewRecord.bank, DEFAULT_3D_VIEW_STATE.bank),
+    zoom: Math.min(3, Math.max(0.5, finiteNumberOrDefault(viewRecord.zoom, DEFAULT_3D_VIEW_STATE.zoom))),
   };
 }

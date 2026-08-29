@@ -423,6 +423,7 @@ function validateQuestionLike(value: unknown, path: string, issues: MauthActionV
     return;
   }
   stringField(value, "id", path, issues);
+  stringField(value, "text", path, issues, true);
   numberField(value, "marks", path, issues);
   validateContentBlocks(value, "contentBlocks", path, issues);
   booleanField(value, "pageBreakAfter", path, issues, true);
@@ -690,6 +691,23 @@ function validateGraph3DNumberTriple(value: Record<string, unknown>, key: string
   });
 }
 
+function validateGraph3DNumberPair(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: MauthActionValidationIssue[],
+  allowClear = false,
+) {
+  if (!hasOwn(value, key) || (allowClear && value[key] === null)) return;
+  const pair = arrayField(value, key, path, issues);
+  if (!pair) return;
+  if (pair.length !== 2) addIssue(issues, `${path}.${key}`, "must contain exactly 2 numbers", "[x, y]");
+  pair.forEach((entry, index) => {
+    if (typeof entry !== "number" || !Number.isFinite(entry))
+      addIssue(issues, `${path}.${key}[${index}]`, "must be a finite number", "number");
+  });
+}
+
 function validateGraph3DPointReference(value: Record<string, unknown>, key: string, path: string, issues: MauthActionValidationIssue[]) {
   if (!hasOwn(value, key)) return;
   if (typeof value[key] === "string") return;
@@ -699,11 +717,23 @@ function validateGraph3DPointReference(value: Record<string, unknown>, key: stri
 function validateGraph3DElementPatch(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   for (const key of ["id", "name", "label", "color", "strokeColor", "strokeStyle", "fillColor", "kind", "type"])
     stringValueField(value, key, path, issues, true);
-  numberFields(value, ["strokeWidth", "fillOpacity", "radius", "height", "depth", "stepsU", "stepsV"], path, issues);
+  enumField(value, "display", path, new Set(["label", "guide", "bracket"]), issues, true);
+  enumField(value, "renderStyle", path, new Set(["surface", "wireframe", "outline"]), issues, true);
+  numberFields(
+    value,
+    ["strokeWidth", "fillOpacity", "radius", "height", "depth", "stepsU", "stepsV", "labelOffsetPx", "rightAngleSize"],
+    path,
+    issues,
+  );
+  if (hasOwn(value, "rightAngleWith") && value.rightAngleWith !== null) {
+    stringField(value, "rightAngleWith", path, issues);
+  }
   booleanField(value, "show", path, issues, true);
   booleanField(value, "dashed", path, issues, true);
   booleanField(value, "solutionOnly", path, issues, true);
   validateGraph3DNumberTriple(value, "coords", path, issues);
+  validateGraph3DNumberPair(value, "labelScreenOffsetPx", path, issues, true);
+  validateGraph3DNumberTriple(value, "labelPosition", path, issues);
   validateGraph3DNumberTriple(value, "normal", path, issues);
   validateGraph3DNumberTriple(value, "axis", path, issues);
   for (const key of ["from", "to", "center", "baseCenter", "topCenter", "apex"]) validateGraph3DPointReference(value, key, path, issues);
@@ -926,6 +956,7 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
 
   if (value.renderer === "graph3d") {
     numberFields(value, ["widthPx", "heightPx"], path, issues);
+    booleanFields(value, ["showAxes", "showAxisLabels"], path, issues);
     booleanField(value, "resetView", path, issues, true);
     const view = recordField(value, "view", path, issues, true);
     if (view) numberFields(view, ["az", "el", "bank"], `${path}.view`, issues);

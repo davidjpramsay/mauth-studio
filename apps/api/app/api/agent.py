@@ -15,6 +15,7 @@ from fastapi import APIRouter, Body, Header, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 REQUEST_TIMEOUT_SECONDS = 20
+MUTATION_REQUEST_TIMEOUT_SECONDS = 60
 BROWSER_POLL_TIMEOUT_SECONDS = 25
 SESSION_TTL_SECONDS = 75
 EVENT_LOG_LIMIT = 500
@@ -415,7 +416,7 @@ def _dispatch_to_browser(kind: str, payload: dict[str, Any]) -> tuple[int, dict[
             data={"kind": kind},
         )
 
-    if not request.response_ready.wait(timeout=REQUEST_TIMEOUT_SECONDS):
+    if not request.response_ready.wait(timeout=_request_timeout_seconds(kind)):
         with _lock:
             _pending_requests.pop(request.request_id, None)
             _append_event_unlocked(
@@ -439,6 +440,12 @@ def _dispatch_to_browser(kind: str, payload: dict[str, Any]) -> tuple[int, dict[
     return request.response_status or 500, request.response_body or _error_body(
         "ACTION_FAILED", "Browser bridge returned no response."
     )
+
+
+def _request_timeout_seconds(kind: str) -> int:
+    if kind in {"actions.apply", "document.create", "document.open", "document.close"}:
+        return MUTATION_REQUEST_TIMEOUT_SECONDS
+    return REQUEST_TIMEOUT_SECONDS
 
 
 @agent_router.post("/browser/register")

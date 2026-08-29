@@ -1,6 +1,6 @@
 # Mauth Roadmap
 
-Last reviewed: 31 July 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
+Last reviewed: 30 August 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
 
 ## Current Direction
 
@@ -21,7 +21,7 @@ Mauth is a standalone teacher app with optional local agent authoring. Human con
 
 ## Now
 
-1. Clean-machine verify public `0.1.4`, including Finder/Quick Look, tab recovery, connector setup, and update from `0.1.3`.
+1. Clean-machine verify public `0.1.5`, including Finder/Quick Look, tab recovery, connector setup, and update from `0.1.4`.
 2. Improve the next concrete teacher-facing manual-solution or authoring ergonomics gap.
 3. Keep active folder, tab, file, revision, autosave, and bridge state obvious.
 4. Add conservative measured-preview layout checks and explicit repair actions.

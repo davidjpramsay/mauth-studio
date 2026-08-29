@@ -77,7 +77,26 @@ Use structured actions for:
 - changing page breaks and document formatting
 - running validation and layout checks
 
+For ordinary tests, exams, and worksheets, use `question.add.question.text` or `question.update.patch.text` for the main stem—the **Question wording** field in the editor. Parts and subparts use their own `text` fields. Do not add a leading shared text module as a substitute for blank question wording. Text modules remain appropriate for deliberately ordered additional prose, visibility-specific content, and special blocks such as `**End of Test**`; Math Notes use them for note bodies. Document validation reports `redundant-leading-text-stem` when the ordinary stem pattern is detected.
+
 Use direct source edits only when the requested app change is outside the document action contract. For assessment authoring, direct project-file JSON edits are a fallback for recovery or migration, not the primary workflow.
+
+For a standard-test formula/reference page, use one document-level `frontMatter.update` action with a complete nested formula-sheet value:
+
+```json
+{
+  "type": "frontMatter.update",
+  "patch": {
+    "formulaSheet": {
+      "enabled": true,
+      "title": "Formula Sheet",
+      "body": "**Area**\nRectangle: $A=lw$"
+    }
+  }
+}
+```
+
+The renderer places the page after the opening title page without changing question numbering or marks. Preview the document batch before applying it; do not create a zero-mark question as a pagination workaround.
 
 ## Section Headings
 
@@ -150,6 +169,8 @@ Current diagram systems:
 - `image`: uploaded/imported bitmap diagrams.
 
 For `graph2d` and `vector2d`, `showAxisNumbers` remains the shared compatibility switch. `showXAxisNumbers` and `showYAxisNumbers` optionally override it per axis. Use the per-axis switches when, for example, the x-axis uses custom symbolic free labels while the y-axis retains renderer-owned numeric labels. The renderer-owned labels use MathJax and remain anchored to their exact major-grid values; do not recreate ordinary numeric ticks with coordinate-offset label features.
+
+For `graph3d`, top-level `widthPx` and `heightPx` are independent rectangular frame dimensions, not independent mathematical scales. The renderer preserves 1:1 horizontal/vertical screen scale inside that frame, so a wider or taller frame only adds usable layout margin. `metadata.view3d.zoom` is the object-size multiplier, clamped to `0.5` through `3`; it defaults to `1.3` and enlarges or reduces geometry inside the frame without distorting that equal scale. The internal viewport is centred with a restrained, even inset on every side. Preserve explicit teacher zoom values rather than replacing them with the default. An `element` target may select a point, segment, dimension, face, or solid by stable `id` or zero-based `index`. Point, segment, dimension, and face patches accept `labelScreenOffsetPx: [dx, dy]` for an independently positioned screen-space label. The label remains geometrically anchored while the camera rotates. Set `labelScreenOffsetPx: null` in the action patch to restore automatic placement; saved documents omit the field after reset. A dimension patch also accepts `rightAngleWith` as either the stable id of another connected dimension or `face:<face-id>` for a compatible perpendicular polygon face, plus optional positive `rightAngleSize`. The renderer derives the shared foot and keeps the perpendicular square attached through camera changes. For a foot at a face corner, its explicit on-face arm follows the internal corner bisector rather than coinciding with a boundary edge. Set `rightAngleWith: null` to remove the marker.
 
 For existing Venn diagrams, prefer `diagram.settings.update` with `renderer: "setDiagram"` for focused edits. It supports `setCount: 2 | 3`, `labels`, and `shading`, so agents can switch between two-set and three-set Venn diagrams without replacing the whole `graphConfig`.
 

@@ -146,12 +146,26 @@ function summarizeQuestion(question: MauthQuestionLike, index: number): MauthAge
   };
 }
 
+function subpartTotalMarks(subparts: MauthSubpartLike[] | undefined) {
+  return (subparts ?? []).reduce((total, subpart) => total + Math.max(0, Number(subpart.marks) || 0), 0);
+}
+
+function partTotalMarks(part: MauthPartLike) {
+  const subparts = part.subparts ?? [];
+  return subparts.length ? subpartTotalMarks(subparts) : Math.max(0, Number(part.marks) || 0);
+}
+
+function questionTotalMarks(question: MauthQuestionLike) {
+  const parts = question.parts ?? [];
+  return parts.length ? parts.reduce((total, part) => total + partTotalMarks(part), 0) : Math.max(0, Number(question.marks) || 0);
+}
+
 function documentTotalMarks<Q extends MauthQuestionLike, F extends object, C extends object>(document: MauthDocumentLike<Q, F, C>) {
   const frontMatter = document.frontMatter as Record<string, unknown>;
   if (frontMatter.titlePageTemplate === "investigation") {
     return investigationTotalMarks(normalizeInvestigation(frontMatter.investigation));
   }
-  return document.questions.reduce((total, question) => total + question.marks, 0);
+  return document.questions.reduce((total, question) => total + questionTotalMarks(question), 0);
 }
 
 function snapshotIdFor<Q extends MauthQuestionLike, F extends object, C extends object>(

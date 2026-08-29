@@ -6,6 +6,6 @@ interface EditorInspectorPaneProps extends SelectionInspectorProps {
 }
 
 export function EditorInspectorPane({ open, visible, ...selectionInspectorProps }: EditorInspectorPaneProps) {
-  if (!open || !visible) return null;
-  return <SelectionInspector {...selectionInspectorProps} />;
+  if (!open) return null;
+  return <SelectionInspector {...selectionInspectorProps} selectedBlock={visible ? selectionInspectorProps.selectedBlock : null} />;
 }

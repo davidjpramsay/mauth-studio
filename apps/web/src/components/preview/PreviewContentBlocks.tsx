@@ -509,27 +509,24 @@ function DiagramBesideContentBlock({
 
   if (block.kind === "diagram") {
     return (
-      <div
-        data-scroll-anchor={blockAnchor}
-        data-preview-module-anchor={blockAnchor ? "true" : undefined}
-        data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
-        className={cn("test-diagram-wrap flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
-      >
-        <SolutionMarkedSurface
-          block={block}
-          showSolutions={showSolutions}
-          renderers={renderers}
-          contentClassName={cn("flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
+      <div className={cn("test-diagram-layout flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}>
+        <div
+          data-scroll-anchor={blockAnchor}
+          data-preview-module-anchor={blockAnchor ? "true" : undefined}
+          data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+          className="test-diagram-wrap flex min-w-0"
         >
-          {renderers.renderDiagram({
-            graphConfig: block.graphConfig,
-            anchor: blockAnchor,
-            measureOnly,
-            showSolutions,
-            solutionTone: isSolutionSurface(block, showSolutions),
-            onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
-          })}
-        </SolutionMarkedSurface>
+          <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers} contentClassName="flex min-w-0">
+            {renderers.renderDiagram({
+              graphConfig: block.graphConfig,
+              anchor: blockAnchor,
+              measureOnly,
+              showSolutions,
+              solutionTone: isSolutionSurface(block, showSolutions),
+              onGraphConfigChange: measureOnly ? undefined : onGraphConfigChange,
+            })}
+          </SolutionMarkedSurface>
+        </div>
       </div>
     );
   }
@@ -931,29 +928,25 @@ export function PreviewContentBlocks({
     }
     if (block.kind === "diagram") {
       renderedBlocks.push(
-        <div
-          key={block.id}
-          data-scroll-anchor={blockAnchor}
-          data-preview-module-anchor={blockAnchor ? "true" : undefined}
-          data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
-          className={cn("test-diagram-wrap flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
-        >
-          <SolutionMarkedSurface
-            block={block}
-            showSolutions={showSolutions}
-            renderers={renderers}
-            contentClassName={cn("flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}
+        <div key={block.id} className={cn("test-diagram-layout flex min-w-0", runtime.diagramAlignmentClass(block.diagramAlign))}>
+          <div
+            data-scroll-anchor={blockAnchor}
+            data-preview-module-anchor={blockAnchor ? "true" : undefined}
+            data-preview-selected={runtime.previewSelectionAttr(blockAnchor, activePreviewAnchor)}
+            className="test-diagram-wrap flex min-w-0"
           >
-            {renderers.renderDiagram({
-              graphConfig: block.graphConfig,
-              anchor: blockAnchor,
-              measureOnly,
-              showSolutions,
-              solutionTone: isSolutionSurface(block, showSolutions),
-              onGraphConfigChange:
-                measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig),
-            })}
-          </SolutionMarkedSurface>
+            <SolutionMarkedSurface block={block} showSolutions={showSolutions} renderers={renderers} contentClassName="flex min-w-0">
+              {renderers.renderDiagram({
+                graphConfig: block.graphConfig,
+                anchor: blockAnchor,
+                measureOnly,
+                showSolutions,
+                solutionTone: isSolutionSurface(block, showSolutions),
+                onGraphConfigChange:
+                  measureOnly || !onGraphConfigChange ? undefined : (graphConfig) => onGraphConfigChange(block.id, graphConfig),
+              })}
+            </SolutionMarkedSurface>
+          </div>
         </div>,
       );
       continue;

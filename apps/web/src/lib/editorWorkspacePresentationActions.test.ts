@@ -4,8 +4,11 @@ import type { DocumentTocItem } from "./documentNavigation.ts";
 
 import {
   activePreviewAnchorForTocItem,
+  clampEditorWorkspaceToolDockWidth,
   editorAppShellGridStyle,
   editorWorkspaceGridStyle,
+  editorWorkspaceInspectorPresentation,
+  editorWorkspaceResponsiveMode,
   editorWorkspaceVisibility,
 } from "./editorWorkspacePresentation.ts";
 
@@ -25,7 +28,37 @@ test("editorWorkspaceVisibility keeps preview visible and gates the inspector on
 test("editorWorkspaceGridStyle preserves preview, split, and inspector layouts", () => {
   assert.equal(editorWorkspaceGridStyle("preview", false).gridTemplateColumns, "minmax(0, 1fr)");
   assert.equal(editorWorkspaceGridStyle("split", false).gridTemplateColumns, "minmax(0, 1fr) minmax(0, 1fr)");
-  assert.match(editorWorkspaceGridStyle("split", true).gridTemplateColumns, /19rem/);
+  assert.match(editorWorkspaceGridStyle("split", true).gridTemplateColumns, /21rem/);
+});
+
+test("editorWorkspaceInspectorPresentation opens the pane before a block is selected", () => {
+  assert.deepEqual(editorWorkspaceInspectorPresentation(true, false), {
+    showPane: true,
+    showSelection: false,
+  });
+  assert.deepEqual(editorWorkspaceInspectorPresentation(true, true), {
+    showPane: true,
+    showSelection: true,
+  });
+  assert.deepEqual(editorWorkspaceInspectorPresentation(false, true), {
+    showPane: false,
+    showSelection: false,
+  });
+});
+
+test("editorWorkspaceResponsiveMode protects compact workspaces from three narrow panes", () => {
+  assert.equal(editorWorkspaceResponsiveMode(700), "overlay");
+  assert.equal(editorWorkspaceResponsiveMode(839), "overlay");
+  assert.equal(editorWorkspaceResponsiveMode(840), "compact");
+  assert.equal(editorWorkspaceResponsiveMode(1239), "compact");
+  assert.equal(editorWorkspaceResponsiveMode(1240), "wide");
+});
+
+test("clampEditorWorkspaceToolDockWidth preserves readable tools and preview", () => {
+  assert.equal(clampEditorWorkspaceToolDockWidth(100, 1180), 384);
+  assert.equal(clampEditorWorkspaceToolDockWidth(460, 1180), 460);
+  assert.equal(clampEditorWorkspaceToolDockWidth(800, 1180), 520);
+  assert.equal(clampEditorWorkspaceToolDockWidth(520, 840), 480);
 });
 
 test("editorAppShellGridStyle reserves the expanded document navigator column", () => {

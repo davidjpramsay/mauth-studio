@@ -1,7 +1,7 @@
 import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { Textarea } from "@/components/ui/textarea";
-import type { FrontMatterConfig } from "@/lib/frontMatterConfig";
+import { normalizeFormulaSheet, type FrontMatterConfig, type FormulaSheetConfig } from "@/lib/frontMatterConfig";
 
 interface StandardFrontMatterEditorProps {
   frontMatter: FrontMatterConfig;
@@ -9,6 +9,9 @@ interface StandardFrontMatterEditorProps {
 }
 
 export function StandardFrontMatterEditor({ frontMatter, onChange }: StandardFrontMatterEditorProps) {
+  const formulaSheet = normalizeFormulaSheet(frontMatter.formulaSheet);
+  const updateFormulaSheet = (patch: Partial<FormulaSheetConfig>) => onChange({ formulaSheet: { ...formulaSheet, ...patch } });
+
   return (
     <>
       <CollapsiblePanel
@@ -65,6 +68,31 @@ export function StandardFrontMatterEditor({ frontMatter, onChange }: StandardFro
             />
           </label>
         </div>
+      </CollapsiblePanel>
+
+      <CollapsiblePanel
+        title={
+          <InlineSummaryTitle
+            label="Formula sheet"
+            summary={formulaSheet.enabled ? `${formulaSheet.title || "Formula Sheet"} - after title page` : "Not included"}
+          />
+        }
+        defaultOpen={false}
+        className="bg-muted/20"
+        actions={
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={formulaSheet.enabled}
+              onChange={(event) => updateFormulaSheet({ enabled: event.target.checked })}
+            />
+            Include
+          </label>
+        }
+      >
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          When included, select <strong>F</strong> in the mini TOC to edit the formula sheet as its own document page.
+        </p>
       </CollapsiblePanel>
 
       <CollapsiblePanel

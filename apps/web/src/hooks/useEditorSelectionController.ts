@@ -18,6 +18,8 @@ interface UseEditorSelectionControllerOptions<
   setActiveRailItemId: (anchor: string) => void;
   showInspectorPane: boolean;
   frontMatterAnchor: string;
+  formulaSheetAnchor: string;
+  formulaSheetEnabled: boolean;
   questionScrollAnchor: (questionId: string) => string;
   sectionHeadingIdFromScrollAnchor: (anchor: string) => string;
   pageBreakQuestionIdFromScrollAnchor: (anchor: string) => string;
@@ -44,6 +46,8 @@ export function useEditorSelectionController<
   setActiveRailItemId,
   showInspectorPane,
   frontMatterAnchor,
+  formulaSheetAnchor,
+  formulaSheetEnabled,
   questionScrollAnchor,
   sectionHeadingIdFromScrollAnchor,
   pageBreakQuestionIdFromScrollAnchor,
@@ -58,6 +62,7 @@ export function useEditorSelectionController<
   const activeSectionHeading = sectionHeadings.find((heading) => heading.id === activeSectionHeadingId) ?? null;
   const editingSectionHeading = Boolean(activeSectionHeading);
   const editingFrontMatter = activeTocItemId === frontMatterAnchor || isFrontMatterScrollAnchor(activeTocItemId);
+  const editingFormulaSheet = activeTocItemId === formulaSheetAnchor && formulaSheetEnabled;
   const pageBreakQuestionIds = useMemo(
     () => new Set(questions.filter(questionHasPageBreak).map((question) => question.id)),
     [questionHasPageBreak, questions],
@@ -70,11 +75,23 @@ export function useEditorSelectionController<
     [activeTocItemId, questions, selectedEditorBlockFromAnchor],
   );
   const selectionInspectorVisible =
-    showInspectorPane && !editingFrontMatter && !editingPageBreak && !editingSectionHeading && Boolean(selectedEditorBlock);
+    showInspectorPane &&
+    !editingFrontMatter &&
+    !editingFormulaSheet &&
+    !editingPageBreak &&
+    !editingSectionHeading &&
+    Boolean(selectedEditorBlock);
 
   useEffect(() => {
+    if (activeTocItemId === formulaSheetAnchor && !formulaSheetEnabled) {
+      setActiveTocItemId(frontMatterAnchor);
+      setActiveRailItemId(frontMatterAnchor);
+      return;
+    }
+
     if (!questions.length) {
       setActiveQuestionId("");
+      if (editingFormulaSheet) return;
       setActiveTocItemId(frontMatterAnchor);
       setActiveRailItemId(frontMatterAnchor);
       return;
@@ -107,10 +124,14 @@ export function useEditorSelectionController<
     activePageBreakQuestionId,
     activeQuestionId,
     activeSectionHeadingId,
+    activeTocItemId,
     documentFlow,
+    editingFormulaSheet,
     existingOrFirstQuestionId,
     firstDocumentFlowAnchor,
     frontMatterAnchor,
+    formulaSheetAnchor,
+    formulaSheetEnabled,
     normalizeDocumentFlow,
     questionScrollAnchor,
     questions,
@@ -126,6 +147,7 @@ export function useEditorSelectionController<
     activeSectionHeading,
     editingSectionHeading,
     editingFrontMatter,
+    editingFormulaSheet,
     pageBreakQuestionIds,
     activePageBreakQuestionId,
     activePageBreakQuestion,

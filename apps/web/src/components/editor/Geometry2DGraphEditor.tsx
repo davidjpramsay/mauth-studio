@@ -28,11 +28,15 @@ interface Geometry2DGraphEditorProps {
   onChange: (patch: Partial<GraphConfig>) => void;
 }
 
-const GEOMETRY_MARKER_ACTIONS: Array<{ kind: Graph2DGeometryDecoration["kind"]; label: string }> = [
+const GEOMETRY_ANNOTATION_ACTIONS: Array<{ kind: Graph2DGeometryDecoration["kind"]; label: string }> = [
   { kind: "equalLength", label: "Equal length" },
   { kind: "equalAngle", label: "Equal angle" },
   { kind: "rightAngle", label: "Right angle" },
 ];
+
+function geometryAnnotationLabel(kind: Graph2DGeometryDecoration["kind"]) {
+  return GEOMETRY_ANNOTATION_ACTIONS.find((action) => action.kind === kind)?.label ?? "Annotation";
+}
 
 function itemActive(activeAnchor: string | undefined, anchor: string) {
   return activeAnchor === anchor;
@@ -228,10 +232,10 @@ export function Geometry2DGraphEditor({
       </GeometrySection>
 
       <GeometrySection
-        title="Markers"
+        title="Annotations"
         actions={
           <div className="flex flex-wrap justify-end gap-2">
-            {GEOMETRY_MARKER_ACTIONS.map(({ kind, label }) => (
+            {GEOMETRY_ANNOTATION_ACTIONS.map(({ kind, label }) => (
               <Button
                 key={kind}
                 type="button"
@@ -264,7 +268,7 @@ export function Geometry2DGraphEditor({
             <GeometryItemButton
               key={decoration.id ?? index}
               active={itemActive(activeAnchor, itemAnchor)}
-              label={`Marker ${index + 1}: ${decoration.kind}`}
+              label={`${geometryAnnotationLabel(decoration.kind)} ${index + 1}`}
               summary={target}
               solutionOnly={isSolutionOnlyGeometry2DPrimitive(decoration)}
               anchor={itemAnchor}

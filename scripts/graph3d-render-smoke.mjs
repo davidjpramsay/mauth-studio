@@ -110,6 +110,7 @@ function pngPixelStats(buffer) {
   let dark = 0;
   let transparent = 0;
   const total = width * height;
+  const pixels = Buffer.alloc(total * 4);
 
   for (let y = 0; y < height; y += 1) {
     const filter = inflated[sourceOffset];
@@ -135,6 +136,11 @@ function pngPixelStats(buffer) {
       const g = colorType === 0 || colorType === 4 ? row[index] : row[index + 1];
       const b = colorType === 0 || colorType === 4 ? row[index] : row[index + 2];
       const a = colorType === 4 ? row[index + 1] : colorType === 6 ? row[index + 3] : 255;
+      const pixelIndex = (y * width + x) * 4;
+      pixels[pixelIndex] = r;
+      pixels[pixelIndex + 1] = g;
+      pixels[pixelIndex + 2] = b;
+      pixels[pixelIndex + 3] = a;
       if (a <= 16) {
         transparent += 1;
         continue;
@@ -153,7 +159,27 @@ function pngPixelStats(buffer) {
     transparent,
     nonWhiteRatio: nonWhite / total,
     darkRatio: dark / total,
+    pixels,
   };
+}
+
+function pngDifferenceRatio(leftBuffer, rightBuffer) {
+  const left = pngPixelStats(leftBuffer);
+  const right = pngPixelStats(rightBuffer);
+  if (left.width !== right.width || left.height !== right.height) {
+    throw new Error(`Cannot compare screenshots with sizes ${left.width}x${left.height} and ${right.width}x${right.height}`);
+  }
+  let changed = 0;
+  const total = left.width * left.height;
+  for (let index = 0; index < left.pixels.length; index += 4) {
+    const difference =
+      Math.abs(left.pixels[index] - right.pixels[index]) +
+      Math.abs(left.pixels[index + 1] - right.pixels[index + 1]) +
+      Math.abs(left.pixels[index + 2] - right.pixels[index + 2]) +
+      Math.abs(left.pixels[index + 3] - right.pixels[index + 3]);
+    if (difference > 40) changed += 1;
+  }
+  return changed / total;
 }
 
 async function writeFixture(port) {
@@ -254,6 +280,247 @@ const curvedSolids: GraphConfig = {
   }
 };
 
+const measurementPrism: GraphConfig = {
+  type: "graph3d",
+  showAxes: false,
+  widthPx: 420,
+  heightPx: 260,
+  metadata: { view3d: { az: 0.88, el: 0.36, bank: 0 } },
+  data: {
+    points: [
+      { id: "A", coords: [0, 0, 0], show: false },
+      { id: "B", coords: [8, 0, 0], show: false },
+      { id: "C", coords: [8, 5, 0], show: false },
+      { id: "D", coords: [0, 5, 0], show: false },
+      { id: "E", coords: [0, 0, 3], show: false },
+      { id: "F", coords: [8, 0, 3], show: false },
+      { id: "G", coords: [8, 5, 3], show: false },
+      { id: "H", coords: [0, 5, 3], show: false }
+    ],
+    segments: [
+      { from: "A", to: "B" }, { from: "B", to: "C" }, { from: "C", to: "D" }, { from: "D", to: "A" },
+      { from: "E", to: "F" }, { from: "F", to: "G" }, { from: "G", to: "H" }, { from: "H", to: "E" },
+      { from: "A", to: "E" }, { from: "B", to: "F" }, { from: "C", to: "G" }, { from: "D", to: "H" }
+    ],
+    faces: [
+      { points: ["E", "F", "G", "H"], fillColor: "#e2e8f0", fillOpacity: 0.12 },
+      { points: ["A", "B", "F", "E"], fillColor: "#e2e8f0", fillOpacity: 0.08 },
+      { points: ["B", "C", "G", "F"], fillColor: "#e2e8f0", fillOpacity: 0.08 }
+    ],
+    dimensions: [
+      {
+        from: "A",
+        to: "B",
+        label: "$8\\text{ cm}$",
+        display: "label",
+        labelOffsetPx: 14,
+        color: "#000000",
+        strokeWidth: 1.4
+      },
+      {
+        from: "B",
+        to: "C",
+        label: "$5\\text{ cm}$",
+        display: "label",
+        labelOffsetPx: 14,
+        color: "#000000",
+        strokeWidth: 1.4
+      },
+      {
+        from: "D",
+        to: "H",
+        label: "$3\\text{ cm}$",
+        display: "label",
+        labelOffsetPx: 14,
+        color: "#000000",
+        strokeWidth: 1.4
+      }
+    ],
+    xRange: [-1.5, 9.5], yRange: [-1.5, 6.5], zRange: [-1, 4]
+  }
+};
+
+const measurementCylinder: GraphConfig = {
+  type: "graph3d",
+  showAxes: false,
+  widthPx: 360,
+  heightPx: 260,
+  metadata: { view3d: { az: 0.12, el: 0.28, bank: 0 } },
+  data: {
+    solids: [
+      { kind: "cylinder", baseCenter: [0, 0, 0], topCenter: [0, 0, 2.5], radius: 0.9, renderStyle: "outline" }
+    ],
+    dimensions: [
+      {
+        id: "diameter",
+        from: [-0.9, 0, 2.5],
+        to: [0.9, 0, 2.5],
+        label: "$1.8\\text{ m}$",
+        display: "guide",
+        labelOffsetPx: 12,
+        color: "#000000",
+        strokeWidth: 1.4
+      },
+      {
+        id: "height",
+        from: [0, 0, 0],
+        to: [0, 0, 2.5],
+        label: "$2.5\\text{ m}$",
+        display: "label",
+        labelOffsetPx: 70,
+        color: "#000000",
+        strokeWidth: 1.4
+      }
+    ],
+    xRange: [-1.6, 1.6], yRange: [-1.6, 1.6], zRange: [-0.3, 2.9]
+  }
+};
+
+const measurementPrismRotated: GraphConfig = {
+  ...measurementPrism,
+  metadata: { view3d: { az: 1.7, el: 0.62, bank: 0.28 } }
+};
+
+const measurementCylinderRotated: GraphConfig = {
+  ...measurementCylinder,
+  metadata: { view3d: { az: 1.35, el: 0.52, bank: -0.24 } }
+};
+
+const measurementSphere: GraphConfig = {
+  type: "graph3d",
+  showAxes: false,
+  widthPx: 300,
+  heightPx: 260,
+  metadata: { view3d: { az: 0.97, el: 1.14, bank: 0 } },
+  data: {
+    solids: [{ kind: "sphere", center: [0, 0, 0], radius: 4, renderStyle: "outline" }],
+    dimensions: [
+      {
+        from: [0, 0, 0],
+        to: [4, 0, 0],
+        label: "$4\\text{ cm}$",
+        display: "guide",
+        labelOffsetPx: 12,
+        color: "#000000",
+        strokeWidth: 1.4
+      }
+    ],
+    xRange: [-6.5, 6.5], yRange: [-6.5, 6.5], zRange: [-6.5, 6.5]
+  }
+};
+
+const measurementSphereSurface: GraphConfig = {
+  ...measurementSphere,
+  data: {
+    ...measurementSphere.data,
+    solids: [
+      {
+        kind: "sphere",
+        center: [0, 0, 0],
+        radius: 4,
+        renderStyle: "surface",
+        fillColor: "#e2e8f0",
+        fillOpacity: 0.08,
+        stepsU: 8,
+        stepsV: 4
+      }
+    ]
+  }
+};
+
+const joinedConeHemisphere: GraphConfig = {
+  type: "graph3d",
+  showAxes: false,
+  widthPx: 300,
+  heightPx: 300,
+  metadata: { view3d: { az: 5.810564, el: 0.482683, bank: 0, zoom: 1.3 } },
+  data: {
+    solids: [
+      {
+        kind: "cone",
+        baseCenter: [0, 0, 0],
+        apex: [0, 0, 8],
+        radius: 3,
+        renderStyle: "surface",
+        fillColor: "#dbeafe",
+        fillOpacity: 0.9
+      },
+      {
+        kind: "sphereCap",
+        center: [0, 0, 0],
+        radius: 3,
+        height: 3,
+        axis: [0, 0, -1],
+        renderStyle: "surface",
+        fillColor: "#dcfce7",
+        fillOpacity: 0.9
+      }
+    ],
+    dimensions: [
+      { id: "radius", from: [0, 0, 0], to: [3, 0, 0], label: "$3\\text{ cm}$", display: "guide", labelOffsetPx: 12 },
+      {
+        id: "height",
+        from: [0, 0, 0],
+        to: [0, 0, 8],
+        label: "$8\\text{ cm}$",
+        display: "guide",
+        labelOffsetPx: 20,
+        rightAngleWith: "radius"
+      }
+    ],
+    xRange: [-4, 4], yRange: [-4, 4], zRange: [-5, 10]
+  }
+};
+
+const joinedConeHemisphereRotated: GraphConfig = {
+  ...joinedConeHemisphere,
+  metadata: { view3d: { az: 5.42399, el: 0.53504, bank: 0, zoom: 1.3 } }
+};
+
+const joinedConeHemisphereSteep: GraphConfig = {
+  ...joinedConeHemisphere,
+  metadata: { view3d: { az: 5.786398, el: 1.032462, bank: 0, zoom: 1.3 } }
+};
+
+const measurementPyramidFace: GraphConfig = {
+  type: "graph3d",
+  showAxes: false,
+  widthPx: 360,
+  heightPx: 320,
+  metadata: { view3d: { az: 5.7, el: 0.55, bank: 0, zoom: 1.3 } },
+  data: {
+    points: [
+      { id: "A", coords: [-3, -3, 0], show: false },
+      { id: "B", coords: [3, -3, 0], show: false },
+      { id: "C", coords: [3, 3, 0], show: false },
+      { id: "D", coords: [-3, 3, 0], show: false },
+      { id: "T", coords: [0, 0, 10], show: false },
+      { id: "H", coords: [3, -3, 10], show: false }
+    ],
+    segments: [
+      { from: "A", to: "B" }, { from: "B", to: "C" }, { from: "C", to: "D" }, { from: "D", to: "A" },
+      { from: "A", to: "T" }, { from: "B", to: "T" }, { from: "C", to: "T" }, { from: "D", to: "T" }
+    ],
+    faces: [{ id: "base", points: ["A", "B", "C", "D"], fillColor: "#e5e7eb", fillOpacity: 0.35 }],
+    dimensions: [
+      {
+        id: "height",
+        from: "B",
+        to: "H",
+        label: "$10\\text{ cm}$",
+        display: "guide",
+        rightAngleWith: "face:base"
+      }
+    ],
+    xRange: [-4, 4], yRange: [-4, 4], zRange: [-1, 11]
+  }
+};
+
+const measurementPyramidFaceRotated: GraphConfig = {
+  ...measurementPyramidFace,
+  metadata: { view3d: { az: 4.95, el: 0.82, bank: 0.18, zoom: 1.3 } }
+};
+
 function SmokeCase({ name, config }: { name: string; config: GraphConfig }) {
   return (
     <section data-case={name} style={{ display: "inline-block", margin: 16, verticalAlign: "top" }}>
@@ -264,11 +531,61 @@ function SmokeCase({ name, config }: { name: string; config: GraphConfig }) {
   );
 }
 
+function InteractiveSmokeCase({ name, initialConfig }: { name: string; initialConfig: GraphConfig }) {
+  const [config, setConfig] = React.useState(initialConfig);
+  const firstDimension = Array.isArray(config.data?.dimensions) ? config.data.dimensions[0] : undefined;
+  const rotateObject = () =>
+    setConfig((current) => ({
+      ...current,
+      metadata: {
+        ...current.metadata,
+        view3d: {
+          ...current.metadata?.view3d,
+          az: (current.metadata?.view3d?.az ?? 0) + 0.55,
+          el: (current.metadata?.view3d?.el ?? 0) + 0.12,
+        },
+      },
+    }));
+  return (
+    <section
+      data-case={name}
+      data-view-state={JSON.stringify(config.metadata?.view3d ?? null)}
+      data-label-offset={JSON.stringify(firstDimension?.labelScreenOffsetPx ?? null)}
+      style={{ display: "inline-block", margin: 16, verticalAlign: "top" }}
+    >
+      {name === "interactive-pyramid-face" || name === "interactive-joined-cone-hemisphere" ? (
+        <button type="button" data-testid={"rotate-" + name} onClick={rotateObject}>
+          Rotate {name === "interactive-pyramid-face" ? "pyramid" : "composite solid"}
+        </button>
+      ) : null}
+      <div data-graph-frame={name} style={{ background: "white", border: "1px solid #d1d5db", padding: 8 }}>
+        <Basic3DGraph graphConfig={config} onGraphConfigChange={setConfig} />
+      </div>
+    </section>
+  );
+}
+
 function App() {
   return (
     <main style={{ background: "#f8fafc", minHeight: "100vh", padding: 24 }}>
       <SmokeCase name="faces" config={prismFaces} />
       <SmokeCase name="curved-solids" config={curvedSolids} />
+      <SmokeCase name="measurement-prism" config={measurementPrism} />
+      <SmokeCase name="measurement-cylinder" config={measurementCylinder} />
+      <SmokeCase name="measurement-prism-rotated" config={measurementPrismRotated} />
+      <SmokeCase name="measurement-cylinder-rotated" config={measurementCylinderRotated} />
+      <SmokeCase name="measurement-sphere" config={measurementSphere} />
+      <SmokeCase name="measurement-sphere-surface" config={measurementSphereSurface} />
+      <SmokeCase name="joined-cone-hemisphere" config={joinedConeHemisphere} />
+      <SmokeCase name="joined-cone-hemisphere-rotated" config={joinedConeHemisphereRotated} />
+      <SmokeCase name="joined-cone-hemisphere-steep" config={joinedConeHemisphereSteep} />
+      <SmokeCase name="measurement-pyramid-face" config={measurementPyramidFace} />
+      <SmokeCase name="measurement-pyramid-face-rotated" config={measurementPyramidFaceRotated} />
+      <InteractiveSmokeCase name="interactive-faces" initialConfig={prismFaces} />
+      <InteractiveSmokeCase name="interactive-cylinder" initialConfig={measurementCylinder} />
+      <InteractiveSmokeCase name="interactive-sphere" initialConfig={measurementSphere} />
+      <InteractiveSmokeCase name="interactive-pyramid-face" initialConfig={measurementPyramidFace} />
+      <InteractiveSmokeCase name="interactive-joined-cone-hemisphere" initialConfig={joinedConeHemisphere} />
     </main>
   );
 }
@@ -293,6 +610,22 @@ async function main() {
   vite.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   vite.stderr.on("data", (chunk) => logs.push(chunk.toString()));
 
+  if (process.argv.includes("--serve")) {
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      await waitForServer(url, vite, logs);
+      console.log(`Graph3D render fixture ready: ${url}`);
+      await new Promise((resolve) => {
+        process.once("SIGINT", resolve);
+        process.once("SIGTERM", resolve);
+      });
+    } finally {
+      await stopProcess(vite);
+      await fs.rm(TEMP_ROOT, { recursive: true, force: true });
+    }
+    return;
+  }
+
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const consoleErrors = [];
@@ -307,8 +640,27 @@ async function main() {
     await waitForServer(url, vite, logs);
     await page.goto(url, { waitUntil: "networkidle" });
     try {
-      await page.waitForSelector('[data-graph-frame="faces"] svg', { state: "attached", timeout: 20_000 });
-      await page.waitForSelector('[data-graph-frame="curved-solids"] svg', { state: "attached", timeout: 20_000 });
+      for (const name of [
+        "faces",
+        "curved-solids",
+        "measurement-prism",
+        "measurement-cylinder",
+        "measurement-prism-rotated",
+        "measurement-cylinder-rotated",
+        "measurement-sphere",
+        "measurement-sphere-surface",
+        "joined-cone-hemisphere",
+        "joined-cone-hemisphere-steep",
+        "measurement-pyramid-face",
+        "measurement-pyramid-face-rotated",
+        "interactive-faces",
+        "interactive-cylinder",
+        "interactive-sphere",
+        "interactive-pyramid-face",
+        "interactive-joined-cone-hemisphere",
+      ]) {
+        await page.waitForSelector(`[data-graph-frame="${name}"] svg`, { state: "attached", timeout: 20_000 });
+      }
     } catch (error) {
       const bodyText = (
         (await page
@@ -324,6 +676,147 @@ async function main() {
     }
     await page.waitForTimeout(1500);
 
+    const interactiveCase = page.locator('[data-case="interactive-cylinder"]');
+    const interactiveFrame = page.locator('[data-graph-frame="interactive-cylinder"]');
+    const interactiveGraph = interactiveFrame.locator('[data-mauth-diagram-type="graph3d"]');
+    await interactiveGraph.scrollIntoViewIfNeeded();
+    const graphBox = await interactiveGraph.boundingBox();
+    if (!graphBox) throw new Error("Interactive cylinder did not expose a draggable graph box");
+    const initialViewState = await interactiveCase.getAttribute("data-view-state");
+    const draggableDimensionLabel = interactiveGraph
+      .locator('[data-mauth-draggable-graph3d-label="true"][data-mauth-graph3d-label-kind="dimension"]')
+      .first();
+    const labelBox = await draggableDimensionLabel.boundingBox();
+    if (!labelBox) throw new Error("Interactive cylinder did not expose a draggable dimension label");
+    const initialLabelOffset = await interactiveCase.getAttribute("data-label-offset");
+    await page.mouse.move(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(labelBox.x + labelBox.width / 2 + 36, labelBox.y + labelBox.height / 2 - 22, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForFunction(
+      ({ initial }) => document.querySelector('[data-case="interactive-cylinder"]')?.getAttribute("data-label-offset") !== initial,
+      { initial: initialLabelOffset },
+      { timeout: 5000 },
+    );
+    const draggedLabelOffset = JSON.parse((await interactiveCase.getAttribute("data-label-offset")) ?? "null");
+    if (!Array.isArray(draggedLabelOffset) || Math.abs(draggedLabelOffset[0] - 36) > 1 || Math.abs(draggedLabelOffset[1] + 22) > 1) {
+      throw new Error(`Dimension label drag saved an unexpected screen offset: ${JSON.stringify(draggedLabelOffset)}`);
+    }
+    if ((await interactiveCase.getAttribute("data-view-state")) !== initialViewState) {
+      throw new Error("Dragging a 3D label unexpectedly changed the camera view state");
+    }
+    await interactiveFrame.screenshot({ path: path.join(outputDir, "interactive-cylinder-label-dragged.png") });
+
+    await page.mouse.move(graphBox.x + graphBox.width * 0.9, graphBox.y + graphBox.height * 0.88);
+    await page.mouse.down();
+    await page.mouse.move(graphBox.x + graphBox.width * 0.55, graphBox.y + graphBox.height * 0.72, { steps: 12 });
+    await page.waitForTimeout(120);
+    const draggingScreenshot = await interactiveFrame.screenshot({
+      path: path.join(outputDir, "interactive-cylinder-dragging.png"),
+    });
+    await page.mouse.up();
+    await page.waitForFunction(
+      ({ initial }) => document.querySelector('[data-case="interactive-cylinder"]')?.getAttribute("data-view-state") !== initial,
+      { initial: initialViewState },
+      { timeout: 5000 },
+    );
+    await page.waitForTimeout(250);
+    const labelOffsetAfterRotation = JSON.parse((await interactiveCase.getAttribute("data-label-offset")) ?? "null");
+    if (JSON.stringify(labelOffsetAfterRotation) !== JSON.stringify(draggedLabelOffset)) {
+      throw new Error(
+        `Dimension label screen offset changed during camera rotation: ${JSON.stringify(draggedLabelOffset)} -> ${JSON.stringify(labelOffsetAfterRotation)}`,
+      );
+    }
+    const releasedScreenshot = await interactiveFrame.screenshot({
+      path: path.join(outputDir, "interactive-cylinder-released.png"),
+    });
+    const releaseDifferenceRatio = pngDifferenceRatio(draggingScreenshot, releasedScreenshot);
+
+    const interactiveFacesCase = page.locator('[data-case="interactive-faces"]');
+    const interactiveFacesFrame = page.locator('[data-graph-frame="interactive-faces"]');
+    const interactiveFacesGraph = interactiveFacesFrame.locator('[data-mauth-diagram-type="graph3d"]');
+    await interactiveFacesGraph.scrollIntoViewIfNeeded();
+    const staticFace = interactiveFacesGraph.locator('[data-mauth-static-graph3d-face="true"]').first();
+    const staticFaceBox = await staticFace.boundingBox();
+    if (!staticFaceBox) throw new Error("Interactive faces did not expose a fixed face surface");
+    const initialFacesViewState = await interactiveFacesCase.getAttribute("data-view-state");
+    await page.mouse.move(staticFaceBox.x + staticFaceBox.width / 2, staticFaceBox.y + staticFaceBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(staticFaceBox.x + staticFaceBox.width / 2 - 52, staticFaceBox.y + staticFaceBox.height / 2 + 34, {
+      steps: 12,
+    });
+    await page.waitForTimeout(120);
+    const facesDraggingScreenshot = await interactiveFacesFrame.screenshot({
+      path: path.join(outputDir, "interactive-faces-dragging.png"),
+    });
+    await page.mouse.up();
+    await page.waitForFunction(
+      ({ initial }) => document.querySelector('[data-case="interactive-faces"]')?.getAttribute("data-view-state") !== initial,
+      { initial: initialFacesViewState },
+      { timeout: 5000 },
+    );
+    await page.waitForTimeout(250);
+    const facesReleasedScreenshot = await interactiveFacesFrame.screenshot({
+      path: path.join(outputDir, "interactive-faces-released.png"),
+    });
+    const facesReleaseDifferenceRatio = pngDifferenceRatio(facesDraggingScreenshot, facesReleasedScreenshot);
+
+    const interactiveSphereCase = page.locator('[data-case="interactive-sphere"]');
+    const interactiveSphereFrame = page.locator('[data-graph-frame="interactive-sphere"]');
+    const interactiveSphereGraph = interactiveSphereFrame.locator('[data-mauth-diagram-type="graph3d"]');
+    await interactiveSphereGraph.scrollIntoViewIfNeeded();
+    const sphereGraphBox = await interactiveSphereGraph.boundingBox();
+    if (!sphereGraphBox) throw new Error("Interactive sphere did not expose a draggable graph box");
+    const initialSphereViewState = await interactiveSphereCase.getAttribute("data-view-state");
+    await page.mouse.move(sphereGraphBox.x + sphereGraphBox.width * 0.72, sphereGraphBox.y + sphereGraphBox.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(sphereGraphBox.x + sphereGraphBox.width * 0.42, sphereGraphBox.y + sphereGraphBox.height * 0.68, {
+      steps: 12,
+    });
+    await page.waitForTimeout(120);
+    const sphereDraggingScreenshot = await interactiveSphereFrame.screenshot({
+      path: path.join(outputDir, "interactive-sphere-dragging.png"),
+    });
+    await page.mouse.up();
+    await page.waitForFunction(
+      ({ initial }) => document.querySelector('[data-case="interactive-sphere"]')?.getAttribute("data-view-state") !== initial,
+      { initial: initialSphereViewState },
+      { timeout: 5000 },
+    );
+    await page.waitForTimeout(250);
+    const sphereReleasedScreenshot = await interactiveSphereFrame.screenshot({
+      path: path.join(outputDir, "interactive-sphere-released.png"),
+    });
+    const sphereReleaseDifferenceRatio = pngDifferenceRatio(sphereDraggingScreenshot, sphereReleasedScreenshot);
+
+    const interactivePyramidCase = page.locator('[data-case="interactive-pyramid-face"]');
+    const interactivePyramidFrame = page.locator('[data-graph-frame="interactive-pyramid-face"]');
+    const interactivePyramidGraph = interactivePyramidFrame.locator('[data-mauth-diagram-type="graph3d"]');
+    await interactivePyramidGraph.scrollIntoViewIfNeeded();
+    const pyramidGraphBox = await interactivePyramidGraph.boundingBox();
+    if (!pyramidGraphBox) throw new Error("Interactive pyramid did not expose a draggable graph box");
+    const initialPyramidViewState = await interactivePyramidCase.getAttribute("data-view-state");
+    const initialPyramidMarkerCount = await interactivePyramidGraph.locator("[data-mauth-graph3d-right-angle]").count();
+    if (initialPyramidMarkerCount !== 3) {
+      throw new Error(`Interactive pyramid began with ${initialPyramidMarkerCount} line-to-face marker sides instead of 3`);
+    }
+    await page.mouse.move(pyramidGraphBox.x + pyramidGraphBox.width * 0.86, pyramidGraphBox.y + pyramidGraphBox.height * 0.78);
+    await page.mouse.down();
+    await page.mouse.move(pyramidGraphBox.x + pyramidGraphBox.width * 0.56, pyramidGraphBox.y + pyramidGraphBox.height * 0.62, {
+      steps: 12,
+    });
+    await page.mouse.up();
+    await page.waitForFunction(
+      ({ initial }) => document.querySelector('[data-case="interactive-pyramid-face"]')?.getAttribute("data-view-state") !== initial,
+      { initial: initialPyramidViewState },
+      { timeout: 5000 },
+    );
+    const rotatedPyramidMarkerCount = await interactivePyramidGraph.locator("[data-mauth-graph3d-right-angle]").count();
+    if (rotatedPyramidMarkerCount !== 3) {
+      throw new Error(`Interactive pyramid retained ${rotatedPyramidMarkerCount} line-to-face marker sides after rotation instead of 3`);
+    }
+    await interactivePyramidFrame.screenshot({ path: path.join(outputDir, "interactive-pyramid-face-rotated.png") });
+
     const browserMetrics = await page.evaluate(() =>
       Array.from(document.querySelectorAll("[data-graph-frame]")).map((frame) => {
         const name = frame.getAttribute("data-graph-frame") ?? "";
@@ -335,29 +828,161 @@ async function main() {
         });
         const labels = frame.querySelectorAll(".jxg-latex-label, foreignObject, text").length;
         const box = frame.getBoundingClientRect();
-        return { name, width: box.width, height: box.height, primitiveCount: primitives.length, labelCount: labels };
+        const graph = frame.querySelector('[data-mauth-diagram-type="graph3d"]');
+        return {
+          name,
+          width: box.width,
+          height: box.height,
+          primitiveCount: primitives.length,
+          labelCount: labels,
+          axesVisible: graph?.getAttribute("data-mauth-graph3d-axes-visible"),
+          axisLabelCount: frame.querySelectorAll('[data-mauth-label-role="axis-label"]').length,
+          pointLabelCount: frame.querySelectorAll('[data-mauth-label-role="graph3d-point-label"]').length,
+          dimensionLabelColors: Array.from(frame.querySelectorAll('[data-mauth-label-role="graph3d-dimension-label"]')).map(
+            (element) => window.getComputedStyle(element).color,
+          ),
+          dimensionDisplays: Array.from(frame.querySelectorAll('[data-mauth-label-role="graph3d-dimension-label"]')).map((element) =>
+            element.getAttribute("data-mauth-graph3d-dimension-display"),
+          ),
+          draggableLabelCount: frame.querySelectorAll('[data-mauth-draggable-graph3d-label="true"]').length,
+          staticFaceCount: frame.querySelectorAll('[data-mauth-static-graph3d-face="true"]').length,
+          surfaceFaceCount: frame.querySelectorAll('[data-mauth-graph3d-surface-face="true"]').length,
+          surfaceGroupCount: new Set(
+            Array.from(frame.querySelectorAll("[data-mauth-graph3d-surface-group]")).map((element) =>
+              element.getAttribute("data-mauth-graph3d-surface-group"),
+            ),
+          ).size,
+          compositeSilhouetteCount: frame.querySelectorAll("[data-mauth-graph3d-composite-silhouette='true']").length,
+          sharedSeamCount: frame.querySelectorAll("[data-mauth-graph3d-shared-seam='true']").length,
+          sharedSeamDashed: Array.from(frame.querySelectorAll("[data-mauth-graph3d-shared-seam='true']")).every((element) => {
+            const dashArray = window.getComputedStyle(element).strokeDasharray;
+            return dashArray !== "none" && dashArray !== "";
+          }),
+          sharedSeamGapPx: Math.max(
+            0,
+            ...Array.from(frame.querySelectorAll("[data-mauth-graph3d-shared-seam='true']")).map((element) => {
+              if (!(element instanceof SVGPathElement)) return Number.POSITIVE_INFINITY;
+              const length = element.getTotalLength();
+              const end = element.getPointAtLength(length);
+              return Math.min(
+                ...Array.from({ length: 51 }, (_, index) => {
+                  const earlyPoint = element.getPointAtLength(length * 0.05 * (index / 50));
+                  return Math.hypot(earlyPoint.x - end.x, earlyPoint.y - end.y);
+                }),
+              );
+            }),
+          ),
+          rightAngleMarkerCount: frame.querySelectorAll("[data-mauth-graph3d-right-angle]").length,
+          screenScaleRatio: Number(graph?.getAttribute("data-mauth-graph3d-screen-scale-ratio")),
+          rangeSpanRatio: Number(graph?.getAttribute("data-mauth-graph3d-range-span-ratio")),
+        };
       }),
     );
 
     const failures = [];
     for (const metric of browserMetrics) {
-      if (metric.width < 400 || metric.height < 280) failures.push(`${metric.name} rendered at ${metric.width}x${metric.height}`);
-      if (metric.primitiveCount < 18) failures.push(`${metric.name} rendered only ${metric.primitiveCount} SVG primitives`);
+      const minimumWidth = metric.name.includes("sphere") || metric.name.includes("joined-cone-hemisphere") ? 290 : 340;
+      if (metric.width < minimumWidth || metric.height < 250) failures.push(`${metric.name} rendered at ${metric.width}x${metric.height}`);
+      const minimumPrimitives = metric.name.includes("joined-cone-hemisphere")
+        ? 6
+        : metric.name === "curved-solids"
+          ? 11
+          : metric.name.includes("sphere")
+            ? 2
+            : metric.name.includes("cylinder")
+              ? 5
+              : metric.name.startsWith("measurement-") || metric.name.includes("pyramid-face")
+                ? 8
+                : 14;
+      if (metric.primitiveCount < minimumPrimitives) failures.push(`${metric.name} rendered only ${metric.primitiveCount} SVG primitives`);
+      if (metric.name.startsWith("measurement-") && metric.axesVisible !== "false") failures.push(`${metric.name} unexpectedly shows axes`);
+      if (metric.name.startsWith("measurement-") && metric.axisLabelCount !== 0) failures.push(`${metric.name} rendered axis labels`);
+      if (metric.name.startsWith("measurement-") && metric.pointLabelCount !== 0)
+        failures.push(`${metric.name} rendered helper point labels`);
+      if (metric.name.startsWith("measurement-") && metric.dimensionLabelColors.some((color) => color !== "rgb(0, 0, 0)"))
+        failures.push(`${metric.name} rendered a non-black dimension label: ${metric.dimensionLabelColors.join(", ")}`);
+      if (metric.name.startsWith("measurement-") && metric.dimensionDisplays.some((display) => display === "bracket" || !display))
+        failures.push(`${metric.name} rendered a legacy dimension bracket: ${metric.dimensionDisplays.join(", ")}`);
+      if (metric.name.startsWith("interactive-") && metric.draggableLabelCount < 1)
+        failures.push(`${metric.name} did not expose independently draggable labels`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.rightAngleMarkerCount !== 2)
+        failures.push(`${metric.name} rendered ${metric.rightAngleMarkerCount} right-angle marker sides instead of 2`);
+      if (metric.name.includes("pyramid-face") && metric.rightAngleMarkerCount !== 3)
+        failures.push(`${metric.name} rendered ${metric.rightAngleMarkerCount} line-to-face marker sides instead of 3`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.surfaceFaceCount < 100)
+        failures.push(`${metric.name} rendered only ${metric.surfaceFaceCount} true 3D surface faces`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.surfaceGroupCount !== 1)
+        failures.push(`${metric.name} rendered ${metric.surfaceGroupCount} independently layered surface groups instead of 1`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.compositeSilhouetteCount !== 1)
+        failures.push(`${metric.name} rendered ${metric.compositeSilhouetteCount} composite silhouettes instead of 1`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.sharedSeamCount !== 1)
+        failures.push(`${metric.name} rendered ${metric.sharedSeamCount} shared seams instead of 1`);
+      if (metric.name.includes("joined-cone-hemisphere") && !metric.sharedSeamDashed)
+        failures.push(`${metric.name} rendered its hidden shared seam as a solid line`);
+      if (metric.name.includes("joined-cone-hemisphere") && metric.sharedSeamGapPx > 0.75)
+        failures.push(`${metric.name} left a ${metric.sharedSeamGapPx.toFixed(2)} px gap in its shared seam`);
+      const expectedStaticFaceCount =
+        metric.name === "faces" || metric.name === "interactive-faces"
+          ? 2
+          : metric.name.includes("prism")
+            ? 3
+            : metric.name.includes("pyramid-face")
+              ? 1
+              : 0;
+      if (metric.staticFaceCount !== expectedStaticFaceCount)
+        failures.push(`${metric.name} locked ${metric.staticFaceCount} faces instead of ${expectedStaticFaceCount}`);
+      if (Math.abs(metric.screenScaleRatio - 1) > 0.000001)
+        failures.push(`${metric.name} rendered with unequal x/y screen scale: ${metric.screenScaleRatio}`);
+      if (Math.abs(metric.rangeSpanRatio - 1) > 0.000001)
+        failures.push(`${metric.name} rendered with unequal x/y/z range spans: ${metric.rangeSpanRatio}`);
     }
-    for (const name of ["faces", "curved-solids"]) {
+    for (const name of [
+      "faces",
+      "curved-solids",
+      "measurement-prism",
+      "measurement-cylinder",
+      "measurement-prism-rotated",
+      "measurement-cylinder-rotated",
+      "measurement-sphere",
+      "measurement-sphere-surface",
+      "joined-cone-hemisphere",
+      "joined-cone-hemisphere-rotated",
+      "joined-cone-hemisphere-steep",
+      "measurement-pyramid-face",
+      "measurement-pyramid-face-rotated",
+      "interactive-pyramid-face",
+      "interactive-joined-cone-hemisphere",
+    ]) {
       const screenshot = await page.locator(`[data-graph-frame="${name}"]`).screenshot({
         path: path.join(outputDir, `${name}.png`),
       });
       const stats = pngPixelStats(screenshot);
       if (stats.nonWhiteRatio < 0.01) failures.push(`${name} screenshot appears blank: ${JSON.stringify(stats)}`);
-      if (stats.darkRatio < 0.0005) failures.push(`${name} screenshot has too few dark graph strokes: ${JSON.stringify(stats)}`);
+      if (stats.darkRatio < 0.00005) failures.push(`${name} screenshot has too few dark graph strokes: ${JSON.stringify(stats)}`);
+    }
+    if (releaseDifferenceRatio > 0.008) {
+      failures.push(
+        `interactive cylinder visibly snapped after pointer release (${(releaseDifferenceRatio * 100).toFixed(3)}% changed pixels)`,
+      );
+    }
+    if (sphereReleaseDifferenceRatio > 0.008) {
+      failures.push(
+        `interactive sphere visibly snapped after pointer release (${(sphereReleaseDifferenceRatio * 100).toFixed(3)}% changed pixels)`,
+      );
+    }
+    if (facesReleaseDifferenceRatio > 0.008) {
+      failures.push(
+        `interactive faces visibly snapped after pointer release (${(facesReleaseDifferenceRatio * 100).toFixed(3)}% changed pixels)`,
+      );
     }
     if (consoleErrors.length) failures.push(`console errors:\n${consoleErrors.join("\n")}`);
     if (pageErrors.length) failures.push(`page errors:\n${pageErrors.join("\n")}`);
     if (failures.length) {
       throw new Error(`Graph3D render smoke failed. Screenshots: ${outputDir}\n${failures.join("\n")}`);
     }
-    console.log(`Graph3D render smoke passed. Screenshots: ${outputDir}`);
+    console.log(
+      `Graph3D render smoke passed (label offset ${JSON.stringify(draggedLabelOffset)}, faces ${(facesReleaseDifferenceRatio * 100).toFixed(3)}%, cylinder ${(releaseDifferenceRatio * 100).toFixed(3)}%, sphere ${(sphereReleaseDifferenceRatio * 100).toFixed(3)}% drag-to-release pixel change). Screenshots: ${outputDir}`,
+    );
   } finally {
     await browser.close();
     await stopProcess(vite);

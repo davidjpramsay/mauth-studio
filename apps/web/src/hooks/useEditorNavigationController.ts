@@ -350,11 +350,17 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
     setPaneMode(nextPaneMode);
   }
 
-  function toggleInspectorPane() {
+  function openSettingsPane() {
     if (!showEditor) {
       resetPreviewZoom();
-      setInspectorOpen(true);
       setPaneMode("split");
+    }
+    setInspectorOpen(true);
+  }
+
+  function toggleInspectorPane() {
+    if (!showEditor) {
+      openSettingsPane();
       return;
     }
 
@@ -378,6 +384,7 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
     toggleEditorAtTocItem,
     jumpPreviewToQuestion,
     toggleManualPane,
+    openSettingsPane,
     toggleInspectorPane,
   };
 }

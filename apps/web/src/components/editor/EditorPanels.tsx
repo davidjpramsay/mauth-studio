@@ -8,6 +8,7 @@ import {
   ListOrdered,
   PlusCircle,
   SeparatorHorizontal,
+  SlidersHorizontal,
   Table2,
   Trash2,
   Type,
@@ -137,6 +138,22 @@ export function RemoveActionButton({ label, disabled = false, onRemove }: { labe
       className="size-8"
     >
       <Trash2 />
+    </Button>
+  );
+}
+
+export function OpenSettingsActionButton({ label }: { label: string }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      title={`Edit ${label} settings`}
+      aria-label={`Edit ${label} settings`}
+      data-workspace-open-settings="true"
+      className="size-8"
+    >
+      <SlidersHorizontal />
     </Button>
   );
 }

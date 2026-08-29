@@ -15,6 +15,7 @@ import {
   partScrollAnchor,
   questionBlockScrollAnchor,
   questionScrollAnchor,
+  SCROLL_ANCHOR_FORMULA_SHEET,
   sectionHeadingScrollAnchor,
 } from "./scrollAnchors.ts";
 
@@ -121,8 +122,9 @@ test("editorAnchorActivationPlan mirrors graph children only when preview is vis
   assert.equal(editorAnchorActivationPlan({ ...options, showPreview: false }).previewAnchor, null);
 });
 
-test("canDeleteAnchorTarget excludes only front matter and unknown anchors", () => {
+test("canDeleteAnchorTarget keeps fixed document pages out of generic deletion", () => {
   assert.equal(canDeleteAnchorTarget("front-matter"), false);
+  assert.equal(canDeleteAnchorTarget(SCROLL_ANCHOR_FORMULA_SHEET), false);
   assert.equal(canDeleteAnchorTarget("garbage"), false);
   assert.equal(canDeleteAnchorTarget(questionScrollAnchor("q1")), true);
   assert.equal(canDeleteAnchorTarget(sectionHeadingScrollAnchor("heading-1")), true);

@@ -87,6 +87,8 @@ The snapshot is compact, stable, and targeted at agent planning. Its contract in
 
 Agents should target ids from this snapshot. They should not infer document identity from DOM order, React component state, browser localStorage, or raw JSON file paths.
 
+Ordinary test, exam, and worksheet stems belong in the structured question, part, or subpart wording fields. Validation reports `redundant-leading-text-stem` when a question has blank Question wording and its first shared text module is acting as that stem. Agents should move the prose to `question.text` and delete the duplicate module; deliberate ordered prose, visibility-specific text, final **End of Test** markers, and Math Notes content remain valid text modules.
+
 Snapshot, action preview, action apply, and validation operations accept an optional `documentId`. The GET snapshot route uses a query parameter; the POST routes use the same field in their JSON body. Mauth activates that open tab through the normal visible tab controller before reading or mutating it. An unknown id returns `404 INVALID_REQUEST`. Omitting the field targets the currently selected tab. This is explicit foreground targeting rather than hidden background editing: only one document drives preview, print, autosave, file synchronization, and the live React action layer at a time.
 
 Layout warnings are measured browser evidence, not speculative action validation. After a Student or Solutions preview has rendered, its page totals and oversized-page results are retained for the current document fingerprint and exposed as `rendered-page-overflow` warnings. Editing or opening another document clears those reports until the new preview is measured. A dry-run or applied-action result snapshot does not reuse warnings measured against the previous rendered document; verify the changed document in the browser to obtain fresh layout evidence.
@@ -114,6 +116,8 @@ Agents can work without a teacher first opening every file:
 - `document.create` builds a blank document through the same template factory as **New document**, saves it with `baseRevision: null`, records a project-file version, and opens it as a normal tab. It requires an `Idempotency-Key`; `onConflict: "error"` is the default and `"unique"` deliberately chooses a new name.
 - `document.open` accepts a relative path returned by the list operation and opens or activates the matching tab through the normal file controller.
 - `document.close` requires an `Idempotency-Key` and an explicit policy. `require-clean` is the default and refuses dirty tabs; `save` revision-saves a named file before closing; `discard` deliberately drops unsaved tab changes. An unsaved draft cannot be silently named by close.
+
+Lifecycle responses wait briefly for the activated editor state to settle before the browser acknowledges the bridge request. That wait uses a bounded timer fallback as well as animation frames, so an occluded or background Electron window cannot suspend the acknowledgement indefinitely.
 
 Lifecycle paths are relative to the teacher-selected documents folder. Absolute paths, parent traversal, non-Mauth files, missing files, and collisions are rejected with structured errors. Create requests persist their idempotency key in project-file metadata so an interrupted retry can recover the already-created file rather than duplicate it.
 
@@ -198,6 +202,8 @@ The MCP server wraps the HTTP bridge and exposes:
 - `mauth_suggestion_mark`
 
 Every MCP tool declares a JSON output schema and local-only tool annotations. Results are returned both as `structuredContent` and equivalent JSON text for client compatibility; non-2xx bridge responses set the MCP error flag while retaining the structured Mauth error body. This follows the OpenAI MCP guidance for validated tool definitions and structured results: <https://developers.openai.com/api/docs/mcp/>.
+
+The action-preview and action-apply tool descriptions reinforce the same authoring contract: use `question.add.question.text` or `question.update.patch.text` for a main stem, and reserve text modules for prose that genuinely needs an ordered block position or special rendering.
 
 Run `pnpm agent:doctor` to check API health, web reachability, MCP dependencies, discovery docs, and active editor presence. Run `pnpm macos:build:agent` followed by `pnpm smoke:agent-connector` to exercise MCP negotiation and a live snapshot through the generated self-contained bundle.
 

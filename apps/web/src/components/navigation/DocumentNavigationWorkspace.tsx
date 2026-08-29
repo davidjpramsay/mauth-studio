@@ -36,6 +36,10 @@ interface InvestigationNavigationLifecycle {
   addPage: () => void;
 }
 
+interface FormulaSheetNavigationLifecycle {
+  add: () => void;
+}
+
 interface QuestionPageBreakDragActions {
   moveQuestionByKeyboard: (questionId: string, direction: MoveDirection) => void;
   movePageBreakByKeyboard: (questionId: string, direction: MoveDirection) => void;
@@ -68,6 +72,7 @@ export interface DocumentNavigationWorkspaceProps {
   questionLifecycle: QuestionNavigationLifecycle;
   sectionHeadingLifecycle: SectionHeadingNavigationLifecycle;
   investigationLifecycle?: InvestigationNavigationLifecycle;
+  formulaSheetLifecycle?: FormulaSheetNavigationLifecycle;
   questionPageBreakDrag: QuestionPageBreakDragActions;
   onOpenChange: (open: boolean) => void;
   onContextMenu: (event: ReactMouseEvent<HTMLElement>, anchor: string, surface: "miniToc") => void;
@@ -87,6 +92,7 @@ export function DocumentNavigationWorkspace({
   questionLifecycle,
   sectionHeadingLifecycle,
   investigationLifecycle,
+  formulaSheetLifecycle,
   questionPageBreakDrag,
   onOpenChange,
   onContextMenu,
@@ -113,10 +119,12 @@ export function DocumentNavigationWorkspace({
         onSelectPageBreak={navigation.selectPageBreakInRail}
         onToggleEditorAtItem={navigation.toggleEditorAtTocItem}
         onAddSectionHeading={sectionHeadingLifecycle.addSectionHeading}
+        onAddFormulaSheet={formulaSheetLifecycle?.add}
         onAddQuestion={questionLifecycle.addQuestion}
         questionItemLabel={presentation.questionItemLabel}
         sectionItemPresentation={presentation.sectionItemPresentation}
         showStructureControls={presentation.showStructureControls}
+        showFormulaSheetControl={isStandardTestTemplate}
         showInvestigationControls={presentation.showInvestigationControls}
         onAddInvestigationPage={investigationLifecycle?.addPage}
         onAddPageBreakAfterQuestion={questionLifecycle.addPageBreakAfterQuestion}

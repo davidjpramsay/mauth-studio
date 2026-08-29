@@ -109,6 +109,7 @@ interface TestFrontMatter {
   schoolName: string;
   assessmentTitle: string;
   startQuestionNumber: number;
+  formulaSheet?: { enabled: boolean; title: string; body: string };
 }
 
 interface TestFormattingConfig {
@@ -972,7 +973,13 @@ test("applies named diagram settings updates across supported renderers", () => 
       type: "diagram.settings.update" as const,
       scope: { kind: "question" as const, questionId: "q1" },
       blockId: "three",
-      settings: { renderer: "graph3d" as const, widthPx: 520, view: { az: 1.2 } },
+      settings: {
+        renderer: "graph3d" as const,
+        widthPx: 520,
+        showAxes: false,
+        showAxisLabels: false,
+        view: { az: 1.2 },
+      },
     },
     {
       type: "diagram.settings.update" as const,
@@ -1038,6 +1045,8 @@ test("applies named diagram settings updates across supported renderers", () => 
   assert.equal(three?.kind, "diagram");
   const threeView = three?.kind === "diagram" ? (three.graphConfig.metadata?.view3d as { az?: number } | undefined) : undefined;
   assert.equal(three?.kind === "diagram" ? three.graphConfig.widthPx : undefined, 520);
+  assert.equal(three?.kind === "diagram" ? three.graphConfig.showAxes : undefined, false);
+  assert.equal(three?.kind === "diagram" ? three.graphConfig.showAxisLabels : undefined, false);
   assert.equal(threeView?.az, 1.2);
   assert.equal(three?.kind === "diagram" ? three.graphConfig.metadata?.keep : undefined, true);
 
@@ -1327,6 +1336,14 @@ test("updates selected graph3d element settings without replacing sibling elemen
         { id: "shared", from: "A", to: "B", label: "AB" },
         { id: "answer", from: "A", to: "B", label: "" },
       ],
+      dimensions: [
+        { id: "length", from: "A", to: "B", label: "1", display: "bracket" },
+        { id: "radius", from: "A", to: [1, 0, 0], label: "r", display: "guide" },
+      ],
+      solids: [
+        { id: "sphere", kind: "sphere", center: [0, 0, 0], radius: 1, renderStyle: "outline" },
+        { id: "cylinder", kind: "cylinder", baseCenter: [0, 0, 0], topCenter: [0, 0, 1], radius: 0.5 },
+      ],
       xRange: [-2, 2],
     },
   };
@@ -1351,6 +1368,71 @@ test("updates selected graph3d element settings without replacing sibling elemen
   assert.equal(data?.segments?.[1]?.solutionOnly, true);
   assert.deepEqual(data?.points, graph3dConfig.data?.points);
   assert.deepEqual(data?.xRange, [-2, 2]);
+
+  const dimension = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "graph3d",
+      element: {
+        kind: "dimension",
+        id: "length",
+        display: "label",
+        labelOffsetPx: 16,
+        labelScreenOffsetPx: [32, -14],
+        rightAngleWith: "radius",
+        rightAngleSize: 0.4,
+      },
+    },
+  });
+  assert.equal(dimension.ok, true, dimension.error);
+  const dimensionDiagram = dimension.questions[0].contentBlocks[0];
+  assert.equal(dimensionDiagram.kind, "diagram");
+  if (dimensionDiagram.kind === "diagram") {
+    assert.equal(dimensionDiagram.graphConfig.data?.dimensions?.[0]?.display, "label");
+    assert.equal(dimensionDiagram.graphConfig.data?.dimensions?.[0]?.labelOffsetPx, 16);
+    assert.deepEqual(dimensionDiagram.graphConfig.data?.dimensions?.[0]?.labelScreenOffsetPx, [32, -14]);
+    assert.equal(dimensionDiagram.graphConfig.data?.dimensions?.[0]?.rightAngleWith, "radius");
+    assert.equal(dimensionDiagram.graphConfig.data?.dimensions?.[0]?.rightAngleSize, 0.4);
+    assert.equal(dimensionDiagram.graphConfig.data?.segments?.[0]?.label, "AB");
+  }
+
+  const resetDimensionLabel = applyMauthAction(dimension.questions, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "graph3d",
+      element: { kind: "dimension", id: "length", patch: { labelScreenOffsetPx: null } },
+    },
+  });
+  assert.equal(resetDimensionLabel.ok, true, resetDimensionLabel.error);
+  const resetDimensionDiagram = resetDimensionLabel.questions[0].contentBlocks[0];
+  assert.equal(resetDimensionDiagram.kind, "diagram");
+  if (resetDimensionDiagram.kind === "diagram") {
+    assert.equal(resetDimensionDiagram.graphConfig.data?.dimensions?.[0]?.labelScreenOffsetPx, undefined);
+  }
+
+  const solid = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "graph3d",
+      element: { kind: "solid", id: "sphere", renderStyle: "surface", fillOpacity: 0.08, stepsU: 12, stepsV: 6 },
+    },
+  });
+  assert.equal(solid.ok, true, solid.error);
+  const solidDiagram = solid.questions[0].contentBlocks[0];
+  assert.equal(solidDiagram.kind, "diagram");
+  if (solidDiagram.kind === "diagram") {
+    assert.equal(solidDiagram.graphConfig.data?.solids?.[0]?.renderStyle, "surface");
+    assert.equal(solidDiagram.graphConfig.data?.solids?.[0]?.fillOpacity, 0.08);
+    assert.equal(solidDiagram.graphConfig.data?.solids?.[0]?.stepsU, 12);
+    assert.equal(solidDiagram.graphConfig.data?.solids?.[0]?.stepsV, 6);
+    assert.equal(solidDiagram.graphConfig.data?.solids?.[1]?.kind, "cylinder");
+  }
 
   const renamed = applyMauthAction(initial, {
     type: "diagram.settings.update",
@@ -1680,12 +1762,24 @@ test("updates document front matter and logo selection", () => {
 
   const updated = applyMauthDocumentAction(
     initial,
-    { type: "frontMatter.update", patch: { assessmentTitle: "quiz 2", startQuestionNumber: 3 } },
+    {
+      type: "frontMatter.update",
+      patch: {
+        assessmentTitle: "quiz 2",
+        startQuestionNumber: 3,
+        formulaSheet: { enabled: true, title: "Formula Sheet", body: "Area: $A=lw$" },
+      },
+    },
     { normalizeFrontMatter: normalizeTestFrontMatter },
   );
   assert.equal(updated.ok, true);
   assert.equal(updated.document.frontMatter.assessmentTitle, "QUIZ 2");
   assert.equal(updated.document.frontMatter.startQuestionNumber, 3);
+  assert.deepEqual(updated.document.frontMatter.formulaSheet, {
+    enabled: true,
+    title: "Formula Sheet",
+    body: "Area: $A=lw$",
+  });
   assert.deepEqual(updated.changedIds, ["frontMatter"]);
 
   const logoSelected = applyMauthDocumentAction(

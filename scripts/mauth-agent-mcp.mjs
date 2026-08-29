@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
 
-import { agentAuthorizationHeaders, resolveMauthRuntime } from "./mauth-runtime.mjs";
+import { asStructuredBody, createMauthBridgeRequest } from "./mauth-agent-http.mjs";
 
 const CONNECTOR_VERSION = typeof __MAUTH_CONNECTOR_VERSION__ === "string" ? __MAUTH_CONNECTOR_VERSION__ : "development";
 
@@ -14,11 +14,9 @@ if (process.argv.includes("--version")) {
   process.exit(0);
 }
 
-const runtime = resolveMauthRuntime();
-const API_BASE = runtime.apiUrl;
-const AGENT_HEADERS = agentAuthorizationHeaders(runtime);
-
 const actionSchema = z.array(z.record(z.string(), z.unknown()));
+const actionAuthoringDescription =
+  "MauthDocumentAction array. For ordinary tests, exams, and worksheets, put the main stem in question.add.question.text or question.update.patch.text (Question wording); reserve text modules for deliberately ordered additional prose or special blocks such as End of Test.";
 const bridgeOutputSchema = z
   .object({
     httpStatus: z.number(),
@@ -58,41 +56,7 @@ const reviewTargetSchema = z
   })
   .optional();
 
-function parseResponseBody(text) {
-  if (!text.trim()) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-function asStructuredBody(status, body, extra = {}) {
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return { httpStatus: status, ...extra, ...body };
-  }
-  return { httpStatus: status, ...extra, body };
-}
-
-async function bridgeRequest(path, { method = "GET", body, headers = {} } = {}) {
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: body ? { "Content-Type": "application/json", ...AGENT_HEADERS, ...headers } : { ...AGENT_HEADERS, ...headers },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const parsedBody = parseResponseBody(await response.text());
-    return asStructuredBody(response.status, parsedBody);
-  } catch (error) {
-    return {
-      httpStatus: 0,
-      success: false,
-      code: "APP_NOT_CONNECTED",
-      error: error instanceof Error ? error.message : "Could not reach the Mauth API bridge.",
-      setupLink: "/agent-docs",
-    };
-  }
-}
+const bridgeRequest = createMauthBridgeRequest();
 
 function toolResult(output) {
   const text = JSON.stringify(output, null, 2);
@@ -130,7 +94,7 @@ server.registerTool(
     description: "Dry-run a batch of Mauth document actions against the live editor.",
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id to activate before previewing."),
-      actions: actionSchema.describe("MauthDocumentAction array to dry-run."),
+      actions: actionSchema.describe(`${actionAuthoringDescription} This batch is dry-run only.`),
     }),
     outputSchema: bridgeOutputSchema,
     annotations: readOnlyAnnotations,
@@ -152,7 +116,7 @@ server.registerTool(
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id to activate before applying."),
       baseSnapshotId: z.string().describe("Snapshot id from mauth_snapshot or preview response."),
-      actions: actionSchema.describe("MauthDocumentAction array to apply."),
+      actions: actionSchema.describe(`${actionAuthoringDescription} This batch is applied and revision-saved.`),
       idempotencyKey: z.string().optional().describe("Stable idempotency key for retrying the same apply request."),
     }),
     outputSchema: bridgeOutputSchema,

@@ -1,4 +1,5 @@
-import { useLayoutEffect } from "react";
+import { PanelLeft, SlidersHorizontal } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, CSSProperties, MouseEventHandler, PointerEventHandler, RefObject } from "react";
 
 import { EditorInspectorPane } from "@/components/editor/EditorInspectorPane";
@@ -7,25 +8,41 @@ import { EditorQuestionPanel } from "@/components/editor/EditorQuestionPanel";
 import { PageBreakStructurePanel, SectionHeadingStructurePanel } from "@/components/editor/StructurePanels";
 import { ProjectFileConflictBanner } from "@/components/files/ProjectFileConflictBanner";
 import { FrontMatterEditor } from "@/components/front-matter/FrontMatterEditor";
+import { FormulaSheetEditor } from "@/components/front-matter/FormulaSheetEditor";
 import { StandardSectionTitlePageEditor } from "@/components/front-matter/StandardSectionTitlePageEditor";
 import { PaginatedTestPreview } from "@/components/preview/PaginatedTestPreview";
+import { Button } from "@/components/ui/button";
 import { documentEditorSurfaceKind, documentPageBreakPanelLabel, documentQuestionPanelLabel } from "@/lib/documentWorkspaceRenderPlan";
+import {
+  clampEditorWorkspaceToolDockWidth,
+  editorWorkspaceResponsiveMode,
+  type EditorWorkspaceResponsiveMode,
+} from "@/lib/editorWorkspacePresentation";
 import { syncPreviewSelection } from "@/lib/editorDomNavigation";
 import type { PartPageBreakTarget } from "@/lib/editorPageBreakLifecycle";
 import type { DocumentFlowItem, DocumentSectionHeading, QuestionBlock } from "@/lib/editorDocumentNormalization";
 import { buildTestSectionPlans } from "@/lib/editorPreviewSegments";
 import { questionDisplayNumber } from "@/lib/editorSolutionValidationRuntime";
 import type { FrontMatterConfig } from "@/lib/frontMatterConfig";
-import { SCROLL_ANCHOR_FRONT_MATTER, pageBreakScrollAnchor, questionScrollAnchor, sectionHeadingScrollAnchor } from "@/lib/scrollAnchors";
+import {
+  SCROLL_ANCHOR_FORMULA_SHEET,
+  SCROLL_ANCHOR_FRONT_MATTER,
+  pageBreakScrollAnchor,
+  questionScrollAnchor,
+  sectionHeadingScrollAnchor,
+} from "@/lib/scrollAnchors";
 import { partPageBreakInsertTarget } from "@/lib/editorPageBreakLifecycle";
 import { cn } from "@/lib/utils";
 
 type PaneMode = "split" | "preview";
+type WorkspaceToolPane = "content" | "settings";
+type WorkspaceCssProperties = CSSProperties & { "--workspace-tool-dock-width": string };
 
 type QuestionPanelBindings = Omit<ComponentProps<typeof EditorQuestionPanel>, "question" | "label" | "active" | "canAddPartPageBreak">;
 
 interface DocumentEditorSurfaceProps {
   editingFrontMatter: boolean;
+  editingFormulaSheet: boolean;
   editingPageBreak: boolean;
   editingSectionHeading: boolean;
   activePageBreakQuestion: QuestionBlock | null;
@@ -55,6 +72,7 @@ interface DocumentEditorWorkspaceProps {
     surface: DocumentEditorSurfaceProps;
   };
   inspectorProps: ComponentProps<typeof EditorInspectorPane>;
+  onRequestSettings: () => void;
   preview: {
     show: boolean;
     paneRef: RefObject<HTMLElement | null>;
@@ -68,6 +86,7 @@ interface DocumentEditorWorkspaceProps {
 
 function ActiveDocumentEditorSurface({
   editingFrontMatter,
+  editingFormulaSheet,
   editingPageBreak,
   editingSectionHeading,
   activePageBreakQuestion,
@@ -89,6 +108,7 @@ function ActiveDocumentEditorSurface({
   const activeQuestionIndex = activeQuestion ? questions.findIndex((question) => question.id === activeQuestion.id) : -1;
   const surfaceKind = documentEditorSurfaceKind({
     editingFrontMatter,
+    editingFormulaSheet,
     editingPageBreak,
     editingSectionHeading,
     hasActivePageBreak: Boolean(activePageBreakQuestion),
@@ -108,6 +128,17 @@ function ActiveDocumentEditorSurface({
         <div className="flex flex-col gap-3">
           <FrontMatterEditor {...frontMatterProps} />
         </div>
+      </div>
+    );
+  }
+
+  if (surfaceKind === "formulaSheet") {
+    return (
+      <div
+        className={cn(isActiveAnchor(SCROLL_ANCHOR_FORMULA_SHEET) && EDITOR_ACTIVE_PANEL_CLASS)}
+        data-scroll-anchor={SCROLL_ANCHOR_FORMULA_SHEET}
+      >
+        <FormulaSheetEditor frontMatter={frontMatter} onChange={frontMatterProps.onChange} />
       </div>
     );
   }
@@ -200,7 +231,71 @@ function ActiveDocumentEditorSurface({
   return null;
 }
 
-export function DocumentEditorWorkspace({ style, paneMode, editor, inspectorProps, preview }: DocumentEditorWorkspaceProps) {
+export function DocumentEditorWorkspace({
+  style,
+  paneMode,
+  editor,
+  inspectorProps,
+  onRequestSettings,
+  preview,
+}: DocumentEditorWorkspaceProps) {
+  const inspectorAvailable = inspectorProps.open;
+  const [activeCompactTool, setActiveCompactTool] = useState<WorkspaceToolPane>("content");
+  const [compactDockWidth, setCompactDockWidth] = useState(448);
+  const [responsiveMode, setResponsiveMode] = useState<EditorWorkspaceResponsiveMode>("wide");
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const dockResizeStart = useRef<{ pointerX: number; width: number } | null>(null);
+  const inspectorWasAvailable = useRef(inspectorAvailable);
+
+  useEffect(() => {
+    if (!inspectorAvailable) {
+      setActiveCompactTool("content");
+    } else if (!inspectorWasAvailable.current) {
+      setActiveCompactTool("settings");
+    }
+    inspectorWasAvailable.current = inspectorAvailable;
+  }, [inspectorAvailable]);
+
+  useEffect(() => {
+    if (editor.surface.editingFormulaSheet) setActiveCompactTool("content");
+  }, [editor.surface.editingFormulaSheet]);
+
+  const showSettings = () => {
+    onRequestSettings();
+    setActiveCompactTool("settings");
+  };
+
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    const updateResponsiveMode = (width: number) => {
+      setResponsiveMode((current) => {
+        const next = editorWorkspaceResponsiveMode(width);
+        return current === next ? current : next;
+      });
+      setCompactDockWidth((current) => clampEditorWorkspaceToolDockWidth(current, width));
+    };
+    updateResponsiveMode(workspace.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) updateResponsiveMode(entry.contentRect.width);
+    });
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, []);
+
+  const resizeCompactDock = (nextWidth: number) => {
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? 1180;
+    setCompactDockWidth(clampEditorWorkspaceToolDockWidth(nextWidth, workspaceWidth));
+  };
+
+  const workspaceStyle = {
+    ...style,
+    "--workspace-tool-dock-width": `${compactDockWidth}px`,
+  } as WorkspaceCssProperties;
+
   useLayoutEffect(() => {
     const previewPane = preview.paneRef.current;
     if (!previewPane || !preview.show || paneMode !== "split") return;
@@ -220,28 +315,104 @@ export function DocumentEditorWorkspace({ style, paneMode, editor, inspectorProp
 
   return (
     <div
+      ref={workspaceRef}
       className="app-workspace relative grid min-h-0 min-w-0 bg-background"
-      data-inspector-open={inspectorProps.open && inspectorProps.visible ? "true" : "false"}
-      style={style}
+      data-inspector-open={inspectorAvailable ? "true" : "false"}
+      data-responsive-mode={responsiveMode}
+      style={workspaceStyle}
     >
       {editor.show ? (
-        <section
-          ref={editor.paneRef}
-          className={cn(
-            "editor-pane min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-4 lg:border-b-0 lg:border-r",
-            paneMode === "split" && "split-pane-scroll",
-          )}
-        >
-          <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
-            <div className="flex w-full min-w-0 flex-col gap-4">
-              <ProjectFileConflictBanner {...editor.conflictBannerProps} />
-              <ActiveDocumentEditorSurface {...editor.surface} />
-            </div>
+        <div className="workspace-tool-dock" data-active-tool={activeCompactTool}>
+          <div className="workspace-tool-switcher" role="tablist" aria-label="Authoring tools">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              role="tab"
+              aria-selected={activeCompactTool === "content"}
+              aria-controls="mauth-editor-pane"
+              onClick={() => setActiveCompactTool("content")}
+              className={cn(
+                "min-w-0 flex-1 justify-center gap-2",
+                activeCompactTool === "content" &&
+                  "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground",
+              )}
+            >
+              <PanelLeft className="size-4 shrink-0" />
+              Content
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              role="tab"
+              aria-selected={activeCompactTool === "settings"}
+              aria-controls="mauth-inspector-pane"
+              disabled={!inspectorAvailable}
+              onClick={() => setActiveCompactTool("settings")}
+              className={cn(
+                "min-w-0 flex-1 justify-center gap-2",
+                activeCompactTool === "settings" &&
+                  "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground",
+              )}
+            >
+              <SlidersHorizontal className="size-4 shrink-0" />
+              Settings
+            </Button>
           </div>
-        </section>
-      ) : null}
 
-      <EditorInspectorPane {...inspectorProps} />
+          <section
+            id="mauth-editor-pane"
+            ref={editor.paneRef}
+            className="editor-pane workspace-control-surface min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-3 lg:border-b-0 lg:border-r"
+            onClickCapture={(event) => {
+              if (!(event.target instanceof Element) || !event.target.closest("[data-workspace-open-settings='true']")) return;
+              showSettings();
+            }}
+          >
+            <div className="flex w-full min-w-0 flex-col gap-4">
+              <div className="flex w-full min-w-0 flex-col gap-4">
+                <ProjectFileConflictBanner {...editor.conflictBannerProps} />
+                <ActiveDocumentEditorSurface {...editor.surface} />
+              </div>
+            </div>
+          </section>
+
+          <EditorInspectorPane {...inspectorProps} onShowContent={() => setActiveCompactTool("content")} />
+
+          <div
+            className="workspace-tool-resize-handle"
+            role="separator"
+            aria-label="Resize authoring tools"
+            aria-orientation="vertical"
+            aria-valuemin={384}
+            aria-valuemax={520}
+            aria-valuenow={compactDockWidth}
+            tabIndex={0}
+            onPointerDown={(event) => {
+              dockResizeStart.current = { pointerX: event.clientX, width: compactDockWidth };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+              const start = dockResizeStart.current;
+              if (!start || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+              resizeCompactDock(start.width + event.clientX - start.pointerX);
+            }}
+            onPointerUp={(event) => {
+              dockResizeStart.current = null;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onPointerCancel={() => {
+              dockResizeStart.current = null;
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              resizeCompactDock(compactDockWidth + (event.key === "ArrowRight" ? 16 : -16));
+            }}
+          />
+        </div>
+      ) : null}
 
       {preview.show ? (
         <section

@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { normalizeChoiceItems, normalizeChoiceListLayout, normalizeChoiceNumberingStyle } from "@/lib/contentBlockNormalization";
 import { contentBlockDisplayVisibility } from "@/lib/moduleSettingsPatches";
 import { cn } from "@/lib/utils";
-import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { CollapsiblePanel, OpenSettingsActionButton, RemoveActionButton } from "./EditorPanels";
 
 type ChoiceListBlock = Extract<ContentBlock, { kind: "choices" }>;
 
@@ -56,7 +56,12 @@ export function ChoiceListBlockEditor({
     <CollapsiblePanel
       title={title}
       leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
+      actions={
+        <>
+          {!showInlineSettings ? <OpenSettingsActionButton label={label} /> : null}
+          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+        </>
+      }
       className={cn("bg-background", muted && "bg-muted/30")}
       bodyClassName="p-3"
       active={active}

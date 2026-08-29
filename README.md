@@ -6,9 +6,9 @@ Mauth Studio is a local-first macOS app for creating printable mathematics tests
 
 ## Download
 
-The current public build is the signed and Apple-notarized `0.1.4` alpha for Apple Silicon Macs.
+The current public build is the signed and Apple-notarized `0.1.5` alpha for Apple Silicon Macs.
 
-[Download Mauth Studio 0.1.4](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.4/Mauth-Studio-0.1.4-arm64.dmg)
+[Download Mauth Studio 0.1.5](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.5/Mauth-Studio-0.1.5-arm64.dmg)
 
 Open the DMG, move **Mauth Studio** to Applications, and launch it normally. The app starts and stops its own local mathematics service. Python, Node.js, a repository checkout, and open Terminal windows are not required.
 
@@ -20,7 +20,7 @@ Mauth asks before downloading an update and again before restarting to install i
 - Supports tests, exams, worksheets, notes, and linked student/teacher investigation documents.
 - Renders maths with MathJax SVG, coordinate diagrams with JSXGraph, geometry/set/network diagrams with Penrose, and statistics charts with Plotly.
 - Keeps visible `.mauth` documents in a teacher-selected folder, with revision-aware saves, versions, autosave recovery, and multiple open tabs.
-- Integrates with Finder through a Mauth document icon, thumbnail, and read-only Quick Look summary.
+- Integrates with Finder through a dedicated Mauth document icon and read-only Quick Look summary.
 
 Mauth Studio is alpha software. Keep backups of important assessment files and expect the interface and schema to continue improving.
 

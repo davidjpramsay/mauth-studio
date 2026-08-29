@@ -95,6 +95,7 @@ export interface Graph3DPointData {
   y?: number;
   z?: number;
   color?: string;
+  labelScreenOffsetPx?: [number, number];
   show?: boolean;
   solutionOnly?: boolean;
   [key: string]: unknown;
@@ -107,6 +108,7 @@ export interface Graph3DSegmentData {
   points?: string[];
   label?: string;
   color?: string;
+  labelScreenOffsetPx?: [number, number];
   strokeStyle?: "solid" | "dashed";
   strokeWidth?: number;
   dashed?: boolean;
@@ -123,6 +125,12 @@ export interface Graph3DDimensionData {
   end?: string | [number, number, number] | Graph3DPointData;
   points?: Array<string | [number, number, number] | Graph3DPointData>;
   label?: string;
+  labelPosition?: [number, number, number];
+  display?: "label" | "guide" | "bracket";
+  labelOffsetPx?: number;
+  labelScreenOffsetPx?: [number, number];
+  rightAngleWith?: string;
+  rightAngleSize?: number;
   color?: string;
   strokeColor?: string;
   strokeStyle?: "solid" | "dashed";
@@ -133,11 +141,14 @@ export interface Graph3DDimensionData {
   [key: string]: unknown;
 }
 
+export const GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX = "face:";
+
 export interface Graph3DFaceData {
   id?: string;
   points?: Array<string | [number, number, number] | Graph3DPointData>;
   vertices?: Array<string | [number, number, number] | Graph3DPointData>;
   label?: string;
+  labelScreenOffsetPx?: [number, number];
   color?: string;
   fillColor?: string;
   fillOpacity?: number;
@@ -168,6 +179,7 @@ export interface Graph3DSolidData {
   fillOpacity?: number;
   strokeColor?: string;
   strokeWidth?: number;
+  renderStyle?: "surface" | "wireframe" | "outline";
   stepsU?: number;
   stepsV?: number;
   show?: boolean;

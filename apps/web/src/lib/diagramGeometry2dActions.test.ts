@@ -3,11 +3,36 @@ import test from "node:test";
 import type { Graph2DGeometryData, Graph2DGeometryPoint } from "@mauth-studio/shared";
 
 import {
+  geometry2dConfigWithLabelPosition,
   geometry2dDataForSolutionVisibility,
   geometry2dDataHasSolutionOnly,
   geometry2dPrimitiveForAuthoringLayer,
   geometry2dPrimitiveWithSolutionOnly,
 } from "./diagramGeometry2d.ts";
+
+test("geometry2d label drags update only the targeted primitive position", () => {
+  const graphConfig = {
+    type: "geometry2d",
+    data: {
+      points: [{ id: "A", x: 0, y: 0, label: "$A$", labelX: -0.2, labelY: 0.2 }],
+      segments: [
+        { id: "AB", from: "A", to: "B", label: "$6\\text{ cm}$", labelX: 1, labelY: 2 },
+        { id: "BC", from: "B", to: "C", label: "$8\\text{ cm}$", labelX: 3, labelY: 4 },
+      ],
+    },
+  } as const;
+
+  const nextConfig = geometry2dConfigWithLabelPosition(graphConfig, "segment", "AB", 1.23456789, -2.34567891);
+  const nextData = nextConfig.data as Graph2DGeometryData;
+
+  assert.deepEqual(nextData.segments?.[0], {
+    ...graphConfig.data.segments[0],
+    labelX: 1.234568,
+    labelY: -2.345679,
+  });
+  assert.equal(nextData.segments?.[1], graphConfig.data.segments[1]);
+  assert.equal(nextData.points?.[0], graphConfig.data.points[0]);
+});
 
 test("geometry2d primitives follow the active authoring layer", () => {
   const point: Graph2DGeometryPoint = { id: "A", x: 1, y: 2 };

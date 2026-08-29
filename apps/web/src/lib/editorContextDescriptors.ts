@@ -24,6 +24,7 @@ function tocItemMatchesAnchor(item: DocumentTocItem, anchor: string) {
 export function fallbackContextLabel(anchor: string) {
   const parsed = parseScrollAnchor(anchor);
   if (parsed.kind === "frontMatter") return "Title Page";
+  if (parsed.kind === "formulaSheet") return "Formula Sheet";
   if (parsed.kind === "sectionHeading") return "Section heading";
   if (parsed.kind === "pageBreak") return "Page break";
   if (parsed.kind === "question") return "Question";

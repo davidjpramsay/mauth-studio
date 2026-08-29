@@ -153,8 +153,8 @@ export function AppHeader({
               type="button"
               variant="ghost"
               size="icon"
-              title={showInspectorPane ? "Hide inspector" : "Show inspector"}
-              aria-label={showInspectorPane ? "Hide inspector" : "Show inspector"}
+              title={showInspectorPane ? "Hide settings" : "Show settings"}
+              aria-label={showInspectorPane ? "Hide settings" : "Show settings"}
               aria-pressed={showInspectorPane}
               onClick={onToggleInspectorPane}
               className={cn(HEADER_ICON_BUTTON_CLASS, showInspectorPane && HEADER_ICON_ACTIVE_CLASS)}

@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { FileText, GitBranch, ScanSearch, Trash2 } from "lucide-react";
 
-import { ContentInsertionActions, EDITOR_ACTIVE_PANEL_CLASS } from "@/components/editor/EditorPanels";
+import { ContentInsertionActions } from "@/components/editor/EditorPanels";
 import { ContainerWordingEditor } from "@/components/editor/ContainerWordingEditor";
 import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { quickDiagramInsertActions } from "@/components/editor/diagramInsertionActions";
@@ -112,10 +112,7 @@ export function EditorQuestionPanel({
   const dragActive = draggedSubsectionActive || draggedEditorPageBreakActive;
 
   return (
-    <article
-      className={cn("relative rounded-lg border bg-card p-4 shadow-panel transition-colors", active && EDITOR_ACTIVE_PANEL_CLASS)}
-      data-scroll-anchor={questionAnchor}
-    >
+    <article className="relative min-w-0 p-4" data-scroll-anchor={questionAnchor}>
       <div
         className="mb-4 flex flex-wrap items-center justify-between gap-3"
         data-panel-region="header"
@@ -145,7 +142,7 @@ export function EditorQuestionPanel({
             <ScanSearch />
           </Button>
           {isNotesTemplate ? (
-            <label className="flex h-9 min-w-[14rem] flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
+            <label className="flex h-9 min-w-0 flex-[1_1_14rem] items-center gap-2 rounded-md border border-input bg-background px-2 text-sm">
               <span className="shrink-0 font-medium text-muted-foreground">Title</span>
               <input
                 aria-label={`${label} title`}

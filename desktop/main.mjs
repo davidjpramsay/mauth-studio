@@ -16,6 +16,7 @@ import {
   packagedAgentConnectorPath,
 } from "./agent-connector.mjs";
 import { developmentRuntimePlan } from "./development-runtime.mjs";
+import { isRuntimeApiRequest } from "./local-api-auth.mjs";
 import { MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, chooseDocumentsFolder } from "./native-dialogs.mjs";
 import { packagedSidecarExecutable } from "./platform-paths.mjs";
 import {
@@ -284,9 +285,17 @@ function refreshApplicationMenu() {
   Menu.setApplicationMenu(createApplicationMenu());
 }
 
+function revealMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
   const appOrigin = new URL(webUrl).origin;
   const apiOrigin = new URL(apiUrl).origin;
+  const runtimeApiOrigins = new Set([appOrigin, apiOrigin]);
   mainWindow = new BrowserWindow({
     title: "Mauth Studio",
     width: 1560,
@@ -303,17 +312,18 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
       preload,
     },
   });
-  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
-    { urls: [`${appOrigin}/api/*`, `${apiOrigin}/api/*`] },
-    (details, callback) => {
-      callback({
-        requestHeaders: {
-          ...details.requestHeaders,
-          Authorization: `Bearer ${agentToken}`,
-        },
-      });
-    },
-  );
+  mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (!isRuntimeApiRequest(details.url, runtimeApiOrigins)) {
+      callback({ requestHeaders: details.requestHeaders });
+      return;
+    }
+    callback({
+      requestHeaders: {
+        ...details.requestHeaders,
+        Authorization: `Bearer ${agentToken}`,
+      },
+    });
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedAppNavigation(url, appOrigin)) return { action: "allow" };
     if (/^(https?:|mailto:)/.test(url)) void shell.openExternal(url);
@@ -324,10 +334,15 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
     event.preventDefault();
     if (/^(https?:|mailto:)/.test(url)) void shell.openExternal(url);
   });
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
+  let presented = false;
+  const presentWindow = (reason) => {
+    if (presented) return;
+    presented = true;
+    revealMainWindow();
+    desktopLog(`window presented by ${reason}`);
+  };
+  mainWindow.once("ready-to-show", () => presentWindow("ready-to-show"));
+  mainWindow.webContents.once("did-finish-load", () => presentWindow("did-finish-load"));
   mainWindow.webContents.on("will-prevent-unload", (event) => {
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: "question",
@@ -429,11 +444,10 @@ async function launch() {
 
 app.on("second-instance", (_event, commandLine) => {
   for (const filePath of mauthDocumentPathsFromCommandLine(commandLine)) sendOpenDocument(filePath);
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  revealMainWindow();
 });
+
+app.on("activate", revealMainWindow);
 
 app.on("open-file", (event, filePath) => {
   event.preventDefault();

@@ -82,7 +82,7 @@ export function subsectionTargetFromAnchor(anchor: string) {
 
 export function canDeleteAnchorTarget(anchor: string) {
   const parsed = parseScrollAnchor(anchor);
-  return parsed.kind !== "frontMatter" && parsed.kind !== "unknown";
+  return parsed.kind !== "frontMatter" && parsed.kind !== "formulaSheet" && parsed.kind !== "unknown";
 }
 
 export function canMoveAnchorTarget({

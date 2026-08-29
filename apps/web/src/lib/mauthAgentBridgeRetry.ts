@@ -1,4 +1,11 @@
 const MAX_BRIDGE_RETRY_DELAY_MS = 30_000;
+const EDITOR_SETTLE_FALLBACK_MS = 100;
+
+interface EditorSettleScheduler {
+  requestAnimationFrame: (callback: FrameRequestCallback) => number;
+  setTimeout: (callback: () => void, milliseconds: number) => number;
+  clearTimeout: (timer: number) => void;
+}
 
 interface ApiErrorLike extends Error {
   status: number;
@@ -28,4 +35,18 @@ export function bridgeRetryDelayMs(error: unknown, registered: boolean, retryAtt
 
   const baseDelay = registered ? 1_000 : 1_500;
   return Math.min(MAX_BRIDGE_RETRY_DELAY_MS, baseDelay * 2 ** Math.max(0, retryAttempt));
+}
+
+export function afterEditorStateSettles(scheduler: EditorSettleScheduler = window) {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      scheduler.clearTimeout(fallbackTimer);
+      resolve();
+    };
+    const fallbackTimer = scheduler.setTimeout(finish, EDITOR_SETTLE_FALLBACK_MS);
+    scheduler.requestAnimationFrame(() => scheduler.requestAnimationFrame(finish));
+  });
 }

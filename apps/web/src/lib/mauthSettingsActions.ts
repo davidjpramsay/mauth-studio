@@ -283,6 +283,8 @@ interface Vector2DSettingsUpdate extends Bounded2DSettingsUpdate {
 }
 
 interface Graph3DSettingsUpdate extends SizedSettingsUpdate {
+  showAxes?: boolean;
+  showAxisLabels?: boolean;
   view?: Partial<Graph3DViewState>;
   resetView?: boolean;
   element?: Graph3DElementSettingsUpdate;
@@ -811,6 +813,8 @@ function graph3dBaseSettingsPatch(config: GraphConfig, settings: Graph3DSettings
   const sizePatch: GraphPatch = {};
   setIfDefined(sizePatch, "widthPx", settings.widthPx ?? (settings.widthPx === undefined ? undefined : DEFAULT_3D_GRAPH.widthPx));
   setIfDefined(sizePatch, "heightPx", settings.heightPx ?? (settings.heightPx === undefined ? undefined : DEFAULT_3D_GRAPH.heightPx));
+  setIfDefined(sizePatch, "showAxes", settings.showAxes);
+  setIfDefined(sizePatch, "showAxisLabels", settings.showAxisLabels);
   if (Object.keys(sizePatch).length) patches.push(sizePatch);
   if (settings.resetView) patches.push(graph3dResetViewPatch(config));
   if (settings.view) {
@@ -836,17 +840,26 @@ function numberTriplePatchValue(value: unknown) {
   return triple.every((entry) => entry !== undefined) ? (triple as [number, number, number]) : undefined;
 }
 
+function numberPairPatchValue(value: unknown): [number, number] | null | undefined {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length !== 2) return undefined;
+  const pair = value.map(numberPatchValue);
+  return pair.every((entry) => entry !== undefined) ? (pair as [number, number]) : undefined;
+}
+
 function graph3dPointReferencePatchValue(value: unknown) {
   return stringPatchValue(value) ?? numberTriplePatchValue(value);
 }
 
 function graph3dElementCommonPatch(record: Record<string, unknown>) {
+  const labelScreenOffsetPx = numberPairPatchValue(record.labelScreenOffsetPx);
   return {
     ...(stringPatchValue(record.id) !== undefined ? { id: stringPatchValue(record.id) } : {}),
     ...(stringPatchValue(record.label) !== undefined ? { label: stringPatchValue(record.label) } : {}),
     ...(stringPatchValue(record.color) !== undefined ? { color: stringPatchValue(record.color) } : {}),
     ...(booleanPatchValue(record.show) !== undefined ? { show: booleanPatchValue(record.show) } : {}),
     ...(booleanPatchValue(record.solutionOnly) !== undefined ? { solutionOnly: booleanPatchValue(record.solutionOnly) } : {}),
+    ...(labelScreenOffsetPx !== undefined ? { labelScreenOffsetPx: labelScreenOffsetPx ?? undefined } : {}),
   };
 }
 
@@ -860,6 +873,7 @@ function graph3dElementPatch(kind: Graph3DElementKind, record: Record<string, un
     } satisfies Partial<Graph3DPointData>;
   }
   if (kind === "segment" || kind === "dimension") {
+    const rightAngleWith = record.rightAngleWith === null ? null : stringPatchValue(record.rightAngleWith);
     const linePatch = {
       ...common,
       ...(graph3dPointReferencePatchValue(record.from) !== undefined ? { from: graph3dPointReferencePatchValue(record.from) } : {}),
@@ -868,6 +882,19 @@ function graph3dElementPatch(kind: Graph3DElementKind, record: Record<string, un
       ...(stringPatchValue(record.strokeStyle) !== undefined ? { strokeStyle: stringPatchValue(record.strokeStyle) } : {}),
       ...(numberPatchValue(record.strokeWidth) !== undefined ? { strokeWidth: numberPatchValue(record.strokeWidth) } : {}),
       ...(booleanPatchValue(record.dashed) !== undefined ? { dashed: booleanPatchValue(record.dashed) } : {}),
+      ...(kind === "dimension" && stringPatchValue(record.display) !== undefined
+        ? { display: stringPatchValue(record.display) as Graph3DDimensionData["display"] }
+        : {}),
+      ...(kind === "dimension" && numberPatchValue(record.labelOffsetPx) !== undefined
+        ? { labelOffsetPx: numberPatchValue(record.labelOffsetPx) }
+        : {}),
+      ...(kind === "dimension" && numberTriplePatchValue(record.labelPosition)
+        ? { labelPosition: numberTriplePatchValue(record.labelPosition) }
+        : {}),
+      ...(kind === "dimension" && rightAngleWith !== undefined ? { rightAngleWith: rightAngleWith ?? undefined } : {}),
+      ...(kind === "dimension" && numberPatchValue(record.rightAngleSize) !== undefined
+        ? { rightAngleSize: numberPatchValue(record.rightAngleSize) }
+        : {}),
     };
     return linePatch as Partial<Graph3DSegmentData | Graph3DDimensionData>;
   }
@@ -902,6 +929,11 @@ function graph3dElementPatch(kind: Graph3DElementKind, record: Record<string, un
     ...(numberPatchValue(record.fillOpacity) !== undefined ? { fillOpacity: numberPatchValue(record.fillOpacity) } : {}),
     ...(stringPatchValue(record.strokeColor) !== undefined ? { strokeColor: stringPatchValue(record.strokeColor) } : {}),
     ...(numberPatchValue(record.strokeWidth) !== undefined ? { strokeWidth: numberPatchValue(record.strokeWidth) } : {}),
+    ...(stringPatchValue(record.renderStyle) !== undefined
+      ? { renderStyle: stringPatchValue(record.renderStyle) as Graph3DSolidData["renderStyle"] }
+      : {}),
+    ...(numberPatchValue(record.stepsU) !== undefined ? { stepsU: numberPatchValue(record.stepsU) } : {}),
+    ...(numberPatchValue(record.stepsV) !== undefined ? { stepsV: numberPatchValue(record.stepsV) } : {}),
   } satisfies Partial<Graph3DSolidData>;
 }
 

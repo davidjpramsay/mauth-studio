@@ -104,16 +104,24 @@ test("standard-test mini TOC shows one T target for each physical title page", (
   const items: DocumentTocItem[] = [
     { id: "front", label: "Title Page", kind: "title", depth: 0, editorAnchor: "front", previewAnchor: "front" },
     { id: "s1", label: "Section One", kind: "sectionHeading", depth: 0, editorAnchor: "s1", previewAnchor: "s1" },
+    {
+      id: "formula-sheet",
+      label: "Formula Sheet",
+      kind: "formulaSheet",
+      depth: 0,
+      editorAnchor: "formula-sheet",
+      previewAnchor: "formula-sheet",
+    },
     { id: "q1", label: "Question 1", kind: "question", depth: 0, editorAnchor: "q1", previewAnchor: "q1" },
     { id: "s2", label: "Section Two", kind: "sectionHeading", depth: 0, editorAnchor: "s2", previewAnchor: "s2" },
   ];
 
   assert.deepEqual(
     documentNavigationRailItems(items, "titlePage").map((item) => item.id),
-    ["s1", "q1", "s2"],
+    ["s1", "formula-sheet", "q1", "s2"],
   );
   assert.deepEqual(
     documentNavigationRailItems(items, "section").map((item) => item.id),
-    ["front", "s1", "q1", "s2"],
+    ["front", "s1", "formula-sheet", "q1", "s2"],
   );
 });

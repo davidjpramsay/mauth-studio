@@ -5,6 +5,7 @@ import { InlineSummaryTitle } from "@/components/MathText";
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { Button } from "@/components/ui/button";
+import { MauthSelect } from "@/components/ui/mauth-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   EXAM_SECTION_PRESETS,
@@ -104,18 +105,12 @@ export function FrontMatterTitleEditor({
           <>
             <label className="flex flex-col gap-2 text-xs font-medium">
               Logo
-              <select
+              <MauthSelect
+                ariaLabel="Logo"
                 value={frontMatter.logoId}
-                onChange={(event) => onChange({ logoId: event.target.value })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-              >
-                <option value="">No logo</option>
-                {logos.map((logoOption) => (
-                  <option key={logoOption.id} value={logoOption.id}>
-                    {logoOption.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(logoId) => onChange({ logoId })}
+                options={[{ value: "", label: "No logo" }, ...logos.map((logo) => ({ value: logo.id, label: logo.name }))]}
+              />
             </label>
             <label className="flex flex-col gap-2 text-xs font-medium">
               School name
@@ -140,17 +135,12 @@ export function FrontMatterTitleEditor({
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="flex flex-col gap-2 text-xs font-medium md:col-span-2">
                     Logo
-                    <select
+                    <MauthSelect
+                      ariaLabel="Logo"
                       value={frontMatter.logoId}
-                      onChange={(event) => onChange({ logoId: event.target.value })}
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-                    >
-                      {logos.map((logoOption) => (
-                        <option key={logoOption.id} value={logoOption.id}>
-                          {logoOption.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(logoId) => onChange({ logoId })}
+                      options={logos.map((logo) => ({ value: logo.id, label: logo.name }))}
+                    />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-medium">
                     Logo name

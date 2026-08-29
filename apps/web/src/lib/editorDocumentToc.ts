@@ -14,10 +14,17 @@ import {
   type QuestionBlock,
 } from "./editorDocumentNormalization.ts";
 import { questionDisplayNumber } from "./editorSolutionValidationRuntime.ts";
-import { assessmentTitleText, investigationTotalMarks, normalizeInvestigation, type FrontMatterConfig } from "./frontMatterConfig.ts";
+import {
+  assessmentTitleText,
+  investigationTotalMarks,
+  normalizeFormulaSheet,
+  normalizeInvestigation,
+  type FrontMatterConfig,
+} from "./frontMatterConfig.ts";
 import type { DocumentTocItem } from "./documentNavigation.ts";
 import {
   SCROLL_ANCHOR_FRONT_MATTER,
+  SCROLL_ANCHOR_FORMULA_SHEET,
   SCROLL_ANCHOR_INVESTIGATION_RUBRIC,
   investigationDiagramScrollAnchor,
   investigationPageScrollAnchor,
@@ -256,7 +263,25 @@ export function buildDocumentToc({
   const questionMap = new Map(questions.map((question, index) => [question.id, { question, questionIndex: index }]));
   const sectionHeadingMap = new Map(sectionHeadings.map((heading) => [heading.id, heading]));
   const normalizedFlow = normalizeDocumentFlow(documentFlow, questions, sectionHeadings);
-  normalizedFlow.forEach((flowItem) => {
+  const formulaSheet = normalizeFormulaSheet(frontMatter.formulaSheet);
+  const formulaSheetItem: DocumentTocItem | null =
+    frontMatter.titlePageTemplate === "standard" && formulaSheet.enabled
+      ? {
+          id: SCROLL_ANCHOR_FORMULA_SHEET,
+          label: formulaSheet.title.trim() || "Formula Sheet",
+          summary: "Unnumbered page after the opening title page",
+          kind: "formulaSheet",
+          depth: 0,
+          editorAnchor: SCROLL_ANCHOR_FORMULA_SHEET,
+          previewAnchor: SCROLL_ANCHOR_FORMULA_SHEET,
+        }
+      : null;
+  const formulaSheetFollowsLeadingSection = Boolean(
+    formulaSheetItem && normalizedFlow[0]?.kind === "sectionHeading" && sectionHeadingMap.has(normalizedFlow[0].id),
+  );
+  if (formulaSheetItem && !formulaSheetFollowsLeadingSection) items.push(formulaSheetItem);
+
+  normalizedFlow.forEach((flowItem, flowIndex) => {
     if (flowItem.kind === "sectionHeading") {
       const heading = sectionHeadingMap.get(flowItem.id);
       if (!heading) return;
@@ -274,6 +299,7 @@ export function buildDocumentToc({
         editorAnchor: headingAnchor,
         previewAnchor: headingAnchor,
       });
+      if (flowIndex === 0 && formulaSheetItem && formulaSheetFollowsLeadingSection) items.push(formulaSheetItem);
       return;
     }
 

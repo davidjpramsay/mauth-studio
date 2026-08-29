@@ -41,6 +41,10 @@ test("MCP connector publishes the complete local document and authoring contract
     assert.equal(tools.get("mauth_documents_list")?.annotations?.readOnlyHint, true);
     assert.equal(tools.get("mauth_document_create")?.annotations?.destructiveHint, false);
     assert.equal(tools.get("mauth_document_close")?.annotations?.destructiveHint, true);
+    assert.match(
+      tools.get("mauth_actions_apply")?.inputSchema?.properties?.actions?.description ?? "",
+      /main stem.*question\.update\.patch\.text.*Question wording/i,
+    );
   } finally {
     await client.close();
   }

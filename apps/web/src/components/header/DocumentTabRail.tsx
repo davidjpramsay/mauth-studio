@@ -138,10 +138,10 @@ export function DocumentTabRail({ tabs, activeTabId, onActivateTab, onCloseTab, 
               aria-selected={active}
               data-document-tab-id={tab.id}
               className={cn(
-                "group relative flex h-8 min-w-[7.5rem] max-w-[14rem] flex-[1_1_13rem] cursor-grab items-center gap-1 rounded-md border px-1.5 text-sm transition-colors active:cursor-grabbing",
+                "group relative flex h-8 min-w-[7.5rem] max-w-[14rem] flex-[1_1_13rem] cursor-grab items-center gap-1 rounded-[5px] border px-1.5 text-sm transition-colors active:cursor-grabbing",
                 active
-                  ? "border-blue-400/70 bg-blue-500/15 text-white shadow-[inset_0_-2px_0_rgba(96,165,250,0.8)]"
-                  : "border-blue-300/15 bg-[#050b1d] text-blue-100/80 hover:border-blue-300/35 hover:bg-blue-500/10 hover:text-white",
+                  ? "border-white/15 bg-white/[0.075] text-white"
+                  : "border-transparent bg-transparent text-blue-100/65 hover:border-white/10 hover:bg-white/[0.045] hover:text-blue-50",
                 draggedTabId === tab.id && "opacity-45",
                 dropTarget?.tabId === tab.id &&
                   (dropTarget.placement === "before" ? "document-tab-drop-before" : "document-tab-drop-after"),

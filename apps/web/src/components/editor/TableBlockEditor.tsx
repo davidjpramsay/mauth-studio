@@ -7,7 +7,7 @@ import { paddedTableRow, plainTablePatch, plainTableRows } from "@/lib/contentBl
 import { sharedTableSolutionPresentation, tableSolutionEntryPatch, type TableSolutionEntryMask } from "@/lib/tableSolutionEntries";
 import { solutionSurfaceControlState } from "@/lib/solutionSurfaceControls";
 import { cn } from "@/lib/utils";
-import { CollapsiblePanel, RemoveActionButton } from "./EditorPanels";
+import { CollapsiblePanel, OpenSettingsActionButton, RemoveActionButton } from "./EditorPanels";
 import { NumericExpressionInput } from "./NumericExpressionInput";
 
 type TableBlock = Extract<ContentBlock, { kind: "table" }>;
@@ -132,6 +132,7 @@ export function TableBlockEditor({
       leading={dragHandle}
       actions={
         <>
+          {!showInlineSettings ? <OpenSettingsActionButton label={label} /> : null}
           {showInlineSettings && onCompleteInSolutions && solutionSurfaceState.canCreateSolutionCopy ? (
             <Button
               type="button"

@@ -1,7 +1,7 @@
 import type { FormattingConfig } from "@mauth-studio/shared";
 
 import { normalizeFormattingConfig } from "./editorFormattingConfig.ts";
-import { normalizeExamTitlePage, type ExamStructureRowConfig, type FrontMatterConfig } from "./frontMatterConfig.ts";
+import { normalizeExamTitlePage, normalizeFormulaSheet, type ExamStructureRowConfig, type FrontMatterConfig } from "./frontMatterConfig.ts";
 import type { PageFormat } from "./previewPageFormat.ts";
 
 const QUESTION_GAP_PX = 32;
@@ -158,7 +158,8 @@ export function frontMatterPageCount(frontMatter: FrontMatterConfig) {
     frontMatter.titlePageTemplate === "investigation"
   )
     return 0;
-  return frontMatter.titlePageTemplate === "exam" ? 2 : 1;
+  if (frontMatter.titlePageTemplate === "exam") return 2;
+  return normalizeFormulaSheet(frontMatter.formulaSheet).enabled ? 2 : 1;
 }
 
 export const INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE = 3;

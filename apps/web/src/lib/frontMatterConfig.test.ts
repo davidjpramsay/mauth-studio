@@ -11,6 +11,7 @@ import {
   investigationStudentPageCount,
   investigationTotalMarks,
   normalizeExamTitlePage,
+  normalizeFormulaSheet,
   normalizeFrontMatter,
   normalizeInvestigation,
 } from "./frontMatterConfig.ts";
@@ -133,6 +134,18 @@ test("normalizeFrontMatter uppercases standard test titles and preserves legacy 
 test("normalizeFrontMatter returns null for invalid front matter", () => {
   assert.equal(normalizeFrontMatter(null), null);
   assert.equal(normalizeFrontMatter("front matter"), null);
+});
+
+test("standard front matter preserves an optional formula sheet", () => {
+  assert.deepEqual(normalizeFormulaSheet(undefined), { enabled: false, title: "Formula Sheet", body: "" });
+  assert.deepEqual(
+    normalizeFrontMatter({
+      titlePageTemplate: "standard",
+      formulaSheet: { enabled: true, title: "Measurement Formula Sheet", body: "Circle: $A=\\pi r^2$" },
+    })?.formulaSheet,
+    { enabled: true, title: "Measurement Formula Sheet", body: "Circle: $A=\\pi r^2$" },
+  );
+  assert.equal(normalizeFrontMatter(DEFAULT_FRONT_MATTER)?.formulaSheet, undefined);
 });
 
 test("normalizeExamTitlePage infers calculator-assumed preset from legacy section text", () => {

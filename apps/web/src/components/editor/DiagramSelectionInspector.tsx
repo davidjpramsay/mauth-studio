@@ -170,7 +170,10 @@ export function DiagramSelectionInspector({
         <Graph3DSelectionInspector
           selectedBlock={selectedBlock}
           selectedDiagramConfig={selectedDiagramConfig}
+          activeAnchor={activeAnchor}
+          onActivateAnchor={onActivateAnchor}
           controlClassName={controlClassName}
+          checkboxLabelClassName={checkboxLabelClassName}
           onBlockChange={onBlockChange}
           updateGraphConfig={updateGraphConfig}
         />

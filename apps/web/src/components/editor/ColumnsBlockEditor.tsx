@@ -4,7 +4,7 @@ import type { ContentBlockVisibility } from "@mauth-studio/shared";
 import { InlineSummaryTitle } from "@/components/MathText";
 import { ChoiceListBlockEditor } from "@/components/editor/ChoiceListBlockEditor";
 import { DiagramBlockEditor } from "@/components/editor/DiagramBlockEditor";
-import { CollapsiblePanel, ContentInsertionActions, RemoveActionButton } from "@/components/editor/EditorPanels";
+import { CollapsiblePanel, ContentInsertionActions, OpenSettingsActionButton, RemoveActionButton } from "@/components/editor/EditorPanels";
 import { SpaceBlockEditor } from "@/components/editor/SpaceBlockEditor";
 import { TableBlockEditor } from "@/components/editor/TableBlockEditor";
 import { TextBlockEditor } from "@/components/editor/TextBlockEditor";
@@ -290,13 +290,21 @@ export function ColumnsBlockEditor({
     <CollapsiblePanel
       title={title ?? <InlineSummaryTitle label={label} summary={columnsBlockSummary(block)} />}
       leading={dragHandle}
-      actions={<RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />}
+      actions={
+        <>
+          <OpenSettingsActionButton label={label} />
+          <RemoveActionButton label={`Remove ${label}`} onRemove={onRemove} />
+        </>
+      }
       className={cn(muted && "bg-muted/25")}
       bodyClassName="space-y-3"
       active={active}
       openSignal={openSignal}
     >
-      <div className="grid min-w-0 gap-3" style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}>
+      <div
+        className="editor-authored-columns-grid grid min-w-0 gap-3"
+        style={{ gridTemplateColumns: `repeat(${normalized.columnCount}, minmax(0, 1fr))` }}
+      >
         {visibleColumns.map((column, columnIndex) => (
           <section key={columnIndex} className="min-w-0 space-y-3 rounded-md border bg-background p-3">
             <div className="text-xs font-semibold uppercase text-muted-foreground">Column {columnIndex + 1}</div>

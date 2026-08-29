@@ -1,7 +1,8 @@
-export type DocumentEditorSurfaceKind = "frontMatter" | "pageBreak" | "sectionHeading" | "question" | "empty";
+export type DocumentEditorSurfaceKind = "frontMatter" | "formulaSheet" | "pageBreak" | "sectionHeading" | "question" | "empty";
 
 export function documentEditorSurfaceKind({
   editingFrontMatter,
+  editingFormulaSheet,
   editingPageBreak,
   editingSectionHeading,
   hasActivePageBreak,
@@ -9,6 +10,7 @@ export function documentEditorSurfaceKind({
   hasActiveQuestion,
 }: {
   editingFrontMatter: boolean;
+  editingFormulaSheet: boolean;
   editingPageBreak: boolean;
   editingSectionHeading: boolean;
   hasActivePageBreak: boolean;
@@ -16,6 +18,7 @@ export function documentEditorSurfaceKind({
   hasActiveQuestion: boolean;
 }): DocumentEditorSurfaceKind {
   if (editingFrontMatter) return "frontMatter";
+  if (editingFormulaSheet) return "formulaSheet";
   if (editingPageBreak) return hasActivePageBreak ? "pageBreak" : "empty";
   if (editingSectionHeading) return hasActiveSectionHeading ? "sectionHeading" : "empty";
   return hasActiveQuestion ? "question" : "empty";

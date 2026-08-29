@@ -10,6 +10,7 @@ import {
   ImagePlus,
   ListOrdered,
   SeparatorHorizontal,
+  Sigma,
   Table2,
   Type,
 } from "lucide-react";
@@ -58,6 +59,7 @@ export function tocSummaryText(source: string) {
 
 function TocItemIcon({ kind, sectionItemPresentation }: { kind: TocItemKind; sectionItemPresentation: "section" | "titlePage" }) {
   if (kind === "title") return <FileText className="size-4" aria-hidden="true" />;
+  if (kind === "formulaSheet") return <Sigma className="size-4" aria-hidden="true" />;
   if (kind === "investigationPage") return <FileText className="size-4" aria-hidden="true" />;
   if (kind === "investigationRubric") return <ClipboardList className="size-4" aria-hidden="true" />;
   if (kind === "sectionHeading") {
