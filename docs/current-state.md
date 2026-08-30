@@ -38,7 +38,7 @@ For assessment authoring, inspect the live document through the installed app's 
 - **Normal use:** open **Mauth Studio.app**. It owns its local FastAPI sidecar and needs no open Terminal window.
 - **Development:** use `pnpm desktop:dev`; `pnpm macos:dev` remains an alias. React/CSS and API edits are watched, while Electron main-process and packaging edits require a restart.
 - **Documents:** visible `.mauth` files live in the selected folder. Shared state and recovery live under `~/Library/Application Support/Mauth Studio/storage`.
-- **Tabs:** several documents can be open with independent history, dirty state, revision, autosave, drag-to-reorder, and explicit agent `documentId` targeting.
+- **Tabs:** several documents can be open with independent history, dirty state, revision, autosave, drag-to-reorder, Command-W close-first behavior, and explicit agent `documentId` targeting.
 - **Agent setup:** **Help > Set Up Codex or Claude...** provides one-time client configuration for the connector bundled inside the app. No setup prompt or token copying is required.
 - **Finder:** `.mauth` uses a dedicated portrait document icon with the large Mauth M and has a read-only native Spacebar Quick Look summary.
 - **Solutions:** manual structured solution layers exist for text, choices, tables, graph functions/features, supported 2D/3D/Plotly/image/Penrose elements, and paired whole-diagram copies.
@@ -49,9 +49,9 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-App.tsx: 1686 lines
+App.tsx: 1701 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; release 0.1.5 includes the MCP reconnect, bridge-timeout, packaged-renderer API authentication, background-safe lifecycle acknowledgement, nested-mark-total, rotation-safe measurement-graph3d, live curved-solid rendering, equal-scale 3D projection, clarified rectangular 3D-frame controls, independently draggable 2D/3D labels, responsive Content/Settings workspace, full-width editor surface, always-responsive Settings pane, pane-width preview zoom, aligned controlled logo selector, structured question-wording changes, selected-element 3D display settings, shrink-wrapped diagram selection, dimension-to-dimension or dimension-to-face perpendicular annotations, first-class standard-test formula-sheet navigation/editor, and shared square-ended title-page accent rails
+worktree: clean at this checkpoint; release 0.1.5 remains the current published build, while the post-release source routes desktop Command-W through the guarded active-tab close lifecycle, retains Command-Shift-W for explicit window close, closes an empty window only after all document tabs are gone, and opens the empty start screen on a fresh installation with no recovery draft
 ```
 
 Observed runtime on 12-14 August 2026:
@@ -260,9 +260,9 @@ Latest full gate on 30 August 2026:
 ```text
 formatting and lint: passed
 API: 89 passed
-web/actions: 679 passed
+web/actions: 680 passed
 Plotly: 8 passed
-launcher: 59 passed (desktop and connector contract)
+launcher: 61 passed (desktop and connector contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

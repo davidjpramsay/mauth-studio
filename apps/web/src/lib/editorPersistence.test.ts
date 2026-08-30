@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createEditorPersistence } from "./editorPersistence.ts";
+import { createEditorPersistence, shouldOpenEditorDocumentOnStartup } from "./editorPersistence.ts";
 import type { BrowserStorageLike } from "./browserStorage.ts";
 
 interface TestQuestion {
@@ -96,6 +96,14 @@ const persistence = createEditorPersistence<{ title: string }, TestQuestion, Tes
   cloneSerializable: (value) => JSON.parse(JSON.stringify(value)) as typeof value,
   defaultDocumentFlow: (questions) => questions.map((question) => ({ kind: "question", id: question.id })),
   isBlankStarterQuestion: (question) => question?.blank === true,
+});
+
+test("fresh installs start empty while real recovery drafts reopen", () => {
+  assert.equal(shouldOpenEditorDocumentOnStartup(null), false);
+  assert.equal(shouldOpenEditorDocumentOnStartup(undefined), false);
+  assert.equal(shouldOpenEditorDocumentOnStartup({ documentOpen: false }), false);
+  assert.equal(shouldOpenEditorDocumentOnStartup({ documentOpen: true }), true);
+  assert.equal(shouldOpenEditorDocumentOnStartup({}), true);
 });
 
 test("normalizes autosave snapshots and filters stale flow entries", () => {

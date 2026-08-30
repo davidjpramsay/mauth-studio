@@ -7,12 +7,15 @@ const MAUTH_AGENT_SETUP_OPEN_CHANNEL = "mauth:open-agent-setup";
 const MAUTH_SYSTEM_STATUS_OPEN_CHANNEL = "mauth:open-system-status";
 const MAUTH_THEME_TOGGLE_CHANNEL = "mauth:toggle-theme";
 const MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL = "mauth:open-solution-validation";
+const MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL = "mauth:close-active-document";
+const MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL = "mauth:request-window-close";
 const pendingDocumentPaths = [];
 const documentOpenListeners = new Set();
 const agentSetupListeners = new Set();
 const systemStatusListeners = new Set();
 const themeToggleListeners = new Set();
 const solutionValidationListeners = new Set();
+const activeDocumentCloseListeners = new Set();
 
 ipcRenderer.on(MAUTH_DOCUMENT_OPEN_CHANNEL, (_event, filePath) => {
   if (typeof filePath !== "string") return;
@@ -39,12 +42,19 @@ ipcRenderer.on(MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL, () => {
   for (const listener of solutionValidationListeners) listener();
 });
 
+ipcRenderer.on(MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL, () => {
+  for (const listener of activeDocumentCloseListeners) listener();
+});
+
 contextBridge.exposeInMainWorld("mauthDesktop", {
   getAgentConnectorInfo() {
     return ipcRenderer.invoke(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
   },
   chooseDocumentsFolder() {
     return ipcRenderer.invoke(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL);
+  },
+  requestWindowClose() {
+    return ipcRenderer.invoke(MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL);
   },
   onOpenAgentSetup(listener) {
     if (typeof listener !== "function") return () => {};
@@ -65,6 +75,11 @@ contextBridge.exposeInMainWorld("mauthDesktop", {
     if (typeof listener !== "function") return () => {};
     solutionValidationListeners.add(listener);
     return () => solutionValidationListeners.delete(listener);
+  },
+  onCloseActiveDocument(listener) {
+    if (typeof listener !== "function") return () => {};
+    activeDocumentCloseListeners.add(listener);
+    return () => activeDocumentCloseListeners.delete(listener);
   },
   onOpenDocument(listener) {
     if (typeof listener !== "function") return () => {};

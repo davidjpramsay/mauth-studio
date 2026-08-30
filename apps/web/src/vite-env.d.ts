@@ -7,9 +7,11 @@ interface Window {
   mauthDesktop?: {
     getAgentConnectorInfo: () => Promise<MauthAgentConnectorInfo>;
     chooseDocumentsFolder: () => Promise<MauthDocumentsFolderSelection>;
+    requestWindowClose: () => Promise<boolean>;
     onOpenAgentSetup: (listener: () => void) => () => void;
     onOpenSystemStatus: (listener: () => void) => () => void;
     onOpenSolutionValidation: (listener: () => void) => () => void;
+    onCloseActiveDocument: (listener: () => void) => () => void;
     onOpenDocument: (listener: (filePath: string) => void) => () => void;
     onToggleTheme: (listener: () => void) => () => void;
   };

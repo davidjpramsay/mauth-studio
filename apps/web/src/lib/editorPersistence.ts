@@ -7,6 +7,10 @@ interface LogoSnapshotLike {
   schoolName?: string;
 }
 
+export function shouldOpenEditorDocumentOnStartup(snapshot: { documentOpen?: boolean } | null | undefined) {
+  return Boolean(snapshot && snapshot.documentOpen !== false);
+}
+
 export interface EditorPersistenceConfig<
   TFrontMatter,
   TQuestion,

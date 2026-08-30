@@ -89,6 +89,7 @@ import {
 import { scrollToAnchorPosition } from "@/lib/editorDomNavigation";
 import { createEditorContextDescriptorRuntime } from "@/lib/editorContextDescriptors";
 import { PROJECT_FILE_REVISION_MISSING_ERROR, type AutosavedEditorSnapshot, type SavedTest } from "@/lib/editorAppPersistence";
+import { shouldOpenEditorDocumentOnStartup } from "@/lib/editorPersistence";
 import { dragPlacementFromEvent, setEditorDragImage } from "@/lib/editorDragDom";
 import { createEditorContentMutationActions } from "@/lib/editorContentMutationActions";
 import { createEditorBlockContextRuntime } from "@/lib/editorBlockContexts";
@@ -220,7 +221,7 @@ function agentDocumentTabSummary(tab: EditorDocumentTab, activeTabId: string | n
 export default function App() {
   const mauthDialogs = useMauthDialogController();
   const initialEditorDraft = loadInitialEditorDraft();
-  const initialEditorDocumentOpen = initialEditorDraft?.documentOpen !== false;
+  const initialEditorDocumentOpen = shouldOpenEditorDocumentOnStartup(initialEditorDraft);
   const initialQuestions = useMemo(() => initialEditorDraft?.questions ?? [], [initialEditorDraft]);
   const initialSectionHeadings = useMemo(() => initialEditorDraft?.sectionHeadings ?? [], [initialEditorDraft]);
   const initialDocumentFlow = useMemo(
@@ -1163,6 +1164,20 @@ export default function App() {
     }
     void closeDocumentTab(activeTabId);
   }
+
+  const handleDesktopCloseActiveDocument = useStableEvent(() => {
+    const activeTabId = documentTabsController.activeTabIdRef.current;
+    if (activeTabId) {
+      void closeDocumentTab(activeTabId);
+      return;
+    }
+    if (editorDocumentOpenRef.current) {
+      void documentSessionController.closeCurrentDocument();
+      return;
+    }
+    void window.mauthDesktop?.requestWindowClose();
+  });
+  useEffect(() => window.mauthDesktop?.onCloseActiveDocument(handleDesktopCloseActiveDocument), [handleDesktopCloseActiveDocument]);
 
   const projectFileManagementController = useEditorProjectFileManagementController({
     activeProject,

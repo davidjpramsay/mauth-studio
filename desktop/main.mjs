@@ -20,9 +20,12 @@ import { isRuntimeApiRequest } from "./local-api-auth.mjs";
 import { MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, chooseDocumentsFolder } from "./native-dialogs.mjs";
 import { packagedSidecarExecutable } from "./platform-paths.mjs";
 import {
+  MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL,
   MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL,
   MAUTH_SYSTEM_STATUS_OPEN_CHANNEL,
   MAUTH_THEME_TOGGLE_CHANNEL,
+  MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL,
+  desktopFileMenuItems,
   sendDesktopMenuCommand,
 } from "./menu-commands.mjs";
 import {
@@ -227,6 +230,15 @@ function openSolutionValidation() {
   sendDesktopMenuCommand(mainWindow, MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL);
 }
 
+function closeActiveDocument() {
+  sendDesktopMenuCommand(mainWindow, MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL);
+}
+
+function closeMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.close();
+}
+
 function createApplicationMenu() {
   return Menu.buildFromTemplate([
     {
@@ -242,7 +254,7 @@ function createApplicationMenu() {
         { role: "quit" },
       ],
     },
-    { label: "File", submenu: [{ role: "close" }] },
+    { label: "File", submenu: desktopFileMenuItems({ closeActiveDocument, closeWindow: closeMainWindow }) },
     {
       label: "Edit",
       submenu: [
@@ -435,6 +447,12 @@ async function launch() {
   ipcMain.handle(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, () =>
     chooseDocumentsFolder({ dialog, window: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null }),
   );
+  ipcMain.removeHandler(MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL);
+  ipcMain.handle(MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL, (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
+    closeMainWindow();
+    return true;
+  });
   if (app.isPackaged && !updatesEnabled) desktopLog("updater disabled because app-update.yml is unavailable");
   refreshApplicationMenu();
   createWindow(webUrl, apiUrl, paths.icon, paths.preload, agentToken);
