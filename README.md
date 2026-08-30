@@ -1,133 +1,73 @@
 # Mauth Studio
 
-Mauth Studio is a local-first macOS app for creating printable mathematics tests, exams, worksheets, notes, investigations, and solutions.
+Mauth Studio is a local-first macOS app for creating printable mathematics assessments and solutions.
 
-![Mauth Studio preview](docs/assets/mauth-bridge-smoke.png)
+![Mauth Studio](docs/assets/mauth-product-preview.png)
 
 ## Download
 
-The current public build is the signed and Apple-notarized `0.1.5` alpha for Apple Silicon Macs.
+[Download Mauth Studio 0.1.5 for Apple Silicon](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.5/Mauth-Studio-0.1.5-arm64.dmg)
 
-[Download Mauth Studio 0.1.5](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.5/Mauth-Studio-0.1.5-arm64.dmg)
+The current release is an alpha build signed and notarized by Apple. Open the DMG, drag **Mauth Studio** to Applications, and launch it normally. The app manages its own local services; Python, Node.js, and a repository checkout are not required.
 
-Open the DMG, move **Mauth Studio** to Applications, and launch it normally. The app starts and stops its own local mathematics service. Python, Node.js, a repository checkout, and open Terminal windows are not required.
+Mauth Studio is still under active development. Keep backups of important documents.
 
-Mauth asks before downloading an update and again before restarting to install it. You can also choose **Mauth Studio > Check for Updates...**.
+## Features
 
-## What It Does
+- Tests, exams, worksheets, mathematics notes, investigations, and teacher solutions.
+- Live A4 Student and Solutions previews with structured questions, marks, tables, diagrams, and working space.
+- Mathematical typesetting with MathJax, graphs with JSXGraph, geometry with Penrose, and statistics charts with Plotly.
+- Local `.mauth` files with autosave recovery, version history, revision-aware saves, and multiple document tabs.
+- Finder document icons, Quick Look summaries, printing, and PDF export.
 
-- Creates printable A4 assessments with title pages, sections, questions, parts, diagrams, tables, working space, and solutions.
-- Supports tests, exams, worksheets, notes, and linked student/teacher investigation documents.
-- Renders maths with MathJax SVG, coordinate diagrams with JSXGraph, geometry/set/network diagrams with Penrose, and statistics charts with Plotly.
-- Keeps visible `.mauth` documents in a teacher-selected folder, with revision-aware saves, versions, autosave recovery, and multiple open tabs.
-- Integrates with Finder through a dedicated Mauth document icon and read-only Quick Look summary.
+See the [Mauth Studio website](https://davidjpramsay.github.io/mauth-studio/) for screenshots and a feature overview.
 
-Mauth Studio is alpha software. Keep backups of important assessment files and expect the interface and schema to continue improving.
+## Optional Agent Help
 
-## Optional Codex Or Claude Connection
-
-The app works without AI. To let Codex, Claude Code, or Claude Desktop inspect and edit the open Mauth document:
+Mauth works without AI. To connect Codex, Claude Code, or Claude Desktop:
 
 1. Open Mauth Studio.
 2. Choose **Help > Set Up Codex or Claude...**.
-3. Copy and run the one-time setup for your agent.
-4. Keep Mauth Studio open while the agent is working.
+3. Run the one-time setup shown for your agent.
 
-No separate prompt, token, agent-files download, source checkout, or Node installation is required. MCP is the local connection that exposes structured Mauth tools to the agent. See [Connect Codex or Claude](docs/agent-local-setup.md).
+The agent can then create, inspect, edit, and validate documents through Mauth's local structured tools while you review the result in the app. See [Connect Codex or Claude](docs/agent-local-setup.md).
 
-The revision-safe authoring loop is:
+## Development
 
-```text
-mauth_documents_list / mauth_document_create / mauth_document_open
-mauth_snapshot
-mauth_actions_preview
-mauth_actions_apply
-mauth_validation_run
-rendered Student and Solutions/Teacher verification
-```
-
-Agents can create and open saved documents without raw file edits. Snapshots include `activeDocumentId` and `openDocuments`, so agents can target the intended tab explicitly; guarded close refuses dirty tabs unless save or discard is explicit.
-
-## Develop Mauth
-
-A repository checkout is needed only to change the app itself.
-
-Before editing, read:
-
-1. `AGENTS.md`
-2. `docs/current-state.md`
-3. `docs/architecture.md`
-4. the subsystem guide named by the current task
-
-Install dependencies from the project root:
+Read [AGENTS.md](AGENTS.md) and [docs/current-state.md](docs/current-state.md) before editing.
 
 ```bash
 pnpm install
 cd apps/api
 uv sync
 cd ../..
+pnpm desktop:dev
 ```
 
-Run the watched Electron development app:
-
-```bash
-pnpm macos:dev
-```
-
-React/CSS edits use Vite HMR and API edits reload through Uvicorn. Restart `pnpm macos:dev` after Electron main-process, preload, startup, or packaging changes.
-
-Use a deliberate local installed-app checkpoint only when needed:
-
-```bash
-pnpm macos:build
-pnpm macos:install
-```
-
-That build is not a shareable release. External releases use the guarded process in `docs/macos-release.md`; `pnpm macos:release` and `pnpm macos:ship` are not routine development commands.
-
-## Repository Map
-
-- `apps/api`: FastAPI maths, storage, diagnostics, and agent bridge services.
-- `apps/web`: React/Vite editor, preview, files, diagrams, solutions, and print UI.
-- `packages/question-engine`: question generation.
-- `packages/marking-engine`: marking rules and equivalence.
-- `packages/formatting-engine`: formatting rules and render blocks.
-- `packages/diagram-penrose`: Penrose diagram adapter.
-- `packages/diagram-plotly`: Plotly statistics-chart adapter.
-- `configs/ai-brains`: durable question, formatting, diagram, and solution authoring rules.
-- `workspace`: ignored scratch space for PDFs, crops, screenshots, reports, and generated artifacts.
-
-Normal teacher documents and private app state do not belong in Git. See `docs/storage.md`.
-
-## Verification
-
-Run the full repository gate before committing shared changes:
+Run the full quality gate before sharing changes:
 
 ```bash
 pnpm check
 ```
 
-Useful focused checks:
+Local installed-app builds use `pnpm macos:build` and `pnpm macos:install`. Public releases follow [docs/macos-release.md](docs/macos-release.md).
 
-```bash
-pnpm test:api
-pnpm test:web-actions
-pnpm test:plotly
-pnpm test:launcher
-pnpm build:web
-```
+## Repository
 
-Use `pnpm check:handoff:live` only at a model/developer transition after the checkpoint in `docs/current-state.md` has been updated to match Git.
+- `apps/api`: FastAPI services, storage, diagnostics, and the agent bridge.
+- `apps/web`: React editor, preview, files, diagrams, solutions, and print UI.
+- `packages`: question, marking, formatting, and diagram engines.
+- `configs`: question types, marking rules, formatting rules, and AI authoring guidance.
+- `docs`: user setup, architecture, formats, release process, and GitHub Pages.
+- `workspace`: ignored local scratch files and generated artifacts.
 
 ## Documentation
 
-- `AGENTS.md`: agent rules and authoring conventions.
-- `docs/current-state.md`: current handoff, verification baseline, and next work.
-- `docs/architecture.md`: durable runtime and component boundaries.
-- `docs/storage.md`: files, folders, autosave, versions, and recovery.
-- `docs/agent-local-setup.md`: installed-app Codex/Claude setup.
-- `docs/agent-bridge.md`: technical HTTP/MCP contract.
-- `docs/mauth-actions.md`: structured mutation contract.
-- `docs/mauthdown.md`: AI-friendly text interchange format.
-- `docs/ai-brains.md`: focused authoring rule sets.
-- `docs/macos-release.md`: signing, notarization, and publication.
+- [Current state](docs/current-state.md)
+- [Architecture](docs/architecture.md)
+- [Storage and recovery](docs/storage.md)
+- [Agent setup](docs/agent-local-setup.md)
+- [Agent bridge](docs/agent-bridge.md)
+- [Structured actions](docs/mauth-actions.md)
+- [Mauthdown format](docs/mauthdown.md)
+- [Authoring rules](docs/ai-brains.md)

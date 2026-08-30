@@ -1,6 +1,6 @@
 # @mauth-studio/diagram-plotly
 
-Plotly-backed statistics chart adapter for the maths authoring app.
+Plotly adapter for Mauth statistics charts.
 
 The package accepts the shared diagram shape:
 
@@ -22,7 +22,7 @@ The package accepts the shared diagram shape:
 }
 ```
 
-It returns controlled Plotly `data`, `layout`, and `config` objects. Rendering happens in the web app so this package remains independent of React and DOM lifecycle code.
+The adapter returns Plotly `data`, `layout`, and `config` objects. The web app owns rendering, keeping this package independent of React and the DOM.
 
 Current chart types:
 
@@ -31,6 +31,6 @@ Current chart types:
 - `normal`
 - `box`
 
-Histogram traces are precomputed as bar traces rather than delegated to Plotly's native histogram binning. This keeps `bins` as an exact interval count and `binSize` as an exact interval width, which is important for worksheet consistency.
+Histograms use precomputed bar traces so `bins` remains an exact interval count and `binSize` remains an exact interval width.
 
-Future chart families should extend this package rather than the JSXGraph or Penrose diagram systems.
+Add future statistical chart types here, not in the JSXGraph or Penrose adapters.

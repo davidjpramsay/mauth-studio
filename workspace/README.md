@@ -1,15 +1,11 @@
 # Mauth Workspace
 
-`workspace/` is the project-integrated scratch area for Codex, Claude Code, and human authoring work.
-
-It replaces the old sibling `mauth-workbench/` folder. The directory now travels with the project layout, but generated contents stay out of Git by default.
+`workspace/` is the ignored scratch area for development and assessment-authoring work.
 
 Use this folder for:
 
-- PDF/image crops and source-conversion scratch files
-- rendered verification screenshots
-- temporary scripts and reports
-- generated PDFs, Canvas/QTI exports, and backups
-- local agent run artifacts that are useful while working but should not become app source
+- source PDFs, image crops, and conversion files;
+- temporary scripts, reports, and verification screenshots;
+- generated PDFs, exports, backups, and agent artifacts.
 
-Promote a file out of `workspace/` only when it has become durable source code, a test fixture, documentation, or intentional configuration.
+Move a file into the repository only when it becomes durable source, documentation, configuration, or a test fixture.
