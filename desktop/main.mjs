@@ -4,7 +4,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import electronUpdater from "electron-updater";
@@ -36,10 +36,16 @@ import {
   writeRuntimeManifest,
 } from "./runtime.mjs";
 import { createDesktopUpdaterController } from "./updater.mjs";
-import { MAUTH_DOCUMENT_OPEN_CHANNEL, isMauthDocumentPath, mauthDocumentPathsFromCommandLine } from "./document-open.mjs";
+import {
+  MAUTH_DOCUMENT_OPEN_CHANNEL,
+  canDispatchDocumentOpen,
+  isMauthDocumentPath,
+  mauthDocumentPathsFromCommandLine,
+} from "./document-open.mjs";
 
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(DESKTOP_DIR, "..");
+const LOADING_PAGE = path.join(DESKTOP_DIR, "loading.html");
 const APP_ID = "au.edu.acc.mauth-studio";
 const API_READY_TIMEOUT_MS = 45_000;
 
@@ -49,6 +55,7 @@ let webProcess = null;
 let runtimeFile = null;
 let quitting = false;
 let updateController = null;
+let editorReady = false;
 const pendingOpenDocumentPaths = [];
 
 const { autoUpdater } = electronUpdater;
@@ -112,7 +119,13 @@ function currentAgentConnectorInfo() {
 
 function sendOpenDocument(filePath) {
   if (!isMauthDocumentPath(filePath)) return;
-  if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) {
+  if (
+    !canDispatchDocumentOpen({
+      windowAvailable: Boolean(mainWindow),
+      editorReady,
+      loadingMainFrame: mainWindow?.webContents.isLoadingMainFrame() ?? false,
+    })
+  ) {
     if (!pendingOpenDocumentPaths.includes(filePath)) pendingOpenDocumentPaths.push(filePath);
     return;
   }
@@ -120,7 +133,15 @@ function sendOpenDocument(filePath) {
 }
 
 function flushPendingOpenDocuments() {
-  if (!mainWindow || mainWindow.webContents.isLoadingMainFrame()) return;
+  if (
+    !canDispatchDocumentOpen({
+      windowAvailable: Boolean(mainWindow),
+      editorReady,
+      loadingMainFrame: mainWindow?.webContents.isLoadingMainFrame() ?? false,
+    })
+  ) {
+    return;
+  }
   for (const filePath of pendingOpenDocumentPaths.splice(0)) {
     mainWindow.webContents.send(MAUTH_DOCUMENT_OPEN_CHANNEL, filePath);
   }
@@ -307,7 +328,9 @@ function revealMainWindow() {
 function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
   const appOrigin = new URL(webUrl).origin;
   const apiOrigin = new URL(apiUrl).origin;
+  const loadingUrl = pathToFileURL(LOADING_PAGE).href;
   const runtimeApiOrigins = new Set([appOrigin, apiOrigin]);
+  editorReady = false;
   mainWindow = new BrowserWindow({
     title: "Mauth Studio",
     width: 1560,
@@ -342,7 +365,7 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedAppNavigation(url, appOrigin)) return;
+    if (url === loadingUrl || isAllowedAppNavigation(url, appOrigin)) return;
     event.preventDefault();
     if (/^(https?:|mailto:)/.test(url)) void shell.openExternal(url);
   });
@@ -355,6 +378,14 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
   };
   mainWindow.once("ready-to-show", () => presentWindow("ready-to-show"));
   mainWindow.webContents.once("did-finish-load", () => presentWindow("did-finish-load"));
+  mainWindow.webContents.on("did-finish-load", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const loadedUrl = mainWindow.webContents.getURL();
+    if (!isAllowedAppNavigation(loadedUrl, appOrigin)) return;
+    editorReady = true;
+    desktopLog("editor document ready");
+    flushPendingOpenDocuments();
+  });
   mainWindow.webContents.on("will-prevent-unload", (event) => {
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: "question",
@@ -374,10 +405,10 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
     }
   });
   mainWindow.on("closed", () => {
+    editorReady = false;
     mainWindow = null;
   });
-  mainWindow.webContents.on("did-finish-load", flushPendingOpenDocuments);
-  void mainWindow.loadURL(webUrl);
+  void mainWindow.loadFile(LOADING_PAGE).catch((error) => desktopLog(`loading page failed ${error.message}`));
 }
 
 function stopApi() {
@@ -393,6 +424,7 @@ function stopWeb() {
 }
 
 async function launch() {
+  const launchStartedAt = Date.now();
   desktopLog("launch started");
   const apiPort = await findAvailablePort();
   if (!apiPort) throw new Error("Could not reserve a local API port for Mauth Studio.");
@@ -410,8 +442,10 @@ async function launch() {
   const agentToken = randomBytes(32).toString("base64url");
   const { apiUrl, webUrl, paths } = startApi(apiPort, agentToken, developmentPlan);
   desktopLog(`api spawned pid=${apiProcess?.pid ?? "unknown"} url=${apiUrl}`);
-  await waitForLocalService(`${apiUrl}/api/system/status`, "API", apiProcess);
-  desktopLog("api ready");
+  createWindow(webUrl, apiUrl, paths.icon, paths.preload, agentToken);
+  desktopLog(`loading window created elapsedMs=${Date.now() - launchStartedAt}`);
+  await waitForLocalService(`${apiUrl}/api/health`, "API", apiProcess);
+  desktopLog(`api ready elapsedMs=${Date.now() - launchStartedAt}`);
   if (developmentPlan) {
     startDevelopmentWeb(developmentPlan);
     desktopLog(`web development server spawned pid=${webProcess?.pid ?? "unknown"} url=${webUrl}`);
@@ -455,9 +489,12 @@ async function launch() {
   });
   if (app.isPackaged && !updatesEnabled) desktopLog("updater disabled because app-update.yml is unavailable");
   refreshApplicationMenu();
-  createWindow(webUrl, apiUrl, paths.icon, paths.preload, agentToken);
+  if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The Mauth Studio window closed during startup.");
+  editorReady = false;
+  desktopLog(`editor navigation started elapsedMs=${Date.now() - launchStartedAt}`);
+  await mainWindow.loadURL(webUrl);
+  desktopLog(`editor loaded elapsedMs=${Date.now() - launchStartedAt}`);
   updateController.scheduleAutomaticCheck();
-  desktopLog("window created");
 }
 
 app.on("second-instance", (_event, commandLine) => {

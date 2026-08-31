@@ -10,3 +10,7 @@ export function isMauthDocumentPath(filePath) {
 export function mauthDocumentPathsFromCommandLine(commandLine) {
   return [...new Set(commandLine.filter(isMauthDocumentPath).map((filePath) => path.resolve(filePath)))];
 }
+
+export function canDispatchDocumentOpen({ windowAvailable, editorReady, loadingMainFrame }) {
+  return windowAvailable && editorReady && !loadingMainFrame;
+}

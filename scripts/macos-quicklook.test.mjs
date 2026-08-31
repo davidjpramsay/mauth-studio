@@ -21,6 +21,7 @@ test("macOS package registers the canonical document type and Quick Look preview
   assert.deepEqual(declaration.UTTypeTagSpecification["public.filename-extension"], ["mauth"]);
   assert.ok(config.extraFiles.some((item) => item.from === "tmp/macos/quicklook" && item.to === "PlugIns"));
   assert.ok(config.extraResources.some((item) => item.from === "build/mauth-document.icns" && item.to === "mauth-document.icns"));
+  assert.ok(config.extraResources.some((item) => item.from === "tmp/macos/mauth-api" && item.to === "sidecars/mauth-api"));
   assert.ok(config.mac.signIgnore.some((pattern) => pattern.includes("Contents/PlugIns")));
 });
 

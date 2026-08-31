@@ -40,8 +40,8 @@ test("desktop state follows each operating system's conventional application-dat
 test("development and packaged executable names follow the target platform", () => {
   assert.equal(developmentPythonExecutable("/repo", "darwin"), path.join("/repo", "apps", "api", ".venv", "bin", "python"));
   assert.equal(developmentPythonExecutable("C:\\repo", "win32"), path.join("C:\\repo", "apps", "api", ".venv", "Scripts", "python.exe"));
-  assert.equal(packagedSidecarExecutable("/resources", "linux"), path.join("/resources", "sidecars", "mauth-api"));
-  assert.equal(packagedSidecarExecutable("C:\\resources", "win32"), path.join("C:\\resources", "sidecars", "mauth-api.exe"));
+  assert.equal(packagedSidecarExecutable("/resources", "linux"), path.join("/resources", "sidecars", "mauth-api", "mauth-api"));
+  assert.equal(packagedSidecarExecutable("C:\\resources", "win32"), path.join("C:\\resources", "sidecars", "mauth-api", "mauth-api.exe"));
   assert.equal(packagedAgentConnectorFileName("darwin"), "mauth-agent-mcp");
   assert.equal(packagedAgentConnectorFileName("win32"), "mauth-agent-mcp.cmd");
 });

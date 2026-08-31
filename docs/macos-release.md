@@ -5,7 +5,7 @@ This is the distribution contract for sharing Mauth Studio outside the developme
 ## Current Support
 
 - macOS on Apple Silicon (`arm64`).
-- Standalone Electron app with packaged FastAPI, Penrose, and self-contained MCP connector runtimes.
+- Standalone Electron app with a PyInstaller onedir FastAPI sidecar plus packaged Penrose and self-contained MCP connector runtimes.
 - Native `.mauth` document identity with a dedicated PDF-style Mauth document icon plus a sandboxed Spacebar Quick Look extension.
 - No Python, Node.js, repo checkout, or Terminal window is required for ordinary use.
 - Codex, Claude Code, and MCP clients remain supported through the authenticated local bridge.
@@ -47,7 +47,7 @@ The command deliberately fails before building when it cannot find:
 - an installed `Developer ID Application` identity; or
 - notarization credentials through a keychain profile, Apple ID variables, or App Store Connect API-key variables.
 
-When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look preview extension, FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extension before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. After DMG stapling it normalizes `latest-mac.yml` to the signed ZIP used by the updater, removes the inapplicable pre-stapling DMG blockmap, verifies that the ZIP metadata hash and size match the published bytes, and starts the packaged connector with the app-owned runtime as part of app verification.
+When those prerequisites exist, it builds the web app, dedicated document icon, Swift Quick Look preview extension, PyInstaller onedir FastAPI sidecar, Penrose runtime, and bundled Mauth Agent Connector; signs the nested extension before sealing the containing app with Hardened Runtime; creates arm64 DMG and ZIP artifacts; notarizes and staples the app; then signs, notarizes, staples, and Gatekeeper-validates the final DMG before running distribution verification. After DMG stapling it normalizes `latest-mac.yml` to the signed ZIP used by the updater, removes the inapplicable pre-stapling DMG blockmap, verifies that the ZIP metadata hash and size match the published bytes, checks and starts the nested sidecar executable, and starts the packaged connector with the app-owned runtime as part of app verification.
 
 This command does not publish anything. It is useful for inspecting a release bundle, but the normal public-release path is the guarded ship command below.
 
@@ -99,6 +99,7 @@ Before sharing a release, also test the downloaded artifact on a clean Apple Sil
 6. Save a `.mauth` document, confirm Finder uses the portrait Mauth document icon, and press Spacebar to verify the title, assessment summary, and marks render without launching Mauth.
 7. Choose **Help > Set Up Codex or Claude...**, configure a disposable agent client, and run the shown connection test without a source checkout.
 8. Confirm an unauthenticated request to `/api/agent/current/snapshot` is rejected.
+9. Quit and cold-launch the app, confirm the restrained loading state appears promptly, and verify it is replaced by the editor without a blank window or extra document tab.
 
 ## Agent Authentication
 

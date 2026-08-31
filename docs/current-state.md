@@ -36,6 +36,7 @@ For assessment authoring, inspect the live document through the installed app's 
 - **Product:** local-first desktop mathematics assessment authoring, with optional external-agent authoring through the same structured action layer as the UI. macOS is the only distributed build today.
 - **Current release:** signed and notarized Apple Silicon alpha `v0.1.5`; the public DMG, ZIP updater artifact, metadata, blockmap, release notes, and GitHub Pages download page are published.
 - **Normal use:** open **Mauth Studio.app**. It owns its local FastAPI sidecar and needs no open Terminal window.
+- **Startup:** the app shows a local loading state immediately, waits only on `/api/health`, then replaces it with the editor; the packaged Python sidecar is an onedir bundle and does not extract itself on every launch.
 - **Development:** use `pnpm desktop:dev`; `pnpm macos:dev` remains an alias. React/CSS and API edits are watched, while Electron main-process and packaging edits require a restart.
 - **Documents:** visible `.mauth` files live in the selected folder. Shared state and recovery live under `~/Library/Application Support/Mauth Studio/storage`.
 - **Tabs:** several documents can be open with independent history, dirty state, revision, autosave, drag-to-reorder, Command-W close-first behavior, and explicit agent `documentId` targeting.
@@ -47,15 +48,16 @@ For assessment authoring, inspect the live document through the installed app's 
 ## Immediate Worktree Checkpoint
 
 ```text
-branch: CURRENT
+branch: codex/startup-performance
 baseline commit: HEAD
 App.tsx: 1701 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; the graph2d and vector2d renderers convert automatic axis-label pixel corrections to board coordinates because JSXGraph ignores `offset` on standalone HTML text, use restrained automatic number clearances, and preserve enough pixel-aware board padding to keep those labels inside the clipped graph canvas, while release 0.1.5 remains the current published build and the post-release source routes desktop Command-W through the guarded active-tab close lifecycle, retains Command-Shift-W for explicit window close, closes an empty window only after all document tabs are gone, and opens the empty start screen on a fresh installation with no recovery draft
+worktree: clean at this checkpoint; packaged startup uses a PyInstaller onedir sidecar, creates and presents a local loading window before API readiness, polls only `/api/health`, queues document-open events until the editor origin is ready, and verifies the nested arm64 sidecar executable as part of the macOS bundle gate, while public release 0.1.5 remains unchanged
 ```
 
-Observed runtime on 12-14 August 2026:
+Observed runtime through 31 August 2026:
 
+- a fresh locally installed `0.1.5` development checkpoint on 31 August created its loading window 148 ms after launch began, presented it at 245 ms, reported API health at 699 ms, and completed editor navigation at 835 ms after launch began (about 327 ms to presentation and 917 ms to the editor from packaged process startup). The previous packaged cold launches recorded roughly 4.4-7.6 seconds. `pnpm agent:doctor` passed API health, web, bridge discovery, and active snapshot; the complete connector smoke reached the app but its document-list operation was correctly blocked by the teacher's currently unavailable selected folder with `503 STORAGE_UNAVAILABLE`, so no folder or document state was changed.
 - the locally installed `Mauth Studio.app` was rebuilt and opened with its packaged FastAPI sidecar on a dynamic loopback port;
 - the packaged MCP connector exposed all 16 local-only tools and returned a live snapshot;
 - one unchanged connector process followed the installed app across a quit/relaunch from one dynamic API port to another, proving that per-request runtime rediscovery works;
@@ -93,6 +95,8 @@ Runtime and folder facts are transient. Recheck them before authoring or debuggi
 The standalone foundation, multi-document session, manual solution layers, native Finder integration, updater, bundled connector, and guarded release pipeline are implemented.
 
 Desktop portability groundwork is now explicit without claiming unsupported releases. Runtime-manifest discovery follows the host application-data convention, development Python paths account for Windows virtual environments, Vite runs through Electron's Node mode instead of a Unix `.bin` shim, packaged helper names are platform-aware, and standalone folder selection uses Electron's native directory dialog through narrow preload IPC. These seams have local macOS tests for macOS, Windows, and Linux plans and do not consume hosted CI minutes. macOS remains the only packaged and supported distribution: Windows still needs a native FastAPI sidecar, MCP launcher, installer, signing/update plan, and real-machine QA; Linux remains demand-driven. Quick Look, Finder registration, signing, notarization, and mac updater metadata stay macOS-only adapters.
+
+Packaged startup no longer waits on the system-status route before creating a window. Electron starts the FastAPI child, presents a dependency-free local loading page, polls only `/api/health`, establishes the authenticated runtime manifest and desktop IPC, and then navigates that same window to the editor. Document-open requests remain queued until the editor origin is ready. The macOS Python service is built as a PyInstaller onedir directory with a nested executable, and app verification checks that executable's presence, permissions, arm64 architecture, and startup help path.
 
 Printable question and solution text now use one slightly more generous shared line rhythm, with a small prompt-to-solution gap, so display-size inline fractions on adjacent lines do not touch. Paired student-space/solution replacement rows receive the same gap as standalone solution rows, regardless of which hidden block appears first. This is renderer-level behaviour: existing documents gain it without stored-file migration, although tightly packed pages may reflow slightly.
 

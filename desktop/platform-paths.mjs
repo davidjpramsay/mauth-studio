@@ -23,7 +23,7 @@ export function developmentPythonExecutable(repoRoot, platform) {
 }
 
 export function packagedSidecarExecutable(resourceRoot, platform) {
-  return path.join(resourceRoot, "sidecars", platform === "win32" ? "mauth-api.exe" : "mauth-api");
+  return path.join(resourceRoot, "sidecars", "mauth-api", platform === "win32" ? "mauth-api.exe" : "mauth-api");
 }
 
 export function packagedAgentConnectorFileName(platform) {

@@ -11,6 +11,7 @@ const distribution = process.argv.includes("--distribution");
 const appArgument = process.argv.slice(2).find((argument) => argument !== "--distribution");
 const appBundle = path.resolve(appArgument ?? path.join(ROOT, "release", "mac-arm64", "Mauth Studio.app"));
 const connector = path.join(appBundle, "Contents", "Resources", "agent", "mauth-agent-mcp");
+const sidecar = path.join(appBundle, "Contents", "Resources", "sidecars", "mauth-api", "mauth-api");
 const documentIcon = path.join(appBundle, "Contents", "Resources", "mauth-document.icns");
 const quickLookExtensions = [
   {
@@ -34,6 +35,10 @@ if (!fs.existsSync(appBundle)) {
 
 if (!fs.existsSync(connector) || !(fs.statSync(connector).mode & 0o111)) {
   console.error(`The executable Mauth Agent Connector is missing from the app bundle: ${connector}`);
+  process.exit(1);
+}
+if (!fs.existsSync(sidecar) || !(fs.statSync(sidecar).mode & 0o111)) {
+  console.error(`The executable Mauth API sidecar is missing from the app bundle: ${sidecar}`);
   process.exit(1);
 }
 if (!fs.existsSync(documentIcon)) {
@@ -109,6 +114,18 @@ if (!architectures.split(/\s+/).includes("arm64")) {
   process.exit(1);
 }
 
+const sidecarArchitectures = run("/usr/bin/lipo", ["-archs", sidecar], { capture: true }).trim();
+if (!sidecarArchitectures.split(/\s+/).includes("arm64")) {
+  console.error(`The Mauth API sidecar does not contain the required Apple Silicon architecture: ${sidecarArchitectures}`);
+  process.exit(1);
+}
+
+const sidecarHelp = run(sidecar, ["--help"], { capture: true });
+if (!sidecarHelp.includes("Run the packaged Mauth Studio API and editor.")) {
+  console.error(`The bundled Mauth API sidecar did not start correctly: ${sidecarHelp || "no output"}`);
+  process.exit(1);
+}
+
 const connectorVersion = run(connector, ["--version"], { capture: true }).trim();
 if (!/^Mauth Agent Connector \d+\.\d+\.\d+/.test(connectorVersion)) {
   console.error(`The bundled Mauth Agent Connector did not start correctly: ${connectorVersion || "no output"}`);
@@ -124,5 +141,5 @@ if (distribution) {
 }
 
 console.log(
-  `${distribution ? "Distribution" : "Local hardened"} verification passed for ${appBundle} (${architectures}; ${connectorVersion}).`,
+  `${distribution ? "Distribution" : "Local hardened"} verification passed for ${appBundle} (app ${architectures}; API ${sidecarArchitectures}; ${connectorVersion}).`,
 );
