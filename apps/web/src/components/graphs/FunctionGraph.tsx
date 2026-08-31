@@ -158,16 +158,17 @@ const GRID_MINOR_COLOR = "#dddddd";
 const AXIS_COLOR = "#000000";
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
-const BOARD_EDGE_PADDING_RATIO = 0.022;
-const BOARD_EDGE_PADDING_MIN_UNITS = 0.22;
+const BOARD_EDGE_PADDING_RATIO = 0.026;
+const BOARD_EDGE_PADDING_MIN_UNITS = 0.26;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
 const AXIS_LABEL_EDGE_PADDING_MIN_UNITS = 0.32;
 const ARROW_SCAN_STEPS = 180;
 const AXIS_ARROW_SIZE = 4;
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_TEXT_FONT_SIZE = GRAPH_LABEL_FONT_SIZE_PT;
-const X_TICK_LABEL_OFFSET_PX = -8;
-const Y_TICK_LABEL_OFFSET_PX = -10;
+const AXIS_CONTENT_EDGE_PADDING_PX = 34;
+const X_TICK_LABEL_OFFSET_PX = -12;
+const Y_TICK_LABEL_OFFSET_PX = -16;
 const FUNCTION_ARROW_LENGTH_PX = 9;
 const FUNCTION_ARROW_HALF_WIDTH_PX = 4.5;
 const FUNCTION_ARROW_SAMPLE_RATIOS = [0.002, 0.005, 0.01, 0.02];
@@ -550,6 +551,13 @@ function boardEdgePadding(span: number) {
 
 function axisLabelEdgePadding(span: number) {
   return Math.max(span * AXIS_LABEL_EDGE_PADDING_RATIO, AXIS_LABEL_EDGE_PADDING_MIN_UNITS);
+}
+
+function boardPaddingForPixels(span: number, displaySize: number, requestedPaddingPx: number) {
+  if (!Number.isFinite(displaySize) || displaySize <= 0) return 0;
+  const paddingPx = Math.min(requestedPaddingPx, displaySize * 0.14);
+  const contentSize = displaySize - paddingPx * 2;
+  return contentSize > 0 ? (span * paddingPx) / contentSize : 0;
 }
 
 function graphFunctionDomain(graphFunction: GraphFunction, graphConfig: GraphConfig) {
@@ -1332,7 +1340,11 @@ function createAxisLabelText(
   attributes: Record<string, string | undefined> = {},
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;${onMove ? " pointer-events:auto; cursor:move;" : ""}`;
-  const text = board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
+  // JSXGraph only applies `offset` to labels attached to another element, not
+  // to standalone HTML text. Convert the intended screen-pixel correction to
+  // board coordinates so axis numbers and letters visibly clear the stroke.
+  const [positionX, positionY] = offsetUserByPixels(board, x, y, offset[0], -offset[1]);
+  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
     fixed: !onMove,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -1343,7 +1355,6 @@ function createAxisLabelText(
     highlightCssStyle: axisLabelCss,
     anchorX,
     anchorY,
-    offset,
     display: "html",
     parse: false,
     layer: GRAPH_LAYERS.axisLabel,
@@ -3537,6 +3548,8 @@ export function FunctionGraph({
       xMax,
       yMin,
       yMax,
+      xSpan,
+      ySpan,
       xMajorStep,
       yMajorStep,
       xMinorStep,
@@ -3560,6 +3573,14 @@ export function FunctionGraph({
     const gridMinorColor = graphConfig.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig.widthPx ?? DEFAULT_GRAPH_WIDTH;
     const displayHeight = graphDisplayHeight(graphConfig);
+    const renderedBoardPaddingX =
+      showAxes && (showYAxisNumbers || showAxisLabels)
+        ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
+        : boardPaddingX;
+    const renderedBoardPaddingY =
+      showAxes && (showXAxisNumbers || showAxisLabels)
+        ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
+        : boardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -3573,10 +3594,10 @@ export function FunctionGraph({
 
     const board = JXG.JSXGraph.initBoard(boardId, {
       boundingbox: functionBoardBoundingBox(
-        xMin - boardPaddingX,
-        yMax + boardPaddingY,
-        xMax + boardPaddingX,
-        yMin - boardPaddingY,
+        xMin - renderedBoardPaddingX,
+        yMax + renderedBoardPaddingY,
+        xMax + renderedBoardPaddingX,
+        yMin - renderedBoardPaddingY,
         displayWidth,
         displayHeight,
         graphConfig.equalScale === true,

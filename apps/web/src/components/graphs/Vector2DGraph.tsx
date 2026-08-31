@@ -14,10 +14,11 @@ const AXIS_COLOR = "#000000";
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_ARROW_SIZE = 4;
 const AUTO_AXIS_EXTENSION_RATIO = 0.055;
-const BOARD_EDGE_PADDING_RATIO = 0.022;
+const BOARD_EDGE_PADDING_RATIO = 0.026;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
-const X_TICK_LABEL_OFFSET_PX = -8;
-const Y_TICK_LABEL_OFFSET_PX = -10;
+const AXIS_CONTENT_EDGE_PADDING_PX = 34;
+const X_TICK_LABEL_OFFSET_PX = -12;
+const Y_TICK_LABEL_OFFSET_PX = -16;
 const VECTOR_ARROW_LENGTH_PX = 18;
 const VECTOR_ARROW_HALF_WIDTH_PX = 7;
 const PASSIVE_GRAPH_DECORATION_CSS = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
@@ -387,6 +388,13 @@ function vectorBoardBoundingBox(
   return [left, top + padding, right, bottom - padding];
 }
 
+function boardPaddingForPixels(span: number, displaySize: number, requestedPaddingPx: number) {
+  if (!Number.isFinite(displaySize) || displaySize <= 0) return 0;
+  const paddingPx = Math.min(requestedPaddingPx, displaySize * 0.14);
+  const contentSize = displaySize - paddingPx * 2;
+  return contentSize > 0 ? (span * paddingPx) / contentSize : 0;
+}
+
 function axisLabelStep({ graphConfig, axis, majorStep }: { graphConfig?: GraphConfig | null; axis: "x" | "y"; majorStep: number }) {
   const manualStep = axis === "x" ? graphConfig?.axisLabelStepX : graphConfig?.axisLabelStepY;
   if ((graphConfig?.axisLabelIntervalMode ?? "auto") === "manual") {
@@ -669,7 +677,11 @@ function createAxisLabelText(
   attributes: Record<string, string | undefined> = { "data-mauth-label-role": "axis-label" },
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
-  board.create("text", [x, y, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
+  // JSXGraph only applies `offset` to labels attached to another element, not
+  // to standalone HTML text. Convert the intended screen-pixel correction to
+  // board coordinates so axis numbers and letters visibly clear the stroke.
+  const [positionX, positionY] = offsetUserByPixels(board, x, y, offset[0], -offset[1]);
+  board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
     fixed: true,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -680,7 +692,6 @@ function createAxisLabelText(
     highlightCssStyle: axisLabelCss,
     anchorX,
     anchorY,
-    offset,
     display: "html",
     parse: false,
     layer: GRAPH_LAYERS.axisLabel,
@@ -749,6 +760,8 @@ export function Vector2DGraph({
       xMax,
       yMin,
       yMax,
+      xSpan,
+      ySpan,
       xMajorStep,
       yMajorStep,
       xMinorStep,
@@ -771,6 +784,14 @@ export function Vector2DGraph({
     const gridMinorColor = graphConfig?.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH;
     const displayHeight = graphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT;
+    const renderedBoardPaddingX =
+      showAxes && (showYAxisNumbers || showAxisLabels)
+        ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
+        : boardPaddingX;
+    const renderedBoardPaddingY =
+      showAxes && (showXAxisNumbers || showAxisLabels)
+        ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
+        : boardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -784,10 +805,10 @@ export function Vector2DGraph({
 
     const board = JXG.JSXGraph.initBoard(boardId, {
       boundingbox: vectorBoardBoundingBox(
-        xMin - boardPaddingX,
-        yMax + boardPaddingY,
-        xMax + boardPaddingX,
-        yMin - boardPaddingY,
+        xMin - renderedBoardPaddingX,
+        yMax + renderedBoardPaddingY,
+        xMax + renderedBoardPaddingX,
+        yMin - renderedBoardPaddingY,
         displayWidth,
         displayHeight,
         graphConfig?.equalScale === true,
