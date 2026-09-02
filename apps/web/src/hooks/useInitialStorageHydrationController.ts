@@ -25,7 +25,6 @@ interface UseInitialStorageHydrationControllerOptions<TLegacySavedTest, TLogo, T
   logoId?: (logo: TLogo) => string | undefined;
   deleteLogoFromDisk?: (logoId: string) => Promise<unknown>;
   loadBrowserAutosave: () => TAutosave | null;
-  newerAutosave: (browserAutosave: TAutosave | null, diskAutosave: TAutosave | null) => TAutosave | null;
   isClosedAutosave: (autosave: TAutosave) => boolean;
   clearAutosaveProjectFile: (autosave: TAutosave) => TAutosave;
   autosaveProjectFileRevision: (autosave: TAutosave) => { filePath?: string; revision?: number };

@@ -35,7 +35,6 @@ export interface InitialStorageHydrationRuntime<TLegacySavedTest, TLogo, TAutosa
   logoId?: (logo: TLogo) => string | undefined;
   deleteLogoFromDisk?: (logoId: string) => Promise<unknown>;
   loadBrowserAutosave: () => TAutosave | null;
-  newerAutosave: (browserAutosave: TAutosave | null, diskAutosave: TAutosave | null) => TAutosave | null;
   isClosedAutosave: (autosave: TAutosave) => boolean;
   clearAutosaveProjectFile: (autosave: TAutosave) => TAutosave;
   autosaveProjectFileRevision: (autosave: TAutosave) => { filePath?: string; revision?: number };
@@ -59,9 +58,16 @@ function cancelled(runtime: Pick<InitialStorageHydrationRuntime<unknown, unknown
 export async function hydrateInitialStorage<TLegacySavedTest, TLogo, TAutosave, TConflict = InitialStorageHydrationConflict>(
   runtime: InitialStorageHydrationRuntime<TLegacySavedTest, TLogo, TAutosave, TConflict>,
 ) {
+  let recoverableAutosave: TAutosave | null = null;
+  let autosaveRestored = false;
+
   try {
     const diskStorage = await runtime.loadDiskStorage();
     if (cancelled(runtime)) return;
+
+    // Desktop localhost ports change between launches. Their browser storage
+    // can therefore belong to an older runtime, while disk autosave is stable.
+    recoverableAutosave = diskStorage.autosave ?? runtime.loadBrowserAutosave();
 
     const mergedLegacySavedTests = runtime.mergeLegacySavedTests(diskStorage.legacySavedTests, runtime.fallbackLegacySavedTests);
     const localLogos = runtime.currentLogos().length ? runtime.currentLogos() : runtime.starterLogos;
@@ -83,21 +89,26 @@ export async function hydrateInitialStorage<TLegacySavedTest, TLogo, TAutosave, 
     }
     void Promise.allSettled(logoStorageUpdates).catch(() => undefined);
 
-    let autosave = runtime.newerAutosave(runtime.loadBrowserAutosave(), diskStorage.autosave);
+    let autosave = recoverableAutosave;
     let autosaveProject: ProjectSummary | null = null;
     let autosaveCleanFingerprint: string | null = null;
     let autosaveConflict: TConflict | null = null;
+    let projectFileUnavailable = false;
     if (autosave && runtime.isClosedAutosave(autosave)) {
       autosave = runtime.clearAutosaveProjectFile(autosave);
     } else if (autosave) {
       const autosaveRevision = runtime.autosaveProjectFileRevision(autosave);
       if (autosaveRevision.filePath && typeof autosaveRevision.revision === "number") {
-        const resolvedAutosave = await runtime.resolveAutosaveAgainstProjectFile(autosave);
-        if (cancelled(runtime)) return;
-        autosave = resolvedAutosave.snapshot;
-        autosaveProject = resolvedAutosave.project;
-        autosaveCleanFingerprint = resolvedAutosave.cleanFingerprint;
-        autosaveConflict = resolvedAutosave.conflict;
+        try {
+          const resolvedAutosave = await runtime.resolveAutosaveAgainstProjectFile(autosave);
+          if (cancelled(runtime)) return;
+          autosave = resolvedAutosave.snapshot;
+          autosaveProject = resolvedAutosave.project;
+          autosaveCleanFingerprint = resolvedAutosave.cleanFingerprint;
+          autosaveConflict = resolvedAutosave.conflict;
+        } catch {
+          projectFileUnavailable = true;
+        }
       }
     }
 
@@ -108,11 +119,21 @@ export async function hydrateInitialStorage<TLegacySavedTest, TLogo, TAutosave, 
         cleanFingerprint: autosaveCleanFingerprint,
         conflict: autosaveConflict,
       });
+      autosaveRestored = true;
     }
 
-    runtime.setDraftAutosaveStatus("ready");
-    runtime.setDraftAutosaveMessage("Draft autosave ready");
+    runtime.setDraftAutosaveStatus(projectFileUnavailable ? "unavailable" : "ready");
+    runtime.setDraftAutosaveMessage(
+      projectFileUnavailable ? "Saved file unavailable: recovered draft without overwriting it" : "Draft autosave ready",
+    );
   } catch {
+    if (!autosaveRestored) {
+      const browserAutosave = recoverableAutosave ?? runtime.loadBrowserAutosave();
+      if (browserAutosave) {
+        const autosave = runtime.isClosedAutosave(browserAutosave) ? runtime.clearAutosaveProjectFile(browserAutosave) : browserAutosave;
+        runtime.restoreAutosave({ autosave, project: null, cleanFingerprint: null, conflict: null });
+      }
+    }
     runtime.setDraftAutosaveStatus("unavailable");
     runtime.setDraftAutosaveMessage("API unavailable: using browser backup only");
   } finally {

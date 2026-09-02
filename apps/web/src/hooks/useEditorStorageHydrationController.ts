@@ -28,7 +28,6 @@ interface UseEditorStorageHydrationControllerOptions {
     | "mergeLegacySavedTests"
     | "persistLegacySavedTests"
     | "loadCurrentDraft"
-    | "newerAutosave"
     | "editorDocumentFingerprint"
   >;
   setLegacySavedTests: (tests: SavedTest[]) => void;
@@ -99,7 +98,6 @@ export function useEditorStorageHydrationController({
     logoId: (logo) => logo.id,
     deleteLogoFromDisk: deleteStoredLogo,
     loadBrowserAutosave: persistence.loadCurrentDraft,
-    newerAutosave: persistence.newerAutosave,
     isClosedAutosave: (autosave) => autosave.documentOpen === false,
     clearAutosaveProjectFile: autosaveWithoutProjectFile,
     autosaveProjectFileRevision: autosaveProjectFileIdentity,

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   documentTabIdentity,
+  documentTabsPersistencePlan,
+  hydratedDocumentTabId,
   nextActiveDocumentTabId,
   documentTabDropPlacement,
   persistedDocumentTabsSession,
@@ -51,6 +53,44 @@ test("upsert replaces the same saved document without duplicating its tab", () =
 
   assert.equal(result.length, 2);
   assert.equal(result[0]?.title, "Updated");
+});
+
+test("a hydrated draft never borrows the active saved tab id", () => {
+  const saved = {
+    ...tab("file:workspace:tests/Exam.mauth", "tests/Exam.mauth"),
+    project: { id: "local-project", documentsPath: "/workspace" } as EditorDocumentTab["project"],
+  };
+  const session = persistedDocumentTabsSession([saved], saved.id);
+
+  assert.equal(
+    hydratedDocumentTabId(session, {
+      filePath: null,
+      documentsPath: "/workspace",
+      createDraftId: () => "fresh",
+    }),
+    "draft:fresh",
+  );
+  assert.equal(
+    hydratedDocumentTabId(session, {
+      filePath: saved.filePath,
+      documentsPath: "/workspace",
+      createDraftId: () => "unused",
+    }),
+    saved.id,
+  );
+});
+
+test("persisted active tabs are restored and reject a mismatched id collision", () => {
+  const saved = tab("file:workspace:tests/Exam.mauth", "tests/Exam.mauth");
+  const staleDraft = { ...tab(saved.id), title: "Stale starter" };
+  const plan = documentTabsPersistencePlan([saved], saved.id, staleDraft);
+
+  assert.deepEqual(
+    plan.tabs.map((item) => item.title),
+    [saved.title],
+  );
+  assert.equal(plan.activeTabId, saved.id);
+  assert.equal(plan.restoreActiveTab, true);
 });
 
 test("closing selection prefers the following tab then the preceding tab", () => {

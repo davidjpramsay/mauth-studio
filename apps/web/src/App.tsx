@@ -65,7 +65,7 @@ import {
 } from "@/lib/projectFiles";
 import { listMauthAgentDocuments, mauthAgentProjectFilePath, normalizeMauthAgentFolderPath } from "@/lib/mauthAgentDocuments";
 import { afterEditorStateSettles } from "@/lib/mauthAgentBridgeRetry";
-import { isProjectFilesUnavailableError } from "@/lib/projectFilesActions";
+import { isProjectFilesUnavailableError, projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
   loadBrowserDocumentTabsSession,
@@ -74,6 +74,7 @@ import {
 } from "@/lib/editorDocumentTabPersistence";
 import {
   draftDocumentTabId,
+  hydratedDocumentTabId,
   persistedDocumentTabsSession,
   savedDocumentTabId,
   type EditorDocumentTab,
@@ -580,20 +581,6 @@ export default function App() {
       };
     },
     restoreTab: async (tab) => {
-      const targetDocumentsPath = tab.project?.documentsPath?.replace(/\/+$/g, "");
-      const currentDocumentsPath = activeProject?.documentsPath?.replace(/\/+$/g, "");
-      if (tab.project && targetDocumentsPath && targetDocumentsPath !== currentDocumentsPath) {
-        const project = await openDefaultProjectDocumentsFolder(targetDocumentsPath);
-        const filesResponse = await listProjectFiles(project.id);
-        setActiveProject(project);
-        setProjectFiles(filesResponse.files);
-      } else if (tab.project && tab.project.id !== activeProject?.id) {
-        const filesResponse = await listProjectFiles(tab.project.id);
-        setActiveProject(tab.project);
-        setProjectFiles(filesResponse.files);
-      } else if (tab.project) {
-        setActiveProject(tab.project);
-      }
       setEditorDocument(tab.document);
       setEditorDocumentOpenState(true);
       setActiveProjectFileState(tab.filePath, tab.revision);
@@ -605,6 +592,28 @@ export default function App() {
       setActiveTocItemId(tab.navigation.activeTocItemId);
       setActiveRailItemId(tab.navigation.activeRailItemId);
       clearEditorTransientState();
+
+      const targetDocumentsPath = tab.project?.documentsPath?.replace(/\/+$/g, "");
+      const currentDocumentsPath = activeProject?.documentsPath?.replace(/\/+$/g, "");
+      if (tab.project) setActiveProject(tab.project);
+      try {
+        if (tab.project && targetDocumentsPath && targetDocumentsPath !== currentDocumentsPath) {
+          const project = await openDefaultProjectDocumentsFolder(targetDocumentsPath);
+          const filesResponse = await listProjectFiles(project.id);
+          setActiveProject(project);
+          setProjectFiles(filesResponse.files);
+          setProjectFilesStatus("ready");
+          setProjectFilesMessage("");
+        } else if (tab.project && tab.project.id !== activeProject?.id) {
+          const filesResponse = await listProjectFiles(tab.project.id);
+          setProjectFiles(filesResponse.files);
+          setProjectFilesStatus("ready");
+          setProjectFilesMessage("");
+        }
+      } catch (error) {
+        setProjectFilesStatus("error");
+        setProjectFilesMessage(projectFilesUnavailableMessage(error));
+      }
     },
   });
   const captureCurrentDocumentTab = useStableEvent(documentTabsController.captureCurrentDocument);
@@ -622,22 +631,22 @@ export default function App() {
           loadBrowserDocumentTabsSession(normalizeDocumentTabDocument),
       )
       .catch(() => loadBrowserDocumentTabsSession(normalizeDocumentTabDocument))
-      .then((session) => {
+      .then(async (session) => {
         if (cancelled) return;
         const currentFilePath = activeProjectFilePathRef.current;
-        const matchingTab = session?.tabs.find(
-          (tab) =>
-            tab.filePath === currentFilePath && (!tab.project?.documentsPath || tab.project.documentsPath === activeProject?.documentsPath),
-        );
-        const currentTabId =
-          matchingTab?.id ??
-          (!currentFilePath && session?.activeTabId ? session.activeTabId : null) ??
-          (currentFilePath
-            ? savedDocumentTabId(activeProject?.documentsPath ?? activeProject?.id, currentFilePath)
-            : draftDocumentTabId(() => id("document")));
+        const currentTabId = hydratedDocumentTabId(session, {
+          filePath: currentFilePath,
+          projectId: activeProject?.id,
+          documentsPath: activeProject?.documentsPath,
+          createDraftId: () => id("document"),
+        });
         const currentTab = editorDocumentOpenRef.current ? captureCurrentDocumentTab(currentTabId) : null;
-        replaceDocumentTabsFromPersistence(session ?? { activeTabId: null, tabs: [] }, currentTab);
+        await replaceDocumentTabsFromPersistence(session ?? { activeTabId: null, tabs: [] }, currentTab);
+        if (cancelled) return;
         setDocumentTabsHydrated(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDocumentTabsHydrated(true);
       });
 
     return () => {

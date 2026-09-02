@@ -39,7 +39,6 @@ function runtime(
     persistMergedStorage: () => undefined,
     saveLogoToDisk: async () => undefined,
     loadBrowserAutosave: () => null,
-    newerAutosave: (browserAutosave, diskAutosave) => browserAutosave ?? diskAutosave,
     isClosedAutosave: (autosave) => autosave.documentOpen === false,
     clearAutosaveProjectFile: (autosave) => ({
       ...autosave,
@@ -155,6 +154,56 @@ test("hydrateInitialStorage clears project-file identity from closed autosaves",
   assert.equal(restored[0].activeProjectFileRevision, undefined);
 });
 
+test("hydrateInitialStorage treats disk autosave as authoritative over stale browser storage", async () => {
+  const restored: AutosaveSnapshot[] = [];
+
+  await hydrateInitialStorage(
+    runtime({
+      loadDiskStorage: async () => ({
+        legacySavedTests: [],
+        logos: [],
+        autosave: { id: "disk", activeProjectFilePath: "tests/Current.mauth", activeProjectFileRevision: 2 },
+      }),
+      loadBrowserAutosave: () => ({ id: "stale-browser" }),
+      restoreAutosave: ({ autosave }) => restored.push(autosave),
+    }),
+  );
+
+  assert.deepEqual(
+    restored.map((autosave) => autosave.id),
+    ["disk"],
+  );
+});
+
+test("hydrateInitialStorage restores disk autosave when its cloud file cannot be checked", async () => {
+  const restored: AutosaveSnapshot[] = [];
+  const statuses: string[] = [];
+  const messages: string[] = [];
+
+  await hydrateInitialStorage(
+    runtime({
+      loadDiskStorage: async () => ({
+        legacySavedTests: [],
+        logos: [],
+        autosave: { id: "disk", activeProjectFilePath: "tests/Cloud.mauth", activeProjectFileRevision: 4 },
+      }),
+      resolveAutosaveAgainstProjectFile: async () => {
+        throw new Error("Storage unavailable");
+      },
+      restoreAutosave: ({ autosave }) => restored.push(autosave),
+      setDraftAutosaveStatus: (status) => statuses.push(status),
+      setDraftAutosaveMessage: (message) => messages.push(message),
+    }),
+  );
+
+  assert.deepEqual(
+    restored.map((autosave) => autosave.id),
+    ["disk"],
+  );
+  assert.deepEqual(statuses, ["unavailable"]);
+  assert.match(messages[0] ?? "", /recovered draft/i);
+});
+
 test("hydrateInitialStorage deletes disk logos removed by library reconciliation", async () => {
   const deletedLogoIds: string[] = [];
 
@@ -198,6 +247,25 @@ test("hydrateInitialStorage reports unavailable storage when disk hydration fail
   assert.deepEqual(statuses, ["unavailable"]);
   assert.deepEqual(messages, ["API unavailable: using browser backup only"]);
   assert.deepEqual(hydrated, [true]);
+});
+
+test("hydrateInitialStorage restores browser backup when disk hydration fails", async () => {
+  const restored: AutosaveSnapshot[] = [];
+
+  await hydrateInitialStorage(
+    runtime({
+      loadDiskStorage: async () => {
+        throw new Error("API down");
+      },
+      loadBrowserAutosave: () => ({ id: "browser-backup" }),
+      restoreAutosave: ({ autosave }) => restored.push(autosave),
+    }),
+  );
+
+  assert.deepEqual(
+    restored.map((autosave) => autosave.id),
+    ["browser-backup"],
+  );
 });
 
 test("hydrateInitialStorage suppresses side effects when cancelled after disk load", async () => {

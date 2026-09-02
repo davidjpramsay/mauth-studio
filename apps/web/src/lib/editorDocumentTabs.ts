@@ -40,6 +40,19 @@ export interface PersistedEditorDocumentTabsSession {
 
 export type DocumentTabDropPlacement = "before" | "after";
 
+interface HydratedDocumentTabIdOptions {
+  filePath: string | null;
+  projectId?: string | null;
+  documentsPath?: string | null;
+  createDraftId?: () => string;
+}
+
+export interface DocumentTabsPersistencePlan {
+  tabs: EditorDocumentTab[];
+  activeTabId: string | null;
+  restoreActiveTab: boolean;
+}
+
 export function savedDocumentTabId(projectId: string | null | undefined, filePath: string) {
   return `file:${projectId ?? "default"}:${filePath}`;
 }
@@ -50,6 +63,27 @@ export function draftDocumentTabId(createId: () => string = () => crypto.randomU
 
 export function documentTabIdentity(tab: Pick<EditorDocumentTab, "project" | "filePath">) {
   return tab.filePath ? savedDocumentTabId(tab.project?.documentsPath ?? tab.project?.id, tab.filePath) : null;
+}
+
+export function hydratedDocumentTabId(
+  session: PersistedEditorDocumentTabsSession | null,
+  { filePath, projectId, documentsPath, createDraftId = () => crypto.randomUUID() }: HydratedDocumentTabIdOptions,
+) {
+  const matchingTab = filePath
+    ? session?.tabs.find(
+        (tab) =>
+          tab.filePath === filePath && (!tab.project?.documentsPath || !documentsPath || tab.project.documentsPath === documentsPath),
+      )
+    : null;
+  if (matchingTab) return matchingTab.id;
+
+  if (!filePath) {
+    const persistedActiveTab = session?.tabs.find((tab) => tab.id === session.activeTabId);
+    if (persistedActiveTab?.filePath === null) return persistedActiveTab.id;
+    return draftDocumentTabId(createDraftId);
+  }
+
+  return savedDocumentTabId(documentsPath ?? projectId, filePath);
 }
 
 export function nextActiveDocumentTabId(tabs: readonly EditorDocumentTab[], closingTabId: string) {
@@ -90,6 +124,31 @@ export function upsertDocumentTab(tabs: readonly EditorDocumentTab[], tab: Edito
   );
   if (matchingIndex < 0) return [...tabs, tab];
   return tabs.map((candidate, index) => (index === matchingIndex ? tab : candidate));
+}
+
+export function documentTabsPersistencePlan(
+  restoredTabs: EditorDocumentTab[],
+  sessionActiveTabId: string | null,
+  currentTab?: EditorDocumentTab | null,
+): DocumentTabsPersistencePlan {
+  const idCollision = currentTab
+    ? restoredTabs.some(
+        (tab) =>
+          tab.id === currentTab.id &&
+          (tab.filePath !== currentTab.filePath || documentTabIdentity(tab) !== documentTabIdentity(currentTab)),
+      )
+    : false;
+  const safeCurrentTab = idCollision ? null : currentTab;
+  const currentIdentity = safeCurrentTab ? documentTabIdentity(safeCurrentTab) : null;
+  const tabs = safeCurrentTab
+    ? upsertDocumentTab(
+        restoredTabs.filter((tab) => !currentIdentity || documentTabIdentity(tab) !== currentIdentity),
+        safeCurrentTab,
+      )
+    : restoredTabs;
+  const requestedActiveId = safeCurrentTab?.id ?? sessionActiveTabId;
+  const activeTabId = tabs.some((tab) => tab.id === requestedActiveId) ? requestedActiveId : (tabs[0]?.id ?? null);
+  return { tabs, activeTabId, restoreActiveTab: !safeCurrentTab && activeTabId !== null };
 }
 
 export function persistedDocumentTabsSession(

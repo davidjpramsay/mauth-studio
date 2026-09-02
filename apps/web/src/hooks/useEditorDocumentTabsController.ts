@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import {
+  documentTabsPersistencePlan,
   documentTabIdentity,
   draftDocumentTabId,
   nextActiveDocumentTabId,
@@ -106,19 +107,15 @@ export function useEditorDocumentTabsController({ initialTab, captureCurrentTab,
     setTabs(reorderDocumentTabs(tabsRef.current, tabId, targetTabId, placement));
   }
 
-  function replaceTabsFromPersistence(session: PersistedEditorDocumentTabsSession, currentTab?: EditorDocumentTab | null) {
+  async function replaceTabsFromPersistence(session: PersistedEditorDocumentTabsSession, currentTab?: EditorDocumentTab | null) {
     const restoredTabs = session.tabs.map((tab) => ({ ...tab, history: { undo: [], redo: [] } }));
-    const currentIdentity = currentTab ? documentTabIdentity(currentTab) : null;
-    const mergedTabs = currentTab
-      ? upsertDocumentTab(
-          restoredTabs.filter((tab) => !currentIdentity || documentTabIdentity(tab) !== currentIdentity),
-          currentTab,
-        )
-      : restoredTabs;
-    const requestedActiveId = currentTab?.id ?? session.activeTabId;
-    const nextActiveId = mergedTabs.some((tab) => tab.id === requestedActiveId) ? requestedActiveId : (mergedTabs[0]?.id ?? null);
-    setTabs(mergedTabs);
-    setActiveTabId(nextActiveId);
+    const plan = documentTabsPersistencePlan(restoredTabs, session.activeTabId, currentTab);
+    setTabs(plan.tabs);
+    setActiveTabId(plan.activeTabId);
+    if (plan.restoreActiveTab && plan.activeTabId) {
+      const activeTab = plan.tabs.find((tab) => tab.id === plan.activeTabId);
+      if (activeTab) await restoreTabRef.current(activeTab);
+    }
   }
 
   function clearTabs() {

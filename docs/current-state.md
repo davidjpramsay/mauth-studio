@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 31 August 2026.
+Last reviewed: 2 September 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -50,13 +50,14 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: codex/startup-performance
 baseline commit: HEAD
-App.tsx: 1701 lines
+App.tsx: 1710 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; packaged startup uses a PyInstaller onedir sidecar, creates and presents a local loading window before API readiness, polls only `/api/health`, queues document-open events until the editor origin is ready, and verifies the nested arm64 sidecar executable as part of the macOS bundle gate, while public release 0.1.5 remains unchanged
+worktree: clean at this checkpoint; startup treats disk autosave as the durable recovery source, restores the active persisted tab into the editor, preserves drafts when their cloud project file cannot be checked, and prevents unrelated localhost browser state from borrowing a saved tab id, while public release 0.1.5 remains unchanged
 ```
 
-Observed runtime through 31 August 2026:
+Observed runtime through 2 September 2026:
 
+- on 2 September the real Application Support recovery state reproduced a tab header for an empty Year 10 starter while its saved Year 11 path and document body were detached. A protected backup was taken before repair. The source desktop app then restored Year 11 Methods Test 3 at revision 2 with all 8 questions, rendered its preview, passed the local bridge doctor, and rewrote both `current-test.json` and `open-documents.json` with the correct active path and document. Focused tests cover disk-over-browser precedence, unavailable cloud-file recovery, browser-only API fallback, active-tab restoration, and saved-tab id collisions;
 - a fresh locally installed `0.1.5` development checkpoint on 31 August created its loading window 148 ms after launch began, presented it at 245 ms, reported API health at 699 ms, and completed editor navigation at 835 ms after launch began (about 327 ms to presentation and 917 ms to the editor from packaged process startup). The previous packaged cold launches recorded roughly 4.4-7.6 seconds. `pnpm agent:doctor` passed API health, web, bridge discovery, and active snapshot; the complete connector smoke reached the app but its document-list operation was correctly blocked by the teacher's currently unavailable selected folder with `503 STORAGE_UNAVAILABLE`, so no folder or document state was changed.
 - the locally installed `Mauth Studio.app` was rebuilt and opened with its packaged FastAPI sidecar on a dynamic loopback port;
 - the packaged MCP connector exposed all 16 local-only tools and returned a live snapshot;
@@ -97,6 +98,8 @@ The standalone foundation, multi-document session, manual solution layers, nativ
 Desktop portability groundwork is now explicit without claiming unsupported releases. Runtime-manifest discovery follows the host application-data convention, development Python paths account for Windows virtual environments, Vite runs through Electron's Node mode instead of a Unix `.bin` shim, packaged helper names are platform-aware, and standalone folder selection uses Electron's native directory dialog through narrow preload IPC. These seams have local macOS tests for macOS, Windows, and Linux plans and do not consume hosted CI minutes. macOS remains the only packaged and supported distribution: Windows still needs a native FastAPI sidecar, MCP launcher, installer, signing/update plan, and real-machine QA; Linux remains demand-driven. Quick Look, Finder registration, signing, notarization, and mac updater metadata stay macOS-only adapters.
 
 Packaged startup no longer waits on the system-status route before creating a window. Electron starts the FastAPI child, presents a dependency-free local loading page, polls only `/api/health`, establishes the authenticated runtime manifest and desktop IPC, and then navigates that same window to the editor. Document-open requests remain queued until the editor origin is ready. The macOS Python service is built as a PyInstaller onedir directory with a nested executable, and app verification checks that executable's presence, permissions, arm64 architecture, and startup help path.
+
+Startup recovery treats Application Support disk state as authoritative whenever it loads successfully. Dynamic localhost browser storage is an emergency fallback only and cannot replace a disk document from an older port. If a cloud project file is temporarily unavailable, Mauth still opens the disk recovery draft and keeps disk autosave paused rather than presenting an empty editor or overwriting the draft. If only the tab session survives, its active structured document is restored into the editor; a mismatched draft cannot take over a saved tab's identity.
 
 Printable question and solution text now use one slightly more generous shared line rhythm, with a small prompt-to-solution gap, so display-size inline fractions on adjacent lines do not touch. Paired student-space/solution replacement rows receive the same gap as standalone solution rows, regardless of which hidden block appears first. This is renderer-level behaviour: existing documents gain it without stored-file migration, although tightly packed pages may reflow slightly.
 
