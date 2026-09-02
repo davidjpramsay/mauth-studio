@@ -12,6 +12,8 @@ let webUrl = configuredWebUrl ?? "";
 const apiUrl = process.env.MAUTH_API_URL ?? "http://127.0.0.1:8000";
 const configuredProjectId = process.env.MAUTH_PROJECT_ID;
 const smokeRoot = process.env.MAUTH_FILE_MANAGER_SMOKE_ROOT ?? `__file_manager_smoke_${Date.now()}`;
+const screenshotPath = process.env.MAUTH_FILE_MANAGER_SCREENSHOT;
+const colorScheme = process.env.MAUTH_SMOKE_COLOR_SCHEME === "dark" ? "dark" : "light";
 const modKey = process.platform === "darwin" ? "Meta" : "Control";
 
 async function findFreePort() {
@@ -223,7 +225,7 @@ function breadcrumb(drawer, folderPath) {
 }
 
 async function openFilesDrawer(page) {
-  await page.getByRole("button", { name: "Open files" }).click();
+  await page.getByRole("button", { name: "Open files" }).first().click();
   const drawer = page.locator('aside[aria-label="Files"]');
   await drawer.waitFor({ state: "visible", timeout: 5000 });
   return drawer;
@@ -233,6 +235,11 @@ async function ensureSplitView(page) {
   const splitButton = page.getByRole("button", { name: "Manual editor mode" });
   if ((await splitButton.getAttribute("aria-pressed")) !== "true") {
     await splitButton.click();
+  }
+  const contentTab = page.getByRole("tab", { name: "Content", exact: true });
+  if ((await contentTab.count()) && (await contentTab.isVisible())) {
+    await contentTab.click();
+    await page.locator("#mauth-editor-pane").waitFor({ state: "visible", timeout: 3000 });
   }
 }
 
@@ -277,8 +284,9 @@ async function findTextareaWithValue(page, expectedValue) {
   for (let index = 0; index < count; index += 1) {
     const textarea = textareas.nth(index);
     const value = await textarea.inputValue().catch(() => "");
-    values.push(value.slice(0, 80));
-    if (value.includes(expectedValue)) return textarea;
+    const visible = await textarea.isVisible().catch(() => false);
+    values.push(`${visible ? "visible" : "hidden"}: ${value.slice(0, 80)}`);
+    if (visible && value.includes(expectedValue)) return textarea;
   }
   const bodyText = (
     (await page
@@ -313,7 +321,7 @@ await seedSmokeFiles(projectId, smokeRoot);
 
 let webServer = null;
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, colorScheme });
 const nativeDialogs = [];
 page.on("dialog", (dialog) => {
   nativeDialogs.push(`${dialog.type()}: ${dialog.message()}`);
@@ -323,9 +331,32 @@ page.on("dialog", (dialog) => {
 try {
   webServer = await startWebServerIfNeeded();
   await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Open files" }).waitFor({ state: "visible", timeout: 15000 });
+  await page.getByRole("button", { name: "Open files" }).first().waitFor({ state: "visible", timeout: 15000 });
   let drawer = await openFilesDrawer(page);
+  const fileManager = drawer.locator("[data-mauth-file-manager]");
+  const layout = await fileManager.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    filePaneHeight: element.querySelector("[data-mauth-folder-pane]")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert(
+    layout.scrollHeight <= layout.clientHeight + 1,
+    `Files drawer should not scroll as one tall surface (${layout.scrollHeight}px content in ${layout.clientHeight}px)`,
+  );
+  assert(layout.filePaneHeight >= 280, `Files list should retain useful height at 1280 x 720; received ${layout.filePaneHeight}px`);
+  assert.equal(await drawer.getByText("Recent documents", { exact: true }).count(), 0, "Files drawer should not duplicate recent files");
+
+  await drawer.getByRole("button", { name: "More folder and backup actions" }).click();
+  const folderActions = page.getByRole("menu", { name: "Folder and backup actions" });
+  await folderActions.waitFor({ state: "visible", timeout: 3000 });
+  for (const actionName of ["Enter folder path...", "Use default folder", "Back up as ZIP", "Import backup ZIP..."]) {
+    await folderActions.getByRole("menuitem", { name: actionName, exact: true }).waitFor({ state: "visible" });
+  }
+  await page.keyboard.press("Escape");
+  await folderActions.waitFor({ state: "hidden", timeout: 3000 });
+
   await openSmokeRoot(drawer, smokeRoot);
+  if (screenshotPath) await drawer.screenshot({ path: screenshotPath });
 
   const alpha = `${smokeRoot}/Alpha.mauth`;
   const beta = `${smokeRoot}/Beta.test.json`;
@@ -386,7 +417,10 @@ try {
   const editedText = "Alpha edited by file manager smoke";
   const alphaTextArea = await findTextareaWithValue(page, "Alpha original");
   await alphaTextArea.fill(editedText);
-  await page.getByText(/Unsaved file changes/i).waitFor({ state: "visible", timeout: 6000 });
+  await page
+    .getByLabel(/Unsaved file changes/i)
+    .first()
+    .waitFor({ state: "visible", timeout: 6000 });
 
   drawer = await openFilesDrawer(page);
   await openSmokeRoot(drawer, smokeRoot);

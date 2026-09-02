@@ -18,7 +18,15 @@ export interface ContextMenuState {
   actions: ContextMenuAction[];
 }
 
-export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; onClose: () => void }) {
+export function ContextMenu({
+  menu,
+  onClose,
+  ariaLabel = "Context actions",
+}: {
+  menu: ContextMenuState | null;
+  onClose: () => void;
+  ariaLabel?: string;
+}) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: menu?.x ?? 0, top: menu?.y ?? 0 });
 
@@ -61,7 +69,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Context actions"
+      aria-label={ariaLabel}
       className="fixed z-[100] w-60 overflow-hidden rounded-md border bg-card text-card-foreground shadow-xl"
       style={{ left: position.left, top: position.top }}
       data-context-menu
