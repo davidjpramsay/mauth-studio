@@ -20,6 +20,7 @@ const STATS_CHART_DATA_MODES = new Set(["raw", "manualProbabilities", "manualFre
 const STATS_CHART_Y_AXIS_MODES = new Set(["frequency", "relativeFrequency"]);
 const STATS_CHART_Y_LABEL_ORIENTATIONS = new Set(["vertical", "horizontal"]);
 const STATS_CHART_SERIES_TYPES = new Set(["line", "points", "linePoints", "bars"]);
+const STATS_CHART_REGION_MODES = new Set(["between", "leftTail", "rightTail", "outside"]);
 const GRAPH_FUNCTION_KINDS = new Set(["expression", "piecewise", "relation"]);
 const STROKE_STYLES = new Set(["solid", "dashed"]);
 const GRAPH_FEATURE_KINDS = new Set([
@@ -1539,6 +1540,47 @@ function validateStatsChartSeries(data: Record<string, unknown>, path: string, i
   });
 }
 
+function validateStatsChartRegions(data: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  const regions = optionalArray(data, "regions", path, issues);
+  const ids = new Set<string>();
+  regions?.forEach((entry, index) => {
+    const entryPath = `${path}.regions[${index}]`;
+    if (!isRecord(entry)) {
+      addIssue(issues, entryPath, "must be a statistics chart region", "{ id, mode, lower?, upper? }");
+      return;
+    }
+    requiredString(entry, "id", entryPath, issues);
+    requiredEnum(entry, "mode", entryPath, STATS_CHART_REGION_MODES, issues);
+    optionalString(entry, "label", entryPath, issues);
+    optionalString(entry, "fillColor", entryPath, issues);
+    optionalNumber(entry, "lower", entryPath, issues);
+    optionalNumber(entry, "upper", entryPath, issues);
+    optionalNumber(entry, "fillOpacity", entryPath, issues, { min: 0, max: 1 });
+    optionalBoolean(entry, "show", entryPath, issues);
+    optionalBoolean(entry, "solutionOnly", entryPath, issues);
+
+    if ((entry.mode === "between" || entry.mode === "outside") && !finiteNumber(entry.lower)) {
+      addIssue(issues, `${entryPath}.lower`, `${entry.mode} regions require a lower bound`, "finite number");
+    }
+    if ((entry.mode === "between" || entry.mode === "outside") && !finiteNumber(entry.upper)) {
+      addIssue(issues, `${entryPath}.upper`, `${entry.mode} regions require an upper bound`, "finite number");
+    }
+    if (entry.mode === "leftTail" && !finiteNumber(entry.upper)) {
+      addIssue(issues, `${entryPath}.upper`, "leftTail regions require an upper bound", "finite number");
+    }
+    if (entry.mode === "rightTail" && !finiteNumber(entry.lower)) {
+      addIssue(issues, `${entryPath}.lower`, "rightTail regions require a lower bound", "finite number");
+    }
+    if (finiteNumber(entry.lower) && finiteNumber(entry.upper) && entry.lower >= entry.upper) {
+      addIssue(issues, `${entryPath}.upper`, "must be greater than lower", "upper > lower");
+    }
+    if (typeof entry.id === "string") {
+      if (ids.has(entry.id)) addIssue(issues, `${entryPath}.id`, "must be unique within data.regions", "unique region id");
+      ids.add(entry.id);
+    }
+  });
+}
+
 function validateStatsChart(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   validateCommonGraphConfig(config, path, issues);
   const data = requiredRecord(config, "data", path, issues);
@@ -1555,6 +1597,11 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
   optionalString(data, "yLabel", `${path}.data`, issues);
   optionalString(data, "title", `${path}.data`, issues);
   validateStatsChartSeries(data, `${path}.data`, issues);
+  validateStatsChartRegions(data, `${path}.data`, issues);
+
+  if (Array.isArray(data.regions) && data.regions.length && data.chartType !== "normal" && data.chartType !== "density") {
+    addIssue(issues, `${path}.data.regions`, "are supported only for normal and density charts", "chartType normal | density");
+  }
 
   if (data.chartType === "histogram") {
     const xValues = numberArray(data, "xValues", `${path}.data`, issues);

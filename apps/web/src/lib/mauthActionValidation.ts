@@ -80,8 +80,10 @@ const GRAPH_3D_ELEMENT_KIND_KEYS = new Set([
   "surface",
   "surfaces",
 ]);
-const STATS_CHART_ELEMENT_KIND_KEYS = new Set(["series"]);
+const STATS_CHART_ELEMENT_KIND_KEYS = new Set(["series", "region"]);
 const STATS_CHART_SERIES_TYPES = new Set(["line", "points", "linePoints", "bars"]);
+const STATS_CHART_REGION_MODES = new Set(["between", "leftTail", "rightTail", "outside"]);
+const STATS_CHART_REGION_OPERATIONS = new Set(["update", "upsert", "delete"]);
 const IMAGE_ELEMENT_KIND_KEYS = new Set(["annotation"]);
 const IMAGE_ANNOTATION_TYPES = new Set(["label", "ellipse", "arrow"]);
 const PENROSE_GEOMETRY_ELEMENT_KIND_KEYS = new Set(["object", "relationship"]);
@@ -802,6 +804,47 @@ function validateStatsChartSeriesSettings(value: unknown, path: string, issues: 
   validateStatsChartSeriesPatch(value, path, issues);
 }
 
+function validateStatsChartRegionPatch(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
+  stringValueField(value, "id", path, issues, true);
+  stringValueField(value, "label", path, issues, true);
+  stringValueField(value, "fillColor", path, issues, true);
+  enumField(value, "mode", path, STATS_CHART_REGION_MODES, issues, true);
+  numberFields(value, ["lower", "upper", "fillOpacity"], path, issues);
+  if (typeof value.fillOpacity === "number" && (value.fillOpacity < 0 || value.fillOpacity > 1)) {
+    addIssue(issues, `${path}.fillOpacity`, "must be between 0 and 1", "0 <= fillOpacity <= 1");
+  }
+  if (typeof value.lower === "number" && typeof value.upper === "number" && value.lower >= value.upper) {
+    addIssue(issues, `${path}.upper`, "must be greater than lower", "upper > lower");
+  }
+  booleanField(value, "show", path, issues, true);
+  booleanField(value, "solutionOnly", path, issues, true);
+}
+
+function validateStatsChartRegionSettings(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "must be a statsChart region settings object", "{ kind: 'region', operation?, index?, id?, ...patch }");
+    return;
+  }
+  enumField(value, "kind", path, STATS_CHART_ELEMENT_KIND_KEYS, issues);
+  enumField(value, "operation", path, STATS_CHART_REGION_OPERATIONS, issues, true);
+  nonNegativeIntegerField(value, "index", path, issues, true);
+  stringField(value, "id", path, issues, true);
+  if (!hasOwn(value, "index") && !hasOwn(value, "id")) {
+    addIssue(issues, path, "must identify the region by selected index or id", "{ kind: 'region', index } or { kind: 'region', id }");
+  }
+  const patch = recordField(value, "patch", path, issues, true);
+  if (patch) validateStatsChartRegionPatch(patch, `${path}.patch`, issues);
+  validateStatsChartRegionPatch(value, path, issues);
+}
+
+function validateStatsChartElementSettings(value: unknown, path: string, issues: MauthActionValidationIssue[]) {
+  if (isRecord(value) && value.kind === "region") {
+    validateStatsChartRegionSettings(value, path, issues);
+    return;
+  }
+  validateStatsChartSeriesSettings(value, path, issues);
+}
+
 function validateImageAnnotationPatch(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
   for (const key of ["id", "text", "color"]) stringValueField(value, key, path, issues, true);
   enumField(value, "annotationKind", path, IMAGE_ANNOTATION_TYPES, issues, true);
@@ -969,7 +1012,7 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
     stringValueField(value, "chartType", path, issues, true);
     stringValueField(value, "fillColor", path, issues, true);
     booleanFields(value, ["showGrid", "showFill"], path, issues);
-    if (hasOwn(value, "element")) validateStatsChartSeriesSettings(value.element, `${path}.element`, issues);
+    if (hasOwn(value, "element")) validateStatsChartElementSettings(value.element, `${path}.element`, issues);
     return;
   }
 

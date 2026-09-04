@@ -182,6 +182,30 @@ Penrose-backed renderers also support focused `element` targets without replacin
 
 Element patches may update the supported name/label/value/type, points, shading, and `solutionOnly` fields. Use this path for solution points/nodes, segments/links, and Venn region answers. Student preview removes solution-only points and dependent relationships while preserving fixed Venn region slots. Do not use element actions against custom Advanced Substance; return to structured data or create one paired solution diagram instead.
 
+Normal and density `statsChart` diagrams support deterministic shaded regions under the base curve. A focused region target uses `kind: "region"`, a stable `id` or zero-based `index`, and optional `operation: "update" | "upsert" | "delete"`. `upsert` creates the region when its id is absent and updates it when present; `delete` removes only that region. Modes are `between`, `leftTail`, `rightTail`, and `outside`. Provide `lower` and/or `upper` as required by the mode. Fill styling, visibility, and `solutionOnly` are stored on the region, while the renderer owns curve interpolation, outside tick placement, and stroke-free interval clipping.
+
+```json
+{
+  "type": "diagram.settings.update",
+  "scope": { "kind": "part", "questionId": "q2", "partId": "q2-a" },
+  "blockId": "normal-curve",
+  "settings": {
+    "renderer": "statsChart",
+    "element": {
+      "kind": "region",
+      "operation": "upsert",
+      "id": "answer-region",
+      "mode": "between",
+      "lower": 63,
+      "upper": 78,
+      "fillColor": "#1d4ed8",
+      "fillOpacity": 0.22,
+      "solutionOnly": true
+    }
+  }
+}
+```
+
 Uploaded images support focused annotation targets without replacing the embedded bitmap or sibling annotations. Target `kind: "annotation"` by stable `id` or zero-based `index`. Supported annotation kinds are `label`, `ellipse`, and `arrow`; use `annotationKind` in the patch when changing the annotation type because the target's `kind` already identifies the element family. Positions and sizes use percentages of the configured image box. Student mode removes `solutionOnly` annotations, while Solutions mode colours only those annotations blue.
 
 `graph2d` supports a focused `function` target by stable `id` or zero-based `index`. The patch may update the normal function fields, including expression/piecewise/relation kind, expression, label, style, domain, extensions, visibility, and `solutionOnly`. Use this target for an editable answer curve on a shared graph; Student mode hides a solution-only function and any feature that references it while preserving the original function indexes. Sibling functions, features, ranges, and graph settings remain unchanged.

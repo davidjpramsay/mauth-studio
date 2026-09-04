@@ -19,7 +19,10 @@ function withoutAxisTitle(axis: unknown) {
 }
 
 function expandPlotClipRects(element: HTMLElement, resetBase = false) {
-  const paddingPx = 3;
+  // Plotly clips line strokes exactly at the authored data range. Reserve enough
+  // source-space allowance for print scaling so curve tails and heavy axes do not
+  // lose their outer pixels while labels remain contained by the layout margins.
+  const paddingPx = 8;
   element.querySelectorAll<SVGRectElement>(".clips clipPath rect").forEach((rect) => {
     if (resetBase) {
       rect.removeAttribute("data-mauth-clip-x");

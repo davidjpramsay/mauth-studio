@@ -28,8 +28,8 @@ test("normalizes manual probability column graphs with horizontal y-axis labels"
   assert.deepEqual(trace.x, [2, 4, 5]);
   assert.deepEqual(trace.y, [0.1, 0.25, 0.3]);
   assert.equal(layout.yaxis.title.text, "");
-  assert.equal(layout.margin.l, 60);
-  assert.equal(layout.margin.t, 34);
+  assert.equal(layout.margin.l, 64);
+  assert.equal(layout.margin.t, 38);
 });
 
 test("plots discrete raw data as relative-frequency columns", () => {
@@ -175,4 +175,98 @@ test("renders structured supplemental line, point, and bar series", () => {
   assert.equal((config.data[1].marker as { size: number }).size, 9);
   assert.equal(config.data[2].type, "bar");
   assert.equal(config.data[2].width, 0.4);
+});
+
+test("shades a deterministic interval under a normal curve without boundary strokes", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "normal",
+      mean: 68,
+      stdDev: 5,
+      range: [52, 84],
+      regions: [
+        {
+          id: "answer-region",
+          mode: "between",
+          lower: 63,
+          upper: 78,
+          fillColor: "#1d4ed8",
+          fillOpacity: 0.22,
+          solutionOnly: true,
+        },
+      ],
+    },
+  });
+
+  assert.equal(config.data.length, 2);
+  const region = config.data[0];
+  const curve = config.data[1];
+  assert.deepEqual(region.meta, { mauthRegionId: "answer-region", mauthRegionPart: 0 });
+  assert.equal(region.fill, "tozeroy");
+  assert.equal(region.fillcolor, "rgba(29, 78, 216, 0.22)");
+  assert.equal((region.line as { width: number }).width, 0);
+  assert.equal((region.x as number[])[0], 63);
+  assert.equal((region.x as number[]).at(-1), 78);
+  assert.equal(curve.name, "Normal distribution");
+
+  const layout = config.layout as {
+    margin: { r: number; b: number };
+    xaxis: {
+      tick0: number;
+      dtick: number;
+      ticks: string;
+      ticklen: number;
+      tickwidth: number;
+      tickcolor: string;
+      ticklabelposition: string;
+      ticklabelstandoff: number;
+    };
+    yaxis: { ticks: string; ticklen: number; tickwidth: number; tickcolor: string };
+  };
+  assert.equal(layout.xaxis.tick0, 55);
+  assert.equal(layout.xaxis.dtick, 5);
+  assert.equal(layout.xaxis.ticks, "outside");
+  assert.equal(layout.xaxis.ticklen, 5);
+  assert.equal(layout.xaxis.tickwidth, 1.2);
+  assert.equal(layout.xaxis.tickcolor, "#111111");
+  assert.equal(layout.xaxis.ticklabelposition, "outside");
+  assert.equal(layout.xaxis.ticklabelstandoff, 5);
+  assert.equal(layout.yaxis.ticks, "outside");
+  assert.equal(layout.yaxis.ticklen, 5);
+  assert.equal(layout.yaxis.tickwidth, 1.2);
+  assert.equal(layout.yaxis.tickcolor, "#111111");
+  assert.equal(layout.margin.r, 30);
+  assert.equal(layout.margin.b, 58);
+});
+
+test("renders both outside tails as separate deterministic fill traces", () => {
+  const config = buildStatsChartPlotlyConfig({
+    type: "statsChart",
+    data: {
+      chartType: "normal",
+      mean: 0,
+      stdDev: 1,
+      range: [-3.2, 3.2],
+      regions: [{ id: "tails", mode: "outside", lower: -1, upper: 1 }],
+    },
+  });
+
+  assert.equal(config.data.length, 3);
+  assert.deepEqual(
+    config.data.slice(0, 2).map((trace) => [(trace.x as number[])[0], (trace.x as number[]).at(-1)]),
+    [
+      [-3.2, -1],
+      [1, 3.2],
+    ],
+  );
+});
+
+test("uses a wider default normal domain so curve tails do not end at three standard deviations", () => {
+  const spec = normalizeStatsChartSpec({
+    type: "statsChart",
+    data: { chartType: "normal", mean: 68, stdDev: 5 },
+  });
+
+  assert.deepEqual(spec.data.range, [52, 84]);
 });

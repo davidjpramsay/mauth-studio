@@ -1,5 +1,6 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 import {
+  DEFAULT_NORMAL_RANGE_SIGMAS,
   STATS_CHART_TYPES,
   normalizeStatsChartSpec,
   type StatsChartData,
@@ -11,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
 import { cn } from "@/lib/utils";
 import { StatsChartSeriesEditor } from "./StatsChartSeriesEditor";
+import { StatsChartRegionEditor } from "./StatsChartRegionEditor";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -44,9 +46,10 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
       chartType,
       mean,
       stdDev,
-      range: current.range ?? [mean - 3 * stdDev, mean + 3 * stdDev],
+      range: current.range ?? [mean - DEFAULT_NORMAL_RANGE_SIGMAS * stdDev, mean + DEFAULT_NORMAL_RANGE_SIGMAS * stdDev],
       xLabel: current.xLabel || "x",
       yLabel: current.yLabel || "Density",
+      regions: current.regions ?? [],
     };
   }
 
@@ -57,6 +60,7 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
       probability: typeof current.probability === "number" ? current.probability : 0.5,
       xLabel: current.xLabel || "x",
       yLabel: current.yLabel || "Probability",
+      regions: [],
     };
   }
 
@@ -74,6 +78,7 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
       probabilities: current.probabilities?.length ? current.probabilities : [0.1, 0.25, 0.3, 0.15, 0.2],
       xLabel: current.xLabel || (dataMode === "manualProbabilities" ? "x" : "Value"),
       yLabel: current.yLabel || (dataMode === "manualProbabilities" ? histogramManualProbabilityLabel() : histogramYAxisLabel(yAxisMode)),
+      regions: [],
     };
   }
 
@@ -82,6 +87,7 @@ export function defaultStatsDataForType(chartType: StatsChartType, current: Stat
     values: current.values?.length ? current.values : [1, 2, 3, 4, 5, 6, 7],
     xLabel: current.xLabel || "Value",
     yLabel: "",
+    regions: chartType === "density" ? (current.regions ?? []) : [],
   };
 }
 
@@ -459,6 +465,13 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
           ) : null}
         </section>
       )}
+
+      <StatsChartRegionEditor
+        config={config}
+        data={data}
+        showSolutions={showSolutions}
+        onChange={(nextData) => onChange({ data: nextData })}
+      />
 
       <StatsChartSeriesEditor
         config={config}

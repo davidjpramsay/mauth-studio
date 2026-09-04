@@ -1504,6 +1504,90 @@ test("updates selected statsChart series without replacing sibling chart data", 
   assert.match(missing.error ?? "", /outside data\.series/);
 });
 
+test("upserts, updates, and deletes deterministic statsChart regions without replacing the chart", () => {
+  const chartConfig: GraphConfig = {
+    type: "statsChart",
+    data: {
+      chartType: "normal",
+      mean: 68,
+      stdDev: 5,
+      range: [52, 84],
+      xLabel: "x",
+      yLabel: "Density",
+      regions: [],
+    },
+    options: { widthPx: 560, heightPx: 320, showGrid: false },
+  };
+  const initial = [question("q1", [diagramBlock("d1", chartConfig)])];
+  const added = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "statsChart",
+      element: {
+        kind: "region",
+        operation: "upsert",
+        id: "answer-region",
+        mode: "between",
+        lower: 63,
+        upper: 78,
+        fillColor: "#1d4ed8",
+        fillOpacity: 0.22,
+        solutionOnly: true,
+      },
+    },
+  });
+
+  assert.equal(added.ok, true, added.error);
+  const addedDiagram = added.questions[0].contentBlocks[0];
+  assert.equal(addedDiagram.kind, "diagram");
+  if (addedDiagram.kind !== "diagram") return;
+  assert.deepEqual(addedDiagram.graphConfig.data?.regions, [
+    {
+      id: "answer-region",
+      mode: "between",
+      lower: 63,
+      upper: 78,
+      fillColor: "#1d4ed8",
+      fillOpacity: 0.22,
+      solutionOnly: true,
+    },
+  ]);
+  assert.deepEqual(addedDiagram.graphConfig.data?.range, [52, 84]);
+
+  const updated = applyMauthAction(added.questions, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "statsChart",
+      element: { kind: "region", id: "answer-region", upper: 79 },
+    },
+  });
+  assert.equal(updated.ok, true, updated.error);
+  const updatedDiagram = updated.questions[0].contentBlocks[0];
+  assert.equal(updatedDiagram.kind, "diagram");
+  if (updatedDiagram.kind !== "diagram") return;
+  assert.equal(updatedDiagram.graphConfig.data?.regions?.[0]?.upper, 79);
+  assert.deepEqual(updatedDiagram.graphConfig.options, chartConfig.options);
+
+  const removed = applyMauthAction(updated.questions, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: {
+      renderer: "statsChart",
+      element: { kind: "region", operation: "delete", id: "answer-region" },
+    },
+  });
+  assert.equal(removed.ok, true, removed.error);
+  const removedDiagram = removed.questions[0].contentBlocks[0];
+  assert.equal(removedDiagram.kind, "diagram");
+  if (removedDiagram.kind !== "diagram") return;
+  assert.deepEqual(removedDiagram.graphConfig.data?.regions, []);
+});
+
 test("updates selected image annotations without replacing the uploaded image", () => {
   const imageConfig: GraphConfig = {
     type: "image",

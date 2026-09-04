@@ -555,6 +555,33 @@ Statistics charts use `type="statsChart"` and a JSON chart DSL. The app converts
 
 Optional `data.series` entries add editable supplemental traces without replacing the chart's base data. A series has a stable `id`, `seriesType` (`line`, `points`, `linePoints`, or `bars`), matching `xValues` and `yValues`, optional label and styling fields, and optional `show`/`solutionOnly` visibility. Agents should target one series by id or index through `diagram.settings.update`; element updates must preserve sibling series and the base chart's ranges and options.
 
+Normal and density charts may also contain `data.regions`. A region has a stable `id`, `mode` (`between`, `leftTail`, `rightTail`, or `outside`), the applicable `lower`/`upper` bounds, optional `fillColor` and `fillOpacity`, and optional `show`/`solutionOnly` visibility. The renderer interpolates the base curve at the exact bounds and fills to the x-axis without drawing vertical boundary lines. Regions added in Solutions mode default to `solutionOnly` and render in solution blue. Agents can create or replace one region with `diagram.settings.update` using `element: { kind: "region", operation: "upsert", ... }`; use `operation: "delete"` with the stable id to remove it. New normal charts default to a domain of approximately `mean ± 3.2 standard deviations` so the tails approach the axis before the frame edge, while an explicit source `range` remains exact.
+
+```json
+{
+  "type": "statsChart",
+  "data": {
+    "chartType": "normal",
+    "mean": 68,
+    "stdDev": 5,
+    "range": [52, 84],
+    "xLabel": "x",
+    "yLabel": "Density",
+    "regions": [
+      {
+        "id": "answer-region",
+        "mode": "between",
+        "lower": 63,
+        "upper": 78,
+        "fillColor": "#1d4ed8",
+        "fillOpacity": 0.22,
+        "solutionOnly": true
+      }
+    ]
+  }
+}
+```
+
 For histogram/column graph displays:
 
 - `barType="continuous"` treats bars as continuous bins.
@@ -567,7 +594,7 @@ For histogram/column graph displays:
 - `dataMode="manualFrequencies"` plots exact frequency columns from matching `xValues` and `frequencies`.
 - `dataMode="manualProbabilities"` plots exact probability columns from matching `xValues` and `probabilities`.
 
-Every statsChart chart DSL field belongs inside the JSON `data` object. Put `chartType`, `dataMode`, `xValues`, `frequencies`/`probabilities`, `values`, `points`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `xLabel`, and `yLabel` under `graphConfig.data`, not directly on `graphConfig`.
+Every statsChart chart DSL field belongs inside the JSON `data` object. Put `chartType`, `dataMode`, `xValues`, `frequencies`/`probabilities`, `values`, `points`, `regions`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `xLabel`, and `yLabel` under `graphConfig.data`, not directly on `graphConfig`.
 
 For source statistics charts, preserve the chart semantics as well as the visible shape. Keep source `xLabel`/`yLabel`, `range`/`yRange`, `binSize`, `barType`, `yAxisMode`, `dataMode`, and any visible density points or exact bar heights when they are shown in the source or marking key. For arbitrary source density curves, use sparse visible anchor points; do not invent extra smooth or normal points.
 

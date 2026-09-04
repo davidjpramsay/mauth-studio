@@ -447,6 +447,57 @@ test("statsChart series settings reject invalid targets and values", () => {
   assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.solutionOnly"));
 });
 
+test("statsChart region settings accept deterministic upserts", () => {
+  const result = validateMauthDocumentActionPayloads([
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "d1",
+      settings: {
+        renderer: "statsChart",
+        element: {
+          kind: "region",
+          operation: "upsert",
+          id: "answer-region",
+          patch: {
+            mode: "between",
+            lower: 63,
+            upper: 78,
+            fillColor: "#1d4ed8",
+            fillOpacity: 0.22,
+            solutionOnly: true,
+          },
+        },
+      },
+    },
+  ]);
+  assert.equal(result.ok, true);
+});
+
+test("statsChart region settings reject invalid operations, bounds, and opacity", () => {
+  const result = validateMauthDocumentActionPayloads([
+    {
+      type: "diagram.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "d1",
+      settings: {
+        renderer: "statsChart",
+        element: {
+          kind: "region",
+          operation: "replace",
+          id: "answer-region",
+          patch: { mode: "middle", lower: 78, upper: 63, fillOpacity: 2 },
+        },
+      },
+    },
+  ]);
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.operation"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.mode"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.upper"));
+  assert.ok(result.issues.some((issue) => issue.path === "actions[0].settings.element.patch.fillOpacity"));
+});
+
 test("image annotation settings accept structured solution-layer patches", () => {
   const result = validateMauthDocumentActionPayloads([
     {

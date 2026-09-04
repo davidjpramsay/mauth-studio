@@ -48,6 +48,15 @@ const annotatedConfigs: GraphConfig[] = [
     },
   },
   {
+    type: "statsChart",
+    data: {
+      chartType: "normal",
+      mean: 0,
+      stdDev: 1,
+      regions: [{ id: "answer-region", mode: "between", lower: -1, upper: 1, solutionOnly: true }],
+    },
+  },
+  {
     type: "image",
     data: {
       src: "data:image/png;base64,abc",

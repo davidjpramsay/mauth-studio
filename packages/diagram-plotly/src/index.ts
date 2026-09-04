@@ -3,6 +3,8 @@ import type {
   HistogramBarType,
   StatsChartData,
   StatsChartDataMode,
+  StatsChartRegionData,
+  StatsChartRegionMode,
   StatsChartSeriesData,
   StatsChartSeriesType,
   StatsChartSpec,
@@ -14,6 +16,8 @@ import type {
 export type {
   StatsChartData,
   StatsChartOptions,
+  StatsChartRegionData,
+  StatsChartRegionMode,
   StatsChartSeriesData,
   StatsChartSeriesType,
   StatsChartSpec,
@@ -37,6 +41,8 @@ const TEST_TEXT_FONT_FAMILY = "Inter, ui-sans-serif, system-ui, -apple-system, B
 const DEFAULT_WIDTH_PX = 560;
 const DEFAULT_HEIGHT_PX = 320;
 const DEFAULT_FILL_COLOR = "#f5f5f5";
+const DEFAULT_REGION_FILL_COLOR = "#1d4ed8";
+export const DEFAULT_NORMAL_RANGE_SIGMAS = 3.2;
 const DEFAULT_HISTOGRAM_VALUES = [3, 5, 7, 7, 8, 10];
 const DEFAULT_MANUAL_X_VALUES = [2, 4, 5, 6, 7];
 const DEFAULT_MANUAL_PROBABILITIES = [0.1, 0.25, 0.3, 0.15, 0.2];
@@ -134,6 +140,39 @@ export function normalizeStatsChartSeries(value: unknown): StatsChartSeriesData[
         lineWidth: optionalPositiveNumber(record.lineWidth),
         markerSize: optionalPositiveNumber(record.markerSize),
         barWidth: optionalPositiveNumber(record.barWidth),
+        show: record.show !== false,
+        solutionOnly: record.solutionOnly === true,
+      },
+    ];
+  });
+}
+
+function statsChartRegionMode(value: unknown): StatsChartRegionMode {
+  if (value === "leftTail" || value === "rightTail" || value === "outside") return value;
+  return "between";
+}
+
+function optionalNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+export function normalizeStatsChartRegions(value: unknown): StatsChartRegionData[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry, index): StatsChartRegionData[] => {
+    const record = asRecord(entry);
+    if (!record) return [];
+    const id = stringValue(record.id, `region-${index + 1}`).trim() || `region-${index + 1}`;
+    return [
+      {
+        ...record,
+        id,
+        label: stringValue(record.label, ""),
+        mode: statsChartRegionMode(record.mode),
+        lower: optionalNumber(record.lower),
+        upper: optionalNumber(record.upper),
+        fillColor: stringValue(record.fillColor, DEFAULT_REGION_FILL_COLOR),
+        fillOpacity: Math.min(1, Math.max(0, numeric(record.fillOpacity, 0.22))),
         show: record.show !== false,
         solutionOnly: record.solutionOnly === true,
       },
@@ -265,7 +304,7 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
   const defaultRange =
     selectedChartType === "density"
       ? extentRange(densityPoints.xs, [mean - 3 * stdDev, mean + 3 * stdDev])
-      : [mean - 3 * stdDev, mean + 3 * stdDev];
+      : [mean - DEFAULT_NORMAL_RANGE_SIGMAS * stdDev, mean + DEFAULT_NORMAL_RANGE_SIGMAS * stdDev];
   const defaultYRange =
     selectedChartType === "density" ? extentRange(densityPoints.ys, DEFAULT_BLANK_Y_RANGE, true) : DEFAULT_BLANK_Y_RANGE;
   const histogramDefaultYLabel =
@@ -323,6 +362,7 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
       ),
       title: stringValue(sourceData.title, ""),
       series: normalizeStatsChartSeries(sourceData.series),
+      regions: normalizeStatsChartRegions(sourceData.regions),
     },
     style: stringValue(sourceRecord?.style, "exam"),
     options: {
@@ -388,6 +428,104 @@ function densityCurvePoints(data: StatsChartData) {
   return normalCurvePoints(data.mean ?? 0, data.stdDev ?? 1, data.range ?? [-3, 3], 181);
 }
 
+type StatsCurvePoints = { xs: number[]; ys: number[] };
+
+function curveYAt(curve: StatsCurvePoints, x: number) {
+  const { xs, ys } = curve;
+  if (!xs.length || !ys.length) return undefined;
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[xs.length - 1]) return ys[Math.min(ys.length, xs.length) - 1];
+
+  let low = 0;
+  let high = xs.length - 1;
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if (xs[middle] <= x) low = middle;
+    else high = middle;
+  }
+  const span = xs[high] - xs[low];
+  if (!Number.isFinite(span) || span <= 0) return ys[low];
+  const ratio = (x - xs[low]) / span;
+  return ys[low] + (ys[high] - ys[low]) * ratio;
+}
+
+function curveSegment(curve: StatsCurvePoints, start: number, end: number): StatsCurvePoints | undefined {
+  if (!curve.xs.length || curve.xs.length !== curve.ys.length) return undefined;
+  const curveMin = curve.xs[0];
+  const curveMax = curve.xs[curve.xs.length - 1];
+  const lower = Math.max(curveMin, Math.min(start, end));
+  const upper = Math.min(curveMax, Math.max(start, end));
+  if (!Number.isFinite(lower) || !Number.isFinite(upper) || lower >= upper) return undefined;
+  const lowerY = curveYAt(curve, lower);
+  const upperY = curveYAt(curve, upper);
+  if (lowerY === undefined || upperY === undefined) return undefined;
+
+  const xs = [lower];
+  const ys = [lowerY];
+  curve.xs.forEach((x, index) => {
+    if (x <= lower || x >= upper) return;
+    xs.push(x);
+    ys.push(curve.ys[index]);
+  });
+  xs.push(upper);
+  ys.push(upperY);
+  return { xs, ys };
+}
+
+function regionIntervals(region: StatsChartRegionData, curveMin: number, curveMax: number): Array<[number, number]> {
+  if (region.mode === "leftTail" && region.upper !== undefined) return [[curveMin, region.upper]];
+  if (region.mode === "rightTail" && region.lower !== undefined) return [[region.lower, curveMax]];
+  if (region.mode === "outside" && region.lower !== undefined && region.upper !== undefined && region.lower < region.upper) {
+    return [
+      [curveMin, region.lower],
+      [region.upper, curveMax],
+    ];
+  }
+  if (region.mode === "between" && region.lower !== undefined && region.upper !== undefined && region.lower < region.upper) {
+    return [[region.lower, region.upper]];
+  }
+  return [];
+}
+
+function statsChartRegionTraces(spec: StatsChartSpec) {
+  if (spec.data.chartType !== "normal" && spec.data.chartType !== "density") return [];
+  const curve =
+    spec.data.chartType === "normal"
+      ? normalCurvePoints(spec.data.mean ?? 0, spec.data.stdDev ?? 1, spec.data.range ?? [-3, 3], spec.options?.normalPointCount ?? 181)
+      : densityCurvePoints(spec.data);
+  if (!curve.xs.length || curve.xs.length !== curve.ys.length) return [];
+  const curveMin = curve.xs[0];
+  const curveMax = curve.xs[curve.xs.length - 1];
+
+  return normalizeStatsChartRegions(spec.data.regions).flatMap((region) => {
+    if (region.show === false) return [];
+    return regionIntervals(region, curveMin, curveMax).flatMap((interval, intervalIndex) => {
+      const segment = curveSegment(curve, interval[0], interval[1]);
+      if (!segment) return [];
+      return [
+        {
+          type: "scatter",
+          mode: "lines",
+          x: segment.xs,
+          y: segment.ys,
+          fill: "tozeroy",
+          fillcolor: colorWithOpacity(region.fillColor || DEFAULT_REGION_FILL_COLOR, region.fillOpacity ?? 0.22),
+          line: {
+            color: "rgba(0, 0, 0, 0)",
+            width: 0,
+            shape: spec.data.chartType === "normal" ? "spline" : "linear",
+          },
+          hoverinfo: "skip",
+          cliponaxis: false,
+          showlegend: false,
+          name: region.label?.trim() || region.id,
+          meta: { mauthRegionId: region.id, mauthRegionPart: intervalIndex },
+        },
+      ];
+    });
+  });
+}
+
 function binomialCoefficient(n: number, k: number) {
   if (k < 0 || k > n) return 0;
   const smaller = Math.min(k, n - k);
@@ -436,10 +574,12 @@ function baseAxis(showGrid: boolean, label: string, fontSizePx: number) {
     linewidth: 1.4,
     linecolor: "#111111",
     mirror: false,
-    ticks: "",
-    ticklen: 0,
-    tickwidth: 0,
+    ticks: "outside",
+    ticklen: 5,
+    tickwidth: 1.2,
     tickcolor: "#111111",
+    ticklabelposition: "outside",
+    ticklabelstandoff: 5,
     showgrid: showGrid,
     gridcolor: "#d8d8d8",
     gridwidth: 1,
@@ -832,7 +972,7 @@ function supplementalSeriesTraces(data: StatsChartData) {
 }
 
 function chartTraces(spec: StatsChartSpec) {
-  return [...baseChartTraces(spec), ...supplementalSeriesTraces(spec.data)];
+  return [...statsChartRegionTraces(spec), ...baseChartTraces(spec), ...supplementalSeriesTraces(spec.data)];
 }
 
 export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec | null): PlotlyChartConfig {
@@ -859,6 +999,17 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
   const binomialYAxis = positiveTickAxis(binomial?.ys ?? [], 0.1);
   const normalYAxis = positiveTickAxis(normal?.ys ?? [], 0.1);
   const densityYAxis = data.yRange ? { range: data.yRange } : positiveTickAxis(density?.ys ?? [], 0.1);
+  const normalXAxisTicks =
+    data.chartType === "normal" && data.range
+      ? (() => {
+          const step = niceStep(data.range[1] - data.range[0], 7);
+          return {
+            tickmode: "linear" as const,
+            tick0: Number((Math.ceil(data.range[0] / step) * step).toFixed(8)),
+            dtick: Number(step.toFixed(8)),
+          };
+        })()
+      : {};
 
   return {
     data: chartTraces(spec),
@@ -871,10 +1022,10 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
       bargap: data.chartType === "binomial" || histogram?.discrete ? 0.18 : 0,
       boxgap: 0.35,
       margin: {
-        l: data.chartType === "box" || !data.yLabel?.trim() ? 54 : horizontalYLabel ? 60 : 78,
-        r: 22,
-        t: data.title ? 42 : horizontalYLabel ? 34 : 18,
-        b: 50,
+        l: data.chartType === "box" || !data.yLabel?.trim() ? 58 : horizontalYLabel ? 64 : 82,
+        r: 30,
+        t: data.title ? 46 : horizontalYLabel ? 38 : 24,
+        b: 58,
       },
       paper_bgcolor: "#ffffff",
       plot_bgcolor: "#ffffff",
@@ -903,6 +1054,7 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
               ? {
                   ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
                   range: data.range,
+                  ...normalXAxisTicks,
                 }
               : data.chartType === "density" || data.chartType === "blankAxes"
                 ? {

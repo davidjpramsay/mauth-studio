@@ -25,6 +25,7 @@ import {
   normalizeStatsChartSpec,
   type StatsChartData,
   type StatsChartOptions,
+  type StatsChartRegionData,
   type StatsChartSeriesData,
 } from "@mauth-studio/diagram-plotly";
 
@@ -75,11 +76,20 @@ import {
 import { normalizedSetDiagramData } from "./diagramSet.ts";
 import {
   normalizeStatsChartSeriesType,
+  normalizeStatsChartRegionMode,
+  deleteStatsChartRegion,
+  statsChartRegionAt,
+  statsChartRegionDisplayName,
+  statsChartRegionIndexById,
+  statsChartRegionTarget,
   statsChartSeriesAt,
   statsChartSeriesDisplayName,
   statsChartSeriesIndexById,
   statsChartSeriesTarget,
   updateStatsChartSeries,
+  updateStatsChartRegion,
+  upsertStatsChartRegion,
+  type StatsChartRegionTarget,
   type StatsChartSeriesTarget,
 } from "./diagramStatsChart.ts";
 import {
@@ -303,11 +313,19 @@ interface StatsChartSettingsUpdate extends SizedSettingsUpdate {
   showFill?: boolean;
   fillColor?: string;
   fillOpacity?: number;
-  element?: StatsChartSeriesSettingsUpdate;
+  element?: StatsChartSeriesSettingsUpdate | StatsChartRegionSettingsUpdate;
 }
 
 interface StatsChartSeriesSettingsUpdate extends Record<string, unknown> {
   kind?: "series" | string;
+  index?: number;
+  id?: string;
+  patch?: Record<string, unknown>;
+}
+
+interface StatsChartRegionSettingsUpdate extends Record<string, unknown> {
+  kind?: "region" | string;
+  operation?: "update" | "upsert" | "delete" | string;
   index?: number;
   id?: string;
   patch?: Record<string, unknown>;
@@ -1014,11 +1032,27 @@ function statsChartSeriesPatchRecord(source: StatsChartSeriesSettingsUpdate, idU
   if (isRecord(source.patch)) return source.patch;
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (key === "kind" || key === "index" || key === "patch") continue;
+    if (key === "kind" || key === "operation" || key === "index" || key === "patch") continue;
     if (key === "id" && idUsedAsTarget) continue;
     patch[key] = value;
   }
   return patch;
+}
+
+function statsChartRegionPatch(record: Record<string, unknown>): Partial<StatsChartRegionData> {
+  return {
+    ...(stringPatchValue(record.id) !== undefined ? { id: stringPatchValue(record.id) } : {}),
+    ...(stringPatchValue(record.label) !== undefined ? { label: stringPatchValue(record.label) } : {}),
+    ...(normalizeStatsChartRegionMode(record.mode) !== undefined ? { mode: normalizeStatsChartRegionMode(record.mode) } : {}),
+    ...(numberPatchValue(record.lower) !== undefined ? { lower: numberPatchValue(record.lower) } : {}),
+    ...(numberPatchValue(record.upper) !== undefined ? { upper: numberPatchValue(record.upper) } : {}),
+    ...(stringPatchValue(record.fillColor) !== undefined ? { fillColor: stringPatchValue(record.fillColor) } : {}),
+    ...(numberPatchValue(record.fillOpacity) !== undefined
+      ? { fillOpacity: Math.min(1, Math.max(0, numberPatchValue(record.fillOpacity) ?? 0.22)) }
+      : {}),
+    ...(booleanPatchValue(record.show) !== undefined ? { show: booleanPatchValue(record.show) } : {}),
+    ...(booleanPatchValue(record.solutionOnly) !== undefined ? { solutionOnly: booleanPatchValue(record.solutionOnly) } : {}),
+  };
 }
 
 function numberArrayPatchValue(value: unknown) {
@@ -1060,9 +1094,89 @@ function statsChartSeriesTargetFromSettings(
   return { ok: true, target, idUsedAsTarget };
 }
 
+function statsChartRegionTargetFromSettings(
+  config: GraphConfig,
+  source: StatsChartRegionSettingsUpdate,
+): { ok: true; target: StatsChartRegionTarget; idUsedAsTarget: boolean } | SettingsFailure {
+  if (source.kind !== "region") return settingsFailure("statsChart region settings must include kind: region.");
+  const directIndex = nonNegativeInteger(source.index);
+  const idValue = typeof source.id === "string" && source.id.trim() ? source.id.trim() : "";
+  const index = directIndex ?? (idValue ? statsChartRegionIndexById(config, idValue) : undefined);
+  const idUsedAsTarget = directIndex === undefined && Boolean(idValue);
+  if (index === undefined || index < 0) return settingsFailure("statsChart region settings could not find the requested region.");
+  const target = statsChartRegionTarget(config, index);
+  if (!target || !statsChartRegionAt(config, target)) return settingsFailure(`statsChart region index ${index} is outside data.regions.`);
+  return { ok: true, target, idUsedAsTarget };
+}
+
+function completeStatsChartRegion(
+  id: string,
+  patch: Partial<StatsChartRegionData>,
+): { ok: true; region: StatsChartRegionData } | SettingsFailure {
+  if (!id.trim()) return settingsFailure("statsChart region upsert requires a non-empty id.");
+  const mode = patch.mode;
+  if (!mode) return settingsFailure("statsChart region upsert requires mode: between, leftTail, rightTail, or outside.");
+  if ((mode === "between" || mode === "outside") && (patch.lower === undefined || patch.upper === undefined)) {
+    return settingsFailure(`statsChart ${mode} region requires lower and upper bounds.`);
+  }
+  if (mode === "leftTail" && patch.upper === undefined) return settingsFailure("statsChart leftTail region requires an upper bound.");
+  if (mode === "rightTail" && patch.lower === undefined) return settingsFailure("statsChart rightTail region requires a lower bound.");
+  if (patch.lower !== undefined && patch.upper !== undefined && patch.lower >= patch.upper) {
+    return settingsFailure("statsChart region lower bound must be less than its upper bound.");
+  }
+  return { ok: true, region: { id, mode, ...patch } };
+}
+
+function statsChartRegionSettingsPatch(
+  config: GraphConfig,
+  source: StatsChartRegionSettingsUpdate,
+): DiagramSettingsPatchSuccess | SettingsFailure {
+  const operation = source.operation === "upsert" || source.operation === "delete" ? source.operation : "update";
+  const directIndex = nonNegativeInteger(source.index);
+  const idValue = typeof source.id === "string" && source.id.trim() ? source.id.trim() : "";
+  const existingIndex = directIndex ?? (idValue ? statsChartRegionIndexById(config, idValue) : undefined);
+
+  if (operation === "upsert" && (existingIndex === undefined || existingIndex < 0)) {
+    const regionPatch = statsChartRegionPatch(statsChartSeriesPatchRecord(source, false));
+    const regionResult = completeStatsChartRegion(idValue || regionPatch.id || "", regionPatch);
+    if (!regionResult.ok) return regionResult;
+    const nextRegion = regionResult.region;
+    return {
+      ok: true,
+      patch: { data: upsertStatsChartRegion(config, nextRegion) },
+      targetLabel: nextRegion.label?.trim() || nextRegion.id,
+    };
+  }
+
+  const targetResult = statsChartRegionTargetFromSettings(config, source);
+  if (!targetResult.ok) return targetResult;
+  if (operation === "delete") {
+    return {
+      ok: true,
+      patch: { data: deleteStatsChartRegion(config, targetResult.target) },
+      targetLabel: statsChartRegionDisplayName(config, targetResult.target),
+    };
+  }
+  const regionPatch = statsChartRegionPatch(statsChartSeriesPatchRecord(source, targetResult.idUsedAsTarget));
+  return {
+    ok: true,
+    patch: Object.keys(regionPatch).length ? { data: updateStatsChartRegion(config, targetResult.target, regionPatch) } : {},
+    targetLabel: statsChartRegionDisplayName(config, targetResult.target),
+  };
+}
+
 function statsChartSettingsPatch(config: GraphConfig, settings: StatsChartSettingsUpdate): DiagramSettingsPatchSuccess | SettingsFailure {
   const patch = statsChartBaseSettingsPatch(config, settings);
   if (!settings.element) return { ok: true, patch };
+  if (settings.element.kind === "region") {
+    const regionResult = statsChartRegionSettingsPatch(config, settings.element);
+    if (!regionResult.ok) return regionResult;
+    return {
+      ok: true,
+      patch: compactGraphPatch([patch, regionResult.patch]),
+      targetLabel: regionResult.targetLabel,
+    };
+  }
   const targetResult = statsChartSeriesTargetFromSettings(config, settings.element);
   if (!targetResult.ok) return targetResult;
   const elementPatch = statsChartSeriesPatch(statsChartSeriesPatchRecord(settings.element, targetResult.idUsedAsTarget));

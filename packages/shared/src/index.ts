@@ -18,6 +18,7 @@ export type StatsChartDataMode = "raw" | "manualProbabilities" | "manualFrequenc
 export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
 export type StatsChartYLabelOrientation = "vertical" | "horizontal";
 export type StatsChartSeriesType = "line" | "points" | "linePoints" | "bars";
+export type StatsChartRegionMode = "between" | "leftTail" | "rightTail" | "outside";
 
 export interface StatsChartSeriesData {
   id: string;
@@ -29,6 +30,19 @@ export interface StatsChartSeriesData {
   lineWidth?: number;
   markerSize?: number;
   barWidth?: number;
+  show?: boolean;
+  solutionOnly?: boolean;
+  [key: string]: unknown;
+}
+
+export interface StatsChartRegionData {
+  id: string;
+  label?: string;
+  mode: StatsChartRegionMode;
+  lower?: number;
+  upper?: number;
+  fillColor?: string;
+  fillOpacity?: number;
   show?: boolean;
   solutionOnly?: boolean;
   [key: string]: unknown;
@@ -59,6 +73,7 @@ export interface StatsChartData {
   frequencies?: number[];
   points?: Array<{ x: number; y: number; label?: string }>;
   series?: StatsChartSeriesData[];
+  regions?: StatsChartRegionData[];
   [key: string]: unknown;
 }
 

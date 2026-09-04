@@ -41,6 +41,7 @@
     "smoke:external-folder-autosave": "node scripts/external-folder-autosave-smoke.mjs",
     "smoke:document-session-conflict": "node scripts/document-session-conflict-smoke.mjs",
     "smoke:diagram-solution-authoring": "node scripts/diagram-solution-authoring-smoke.mjs",
+    "smoke:stats-chart-region": "node scripts/stats-chart-region-smoke.mjs",
     "smoke:agent-bridge": "node scripts/agent-bridge-smoke.mjs",
     "smoke:agent-connector": "node scripts/agent-connector-smoke.mjs",
     "smoke:agent-connector-relaunch": "node scripts/agent-connector-relaunch-smoke.mjs",

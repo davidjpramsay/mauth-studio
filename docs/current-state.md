@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 2 September 2026.
+Last reviewed: 4 September 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -48,15 +48,16 @@ For assessment authoring, inspect the live document through the installed app's 
 ## Immediate Worktree Checkpoint
 
 ```text
-branch: codex/startup-performance
+branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1710 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; startup treats disk autosave as the durable recovery source, restores the active persisted tab into the editor, preserves drafts when their cloud project file cannot be checked, and prevents unrelated localhost browser state from borrowing a saved tab id, while public release 0.1.5 remains unchanged
+worktree: clean at this checkpoint; startup performance and recovery fixes, the compact Files drawer, native statistics-chart regions, renderer-owned normal-axis ticks and outward tick marks, wider normal-curve domains, and print-safe clipping are implemented, while public release 0.1.5 remains unchanged
 ```
 
 Observed runtime through 2 September 2026:
 
+- native `statsChart` normal and density diagrams now store deterministic under-curve `regions` for between, left-tail, right-tail, and outside shading. Each region has stable bounds, colour, opacity, visibility, and solution-only state; the renderer interpolates exact boundary points, fills to the axis without boundary strokes, keeps the distribution curve above the fill, and exposes focused `diagram.settings.update` upsert/update/delete actions. Normal charts use renderer-owned major ticks, short outward tick marks on both axes, and a default domain of mean plus or minus 3.2 standard deviations, while larger Plotly margins and an 8 px source-space clip allowance protect ticks, axes, and curve tails during preview and print scaling. The isolated `1540 x 1100` browser smoke measured the exact labels `55, 60, 65, 70, 75, 80`, six native 5 px tick marks on each axis, 10.41 px tick-label clearance, 16 px total clip expansion in both directions, no console warnings or errors, solution-only shading, and an unshaded Student copy. `pnpm check` passed 89 API tests, 693 web/action tests, 11 Plotly tests, 64 launcher/runtime tests, Quick Look tests, lint, formatting, TypeScript, and the production web build. A hardened local app rebuild/install passed connector doctor, then the live Year 12 Methods Test 4 graph was converted through MCP preview/apply at saved revision 10; validation checked 20 items across 7 questions with zero errors or warnings, and installed Student/Solutions render checks confirmed unclipped tails, native axis numbering, and the shaded interval `63<X<78`.
 - on 2 September the real Application Support recovery state reproduced a tab header for an empty Year 10 starter while its saved Year 11 path and document body were detached. A protected backup was taken before repair. The source desktop app then restored Year 11 Methods Test 3 at revision 2 with all 8 questions, rendered its preview, passed the local bridge doctor, and rewrote both `current-test.json` and `open-documents.json` with the correct active path and document. Focused tests cover disk-over-browser precedence, unavailable cloud-file recovery, browser-only API fallback, active-tab restoration, and saved-tab id collisions;
 - a fresh locally installed `0.1.5` development checkpoint on 31 August created its loading window 148 ms after launch began, presented it at 245 ms, reported API health at 699 ms, and completed editor navigation at 835 ms after launch began (about 327 ms to presentation and 917 ms to the editor from packaged process startup). The previous packaged cold launches recorded roughly 4.4-7.6 seconds. `pnpm agent:doctor` passed API health, web, bridge discovery, and active snapshot; the complete connector smoke reached the app but its document-list operation was correctly blocked by the teacher's currently unavailable selected folder with `503 STORAGE_UNAVAILABLE`, so no folder or document state was changed.
 - the locally installed `Mauth Studio.app` was rebuilt and opened with its packaged FastAPI sidecar on a dynamic loopback port;

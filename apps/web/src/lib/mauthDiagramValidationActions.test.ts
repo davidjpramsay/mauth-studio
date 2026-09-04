@@ -329,6 +329,59 @@ test("statsChart validation rejects malformed solution series", () => {
   assert.ok(issues.some((issue) => issue.path === "diagram.data.series[0].solutionOnly"));
 });
 
+test("statsChart validation accepts deterministic normal-curve regions", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "statsChart",
+      data: {
+        chartType: "normal",
+        mean: 68,
+        stdDev: 5,
+        range: [52, 84],
+        regions: [
+          {
+            id: "answer-region",
+            mode: "between",
+            lower: 63,
+            upper: 78,
+            fillColor: "#1d4ed8",
+            fillOpacity: 0.22,
+            solutionOnly: true,
+          },
+        ],
+      },
+    },
+    "diagram",
+    issues,
+  );
+  assert.deepEqual(issues, []);
+});
+
+test("statsChart validation rejects malformed and unsupported regions", () => {
+  const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+  validateMauthDiagramConfig(
+    {
+      type: "statsChart",
+      data: {
+        chartType: "histogram",
+        values: [1, 2, 3],
+        regions: [
+          { id: "duplicate", mode: "between", lower: 2, upper: 1, fillOpacity: 1.5 },
+          { id: "duplicate", mode: "leftTail" },
+        ],
+      },
+    },
+    "diagram",
+    issues,
+  );
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.regions"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.regions[0].upper"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.regions[0].fillOpacity"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.regions[1].upper"));
+  assert.ok(issues.some((issue) => issue.path === "diagram.data.regions[1].id"));
+});
+
 test("image validation accepts structured solution annotations", () => {
   const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
   validateMauthDiagramConfig(
