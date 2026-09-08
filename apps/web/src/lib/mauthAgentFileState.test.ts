@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { MauthDocumentFlowItem, MauthQuestionLike, MauthSectionHeadingLike } from "./mauthActions.ts";
-import { buildMauthAgentFileState, buildMauthAgentFileStateForDocument } from "./mauthAgentFileState.ts";
+import { buildMauthAgentFileState, buildMauthAgentFileStateForDocument, reconcileAgentDraftState } from "./mauthAgentFileState.ts";
+
+test("live draft snapshots agree with their owning tab without changing saved-file preconditions", () => {
+  const draft = buildMauthAgentFileState({ documentFingerprint: "recovered", lastProjectSaveFingerprint: null });
+  assert.equal(reconcileAgentDraftState(draft, { dirty: true }).dirty, true);
+  assert.equal(reconcileAgentDraftState(draft, { dirty: false }).dirty, false);
+  const saved = { ...draft, activePath: "tests/saved.mauth", dirty: true };
+  assert.equal(reconcileAgentDraftState(saved, { dirty: false }), saved);
+});
 
 test("buildMauthAgentFileState reports unsaved drafts without project file identity", () => {
   const state = buildMauthAgentFileState({

@@ -81,15 +81,19 @@ export function useProjectFileStatus({
   const fileOperationBusy = projectFilesStatus === "saving" || projectFilesStatus === "loading";
   const headerFileStatusMessage = fileOperationBusy
     ? projectFilesMessage || "Working with files"
-    : !editorDocumentOpen
-      ? "Create a new Mauth document to begin"
-      : activeProjectFilePath
-        ? activeProjectRevisionIssue
-          ? "File changed outside app · reload or Save as"
-          : hasUnsavedProjectChanges
-            ? `Unsaved file changes · ${draftBackupSummary}`
-            : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
-        : `New file not saved · ${draftBackupSummary}`;
+    : projectFilesStatus === "error"
+      ? projectFilesMessage || "Files unavailable"
+      : draftAutosaveStatus === "unavailable"
+        ? draftAutosaveMessage
+        : !editorDocumentOpen
+          ? "Create a new Mauth document to begin"
+          : activeProjectFilePath
+            ? activeProjectRevisionIssue
+              ? "File changed outside app · reload or Save as"
+              : hasUnsavedProjectChanges
+                ? `Unsaved file changes · ${draftBackupSummary}`
+                : `Saved to file${activeProjectSavedAt ? ` · ${activeProjectSavedAt}` : ""}`
+            : `New file not saved · ${draftBackupSummary}`;
   const headerFileStatusTitle = fileOperationBusy
     ? [projectFilesMessage || "Working with files", activeProjectPathLabel ? `Current file: ${activeProjectPathLabel}` : ""]
         .filter(Boolean)
@@ -124,17 +128,21 @@ export function useProjectFileStatus({
           ].join("\n");
   const headerStorageStatus: HeaderSaveStatus = fileOperationBusy
     ? "saving"
-    : !editorDocumentOpen
-      ? "ready"
-      : activeProjectFilePath
-        ? activeProjectRevisionIssue
-          ? "conflict"
-          : hasUnsavedProjectChanges
-            ? "dirty"
-            : "saved"
-        : draftAutosaveStatus === "saved"
-          ? "draft"
-          : draftAutosaveStatus;
+    : projectFilesStatus === "error"
+      ? "error"
+      : draftAutosaveStatus === "unavailable"
+        ? "unavailable"
+        : !editorDocumentOpen
+          ? "ready"
+          : activeProjectFilePath
+            ? activeProjectRevisionIssue
+              ? "conflict"
+              : hasUnsavedProjectChanges
+                ? "dirty"
+                : "saved"
+            : draftAutosaveStatus === "saved"
+              ? "draft"
+              : draftAutosaveStatus;
   const hasUnsavedDraftChanges = Boolean(
     editorDocumentOpen && !activeProjectFilePath && cleanUnsavedDocumentFingerprint !== currentDocumentFingerprint,
   );

@@ -69,6 +69,8 @@ export function hydratedDocumentTabId(
   session: PersistedEditorDocumentTabsSession | null,
   { filePath, projectId, documentsPath, createDraftId = () => crypto.randomUUID() }: HydratedDocumentTabIdOptions,
 ) {
+  const activeTab = session?.tabs.find((tab) => tab.id === session.activeTabId);
+  if (filePath && !documentsPath && activeTab?.filePath === filePath) return activeTab.id;
   const matchingTab = filePath
     ? session?.tabs.find(
         (tab) =>
@@ -131,6 +133,16 @@ export function documentTabsPersistencePlan(
   sessionActiveTabId: string | null,
   currentTab?: EditorDocumentTab | null,
 ): DocumentTabsPersistencePlan {
+  // The current draft is authoritative even when its cloud project lookup
+  // failed. Recover only the owning folder from the matching saved session.
+  const initialCurrentTab = currentTab;
+  const persistedOwner =
+    initialCurrentTab?.filePath && !initialCurrentTab.project
+      ? restoredTabs.find((tab) => tab.id === initialCurrentTab.id && tab.filePath === initialCurrentTab.filePath)
+      : null;
+  const resolvedCurrentTab = persistedOwner?.project && currentTab ? { ...currentTab, project: persistedOwner.project } : currentTab;
+  const recoveredProject = resolvedCurrentTab !== currentTab;
+  currentTab = resolvedCurrentTab;
   const idCollision = currentTab
     ? restoredTabs.some(
         (tab) =>
@@ -148,7 +160,7 @@ export function documentTabsPersistencePlan(
     : restoredTabs;
   const requestedActiveId = safeCurrentTab?.id ?? sessionActiveTabId;
   const activeTabId = tabs.some((tab) => tab.id === requestedActiveId) ? requestedActiveId : (tabs[0]?.id ?? null);
-  return { tabs, activeTabId, restoreActiveTab: !safeCurrentTab && activeTabId !== null };
+  return { tabs, activeTabId, restoreActiveTab: (!safeCurrentTab || recoveredProject) && activeTabId !== null };
 }
 
 export function persistedDocumentTabsSession(

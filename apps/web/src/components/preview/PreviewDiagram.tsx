@@ -1,11 +1,8 @@
+import { lazy, Suspense } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 
-import { GeometricConstructionDiagram } from "@/components/diagrams/GeometricConstructionDiagram";
 import { ImageDiagramCanvas } from "@/components/diagrams/ImageDiagramCanvas";
-import { StatsChartDiagram } from "@/components/diagrams/StatsChartDiagram";
-import { Basic3DGraph } from "@/components/graphs/Basic3DGraph";
-import { FunctionGraph } from "@/components/graphs/FunctionGraph";
-import { Vector2DGraph } from "@/components/graphs/Vector2DGraph";
+import { DiagramRenderBoundary, DiagramRenderPlaceholder } from "@/components/preview/DiagramRenderBoundary";
 import { graphHeight, graphWidth, isSolutionOnlyGraphFeature, isSolutionOnlyGraphFunction } from "@/lib/diagramGraph2d";
 import { geometry2dData, geometry2dDataHasSolutionOnly } from "@/lib/diagramGeometry2d";
 import { vector2dConfigHasSolutionOnly } from "@/lib/diagramVector2d";
@@ -24,6 +21,15 @@ import {
 import { previewPenroseConfigForSolutionVisibility } from "@/lib/diagramPenroseSolution";
 
 const TEST_SOLUTION_COLOR = "#1d4ed8";
+const FunctionGraph = lazy(() => import("@/components/graphs/FunctionGraph").then((module) => ({ default: module.FunctionGraph })));
+const Basic3DGraph = lazy(() => import("@/components/graphs/Basic3DGraph").then((module) => ({ default: module.Basic3DGraph })));
+const Vector2DGraph = lazy(() => import("@/components/graphs/Vector2DGraph").then((module) => ({ default: module.Vector2DGraph })));
+const StatsChartDiagram = lazy(() =>
+  import("@/components/diagrams/StatsChartDiagram").then((module) => ({ default: module.StatsChartDiagram })),
+);
+const GeometricConstructionDiagram = lazy(() =>
+  import("@/components/diagrams/GeometricConstructionDiagram").then((module) => ({ default: module.GeometricConstructionDiagram })),
+);
 
 interface PreviewDiagramProps {
   graphConfig?: GraphConfig | null;
@@ -35,7 +41,19 @@ interface PreviewDiagramProps {
   withGraphDefaults: (graphConfig?: GraphConfig | null) => GraphConfig;
 }
 
-export function PreviewDiagram({
+export function PreviewDiagram(props: PreviewDiagramProps) {
+  const config = props.withGraphDefaults(props.graphConfig);
+  if (props.measureOnly) return <DiagramRenderPlaceholder config={config} />;
+  return (
+    <DiagramRenderBoundary config={config}>
+      <Suspense fallback={<DiagramRenderPlaceholder config={config} state="loading" />}>
+        <PreviewDiagramContent {...props} />
+      </Suspense>
+    </DiagramRenderBoundary>
+  );
+}
+
+function PreviewDiagramContent({
   graphConfig,
   anchor,
   measureOnly = false,

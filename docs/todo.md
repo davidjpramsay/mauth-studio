@@ -1,6 +1,6 @@
 # Mauth Roadmap
 
-Last reviewed: 30 August 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
+Last reviewed: 8 September 2026. `docs/current-state.md` owns the live checkpoint; `docs/app-scan-and-direction.md` owns product direction.
 
 ## Current Direction
 
@@ -16,6 +16,8 @@ Mauth is a standalone teacher app with optional local agent authoring. Human con
 - Bundled Codex/Claude MCP connector with one-time Help-menu setup and no copied token.
 - Student/Solutions authoring with structured shared and solution-only answer layers across supported surfaces.
 - Browser-measured page totals and overflow evidence.
+- Bounded print preflight with Retry/Cancel, platform-specific page-image baselines, and real PDF regression output.
+- On-demand diagram engines and a versioned MCP action catalog with question-scoped summaries.
 - Focused composition boundaries and regression smokes for high-risk workflows.
 - Platform-neutral runtime discovery, development process paths, helper naming, and Electron-native folder selection, without consuming hosted CI minutes.
 

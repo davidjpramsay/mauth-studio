@@ -2,7 +2,8 @@ import type { ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
-import { deleteProjectFile, getDefaultProject, getProjectFile, listProjectFiles, saveProjectFile } from "@/lib/api";
+import { deleteProjectFile, getDefaultProject, getProjectFile, listProjectFiles, saveProjectFile, moveProjectFile } from "@/lib/api";
+import type { DocumentTabFileOperation } from "@/lib/documentTabFileOperations";
 import {
   ensureTestFileName,
   joinTestPath,
@@ -44,14 +45,15 @@ interface UseProjectFileOperationsControllerOptions {
   setProjectSaveConflict: (conflict: ProjectSaveConflict | null) => void;
   updateLastProjectSaveFingerprint: (fingerprint: string | null) => void;
   dialogs: MauthDialogActions;
+  onFileOperation?: (operation: DocumentTabFileOperation) => void;
 }
 
-async function copyProjectItem(projectId: string, sourcePath: string, targetPath: string, files: ProjectFileSummary[]) {
+async function copyProjectItem(projectId: ProjectSummary, sourcePath: string, targetPath: string, files: ProjectFileSummary[]) {
   const source = files.find((file) => file.path === sourcePath);
   if (!source) throw new Error("Missing source file");
 
   if (source.kind === "folder") {
-    await saveProjectFile(projectId, targetPath, { kind: "folder", fileType: "folder", metadata: source.metadata });
+    await saveProjectFile(projectId, targetPath, { baseRevision: null, kind: "folder", fileType: "folder", metadata: source.metadata });
     const descendants = files
       .filter((file) => file.path.startsWith(`${sourcePath}/`))
       .sort((left, right) => {
@@ -62,6 +64,7 @@ async function copyProjectItem(projectId: string, sourcePath: string, targetPath
       const descendantTargetPath = `${targetPath}${descendant.path.slice(sourcePath.length)}`;
       if (descendant.kind === "folder") {
         await saveProjectFile(projectId, descendantTargetPath, {
+          baseRevision: null,
           kind: "folder",
           fileType: "folder",
           metadata: descendant.metadata,
@@ -69,6 +72,7 @@ async function copyProjectItem(projectId: string, sourcePath: string, targetPath
       } else {
         const document = await getProjectFile(projectId, descendant.path);
         await saveProjectFile(projectId, descendantTargetPath, {
+          baseRevision: null,
           content: document.content ?? "",
           kind: "file",
           fileType: document.fileType ?? "test",
@@ -81,6 +85,7 @@ async function copyProjectItem(projectId: string, sourcePath: string, targetPath
 
   const document = await getProjectFile(projectId, sourcePath);
   await saveProjectFile(projectId, targetPath, {
+    baseRevision: null,
     content: document.content ?? "",
     kind: "file",
     fileType: document.fileType ?? "test",
@@ -104,6 +109,7 @@ export function useProjectFileOperationsController({
   setProjectSaveConflict,
   updateLastProjectSaveFingerprint,
   dialogs,
+  onFileOperation,
 }: UseProjectFileOperationsControllerOptions) {
   async function currentProject() {
     const project = activeProject ?? (await getDefaultProject());
@@ -119,16 +125,16 @@ export function useProjectFileOperationsController({
       if (activeProjectFilePath && hasUnsavedProjectChanges && projectPathContains(filePath, activeProjectFilePath)) {
         await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
       }
-      const currentFiles = await listProjectFiles(project.id);
+      const currentFiles = await listProjectFiles(project);
       const source = currentFiles.files.find((file) => file.path === filePath);
       if (!source) {
         setProjectFilesStatus("ready");
         setProjectFilesMessage("");
         return;
       }
-      await copyProjectItem(project.id, filePath, targetFilePath, currentFiles.files);
-      await deleteProjectFile(project.id, filePath, source.revision);
-      const refreshedFiles = await listProjectFiles(project.id);
+      const moved = await moveProjectFile(project, filePath, targetFilePath, source.revision);
+      onFileOperation?.({ project, sourcePath: filePath, targetPath: targetFilePath, files: moved.files });
+      const refreshedFiles = await listProjectFiles(project);
       setProjectFiles(refreshedFiles.files);
       const nextActiveFilePath = activeProjectFilePath
         ? activeProjectFilePath === filePath
@@ -137,7 +143,7 @@ export function useProjectFileOperationsController({
             ? `${targetFilePath}${activeProjectFilePath.slice(filePath.length)}`
             : activeProjectFilePath
         : null;
-      if (nextActiveFilePath !== activeProjectFilePath) {
+      if (!onFileOperation && nextActiveFilePath !== activeProjectFilePath) {
         const nextRevision = nextActiveFilePath
           ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
           : null;
@@ -167,7 +173,7 @@ export function useProjectFileOperationsController({
       ) {
         await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
       }
-      let currentFiles = (await listProjectFiles(project.id)).files;
+      let currentFiles = (await listProjectFiles(project)).files;
       let duplicatedCount = 0;
       let openedDuplicatePath: string | null = null;
       let openedDuplicateFingerprint: string | null = null;
@@ -197,13 +203,13 @@ export function useProjectFileOperationsController({
           openedDuplicateFingerprint = duplicate.fingerprint;
           openedDuplicateRevision = duplicate.revision;
         } else {
-          await copyProjectItem(project.id, filePath, targetFilePath, currentFiles);
+          await copyProjectItem(project, filePath, targetFilePath, currentFiles);
         }
-        currentFiles = (await listProjectFiles(project.id)).files;
+        currentFiles = (await listProjectFiles(project)).files;
         duplicatedCount += 1;
       }
 
-      const refreshedFiles = await listProjectFiles(project.id);
+      const refreshedFiles = await listProjectFiles(project);
       setProjectFiles(refreshedFiles.files);
       if (openedDuplicatePath) {
         setActiveProjectFileState(openedDuplicatePath, openedDuplicateRevision);
@@ -271,7 +277,7 @@ export function useProjectFileOperationsController({
       ) {
         await writeCurrentTestProjectFile(activeProjectFilePath, currentProjectFileName);
       }
-      const currentFiles = (await listProjectFiles(project.id)).files;
+      const currentFiles = (await listProjectFiles(project)).files;
       const existingPaths = new Set(currentFiles.map((file) => file.path.toLowerCase()));
       const plannedTargets = new Set<string>();
       const plannedMoves: Array<{ source: ProjectFileSummary; sourcePath: string; targetPath: string }> = [];
@@ -314,13 +320,11 @@ export function useProjectFileOperationsController({
       }
 
       for (const move of plannedMoves) {
-        await copyProjectItem(project.id, move.sourcePath, move.targetPath, currentFiles);
-      }
-      for (const move of plannedMoves) {
-        await deleteProjectFile(project.id, move.sourcePath, move.source.revision);
+        const moved = await moveProjectFile(project, move.sourcePath, move.targetPath, move.source.revision);
+        onFileOperation?.({ project, sourcePath: move.sourcePath, targetPath: move.targetPath, files: moved.files });
       }
 
-      const refreshedFiles = await listProjectFiles(project.id);
+      const refreshedFiles = await listProjectFiles(project);
       setProjectFiles(refreshedFiles.files);
       const nextActiveFilePath = activeProjectFilePath
         ? (() => {
@@ -333,7 +337,7 @@ export function useProjectFileOperationsController({
             return activeProjectFilePath;
           })()
         : null;
-      if (nextActiveFilePath !== activeProjectFilePath) {
+      if (!onFileOperation && nextActiveFilePath !== activeProjectFilePath) {
         const nextRevision = nextActiveFilePath
           ? (refreshedFiles.files.find((file) => file.path === nextActiveFilePath)?.revision ?? null)
           : null;
@@ -380,19 +384,20 @@ export function useProjectFileOperationsController({
         ? sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
         : false;
       for (const { filePath, source } of sources) {
-        await deleteProjectFile(project.id, filePath, source.revision);
+        await deleteProjectFile(project, filePath, source.revision);
+        onFileOperation?.({ project, sourcePath: filePath, files: [] });
       }
-      const refreshedFiles = await listProjectFiles(project.id);
+      const refreshedFiles = await listProjectFiles(project);
       setProjectFiles(refreshedFiles.files);
       const nextActiveFilePath =
         activeProjectFilePath &&
         sources.some(({ filePath }) => activeProjectFilePath === filePath || activeProjectFilePath.startsWith(`${filePath}/`))
           ? null
           : activeProjectFilePath;
-      if (nextActiveFilePath !== activeProjectFilePath) {
+      if (!onFileOperation && nextActiveFilePath !== activeProjectFilePath) {
         setActiveProjectFileState(nextActiveFilePath, null);
       }
-      if (deletingActiveProjectFile) {
+      if (!onFileOperation && deletingActiveProjectFile) {
         setProjectSaveConflict(null);
         updateLastProjectSaveFingerprint(null);
       }

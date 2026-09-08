@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { actionCatalog, actionSchema, actionTypes, ACTION_CATALOG_URI, projectSnapshot } from "./mauth-action-contract.mjs";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -20,6 +22,10 @@ test("MCP connector publishes the complete local document and authoring contract
   try {
     await client.connect(transport);
     const result = await client.listTools();
+    const resources = await client.listResources();
+    assert.ok(resources.resources.some((resource) => resource.uri === ACTION_CATALOG_URI));
+    const catalog = await client.readResource({ uri: ACTION_CATALOG_URI });
+    assert.equal(JSON.parse(catalog.contents[0].text).version, 1);
     const tools = new Map(result.tools.map((tool) => [tool.name, tool]));
     assert.equal(tools.size, 16);
     for (const name of [
@@ -48,4 +54,35 @@ test("MCP connector publishes the complete local document and authoring contract
   } finally {
     await client.close();
   }
+});
+
+test("action envelopes track every live editor action and validate examples", () => {
+  const source = readFileSync(path.join(ROOT, "apps/web/src/lib/mauthActions.ts"), "utf8");
+  const start = source.indexOf("export const MAUTH_CONTENT_ACTION_TYPES");
+  const end = source.indexOf("export const MAUTH_DOCUMENT_ACTION_TYPES", start);
+  const names = [...source.slice(start, end).matchAll(/"([A-Za-z]+(?:\.[A-Za-z]+)+)"/g)].map((match) => match[1]);
+  assert.deepEqual([...actionTypes].sort(), [...names].sort());
+  for (const example of actionCatalog.examples) assert.equal(actionSchema.safeParse([example]).success, true);
+  assert.equal(actionSchema.safeParse([{ type: "question.update", patch: {} }]).success, false);
+  assert.equal(actionSchema.safeParse([{ type: "unknown.action" }]).success, false);
+  assert.equal(actionSchema.safeParse([{ type: "marks.update", target: { kind: "part", questionId: "q" }, marks: 1 }]).success, false);
+});
+
+test("scoped snapshots preserve preconditions, tab state and storage errors", () => {
+  const snapshot = {
+    httpStatus: 200,
+    snapshotId: "current",
+    mutationBase: { snapshotId: "current" },
+    activeDocumentId: "tab1",
+    openDocuments: [{ id: "tab1", dirty: true }],
+    questionCount: 2,
+    questions: [{ id: "q1" }, { id: "q2" }],
+  };
+  const scoped = projectSnapshot(snapshot, "q2");
+  assert.deepEqual(scoped.questions, [{ id: "q2" }]);
+  assert.equal(scoped.mutationBase, snapshot.mutationBase);
+  assert.equal(scoped.openDocuments, snapshot.openDocuments);
+  assert.equal(projectSnapshot(snapshot, "missing").httpStatus, 404);
+  const unavailable = { httpStatus: 503, code: "STORAGE_UNAVAILABLE" };
+  assert.equal(projectSnapshot(unavailable, "q2"), unavailable);
 });

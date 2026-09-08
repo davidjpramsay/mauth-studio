@@ -21,6 +21,7 @@ import {
   type ProjectFileTransitionOutcome,
 } from "@/lib/projectFileBeforeOpenWorkflow";
 import { runSingleFlight } from "@/lib/singleFlight";
+import type { DocumentTabSaveResult } from "@/lib/documentTabFileOperations";
 
 interface SerializedProjectDocument {
   content: string;
@@ -44,6 +45,8 @@ interface UseProjectDocumentPersistenceControllerOptions<TDocument> {
   currentProjectFileName: string;
   revisionMissingErrorMessage: string;
   currentDocument: () => TDocument;
+  currentDocumentIdentity?: () => string | null;
+  onDocumentSaved?: (result: DocumentTabSaveResult) => void;
   defaultProjectFileName: () => string;
   serializeProjectDocument: (args: SerializeProjectDocumentArgs<TDocument>) => SerializedProjectDocument;
   projectFileConflictFromError: (error: unknown, filePath: string, localRevision: number | null) => ProjectSaveConflict | null;
@@ -69,6 +72,8 @@ export function useProjectDocumentPersistenceController<TDocument>({
   currentProjectFileName,
   revisionMissingErrorMessage,
   currentDocument,
+  currentDocumentIdentity,
+  onDocumentSaved,
   defaultProjectFileName,
   serializeProjectDocument,
   projectFileConflictFromError,
@@ -86,12 +91,19 @@ export function useProjectDocumentPersistenceController<TDocument>({
   const saveCurrentTestInFlightRef = useRef<Promise<boolean> | null>(null);
 
   async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: TDocument) {
+    const documentId = currentDocumentIdentity?.() ?? null;
+    const sourcePath = activeProjectFilePathRef.current;
+    const sourceRevision = activeProjectFileRevisionRef.current;
+    const stillCurrent = () =>
+      (currentDocumentIdentity?.() ?? null) === documentId &&
+      activeProjectFilePathRef.current === sourcePath &&
+      activeProjectFileRevisionRef.current === sourceRevision;
     setProjectFilesStatus("saving");
     setProjectFilesMessage("Saving");
 
     const project = activeProject ?? (await getDefaultProject());
-    const loadedFilePath = activeProjectFilePathRef.current;
-    const loadedRevision = loadedFilePath === filePath ? activeProjectFileRevisionRef.current : undefined;
+    const loadedFilePath = sourcePath;
+    const loadedRevision = loadedFilePath === filePath ? sourceRevision : undefined;
     if (loadedFilePath === filePath && loadedRevision === null) {
       const conflict = missingProjectRevisionConflict(filePath);
       setProjectSaveConflict(conflict);
@@ -107,7 +119,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     let savedDocument: ProjectFileDocument;
     const baseRevision = loadedRevision ?? existingFile?.revision ?? null;
     try {
-      savedDocument = await saveProjectFile(project.id, filePath, {
+      savedDocument = await saveProjectFile(project, filePath, {
         content: serializedDocument.content,
         kind: "file",
         fileType: serializedDocument.fileType,
@@ -119,7 +131,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
       });
     } catch (error) {
       const conflict = projectFileConflictFromError(error, filePath, baseRevision ?? null);
-      if (conflict) {
+      if (conflict && stillCurrent()) {
         setProjectSaveConflict(conflict);
         setProjectFilesStatus("error");
         setProjectFilesMessage("File changed on disk");
@@ -128,12 +140,23 @@ export function useProjectDocumentPersistenceController<TDocument>({
       throw error;
     }
 
-    const refreshedFiles = await listProjectFiles(project.id);
-    setActiveProject(project);
-    setProjectFiles(refreshedFiles.files);
-    setActiveProjectFileState(filePath, savedDocument.revision);
-    setProjectSaveConflict(null);
-    updateLastProjectSaveFingerprint(serializedDocument.fingerprint);
+    const updateActiveFile = stillCurrent();
+    onDocumentSaved?.({
+      documentId,
+      sourcePath,
+      sourceRevision,
+      project,
+      filePath,
+      revision: savedDocument.revision,
+      fingerprint: serializedDocument.fingerprint,
+    });
+    if (updateActiveFile) {
+      setActiveProject(project);
+      setProjectFiles([...projectFiles.filter((file) => file.path !== filePath), savedDocument]);
+      setActiveProjectFileState(filePath, savedDocument.revision);
+      setProjectSaveConflict(null);
+      updateLastProjectSaveFingerprint(serializedDocument.fingerprint);
+    }
     setProjectFilesStatus("ready");
     setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
   }
@@ -153,7 +176,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     const recoveryPath = projectPathForTestPath(joinTestPath("Recovery", ensureTestFileName(recoveryName)));
     const serializedDocument = serializeProjectDocument({ filePath: recoveryPath, testName: recoveryName, document });
 
-    const savedDocument = await saveProjectFile(project.id, recoveryPath, {
+    const savedDocument = await saveProjectFile(project, recoveryPath, {
       content: serializedDocument.content,
       kind: "file",
       fileType: serializedDocument.fileType,
@@ -165,7 +188,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
       },
       baseRevision: null,
     });
-    const refreshedFiles = await listProjectFiles(project.id);
+    const refreshedFiles = await listProjectFiles(project);
     setActiveProject(project);
     setProjectFiles(refreshedFiles.files);
     return savedDocument;
@@ -236,6 +259,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
   }
 
   async function performSaveCurrentTestToProjectFile(folderPath: string) {
+    const documentId = currentDocumentIdentity?.() ?? null;
     let saveTargetPath = activeProjectFilePath;
     try {
       const defaultName = defaultProjectFileName();
@@ -251,6 +275,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
           requireValue: true,
         });
         if (requestedName === null) return false;
+        if ((currentDocumentIdentity?.() ?? null) !== documentId) return false;
         testName = safeProjectFileName(requestedName);
         filePath = projectPathForTestPath(joinTestPath(folderPath, ensureTestFileName(testName)));
       }
@@ -259,6 +284,11 @@ export function useProjectDocumentPersistenceController<TDocument>({
       await writeCurrentTestProjectFile(filePath, testName);
       return true;
     } catch (error) {
+      if ((currentDocumentIdentity?.() ?? null) !== documentId) {
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("The previous document could not be saved; its draft is retained");
+        return false;
+      }
       if (error instanceof Error && error.message === revisionMissingErrorMessage) return false;
       const conflict = saveTargetPath ? projectFileConflictFromError(error, saveTargetPath, activeProjectFileRevisionRef.current) : null;
       if (conflict) {

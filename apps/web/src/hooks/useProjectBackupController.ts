@@ -50,7 +50,7 @@ export function useProjectBackupController({
   }
 
   async function refreshProjectFiles(project: ProjectSummary) {
-    const refreshedFiles = await listProjectFiles(project.id);
+    const refreshedFiles = await listProjectFiles(project);
     setActiveProject(project);
     setProjectFiles(refreshedFiles.files);
   }
@@ -79,7 +79,7 @@ export function useProjectBackupController({
       }
 
       const project = await currentProject();
-      const backup = await downloadProjectBackup(project.id);
+      const backup = await downloadProjectBackup(project);
       downloadBlob(backup.blob, backup.fileName);
       await refreshProjectFiles(project);
       setProjectFilesStatus("ready");
@@ -102,7 +102,7 @@ export function useProjectBackupController({
       setProjectFilesStatus("saving");
       setProjectFilesMessage("Importing backup");
       const project = await currentProject();
-      const result = await importProjectBackup(project.id, file);
+      const result = await importProjectBackup(project, file);
       await refreshProjectFiles(project);
       await refreshLogoLibraryFromDisk();
       setProjectFilesStatus("ready");

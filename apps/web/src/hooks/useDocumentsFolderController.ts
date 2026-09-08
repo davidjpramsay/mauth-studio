@@ -49,7 +49,7 @@ export function useDocumentsFolderController({
   }
 
   async function loadProjectFolder(project: ProjectSummary, readyMessage: string) {
-    const refreshedFiles = await listProjectFiles(project.id);
+    const refreshedFiles = await listProjectFiles(project);
     setActiveProject(project);
     setProjectFiles(refreshedFiles.files);
     clearActiveProjectFile();

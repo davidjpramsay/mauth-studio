@@ -6,6 +6,7 @@ const KNOWN_LARGE_CHUNK_LIMIT_KB = 5000;
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET;
 
 export default defineConfig({
+  cacheDir: process.env.MAUTH_VITE_CACHE_DIR,
   plugins: [react()],
   define: {
     __MAUTH_WEB_BUILD_ID__: JSON.stringify(process.env.MAUTH_WEB_BUILD_ID ?? new Date().toISOString()),

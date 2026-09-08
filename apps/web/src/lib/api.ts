@@ -11,6 +11,10 @@ import type {
   ProjectSummary,
   Question,
 } from "@mauth-studio/shared";
+import { createSerialWriteQueue } from "@/lib/recoveryWrites";
+
+const writeAutosave = createSerialWriteQueue();
+const writeSession = createSerialWriteQueue();
 
 const PRODUCTION_ORIGIN = typeof globalThis.location?.origin === "string" ? globalThis.location.origin : "";
 
@@ -202,7 +206,7 @@ export function getStorageAutosave<TAutosave>() {
 }
 
 export function saveStorageAutosave<TAutosave>(autosave: TAutosave) {
-  return postJson<{ autosave: TAutosave }>("/api/storage/tests/autosave", autosave);
+  return writeAutosave(() => postJson<{ autosave: TAutosave }>("/api/storage/tests/autosave", autosave));
 }
 
 export function getEditorSession<TSession>() {
@@ -210,7 +214,7 @@ export function getEditorSession<TSession>() {
 }
 
 export function saveEditorSession<TSession>(session: TSession) {
-  return postJson<{ session: TSession }>("/api/storage/editor-session", session);
+  return writeSession(() => postJson<{ session: TSession }>("/api/storage/editor-session", session));
 }
 
 export function listStoredLogos<TLogo>() {
@@ -237,6 +241,23 @@ export function openDefaultProjectDocumentsFolder(path: string) {
   return postJson<ProjectSummary>("/api/storage/projects/default/documents-folder", { path });
 }
 
+export function openExternalProjectDocumentFile(path: string) {
+  return postJsonWithSignal<{ project: ProjectSummary; document: ProjectFileDocument }>(
+    "/api/storage/projects/default/open-document",
+    { path },
+    AbortSignal.timeout(10000),
+  );
+}
+
+type ProjectTarget = string | ProjectSummary;
+
+function projectResource(project: ProjectTarget, resource: string) {
+  const id = typeof project === "string" ? project : project.id;
+  const path = `/api/storage/projects/${encodeURIComponent(id)}/${resource}`;
+  if (typeof project === "string" || !project.documentsPath) return path;
+  return `${path}${resource.includes("?") ? "&" : "?"}documentsPath=${encodeURIComponent(project.documentsPath)}`;
+}
+
 export function chooseDefaultProjectDocumentsFolder() {
   return postJson<{ cancelled: boolean; path?: string; project?: ProjectSummary }>(
     "/api/storage/projects/default/documents-folder/choose",
@@ -260,12 +281,12 @@ export function deleteProject(projectId: string) {
   return deleteRequest(`/api/storage/projects/${encodeURIComponent(projectId)}`);
 }
 
-export function listProjectFiles(projectId: string) {
-  return getJson<{ files: ProjectFileSummary[] }>(`/api/storage/projects/${encodeURIComponent(projectId)}/files`);
+export function listProjectFiles(project: ProjectTarget) {
+  return getJson<{ files: ProjectFileSummary[] }>(projectResource(project, "files"));
 }
 
-export async function downloadProjectBackup(projectId: string) {
-  const response = await fetch(`${API_BASE}/api/storage/projects/${encodeURIComponent(projectId)}/backup`, {
+export async function downloadProjectBackup(project: ProjectTarget) {
+  const response = await fetch(`${API_BASE}${projectResource(project, "backup")}`, {
     cache: "no-store",
   });
 
@@ -289,39 +310,39 @@ export interface ProjectBackupImportResult {
   skippedFiles: number;
 }
 
-export function importProjectBackup(projectId: string, file: File) {
-  return postBinary<ProjectBackupImportResult>(
-    `/api/storage/projects/${encodeURIComponent(projectId)}/backup/import`,
-    file,
-    file.type || "application/zip",
-  );
+export function importProjectBackup(project: ProjectTarget, file: File) {
+  return postBinary<ProjectBackupImportResult>(projectResource(project, "backup/import"), file, file.type || "application/zip");
 }
 
-export function getProjectFile(projectId: string, filePath: string) {
-  return getJson<ProjectFileDocument>(`/api/storage/projects/${encodeURIComponent(projectId)}/files/${encodeProjectFilePath(filePath)}`);
+export function getProjectFileSummary(project: ProjectTarget, filePath: string) {
+  return getJson<ProjectFileSummary>(projectResource(project, `file-summary?path=${encodeURIComponent(filePath)}`));
 }
 
-export function saveProjectFile(projectId: string, filePath: string, file: ProjectFileSaveRequest) {
-  return putJson<ProjectFileDocument>(
-    `/api/storage/projects/${encodeURIComponent(projectId)}/files/${encodeProjectFilePath(filePath)}`,
-    file,
-  );
+export function moveProjectFile(project: ProjectTarget, path: string, target: string, baseRevision: number) {
+  const query = new URLSearchParams({ path, target, baseRevision: String(baseRevision) });
+  return postJson<{ files: ProjectFileSummary[] }>(projectResource(project, `move?${query}`), {});
 }
 
-export function deleteProjectFile(projectId: string, filePath: string, baseRevision?: number) {
+export function getProjectFile(project: ProjectTarget, filePath: string) {
+  return getJson<ProjectFileDocument>(projectResource(project, `files/${encodeProjectFilePath(filePath)}`));
+}
+
+export function saveProjectFile(project: ProjectTarget, filePath: string, file: ProjectFileSaveRequest) {
+  return putJson<ProjectFileDocument>(projectResource(project, `files/${encodeProjectFilePath(filePath)}`), file);
+}
+
+export function deleteProjectFile(project: ProjectTarget, filePath: string, baseRevision?: number) {
   const revisionQuery = typeof baseRevision === "number" ? `?baseRevision=${encodeURIComponent(baseRevision)}` : "";
-  return deleteRequest(`/api/storage/projects/${encodeURIComponent(projectId)}/files/${encodeProjectFilePath(filePath)}${revisionQuery}`);
+  return deleteRequest(projectResource(project, `files/${encodeProjectFilePath(filePath)}${revisionQuery}`));
 }
 
-export function listProjectFileVersions(projectId: string, filePath: string) {
-  return getJson<{ versions: ProjectFileVersion[] }>(
-    `/api/storage/projects/${encodeURIComponent(projectId)}/versions?path=${encodeURIComponent(filePath)}`,
-  );
+export function listProjectFileVersions(project: ProjectTarget, filePath: string) {
+  return getJson<{ versions: ProjectFileVersion[] }>(projectResource(project, `versions?path=${encodeURIComponent(filePath)}`));
 }
 
-export function restoreProjectFileVersion(projectId: string, filePath: string, versionId: string) {
+export function restoreProjectFileVersion(project: ProjectTarget, filePath: string, versionId: string) {
   return postJson<ProjectFileDocument>(
-    `/api/storage/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/restore?path=${encodeURIComponent(filePath)}`,
+    projectResource(project, `versions/${encodeURIComponent(versionId)}/restore?path=${encodeURIComponent(filePath)}`),
     {},
   );
 }

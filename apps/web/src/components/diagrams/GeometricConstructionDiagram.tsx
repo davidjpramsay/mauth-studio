@@ -17,8 +17,9 @@ function scalePercent(graphConfig?: GraphConfig | null) {
 export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const request = useMemo(() => penroseRenderRequest(graphConfig), [graphConfig]);
   const requestKey = useMemo(() => JSON.stringify(request), [request]);
-  const [diagram, setDiagram] = useState<PenroseDiagramResponse | null>(null);
-  const [error, setError] = useState("");
+  const [rendered, setRendered] = useState<{ key: string; diagram?: PenroseDiagramResponse; error?: string } | null>(null);
+  const diagram = rendered?.key === requestKey ? rendered.diagram : undefined;
+  const error = rendered?.key === requestKey ? rendered.error : undefined;
   const baseWidth = numericOption(diagram?.metadata?.displayWidth, PENROSE_ORIGINAL_WIDTH);
   const requestOptions = request.options as Record<string, unknown>;
   const baseHeight = numericOption(diagram?.metadata?.displayHeight ?? requestOptions.height, 300);
@@ -29,16 +30,15 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
   useEffect(() => {
     const controller = new AbortController();
     const currentRequest = JSON.parse(requestKey) as ReturnType<typeof penroseRenderRequest>;
-    setError("");
-    setDiagram(null);
-
     renderPenroseDiagram(currentRequest, controller.signal)
       .then((data) => {
-        setDiagram(data);
+        if (controller.signal.aborted) return;
+        if (!data.svg?.trim()) throw new Error("The geometry renderer returned an empty diagram.");
+        setRendered({ key: requestKey, diagram: data });
       })
       .catch((fetchError) => {
-        if (fetchError instanceof DOMException && fetchError.name === "AbortError") return;
-        setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
+        if (controller.signal.aborted) return;
+        setRendered({ key: requestKey, error: fetchError instanceof Error ? fetchError.message : String(fetchError) });
       });
 
     return () => controller.abort();
@@ -46,7 +46,11 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
 
   if (error) {
     return (
-      <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border p-3 text-xs">
+      <div
+        className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border p-3 text-xs"
+        data-mauth-print-render-state="error"
+        role="alert"
+      >
         Geometry diagram could not render.
       </div>
     );
@@ -55,6 +59,7 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
   return (
     <div
       className="penrose-diagram min-w-0 bg-white"
+      data-mauth-print-render-state={diagram ? "ready" : "loading"}
       style={{
         width: displayWidth,
         minHeight: displayHeight,

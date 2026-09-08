@@ -1,7 +1,8 @@
 import subprocess
 import sys
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.models.schemas import (
     AutosaveRequest,
@@ -13,6 +14,7 @@ from app.models.schemas import (
     SavedTestRequest,
 )
 from app.services.storage import (
+    CloudPlaceholderError,
     FileLogoStorage,
     FileProjectStorage,
     FileTestStorage,
@@ -39,6 +41,24 @@ def storage_http_error(error: Exception) -> HTTPException:
     if isinstance(error, StorageNotFoundError):
         return HTTPException(status_code=404, detail=str(error))
     if isinstance(error, OSError):
+        if isinstance(error, CloudPlaceholderError):
+            metadata = error.metadata_placeholder
+            return HTTPException(
+                status_code=503,
+                detail={
+                    "code": "STORAGE_UNAVAILABLE",
+                    "reason": "PROJECT_INDEX_ONLINE_ONLY" if metadata else "DOCUMENT_ONLINE_ONLY",
+                    "path": error.filename,
+                    "retryable": True,
+                    "action": "MAKE_FOLDER_AVAILABLE_OFFLINE",
+                    "message": (
+                        "The hidden folder index (.mauth/project.json) is online-only, even if the assessment file is downloaded. "
+                        if metadata
+                        else "This document is online-only. "
+                    )
+                    + "In Google Drive or Finder, make its containing folder available offline, wait for the download to finish, then choose Retry. Your open documents and unsaved work have not been replaced.",
+                },
+            )
         return HTTPException(
             status_code=503,
             detail={
@@ -47,6 +67,54 @@ def storage_http_error(error: Exception) -> HTTPException:
             },
         )
     return HTTPException(status_code=500, detail="Storage error")
+
+
+def scoped_project_storage(project_id: str, documents_path: str | None = Query(None, alias="documentsPath")):
+    try:
+        if documents_path and not project_storage_service.uses_visible_workspace:
+            if project_storage_service._normalized_documents_folder(
+                documents_path
+            ) != project_storage_service._documents_path_for_project(project_id):
+                raise StorageValidationError("The request belongs to a different documents folder")
+            return project_storage_service
+        return (
+            project_storage_service.for_documents_folder(documents_path) if documents_path else project_storage_service
+        )
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
+ProjectStorage = Annotated[FileProjectStorage, Depends(scoped_project_storage)]
+
+
+@router.post("/projects/{project_id}/move")
+def move_project_file(
+    project_id: str,
+    service: ProjectStorage,
+    path: str,
+    target: str,
+    base_revision: int = Query(..., alias="baseRevision"),
+) -> dict:
+    try:
+        return {"files": service.move_file(project_id, path, target, base_revision)}
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
+@router.post("/projects/default/open-document")
+def open_external_document(request: ProjectWorkspaceRequest) -> dict:
+    try:
+        return project_storage_service.open_document(request.path)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
+@router.get("/projects/{project_id}/file-summary")
+def get_project_file_summary(project_id: str, service: ProjectStorage, path: str = Query(...)) -> dict:
+    try:
+        return service.get_file_summary(project_id, path)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
 
 
 @router.get("/tests")
@@ -233,17 +301,17 @@ def delete_project(project_id: str) -> Response:
 
 
 @router.get("/projects/{project_id}/files")
-def list_project_files(project_id: str) -> dict:
+def list_project_files(project_id: str, service: ProjectStorage) -> dict:
     try:
-        return {"files": project_storage_service.list_files(project_id)}
+        return {"files": service.list_files(project_id)}
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.get("/projects/{project_id}/backup")
-def export_project_backup(project_id: str) -> Response:
+def export_project_backup(project_id: str, service: ProjectStorage) -> Response:
     try:
-        filename, content = project_storage_service.export_backup(project_id)
+        filename, content = service.export_backup(project_id)
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
     return Response(
@@ -254,42 +322,44 @@ def export_project_backup(project_id: str) -> Response:
 
 
 @router.post("/projects/{project_id}/backup/import")
-async def import_project_backup(project_id: str, request: Request) -> dict:
+async def import_project_backup(project_id: str, request: Request, service: ProjectStorage) -> dict:
     try:
         content = await request.body()
-        return project_storage_service.import_backup(project_id, content)
+        return service.import_backup(project_id, content)
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.get("/projects/{project_id}/versions")
-def list_project_file_versions(project_id: str, path: str = Query(...)) -> dict:
+def list_project_file_versions(project_id: str, service: ProjectStorage, path: str = Query(...)) -> dict:
     try:
-        return {"versions": project_storage_service.list_versions(project_id, path)}
+        return {"versions": service.list_versions(project_id, path)}
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.post("/projects/{project_id}/versions/{version_id}/restore")
-def restore_project_file_version(project_id: str, version_id: str, path: str = Query(...)) -> dict:
+def restore_project_file_version(
+    project_id: str, version_id: str, service: ProjectStorage, path: str = Query(...)
+) -> dict:
     try:
-        return project_storage_service.restore_version(project_id, path, version_id)
+        return service.restore_version(project_id, path, version_id)
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.get("/projects/{project_id}/files/{file_path:path}")
-def get_project_file(project_id: str, file_path: str) -> dict:
+def get_project_file(project_id: str, file_path: str, service: ProjectStorage) -> dict:
     try:
-        return project_storage_service.get_file(project_id, file_path)
+        return service.get_file(project_id, file_path)
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
 
 @router.put("/projects/{project_id}/files/{file_path:path}")
-def save_project_file(project_id: str, file_path: str, request: ProjectFileRequest) -> dict:
+def save_project_file(project_id: str, file_path: str, request: ProjectFileRequest, service: ProjectStorage) -> dict:
     try:
-        return project_storage_service.save_file(project_id, file_path, request.model_dump(exclude_unset=True))
+        return service.save_file(project_id, file_path, request.model_dump(exclude_unset=True))
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 
@@ -298,10 +368,11 @@ def save_project_file(project_id: str, file_path: str, request: ProjectFileReque
 def delete_project_file(
     project_id: str,
     file_path: str,
+    service: ProjectStorage,
     base_revision: int | None = Query(None, alias="baseRevision"),
 ) -> Response:
     try:
-        deleted = project_storage_service.delete_file(project_id, file_path, base_revision=base_revision)
+        deleted = service.delete_file(project_id, file_path, base_revision=base_revision)
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
     if not deleted:

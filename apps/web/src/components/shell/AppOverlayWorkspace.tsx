@@ -15,6 +15,7 @@ interface FileOverlayBindings {
   projectFilesStatus: FileManagementProps["projectFilesStatus"];
   projectFilesMessage: FileManagementProps["projectFilesMessage"];
   activeProjectFilePath: FileManagementProps["activeProjectFilePath"];
+  openProjectFilePaths?: string[];
   buildVersionPreview: FileManagementProps["buildVersionPreview"];
   startNewTest: FileManagementProps["onNewTest"];
   openProjectFile: FileManagementProps["onOpenProjectFile"];
@@ -114,6 +115,7 @@ export function AppOverlayWorkspace({
         projectFilesStatus: files.projectFilesStatus,
         projectFilesMessage: files.projectFilesMessage,
         activeProjectFilePath: files.activeProjectFilePath,
+        openProjectFilePaths: files.openProjectFilePaths,
         buildVersionPreview: files.buildVersionPreview,
         onClose: () => files.setFileManagerOpen(false),
         onNewTest: files.startNewTest,

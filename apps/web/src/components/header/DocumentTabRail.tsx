@@ -14,7 +14,7 @@ interface DocumentTabRailProps {
 }
 
 function tabStatusTone(tab: EditorDocumentTab) {
-  if (tab.saveStatus === "conflict" || tab.saveStatus === "error") return "bg-red-400";
+  if (tab.saveStatus === "conflict" || tab.saveStatus === "error" || tab.saveStatus === "unavailable") return "bg-red-400";
   if (tab.dirty || tab.saveStatus === "dirty" || tab.saveStatus === "draft") return "bg-amber-300";
   if (tab.saveStatus === "loading" || tab.saveStatus === "saving") return "bg-sky-300";
   return "bg-emerald-400";

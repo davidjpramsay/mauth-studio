@@ -1,4 +1,8 @@
-import type { MauthAgentFileState, ProjectSummary } from "@mauth-studio/shared";
+import type { MauthAgentFileState, MauthAgentOpenDocument, ProjectSummary } from "@mauth-studio/shared";
+
+export function reconcileAgentDraftState(file: MauthAgentFileState, tab?: Pick<MauthAgentOpenDocument, "dirty">): MauthAgentFileState {
+  return !file.activePath && tab ? { ...file, dirty: tab.dirty } : file;
+}
 
 import type { MauthDocumentFlowItem, MauthDocumentLike, MauthQuestionLike, MauthSectionHeadingLike } from "./mauthActions.ts";
 

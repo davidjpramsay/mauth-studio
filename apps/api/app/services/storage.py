@@ -9,14 +9,48 @@ import sys
 import uuid
 import zipfile
 from base64 import b64decode, b64encode, urlsafe_b64encode
+from copy import copy
 from datetime import datetime, timezone
+from functools import wraps
 from io import BytesIO
 from pathlib import Path, PurePosixPath
+from threading import RLock
 from typing import Any
+
+from filelock import FileLock, Timeout
 
 from app.bootstrap import ROOT
 
 MACOS_DATALESS_FILE_FLAG = 0x40000000
+PROJECT_OPERATION_LOCK = RLock()
+PROJECT_FILE_LOCKS: dict[str, FileLock] = {}
+
+
+def serialized_project_operation(operation):
+    @wraps(operation)
+    def serialized(*args, **kwargs):
+        # Reads can reconcile the index too. Lock the complete operation, not
+        # just the final atomic write, including nested version snapshots.
+        with PROJECT_OPERATION_LOCK:
+            service = args[0]
+            lock_path = service.base_root / "locks" / "project-storage.lock"
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock = PROJECT_FILE_LOCKS.setdefault(str(lock_path), FileLock(lock_path, timeout=5))
+            try:
+                with lock:
+                    return operation(*args, **kwargs)
+            except Timeout as error:
+                raise OSError(
+                    errno.EBUSY, "Another Mauth instance is using the documents folder; retry shortly"
+                ) from error
+
+    return serialized
+
+
+class CloudPlaceholderError(OSError):
+    def __init__(self, path: Path):
+        super().__init__(errno.ENODATA, "Cloud-backed file is not downloaded", str(path))
+        self.metadata_placeholder = Path(str(path)).name == "project.json" and Path(str(path)).parent.name == ".mauth"
 
 
 def documents_workspace_root() -> Path:
@@ -102,7 +136,7 @@ def atomic_write_text(path: Path, content: str) -> None:
 def require_materialized_file(path: Path) -> None:
     flags = getattr(path.stat(), "st_flags", 0)
     if flags & MACOS_DATALESS_FILE_FLAG:
-        raise OSError(errno.ENODATA, "Cloud-backed file is not downloaded", str(path))
+        raise CloudPlaceholderError(path)
 
 
 def read_json_file(path: Path) -> dict[str, Any]:
@@ -508,6 +542,7 @@ class FileProjectStorage:
         if self.uses_visible_workspace:
             self._load_active_documents_folder()
 
+    @serialized_project_operation
     def list_projects(self) -> list[dict[str, Any]]:
         self._migrate_default_project_to_visible_workspace()
         self.projects_dir.mkdir(parents=True, exist_ok=True)
@@ -531,13 +566,17 @@ class FileProjectStorage:
                 projects.append(self._project_summary(record))
         return sorted(projects, key=lambda record: str(record.get("updatedAt", "")), reverse=True)
 
+    @serialized_project_operation
     def get_or_create_default_project(self) -> dict[str, Any]:
+        if self._is_external_visible_documents_folder(self.DEFAULT_PROJECT_ID) and not self.documents_dir.is_dir():
+            raise OSError(errno.ENODEV, "Documents folder is unavailable", str(self.documents_dir))
         self._migrate_default_project_to_visible_workspace()
         existing = self.get_project(self.DEFAULT_PROJECT_ID)
         if existing is not None:
             return existing
         return self.create_project({"id": self.DEFAULT_PROJECT_ID, "name": "Local Project"})
 
+    @serialized_project_operation
     def get_project(self, project_id: str) -> dict[str, Any] | None:
         self._migrate_default_project_to_visible_workspace()
         path = self._project_path(project_id)
@@ -547,6 +586,14 @@ class FileProjectStorage:
         if isinstance(record.get("deletedAt"), str):
             return None
         return self._project_summary(record)
+
+    @serialized_project_operation
+    def for_documents_folder(self, folder_path: str):
+        if not self.uses_visible_workspace:
+            raise StorageValidationError("Folder selection requires a visible workspace")
+        scoped = copy(self)
+        scoped._configure_documents_folder(self._normalized_documents_folder(folder_path), persist=False)
+        return scoped
 
     def workspace_status(self) -> dict[str, Any]:
         default_project: dict[str, Any] | None = None
@@ -574,6 +621,7 @@ class FileProjectStorage:
             "defaultProject": default_project,
         }
 
+    @serialized_project_operation
     def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._migrate_default_project_to_visible_workspace()
         requested_id = payload.get("id")
@@ -600,23 +648,69 @@ class FileProjectStorage:
         atomic_write_json(path, record)
         return self._project_summary(record)
 
+    @serialized_project_operation
     def open_documents_folder(self, folder_path: str) -> dict[str, Any]:
         if not self.uses_visible_workspace:
             raise StorageValidationError(
                 "Opening another documents folder is only available for local visible workspaces"
             )
         resolved = self._validated_documents_folder(folder_path)
+        scoped = self.for_documents_folder(str(resolved))
+        project = scoped.get_or_create_default_project()
         self._configure_documents_folder(resolved, persist=True)
-        return self.get_or_create_default_project()
+        return project
 
+    @serialized_project_operation
+    def open_document(self, absolute_file_path: str) -> dict[str, Any]:
+        path = Path(os.path.abspath(os.path.expanduser(absolute_file_path)))
+        if not Path(absolute_file_path).is_absolute() or not path.name.lower().endswith((".mauth", ".test.json")):
+            raise StorageValidationError("Choose an absolute .mauth document path")
+        try:
+            require_materialized_file(path)
+        except FileNotFoundError as error:
+            if path.parent.is_dir():
+                raise StorageNotFoundError("The requested assessment file no longer exists in its folder") from error
+            raise OSError(errno.ENODEV, "The requested documents folder is unavailable") from error
+        try:
+            relative = path.relative_to(self.documents_dir)
+            folder = self.documents_dir
+        except ValueError:
+            relative = Path(path.name)
+            folder = path.parent
+        scoped = self.for_documents_folder(str(folder))
+        project = scoped.get_or_create_default_project()
+        file_path = safe_project_path(f"tests/{relative.as_posix()}")
+        record = scoped._require_project(project["id"])
+        scoped._index_visible_document(project["id"], record, file_path)
+        document = scoped.get_file(project["id"], file_path)
+        try:
+            content = json.loads(document["content"])
+        except (ValueError, TypeError) as error:
+            raise StorageValidationError("The requested document contains invalid JSON") from error
+        if (
+            not isinstance(content, dict)
+            or not isinstance(content.get("frontMatter"), dict)
+            or not isinstance(content.get("id"), str)
+            or not isinstance(content.get("name"), str)
+        ):
+            raise StorageValidationError("The requested file is not a supported Mauth document")
+        # Do not select or remember the requested folder until its index AND
+        # document have been read successfully. Recovery is owned by the UI.
+        self._configure_documents_folder(folder, persist=True)
+        return {"project": project, "document": document}
+
+    @serialized_project_operation
     def reset_documents_folder(self) -> dict[str, Any]:
         if not self.uses_visible_workspace:
             raise StorageValidationError(
                 "Resetting the documents folder is only available for local visible workspaces"
             )
+        scoped = self.for_documents_folder(str(self.default_documents_dir))
+        project = scoped.get_or_create_default_project()
         self._configure_documents_folder(self.default_documents_dir, persist=True)
-        return self.get_or_create_default_project()
+        return project
 
+    @serialized_project_operation
     def update_project(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         record = self._require_project(project_id)
         if isinstance(payload.get("name"), str) and payload["name"].strip():
@@ -629,6 +723,7 @@ class FileProjectStorage:
         atomic_write_json(self._project_path(project_id), record)
         return self._project_summary(record)
 
+    @serialized_project_operation
     def delete_project(self, project_id: str) -> bool:
         record = self.get_project(project_id)
         if record is None:
@@ -639,6 +734,7 @@ class FileProjectStorage:
         atomic_write_json(self._project_path(project_id), full_record)
         return True
 
+    @serialized_project_operation
     def list_files(self, project_id: str) -> list[dict[str, Any]]:
         project = self._require_project(project_id)
         self._index_visible_workspace_files(project_id, project)
@@ -651,6 +747,15 @@ class FileProjectStorage:
         ]
         return sorted(items, key=lambda item: (0 if item["kind"] == "folder" else 1, str(item["path"])))
 
+    @serialized_project_operation
+    def get_file_summary(self, project_id: str, file_path: str) -> dict[str, Any]:
+        normalized_path = safe_project_path(file_path)
+        project = self._require_project(project_id)
+        self._index_visible_document(project_id, project, normalized_path)
+        record = self._require_file(project_id, project, normalized_path)
+        return self._public_file(project_id, normalized_path, record, project)
+
+    @serialized_project_operation
     def get_file(self, project_id: str, file_path: str) -> dict[str, Any]:
         normalized_path = safe_project_path(file_path)
         project = self._require_project(project_id)
@@ -665,6 +770,7 @@ class FileProjectStorage:
         public["versionCount"] = len(self.list_versions(project_id, normalized_path))
         return public
 
+    @serialized_project_operation
     def save_file(self, project_id: str, file_path: str, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_path = safe_project_path(file_path)
         project = self._require_project(project_id)
@@ -742,6 +848,68 @@ class FileProjectStorage:
         atomic_write_json(self._project_path(project_id), project)
         return self.get_file(project_id, normalized_path)
 
+    @serialized_project_operation
+    def move_file(self, project_id: str, file_path: str, target_path: str, base_revision: int) -> list[dict[str, Any]]:
+        source_path = safe_project_path(file_path)
+        target_path = safe_project_path(target_path)
+        if (
+            source_path == "tests"
+            or target_path == "tests"
+            or target_path == source_path
+            or target_path.startswith(f"{source_path}/")
+        ):
+            raise StorageValidationError("Choose a different destination outside the source folder")
+        project = self._require_project(project_id)
+        record = self._require_file(project_id, project, source_path)
+        if self._revision(record) != base_revision:
+            raise StorageConflictError(
+                "File has changed since it was loaded",
+                current=self._public_file(project_id, source_path, record, project),
+            )
+        files = project["files"]
+        source = self._content_path(project_id, source_path)
+        target = self._content_path(project_id, target_path)
+        if target.exists() or any(
+            path.casefold() == target_path.casefold() and not value.get("deletedAt") for path, value in files.items()
+        ):
+            raise StorageConflictError("Destination already exists")
+        require_materialized_file(source)
+        entries = [
+            (path, value)
+            for path, value in files.items()
+            if (path == source_path or path.startswith(f"{source_path}/")) and not value.get("deletedAt")
+        ]
+        now = utc_now_iso()
+        self._ensure_parent_folders(project_id, project, target_path, now)
+        moved = []
+        for old_path, value in entries:
+            new_path = target_path + old_path[len(source_path) :]
+            versions = self._versions_path(project_id, old_path)
+            for version in sorted(versions.glob("*.json")) if versions.exists() else []:
+                data = read_json_file(version)
+                data["filePath"] = new_path
+                atomic_write_json(self._versions_path(project_id, new_path) / version.name, data)
+            new_record = {
+                **value,
+                "path": new_path,
+                "name": PurePosixPath(new_path).name,
+                "revision": self._revision(value) + 1,
+                "updatedAt": now,
+            }
+            files[new_path] = new_record
+            value.update({"deletedAt": now, "updatedAt": now, "revision": new_record["revision"]})
+            moved.append(self._public_file(project_id, new_path, new_record, project))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source.rename(target)
+        try:
+            project["updatedAt"] = now
+            atomic_write_json(self._project_path(project_id), project)
+        except OSError:
+            target.rename(source)
+            raise
+        return moved
+
+    @serialized_project_operation
     def delete_file(self, project_id: str, file_path: str, base_revision: int | None = None) -> bool:
         normalized_path = safe_project_path(file_path)
         project = self._require_project(project_id)
@@ -775,6 +943,7 @@ class FileProjectStorage:
         atomic_write_json(self._project_path(project_id), project)
         return True
 
+    @serialized_project_operation
     def list_versions(self, project_id: str, file_path: str) -> list[dict[str, Any]]:
         normalized_path = safe_project_path(file_path)
         versions_dir = self._versions_path(project_id, normalized_path)
@@ -790,6 +959,7 @@ class FileProjectStorage:
                 versions.append(record)
         return sorted(versions, key=lambda record: str(record.get("createdAt", "")), reverse=True)
 
+    @serialized_project_operation
     def restore_version(self, project_id: str, file_path: str, version_id: str) -> dict[str, Any]:
         normalized_path = safe_project_path(file_path)
         version = next(
@@ -809,6 +979,7 @@ class FileProjectStorage:
             },
         )
 
+    @serialized_project_operation
     def export_backup(self, project_id: str) -> tuple[str, bytes]:
         project = self._require_project(project_id)
         public_project = self._project_summary(project)
@@ -867,6 +1038,7 @@ class FileProjectStorage:
         filename = f"{safe_file_stem(str(public_project.get('name') or project_id))}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
         return filename, buffer.getvalue()
 
+    @serialized_project_operation
     def import_backup(self, project_id: str, content: bytes) -> dict[str, Any]:
         if not content:
             raise StorageValidationError("Backup file is empty")
@@ -1184,6 +1356,8 @@ class FileProjectStorage:
         return record
 
     def _require_project(self, project_id: str) -> dict[str, Any]:
+        if self._is_external_visible_documents_folder(project_id) and not self.documents_dir.is_dir():
+            raise OSError(errno.ENODEV, "Documents folder is unavailable", str(self.documents_dir))
         path = self._project_path(project_id)
         if not path.exists():
             raise StorageNotFoundError("Project not found")
@@ -1214,7 +1388,11 @@ class FileProjectStorage:
         now = utc_now_iso()
         changed = False
 
-        for content_path in sorted(self.documents_dir.rglob("*")):
+        visible_paths = []
+        for directory, folders, names in os.walk(self.documents_dir):
+            folders[:] = [name for name in folders if not name.startswith((".", *GENERATED_PROJECT_FOLDER_PREFIXES))]
+            visible_paths.extend(Path(directory) / name for name in names)
+        for content_path in sorted(visible_paths):
             if self._skip_visible_workspace_path(content_path):
                 continue
             if not content_path.is_file() or not self._is_visible_project_file(content_path):
@@ -1247,6 +1425,23 @@ class FileProjectStorage:
         if changed:
             project["updatedAt"] = now
             atomic_write_json(self._project_path(project_id), project)
+
+    def _index_visible_document(self, project_id: str, project: dict[str, Any], file_path: str) -> None:
+        if not self.uses_visible_workspace or project_id != self.DEFAULT_PROJECT_ID:
+            return
+        files = project.setdefault("files", {})
+        if file_path in files:
+            return
+        path = self._content_path(project_id, file_path)
+        if not self._is_visible_project_file(path) or not path.is_file():
+            return
+        now = utc_now_iso()
+        self._ensure_parent_folders(project_id, project, file_path, now)
+        files[file_path] = self._visible_file_record(
+            file_path, self._file_type(file_path, None, "file"), path.stat().st_size, now, path
+        )
+        project["updatedAt"] = now
+        atomic_write_json(self._project_path(project_id), project)
 
     def _skip_visible_workspace_path(self, path: Path) -> bool:
         try:

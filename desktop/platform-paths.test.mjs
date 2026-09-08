@@ -45,3 +45,14 @@ test("development and packaged executable names follow the target platform", () 
   assert.equal(packagedAgentConnectorFileName("darwin"), "mauth-agent-mcp");
   assert.equal(packagedAgentConnectorFileName("win32"), "mauth-agent-mcp.cmd");
 });
+
+test("an explicit diagnostic profile isolates recovery and runtime discovery", () => {
+  const args = {
+    platform: process.platform,
+    homeDirectory: "/unused",
+    env: { MAUTH_DESKTOP_USER_DATA: path.resolve("/tmp/mauth-profile") },
+  };
+  assert.equal(desktopUserDataDirectory(args), args.env.MAUTH_DESKTOP_USER_DATA);
+  assert.equal(desktopRuntimeManifestPath(args), path.join(args.env.MAUTH_DESKTOP_USER_DATA, "runtime.json"));
+  assert.throws(() => desktopUserDataDirectory({ ...args, env: { MAUTH_DESKTOP_USER_DATA: "relative" } }), /absolute/);
+});

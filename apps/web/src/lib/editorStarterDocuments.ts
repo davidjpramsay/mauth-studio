@@ -414,6 +414,17 @@ export function createTemplateEditorDocumentPlan({
   const currentLogo = selectedLogoFromLibrary(logos, currentFrontMatter.logoId);
   const nextFrontMatter = {
     ...frontMatterForTemplate(template),
+    subjectTitle: "MATHEMATICS",
+    assessmentTitle:
+      template === "standard"
+        ? "TEST"
+        : template === "exam"
+          ? "EXAM"
+          : template === "worksheet"
+            ? "WORKSHEET"
+            : template === "notes"
+              ? "MATH NOTES"
+              : "INVESTIGATION",
     logoId: currentLogo.id,
     schoolName: currentLogo.schoolName ?? currentFrontMatter.schoolName,
   };

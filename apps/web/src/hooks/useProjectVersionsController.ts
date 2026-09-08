@@ -38,7 +38,7 @@ export function useProjectVersionsController({
 
   async function loadProjectFileVersions(filePath: string): Promise<ProjectFileVersion[]> {
     const project = await currentProject();
-    const response = await listProjectFileVersions(project.id, filePath);
+    const response = await listProjectFileVersions(project, filePath);
     return response.versions;
   }
 
@@ -60,8 +60,8 @@ export function useProjectVersionsController({
       restoreVersion: async () => {
         setProjectFilesStatus("saving");
         setProjectFilesMessage("Restoring version");
-        const restoredDocument = await restoreProjectFileVersion(project.id, filePath, versionId);
-        const refreshedFiles = await listProjectFiles(project.id);
+        const restoredDocument = await restoreProjectFileVersion(project, filePath, versionId);
+        const refreshedFiles = await listProjectFiles(project);
         setProjectFiles(refreshedFiles.files);
 
         if (activeProjectFilePath === filePath) {

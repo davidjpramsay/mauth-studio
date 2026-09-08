@@ -10,6 +10,7 @@ import { useProjectDocumentOpenController } from "@/hooks/useProjectDocumentOpen
 import { useProjectDocumentPersistenceController } from "@/hooks/useProjectDocumentPersistenceController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
+import type { DocumentTabSaveResult } from "@/lib/documentTabFileOperations";
 
 interface DiskAutosaveResult {
   updatedAt?: string;
@@ -53,6 +54,15 @@ interface UseDocumentSessionControllerOptions<TDocument, TSavedDocument, TAutosa
   parseSavedDocument: (content: string | null | undefined) => TSavedDocument | null;
   applySavedProjectDocument: (project: ProjectSummary, filePath: string, savedDocument: TSavedDocument, revision: number | null) => void;
   currentEditorDocumentFingerprint: () => string;
+  currentDocumentIdentity?: () => string | null;
+  onDocumentSaved?: (result: DocumentTabSaveResult) => void;
+  applyOpenedProjectDocument?: (
+    project: ProjectSummary,
+    filePath: string,
+    document: TSavedDocument,
+    revision: number | null,
+  ) => void | Promise<void>;
+  onOpenFailed?: (request: { path: string; external: boolean; message: string }) => void;
   projectFileConflictFromError: (error: unknown, filePath: string, localRevision: number | null) => ProjectSaveConflict | null;
   missingProjectRevisionConflict: (filePath: string) => ProjectSaveConflict;
   setActiveProject: (project: ProjectSummary) => void;
@@ -106,6 +116,10 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   parseSavedDocument,
   applySavedProjectDocument,
   currentEditorDocumentFingerprint,
+  currentDocumentIdentity,
+  onDocumentSaved,
+  applyOpenedProjectDocument,
+  onOpenFailed,
   projectFileConflictFromError,
   missingProjectRevisionConflict,
   setActiveProject,
@@ -143,6 +157,8 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     currentProjectFileName,
     revisionMissingErrorMessage,
     currentDocument,
+    currentDocumentIdentity,
+    onDocumentSaved,
     defaultProjectFileName,
     serializeProjectDocument,
     projectFileConflictFromError,
@@ -199,6 +215,9 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
       prepareCurrentProjectFileTransition,
       prepareOpenProjectFileTransition,
       currentEditorDocumentFingerprint,
+      currentDocumentIdentity,
+      applyOpenedProjectDocument,
+      onOpenFailed,
       projectFileConflictFromError,
       setActiveProject,
       setProjectFiles,

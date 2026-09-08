@@ -15,13 +15,17 @@ export interface PrintReadinessSnapshot {
 export interface WaitForPrintPreviewReadyOptions {
   findPrintStage?: () => ParentNode | null;
   requestFrame?: (callback: FrameRequestCallback) => number;
+  cancelFrame?: (id: number) => void;
   now?: () => number;
   fontsReady?: Promise<unknown>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface WaitForPrintPreviewReadyResult extends PrintReadinessSnapshot {
   timedOut: boolean;
+  fontsLoaded: boolean;
+  cancelled: boolean;
 }
 
 function renderState(element: Element): PrintRenderState {
@@ -42,33 +46,69 @@ export function printReadinessSnapshot(stage: ParentNode | null): PrintReadiness
     total: states.length,
     pending,
     errors,
-    ready: pending === 0,
+    ready: pending === 0 && errors === 0,
   };
 }
 
 export async function waitForPrintPreviewReady(options: WaitForPrintPreviewReadyOptions = {}): Promise<WaitForPrintPreviewReadyResult> {
   const findPrintStage = options.findPrintStage ?? (() => document.querySelector<HTMLElement>(PRINT_PREVIEW_STAGE_SELECTOR));
   const requestFrame = options.requestFrame ?? window.requestAnimationFrame.bind(window);
+  const cancelFrame = options.cancelFrame ?? ((id: number) => globalThis.cancelAnimationFrame?.(id));
   const now = options.now ?? performance.now.bind(performance);
-  const fontsReady = options.fontsReady ?? document.fonts?.ready;
+  const fontsReady = options.fontsReady ?? globalThis.document?.fonts?.ready;
   const timeoutMs = options.timeoutMs ?? 15_000;
   const startedAt = now();
-  const nextFrame = () => new Promise<void>((resolve) => requestFrame(() => resolve()));
+  let fontsLoaded = !fontsReady;
+  let fontError = false;
+  void Promise.resolve(fontsReady).then(
+    () => {
+      fontsLoaded = true;
+    },
+    () => {
+      fontError = true;
+    },
+  );
 
-  let snapshot = printReadinessSnapshot(findPrintStage());
-  while (!snapshot.ready && now() - startedAt < timeoutMs) {
+  // A hidden desktop window may suspend animation frames. Every wait has a
+  // timer fallback and shares the same deadline, including font settlement.
+  const nextFrame = () =>
+    new Promise<void>((resolve) => {
+      const scheduled: { frame?: number } = {};
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (scheduled.frame !== undefined) cancelFrame(scheduled.frame);
+        options.signal?.removeEventListener("abort", finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, Math.max(0, Math.min(50, timeoutMs - (now() - startedAt))));
+      options.signal?.addEventListener("abort", finish, { once: true });
+      scheduled.frame = requestFrame(finish);
+      if (settled) cancelFrame(scheduled.frame);
+    });
+
+  let settledFrames = 0;
+  while (true) {
+    const snapshot = printReadinessSnapshot(findPrintStage());
+    const cancelled = options.signal?.aborted ?? false;
+    const ready = snapshot.ready && fontsLoaded && settledFrames >= 2;
+    const timedOut = !ready && now() - startedAt >= timeoutMs;
+    if (ready || cancelled || timedOut || snapshot.errors > 0 || fontError) {
+      return { ...snapshot, ready: ready && !cancelled, timedOut, fontsLoaded, cancelled };
+    }
+    if (snapshot.ready && fontsLoaded) settledFrames += 1;
+    else settledFrames = 0;
     await nextFrame();
-    snapshot = printReadinessSnapshot(findPrintStage());
   }
+}
 
-  if (fontsReady) {
-    await Promise.resolve(fontsReady).catch(() => undefined);
-  }
-
-  // Give React, Plotly, and the browser two settled layout frames after the
-  // final asynchronous surface reports ready before print media is activated.
-  await nextFrame();
-  await nextFrame();
-
-  return { ...snapshot, timedOut: !snapshot.ready };
+export function printReadinessMessage(result: WaitForPrintPreviewReadyResult): string {
+  if (result.errors)
+    return `${result.errors} diagram${result.errors === 1 ? "" : "s"} could not render. Nothing has been printed. Retry, or cancel and check the diagram.`;
+  if (!result.fontsLoaded) return "The document fonts have not finished loading. Nothing has been printed. Retry when they are available.";
+  if (result.pending)
+    return `${result.pending} diagram${result.pending === 1 ? " is" : "s are"} still loading. Nothing has been printed. Please retry.`;
+  return "The print preview is not ready. Nothing has been printed. Please retry.";
 }

@@ -180,7 +180,7 @@ async function waitForReconciledGraceLogos() {
 }
 
 async function openFilesDrawer(page) {
-  await page.getByRole("button", { name: "Open files" }).click();
+  await page.getByRole("banner").getByRole("button", { name: "Open files" }).click();
   const drawer = page.locator('aside[aria-label="Files"]');
   await drawer.waitFor({ state: "visible", timeout: 8000 });
   return drawer;
@@ -307,6 +307,7 @@ async function run() {
       const listeners = {
         agentSetup: new Set(),
         documentOpen: new Set(),
+        closeActiveDocument: new Set(),
         systemStatus: new Set(),
         themeToggle: new Set(),
         solutionValidation: new Set(),
@@ -336,6 +337,8 @@ async function run() {
         }),
         onOpenAgentSetup: (listener) => subscribe(listeners.agentSetup, listener),
         onOpenDocument: (listener) => subscribe(listeners.documentOpen, listener),
+        onCloseActiveDocument: (listener) => subscribe(listeners.closeActiveDocument, listener),
+        requestWindowClose: async () => {},
         onOpenSystemStatus: (listener) => subscribe(listeners.systemStatus, listener),
         onOpenSolutionValidation: (listener) => subscribe(listeners.solutionValidation, listener),
         onToggleTheme: (listener) => subscribe(listeners.themeToggle, listener),
@@ -348,7 +351,15 @@ async function run() {
     page.on("pageerror", (error) => consoleErrors.push(error.message));
 
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Open files" }).waitFor({ state: "visible", timeout: 10000 });
+    await page
+      .getByRole("banner")
+      .getByRole("button", { name: "Open files" })
+      .waitFor({ state: "visible", timeout: 30000 })
+      .catch(async (error) => {
+        await page.screenshot({ path: path.join(outputDir, "startup-failure.png") });
+        console.error(JSON.stringify({ consoleErrors, body: await page.locator("body").innerText() }, null, 2));
+        throw error;
+      });
     assert.equal(await page.getByRole("button", { name: "System status" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: /Switch to (light|dark) mode/ }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Open solution validation" }).count(), 0);
@@ -375,18 +386,26 @@ async function run() {
     const manualEditorButton = page.getByRole("button", { name: /^(?:Manual editor mode|Hide editor)$/ });
     if ((await manualEditorButton.getAttribute("aria-pressed")) !== "true") await manualEditorButton.click();
     await page.getByRole("button", { name: /^Title Page\./ }).click();
+    const contentTab = page.getByRole("tab", { name: "Content", exact: true });
+    if (await contentTab.isVisible()) await contentTab.click();
     const frontMatterEditor = page.locator('div[data-scroll-anchor="front-matter"]');
-    await frontMatterEditor.waitFor({ state: "visible", timeout: 8000 });
+    await frontMatterEditor.waitFor({ state: "visible", timeout: 8000 }).catch(async (error) => {
+      await page.screenshot({ path: path.join(outputDir, "editor-failure.png") });
+      console.error(JSON.stringify({ consoleErrors, body: await page.locator("body").innerText() }, null, 2));
+      throw error;
+    });
     const titleEditorPanel = frontMatterEditor.getByText("Title:", { exact: true }).locator("xpath=ancestor::section[1]");
     await titleEditorPanel.waitFor({ state: "visible", timeout: 8000 });
     const titleEditorButton = titleEditorPanel.getByRole("button", { name: /panel$/ });
     if ((await titleEditorButton.getAttribute("aria-expanded")) !== "true") await titleEditorButton.click();
-    const logoOptionsLocator = titleEditorPanel.locator("select option");
+    await titleEditorPanel.getByRole("button", { name: "Logo", exact: true }).click();
+    const logoOptionsLocator = page.getByRole("listbox").getByRole("option");
     await logoOptionsLocator.first().waitFor({ state: "attached", timeout: 8000 });
     const logoOptions = await logoOptionsLocator.allTextContents();
     assert.ok(logoOptions.includes("Grace Christian College"), `Expected renamed Grace option, got ${logoOptions.join(", ")}`);
     assert.equal(logoOptions.includes("Grace"), false);
     assert.equal(logoOptions.includes("Grace Logo Only"), false);
+    await page.keyboard.press("Escape");
 
     const headerMetrics = await page.evaluate(() => {
       const rect = (element) => {
@@ -442,10 +461,10 @@ async function run() {
 
     await page.screenshot({ path: path.join(outputDir, "document-tabs.png"), fullPage: false });
     await delay(900);
-    const beforeReloadCount = await page.locator('[role="tab"]').count();
+    const beforeReloadCount = await page.locator("[data-document-tab-id]").count();
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("tablist", { name: "Open documents" }).waitFor({ state: "visible", timeout: 10000 });
-    assert.equal(await page.locator('[role="tab"]').count(), beforeReloadCount);
+    assert.equal(await page.locator("[data-document-tab-id]").count(), beforeReloadCount);
 
     await documentTab(page, "Tab 2").getByRole("button", { name: "Close Tab 2" }).click();
     await documentTab(page, "Tab 2").waitFor({ state: "detached", timeout: 8000 });

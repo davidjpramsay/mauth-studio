@@ -1,4 +1,10 @@
 import { useRef, useState } from "react";
+import {
+  documentTabsAfterFileOperation,
+  documentTabsAfterSave,
+  type DocumentTabFileOperation,
+  type DocumentTabSaveResult,
+} from "@/lib/documentTabFileOperations";
 
 import {
   documentTabsPersistencePlan,
@@ -123,6 +129,14 @@ export function useEditorDocumentTabsController({ initialTab, captureCurrentTab,
     setActiveTabId(null);
   }
 
+  function reconcileFileOperation(operation: DocumentTabFileOperation) {
+    setTabs(documentTabsAfterFileOperation(currentTabsSnapshot(), operation));
+  }
+
+  function reconcileSavedDocument(result: DocumentTabSaveResult, fingerprint: (tab: EditorDocumentTab) => string) {
+    setTabs(documentTabsAfterSave(currentTabsSnapshot(), result, fingerprint));
+  }
+
   return {
     tabs,
     tabsRef,
@@ -138,5 +152,7 @@ export function useEditorDocumentTabsController({ initialTab, captureCurrentTab,
     removeTab,
     replaceTabsFromPersistence,
     clearTabs,
+    reconcileFileOperation,
+    reconcileSavedDocument,
   };
 }

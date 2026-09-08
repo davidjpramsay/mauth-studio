@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DocumentOpenErrorDialog, type FailedDocumentOpen } from "@/components/files/DocumentOpenErrorDialog";
+import { agentStorageError } from "@/lib/agentStorageError";
 import type { FormattingConfig, MauthAgentOpenDocument, ProjectFileSummary, ProjectSummary } from "@mauth-studio/shared";
 
 import { tocSummaryText } from "@/components/navigation/DocumentNavigator";
@@ -65,7 +67,7 @@ import {
 } from "@/lib/projectFiles";
 import { listMauthAgentDocuments, mauthAgentProjectFilePath, normalizeMauthAgentFolderPath } from "@/lib/mauthAgentDocuments";
 import { afterEditorStateSettles } from "@/lib/mauthAgentBridgeRetry";
-import { isProjectFilesUnavailableError, projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
+import { projectFilesUnavailableMessage } from "@/lib/projectFilesActions";
 import { defaultSavedTestName, printFileNameForDocument } from "@/lib/documentFileNaming";
 import {
   loadBrowserDocumentTabsSession,
@@ -82,6 +84,7 @@ import {
 } from "@/lib/editorDocumentTabs";
 import {
   defaultProjectFileNameForDocument,
+  fingerprintProjectDocument,
   MAUTH_DOCUMENT_FORMAT,
   MAUTH_DOCUMENT_SCHEMA_VERSION,
   parseProjectSavedDocument,
@@ -232,6 +235,7 @@ export default function App() {
   const [draftAutosaveStatus, setDraftAutosaveStatus] = useState<DraftAutosaveStatus>("loading");
   const [draftAutosaveMessage, setDraftAutosaveMessage] = useState("Loading draft autosave");
   const [storageHydrated, setStorageHydrated] = useState(false);
+  const [failedDocumentOpens, setFailedDocumentOpens] = useState<FailedDocumentOpen[]>([]);
   const questionPageBreakDragState = useQuestionPageBreakDragState();
   const {
     logos,
@@ -474,7 +478,12 @@ export default function App() {
       : defaultSavedTestName(frontMatterRef.current);
     return printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
   }, [activeProjectFilePathRef, frontMatterRef, showSolutionsRef]);
-  const printDocument = usePrintController({ resolvePrintTitle, setPrintPreviewMounted });
+  const printDocument = usePrintController({
+    resolvePrintTitle,
+    setPrintPreviewMounted,
+    documentKey: `${currentDocumentFingerprint}:${previewShowSolutions}`,
+    confirm: mauthDialogs.confirm,
+  });
 
   useEditorStorageHydrationController({
     activeProject,
@@ -599,13 +608,13 @@ export default function App() {
       try {
         if (tab.project && targetDocumentsPath && targetDocumentsPath !== currentDocumentsPath) {
           const project = await openDefaultProjectDocumentsFolder(targetDocumentsPath);
-          const filesResponse = await listProjectFiles(project.id);
+          const filesResponse = await listProjectFiles(project);
           setActiveProject(project);
           setProjectFiles(filesResponse.files);
           setProjectFilesStatus("ready");
           setProjectFilesMessage("");
         } else if (tab.project && tab.project.id !== activeProject?.id) {
-          const filesResponse = await listProjectFiles(tab.project.id);
+          const filesResponse = await listProjectFiles(tab.project);
           setProjectFiles(filesResponse.files);
           setProjectFilesStatus("ready");
           setProjectFilesMessage("");
@@ -620,6 +629,7 @@ export default function App() {
   const replaceDocumentTabsFromPersistence = useStableEvent(documentTabsController.replaceTabsFromPersistence);
   const currentDocumentTabsSnapshot = useStableEvent(documentTabsController.currentTabsSnapshot);
   const [documentTabsHydrated, setDocumentTabsHydrated] = useState(false);
+  const [sessionBackupUnavailable, setSessionBackupUnavailable] = useState(false);
   useEffect(() => {
     if (!storageHydrated || documentTabsHydrated) return;
     let cancelled = false;
@@ -665,13 +675,27 @@ export default function App() {
 
   useEffect(() => {
     if (!storageHydrated || !documentTabsHydrated) return;
-    const timeout = window.setTimeout(() => {
+    let cancelled = false;
+    let timeout: number;
+    async function persistSession() {
       const currentTabs = editorDocumentOpenRef.current ? currentDocumentTabsSnapshot() : documentTabsController.tabsRef.current;
       const session = persistedDocumentTabsSession(currentTabs, documentTabsController.activeTabIdRef.current);
       saveBrowserDocumentTabsSession(session);
-      void saveEditorSession(session).catch(() => undefined);
-    }, 350);
-    return () => window.clearTimeout(timeout);
+      try {
+        await saveEditorSession(session);
+        if (!cancelled) setSessionBackupUnavailable(false);
+      } catch {
+        if (!cancelled) {
+          setSessionBackupUnavailable(true);
+          timeout = window.setTimeout(() => void persistSession(), 5000);
+        }
+      }
+    }
+    timeout = window.setTimeout(() => void persistSession(), 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [
     activeProjectFileRevision,
     currentDocumentFingerprint,
@@ -692,9 +716,11 @@ export default function App() {
           ? {
               ...tab,
               title: activeProjectFilePath ? currentProjectFileName : defaultSavedTestName(frontMatter),
-              saveStatus: headerStorageStatus,
-              statusMessage: headerFileStatusMessage,
-              statusTitle: headerFileStatusTitle,
+              saveStatus: sessionBackupUnavailable ? "unavailable" : headerStorageStatus,
+              statusMessage: sessionBackupUnavailable ? "Open-tab disk backup unavailable; retrying" : headerFileStatusMessage,
+              statusTitle: sessionBackupUnavailable
+                ? "Open tabs are retained in the browser backup. Disk backup will retry automatically."
+                : headerFileStatusTitle,
               dirty: hasUnsavedProjectChanges || hasUnsavedDraftChanges,
             }
           : tab,
@@ -710,6 +736,7 @@ export default function App() {
       headerFileStatusMessage,
       headerFileStatusTitle,
       headerStorageStatus,
+      sessionBackupUnavailable,
     ],
   );
   useUnsavedChangesBeforeUnloadController({
@@ -1091,6 +1118,40 @@ export default function App() {
       }),
     parseSavedDocument: (content) => parseProjectSavedDocument(content, normalizeSavedTest),
     applySavedProjectDocument,
+    applyOpenedProjectDocument: useStableEvent(
+      async (project: ProjectSummary, filePath: string, document: SavedTest, revision: number | null) => {
+        documentTabsController.captureActiveTab();
+        const existing = documentTabsController.tabForFile(project, filePath);
+        if (existing) {
+          await documentTabsController.activateTab(existing.id);
+        } else {
+          applySavedProjectDocument(project, filePath, document, revision);
+        }
+      },
+    ),
+    currentDocumentIdentity: () => documentTabsController.activeTabIdRef.current,
+    onDocumentSaved: useStableEvent((result) => {
+      documentTabsController.reconcileSavedDocument(result, (tab) =>
+        fingerprintProjectDocument({
+          document: tab.document,
+          logos: logosRef.current,
+          runtime: { editorDocumentFingerprint },
+        }),
+      );
+    }),
+    onOpenFailed: (request) => {
+      const absolutePath =
+        !request.external && activeProject?.documentsPath
+          ? `${activeProject.documentsPath}/${testPathFromProjectPath(request.path) ?? request.path}`
+          : null;
+      const failure = absolutePath ? { ...request, path: absolutePath, external: true } : request;
+      setFailedDocumentOpens((previous) =>
+        previous.some((item) => item.path === failure.path)
+          ? previous.map((item) => (item.path === failure.path ? failure : item))
+          : [...previous, failure],
+      );
+      setFileManagerOpen(false);
+    },
     currentEditorDocumentFingerprint,
     projectFileConflictFromError,
     missingProjectRevisionConflict,
@@ -1128,7 +1189,10 @@ export default function App() {
     closeEditorDocument,
     confirmCurrentDocumentClose,
   } = documentSessionController;
-  useDesktopDocumentOpenController(useStableEvent(openExternalProjectDocument));
+  useDesktopDocumentOpenController(
+    useStableEvent(openExternalProjectDocument),
+    storageHydrated && documentTabsHydrated && !fileOperationBusy,
+  );
 
   const activateDocumentTab = useStableEvent(async (tabId: string) => {
     await documentTabsController.activateTab(tabId);
@@ -1136,13 +1200,13 @@ export default function App() {
   });
   const confirmActiveDocumentTabClose = useStableEvent(confirmCurrentDocumentClose);
 
-  async function openProjectFileInTab(filePath: string) {
+  async function openProjectFileInTab(filePath: string, throwErrors = false) {
     const openTab = documentTabsController.tabForFile(activeProject, filePath);
     if (openTab) {
       await activateDocumentTab(openTab.id);
       return true;
     }
-    return await openProjectFile(filePath);
+    return await openProjectFile(filePath, { throwErrors });
   }
 
   async function removeDocumentTabWithoutPrompt(tabId: string) {
@@ -1189,6 +1253,16 @@ export default function App() {
   useEffect(() => window.mauthDesktop?.onCloseActiveDocument(handleDesktopCloseActiveDocument), [handleDesktopCloseActiveDocument]);
 
   const projectFileManagementController = useEditorProjectFileManagementController({
+    onFileOperation: useStableEvent((operation) => {
+      documentTabsController.reconcileFileOperation(operation);
+      const activeTab = documentTabsController.tabsRef.current.find((tab) => tab.id === documentTabsController.activeTabIdRef.current);
+      if (activeTab) {
+        setActiveProjectFileState(activeTab.filePath, activeTab.revision);
+        setProjectSaveConflict(activeTab.conflict);
+        updateLastProjectSaveFingerprint(activeTab.lastSaveFingerprint);
+        cleanUnsavedDocumentFingerprintRef.current = activeTab.cleanUnsavedFingerprint;
+      }
+    }),
     activeProject,
     projectFiles,
     activeProjectFilePath,
@@ -1230,7 +1304,7 @@ export default function App() {
       const recursive = payload.recursive !== false;
       try {
         const project = activeProject ?? (await getDefaultProject());
-        const filesResponse = await listProjectFiles(project.id);
+        const filesResponse = await listProjectFiles(project);
         return {
           status: 200,
           body: listMauthAgentDocuments({
@@ -1242,11 +1316,14 @@ export default function App() {
           }),
         };
       } catch (error) {
-        return agentLifecycleError(
-          isProjectFilesUnavailableError(error) ? 503 : 500,
-          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
-          error instanceof Error ? error.message : "Could not list Mauth documents.",
-        );
+        return {
+          ...agentStorageError(error),
+          body: {
+            ...agentStorageError(error).body,
+            activeDocumentId: documentTabsController.activeTabIdRef.current,
+            openDocuments: currentAgentOpenDocuments(),
+          },
+        };
       }
     },
     create: async (payload: Record<string, unknown>) => {
@@ -1260,14 +1337,14 @@ export default function App() {
 
       try {
         const project = activeProject ?? (await getDefaultProject());
-        const filesResponse = await listProjectFiles(project.id);
+        const filesResponse = await listProjectFiles(project);
         const replayedFile = idempotencyKey
           ? filesResponse.files.find(
               (file) => file.kind === "file" && file.metadata.agentCreateIdempotencyKey === idempotencyKey && isProjectTestFile(file),
             )
           : undefined;
         if (replayedFile) {
-          const opened = await openProjectFileInTab(replayedFile.path);
+          const opened = await openProjectFileInTab(replayedFile.path, true);
           await afterEditorStateSettles();
           return {
             status: opened ? 200 : 500,
@@ -1278,7 +1355,9 @@ export default function App() {
                   path: testPathFromProjectPath(replayedFile.path),
                   projectPath: replayedFile.path,
                   revision: replayedFile.revision,
-                  documentId: savedDocumentTabId(project.documentsPath ?? project.id, replayedFile.path),
+                  documentId:
+                    documentTabsController.tabForFile(project, replayedFile.path)?.id ??
+                    savedDocumentTabId(project.documentsPath ?? project.id, replayedFile.path),
                 }
               : { success: false, code: "ACTION_FAILED", error: "The created document could not be reopened." },
           };
@@ -1315,7 +1394,7 @@ export default function App() {
           logos: logosRef.current,
           runtime: { createSavedTestSnapshot, editorDocumentFingerprint },
         });
-        const savedDocument = await saveProjectFile(project.id, filePath, {
+        const savedDocument = await saveProjectFile(project, filePath, {
           content: serialized.content,
           kind: "file",
           fileType: serialized.fileType,
@@ -1328,7 +1407,7 @@ export default function App() {
         });
         const parsedDocument = parseProjectSavedDocument(savedDocument.content, normalizeSavedTest);
         if (!parsedDocument) throw new Error("The new Mauth document could not be parsed after saving.");
-        const refreshedFiles = await listProjectFiles(project.id);
+        const refreshedFiles = await listProjectFiles(project);
         setActiveProject(project);
         setProjectFiles(refreshedFiles.files);
         applySavedProjectDocument(project, filePath, parsedDocument, savedDocument.revision);
@@ -1340,16 +1419,20 @@ export default function App() {
             path: testPath,
             projectPath: filePath,
             revision: savedDocument.revision,
-            documentId: savedDocumentTabId(project.documentsPath ?? project.id, filePath),
+            documentId:
+              documentTabsController.tabForFile(project, filePath)?.id ?? savedDocumentTabId(project.documentsPath ?? project.id, filePath),
             template,
           },
         };
       } catch (error) {
-        return agentLifecycleError(
-          isProjectFilesUnavailableError(error) ? 503 : 500,
-          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
-          error instanceof Error ? error.message : "Could not create the Mauth document.",
-        );
+        return {
+          ...agentStorageError(error),
+          body: {
+            ...agentStorageError(error).body,
+            activeDocumentId: documentTabsController.activeTabIdRef.current,
+            openDocuments: currentAgentOpenDocuments(),
+          },
+        };
       }
     },
     open: async (payload: Record<string, unknown>) => {
@@ -1357,12 +1440,12 @@ export default function App() {
       if (!filePath) return agentLifecycleError(400, "INVALID_REQUEST", "path must name a relative .mauth document.");
       try {
         const project = activeProject ?? (await getDefaultProject());
-        const filesResponse = await listProjectFiles(project.id);
+        const filesResponse = await listProjectFiles(project);
         const summary = filesResponse.files.find((file) => file.path === filePath && isProjectTestFile(file));
         if (!summary) return agentLifecycleError(404, "DOCUMENT_NOT_FOUND", `Mauth document not found: ${String(payload.path)}`);
         setActiveProject(project);
         setProjectFiles(filesResponse.files);
-        const opened = await openProjectFileInTab(filePath);
+        const opened = await openProjectFileInTab(filePath, true);
         if (!opened) return agentLifecycleError(500, "ACTION_FAILED", `Could not open ${String(payload.path)}.`);
         await afterEditorStateSettles();
         return {
@@ -1372,15 +1455,19 @@ export default function App() {
             path: testPathFromProjectPath(filePath),
             projectPath: filePath,
             revision: summary.revision,
-            documentId: savedDocumentTabId(project.documentsPath ?? project.id, filePath),
+            documentId:
+              documentTabsController.tabForFile(project, filePath)?.id ?? savedDocumentTabId(project.documentsPath ?? project.id, filePath),
           },
         };
       } catch (error) {
-        return agentLifecycleError(
-          isProjectFilesUnavailableError(error) ? 503 : 500,
-          isProjectFilesUnavailableError(error) ? "STORAGE_UNAVAILABLE" : "ACTION_FAILED",
-          error instanceof Error ? error.message : "Could not open the Mauth document.",
-        );
+        return {
+          ...agentStorageError(error),
+          body: {
+            ...agentStorageError(error).body,
+            activeDocumentId: documentTabsController.activeTabIdRef.current,
+            openDocuments: currentAgentOpenDocuments(),
+          },
+        };
       }
     },
     close: async (payload: Record<string, unknown>) => {
@@ -1545,6 +1632,18 @@ export default function App() {
 
   return (
     <>
+      {failedDocumentOpens[0] ? (
+        <DocumentOpenErrorDialog
+          key={failedDocumentOpens[0].path}
+          request={failedDocumentOpens[0]}
+          onRetry={() =>
+            failedDocumentOpens[0].external
+              ? openExternalProjectDocument(failedDocumentOpens[0].path)
+              : openProjectFile(failedDocumentOpens[0].path)
+          }
+          onDismiss={() => setFailedDocumentOpens((previous) => previous.filter((item) => item.path !== failedDocumentOpens[0].path))}
+        />
+      ) : null}
       <div className="app-shell min-h-screen bg-background text-foreground">
         <AppHeaderWorkspace
           pane={{ paneMode, showInspectorPane, ...editorNavigationController }}
@@ -1662,6 +1761,12 @@ export default function App() {
           ...projectFileManagementController,
           startNewTest,
           openProjectFile: openProjectFileInTab,
+          openProjectFilePaths: visibleDocumentTabs
+            .filter(
+              (tab) =>
+                (tab.project?.documentsPath ?? tab.project?.id) === (activeProject?.documentsPath ?? activeProject?.id) && tab.filePath,
+            )
+            .map((tab) => tab.filePath!),
           buildVersionPreview: projectFileVersionPreview,
         }}
         dialogNode={mauthDialogs.dialogNode}

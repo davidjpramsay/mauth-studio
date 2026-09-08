@@ -49,8 +49,8 @@ export function useProjectFolderController({
       setProjectFilesStatus("saving");
       setProjectFilesMessage("Creating folder");
       const project = activeProject ?? (await getDefaultProject());
-      await saveProjectFile(project.id, filePath, { kind: "folder", fileType: "folder" });
-      const refreshedFiles = await listProjectFiles(project.id);
+      await saveProjectFile(project, filePath, { kind: "folder", fileType: "folder" });
+      const refreshedFiles = await listProjectFiles(project);
       setActiveProject(project);
       setProjectFiles(refreshedFiles.files);
       setProjectFilesStatus("ready");

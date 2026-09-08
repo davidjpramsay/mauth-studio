@@ -4,7 +4,7 @@ import { PlusCircle, Trash2 } from "lucide-react";
 
 import { Latex } from "@/components/Latex";
 import { CollapsiblePanel, OpenSettingsActionButton } from "@/components/editor/EditorPanels";
-import { snapImplicitRelationPointAtX, snapImplicitRelationPointAtY } from "@/components/graphs/FunctionGraph";
+import { snapImplicitRelationPointAtX, snapImplicitRelationPointAtY } from "@/lib/functionGraphExpressions";
 import { Button } from "@/components/ui/button";
 import { GraphAngleMarkerControls } from "@/components/editor/GraphAngleMarkerControls";
 import { GraphAxisArrowControls } from "@/components/editor/GraphAxisArrowControls";

@@ -56,6 +56,7 @@ export function useEditorProjectFileManagementController({
   setProjectSaveConflict,
   updateLastProjectSaveFingerprint,
   dialogs,
+  onFileOperation,
 }: UseEditorProjectFileManagementControllerOptions) {
   const documentsFolderController = useDocumentsFolderController({
     activeProject,
@@ -111,6 +112,7 @@ export function useEditorProjectFileManagementController({
   });
 
   const projectFileOperationsController = useProjectFileOperationsController({
+    onFileOperation,
     activeProject,
     projectFiles,
     activeProjectFilePath,
@@ -125,7 +127,7 @@ export function useEditorProjectFileManagementController({
         logos: currentLogos(),
         runtime: { createSavedTestSnapshot, editorDocumentFingerprint },
       });
-      const duplicatedDocument = await saveProjectFile(project.id, duplicatePlan.filePath, duplicatePlan.request);
+      const duplicatedDocument = await saveProjectFile(project, duplicatePlan.filePath, duplicatePlan.request);
       return {
         revision: duplicatedDocument.revision,
         fingerprint: duplicatePlan.fingerprint,

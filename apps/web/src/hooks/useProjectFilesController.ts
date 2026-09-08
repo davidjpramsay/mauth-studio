@@ -48,12 +48,12 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
     setProjectFilesMessage("Loading files");
     try {
       let project = await getDefaultProject();
-      let filesResponse = await listProjectFiles(project.id);
+      let filesResponse = await listProjectFiles(project);
       const migrationPlan = planLegacySavedTestMigration(project, legacySavedTests, filesResponse.files, buildLegacySavedTestImport);
 
       if (migrationPlan.shouldMarkMigrated) {
         for (const legacyImport of migrationPlan.imports) {
-          await saveProjectFile(project.id, legacyImport.path, {
+          await saveProjectFile(project, legacyImport.path, {
             content: legacyImport.content,
             kind: "file",
             fileType: "test",
@@ -73,7 +73,7 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
             [LEGACY_SAVED_TESTS_IMPORTED_KEY]: migrationPlan.imports.length,
           },
         });
-        filesResponse = await listProjectFiles(project.id);
+        filesResponse = await listProjectFiles(project);
         setProjectFilesMessage(migrationPlan.imports.length ? `Imported ${migrationPlan.imports.length} existing tests` : "");
       } else {
         setProjectFilesMessage("");

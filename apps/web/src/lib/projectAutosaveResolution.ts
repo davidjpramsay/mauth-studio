@@ -27,8 +27,8 @@ export interface ProjectAutosaveResolution<TAutosave> {
 interface ProjectAutosaveResolutionRuntime<TAutosave, TSavedDocument> {
   activeProject: ProjectSummary | null;
   getDefaultProject: () => Promise<ProjectSummary>;
-  getProjectFile: (projectId: string, filePath: string) => Promise<ProjectFileDocumentLike>;
-  listProjectFileVersions: (projectId: string, filePath: string) => Promise<{ versions: ProjectFileVersionLike[] }>;
+  getProjectFile: (project: ProjectSummary, filePath: string) => Promise<ProjectFileDocumentLike>;
+  listProjectFileVersions: (project: ProjectSummary, filePath: string) => Promise<{ versions: ProjectFileVersionLike[] }>;
   parseSavedDocument: (content: string | null) => TSavedDocument | null;
   savedDocumentFingerprint: (document: TSavedDocument) => string;
   autosaveSnapshotFingerprint: (snapshot: TAutosave) => string;
@@ -36,7 +36,7 @@ interface ProjectAutosaveResolutionRuntime<TAutosave, TSavedDocument> {
 }
 
 async function projectFileRevisionFingerprint<TSavedDocument>(
-  projectId: string,
+  project: ProjectSummary,
   filePath: string,
   revision: number,
   runtime: Pick<
@@ -45,7 +45,7 @@ async function projectFileRevisionFingerprint<TSavedDocument>(
   >,
 ) {
   try {
-    const versionsResponse = await runtime.listProjectFileVersions(projectId, filePath);
+    const versionsResponse = await runtime.listProjectFileVersions(project, filePath);
     const matchingVersion = versionsResponse.versions.find((version) => version.revision === revision);
     const savedDocument = matchingVersion ? runtime.parseSavedDocument(matchingVersion.content) : null;
     return savedDocument ? runtime.savedDocumentFingerprint(savedDocument) : null;
@@ -65,7 +65,7 @@ export async function resolveProjectAutosaveAgainstFile<TAutosave extends Projec
   }
 
   const project = runtime.activeProject ?? (await runtime.getDefaultProject());
-  const document = await runtime.getProjectFile(project.id, filePath);
+  const document = await runtime.getProjectFile(project, filePath);
   const savedDocument = runtime.parseSavedDocument(document.content);
   if (!savedDocument) {
     return {
@@ -82,7 +82,7 @@ export async function resolveProjectAutosaveAgainstFile<TAutosave extends Projec
   }
 
   const snapshotFingerprint = runtime.autosaveSnapshotFingerprint(snapshot);
-  const baseFingerprint = await projectFileRevisionFingerprint(project.id, filePath, localRevision, runtime);
+  const baseFingerprint = await projectFileRevisionFingerprint(project, filePath, localRevision, runtime);
   if (baseFingerprint && snapshotFingerprint === baseFingerprint) {
     return {
       snapshot: runtime.savedDocumentToAutosaveSnapshot(savedDocument, filePath, document.revision),

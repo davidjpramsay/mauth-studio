@@ -6,6 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod/v4";
 
 import { asStructuredBody, createMauthBridgeRequest } from "./mauth-agent-http.mjs";
+import { actionSchema, actionCatalog, ACTION_CATALOG_URI, projectSnapshot } from "./mauth-action-contract.mjs";
 
 const CONNECTOR_VERSION = typeof __MAUTH_CONNECTOR_VERSION__ === "string" ? __MAUTH_CONNECTOR_VERSION__ : "development";
 
@@ -14,7 +15,6 @@ if (process.argv.includes("--version")) {
   process.exit(0);
 }
 
-const actionSchema = z.array(z.record(z.string(), z.unknown()));
 const actionAuthoringDescription =
   "MauthDocumentAction array. For ordinary tests, exams, and worksheets, put the main stem in question.add.question.text or question.update.patch.text (Question wording); reserve text modules for deliberately ordered additional prose or special blocks such as End of Test.";
 const bridgeOutputSchema = z
@@ -72,26 +72,48 @@ const server = new McpServer({
   version: CONNECTOR_VERSION,
 });
 
+server.registerResource(
+  "mauth-action-catalog",
+  ACTION_CATALOG_URI,
+  {
+    mimeType: "application/json",
+    description: "Versioned Mauth action catalog, input schemas, authoring workflow and examples. Read before constructing an edit batch.",
+  },
+  async () => ({ contents: [{ uri: ACTION_CATALOG_URI, mimeType: "application/json", text: JSON.stringify(actionCatalog) }] }),
+);
+
 server.registerTool(
   "mauth_snapshot",
   {
     title: "Mauth Snapshot",
-    description: "Read the live Mauth editor snapshot through the local HTTP bridge.",
+    description:
+      "Read the live Mauth editor snapshot through the local HTTP bridge. Optionally restrict question summaries while retaining the document-wide mutation base and tab state.",
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id from a previous snapshot. Omit for the active tab."),
+      questionId: z
+        .string()
+        .optional()
+        .describe(
+          "Return only this question summary; ids come from an unfiltered snapshot. Does not change the mutation base or activate another tab.",
+        ),
     }),
     outputSchema: bridgeOutputSchema,
     annotations: readOnlyAnnotations,
   },
-  async ({ documentId }) =>
-    toolResult(await bridgeRequest(`/api/agent/current/snapshot${documentId ? `?documentId=${encodeURIComponent(documentId)}` : ""}`)),
+  async ({ documentId, questionId }) =>
+    toolResult(
+      projectSnapshot(
+        await bridgeRequest(`/api/agent/current/snapshot${documentId ? `?documentId=${encodeURIComponent(documentId)}` : ""}`),
+        questionId,
+      ),
+    ),
 );
 
 server.registerTool(
   "mauth_actions_preview",
   {
     title: "Mauth Actions Preview",
-    description: "Dry-run a batch of Mauth document actions against the live editor.",
+    description: `Dry-run a batch of Mauth document actions against the live editor. Action reference: ${ACTION_CATALOG_URI}.`,
     inputSchema: z.object({
       documentId: z.string().optional().describe("Open document id to activate before previewing."),
       actions: actionSchema.describe(`${actionAuthoringDescription} This batch is dry-run only.`),

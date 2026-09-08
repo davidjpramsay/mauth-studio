@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 4 September 2026.
+Last reviewed: 8 September 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -50,10 +50,32 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-App.tsx: 1710 lines
+App.tsx: 1815 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; startup performance and recovery fixes, the compact Files drawer, native statistics-chart regions, renderer-owned normal-axis ticks and outward tick marks, wider normal-curve domains, and print-safe clipping are implemented, while public release 0.1.5 remains unchanged
+worktree: clean at this checkpoint; storage, recovery, modal usability, print readiness and overflow, renderer loading, MCP, and CI improvements are committed source changes; the installed app and public installer remain unchanged
 ```
+
+### 8 September Safety And Usability Repair
+
+Follow-on reliability work includes bounded fail-closed printing with Retry/Cancel and Command/Ctrl-P, lazy renderer loading, extraction of shared expression/snapping helpers from `FunctionGraph`, a versioned MCP action resource and typed action envelopes, and optional question-scoped summaries. Seven print-page baselines and a compact error-dialog baseline cover Student/Solutions assessments and investigations. Tests export real PDFs and record non-gating first-graph, copy-switch, and edit timings for a 30-question fixture. The local bundle passed hardened verification and isolated native opening/recovery checks before the final print-overflow change. No new installer release or installation was performed.
+
+### 8 September Print Scale And CI
+
+The Year 12 Methods Test 4 Student PDF reproduced a roughly 79% print scale despite A4 paper and a 100% native print setting. A wide equation in the hidden Solutions replacement copy expanded the printable overflow bounds, causing Chromium to fit every page to that width. Hidden replacement copies now use `overflow: clip` while retaining their layout height; visible solutions and teacher answer spaces are unchanged. The browser regression compares the clipped page against the same page without the hidden copy, then proves that removing the clip recreates the overflow. An isolated export of the current unsaved draft retains all eight A4 pages at the intended scale, with the question heading restored from about 7.91 pt to 10 pt. All eight pages, including the logo, graph, and table, were rendered and visually checked. The original Desktop PDF is retained alongside a separately named corrected export. Automated native Save as PDF completion remains unverified after the native dialog left the dev editor unresponsive; the backed-up draft was not discarded or saved over the project file.
+
+GitHub Check remains one Ubuntu job running the complete `pnpm check` gate. It now caches uv dependencies by `apps/api/uv.lock`, installs Python dependencies with `uv sync --locked`, cancels superseded checks on the same branch or pull request, uses read-only repository permissions, and has a 15-minute timeout. Two local policy tests protect those settings. No installer matrix or extra release workflow was added; the existing Pages publication remains unchanged.
+
+- Finder opening validates the requested document and hidden project index before remembering its folder. Online-only metadata receives a specific `PROJECT_INDEX_ONLINE_ONLY` error with offline-folder guidance and Retry. Mauth does not force hydration through a potentially blocking filesystem read. Cold-start requests wait for recovery/tab hydration; successful requests add or activate a tab without replacing dirty recovery.
+- Full project operations use process and local cross-process locks around revision checks, versions, and writes. Requests retain their owning folder identity, background refresh checks only the active file, and late reads/saves cannot replace another tab or newer edits. Backend moves preserve file ids and version history, retarget inactive tabs, and leave old-path tombstones; deleted open files remain drafts.
+- Local draft and tab-session backups serialize writes and retry after temporary failures independently of cloud availability. Backup failures are visible even when the project file itself is saved. Files badges distinguish all open documents from the active tab.
+- Cold recovery retains the newer active draft when its project lookup fails, using only the matching saved tab's folder identity. The browser regression includes a remembered-folder outage and an intentionally older tab snapshot; neither may replace the latest unsaved working.
+- MCP lifecycle errors retain the original status, storage reason/action, and current open-tab context rather than showing a hidden dialog or reporting generic success. Authentication, revision protection, idempotency, and the existing 16-tool contract remain unchanged.
+- Packaged cold-start opening flushes queued file requests after Electron stops loading; `did-finish-load` alone can still report a loading main frame and strand the request. Targeted MCP reads and mutations wait for bounded editor settlement after tab activation, then use callbacks from the committed render. Immediate recovered-draft snapshots now align file and tab dirty state without changing saved-file revision preconditions.
+- New Document uses compact template choices and neutral subject/title defaults. Shared dialogs have bounded scrolling, focus trapping, Escape, and focus restoration; Escape on a context menu does not also close its parent drawer. Existing tab smoke fixtures were updated for the current preload events, Content/Settings tabs, and logo listbox.
+- The fixed-port development runtime was stopped, then restarted and verified healthy at `http://localhost:5173/`. Tests use disposable storage roots; teacher assessment files and recovery data were not edited to make the tests pass.
+- Production dependency audit is clean after focused patches to ws, immutable, js-yaml, and xmldom. `FunctionGraph` is now 3682 lines after the focused expression/snapping extraction; further renderer decomposition remains incremental work. The production entry bundle fell from about 1310 kB to 1212 kB, and blank documents do not fetch the roughly 976 kB JSXGraph engine. MathJax remains eager. Local timing samples are non-gating and do not establish a general percentage speedup.
+
+Cloud failures are simulated in automated browser tests and exercised through the real backend placeholder guard in Python tests. The rebuilt bundle passed cold file-argument opening and genuine running-instance macOS open-file events with disposable documents, a simulated unavailable index, Retry, four retained tabs, dirty recovery, and the bundled MCP connector. These checks do not certify Google Drive's actual download service, native quit prompts, or signed in-app updates. The installed/public app remains unchanged at `0.1.5`; the tested bundle under `release/mac-arm64` is a local development checkpoint, not a published installer update.
 
 Observed runtime through 2 September 2026:
 
@@ -265,17 +287,20 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 30 August 2026:
+Latest full gate on 8 September 2026:
 
 ```text
 formatting and lint: passed
-API: 89 passed
-web/actions: 680 passed
-Plotly: 8 passed
-launcher: 61 passed (desktop and connector contract)
+API: 104 passed
+web/actions: 702 passed
+document lifecycle: 17 passed
+Plotly: 11 passed
+launcher: 69 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```
+
+Isolated document-opening, document-tabs, and Files browser checks passed. The opening check covers cold and running Finder-style events, an unavailable remembered folder, dirty recovery, retry into separate tabs, and temporary backup failure. Compact dialogs were keyboard-checked at 800 x 600 and the Files drawer at 1280 x 720. Seven visual tests pass against eight inspected baselines, including hidden-solution overflow and delayed and failed Penrose/image rendering; actual Student/Solutions PDFs retain the expected 2/2 assessment and 1/2 investigation A4 pages. The existing 3D render smoke passes camera, geometry, label, and pixel checks. The local bundle also passes signing verification and native opening/MCP/recovery smoke checks with an isolated profile. The production dependency audit reports no known vulnerabilities. Actual Google Drive hydration, real native quit confirmation, native print-dialog cancellation/reopening, and signed in-app updates remain separate manual checks.
 
 Main gate:
 

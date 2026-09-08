@@ -3,6 +3,10 @@ import path from "node:path";
 const APP_DIRECTORY_NAME = "Mauth Studio";
 
 export function desktopUserDataDirectory({ platform, homeDirectory, env = {} }) {
+  if (env.MAUTH_DESKTOP_USER_DATA) {
+    if (!path.isAbsolute(env.MAUTH_DESKTOP_USER_DATA)) throw new Error("MAUTH_DESKTOP_USER_DATA must be an absolute path.");
+    return env.MAUTH_DESKTOP_USER_DATA;
+  }
   if (platform === "darwin") {
     return path.join(homeDirectory, "Library", "Application Support", APP_DIRECTORY_NAME);
   }

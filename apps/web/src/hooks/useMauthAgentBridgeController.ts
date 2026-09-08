@@ -12,7 +12,10 @@ import {
   validateMauthDocumentActionPayloads,
 } from "@/lib/mauthActionValidation";
 import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
+import { reconcileAgentDraftState } from "@/lib/mauthAgentFileState";
+import { afterEditorStateSettles } from "@/lib/mauthAgentBridgeRetry";
 import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
+import { useStableEvent } from "@/hooks/useStableEvent";
 
 export interface MauthAgentDocumentLifecycleHandlers {
   list: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
@@ -71,28 +74,55 @@ export function useMauthAgentBridgeController<
   activateDocument,
   documentLifecycle,
 }: UseMauthAgentBridgeControllerOptions<Q, F, C>) {
+  const selectedDocumentId = useStableEvent(() => activeDocumentId?.());
+
   function buildCurrentAgentSnapshot(validation: unknown = validate(), document?: MauthDocumentLike<Q, F, C>): MauthAgentSnapshot {
     const current = document ?? currentDocument();
+    const activeId = activeDocumentId?.();
+    const tabs = openDocuments?.();
+    const file = fileState(current);
     return buildMauthAgentSnapshot<Q, F, C>({
       document: current,
-      file: fileState(current),
+      file: document
+        ? file
+        : reconcileAgentDraftState(
+            file,
+            tabs?.find((tab) => tab.id === activeId),
+          ),
       validation,
       warnings: document ? [] : warnings?.(),
-      activeDocumentId: activeDocumentId?.(),
-      openDocuments: openDocuments?.(),
+      activeDocumentId: activeId,
+      openDocuments: tabs,
     });
   }
 
   async function ensureTargetDocument(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult | null> {
     const targetId = payload.documentId;
-    if (targetId === undefined || targetId === null || targetId === activeDocumentId?.()) return null;
+    if (targetId === undefined || targetId === null || targetId === selectedDocumentId()) return null;
     if (typeof targetId !== "string" || !targetId) {
       return agentBridgeError(400, "INVALID_REQUEST", "documentId must be a non-empty string when provided.");
     }
     if (!activateDocument || !(await activateDocument(targetId))) {
       return agentBridgeError(404, "INVALID_REQUEST", `Open document tab not found: ${targetId}`);
     }
+    await afterEditorStateSettles();
+    if (selectedDocumentId() !== targetId) {
+      return agentBridgeError(
+        409,
+        "DOCUMENT_CHANGED",
+        "The selected document changed while preparing this request. Read a fresh snapshot.",
+      );
+    }
     return null;
+  }
+
+  async function withTargetDocument(
+    payload: Record<string, unknown>,
+    operation: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>,
+  ): Promise<MauthAgentBridgeHandlerResult> {
+    const targetError = await ensureTargetDocument(payload);
+    // Stable operations read the committed render after a tab's document and save state settle.
+    return targetError ?? operation(payload);
   }
 
   function readAgentDocumentActions(
@@ -120,18 +150,14 @@ export function useMauthAgentBridgeController<
     return { ok: true, actions: typedMauthDocumentActions(rawActions) };
   }
 
-  async function handleAgentSnapshot(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
-    const targetError = await ensureTargetDocument(payload);
-    if (targetError) return targetError;
+  const handleAgentSnapshot = useStableEvent((): MauthAgentBridgeHandlerResult => {
     return {
       status: 200,
       body: buildCurrentAgentSnapshot() as unknown as Record<string, unknown>,
     };
-  }
+  });
 
-  async function handleAgentActionsPreview(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
-    const targetError = await ensureTargetDocument(payload);
-    if (targetError) return targetError;
+  const handleAgentActionsPreview = useStableEvent((payload: Record<string, unknown>): MauthAgentBridgeHandlerResult => {
     const parsed = readAgentDocumentActions(payload);
     if (!parsed.ok) return parsed.response;
 
@@ -151,11 +177,9 @@ export function useMauthAgentBridgeController<
         snapshot: buildCurrentAgentSnapshot(result.validation, result.document),
       },
     };
-  }
+  });
 
-  async function handleAgentActionsApply(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
-    const targetError = await ensureTargetDocument(payload);
-    if (targetError) return targetError;
+  const handleAgentActionsApply = useStableEvent(async (payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> => {
     const baseSnapshotId = payload.baseSnapshotId;
     if (typeof baseSnapshotId !== "string" || !baseSnapshotId) {
       return agentBridgeError(400, "INVALID_REQUEST", "actions.apply requires baseSnapshotId.");
@@ -203,11 +227,9 @@ export function useMauthAgentBridgeController<
         snapshot: buildCurrentAgentSnapshot(result.validation, result.document),
       },
     };
-  }
+  });
 
-  async function handleAgentValidation(payload: Record<string, unknown>): Promise<MauthAgentBridgeHandlerResult> {
-    const targetError = await ensureTargetDocument(payload);
-    if (targetError) return targetError;
+  const handleAgentValidation = useStableEvent((): MauthAgentBridgeHandlerResult => {
     const validation = validate();
     return {
       status: 200,
@@ -217,15 +239,15 @@ export function useMauthAgentBridgeController<
         snapshot: buildCurrentAgentSnapshot(validation),
       },
     };
-  }
+  });
 
   useMauthAgentBridge({
     enabled,
     handlers: {
-      snapshot: handleAgentSnapshot,
-      preview: handleAgentActionsPreview,
-      apply: handleAgentActionsApply,
-      validation: handleAgentValidation,
+      snapshot: (payload) => withTargetDocument(payload, handleAgentSnapshot),
+      preview: (payload) => withTargetDocument(payload, handleAgentActionsPreview),
+      apply: (payload) => withTargetDocument(payload, handleAgentActionsApply),
+      validation: (payload) => withTargetDocument(payload, handleAgentValidation),
       documentsList: documentLifecycle.list,
       documentCreate: documentLifecycle.create,
       documentOpen: documentLifecycle.open,

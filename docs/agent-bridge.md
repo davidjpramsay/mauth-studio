@@ -121,6 +121,8 @@ Lifecycle responses wait briefly for the activated editor state to settle before
 
 Lifecycle paths are relative to the teacher-selected documents folder. Absolute paths, parent traversal, non-Mauth files, missing files, and collisions are rejected with structured errors. Create requests persist their idempotency key in project-file metadata so an interrupted retry can recover the already-created file rather than duplicate it.
 
+Storage failures retain their original HTTP status and structured reason through lifecycle responses; they are not reduced to a generic action failure or a hidden browser dialog. A cloud-placeholder failure includes `code: "STORAGE_UNAVAILABLE"`, `reason: "PROJECT_INDEX_ONLINE_ONLY"` or `"DOCUMENT_ONLINE_ONLY"`, `action: "MAKE_FOLDER_AVAILABLE_OFFLINE"`, the affected path, and `retryable: true`. Failed opens return `documentOpened: false`, `activeDocumentId`, and `openDocuments` so an agent cannot mistake a still-visible recovered assessment for the requested file. Ask the teacher to make the containing folder available offline and retry after it is downloaded. Do not force a blocking read, reset the folder, or discard another tab to clear this error.
+
 ## Comments And Suggestions
 
 Comments and suggestions are review state, not committed document edits.
@@ -202,6 +204,12 @@ The MCP server wraps the HTTP bridge and exposes:
 - `mauth_suggestion_mark`
 
 Every MCP tool declares a JSON output schema and local-only tool annotations. Results are returned both as `structuredContent` and equivalent JSON text for client compatibility; non-2xx bridge responses set the MCP error flag while retaining the structured Mauth error body. This follows the OpenAI MCP guidance for validated tool definitions and structured results: <https://developers.openai.com/api/docs/mcp/>.
+
+The connector also publishes the read-only JSON resource `mauth://authoring/actions/v1`. It contains all supported action names, discriminated input envelopes, examples, and the required snapshot/preview/apply workflow. Tests check parity with the editor's action list. Extensible patches and renderer-specific settings still receive authoritative validation in the live editor; the catalog does not create a second mutation engine.
+
+Document-targeted snapshot, preview, apply, and validation requests wait for the selected tab's editor state to settle before reading its callbacks. If the teacher selects another tab during that handoff, the request returns `409 DOCUMENT_CHANGED` rather than acting on the wrong document. Live snapshots report unsaved recovered drafts as dirty in both the file and tab summaries.
+
+`mauth_snapshot` accepts an optional `questionId` to return just that question's summary. The document-wide `snapshotId`, `mutationBase`, `questionCount`, file state, and open-tab list remain unchanged. `snapshotScope.summaryOnly` identifies this projection; it is not a full-content export. A missing id returns `QUESTION_NOT_FOUND`; storage errors pass through unchanged. This filter does not activate a tab, while an explicit `documentId` retains the normal foreground-targeting behavior.
 
 The action-preview and action-apply tool descriptions reinforce the same authoring contract: use `question.add.question.text` or `question.update.patch.text` for a main stem, and reserve text modules for prose that genuinely needs an ordered block position or special rendering.
 

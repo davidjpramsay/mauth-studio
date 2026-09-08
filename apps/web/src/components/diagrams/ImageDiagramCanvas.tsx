@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { GraphConfig, ImageDiagramAnnotation } from "@mauth-studio/shared";
 
@@ -21,6 +21,8 @@ function markerId(prefix: string, annotation: ImageDiagramAnnotation, index: num
 export function ImageDiagramCanvas({ graphConfig, className, selectedAnnotationId, onAnnotationSelect }: ImageDiagramCanvasProps) {
   const markerPrefix = useId().replace(/:/g, "");
   const data = imageDiagramData(graphConfig);
+  const [loaded, setLoaded] = useState<{ src: string; state: "ready" | "error" } | null>(null);
+  const renderState = loaded?.src === data.src ? loaded.state : "loading";
   const annotations = (data.annotations ?? []).filter((annotation) => annotation.show !== false);
   const widthPx = graphWidth(graphConfig);
   const heightPx = graphHeight(graphConfig);
@@ -34,6 +36,7 @@ export function ImageDiagramCanvas({ graphConfig, className, selectedAnnotationI
           className,
         )}
         style={{ width: widthPx, maxWidth: "100%", aspectRatio: `${widthPx} / ${heightPx}` }}
+        data-mauth-print-render-state="error"
       >
         No image selected
       </div>
@@ -43,9 +46,17 @@ export function ImageDiagramCanvas({ graphConfig, className, selectedAnnotationI
   return (
     <div
       className={cn("relative overflow-hidden bg-white", className)}
+      data-mauth-print-render-state={renderState}
       style={{ width: widthPx, maxWidth: "100%", aspectRatio: `${widthPx} / ${heightPx}` }}
     >
-      <img className="absolute inset-0 size-full object-contain" src={data.src} alt={imageDiagramAlt(graphConfig)} />
+      <img
+        key={data.src}
+        className="absolute inset-0 size-full object-contain"
+        src={data.src}
+        alt={imageDiagramAlt(graphConfig)}
+        onLoad={() => setLoaded({ src: data.src, state: "ready" })}
+        onError={() => setLoaded({ src: data.src, state: "error" })}
+      />
       <svg
         className={cn("absolute inset-0 size-full overflow-visible", !interactive && "pointer-events-none")}
         viewBox="0 0 100 100"

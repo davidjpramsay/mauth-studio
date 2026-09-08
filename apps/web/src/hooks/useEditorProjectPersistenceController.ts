@@ -7,7 +7,7 @@ import { useEditorAutosaveSnapshotController } from "@/hooks/useEditorAutosaveSn
 import { useProjectFileStatus, type DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
 import { type ProjectFilesStatus, type ProjectSaveConflict } from "@/hooks/useProjectFilesController";
 import { useUnsavedChangesBeforeUnloadController } from "@/hooks/useUnsavedChangesBeforeUnloadController";
-import { getDefaultProject, listProjectFiles, saveStorageAutosave } from "@/lib/api";
+import { saveStorageAutosave } from "@/lib/api";
 import type { AutosavedEditorSnapshot } from "@/lib/editorAppPersistence";
 import { editorDocumentFingerprint, persistCurrentDraft } from "@/lib/editorApplicationRuntime";
 import type { DocumentFlowItem, DocumentSectionHeading, QuestionBlock } from "@/lib/editorDocumentNormalization";
@@ -76,21 +76,15 @@ export function useEditorProjectPersistenceController({
   logosRef,
   editorDocumentOpenRef,
   cleanUnsavedDocumentFingerprint,
-  activeProject,
-  setActiveProject,
   projectFiles,
-  setProjectFiles,
   projectFilesStatus,
-  setProjectFilesStatus,
   projectFilesMessage,
-  setProjectFilesMessage,
   activeProjectFilePath,
   setActiveProjectFilePath,
   activeProjectFileRevision,
   setActiveProjectFileRevision,
   projectSaveConflict,
   setProjectSaveConflict,
-  reloadActiveProjectFileFromDisk,
   localDraftDebounceMs,
   diskAutosaveDebounceMs,
 }: UseEditorProjectPersistenceControllerOptions) {
@@ -158,7 +152,6 @@ export function useEditorProjectPersistenceController({
 
   useDraftAutosaveController<AutosavedEditorSnapshot>({
     storageHydrated,
-    diskAutosaveAvailable: draftAutosaveStatus !== "unavailable",
     editorDocumentOpen,
     activeProjectFilePath,
     activeProjectFileRevision,
@@ -169,20 +162,8 @@ export function useEditorProjectPersistenceController({
       const autosaveResponse = await saveStorageAutosave<AutosavedEditorSnapshot>(snapshot);
       return autosaveResponse.autosave;
     },
-    loadProjectFileSummary: async (filePath) => {
-      const project = activeProject ?? (await getDefaultProject());
-      const filesResponse = await listProjectFiles(project.id);
-      setActiveProject(project);
-      setProjectFiles(filesResponse.files);
-      return filesResponse.files.find((file) => file.path === filePath && file.kind === "file");
-    },
-    isCurrentProjectFileClean: () => lastProjectSaveFingerprintRef.current === currentEditorDocumentFingerprint(),
-    reloadActiveProjectFileFromDisk,
     setDraftAutosaveStatus,
     setDraftAutosaveMessage,
-    setProjectSaveConflict,
-    setProjectFilesStatus,
-    setProjectFilesMessage,
     localDraftDebounceMs,
     diskAutosaveDebounceMs,
   });

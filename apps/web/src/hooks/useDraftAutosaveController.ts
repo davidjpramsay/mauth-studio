@@ -1,19 +1,14 @@
-import { useEffect, useRef } from "react";
-import type { ProjectFileSummary } from "@mauth-studio/shared";
-
+import { useEffect, useRef, useState } from "react";
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
-import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
-import { draftAutosaveSavedMessage, draftAutosaveStartMessage, resolveDraftAutosaveRevisionPlan } from "@/lib/draftAutosaveLifecycle";
+import { draftAutosaveSavedMessage, draftAutosaveStartMessage } from "@/lib/draftAutosaveLifecycle";
+import { recoveryRetryDelay } from "@/lib/recoveryWrites";
 
 interface AutosaveSnapshotLike {
-  activeProjectFilePath?: string;
-  activeProjectFileRevision?: number;
   updatedAt?: string;
 }
 
 interface UseDraftAutosaveControllerOptions<TAutosave extends AutosaveSnapshotLike> {
   storageHydrated: boolean;
-  diskAutosaveAvailable: boolean;
   editorDocumentOpen: boolean;
   activeProjectFilePath: string | null;
   activeProjectFileRevision: number | null;
@@ -21,114 +16,80 @@ interface UseDraftAutosaveControllerOptions<TAutosave extends AutosaveSnapshotLi
   createAutosaveSnapshot: () => TAutosave;
   persistLocalDraft: (snapshot: TAutosave) => void;
   saveDiskAutosave: (snapshot: TAutosave) => Promise<TAutosave>;
-  loadProjectFileSummary: (filePath: string) => Promise<ProjectFileSummary | undefined>;
-  isCurrentProjectFileClean: () => boolean;
-  reloadActiveProjectFileFromDisk: () => void;
   setDraftAutosaveStatus: (status: DraftAutosaveStatus) => void;
   setDraftAutosaveMessage: (message: string) => void;
-  setProjectSaveConflict: (conflict: ProjectSaveConflict | null) => void;
-  setProjectFilesStatus: (status: ProjectFilesStatus) => void;
-  setProjectFilesMessage: (message: string) => void;
   localDraftDebounceMs: number;
   diskAutosaveDebounceMs: number;
 }
 
 export function useDraftAutosaveController<TAutosave extends AutosaveSnapshotLike>(options: UseDraftAutosaveControllerOptions<TAutosave>) {
-  const { storageHydrated, diskAutosaveAvailable, editorDocumentOpen, activeProjectFilePath, activeProjectFileRevision, draftChangeKey } =
-    options;
+  const { storageHydrated, editorDocumentOpen, activeProjectFilePath, activeProjectFileRevision, draftChangeKey } = options;
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const autosaveSequenceRef = useRef(0);
+  const failuresRef = useRef(0);
+  const retryAtRef = useRef(0);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!storageHydrated) return;
-    const timeoutId = window.setTimeout(() => {
-      const { createAutosaveSnapshot, persistLocalDraft } = optionsRef.current;
-      persistLocalDraft(createAutosaveSnapshot());
+    const timeout = window.setTimeout(() => {
+      const current = optionsRef.current;
+      current.persistLocalDraft(current.createAutosaveSnapshot());
     }, optionsRef.current.localDraftDebounceMs);
-
-    return () => window.clearTimeout(timeoutId);
+    return () => window.clearTimeout(timeout);
   }, [draftChangeKey, storageHydrated]);
 
   useEffect(() => {
     if (!storageHydrated) return;
-
-    const persistLatestDraft = () => {
-      const { createAutosaveSnapshot, persistLocalDraft } = optionsRef.current;
-      persistLocalDraft(createAutosaveSnapshot());
+    const persist = () => {
+      const current = optionsRef.current;
+      current.persistLocalDraft(current.createAutosaveSnapshot());
     };
-
-    window.addEventListener("pagehide", persistLatestDraft);
-    return () => window.removeEventListener("pagehide", persistLatestDraft);
+    const retryNow = () => {
+      retryAtRef.current = 0;
+      setRetry((value) => value + 1);
+    };
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("online", retryNow);
+    return () => {
+      window.removeEventListener("pagehide", persist);
+      window.removeEventListener("online", retryNow);
+    };
   }, [storageHydrated]);
 
   useEffect(() => {
-    if (!storageHydrated || !diskAutosaveAvailable) return;
-
-    const autosaveSequence = autosaveSequenceRef.current + 1;
-    autosaveSequenceRef.current = autosaveSequence;
-    const { setDraftAutosaveStatus, setDraftAutosaveMessage, activeProjectFilePath, editorDocumentOpen, diskAutosaveDebounceMs } =
-      optionsRef.current;
-    setDraftAutosaveStatus("saving");
-    setDraftAutosaveMessage(draftAutosaveStartMessage({ activeProjectFilePath, editorDocumentOpen }));
-
-    const timeoutId = window.setTimeout(() => {
-      async function saveDraftIfProjectRevisionIsCurrent() {
-        const {
-          activeProjectFilePath,
-          activeProjectFileRevision,
-          createAutosaveSnapshot,
-          loadProjectFileSummary,
-          isCurrentProjectFileClean,
-          reloadActiveProjectFileFromDisk,
-          saveDiskAutosave,
-          setDraftAutosaveStatus,
-          setDraftAutosaveMessage,
-          setProjectSaveConflict,
-          setProjectFilesStatus,
-          setProjectFilesMessage,
-        } = optionsRef.current;
-        const autosaveSnapshot = createAutosaveSnapshot();
-
+    if (!storageHydrated) return;
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    const timeout = window.setTimeout(
+      async () => {
+        const current = optionsRef.current;
+        current.setDraftAutosaveStatus("saving");
+        current.setDraftAutosaveMessage(draftAutosaveStartMessage(current));
         try {
-          if (activeProjectFilePath && typeof activeProjectFileRevision === "number") {
-            const summary = await loadProjectFileSummary(activeProjectFilePath);
-            const revisionPlan = resolveDraftAutosaveRevisionPlan({
-              activeProjectFilePath,
-              activeProjectFileRevision,
-              remoteRevision: summary?.revision,
-              currentProjectFileClean: isCurrentProjectFileClean(),
-            });
-            if (revisionPlan.kind === "reload-clean-file") {
-              setDraftAutosaveStatus(revisionPlan.draftStatus);
-              setDraftAutosaveMessage(revisionPlan.draftMessage);
-              reloadActiveProjectFileFromDisk();
-              return;
-            }
-            if (revisionPlan.kind === "block-dirty-file") {
-              setProjectSaveConflict(revisionPlan.conflict);
-              setProjectFilesStatus(revisionPlan.projectFilesStatus);
-              setProjectFilesMessage(revisionPlan.projectFilesMessage);
-              setDraftAutosaveStatus(revisionPlan.draftStatus);
-              setDraftAutosaveMessage(revisionPlan.draftMessage);
-              return;
-            }
-          }
-
-          const autosaveResponse = await saveDiskAutosave(autosaveSnapshot);
-          if (autosaveSequenceRef.current !== autosaveSequence) return;
-          setDraftAutosaveStatus("saved");
-          setDraftAutosaveMessage(draftAutosaveSavedMessage(autosaveResponse.updatedAt));
+          // Recovery is local state, not a project-file save. A cloud index
+          // outage or revision conflict must never prevent saving the draft.
+          const response = await current.saveDiskAutosave(current.createAutosaveSnapshot());
+          if (cancelled) return;
+          failuresRef.current = 0;
+          retryAtRef.current = 0;
+          current.setDraftAutosaveStatus("saved");
+          current.setDraftAutosaveMessage(draftAutosaveSavedMessage(response.updatedAt));
         } catch {
-          if (autosaveSequenceRef.current !== autosaveSequence) return;
-          setDraftAutosaveStatus("unavailable");
-          setDraftAutosaveMessage("Disk autosave failed: using browser backup only");
+          if (cancelled) return;
+          const delay = recoveryRetryDelay(++failuresRef.current);
+          retryAtRef.current = Date.now() + delay;
+          current.setDraftAutosaveStatus("unavailable");
+          current.setDraftAutosaveMessage("Disk backup unavailable. Browser backup retained; retrying automatically.");
+          retryTimer = window.setTimeout(() => setRetry((value) => value + 1), delay);
         }
-      }
-
-      void saveDraftIfProjectRevisionIsCurrent();
-    }, diskAutosaveDebounceMs);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [activeProjectFilePath, activeProjectFileRevision, diskAutosaveAvailable, draftChangeKey, editorDocumentOpen, storageHydrated]);
+      },
+      Math.max(optionsRef.current.diskAutosaveDebounceMs, retryAtRef.current - Date.now()),
+    );
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      window.clearTimeout(retryTimer);
+    };
+  }, [activeProjectFilePath, activeProjectFileRevision, draftChangeKey, editorDocumentOpen, storageHydrated, retry]);
 }

@@ -44,6 +44,7 @@ import { projectUsesExternalDocumentsFolder } from "@/lib/projectFileRecents";
 import type { ProjectFileVersionPreviewSummary } from "@/lib/projectFileVersionPreview";
 import type { ProjectFileVersionRestoreOutcome } from "@/lib/projectFileVersionRestoreWorkflow";
 import { cn } from "@/lib/utils";
+import { useModalFocus } from "@/hooks/useModalFocus";
 
 interface TestFileManagerProps {
   activeProject: ProjectSummary | null;
@@ -51,6 +52,7 @@ interface TestFileManagerProps {
   status: ProjectFilesStatus;
   message: string;
   activeProjectFilePath: string | null;
+  openProjectFilePaths?: string[];
   buildVersionPreview: (version: ProjectFileVersion) => ProjectFileVersionPreviewSummary;
   onNewTest: () => void;
   onOpenFile: (filePath: string) => void;
@@ -80,6 +82,7 @@ function TestFileManager({
   status,
   message,
   activeProjectFilePath,
+  openProjectFilePaths = [],
   buildVersionPreview,
   onNewTest,
   onOpenFile,
@@ -629,6 +632,7 @@ function TestFileManager({
           {currentItems.length ? (
             currentItems.map(({ file, testPath }) => {
               const active = activeRelativePath === testPath;
+              const isOpen = active || openProjectFilePaths.includes(file.path);
               const selected = selectedPaths.has(testPath);
               const name = file.kind === "folder" ? testPathBasename(testPath) : testFileDisplayName(testPathBasename(testPath));
               return (
@@ -667,9 +671,9 @@ function TestFileManager({
                       <span className="truncate font-medium" title={name}>
                         {name}
                       </span>
-                      {active ? (
+                      {isOpen ? (
                         <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                          Open
+                          {active ? "Active" : "Open"}
                         </span>
                       ) : null}
                     </span>
@@ -942,6 +946,7 @@ export function FileManagementDrawer({
   projectFilesStatus,
   projectFilesMessage,
   activeProjectFilePath,
+  openProjectFilePaths = [],
   buildVersionPreview,
   onClose,
   onNewTest,
@@ -966,6 +971,7 @@ export function FileManagementDrawer({
   projectFilesStatus: ProjectFilesStatus;
   projectFilesMessage: string;
   activeProjectFilePath: string | null;
+  openProjectFilePaths?: string[];
   buildVersionPreview: (version: ProjectFileVersion) => ProjectFileVersionPreviewSummary;
   onClose: () => void;
   onNewTest: () => void;
@@ -984,11 +990,16 @@ export function FileManagementDrawer({
   onListProjectFileVersions: (filePath: string) => Promise<ProjectFileVersion[]>;
   onRestoreProjectFileVersion: (filePath: string, versionId: string, revision: number) => Promise<ProjectFileVersionRestoreOutcome>;
 }) {
+  const drawerRef = useModalFocus(open, onClose);
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/35 p-2 pt-14 sm:p-3 sm:pt-16" onMouseDown={onClose}>
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         className="ml-auto flex h-[calc(100vh-4rem)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-background shadow-xl sm:h-[calc(100vh-5rem)]"
         aria-label="Files"
         onMouseDown={(event) => event.stopPropagation()}
@@ -1009,11 +1020,11 @@ export function FileManagementDrawer({
             status={projectFilesStatus}
             message={projectFilesMessage}
             activeProjectFilePath={activeProjectFilePath}
+            openProjectFilePaths={openProjectFilePaths}
             buildVersionPreview={buildVersionPreview}
             onNewTest={onNewTest}
             onOpenFile={(filePath) => {
               onOpenProjectFile(filePath);
-              onClose();
             }}
             onCreateFolder={onCreateProjectFolder}
             onExportBackup={onExportProjectBackup}

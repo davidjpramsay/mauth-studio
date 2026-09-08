@@ -18,7 +18,7 @@ import {
 import { developmentRuntimePlan } from "./development-runtime.mjs";
 import { isRuntimeApiRequest } from "./local-api-auth.mjs";
 import { MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, chooseDocumentsFolder } from "./native-dialogs.mjs";
-import { packagedSidecarExecutable } from "./platform-paths.mjs";
+import { desktopUserDataDirectory, packagedSidecarExecutable } from "./platform-paths.mjs";
 import {
   MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL,
   MAUTH_SOLUTION_VALIDATION_OPEN_CHANNEL,
@@ -62,7 +62,7 @@ const { autoUpdater } = electronUpdater;
 
 app.setName("Mauth Studio");
 app.setAppUserModelId(APP_ID);
-app.setPath("userData", path.join(app.getPath("appData"), "Mauth Studio"));
+app.setPath("userData", desktopUserDataDirectory({ platform: process.platform, homeDirectory: app.getPath("home"), env: process.env }));
 const desktopLogPath = path.join(app.getPath("userData"), "desktop.log");
 fs.mkdirSync(path.dirname(desktopLogPath), { recursive: true });
 function desktopLog(message) {
@@ -217,7 +217,10 @@ async function waitForLocalService(url, serviceName, processHandle) {
   while (Date.now() < deadline) {
     if (processHandle?.exitCode !== null) throw new Error(`${serviceName} exited with code ${processHandle?.exitCode}`);
     try {
-      const response = await fetch(url, { cache: "no-store" });
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(Math.max(1, Math.min(1500, deadline - Date.now()))),
+      });
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
@@ -386,6 +389,9 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
     desktopLog("editor document ready");
     flushPendingOpenDocuments();
   });
+  // did-finish-load may precede isLoadingMainFrame becoming false. Drain the
+  // queue again when navigation has fully stopped, including cold Finder opens.
+  mainWindow.webContents.on("did-stop-loading", flushPendingOpenDocuments);
   mainWindow.webContents.on("will-prevent-unload", (event) => {
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: "question",
