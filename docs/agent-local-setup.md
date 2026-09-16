@@ -4,7 +4,7 @@ Mauth Studio works as a standalone app. Connecting an agent is optional and take
 
 ## Install Mauth Studio
 
-1. [Download the signed Apple Silicon DMG](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.5/Mauth-Studio-0.1.5-arm64.dmg).
+1. [Download the signed Apple Silicon DMG](https://github.com/davidjpramsay/mauth-studio/releases/download/v0.1.6/Mauth-Studio-0.1.6-arm64.dmg).
 2. Open the DMG and move **Mauth Studio** to Applications.
 3. Open Mauth Studio normally.
 

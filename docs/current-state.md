@@ -55,6 +55,10 @@ SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router,
 worktree: clean at this checkpoint; includes native document commands, the bridge timeout recovery repair and earlier diagram-completion spacing rules; the installed app and public installer remain unchanged
 ```
 
+### 16 September Release Preparation
+
+Version 0.1.6 is prepared for the guarded local `pnpm macos:ship` pipeline, including release notes and updated download links. Publication remains unconfirmed until that pipeline verifies the signed/notarized artifacts and remote assets. The installed app is not replaced by source changes. The release includes all source changes since 0.1.5; clean-machine installation and the actual in-app update remain manual checks.
+
 ### 16 September Native Document Commands
 
 Desktop Open now uses the native multi-file picker and the existing Finder-open queue. File menu commands include New, Open Recent, Save, Save As, Show in Finder, folder backup/restore, and version history. The first save of an unsaved document uses the native save dialog. Save As resolves a destination without switching the global folder, checks its revision and content hash, retains previous versions, and retargets only the owning tab. Another open tab cannot be overwritten by Save As. Ordinary Save remains bound to the tab's own folder. Browser-only use retains the Files drawer. The installed app and public release have not been replaced by these source changes.
