@@ -35,6 +35,8 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
 }: UseProjectFilesControllerOptions<TLegacySavedTest>) {
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
+  const activeProjectRef = useRef(activeProject);
+  activeProjectRef.current = activeProject;
   const [projectFiles, setProjectFiles] = useState<ProjectFileSummary[]>([]);
   const [projectFilesStatus, setProjectFilesStatus] = useState<ProjectFilesStatus>("idle");
   const [projectFilesMessage, setProjectFilesMessage] = useState("");
@@ -44,10 +46,11 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
   const emptyFileRefreshAttemptedRef = useRef(false);
 
   const refreshProjectFiles = useCallback(async () => {
+    const sourceProject = activeProjectRef.current;
     setProjectFilesStatus("loading");
     setProjectFilesMessage("Loading files");
     try {
-      let project = await getDefaultProject();
+      let project = sourceProject ?? (await getDefaultProject());
       let filesResponse = await listProjectFiles(project);
       const migrationPlan = planLegacySavedTestMigration(project, legacySavedTests, filesResponse.files, buildLegacySavedTestImport);
 
@@ -79,6 +82,7 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
         setProjectFilesMessage("");
       }
 
+      if (activeProjectRef.current !== sourceProject) return;
       setActiveProject(project);
       setProjectFiles(filesResponse.files);
       setProjectFilesStatus("ready");
@@ -115,6 +119,13 @@ export function useProjectFilesController<TLegacySavedTest extends LegacySavedTe
   }, [storageHydrated, fileManagerOpen, isVisibleProjectFile, projectFiles, projectFilesStatus, refreshProjectFiles]);
 
   const openFileManager = useCallback(() => {
+    if (window.mauthDesktop?.openDocuments) {
+      void window.mauthDesktop.openDocuments().catch(() => {
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("The file picker could not open. Try File > Open again.");
+      });
+      return;
+    }
     setFileManagerOpen(true);
     if (!storageHydrated) {
       setProjectFilesStatus("loading");

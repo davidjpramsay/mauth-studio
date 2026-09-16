@@ -343,3 +343,4 @@ class ProjectFileRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     sortOrder: int = 0
     baseRevision: int | None = None
+    expectedContentHash: str | None = None

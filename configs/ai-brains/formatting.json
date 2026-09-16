@@ -20,6 +20,7 @@
     "rubric logic"
   ],
   "rules": [
+    "When students complete a supplied diagram, its drawing area is already the answer surface. Default to only one unruled line beneath it for a compact marking note; do not add a second large written-response area unless calculation or explanation is requested. Redistribute freed page capacity among the other written-response parts in proportion to their marks, using conservative whole lines and preserving teacher overrides. Verify both Student and Solutions copies.",
     "Treat space blocks as intentional working area, not generic page filler.",
     "Do not add a trailing question-level space block immediately before a manual page break; leftover page area already provides working room.",
     "Keep space blocks inside parts or subparts when they are intended answer space for that specific part.",

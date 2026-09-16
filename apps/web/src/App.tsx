@@ -12,6 +12,8 @@ import { AppOverlayWorkspace } from "@/components/shell/AppOverlayWorkspace";
 import { EmptyDocumentStart } from "@/components/shell/EmptyDocumentStart";
 import { useDocumentSessionController } from "@/hooks/useDocumentSessionController";
 import { useDesktopDocumentOpenController } from "@/hooks/useDesktopDocumentOpenController";
+import { useDesktopFileCommands } from "@/hooks/useDesktopFileCommands";
+import { desktopDocumentPath } from "@/lib/desktopDocumentPath";
 import { useEditorAgentBridgeController } from "@/hooks/useEditorAgentBridgeController";
 import { useEditorDocumentStateController } from "@/hooks/useEditorDocumentStateController";
 import { useEditorDocumentTabsController } from "@/hooks/useEditorDocumentTabsController";
@@ -1082,6 +1084,11 @@ export default function App() {
   }
 
   const documentSessionController = useDocumentSessionController<EditorDocumentState, SavedTest, AutosavedEditorSnapshot>({
+    isOtherDocumentOpen: (absolutePath) =>
+      documentTabsController.tabsRef.current.some(
+        (tab) =>
+          tab.id !== documentTabsController.activeTabIdRef.current && desktopDocumentPath(tab.project, tab.filePath) === absolutePath,
+      ),
     storageHydrated,
     activeProject,
     projectFiles,
@@ -1291,6 +1298,23 @@ export default function App() {
     const activeTabId = documentTabsController.activeTabIdRef.current;
     return currentDocumentTabsSnapshot().map((tab) => agentDocumentTabSummary(tab, activeTabId));
   };
+
+  useDesktopFileCommands({
+    ready: storageHydrated && documentTabsHydrated && !fileOperationBusy,
+    documentOpen: editorDocumentOpen,
+    documentId: documentTabsController.activeTabId,
+    project: activeProject,
+    filePath: activeProjectFilePath,
+    startNew: startNewTest,
+    open: openFileManager,
+    save: () => saveCurrentTestToProjectFile(),
+    saveAs: documentSessionController.saveCurrentTestAs,
+    backup: projectFileManagementController.exportCurrentProjectBackup,
+    restore: projectFileManagementController.importProjectBackupFile,
+    versions: projectFileManagementController.loadProjectFileVersions,
+    restoreVersion: projectFileManagementController.restoreProjectFileFromVersion,
+    dialogs: mauthDialogs,
+  });
 
   const agentLifecycleError = (status: number, code: string, error: string, extra: Record<string, unknown> = {}) => ({
     status,

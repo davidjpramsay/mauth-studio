@@ -251,6 +251,14 @@ export function openExternalProjectDocumentFile(path: string) {
 
 type ProjectTarget = string | ProjectSummary;
 
+export function getDocumentSaveTarget(path: string) {
+  return postJsonWithSignal<{ project: ProjectSummary; path: string; revision: number | null; contentHash: string | null }>(
+    "/api/storage/projects/default/document-save-target",
+    { path },
+    AbortSignal.timeout(10000),
+  );
+}
+
 function projectResource(project: ProjectTarget, resource: string) {
   const id = typeof project === "string" ? project : project.id;
   const path = `/api/storage/projects/${encodeURIComponent(id)}/${resource}`;

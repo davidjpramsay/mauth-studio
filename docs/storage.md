@@ -2,6 +2,14 @@
 
 The app uses file-backed storage for authored tests. Browser `localStorage` is only a convenience cache and emergency fallback.
 
+## Desktop File Workflow
+
+The desktop Open button and File > Open use the native document picker. Multiple selections join the existing tab set through the same queued, recovery-safe path as Finder opening. New creates an unsaved template; its first Save opens the native save dialog. Subsequent Save operations use that tab's own folder, path, and revision. Save As chooses a new destination and retargets only that tab after the revision-aware write succeeds. Cancellation leaves the document unchanged.
+
+File > Open Recent uses the operating system's recent documents. Successfully opened and saved files are registered there. Show in Finder reveals the active file. Back Up Folder, Restore Backup, and Version History remain separate File menu actions; the browser keeps its Files drawer.
+
+The save-target API scopes a destination without changing the remembered documents folder. Replacements retain version history and check both the selected revision and a content hash, including files created or edited externally after selection. A destination already open in another tab is refused. Storage outages preserve the original tab and local recovery. The `.mauth` metadata folder remains an internal implementation detail.
+
 ## Storage Locations
 
 By default, authored documents remain visible while private macOS app state lives in Application Support:

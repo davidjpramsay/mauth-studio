@@ -45,13 +45,22 @@ test("desktop File menu closes tabs before assigning a separate window shortcut"
   });
 
   assert.deepEqual(
-    items.map(({ label, accelerator }) => ({ label, accelerator })),
+    items.filter((item) => item.label?.startsWith("Close")).map(({ label, accelerator }) => ({ label, accelerator })),
     [
       { label: "Close Tab", accelerator: "CmdOrCtrl+W" },
       { label: "Close Window", accelerator: "CmdOrCtrl+Shift+W" },
     ],
   );
-  items[0].click();
-  items[1].click();
+  items.find((item) => item.label === "Close Tab").click();
+  items.find((item) => item.label === "Close Window").click();
   assert.deepEqual(actions, ["document", "window"]);
+});
+
+test("native File menu exposes document shortcuts and separate maintenance commands", () => {
+  const commands = [];
+  const items = desktopFileMenuItems({ command: (command) => commands.push(command) });
+  for (const accelerator of ["CmdOrCtrl+N", "CmdOrCtrl+O", "CmdOrCtrl+S", "CmdOrCtrl+Shift+S"])
+    items.find((item) => item.accelerator === accelerator).click();
+  assert.deepEqual(commands, ["new", "open", "save", "save-as"]);
+  assert.equal(items.find((item) => item.label === "Open Recent").role, "recentDocuments");
 });

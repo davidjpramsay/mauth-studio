@@ -5,6 +5,11 @@ declare const __MAUTH_WEB_VERSION__: string;
 
 interface Window {
   mauthDesktop?: {
+    openDocuments?: () => Promise<boolean>;
+    chooseDocumentSavePath?: (defaultPath: string) => Promise<string | null>;
+    revealDocument?: (filePath: string) => Promise<void>;
+    rememberDocument?: (filePath: string) => Promise<void>;
+    onFileCommand?: (listener: (command: string) => void) => () => void;
     getAgentConnectorInfo: () => Promise<MauthAgentConnectorInfo>;
     chooseDocumentsFolder: () => Promise<MauthDocumentsFolderSelection>;
     requestWindowClose: () => Promise<boolean>;

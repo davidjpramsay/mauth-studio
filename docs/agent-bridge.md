@@ -69,7 +69,7 @@ Packaged private API routes require `Authorization: Bearer <token>`. Electron in
 
 The browser registers when the editor loads and unregisters with a beacon-safe request on normal page exit. Unregistering removes the session and releases requests assigned to it immediately. A crashed browser still falls back to the server-side session TTL.
 
-The browser treats a missing registration route or an authentication/permission response as an incompatible runtime and stops that bridge loop, avoiding repeated requests against a stale API. A lost registered session is recoverable and registers again. Temporary network failures retry with bounded exponential backoff.
+The browser treats a missing registration route or an authentication/permission response as an incompatible runtime and stops that bridge loop, avoiding repeated requests against a stale API. A lost registered session is recoverable and registers again. Temporary network failures retry with bounded exponential backoff. A late browser acknowledgement rejected with `404 BRIDGE_TIMEOUT` means only that the request has expired: the editor continues polling in the same session without replaying its handler or resending its response. Other unknown 404 responses remain fatal.
 
 ## Snapshot Shape
 

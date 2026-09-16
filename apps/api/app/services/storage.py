@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import re
@@ -711,6 +712,27 @@ class FileProjectStorage:
         return project
 
     @serialized_project_operation
+    def document_save_target(self, absolute_file_path: str) -> dict[str, Any]:
+        """Resolve a picker destination without switching the selected workspace."""
+        path = Path(absolute_file_path)
+        if not path.is_absolute() or not path.name.lower().endswith((".mauth", ".test.json")):
+            raise StorageValidationError("Choose an absolute .mauth document path")
+        folder = self._validated_documents_folder(str(path.parent))
+        scoped = self.for_documents_folder(str(folder))
+        project = scoped.get_or_create_default_project()
+        file_path = safe_project_path(f"tests/{path.name}")
+        if path.exists():
+            require_materialized_file(path)
+            record = scoped._require_project(project["id"])
+            scoped._index_visible_document(project["id"], record, file_path)
+            revision = scoped.get_file_summary(project["id"], file_path)["revision"]
+            content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            revision = None
+            content_hash = None
+        return {"project": project, "path": file_path, "revision": revision, "contentHash": content_hash}
+
+    @serialized_project_operation
     def update_project(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         record = self._require_project(project_id)
         if isinstance(payload.get("name"), str) and payload["name"].strip():
@@ -774,6 +796,15 @@ class FileProjectStorage:
     def save_file(self, project_id: str, file_path: str, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_path = safe_project_path(file_path)
         project = self._require_project(project_id)
+        if "expectedContentHash" in payload:
+            destination = self._content_path(project_id, normalized_path)
+            current_hash = None
+            if destination.exists():
+                require_materialized_file(destination)
+                current_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
+            if current_hash != payload["expectedContentHash"]:
+                raise StorageConflictError("The destination changed after it was selected. Choose Save As again.")
+            self._index_visible_document(project_id, project, normalized_path)
         files = project.setdefault("files", {})
         if not isinstance(files, dict):
             files = {}

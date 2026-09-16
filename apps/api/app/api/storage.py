@@ -117,6 +117,14 @@ def get_project_file_summary(project_id: str, service: ProjectStorage, path: str
         raise storage_http_error(error) from error
 
 
+@router.post("/projects/default/document-save-target")
+def document_save_target(request: ProjectWorkspaceRequest) -> dict:
+    try:
+        return project_storage_service.document_save_target(request.path)
+    except STORAGE_OPERATION_ERRORS as error:
+        raise storage_http_error(error) from error
+
+
 @router.get("/tests")
 def list_saved_tests() -> dict:
     return {"tests": storage_service.list_tests()}

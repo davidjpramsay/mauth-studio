@@ -36,6 +36,84 @@ def cloud_document(workspace, tmp_path, title="Year 11 Test 3"):
     return path
 
 
+def test_native_save_target_preserves_folder_and_revision_history(workspace, tmp_path):
+    source = cloud_document(workspace, tmp_path, "Source")
+    destination = cloud_document(workspace, tmp_path, "Destination")
+    original_folder = workspace.documents_dir
+    original_source = source.read_bytes()
+    target = workspace.document_save_target(str(destination))
+    assert workspace.documents_dir == original_folder
+    scoped = workspace.for_documents_folder(target["project"]["documentsPath"])
+    payload = {"content": source.read_text(), "baseRevision": target["revision"]}
+    saved = scoped.save_file(target["project"]["id"], target["path"], payload)
+    assert saved["revision"] == target["revision"] + 1
+    assert scoped.list_versions(target["project"]["id"], target["path"])
+    assert source.read_bytes() == original_source
+    with pytest.raises(storage.StorageConflictError):
+        scoped.save_file(target["project"]["id"], target["path"], payload)
+    assert workspace.documents_dir == original_folder
+
+
+def test_native_save_new_target_refuses_a_file_created_after_selection(workspace, tmp_path):
+    folder = tmp_path / "New folder"
+    folder.mkdir()
+    target = workspace.document_save_target(str(folder / "New.mauth"))
+    assert target["revision"] is None
+    scoped = workspace.for_documents_folder(target["project"]["documentsPath"])
+    payload = {"content": "first writer", "baseRevision": None}
+    scoped.save_file(target["project"]["id"], target["path"], payload)
+    with pytest.raises(storage.StorageConflictError):
+        scoped.save_file(target["project"]["id"], target["path"], {**payload, "content": "second writer"})
+    assert (folder / "New.mauth").read_text() == "first writer"
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_native_save_detects_external_changes_after_picker(workspace, tmp_path, existing):
+    folder = tmp_path / "External editor"
+    folder.mkdir()
+    path = folder / "Test.mauth"
+    if existing:
+        path.write_text("old content")
+    target = workspace.document_save_target(str(path))
+    path.write_text("changed outside Mauth")
+    scoped = workspace.for_documents_folder(target["project"]["documentsPath"])
+    with pytest.raises(storage.StorageConflictError):
+        scoped.save_file(
+            target["project"]["id"],
+            target["path"],
+            {
+                "content": "must not overwrite",
+                "baseRevision": target["revision"],
+                "expectedContentHash": target["contentHash"],
+            },
+        )
+    assert path.read_text() == "changed outside Mauth"
+
+
+def test_native_save_target_unavailable_index_preserves_selected_folder(workspace, tmp_path, monkeypatch):
+    destination = cloud_document(workspace, tmp_path)
+    original_folder = workspace.documents_dir
+    original_read = storage.require_materialized_file
+
+    def materialized(path):
+        if path == destination.parent / ".mauth/project.json":
+            raise storage.CloudPlaceholderError(path)
+        return original_read(path)
+
+    monkeypatch.setattr(storage, "require_materialized_file", materialized)
+    response = TestClient(app).post(
+        "/api/storage/projects/default/document-save-target", json={"path": str(destination)}
+    )
+    assert response.status_code == 503
+    assert workspace.documents_dir == original_folder
+
+
+@pytest.mark.parametrize("path", ["relative.mauth", "/tmp/wrong.pdf", "/tmp/.mauth/hidden.mauth"])
+def test_native_save_target_rejects_invalid_destinations(workspace, path):
+    response = TestClient(app).post("/api/storage/projects/default/document-save-target", json={"path": path})
+    assert response.status_code == 400
+
+
 @pytest.mark.parametrize("cold_start", [False, True])
 @pytest.mark.parametrize("title", ["Year 11 Test 3", "Year 12 Test 4"])
 def test_finder_open_online_only_index_preserves_recovery_and_retries(

@@ -11,6 +11,7 @@
     "changing marks without explicit review"
   ],
   "rules": [
+    "For a completed diagram that already shows the answer, use one concise marking-summary line rather than repeating its values as several prose steps. A single weighted hidden tick such as [[marks:3]] is appropriate on this compact line when it represents the diagram marks; preserve the full allocation and any genuinely required written reasoning. Keep the adjacent student Space at one unruled line when the summary fits, and render-check the pair.",
     "Preserve the original question and add solutions after the relevant question, part, or subpart.",
     "When the external agent is asked to write a full marking key, write solutions for the whole test, check every question has a solution, or create solutions for all marked items, use mauth.solutions.writeAll. This tool expects coverage for every marked question, part, and subpart, preserves existing shared diagrams, creates/resizes matched student spaces, validates hidden mark ticks, and runs a layout check before success.",
     "When the external agent is asked to add or repair solutions for existing content, prefer mauth.author.ensureSolutions where the compact document summary contains enough question text. Use questionNumber or questionId, optional marks/questionMarks, studentSpaceLines, solutionText, and part labels/ids where needed.",

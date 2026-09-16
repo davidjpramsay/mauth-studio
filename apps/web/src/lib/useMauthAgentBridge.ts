@@ -7,7 +7,7 @@ import {
   respondMauthAgentRequest,
   unregisterMauthAgentEditorSession,
 } from "@/lib/api";
-import { bridgeRetryDelayMs, isLostBrowserSession } from "@/lib/mauthAgentBridgeRetry";
+import { runMauthAgentBridgeLoop } from "@/lib/mauthAgentBridgeRetry";
 
 const EDITOR_SESSION_STORAGE_KEY = "mauth-agent-editor-session-id";
 
@@ -95,43 +95,22 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
     if (!enabled) return;
 
     const abortController = new AbortController();
-    let stopped = false;
-    let registered = false;
     let unregistering = false;
-    let retryAttempt = 0;
 
-    async function runBridgeLoop() {
-      while (!stopped) {
-        try {
-          if (!registered) {
-            await registerMauthAgentEditorSession(sessionId, "Mauth web editor", abortController.signal);
-            registered = true;
-            retryAttempt = 0;
-          }
+    async function processNextRequest() {
+      const response = await pollMauthAgentRequests(sessionId, abortController.signal);
+      if (abortController.signal.aborted || !response.request) return;
 
-          const response = await pollMauthAgentRequests(sessionId, abortController.signal);
-          retryAttempt = 0;
-          if (!response.request) continue;
-
-          const handlerResult = await runHandler(response.request, handlersRef.current);
-          await respondMauthAgentRequest(
-            {
-              sessionId,
-              requestId: response.request.requestId,
-              status: handlerResult.status,
-              body: handlerResult.body,
-            },
-            abortController.signal,
-          );
-        } catch (error) {
-          if (stopped || abortController.signal.aborted) return;
-          if (isLostBrowserSession(error)) registered = false;
-          const retryDelay = bridgeRetryDelayMs(error, registered, retryAttempt);
-          if (retryDelay === null) return;
-          retryAttempt += 1;
-          await delay(retryDelay);
-        }
-      }
+      const handlerResult = await runHandler(response.request, handlersRef.current);
+      await respondMauthAgentRequest(
+        {
+          sessionId,
+          requestId: response.request.requestId,
+          status: handlerResult.status,
+          body: handlerResult.body,
+        },
+        abortController.signal,
+      );
     }
 
     function unregisterClosedPage() {
@@ -142,10 +121,14 @@ export function useMauthAgentBridge({ enabled, handlers }: UseMauthAgentBridgeOp
 
     window.addEventListener("pagehide", unregisterClosedPage);
     window.addEventListener("beforeunload", unregisterClosedPage);
-    void runBridgeLoop();
+    void runMauthAgentBridgeLoop({
+      signal: abortController.signal,
+      register: () => registerMauthAgentEditorSession(sessionId, "Mauth web editor", abortController.signal),
+      processNextRequest,
+      delay,
+    });
 
     return () => {
-      stopped = true;
       abortController.abort();
       window.removeEventListener("pagehide", unregisterClosedPage);
       window.removeEventListener("beforeunload", unregisterClosedPage);

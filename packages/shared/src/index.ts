@@ -891,6 +891,7 @@ export interface ProjectFileVersion {
 }
 
 export interface ProjectFileSaveRequest {
+  expectedContentHash?: string | null;
   content?: string | null;
   kind?: ProjectFileKind;
   fileType?: MauthProjectFileType | null;

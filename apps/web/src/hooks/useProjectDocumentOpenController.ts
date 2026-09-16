@@ -213,6 +213,7 @@ export function useProjectDocumentOpenController<TSavedDocument>({
       setProjectFiles([document]);
       setProjectFilesStatus("ready");
       setProjectFilesMessage(`Opened ${fileName}`);
+      if (typeof window !== "undefined") void window.mauthDesktop?.rememberDocument?.(absoluteFilePath).catch(() => {});
       onOpened?.();
       return true;
     } catch (error) {

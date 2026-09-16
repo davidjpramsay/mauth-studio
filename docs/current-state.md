@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 8 September 2026.
+Last reviewed: 16 September 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -50,10 +50,20 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-App.tsx: 1815 lines
+App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; storage, recovery, modal usability, print readiness and overflow, renderer loading, MCP, and CI improvements are committed source changes; the installed app and public installer remain unchanged
+worktree: clean at this checkpoint; includes native document commands, the bridge timeout recovery repair and earlier diagram-completion spacing rules; the installed app and public installer remain unchanged
 ```
+
+### 16 September Native Document Commands
+
+Desktop Open now uses the native multi-file picker and the existing Finder-open queue. File menu commands include New, Open Recent, Save, Save As, Show in Finder, folder backup/restore, and version history. The first save of an unsaved document uses the native save dialog. Save As resolves a destination without switching the global folder, checks its revision and content hash, retains previous versions, and retargets only the owning tab. Another open tab cannot be overwritten by Save As. Ordinary Save remains bound to the tab's own folder. Browser-only use retains the Files drawer. The installed app and public release have not been replaced by these source changes.
+
+Verification: `pnpm check` passes (112 API, 707 web/action, 17 lifecycle, 11 Plotly, 72 launcher, and 3 Quick Look tests, plus formatting/lint/TypeScript/build). The new browser regression passes native-command routing, cancellation, open-tab overwrite refusal, Save As, and independent folder ownership. An isolated source Electron run with disposable folders also passes the real preload/IPC/menu integration and backend writes; native dialog responses were stubbed, so manual picker interaction, Open Recent presentation, and Finder reveal remain manual checks. Existing teacher documents and recovery are untouched.
+
+### 15 September Bridge Timeout Recovery
+
+During assessment PDF authoring, validation timed out and its late browser acknowledgement received `404 BRIDGE_TIMEOUT`. The API and storage remained healthy, but the editor loop treated the expired request as a missing route and stopped polling. The bridge now continues in the same session after that specific response, without replaying the handler or acknowledgement. Authentication failures and unknown missing routes still stop; a lost editor session still re-registers. The existing loop is extracted into the retry helper so deterministic tests exercise late acknowledgement followed by a successful request, session recovery, fatal failures, and cleanup. The regression fails with the previous fatal-timeout policy. `pnpm check` passes, including all ten focused retry/loop tests, 707 web/action tests, 104 API tests, TypeScript and the production build. The running dev editor loaded the change through HMR and `pnpm agent:doctor` passes. Native print-modal timing was not deliberately reproduced against the teacher document; the expired-response sequence is tested deterministically. No teacher documents are changed by the repair.
 
 ### 8 September Safety And Usability Repair
 
@@ -287,15 +297,15 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 8 September 2026:
+Latest full gate on 16 September 2026:
 
 ```text
 formatting and lint: passed
-API: 104 passed
-web/actions: 702 passed
+API: 112 passed
+web/actions: 707 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 69 passed (desktop, connector, and CI contract)
+launcher: 72 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

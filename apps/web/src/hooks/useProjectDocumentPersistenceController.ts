@@ -3,7 +3,8 @@ import type { ProjectFileDocument, ProjectFileSummary, ProjectSummary } from "@m
 
 import type { MauthDialogActions } from "@/hooks/useMauthDialogController";
 import type { ProjectFilesStatus, ProjectSaveConflict } from "@/hooks/useProjectFilesController";
-import { getDefaultProject, listProjectFiles, saveProjectFile } from "@/lib/api";
+import { getDefaultProject, getDocumentSaveTarget, listProjectFiles, saveProjectFile } from "@/lib/api";
+import { desktopDocumentPath } from "@/lib/desktopDocumentPath";
 import {
   ensureTestFileName,
   joinTestPath,
@@ -47,6 +48,7 @@ interface UseProjectDocumentPersistenceControllerOptions<TDocument> {
   currentDocument: () => TDocument;
   currentDocumentIdentity?: () => string | null;
   onDocumentSaved?: (result: DocumentTabSaveResult) => void;
+  isOtherDocumentOpen?: (absolutePath: string) => boolean;
   defaultProjectFileName: () => string;
   serializeProjectDocument: (args: SerializeProjectDocumentArgs<TDocument>) => SerializedProjectDocument;
   projectFileConflictFromError: (error: unknown, filePath: string, localRevision: number | null) => ProjectSaveConflict | null;
@@ -74,6 +76,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
   currentDocument,
   currentDocumentIdentity,
   onDocumentSaved,
+  isOtherDocumentOpen,
   defaultProjectFileName,
   serializeProjectDocument,
   projectFileConflictFromError,
@@ -90,7 +93,12 @@ export function useProjectDocumentPersistenceController<TDocument>({
 }: UseProjectDocumentPersistenceControllerOptions<TDocument>) {
   const saveCurrentTestInFlightRef = useRef<Promise<boolean> | null>(null);
 
-  async function writeEditorDocumentToProjectFile(filePath: string, testName: string, document: TDocument) {
+  async function writeEditorDocumentToProjectFile(
+    filePath: string,
+    testName: string,
+    document: TDocument,
+    destination?: { project: ProjectSummary; revision: number | null; contentHash: string | null },
+  ) {
     const documentId = currentDocumentIdentity?.() ?? null;
     const sourcePath = activeProjectFilePathRef.current;
     const sourceRevision = activeProjectFileRevisionRef.current;
@@ -101,10 +109,11 @@ export function useProjectDocumentPersistenceController<TDocument>({
     setProjectFilesStatus("saving");
     setProjectFilesMessage("Saving");
 
-    const project = activeProject ?? (await getDefaultProject());
+    const project = destination?.project ?? activeProject ?? (await getDefaultProject());
+    const sameProject = !destination || project.documentsPath === activeProject?.documentsPath;
     const loadedFilePath = sourcePath;
-    const loadedRevision = loadedFilePath === filePath ? sourceRevision : undefined;
-    if (loadedFilePath === filePath && loadedRevision === null) {
+    const loadedRevision = sameProject && loadedFilePath === filePath ? sourceRevision : undefined;
+    if (sameProject && loadedFilePath === filePath && loadedRevision === null) {
       const conflict = missingProjectRevisionConflict(filePath);
       setProjectSaveConflict(conflict);
       setProjectFilesStatus("error");
@@ -117,7 +126,7 @@ export function useProjectDocumentPersistenceController<TDocument>({
     const serializedDocument = serializeProjectDocument({ filePath, testName, document });
 
     let savedDocument: ProjectFileDocument;
-    const baseRevision = loadedRevision ?? existingFile?.revision ?? null;
+    const baseRevision = loadedRevision ?? (destination ? destination.revision : (existingFile?.revision ?? null));
     try {
       savedDocument = await saveProjectFile(project, filePath, {
         content: serializedDocument.content,
@@ -128,10 +137,11 @@ export function useProjectDocumentPersistenceController<TDocument>({
           source: "mauth-studio",
         },
         baseRevision,
+        ...(destination ? { expectedContentHash: destination.contentHash } : {}),
       });
     } catch (error) {
       const conflict = projectFileConflictFromError(error, filePath, baseRevision ?? null);
-      if (conflict && stillCurrent()) {
+      if (conflict && !destination && stillCurrent()) {
         setProjectSaveConflict(conflict);
         setProjectFilesStatus("error");
         setProjectFilesMessage("File changed on disk");
@@ -152,13 +162,15 @@ export function useProjectDocumentPersistenceController<TDocument>({
     });
     if (updateActiveFile) {
       setActiveProject(project);
-      setProjectFiles([...projectFiles.filter((file) => file.path !== filePath), savedDocument]);
+      setProjectFiles([...(sameProject ? projectFiles.filter((file) => file.path !== filePath) : []), savedDocument]);
       setActiveProjectFileState(filePath, savedDocument.revision);
       setProjectSaveConflict(null);
       updateLastProjectSaveFingerprint(serializedDocument.fingerprint);
     }
     setProjectFilesStatus("ready");
     setProjectFilesMessage(`Saved ${testFileDisplayName(testPathBasename(testPathFromProjectPath(filePath) ?? filePath))}`);
+    const absolutePath = desktopDocumentPath(project, filePath);
+    if (absolutePath) void window.mauthDesktop?.rememberDocument?.(absolutePath).catch(() => {});
   }
 
   async function writeCurrentTestProjectFile(filePath: string, testName: string) {
@@ -258,13 +270,43 @@ export function useProjectDocumentPersistenceController<TDocument>({
     return outcome;
   }
 
-  async function performSaveCurrentTestToProjectFile(folderPath: string) {
+  async function performSaveCurrentTestToProjectFile(folderPath: string, saveAs = false) {
     const documentId = currentDocumentIdentity?.() ?? null;
     let saveTargetPath = activeProjectFilePath;
+    let savingCopy = false;
     try {
       const defaultName = defaultProjectFileName();
-      let filePath = activeProjectFilePath;
+      let filePath = saveAs ? null : activeProjectFilePath;
       let testName = defaultName;
+
+      if (!filePath && window.mauthDesktop?.chooseDocumentSavePath) {
+        savingCopy = true;
+        const sourcePath = activeProjectFilePathRef.current;
+        const suggested = saveAs ? desktopDocumentPath(activeProject, sourcePath) : null;
+        const absolutePath = await window.mauthDesktop.chooseDocumentSavePath(suggested ?? ensureTestFileName(defaultName));
+        if (!absolutePath || (currentDocumentIdentity?.() ?? null) !== documentId || activeProjectFilePathRef.current !== sourcePath)
+          return false;
+        if (isOtherDocumentOpen?.(absolutePath))
+          throw new Error("That file is open in another tab. Switch to that tab or choose a different name.");
+        if (sourcePath && absolutePath === desktopDocumentPath(activeProject, sourcePath)) {
+          savingCopy = false;
+          await writeCurrentTestProjectFile(sourcePath, currentProjectFileName);
+          return true;
+        }
+        const target = await getDocumentSaveTarget(absolutePath);
+        if ((currentDocumentIdentity?.() ?? null) !== documentId || activeProjectFilePathRef.current !== sourcePath) return false;
+        if (target.revision !== null && absolutePath !== desktopDocumentPath(activeProject, sourcePath)) {
+          const replace = await dialogs.confirm({
+            title: "Replace existing document?",
+            description: `Replace "${testPathBasename(target.path)}"? Its previous version will be retained in version history.`,
+            confirmLabel: "Replace",
+          });
+          if (!replace || (currentDocumentIdentity?.() ?? null) !== documentId || activeProjectFilePathRef.current !== sourcePath)
+            return false;
+        }
+        await writeEditorDocumentToProjectFile(target.path, testFileDisplayName(testPathBasename(target.path)), currentDocument(), target);
+        return true;
+      }
 
       if (!filePath) {
         const requestedName = await dialogs.prompt({
@@ -290,6 +332,15 @@ export function useProjectDocumentPersistenceController<TDocument>({
         return false;
       }
       if (error instanceof Error && error.message === revisionMissingErrorMessage) return false;
+      if (savingCopy) {
+        setProjectFilesStatus("error");
+        setProjectFilesMessage("Save As failed; original document retained");
+        await dialogs.alert({
+          title: "Document could not be saved",
+          description: error instanceof Error ? error.message : "Your draft is retained. Please try again.",
+        });
+        return false;
+      }
       const conflict = saveTargetPath ? projectFileConflictFromError(error, saveTargetPath, activeProjectFileRevisionRef.current) : null;
       if (conflict) {
         setProjectSaveConflict(conflict);
@@ -300,12 +351,21 @@ export function useProjectDocumentPersistenceController<TDocument>({
       }
       setProjectFilesStatus("error");
       setProjectFilesMessage("Save failed");
+      if (window.mauthDesktop)
+        await dialogs.alert({
+          title: "Document could not be saved",
+          description: error instanceof Error ? error.message : "Your draft is retained. Please try again.",
+        });
       return false;
     }
   }
 
   function saveCurrentTestToProjectFile(folderPath = "") {
     return runSingleFlight(saveCurrentTestInFlightRef, () => performSaveCurrentTestToProjectFile(folderPath));
+  }
+
+  function saveCurrentTestAs() {
+    return runSingleFlight(saveCurrentTestInFlightRef, () => performSaveCurrentTestToProjectFile("", true));
   }
 
   return {
@@ -315,5 +375,6 @@ export function useProjectDocumentPersistenceController<TDocument>({
     saveActiveFileRecoveryCopy,
     prepareCurrentProjectFileTransition,
     saveCurrentTestToProjectFile,
+    saveCurrentTestAs,
   };
 }

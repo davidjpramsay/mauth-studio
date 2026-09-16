@@ -25,6 +25,8 @@ The editor renderer is the authoritative live editing surface while it is regist
 
 ## Runtime And Desktop Shell
 
+Desktop file commands use narrow preload methods for native Open/Save dialogs, recent-document registration, and Finder reveal. The renderer routes selected files through the existing document-open queue and revision-aware persistence controllers. Save As uses a scoped backend destination lookup, without changing other tabs' folder ownership; a content-hash precondition also protects against external edits while the dialog is open. Backup, restore, and version history have separate menu commands. Browser use keeps the Files drawer.
+
 Normal macOS use starts through the installed app:
 
 ```bash

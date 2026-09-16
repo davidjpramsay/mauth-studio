@@ -17,7 +17,16 @@ import {
 } from "./agent-connector.mjs";
 import { developmentRuntimePlan } from "./development-runtime.mjs";
 import { isRuntimeApiRequest } from "./local-api-auth.mjs";
-import { MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL, chooseDocumentsFolder } from "./native-dialogs.mjs";
+import {
+  MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL,
+  chooseDocumentsFolder,
+  chooseDocuments,
+  chooseDocumentSavePath,
+  MAUTH_DOCUMENT_CHOOSE_CHANNEL,
+  MAUTH_DOCUMENT_SAVE_PATH_CHANNEL,
+  MAUTH_DOCUMENT_REVEAL_CHANNEL,
+  MAUTH_DOCUMENT_REMEMBER_CHANNEL,
+} from "./native-dialogs.mjs";
 import { desktopUserDataDirectory, packagedSidecarExecutable } from "./platform-paths.mjs";
 import {
   MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL,
@@ -278,7 +287,14 @@ function createApplicationMenu() {
         { role: "quit" },
       ],
     },
-    { label: "File", submenu: desktopFileMenuItems({ closeActiveDocument, closeWindow: closeMainWindow }) },
+    {
+      label: "File",
+      submenu: desktopFileMenuItems({
+        closeActiveDocument,
+        closeWindow: closeMainWindow,
+        command: (command) => mainWindow?.webContents.send("mauth:file-command", command),
+      }),
+    },
     {
       label: "Edit",
       submenu: [
@@ -488,6 +504,24 @@ async function launch() {
     chooseDocumentsFolder({ dialog, window: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null }),
   );
   ipcMain.removeHandler(MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL);
+  ipcMain.handle(MAUTH_DOCUMENT_CHOOSE_CHANNEL, async (event) => {
+    if (event.sender !== mainWindow?.webContents) return false;
+    const paths = await chooseDocuments({ dialog, window: mainWindow });
+    for (const filePath of paths) mainWindow?.webContents.send("mauth:open-document", filePath);
+    return true;
+  });
+  ipcMain.handle(MAUTH_DOCUMENT_SAVE_PATH_CHANNEL, (event, defaultPath) => {
+    if (event.sender !== mainWindow?.webContents) return null;
+    return chooseDocumentSavePath({ dialog, window: mainWindow, defaultPath });
+  });
+  ipcMain.handle(MAUTH_DOCUMENT_REVEAL_CHANNEL, (event, filePath) => {
+    if (event.sender !== mainWindow?.webContents || typeof filePath !== "string" || !path.isAbsolute(filePath)) return;
+    shell.showItemInFolder(filePath);
+  });
+  ipcMain.handle(MAUTH_DOCUMENT_REMEMBER_CHANNEL, (event, filePath) => {
+    if (event.sender !== mainWindow?.webContents || typeof filePath !== "string" || !path.isAbsolute(filePath)) return;
+    app.addRecentDocument(filePath);
+  });
   ipcMain.handle(MAUTH_WINDOW_CLOSE_REQUEST_CHANNEL, (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
     closeMainWindow();

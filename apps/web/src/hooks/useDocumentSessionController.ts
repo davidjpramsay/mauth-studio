@@ -56,6 +56,7 @@ interface UseDocumentSessionControllerOptions<TDocument, TSavedDocument, TAutosa
   currentEditorDocumentFingerprint: () => string;
   currentDocumentIdentity?: () => string | null;
   onDocumentSaved?: (result: DocumentTabSaveResult) => void;
+  isOtherDocumentOpen?: (absolutePath: string) => boolean;
   applyOpenedProjectDocument?: (
     project: ProjectSummary,
     filePath: string,
@@ -118,6 +119,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   currentEditorDocumentFingerprint,
   currentDocumentIdentity,
   onDocumentSaved,
+  isOtherDocumentOpen,
   applyOpenedProjectDocument,
   onOpenFailed,
   projectFileConflictFromError,
@@ -147,6 +149,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     prepareCurrentProjectFileTransition,
     saveCurrentTestToProjectFile,
     saveActiveFileRecoveryCopy,
+    saveCurrentTestAs,
   } = useProjectDocumentPersistenceController<TDocument>({
     activeProject,
     projectFiles,
@@ -159,6 +162,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
     currentDocument,
     currentDocumentIdentity,
     onDocumentSaved,
+    isOtherDocumentOpen,
     defaultProjectFileName,
     serializeProjectDocument,
     projectFileConflictFromError,
@@ -254,6 +258,7 @@ export function useDocumentSessionController<TDocument, TSavedDocument, TAutosav
   });
 
   return {
+    saveCurrentTestAs,
     writeEditorDocumentToProjectFile,
     writeCurrentTestProjectFile,
     prepareCurrentProjectFileTransition,

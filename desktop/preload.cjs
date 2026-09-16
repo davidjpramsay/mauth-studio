@@ -47,6 +47,23 @@ ipcRenderer.on(MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL, () => {
 });
 
 contextBridge.exposeInMainWorld("mauthDesktop", {
+  openDocuments() {
+    return ipcRenderer.invoke("mauth:choose-document");
+  },
+  chooseDocumentSavePath(defaultPath) {
+    return ipcRenderer.invoke("mauth:choose-document-save-path", defaultPath);
+  },
+  revealDocument(filePath) {
+    return ipcRenderer.invoke("mauth:reveal-document", filePath);
+  },
+  rememberDocument(filePath) {
+    return ipcRenderer.invoke("mauth:remember-document", filePath);
+  },
+  onFileCommand(listener) {
+    const handler = (_event, command) => listener(command);
+    ipcRenderer.on("mauth:file-command", handler);
+    return () => ipcRenderer.removeListener("mauth:file-command", handler);
+  },
   getAgentConnectorInfo() {
     return ipcRenderer.invoke(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
   },
