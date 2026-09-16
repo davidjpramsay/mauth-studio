@@ -57,7 +57,9 @@ worktree: clean at this checkpoint; includes native document commands, the bridg
 
 ### 16 September Release Preparation
 
-Version 0.1.6 is prepared for the guarded local `pnpm macos:ship` pipeline, including release notes and updated download links. Publication remains unconfirmed until that pipeline verifies the signed/notarized artifacts and remote assets. The installed app is not replaced by source changes. The release includes all source changes since 0.1.5; clean-machine installation and the actual in-app update remain manual checks.
+Version 0.1.6 is prepared for the guarded local `pnpm macos:ship` pipeline, including release notes. Publication is blocked: the first attempt failed on a missing signing timestamp (the same library signed successfully on retry); the second completed signing but notarization could not read the `mauth-notary` Keychain profile; the third failed the same credential check before packaging. Standalone `notarytool history` requests intermittently succeeded between failures, and the login Keychain reported unlocked. Do not recreate credentials or weaken signing automatically. Resolve reliable Keychain-profile access, then rerun the guarded ship pipeline and update public download links only after successful publication. No 0.1.6 release or draft exists; public links remain on 0.1.5. The local 0.1.6 bundle passed deep strict signature verification but is not a notarized distributable.
+
+The installed `~/Applications/Mauth Studio.app` is an ad-hoc-signed 0.1.5 development checkpoint without `app-update.yml`, so it needs one deliberate installation of the next signed release before its updater can work. It was not replaced or restarted. Clean-machine installation and the actual in-app update remain manual checks.
 
 ### 16 September Native Document Commands
 
