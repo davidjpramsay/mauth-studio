@@ -67,6 +67,33 @@ test("student Venn visibility preserves the region slot but blanks its answer", 
   assert.equal(regions[1].label, "2");
 });
 
+test("solution-only Venn totals retain blank badge geometry for students", () => {
+  const config: GraphConfig = {
+    type: "setDiagram",
+    data: {
+      totalsSolutionOnly: true,
+      universe: { name: "U", countLabel: "90" },
+      sets: [
+        { name: "M", countLabel: "50" },
+        { name: "D", countLabel: "36" },
+      ],
+      regions: [{ name: "onlyA", label: "32", solutionOnly: true }],
+    },
+  };
+  assert.equal(penroseConfigHasSolutionOnly(config), true);
+  const student = previewPenroseConfigForSolutionVisibility(config, false);
+  const data = student.data as {
+    universe: { countBlank: boolean };
+    sets: Array<{ countBlank: boolean }>;
+    regions: Array<{ label: string }>;
+  };
+  assert.equal(data.universe.countBlank, true);
+  assert.ok(data.sets.every((set) => set.countBlank));
+  assert.equal(data.regions[0].label, "");
+  assert.equal(previewPenroseConfigForSolutionVisibility(config, true), config);
+  assert.equal((config.data as Record<string, unknown>).countBlank, undefined);
+});
+
 test("Penrose element updates preserve sibling records and clear stale Substance", () => {
   const config: GraphConfig = {
     type: "network",

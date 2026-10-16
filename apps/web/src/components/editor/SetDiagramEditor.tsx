@@ -224,6 +224,14 @@ export function SetDiagramEditor({ config, showSolutions = true, settingsMode = 
 
       <section className="flex flex-col gap-2 border-t pt-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optional totals</div>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={data.totalsSolutionOnly === true}
+            onChange={(event) => patchSetData({ ...data, totalsSolutionOnly: event.target.checked })}
+          />
+          Totals in solutions only (keep blank tabs and box for students)
+        </label>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <label className="flex flex-col gap-2 text-xs font-medium">
             U total box

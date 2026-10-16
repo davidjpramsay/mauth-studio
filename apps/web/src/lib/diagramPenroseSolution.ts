@@ -76,6 +76,7 @@ export function createPenroseSolutionSegment(
 export function penroseConfigHasSolutionOnly(config: GraphConfig) {
   const data = asRecord(config.data);
   if (!data) return false;
+  if (config.type === "setDiagram" && data.totalsSolutionOnly === true) return true;
   return [data.objects, data.relationships, data.regions].some((value) => recordArray(value).some((entry) => entry.solutionOnly === true));
 }
 
@@ -133,7 +134,17 @@ export function previewPenroseConfigForSolutionVisibility(config: GraphConfig, s
           }
         : region,
     );
-    return { ...config, data: { ...data, regions } };
+    const blankTotal = (entry: Record<string, unknown>) => ({ ...entry, countBlank: true });
+    return {
+      ...config,
+      data: {
+        ...data,
+        regions,
+        ...(data.totalsSolutionOnly === true
+          ? { universe: blankTotal(asRecord(data.universe) ?? {}), sets: recordArray(data.sets).map(blankTotal) }
+          : {}),
+      },
+    };
   }
 
   const hiddenObjectNames = new Set(

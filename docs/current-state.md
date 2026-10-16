@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 16 September 2026.
+Last reviewed: 16 October 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,8 +52,20 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; includes native document commands, the bridge timeout recovery repair and earlier diagram-completion spacing rules; the installed app and public installer remain unchanged
+worktree: clean at this checkpoint; includes the focused print-diagram and shared Venn completion changes, tests and authoring docs
 ```
+
+### 16 October Source And Installed-App Comparison
+
+The recent Venn completion and print regression changes are included in this clean source checkpoint. The installed app is version 0.1.6. All eleven packaged desktop modules, the rebuilt Penrose renderer bundle, and diagram authoring rules match the current source byte for byte. All 22 editor build files match: fifteen exactly and seven after normalizing the generated build timestamp and resulting chunk filenames. The installed app therefore already contains these fixes. Fresh `pnpm check` and both `tests/visual/print-diagrams.spec.mjs` browser regressions pass. The installed app has no `app-update.yml`, so automatic updates remain disabled. The latest published release remains 0.1.5; pushing this checkpoint does not publish an installer.
+
+### 23 September Print Diagrams And Shared Venn Completion
+
+The installed older development checkpoint could print before its Penrose surface settled. The current source's print readiness gate covers that asynchronous renderer and refuses errors; the new browser regression deliberately delays a native Venn response and checks the Solutions print stage before exporting. The graph regression verifies ten visible data dots and hidden helper geometry. An initial visual report of an extra printed dot was incorrect: connected-component counting of the original rasterized PDF confirmed ten dots. No graph or print-CSS repair was needed; regenerated PDFs must not retain the earlier manual overlays.
+
+Supplied Venn completion diagrams stay shared. Answer regions use `solutionOnly`; `data.totalsSolutionOnly` leaves the existing total tabs and universe box blank in Student mode. Optional totals exposes that setting to teachers. The native renderer preserves explicit empty region labels. Statistical-chart visibility now rejects other diagram types, preventing it from removing Venn answer-region records before the Venn renderer can blank them. Browser regressions check blank regions and three empty badges in Student mode and all answers in Solutions mode.
+
+The prior release app bundle is preserved at `release/mac-arm64-before-print-fix-20260923/Mauth Studio.app`; signed ZIP/DMG artifacts and public distribution are untouched. The fresh local build passed hardened verification, was installed, and reopened the saved Year 10 assessment at revision 6 with its other recovered tabs retained. Native Student and Solutions PDF exports were regenerated directly from the installed app and all 11 pages in each copy were visually checked; the Student Venn retains the blank diagram and total tabs, while Solutions fills its numbers. Full `pnpm check`, nine browser rendering/print checks, and the live handoff check passed. No release has been published by this task.
 
 ### 16 September Release Preparation
 

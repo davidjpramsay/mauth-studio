@@ -308,12 +308,14 @@ function defaultSetEntries(spec) {
       name: assertIdentifier(universe.name ?? "U", "Universe name"),
       label: universe.label ?? "U",
       countLabel: universe.countLabel ?? universe.count ?? universe.total ?? universe.totalLabel,
+      countBlank: universe.countBlank === true,
     },
     sets: setEntries.map((entry, index) => {
       const source = (Array.isArray(sets) ? sets : [])[index] ?? {};
       return {
         ...entry,
         countLabel: source.countLabel ?? source.count ?? source.total ?? source.totalLabel,
+        countBlank: source.countBlank === true,
       };
     }),
     regions: regionDefaults.map((fallback, index) => {
@@ -366,6 +368,8 @@ function normalizeSetLabel(label) {
 }
 
 function setRegionText(label, fallback) {
+  // An explicit empty label is a student answer slot, not missing data.
+  if (label === "") return "";
   const text = normalizeSetLabel(label);
   if (!text) return fallback;
   if (/^[A-Za-z]\s*∩\s*[A-Za-z]$/.test(text)) return text;
@@ -518,8 +522,8 @@ function setRegionShadeColor(region) {
 
 function setCountBadge(text, x, y, type = "box", options = {}) {
   if (text === undefined || text === null || text === "") return "";
-  const label = normalizeSetLabel(text);
-  if (!label) return "";
+  const label = options.blank ? "" : normalizeSetLabel(text);
+  if (!label && !options.blank) return "";
   const fontSize = formatSvgNumber(13.333 * (options.textScale ?? 1));
   if (type === "left-tab" || type === "right-tab") {
     const radius = options.radius ?? 86;
@@ -531,7 +535,7 @@ function setCountBadge(text, x, y, type = "box", options = {}) {
     const sweep = type === "left-tab" ? 1 : 0;
     return `<g data-role="set-count-badge" data-badge-kind="${type}"><path d="M ${formatSvgNumber(edgeX)} ${y - dy} A ${SET_DIAGRAM_SIDE_TAB_RADIUS} ${SET_DIAGRAM_SIDE_TAB_RADIUS} 0 0 ${sweep} ${formatSvgNumber(edgeX)} ${y + dy}" fill="none" stroke="#111827" stroke-width="2.1"/><text x="${formatSvgNumber(textX)}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
   }
-  const width = Math.max(34, label.length * 8 + 16);
+  const width = Math.max(34, normalizeSetLabel(text).length * 8 + 16);
   const height = 34;
   return `<g data-role="set-count-badge" data-badge-kind="box"><rect x="${x - width / 2}" y="${y - height / 2}" width="${width}" height="${height}" fill="#ffffff" stroke="#111827" stroke-width="2.1"/><text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
 }
@@ -658,10 +662,10 @@ function renderThreeSetDiagramSvg(spec, substance) {
       ),
     )
     .join("\n  ")}
-  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale })}
-  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale })}
-  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale })}
-  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale })}
+  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale, blank: universe.countBlank })}
+  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale, blank: leftSet.countBlank })}
+  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale, blank: rightSet.countBlank })}
+  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale, blank: lowerSet.countBlank })}
 </svg>`;
 
   return {
@@ -764,9 +768,9 @@ function renderSetDiagramSvg(spec, substance) {
   ${setSvgText(regionLabels.intersection, regionLabelPositions.intersection.x, regionLabelPositions.intersection.y, setRegionTextOptions(regions[1], textScale))}
   ${setSvgText(regionLabels.onlyB, regionLabelPositions.onlyB.x, regionLabelPositions.onlyB.y, setRegionTextOptions(regions[2], textScale))}
   ${setSvgText(regionLabels.outside, 342, 250, setRegionTextOptions(regions[3], textScale))}
-  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale })}
-  ${setCountBadge(leftSet.countLabel, left.cx, left.cy, "left-tab", { textScale, radius: left.r })}
-  ${setCountBadge(rightSet.countLabel, right.cx, right.cy, "right-tab", { textScale, radius: right.r })}
+  ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale, blank: universe.countBlank })}
+  ${setCountBadge(leftSet.countLabel, left.cx, left.cy, "left-tab", { textScale, blank: leftSet.countBlank, radius: left.r })}
+  ${setCountBadge(rightSet.countLabel, right.cx, right.cy, "right-tab", { textScale, blank: rightSet.countBlank, radius: right.r })}
 </svg>`;
 
   return {

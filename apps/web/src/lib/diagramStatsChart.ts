@@ -102,6 +102,7 @@ export function statsChartDataWithRegions(config: GraphConfig, regions: StatsCha
 }
 
 export function statsChartConfigForSolutionVisibility(config: GraphConfig, showSolutions: boolean, solutionColor?: string): GraphConfig {
+  if (config.type !== "statsChart") return config;
   const series = statsChartSeries(config);
   const regions = statsChartRegions(config);
   const hasSolutionSeries = series.some(isSolutionOnlyStatsChartSeries);

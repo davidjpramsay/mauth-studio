@@ -1,5 +1,7 @@
 # AI Rule Brains
 
+For a supplied Venn completion diagram, keep the diagram block shared. Mark answer regions `solutionOnly: true` and use `data.totalsSolutionOnly: true` to leave empty total tabs and the universe total box in Student mode. Do not mark the entire diagram solutions-only unless students must draw it from scratch. The teacher can change the total setting under Optional totals. Explicit empty region labels remain blank in the native renderer.
+
 Mauth uses small, composable AI rule brains instead of one large prompt. A brain is a focused rule set that operates on the shared Mauthdown/test schema.
 
 The brains are for external/local agents and future explicit AI surfaces. They are not tied to a built-in provider chat panel.

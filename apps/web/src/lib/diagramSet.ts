@@ -169,6 +169,7 @@ export function normalizedSetDiagramData(config: GraphConfig): NormalizedSetDiag
   });
   return {
     setCount,
+    totalsSolutionOnly: asRecord(config.data)?.totalsSolutionOnly === true,
     universe: {
       ...DEFAULT_SET_DATA.universe,
       ...universe,
