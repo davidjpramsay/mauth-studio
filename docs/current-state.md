@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 16 October 2026.
+Last reviewed: 20 October 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,8 +52,20 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; includes the focused print-diagram and shared Venn completion changes, tests and authoring docs
+worktree: clean at this checkpoint; includes aligned solution-row marks, the shared tick style, square test-conditions panel corners and authoring docs
 ```
+
+### 20 October Aligned Solution Row Marks
+
+Continuous `aligned`, `align`, and `align*` maths now accepts hidden `[[marks:n]]` on individual outer rows. The parser preserves nested cases/matrices and explicit row gaps, strips metadata before MathJax, and the renderer places red right-margin ticks using the actual SVG row baselines. The maths remains one typeset table; marks are hidden when disabled and existing block-level annotations remain supported. Four new parser regressions and three browser regressions cover row ownership, fractions, nested environments, metadata hiding, responsive sizing and real PDF printing. The browser geometry check passes with subpixel baseline matching.
+
+Aligned-row ticks share the existing tick font family and weight through one CSS rule. This preserves the original rounded tick shape rather than selecting the different Arial fallback glyph; the three browser checks compare both tick styles on screen, at compact width, and in print.
+
+Standard-test conditions panels now have square corners, including flat ends on their left accent border, matching the scanned teacher correction. The rendered assessment check covers both title pages in Student and Solutions mode.
+
+The local hardened app build and installation passed; the installed app and MCP use this renderer. Year 11 Methods Test 4 now has an ACC master at revision 14 and a Cornerstone copy at revision 2, both clean with 8 questions, 50 marks, 18 checked items and zero validation errors/warnings. The derivative-sketch question was removed; section times are 32 minutes Resource Free and 18 minutes Resource Assumed. The scanned teacher corrections are applied: lowercase constants, a colon, an alternative second-derivative test, exact grid bounds, separate sketch-marking lines, less space in Question 6, bold speed wording, and a five-mark maximum-area question replacing first principles. Question 8 retains its endpoint check and replaces the formal limit with a short decreasing-function justification. The versions have identical content and differ only in school branding. Fresh Student and Solutions print-renderer PDFs each have 11 A4 pages, Solutions has exactly 50 visible ticks, Student has none, and all four PDFs pass qpdf. All pages were reviewed; question pages are pixel-identical across the two brands. Independent symbolic checks confirm the new maximum garden area of 200 square metres and the Question 8 endpoint maximum of 1445 at 100 chips. Printing holds ACC and Cornerstone subfolders with both PDF copies, the ACC master remains in its assessment folder, the Cornerstone editable document is in its Printing subfolder, and prior PDFs and the teacher scan are preserved.
+
+Google Drive initially left the assessment and hidden index dataless. A normal app restart stalled on an orphaned helper; after that helper was terminated and Drive relaunched, both files downloaded and the original assessment matched the preserved draft exactly. Native file panels remained disabled and native screenshots stale in this automation session, so do not claim successful native PDF-dialog export: final PDFs were exported through the same source print renderer in an isolated Chromium run from the actual saved ACC file, with mocked APIs that cannot edit teacher storage. The Browser plugin was unavailable; regular Playwright provided the rendering and baseline checks. A local recovery copy remains under `~/Documents/Mauth/Year 11 Methods Test 4`; detailed transient evidence is under `/tmp/mauth-row-marks-20261020`. No release was published.
 
 ### 16 October Source And Installed-App Comparison
 
@@ -317,12 +329,12 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 16 September 2026:
+Latest full gate on 20 October 2026:
 
 ```text
 formatting and lint: passed
 API: 112 passed
-web/actions: 707 passed
+web/actions: 712 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
 launcher: 72 passed (desktop, connector, and CI contract)

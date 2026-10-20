@@ -226,6 +226,18 @@ Line breaks inside a text block are preserved in the preview and printed PDF out
 
 For solution copies, add `[[marks:n]]` at the end of a mark-worthy text or equation line. The preview hides the raw annotation and renders `n` large red check marks at the right edge of that line. In the editor, solution-only text blocks provide mark-tick buttons that insert these hidden annotations at the cursor. Do not write visible `[1 mark]`, `(1 mark)`, or `Solution (5 marks)` notes in displayed solution prose. Completed solution tables and diagrams can carry `markTicks` so the red check marks render next to the completed surface instead of a following text line.
 
+Inside one continuous `aligned` (or `align`/`align*`) math block, place each `[[marks:n]]` immediately before its owning row's `\\` separator, or before the closing environment for the last row. Unmarked rows remain unmarked. Mauth removes the annotations before MathJax typesetting and places the red ticks at the right margin using the rendered row baselines, so fractions, nested cases/matrices, and explicit row gaps retain their alignment in preview and print. Keep annotations outside nested environments. Row marks contribute to the same solution-mark total as ordinary line and surface marks; they are hidden when solution marks are off. For example:
+
+```latex
+$$\begin{aligned}
+f(x)&=6x^{-2}\\[3pt]
+f'(x)&=-12x^{-3} [[marks:1]]\\[3pt]
+&=-\dfrac{12}{x^3} [[marks:1]]
+\end{aligned}$$
+```
+
+Use one mark location per allocation: when rows carry marks, do not repeat their total after the closing maths delimiter. A trailing annotation outside the maths still marks the whole block for legacy documents and deliberately grouped allocations.
+
 Use the generous student answer space for readable vertical working in solution copies. A normal calculation solution should usually have one equation, method step, answer line, or short conclusion per line. Put each hidden `[[marks:1]]` tick on the exact line or completed surface that earns that mark, so the red tick aligns with the awarded work. For ordinary multi-step items, prefer several one-mark tick lines over one dense paragraph ending with `[[marks:2]]` or `[[marks:3]]`. The shared renderer leaves enough vertical clearance for display-size inline fractions on adjacent lines; keep words short and marking-focused, and do not add blank lines merely to separate ordinary worked steps.
 
 Keep currency symbols outside dollar-delimited maths in question and solution text. Write `$51.02$ dollars`, `\$51.02`, or plain `51.02 dollars`; do not write `$\$51.02$`, `$1 game`, or `$0.094 per game`.
