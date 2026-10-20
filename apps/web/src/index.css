@@ -2242,6 +2242,27 @@
     width: 100%;
   }
 
+  .mathjax-aligned-marks {
+    align-items: start;
+    column-gap: 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    text-align: left;
+    white-space: normal;
+    width: 100%;
+  }
+
+  .mathjax-aligned-marks > mjx-container[jax="SVG"] {
+    display: block;
+    margin: 0;
+  }
+
+  .mathjax-aligned-marks > mjx-container[jax="SVG"] > svg,
+  .mathjax-aligned-marks > .solution-row-marks {
+    display: block;
+    overflow: visible;
+  }
+
   .test-marked-display {
     align-items: center;
     margin: var(--test-block-margin-block, 0.45rem 0 0.35rem);
@@ -2302,12 +2323,16 @@
     padding: 0 0.26rem;
   }
 
+  .solution-mark-ticks,
+  .solution-row-marks text {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-weight: 800;
+  }
+
   .solution-mark-ticks {
     color: #c1121f;
     display: inline-flex;
-    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     font-size: 1.45em;
-    font-weight: 800;
     gap: 0.08em;
     line-height: 1;
     white-space: nowrap;

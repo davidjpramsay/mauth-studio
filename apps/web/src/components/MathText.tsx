@@ -298,7 +298,7 @@ export function MixedMath({
         if (segment.type === "display" || segment.type === "marked-display") {
           const displayMath = (
             <div className="test-display-math">
-              <Latex latex={segment.content} block />
+              <Latex latex={segment.content} block showSolutionMarks={showSolutionMarks} />
             </div>
           );
           if (marks) {
@@ -311,7 +311,7 @@ export function MixedMath({
           }
           return (
             <div key={`${segment.content}-${index}`} className="test-display-math">
-              <Latex latex={segment.content} block />
+              <Latex latex={segment.content} block showSolutionMarks={showSolutionMarks} />
             </div>
           );
         }
@@ -324,16 +324,18 @@ export function MixedMath({
             return (
               <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
                 <span>
-                  <InlineMathText source={textContent} />
+                  <InlineMathText source={textContent} showSolutionMarks={showSolutionMarks} />
                 </span>
                 <SolutionMarkTicks count={marks} />
               </div>
             );
           }
-          return <InlineMathText key={`${segment.content}-${index}`} source={textContent} />;
+          return <InlineMathText key={`${segment.content}-${index}`} source={textContent} showSolutionMarks={showSolutionMarks} />;
         }
         if (segment.type === "inline") {
-          const inlineMath = <Latex latex={segment.content} plainSimpleInlineLatex={plainSimpleInlineLatex} />;
+          const inlineMath = (
+            <Latex latex={segment.content} plainSimpleInlineLatex={plainSimpleInlineLatex} showSolutionMarks={showSolutionMarks} />
+          );
           if (marks) {
             return (
               <div key={`${segment.content}-${index}`} className="test-marked-line test-marked-text">
@@ -367,7 +369,17 @@ export function MixedMath({
   );
 }
 
-function InlineMathText({ source, className, truncate = false }: { source: string; className?: string; truncate?: boolean }) {
+function InlineMathText({
+  source,
+  className,
+  truncate = false,
+  showSolutionMarks = false,
+}: {
+  source: string;
+  className?: string;
+  truncate?: boolean;
+  showSolutionMarks?: boolean;
+}) {
   const segments = useMemo(() => parseMixedMath(source), [source]);
   return (
     <span className={cn(truncate ? "inline-math-truncate" : "inline min-w-0", className)} title={source}>
@@ -375,7 +387,7 @@ function InlineMathText({ source, className, truncate = false }: { source: strin
         if (segment.type === "text" || segment.type === "marked-text") {
           return <FormattedInlineText key={`${segment.content}-${index}`} text={segment.content} />;
         }
-        return <Latex key={`${segment.content}-${index}`} latex={segment.content} />;
+        return <Latex key={`${segment.content}-${index}`} latex={segment.content} showSolutionMarks={showSolutionMarks} />;
       })}
     </span>
   );
