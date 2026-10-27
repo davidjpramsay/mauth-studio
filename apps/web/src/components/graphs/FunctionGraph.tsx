@@ -36,6 +36,7 @@ import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/li
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
 import { geometry2dConfigWithLabelPosition, type Geometry2DLabelPrimitiveKind } from "@/lib/diagramGeometry2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
+import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
 import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
 
@@ -1028,51 +1029,6 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
-function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: (x: number, y: number) => void) {
-  const draggableText = text as JXGElement;
-  const node = draggableText.rendNode;
-  if (!node || node.dataset.mauthDragBound === "true") return;
-
-  node.dataset.mauthDragBound = "true";
-  draggableText.isDraggable = false;
-  node.style.setProperty("cursor", "move");
-  node.style.setProperty("pointer-events", "auto");
-  node.style.setProperty("user-select", "none");
-  node.style.setProperty("-webkit-user-select", "none");
-  node.style.setProperty("touch-action", "none");
-  node.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    const start = textCoordinates(text);
-    if (!start) return;
-    const sizedBoard = board as JXG.Board & { unitX?: number; unitY?: number };
-    const unitX = sizedBoard.unitX || 1;
-    const unitY = sizedBoard.unitY || 1;
-    const startClientX = event.clientX;
-    const startClientY = event.clientY;
-
-    event.preventDefault();
-    event.stopPropagation();
-    node.setPointerCapture?.(event.pointerId);
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      moveEvent.preventDefault();
-      const x = start[0] + (moveEvent.clientX - startClientX) / unitX;
-      const y = start[1] - (moveEvent.clientY - startClientY) / unitY;
-      moveElement(text, x, y);
-      board.update();
-    };
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      node.releasePointerCapture?.(upEvent.pointerId);
-      const coords = textCoordinates(text);
-      if (coords) onMove(coords[0], coords[1]);
-    };
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
-  });
-}
-
 function setRenderedDataAttributes(element: unknown, attributes: Record<string, string | undefined>) {
   if (!element || typeof element !== "object") return;
   const node = (element as JXGElement).rendNode;
@@ -1197,7 +1153,9 @@ function createAxisLabelText(
   } as Record<string, unknown>);
   if (onMove) {
     window.requestAnimationFrame(() =>
-      enableHtmlTextDragging(board, text, (nextX, nextY) => onMove(Number(nextX.toFixed(6)), Number(nextY.toFixed(6)))),
+      enableHtmlTextDragging(board, text, (nextX, nextY) =>
+        onMove(Number((nextX - positionX + x).toFixed(6)), Number((nextY - positionY + y).toFixed(6))),
+      ),
     );
   }
 }

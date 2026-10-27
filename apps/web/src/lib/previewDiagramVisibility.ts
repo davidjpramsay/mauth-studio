@@ -10,10 +10,11 @@ import {
 } from "./diagramGeometry2d.ts";
 import { graph3dConfigForSolutionVisibility } from "./diagramGraph3d.ts";
 import { statsChartConfigForSolutionVisibility } from "./diagramStatsChart.ts";
-import { vector2dConfigForSolutionVisibility } from "./diagramVector2d.ts";
+import { vector2dConfigForSolutionVisibility, vector2dConfigWithLabelPosition, type Vector2DElementKind } from "./diagramVector2d.ts";
 
 export type GraphLabelPositionChange = { x: number; y: number } & (
   | { kind: "geometry2d"; primitiveKind: Geometry2DLabelPrimitiveKind; id: string }
+  | { kind: "vector2d"; elementKind: Vector2DElementKind; id: string }
   | { kind: "function"; index: number }
   | { kind: "feature" | "free-label"; index: number }
 );
@@ -26,6 +27,9 @@ export function graphConfigWithLabelPosition(graphConfig: GraphConfig, visibleCo
   const y = Number(change.y.toFixed(6));
   if (change.kind === "geometry2d") {
     return geometry2dConfigWithLabelPosition(graphConfig, change.primitiveKind, change.id, x, y);
+  }
+  if (change.kind === "vector2d") {
+    return vector2dConfigWithLabelPosition(graphConfig, change.elementKind, change.id, x, y);
   }
   if (change.kind === "function") {
     const functions =

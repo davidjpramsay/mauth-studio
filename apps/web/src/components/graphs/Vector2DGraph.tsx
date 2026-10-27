@@ -3,6 +3,9 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 
 import { renderMathJaxSvg } from "@/lib/mathjax";
+import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
+import { vector2dConfigWithLabelPosition, type Vector2DElementKind } from "@/lib/diagramVector2d";
+import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
 
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, stripGraphLatexDelimiters } from "./graphTypography";
 
@@ -408,13 +411,6 @@ function axisArrowAttributes() {
   return { type: 1, size: AXIS_ARROW_SIZE, highlightSize: AXIS_ARROW_SIZE };
 }
 
-function textCoordinates(text: unknown): [number, number] | null {
-  const candidate = text as JXGElement;
-  const x = typeof candidate.X === "function" ? candidate.X() : candidate.coords?.usrCoords?.[1];
-  const y = typeof candidate.Y === "function" ? candidate.Y() : candidate.coords?.usrCoords?.[2];
-  return Number.isFinite(x) && Number.isFinite(y) ? [x as number, y as number] : null;
-}
-
 function boardUnit(board: JXG.Board, axis: "x" | "y") {
   const unit = (board as JXG.Board & { unitX?: number; unitY?: number })[axis === "x" ? "unitX" : "unitY"];
   return typeof unit === "number" && Number.isFinite(unit) && unit > 0 ? unit : 1;
@@ -653,16 +649,7 @@ function createVectorLabelText(
   } as Record<string, unknown>);
 
   if (onMove) {
-    const draggableText = text as unknown as JXGElement;
-    draggableText.isDraggable = true;
-    draggableText.rendNode?.style.setProperty("cursor", "move");
-    draggableText.rendNode?.style.setProperty("user-select", "none");
-    draggableText.rendNode?.style.setProperty("-webkit-user-select", "none");
-    draggableText.rendNode?.style.setProperty("touch-action", "none");
-    draggableText.on?.("up", () => {
-      const coords = textCoordinates(text);
-      if (coords) onMove(Number(coords[0].toFixed(6)), Number(coords[1].toFixed(6)));
-    });
+    window.requestAnimationFrame(() => enableHtmlTextDragging(board, text, onMove));
   }
 }
 
@@ -675,14 +662,15 @@ function createAxisLabelText(
   anchorX: "left" | "middle" | "right",
   anchorY: "top" | "middle" | "bottom",
   attributes: Record<string, string | undefined> = { "data-mauth-label-role": "axis-label" },
+  onMove?: (x: number, y: number) => void,
 ) {
   const axisLabelCss = `${GRAPH_LABEL_FONT_CSS} color:${AXIS_COLOR}; user-select:none; -webkit-user-select:none; touch-action:none;`;
   // JSXGraph only applies `offset` to labels attached to another element, not
   // to standalone HTML text. Convert the intended screen-pixel correction to
   // board coordinates so axis numbers and letters visibly clear the stroke.
   const [positionX, positionY] = offsetUserByPixels(board, x, y, offset[0], -offset[1]);
-  board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
-    fixed: true,
+  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
+    fixed: !onMove,
     highlight: false,
     strokeColor: AXIS_COLOR,
     highlightStrokeColor: AXIS_COLOR,
@@ -696,61 +684,22 @@ function createAxisLabelText(
     parse: false,
     layer: GRAPH_LAYERS.axisLabel,
   } as Record<string, unknown>);
-}
-
-function vector2dMetadataForSave(graphConfig: GraphConfig | undefined | null, vectors: Vector2DEntry[]) {
-  const metadata = graphConfig?.metadata ?? {};
-  const vectorData =
-    typeof metadata.vector2d === "object" && metadata.vector2d !== null ? (metadata.vector2d as Record<string, unknown>) : {};
-  return {
-    ...metadata,
-    vector2d: {
-      ...vectorData,
-      vectors: vectors.map(({ id, name, label, start, components, color, showComponents, labelX, labelY }) => ({
-        id,
-        name,
-        label,
-        start,
-        components,
-        color,
-        showComponents,
-        ...(Number.isFinite(labelX) ? { labelX } : {}),
-        ...(Number.isFinite(labelY) ? { labelY } : {}),
-      })),
-    },
-  };
-}
-
-function vector2dMetadataWithAnnotationLabelPosition(
-  graphConfig: GraphConfig | undefined | null,
-  collectionKey: "segmentLabels" | "angleMarkers",
-  id: string,
-  x: number,
-  y: number,
-) {
-  const metadata = graphConfig?.metadata ?? {};
-  const vectorData =
-    typeof metadata.vector2d === "object" && metadata.vector2d !== null ? (metadata.vector2d as Record<string, unknown>) : {};
-  const collection = Array.isArray(vectorData[collectionKey]) ? (vectorData[collectionKey] as unknown[]) : [];
-  return {
-    ...metadata,
-    vector2d: {
-      ...vectorData,
-      [collectionKey]: collection.map((entry, index) => {
-        const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {};
-        const fallbackId = `${collectionKey === "segmentLabels" ? "segment-label" : "angle-marker"}-${index + 1}`;
-        return String(record.id ?? fallbackId) === id ? { ...record, labelX: x, labelY: y } : record;
-      }),
-    },
-  };
+  if (onMove)
+    window.requestAnimationFrame(() =>
+      enableHtmlTextDragging(board, text, (nextX, nextY) => onMove(nextX - positionX + x, nextY - positionY + y)),
+    );
 }
 
 export function Vector2DGraph({
   graphConfig,
   onGraphConfigChange,
+  onGraphConfigPatch,
+  onLabelPositionChange,
 }: {
   graphConfig?: GraphConfig | null;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
+  onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
+  onLabelPositionChange?: (change: GraphLabelPositionChange) => void;
 }) {
   const boardId = useMemo(() => `jxg-vector-${Math.random().toString(36).slice(2)}`, []);
 
@@ -821,20 +770,17 @@ export function Vector2DGraph({
 
     const vectors = vector2dEntries(graphConfig);
     const annotationData = vector2dAnnotationData(graphConfig);
-    const commitVectorLabelPosition = (vectorIndex: number, x: number, y: number) => {
-      if (!onGraphConfigChange || !graphConfig) return;
-      const nextVectors = vectors.map((vector, index) => (index === vectorIndex ? { ...vector, labelX: x, labelY: y } : vector));
-      onGraphConfigChange({
-        ...graphConfig,
-        metadata: vector2dMetadataForSave(graphConfig, nextVectors),
-      });
+    const canMoveLabels = Boolean(onGraphConfigChange || onLabelPositionChange);
+    const commitLabelPosition = (elementKind: Vector2DElementKind, id: string, x: number, y: number) => {
+      if (onLabelPositionChange) return onLabelPositionChange({ kind: "vector2d", elementKind, id, x, y });
+      if (onGraphConfigChange && graphConfig) onGraphConfigChange(vector2dConfigWithLabelPosition(graphConfig, elementKind, id, x, y));
     };
-    const commitAnnotationLabelPosition = (collectionKey: "segmentLabels" | "angleMarkers", id: string, x: number, y: number) => {
-      if (!onGraphConfigChange || !graphConfig) return;
-      onGraphConfigChange({
-        ...graphConfig,
-        metadata: vector2dMetadataWithAnnotationLabelPosition(graphConfig, collectionKey, id, x, y),
-      });
+    const commitAxisLabelPosition = (axis: "x" | "y", x: number, y: number) => {
+      const positionX = Number(x.toFixed(6)),
+        positionY = Number(y.toFixed(6));
+      const patch = axis === "x" ? { xAxisLabelX: positionX, xAxisLabelY: positionY } : { yAxisLabelX: positionX, yAxisLabelY: positionY };
+      if (onGraphConfigPatch) onGraphConfigPatch(patch);
+      else if (onGraphConfigChange && graphConfig) onGraphConfigChange({ ...graphConfig, ...patch });
     };
 
     if (showGrid) {
@@ -992,18 +938,30 @@ export function Vector2DGraph({
       if (showAxisLabels) {
         createAxisLabelText(
           board,
-          xMax + xAxisExtension,
-          0,
+          Number.isFinite(graphConfig?.xAxisLabelX) ? graphConfig!.xAxisLabelX! : xMax + xAxisExtension,
+          Number.isFinite(graphConfig?.xAxisLabelY) ? graphConfig!.xAxisLabelY! : 0,
           graphConfig?.xAxisLabel?.trim() || "\\mathbf{i}",
           [-10, 8],
           "middle",
           "bottom",
+          { "data-mauth-label-role": "axis-label", "data-mauth-axis-label": "x" },
+          onGraphConfigChange || onGraphConfigPatch ? (x, y) => commitAxisLabelPosition("x", x, y) : undefined,
         );
-        createAxisLabelText(board, 0, yMax + yAxisExtension, graphConfig?.yAxisLabel?.trim() || "\\mathbf{j}", [8, -8], "left", "bottom");
+        createAxisLabelText(
+          board,
+          Number.isFinite(graphConfig?.yAxisLabelX) ? graphConfig!.yAxisLabelX! : 0,
+          Number.isFinite(graphConfig?.yAxisLabelY) ? graphConfig!.yAxisLabelY! : yMax + yAxisExtension,
+          graphConfig?.yAxisLabel?.trim() || "\\mathbf{j}",
+          [8, -8],
+          "left",
+          "bottom",
+          { "data-mauth-label-role": "axis-label", "data-mauth-axis-label": "y" },
+          onGraphConfigChange || onGraphConfigPatch ? (x, y) => commitAxisLabelPosition("y", x, y) : undefined,
+        );
       }
     }
 
-    vectors.forEach((vector, vectorIndex) => {
+    vectors.forEach((vector) => {
       const end = vectorEnd(vector);
       const elbow: [number, number] = [end[0], vector.start[1]];
       if (vector.showComponents) {
@@ -1040,7 +998,7 @@ export function Vector2DGraph({
           labelY,
           labelLatex,
           vector.color,
-          onGraphConfigChange ? (x, y) => commitVectorLabelPosition(vectorIndex, x, y) : undefined,
+          canMoveLabels ? (x, y) => commitLabelPosition("vector", vector.id, x, y) : undefined,
           { "data-mauth-label-role": "vector", "data-mauth-vector-id": vector.id },
         );
       }
@@ -1048,12 +1006,7 @@ export function Vector2DGraph({
     annotationData.segmentLabels.forEach((label) => {
       const vector = vectorByReference(vectors, label.vectorId);
       if (vector) {
-        drawSegmentLabel(
-          board,
-          vector,
-          label,
-          onGraphConfigChange ? (x, y) => commitAnnotationLabelPosition("segmentLabels", label.id, x, y) : undefined,
-        );
+        drawSegmentLabel(board, vector, label, canMoveLabels ? (x, y) => commitLabelPosition("segmentLabel", label.id, x, y) : undefined);
       }
     });
     annotationData.angleMarkers.forEach((marker) =>
@@ -1061,11 +1014,11 @@ export function Vector2DGraph({
         board,
         vectors,
         marker,
-        onGraphConfigChange && marker.label.trim() ? (x, y) => commitAnnotationLabelPosition("angleMarkers", marker.id, x, y) : undefined,
+        canMoveLabels && marker.label.trim() ? (x, y) => commitLabelPosition("angleMarker", marker.id, x, y) : undefined,
       ),
     );
     return () => JXG.JSXGraph.freeBoard(board);
-  }, [boardId, graphConfig, onGraphConfigChange]);
+  }, [boardId, graphConfig, onGraphConfigChange, onGraphConfigPatch, onLabelPositionChange]);
 
   return (
     <div

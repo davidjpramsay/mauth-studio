@@ -117,7 +117,14 @@ function PreviewDiagramContent({
         />
       );
     case "vector2d":
-      return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <Vector2DGraph
+          graphConfig={config}
+          onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
+        />
+      );
     case "graph3d":
     case "basic3d":
       return <Basic3DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;

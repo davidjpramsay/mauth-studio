@@ -4,6 +4,7 @@ import type { GraphConfig, GraphFeature } from "@mauth-studio/shared";
 
 import { geometry2dData } from "./diagramGeometry2d.ts";
 import { normalizedGraph3DElements } from "./diagramGraph3d.ts";
+import { vector2dMetadata } from "./diagramVector2d.ts";
 import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
@@ -67,6 +68,74 @@ test("axis-label presentation patches preserve hidden solution content", () => {
   assert.equal(result.features, config.features);
   assert.equal(result.xAxisLabelX, 4);
   assert.equal(result.xAxisLabelY, 0.25);
+});
+
+test("vector label edits preserve raw metadata and hidden geometry across both authoring layers", () => {
+  const answer = { id: "answer", name: "r", start: [0, 0], components: [3, 4], solutionOnly: true, color: "#123456" };
+  const shared = { id: "a", name: "a", start: [0, 0], components: [4, 1], color: "#abcdef", custom: "preserve" };
+  const config: GraphConfig = {
+    type: "vector2d",
+    metadata: {
+      custom: "document",
+      vector2d: {
+        custom: "settings",
+        vectors: [answer, shared],
+        segmentLabels: [
+          { vectorId: "a", label: "L", solutionOnly: true },
+          { vectorId: "a", label: "M", custom: "segment" },
+        ],
+        angleMarkers: [
+          { from: "a", to: "answer", solutionOnly: true },
+          { from: "a", to: "answer", label: "theta", custom: "angle" },
+        ],
+      },
+    },
+  };
+  for (const solutions of [false, true]) {
+    const visible = previewVector2DConfigForSolutionVisibility(config, solutions, "#1d4ed8");
+    const moved = graphConfigWithLabelPosition(config, visible, { kind: "vector2d", elementKind: "vector", id: "a", x: 2, y: 3 });
+    const metadata = vector2dMetadata(moved);
+    assert.deepEqual(metadata.vectors, [answer, { ...shared, labelX: 2, labelY: 3 }]);
+    assert.equal(moved.metadata?.custom, "document");
+    assert.equal(metadata.custom, "settings");
+    for (const [kind, listKey, id, custom] of [
+      ["segmentLabel", "segmentLabels", "segment-label-2", "segment"],
+      ["angleMarker", "angleMarkers", "angle-marker-2", "angle"],
+    ] as const) {
+      const changed = graphConfigWithLabelPosition(config, visible, { kind: "vector2d", elementKind: kind, id, x: 2, y: 3 });
+      const list = vector2dMetadata(changed)[listKey] as Record<string, unknown>[];
+      assert.equal(list[1].custom, custom);
+      assert.equal(list[1].labelX, 2);
+      assert.equal(list[1].labelY, 3);
+      assert.deepEqual(list[0], (vector2dMetadata(config)[listKey] as unknown[])[0]);
+    }
+    const movedAnswer = graphConfigWithLabelPosition(config, visible, {
+      kind: "vector2d",
+      elementKind: "vector",
+      id: "answer",
+      x: 2,
+      y: 3,
+    });
+    assert.equal((vector2dMetadata(movedAnswer).vectors as Record<string, unknown>[])[0].color, "#123456");
+  }
+  assert.equal(
+    graphConfigWithLabelPosition(config, config, { kind: "vector2d", elementKind: "vector", id: "missing", x: 2, y: 3 }),
+    config,
+  );
+  assert.deepEqual(vector2dMetadata(config).vectors, [answer, shared]);
+});
+
+test("legacy vector ids are resolved before solution filtering and persist to the correct raw row", () => {
+  const hidden = { start: [0, 0], components: [3, 4], solutionOnly: true, custom: "hidden" };
+  const shared = { start: [0, 0], components: [4, 1], custom: "shared" };
+  const config: GraphConfig = { type: "vector2d", metadata: { vectors: [hidden, shared] } };
+  const visible = previewVector2DConfigForSolutionVisibility(config, false);
+  const rendered = vector2dMetadata(visible).vectors as Record<string, unknown>[];
+  assert.equal(rendered.length, 1);
+  assert.equal(rendered[0].id, "b");
+  const moved = graphConfigWithLabelPosition(config, visible, { kind: "vector2d", elementKind: "vector", id: "b", x: 2, y: 3 });
+  assert.deepEqual(vector2dMetadata(moved).vectors, [hidden, { ...shared, labelX: 2, labelY: 3 }]);
+  assert.deepEqual(config.metadata?.vectors, [hidden, shared]);
 });
 
 const visibleFeature: GraphFeature = { kind: "point", x: 0, y: 0, label: "A" };
