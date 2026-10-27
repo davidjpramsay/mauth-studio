@@ -1,3 +1,6 @@
+from xml.etree import ElementTree
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -704,6 +707,39 @@ def test_penrose_set_diagram_supports_smooth_shading_and_count_badges():
     assert 'x="210" y="150"' in scaled_svg
     assert 'x="276" y="150"' in scaled_svg
     assert 'x="323.982" y="150"' in scaled_svg
+
+
+@pytest.mark.parametrize("blank", [False, True])
+def test_three_set_totals_use_curved_tabs_and_keep_the_universe_box(blank):
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **SET_SPEC,
+            "data": {
+                "setCount": 3,
+                "universe": {"name": "U", "countLabel": "40", "countBlank": blank},
+                "sets": [
+                    {"name": "M", "label": "M", "countLabel": "22", "countBlank": blank},
+                    {"name": "A", "label": "A", "countLabel": "20", "countBlank": blank},
+                    {"name": "C", "label": "C", "countLabel": "18", "countBlank": blank},
+                ],
+            },
+        },
+    )
+    assert response.status_code == 200
+    root = ElementTree.fromstring(response.json()["svg"])
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+    badges = {
+        node.get("data-badge-kind"): node for node in root.findall("s:g[@data-role='set-count-badge']", namespace)
+    }
+    assert set(badges) == {"box", "left-tab", "right-tab", "bottom-tab"}
+    for kind, value in [("box", "40"), ("left-tab", "22"), ("right-tab", "20"), ("bottom-tab", "18")]:
+        text = badges[kind].find("s:text", namespace)
+        assert (text.text or "") == ("" if blank else value)
+        if kind != "box":
+            assert badges[kind].find("s:rect", namespace) is None
+            assert badges[kind].find("s:path", namespace) is not None
+    assert [node.text for node in root.findall("s:text", namespace)][:4] == ["U", "M", "A", "C"]
 
 
 def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():

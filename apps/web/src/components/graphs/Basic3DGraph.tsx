@@ -23,6 +23,7 @@ import {
   graph3dViewDirection,
 } from "@/lib/graph3dPresentation";
 import { DEFAULT_3D_VIEW_STATE } from "@/lib/diagram3d";
+import { graph3dEdgeIsHidden, graph3dEdgeKey } from "@/lib/graph3dHiddenEdges";
 import { graph3dConfigWithLabelScreenOffset, type Graph3DLabelElementKind } from "@/lib/diagramGraph3d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
@@ -177,6 +178,7 @@ interface Basic3DView {
 interface Basic2DElement {
   prepareUpdate?: () => Basic2DElement;
   update?: () => Basic2DElement;
+  updateVisibility?: () => Basic2DElement;
   updateRenderer?: () => Basic2DElement;
   rendNode?: HTMLElement;
 }
@@ -1239,6 +1241,7 @@ function renderGraph3DFace(
   labelContext: Graph3DLabelContext,
   onLabelMove: CommitGraph3DLabelScreenOffset | undefined,
   registerCleanup: (cleanup: () => void) => void,
+  automaticEdges = false,
 ) {
   if (!face.show) return;
   try {
@@ -1249,7 +1252,7 @@ function renderGraph3DFace(
       fixed: true,
       borders: {
         strokeColor: face.strokeColor ?? "#1f2937",
-        strokeWidth: face.strokeWidth ?? 1,
+        strokeWidth: automaticEdges ? 0 : (face.strokeWidth ?? 1),
         dash: face.dashed ? 2 : 0,
         fixed: true,
         highlight: false,
@@ -1311,7 +1314,7 @@ function renderGraph3DDimension(
   if (!dimension.show) return null;
   const color = dimension.color ?? "#000000";
   if (dimension.display !== "label") {
-    renderCurve3D(view, dimension.from, dimension.to, {
+    const line = renderCurve3D(view, dimension.from, dimension.to, {
       strokeColor: color,
       strokeWidth: dimension.strokeWidth ?? 1.3,
       dash: dimension.display === "guide" || dimension.dashed ? 2 : 0,
@@ -1319,6 +1322,7 @@ function renderGraph3DDimension(
       fixed: true,
       highlight: false,
     });
+    line.element2D?.rendNode?.setAttribute("data-mauth-graph3d-dimension-line", dimension.id);
   }
   if (dimension.display === "bracket") {
     const tickDirection = graph3dDimensionTickDirection(dimension.from, dimension.to, labelContext.viewState, labelContext.screenScale);
@@ -1988,7 +1992,45 @@ export function Basic3DGraph({
           sphereCapSilhouette: joinedSurfaceIds.has(solid.id) ? "none" : joinedSolids.capIds.has(solid.id) ? "profile" : "sphere",
         }),
       );
-      faces.forEach((face) => renderGraph3DFace(view!, board, face, labelContext, commitLabelScreenOffset, registerLabelDragCleanup));
+      const automaticEdges = asRecord(renderGraphConfig?.data)?.hiddenEdges === "auto";
+      const faceEdges = new Map<string, { from: Point3DCoords; to: Point3DCoords; color: string; width: number }>();
+      const occludingFaces = faces.filter((face) => face.show).map((face) => face.coords);
+      if (automaticEdges) {
+        faces
+          .filter((face) => face.show)
+          .forEach((face) => {
+            face.coords.forEach((from, index) => {
+              const to = face.coords[(index + 1) % face.coords.length];
+              const key = graph3dEdgeKey(from, to);
+              if (!faceEdges.has(key)) faceEdges.set(key, { from, to, color: face.strokeColor ?? "#1f2937", width: face.strokeWidth ?? 1 });
+            });
+          });
+        segments
+          .filter((segment) => segment.show)
+          .forEach((segment) => {
+            const from = pointMap.get(segment.from)?.coords;
+            const to = pointMap.get(segment.to)?.coords;
+            if (!from || !to) return;
+            faceEdges.set(graph3dEdgeKey(from, to), { from, to, color: segment.color ?? "#111827", width: 1.8 });
+          });
+      }
+      faces.forEach((face) =>
+        renderGraph3DFace(view!, board, face, labelContext, commitLabelScreenOffset, registerLabelDragCleanup, automaticEdges),
+      );
+      faceEdges.forEach((edge, key) => {
+        const hidden = liveViewValue(view!, (state) =>
+          graph3dEdgeIsHidden(edge.from, edge.to, occludingFaces, graph3dViewDirection(state)),
+        );
+        const rendered = renderCurve3D(view!, edge.from, edge.to, {
+          strokeColor: edge.color,
+          strokeWidth: edge.width,
+          dash: () => (hidden() ? 2 : 0),
+          layer: 12,
+          highlight: false,
+        });
+        rendered.element2D?.rendNode?.setAttribute("data-mauth-graph3d-auto-edge", key);
+        liveProjectionElements.push(rendered);
+      });
 
       segments
         .filter((segment) => segment.show)
@@ -1996,12 +2038,13 @@ export function Basic3DGraph({
           const from = pointMap.get(segment.from);
           const to = pointMap.get(segment.to);
           if (!from || !to) return;
-          renderCurve3D(view!, from.coords, to.coords, {
-            strokeColor: segment.color ?? "#111827",
-            strokeWidth: 1.8,
-            dash: segment.dashed ? 2 : 0,
-            highlight: false,
-          });
+          if (!faceEdges.has(graph3dEdgeKey(from.coords, to.coords)))
+            renderCurve3D(view!, from.coords, to.coords, {
+              strokeColor: segment.color ?? "#111827",
+              strokeWidth: 1.8,
+              dash: segment.dashed ? 2 : 0,
+              highlight: false,
+            });
           if (segment.label?.trim()) {
             renderProjectedGraph3DLabel({
               board,
@@ -2097,11 +2140,16 @@ export function Basic3DGraph({
         element.updateRenderer?.();
         element.element2D?.prepareUpdate?.();
         element.element2D?.update?.();
+        element.element2D?.updateVisibility?.();
         element.element2D?.updateRenderer?.();
       }
       scheduleViewStateCommit();
     };
     eventBoard.on?.("update", handleBoardUpdate);
+    // Curve3D creates its 2D path before all 3D samples exist. Settle the
+    // projection and visibility once after construction, without waiting for
+    // the first click or camera gesture.
+    board.fullUpdate();
 
     const container = document.getElementById(boardId);
     const renderedRangeSpans = graphRanges.map(([minimum, maximum]) => maximum - minimum);

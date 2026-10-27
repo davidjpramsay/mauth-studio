@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 20 October 2026.
+Last reviewed: 27 October 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,8 +52,24 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; includes aligned solution-row marks, the shared tick style, square test-conditions panel corners and authoring docs
+worktree: clean at this checkpoint; automatic 3D hidden-edge rendering, shared label dragging and geometry padding, focused tests, Settings/action contract and authoring docs
 ```
+
+### 27 October Native Venn Tabs And Diagram Regression Checkpoint
+
+The three-set Venn renderer now uses the same curved set-total tabs as the two-set renderer, with an added bottom tab and a clear lower-set label. The universe total retains its corner box. Given and solution-only totals use the same native geometry, so UI and MCP authoring need no styling workaround. Two API cases and two browser cases cover filled/blank totals, label containment and collisions, and Student/Solutions printing; reviewed images lock both visible modes. New 3D diagrams start in automatic hidden-edge mode, while existing manual document data is preserved. The installer recovery guard now has permanent isolated filesystem tests included in the root quality gate. Full `pnpm check` passes: 114 API tests, 719 web/action tests, 17 document lifecycle tests, 11 Plotly tests, 75 launcher/runtime tests, Quick Look checks, lint, TypeScript and production build. All 11 targeted browser regressions pass, including rotation, label dragging/persistence, Venn layout and Student/Solutions printing. The hardened local build/install passes. The installed editor (22 files), Penrose runtime (7 files) and diagram brain match the tested build byte for byte; a real request to the installed API returns the universe box plus left/right/bottom curved tabs. Connector doctor passes, and AFTER HOURS reopens active and saved at revision 1 with 23 validation items and no errors or warnings. Refreshed PDF copies retain 11 inspected A4 pages each, with zero Student ticks and 48 Solutions ticks; previous exports are retained. These are app fixes plus safer authoring defaults and shared UI/MCP guidance, not an MCP transport repair. Native pointer automation remains unverified as described below. No public release was published.
+
+### 27 October Shared Label Dragging And Geometry Padding
+
+Student-mode label edits now use a focused presentation callback against the full document. Shared geometry point/segment/arc/angle labels and graph function/feature labels remain draggable when solution-only elements are hidden, without saving filtered data or solution colours. Geometry boards reserve a 36 px inset within their existing frame, retaining equal unit scale and the existing printed page allocation. Regression checks cover saved coordinates, unchanged construction geometry, retained hidden answers, and top-label clearance. Two new pure regressions pass (12 focused visibility tests total), all three browser drag/save/print checks pass at 1440 and 900 px, and full `pnpm check` passes with 112 API tests and 718 web/action tests. The hardened local build/install passes; all 22 installed web files match the tested production build, connector doctor passes, and AFTER HOURS reopens active and clean at revision 1 with 23 checked items and no errors/warnings. Both PDF exports were refreshed and all 22 pages inspected; each remains 11 A4 pages with zero Student ticks and 48 Solutions ticks. Previous exports are retained. Native menus successfully quit and relaunch the app, but subsequent pointer actions return `noWindowsAvailable`, so native dragging and rotation remain unverified despite successful isolated browser interaction tests. The Browser plugin is unavailable; the repository Playwright workflow supplies rendered evidence.
+
+### 27 October Automatic 3D Hidden Edges
+
+Polygonal 3D diagrams can opt into `data.hiddenEdges: "auto"` through Settings or `diagram.settings.update`. The renderer deduplicates face boundaries and classifies segment midpoints against the complete convex-face model using the current parallel camera. Front edges become solid and hidden edges dashed during rotation and in print. The 3D construction settles its sampled curves before first paint, and Rendered image baselines protect both camera views. Face-border duplicates are suppressed in this mode; independently authored dimension guides retain their own dashed styles. Omitted modes retain manual segment styles for compatibility. Geometry, camera, and label positions are preserved by the focused settings action.
+
+Full `pnpm check`, four focused geometry/action tests, four browser rotation/print/image regressions and the existing 3D smoke pass. The local hardened build and installation pass, all 22 installed web files matched the checked renderer build byte for byte at installation, and the running app has reopened AFTER HOURS cleanly with 23 checked items and no validation errors or warnings. Both refreshed PDF copies have 11 inspected A4 pages, with zero student ticks and 48 solution ticks; previous exports are preserved. The source Browser plugin is unavailable, so the repository's isolated Playwright workflow provides rendered evidence. The final settings-action fix also preserves the mode when one action edits or renames a point; its regression and full gate pass, and it is included in the subsequent label-dragging app installation. Native pointer verification remains limited by the automation issue described above.
+
+The installer exposed a legacy-migration bug: it treated a missing `workspace.json` as absent shared state, although external-folder users can have populated shared state without that file. It reimported an older folder selection and recovery draft during this update. The exact showcase file content and all eight prior version snapshots were preserved; the reopened file index reports revision 1. The old recovered draft remains inactive, and AFTER HOURS is the active local document. The installer now skips legacy migration whenever shared state is populated; isolated checks exercise the actual migration block and confirm current draft bytes remain unchanged, while fresh/empty targets still migrate. No release was published.
 
 ### 20 October Aligned Solution Row Marks
 

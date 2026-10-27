@@ -998,6 +998,7 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
   }
 
   if (value.renderer === "graph3d") {
+    enumField(value, "hiddenEdges", path, new Set(["auto", "manual"]), issues, true);
     numberFields(value, ["widthPx", "heightPx"], path, issues);
     booleanFields(value, ["showAxes", "showAxisLabels"], path, issues);
     booleanField(value, "resetView", path, issues, true);

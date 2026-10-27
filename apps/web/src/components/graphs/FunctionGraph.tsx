@@ -36,6 +36,7 @@ import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/li
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
 import { geometry2dConfigWithLabelPosition, type Geometry2DLabelPrimitiveKind } from "@/lib/diagramGeometry2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
+import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
 
 interface FunctionGraphProps {
@@ -46,6 +47,7 @@ interface FunctionGraphProps {
   solutionFunctionColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
+  onLabelPositionChange?: (change: GraphLabelPositionChange) => void;
 }
 
 const FUNCTION_COLORS = ["#0f766e", "#b45309", "#2563eb", "#7c3aed", "#be123c"];
@@ -3201,6 +3203,7 @@ export function FunctionGraph({
   solutionFunctionColor,
   onGraphConfigChange,
   onGraphConfigPatch,
+  onLabelPositionChange,
 }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
 
@@ -3244,11 +3247,15 @@ export function FunctionGraph({
     const renderedBoardPaddingX =
       showAxes && (showYAxisNumbers || showAxisLabels)
         ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingX;
+        : graphConfig.type === "geometry2d"
+          ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, 36))
+          : boardPaddingX;
     const renderedBoardPaddingY =
       showAxes && (showXAxisNumbers || showAxisLabels)
         ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingY;
+        : graphConfig.type === "geometry2d"
+          ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, 36))
+          : boardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -3471,6 +3478,8 @@ export function FunctionGraph({
     renderSlopeField(board, graphConfig, xMajorStep, yMajorStep, xMin, xMax, yMin, yMax);
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {
+      const originalIndex = graphConfig.functions?.indexOf(functions[functionIndex]) ?? functionIndex;
+      if (onLabelPositionChange && originalIndex >= 0) return onLabelPositionChange({ kind: "function", index: originalIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFunctions = (graphConfig.functions ?? functions).map((graphFunction, index) =>
         index === functionIndex ? { ...graphFunction, labelX: x, labelY: y } : graphFunction,
@@ -3479,6 +3488,7 @@ export function FunctionGraph({
     };
 
     const commitFeatureLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (onLabelPositionChange) return onLabelPositionChange({ kind: "feature", index: featureIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, labelX: x, labelY: y } : feature,
@@ -3487,6 +3497,7 @@ export function FunctionGraph({
     };
 
     const commitFreeLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (onLabelPositionChange) return onLabelPositionChange({ kind: "free-label", index: featureIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, x: Number(x.toFixed(6)), y: Number(y.toFixed(6)) } : feature,
@@ -3494,9 +3505,11 @@ export function FunctionGraph({
       onGraphConfigChange({ ...graphConfig, features: nextFeatures });
     };
 
-    const commitGeometry2DLabelPosition: CommitGeometry2DLabelPosition | undefined = onGraphConfigChange
-      ? (kind, id, x, y) => onGraphConfigChange(geometry2dConfigWithLabelPosition(graphConfig, kind, id, x, y))
-      : undefined;
+    const commitGeometry2DLabelPosition: CommitGeometry2DLabelPosition | undefined = onLabelPositionChange
+      ? (primitiveKind, id, x, y) => onLabelPositionChange({ kind: "geometry2d", primitiveKind, id, x, y })
+      : onGraphConfigChange
+        ? (kind, id, x, y) => onGraphConfigChange(geometry2dConfigWithLabelPosition(graphConfig, kind, id, x, y))
+        : undefined;
 
     const commitFeaturePointPosition = (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => {
       if (!onGraphConfigChange) return;
@@ -3650,7 +3663,7 @@ export function FunctionGraph({
           (graphFunction.solutionOnly === true ? solutionFunctionColor : undefined) ??
           graphFunction.color ??
           FUNCTION_COLORS[index % FUNCTION_COLORS.length],
-        onGraphConfigChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
+        onGraphConfigChange || onLabelPositionChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
       );
     });
 
@@ -3662,6 +3675,7 @@ export function FunctionGraph({
     graphConfig,
     onGraphConfigChange,
     onGraphConfigPatch,
+    onLabelPositionChange,
     previewAnchor,
     solutionColor,
     solutionFeatureColor,

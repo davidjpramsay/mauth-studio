@@ -14,6 +14,8 @@ import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
   graphConfigWithPresentationPatch,
+  graphConfigWithLabelPosition,
+  type GraphLabelPositionChange,
   previewGraphConfigForSolutionVisibility,
   previewStatsChartConfigForSolutionVisibility,
   previewVector2DConfigForSolutionVisibility,
@@ -85,6 +87,9 @@ function PreviewDiagramContent({
   const axisLabelConfigPatch = onGraphConfigChange
     ? (patch: Partial<GraphConfig>) => onGraphConfigChange(graphConfigWithPresentationPatch(baseConfig, patch))
     : undefined;
+  const labelPositionChange = onGraphConfigChange
+    ? (change: GraphLabelPositionChange) => onGraphConfigChange(graphConfigWithLabelPosition(baseConfig, config, change))
+    : undefined;
   const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
   const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
 
@@ -108,6 +113,7 @@ function PreviewDiagramContent({
           previewAnchor={anchor}
           onGraphConfigChange={visibleGraphConfigChange}
           onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
         />
       );
     case "vector2d":
@@ -128,6 +134,7 @@ function PreviewDiagramContent({
           solutionFunctionColor={solutionFeatureColor}
           onGraphConfigChange={visibleGraphConfigChange}
           onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
         />
       );
   }

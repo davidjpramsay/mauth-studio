@@ -525,12 +525,16 @@ function setCountBadge(text, x, y, type = "box", options = {}) {
   const label = options.blank ? "" : normalizeSetLabel(text);
   if (!label && !options.blank) return "";
   const fontSize = formatSvgNumber(13.333 * (options.textScale ?? 1));
-  if (type === "left-tab" || type === "right-tab") {
+  if (type === "left-tab" || type === "right-tab" || type === "bottom-tab") {
     const radius = options.radius ?? 86;
     const dy = options.tabHalfHeight ?? SET_DIAGRAM_SIDE_TAB_HALF_HEIGHT;
     const inset = Math.sqrt(Math.max(0, radius * radius - dy * dy));
-    const edgeX = type === "left-tab" ? x - radius + (radius - inset) : x + radius - (radius - inset);
     const textOffset = options.textOffset ?? setDiagramSideTabTextOffset(radius, dy);
+    if (type === "bottom-tab") {
+      const edgeY = y + inset;
+      return `<g data-role="set-count-badge" data-badge-kind="bottom-tab"><path d="M ${x - dy} ${formatSvgNumber(edgeY)} A ${SET_DIAGRAM_SIDE_TAB_RADIUS} ${SET_DIAGRAM_SIDE_TAB_RADIUS} 0 0 1 ${x + dy} ${formatSvgNumber(edgeY)}" fill="none" stroke="#111827" stroke-width="2.1"/><text x="${x}" y="${formatSvgNumber(edgeY - textOffset)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
+    }
+    const edgeX = type === "left-tab" ? x - inset : x + inset;
     const textX = type === "left-tab" ? edgeX + textOffset : edgeX - textOffset;
     const sweep = type === "left-tab" ? 1 : 0;
     return `<g data-role="set-count-badge" data-badge-kind="${type}"><path d="M ${formatSvgNumber(edgeX)} ${y - dy} A ${SET_DIAGRAM_SIDE_TAB_RADIUS} ${SET_DIAGRAM_SIDE_TAB_RADIUS} 0 0 ${sweep} ${formatSvgNumber(edgeX)} ${y + dy}" fill="none" stroke="#111827" stroke-width="2.1"/><text x="${formatSvgNumber(textX)}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
@@ -639,7 +643,7 @@ function renderThreeSetDiagramSvg(spec, substance) {
   ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
   ${setSvgText(normalizeSetLabel(leftSet.label), 112, 66, { textScale })}
   ${setSvgText(normalizeSetLabel(rightSet.label), 308, 66, { textScale })}
-  ${setSvgText(normalizeSetLabel(lowerSet.label), 210, 266, { textScale })}
+  ${setSvgText(normalizeSetLabel(lowerSet.label), 274, 252, { textScale })}
   ${Object.entries(regionLabels)
     .map(([key, label]) =>
       setSvgText(
@@ -663,9 +667,9 @@ function renderThreeSetDiagramSvg(spec, substance) {
     )
     .join("\n  ")}
   ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale, blank: universe.countBlank })}
-  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale, blank: leftSet.countBlank })}
-  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale, blank: rightSet.countBlank })}
-  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale, blank: lowerSet.countBlank })}
+  ${setCountBadge(leftSet.countLabel, left.cx, left.cy, "left-tab", { textScale, blank: leftSet.countBlank, radius: left.r })}
+  ${setCountBadge(rightSet.countLabel, right.cx, right.cy, "right-tab", { textScale, blank: rightSet.countBlank, radius: right.r })}
+  ${setCountBadge(lowerSet.countLabel, lower.cx, lower.cy, "bottom-tab", { textScale, blank: lowerSet.countBlank, radius: lower.r })}
 </svg>`;
 
   return {

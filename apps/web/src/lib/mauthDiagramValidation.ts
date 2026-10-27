@@ -1173,6 +1173,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
   validateCommonGraphConfig(config, path, issues);
   const data = optionalRecord(config, "data", path, issues);
   if (data) {
+    optionalEnum(data, "hiddenEdges", `${path}.data`, new Set(["auto", "manual"]), issues);
     optionalNumberPair(data, "xRange", `${path}.data`, issues);
     optionalNumberPair(data, "yRange", `${path}.data`, issues);
     optionalNumberPair(data, "zRange", `${path}.data`, issues);

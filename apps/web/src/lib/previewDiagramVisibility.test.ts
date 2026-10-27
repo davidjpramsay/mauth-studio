@@ -9,9 +9,50 @@ import {
   previewGraph3DConfigForSolutionVisibility,
   previewGraphConfigForSolutionVisibility,
   graphConfigWithPresentationPatch,
+  graphConfigWithLabelPosition,
   previewStatsChartConfigForSolutionVisibility,
   previewVector2DConfigForSolutionVisibility,
 } from "./previewDiagramVisibility.ts";
+
+test("moving a shared geometry label preserves hidden answers and authored colours", () => {
+  const answer = { id: "answer", points: ["A", "B", "C"] as [string, string, string], solutionOnly: true, color: "#123456" };
+  const config: GraphConfig = {
+    type: "geometry2d",
+    data: { points: [{ id: "A", x: 0, y: 1 }], angles: [answer] },
+  };
+  const visible = previewGeometry2DConfigForSolutionVisibility(config, false);
+  const changed = graphConfigWithLabelPosition(config, visible, { kind: "geometry2d", primitiveKind: "point", id: "A", x: 2, y: 3 });
+  assert.deepEqual(geometry2dData(changed).angles, [answer]);
+  assert.deepEqual(geometry2dData(changed).points[0], { id: "A", x: 0, y: 1, labelX: 2, labelY: 3 });
+  assert.equal(geometry2dData(config).points[0].labelX, undefined);
+});
+
+test("label moves target the full function and feature lists across filtered Student views", () => {
+  const hidden: GraphFeature = { kind: "point", x: 9, y: 9, solutionOnly: true };
+  const shared: GraphFeature = { kind: "point", x: 1, y: 2, label: "A", color: "#123456" };
+  const config: GraphConfig = {
+    type: "graph2d",
+    functions: [
+      { expression: "x^2", label: "f" },
+      { expression: "x", solutionOnly: true },
+    ],
+    features: [hidden, shared],
+  };
+  const visible = previewGraphConfigForSolutionVisibility(config, false, (feature) => feature.solutionOnly === true);
+  const changed = graphConfigWithLabelPosition(config, visible, { kind: "feature", index: 0, x: 3, y: 4 });
+  assert.equal(changed.features?.[0], hidden);
+  assert.deepEqual(changed.features?.[1], { ...shared, labelX: 3, labelY: 4 });
+  assert.equal(changed.functions, config.functions);
+  const movedFunction = graphConfigWithLabelPosition(config, visible, { kind: "function", index: 0, x: -2, y: 5 });
+  assert.equal(movedFunction.functions?.[1], config.functions?.[1]);
+  assert.deepEqual(movedFunction.functions?.[0], { ...config.functions?.[0], labelX: -2, labelY: 5 });
+  const movedFree = graphConfigWithLabelPosition(config, visible, { kind: "free-label", index: 0, x: 3, y: 4 });
+  assert.deepEqual(movedFree.features?.[1], { ...shared, x: 3, y: 4 });
+  assert.equal(graphConfigWithLabelPosition(config, visible, { kind: "feature", index: 4, x: 1, y: 1 }), config);
+  assert.equal(graphConfigWithLabelPosition(config, visible, { kind: "function", index: 0, x: NaN, y: 1 }), config);
+  const legacy: GraphConfig = { type: "graph2d", expression: "x^2" };
+  assert.equal(graphConfigWithLabelPosition(legacy, legacy, { kind: "function", index: 0, x: 2, y: 3 }).functions?.[0].labelX, 2);
+});
 
 test("axis-label presentation patches preserve hidden solution content", () => {
   const solutionFunction = { id: "answer", expression: "x^2", solutionOnly: true };

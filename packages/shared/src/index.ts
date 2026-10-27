@@ -203,6 +203,7 @@ export interface Graph3DSolidData {
 }
 
 export interface Graph3DData {
+  hiddenEdges?: "auto" | "manual";
   points?: Graph3DPointData[];
   vertices?: Graph3DPointData[];
   segments?: Graph3DSegmentData[];
