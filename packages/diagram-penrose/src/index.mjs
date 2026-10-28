@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { compile, showError, toSVG } from "@penrose/core";
 import { JSDOM } from "jsdom";
-import { penroseRelationshipsWithLabelIds } from "../../shared/src/penroseLabels.ts";
+import { penroseRelationshipsWithLabelIds, penroseSupportsLabelDragging } from "../../shared/src/penroseLabels.ts";
 import { presentPenroseLabels } from "./labelPresentation.ts";
 import { optimizeValidatedLayout } from "./constraintValidation.mjs";
 
@@ -1733,7 +1733,7 @@ export async function renderGeometricConstructionDiagram(spec) {
 
   const preset = presetName(spec);
   const substanceSource = stringOption(spec, "substanceSource");
-  if (spec.type === "geometricConstruction" && !substanceSource) {
+  if (penroseSupportsLabelDragging(spec.type) && !substanceSource) {
     spec = { ...spec, data: { ...spec.data, relationships: penroseRelationshipsWithLabelIds(spec.data?.relationships) } };
   }
   if (spec?.type === "setDiagram" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource")) {
@@ -1763,7 +1763,7 @@ export async function renderGeometricConstructionDiagram(spec) {
   const displayViewBox = visibleViewBox(rawSvg, width, height);
   const fixedSvg = fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
   const aliases = {};
-  if (spec.type === "geometricConstruction" && !substanceSource) {
+  if (penroseSupportsLabelDragging(spec.type) && !substanceSource) {
     for (const [prefix, entries] of [
       ["sideLabel", lengthLabelEntries(spec)],
       ["segmentLabel", segmentLabelEntries(spec).filter((entry) => entry.a !== entry.b)],
@@ -1774,7 +1774,7 @@ export async function renderGeometricConstructionDiagram(spec) {
         if (entry.labelId) aliases[`${prefix}${index + 1}.text`] = entry.labelId;
       });
   }
-  const presentation = spec.type === "geometricConstruction" ? presentPenroseLabels(fixedSvg, spec.options?.labelOffsets, aliases) : null;
+  const presentation = penroseSupportsLabelDragging(spec.type) ? presentPenroseLabels(fixedSvg, spec.options?.labelOffsets, aliases) : null;
   const svg = presentation?.svg ?? fixedSvg;
   return {
     svg,

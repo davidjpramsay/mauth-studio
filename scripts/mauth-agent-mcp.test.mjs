@@ -157,7 +157,7 @@ test("capability policy respects explicit requirements, conflicts, alternatives 
     [{ purpose: "vectors", draggableLabels: true }, "vector2d"],
     [{ purpose: "spatial", requiredFeatures: ["rotation3d", "dimensions"] }, "graph3d"],
     [{ purpose: "sets", solutionAnnotations: "elements" }, "setDiagram"],
-    [{ purpose: "network", teacherControls: "structured" }, "network"],
+    [{ purpose: "network", teacherControls: "structured", draggableLabels: true, solutionAnnotations: "elements" }, "network"],
     [{ purpose: "statistics", requiredFeatures: ["densityShading"], solutionAnnotations: "elements" }, "statsChart"],
     [{ purpose: "image", requiredFeatures: ["imageAnnotations"] }, "image"],
   ];
@@ -257,6 +257,39 @@ test("Penrose diameter construction satisfies givens and preserves answer-only g
       "label offsets leave optimized geometry unchanged",
     );
   }
+});
+
+test("Penrose network node, edge and loop labels retain stable offsets without moving geometry", async () => {
+  const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, "packages/diagram-penrose/fixtures/weighted-network.json"), "utf8"));
+  const offsets = { "A.labelText": [6, -4], "relationship_AB.text": [8, 5], "relationship_AA.text": [-4, 7] };
+  const original = await renderGeometricConstructionDiagram(fixture);
+  const moved = await renderGeometricConstructionDiagram({ ...fixture, options: { ...fixture.options, labelOffsets: offsets } });
+  const originalSvg = new DOMParser().parseFromString(original.svg, "image/svg+xml");
+  const movedSvg = new DOMParser().parseFromString(moved.svg, "image/svg+xml");
+  for (const [id, offset] of Object.entries(offsets)) {
+    assert.ok(moved.metadata.labelIds.includes(id));
+    assert.equal(movedSvg.querySelector(`[data-mauth-penrose-label="${id}"]`).getAttribute("transform"), `translate(${offset.join(", ")})`);
+  }
+  assert.equal(moved.metadata.substance, original.metadata.substance);
+  assert.equal(moved.metadata.viewBox, original.metadata.viewBox);
+  assert.deepEqual(
+    [...movedSvg.querySelectorAll("circle, line, polygon, path")].map((node) => node.outerHTML),
+    [...originalSvg.querySelectorAll("circle, line, polygon, path")].map((node) => node.outerHTML),
+  );
+  const visible = await renderGeometricConstructionDiagram({
+    ...fixture,
+    options: { ...fixture.options, labelOffsets: offsets },
+    data: {
+      ...fixture.data,
+      objects: fixture.data.objects.filter((entry) => !entry.solutionOnly),
+      relationships: fixture.data.relationships.filter((entry) => !entry.solutionOnly).reverse(),
+    },
+  });
+  assert.ok(visible.metadata.labelIds.includes("relationship_AB.text"));
+  assert.ok(!visible.metadata.labelIds.includes("relationship_AD.text"));
+  const visibleSvg = new DOMParser().parseFromString(visible.svg, "image/svg+xml");
+  assert.equal(visibleSvg.querySelector('[data-mauth-penrose-label="relationship_AB.text"]').getAttribute("transform"), "translate(8, 5)");
 });
 
 test("Penrose resampling keeps circle constraints across failed and arbitrary seeds", async () => {

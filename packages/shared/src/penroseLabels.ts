@@ -1,6 +1,10 @@
 export type PenroseLabelOffsets = Record<string, [number, number]>;
 export const PENROSE_LABEL_ID = /^[A-Za-z][A-Za-z0-9_]*\.(?:labelText|text)$/;
 
+export function penroseSupportsLabelDragging(type: unknown) {
+  return type === "geometricConstruction" || type === "network";
+}
+
 // Assign identities before answer filtering. Renderer-generated sideLabel1 etc.
 // are positional and cannot safely identify a shared label in both copies.
 export function penroseRelationshipsWithLabelIds(relationships: unknown) {

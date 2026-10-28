@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphConfig, PenroseDiagramResponse } from "@mauth-studio/shared";
 
 import { renderPenroseDiagram } from "@/lib/api";
-import { DEFAULT_PENROSE_SCALE_PERCENT, PENROSE_ORIGINAL_WIDTH, penroseRenderRequest } from "@/lib/diagramPenrose";
+import {
+  DEFAULT_PENROSE_SCALE_PERCENT,
+  PENROSE_ORIGINAL_WIDTH,
+  penroseRenderRequest,
+  penroseSupportsLabelDragging,
+} from "@/lib/diagramPenrose";
 import { presentPenroseLabels } from "../../../../../packages/diagram-penrose/src/labelPresentation.ts";
 import { usePenroseLabelDragging, type PenroseLabelMove } from "@/hooks/usePenroseLabelDragging";
 
@@ -40,13 +45,13 @@ export function GeometricConstructionDiagram({
   const displayHeight = (baseHeight * displayScale) / 100;
   const svg = useMemo(() => {
     if (!diagram?.svg) return "";
-    return graphConfig?.type === "geometricConstruction"
-      ? presentPenroseLabels(diagram.svg, graphConfig.options?.labelOffsets).svg
+    return penroseSupportsLabelDragging(graphConfig?.type)
+      ? presentPenroseLabels(diagram.svg, graphConfig?.options?.labelOffsets).svg
       : diagram.svg;
   }, [diagram?.svg, graphConfig?.type, graphConfig?.options?.labelOffsets]);
   const container = useRef<HTMLDivElement>(null);
   const markup = useMemo(() => ({ __html: svg }), [svg]);
-  usePenroseLabelDragging(container, svg, graphConfig?.type === "geometricConstruction" ? onLabelMove : undefined);
+  usePenroseLabelDragging(container, svg, penroseSupportsLabelDragging(graphConfig?.type) ? onLabelMove : undefined);
 
   useEffect(() => {
     const controller = new AbortController();

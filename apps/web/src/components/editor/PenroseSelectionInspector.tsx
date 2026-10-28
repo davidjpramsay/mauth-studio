@@ -7,6 +7,7 @@ import {
   penroseScalePercent,
   penroseLabelOffsets,
   penroseResetLabelPositionsPatch,
+  penroseSupportsLabelDragging,
 } from "../../lib/diagramPenrose";
 import {
   inspectorSetShadingOptions,
@@ -82,10 +83,10 @@ export function PenroseSelectionInspector({
           Original
         </Button>
       </div>
-      {selectedDiagramConfig.type === "geometricConstruction" ? (
+      {penroseSupportsLabelDragging(selectedDiagramConfig.type) ? (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Drag labels in the preview to position them independently of the automatic geometry.
+            Drag labels in the preview to position them independently of the automatic layout.
           </p>
           <Button
             type="button"
@@ -101,20 +102,22 @@ export function PenroseSelectionInspector({
           >
             Reset label positions
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={() =>
-              onBlockChange(selectedBlock, {
-                graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
-              })
-            }
-          >
-            <Shuffle className="mr-2 size-4" aria-hidden="true" />
-            Resample
-          </Button>
+          {selectedDiagramConfig.type === "geometricConstruction" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() =>
+                onBlockChange(selectedBlock, {
+                  graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
+                })
+              }
+            >
+              <Shuffle className="mr-2 size-4" aria-hidden="true" />
+              Resample
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {selectedDiagramConfig.type === "network" && selectedNetworkData ? (

@@ -52,8 +52,20 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; slightly reduced Penrose and 3D outer padding, with consistent label-drag feedback and prior diagram/editor fixes retained
+worktree: clean at this checkpoint; draggable Penrose network labels and weights, with prior diagram/editor fixes retained
 ```
+
+### 28 October Draggable Penrose Network Labels
+
+Network is Mauth's Penrose node/link renderer. Its labels were still static because the SVG presentation, preview interaction and focused-action validation were restricted to geometricConstruction. Both types now share the existing post-solver label adapter, dashed drag feedback, keyboard nudges, cancellation, undo/redo, persistence and Settings reset. Stable node-name and relationship aliases cover node labels, undirected/directed edge weights and self-loop weights. Aliases are assigned before answer filtering; focused changes preserve the full authored graph, hidden answers, original colours, Substance and metadata. Label-only edits reuse the solved SVG rather than re-running layout. Native SVG exports and print use the same saved offsets.
+
+MCP capability assessment now accepts network plus draggableLabels, focused labelOffset/resetLabelPositions settings accept renderer: network, and diagram inspection exposes the rendered ids and offsets. Network nodes/edges themselves remain fixed; set-diagram labels remain static. This supersedes the network-label limitation recorded in earlier checkpoints. The new browser reproduction fails on the prior build at the missing label interaction role. Native regression checks verify unchanged geometry and stable offsets through reordered/filtered edges; malformed action payloads remain rejected.
+
+Three network browser checks pass at 1440/900 px, covering node/edge/loop drags, repeated moves without solver requests, feedback/cancellation, history/reopening, hidden answers, native inspection, Advanced Substance keyboard controls, Settings reset and print offsets. The four existing Penrose geometry interaction checks also pass. A separate read-only fixture from the live showcase exposes all twelve node/weight controls with no clipped labels; Student/Solutions exports and the interaction screenshots were inspected. Browser plugin not available; repository Playwright supplies the interaction evidence.
+
+Full `pnpm check` passes with 115 API, 732 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build.
+
+The hardened local build/install and connector doctor pass. All 23 web, two connector and seven Penrose runtime files, the desktop archive and diagram brain match the verified bundle. The packaged MCP recommends network for draggable-label requirements and inspects all twelve showcase labels with no schema, clipping or collision issues. Native output visibly confirms Question 5, its tool identity and the new label controls. Pointer automation returned `noWindowsAvailable`, so drag interaction evidence comes from the browser checks. A preset change observed during the native check was undone at the teacher's request; the complete draft, saved-file bytes, revision 2, dirty state and both tab documents match the pre-install backup. No public release was published.
 
 ### 28 October Slightly Tighter Diagram Padding
 

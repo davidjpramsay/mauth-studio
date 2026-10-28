@@ -11,7 +11,7 @@ import { imageConfigForSolutionVisibility, imageConfigHasSolutionOnly } from "@/
 import { statsChartConfigHasSolutionOnly } from "@/lib/diagramStatsChart";
 import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
 import { penroseLabelPositionPatch } from "@/lib/diagramPenrose";
-import { penroseRelationshipsWithLabelIds } from "../../../../../packages/shared/src/penroseLabels.ts";
+import { penroseRelationshipsWithLabelIds, penroseSupportsLabelDragging } from "../../../../../packages/shared/src/penroseLabels.ts";
 import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
@@ -86,7 +86,7 @@ function PreviewDiagramContent({
   const imageVisibleConfig = imageConfigForSolutionVisibility(statsVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const penroseData = imageVisibleConfig.data as { relationships?: unknown[] } | undefined;
   const identifiedConfig =
-    imageVisibleConfig.type === "geometricConstruction" && !imageVisibleConfig.options?.substanceSource && penroseData
+    penroseSupportsLabelDragging(imageVisibleConfig.type) && !imageVisibleConfig.options?.substanceSource && penroseData
       ? { ...imageVisibleConfig, data: { ...penroseData, relationships: penroseRelationshipsWithLabelIds(penroseData.relationships) } }
       : imageVisibleConfig;
   const config = previewPenroseConfigForSolutionVisibility(identifiedConfig, showSolutions);

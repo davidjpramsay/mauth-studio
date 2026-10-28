@@ -125,8 +125,11 @@ export const DIAGRAM_CAPABILITIES: Record<DiagramToolId, { features: DiagramFeat
     ],
   },
   network: {
-    features: features("networkLinks", "structuredEditing", "elementSolutions", "pairedSolutions"),
-    limitations: ["Conceptual node/link layout; exact coordinates and independent label dragging are unavailable."],
+    features: features("networkLinks", "draggableLabels", "structuredEditing", "elementSolutions", "pairedSolutions"),
+    limitations: [
+      "Node labels and edge weights can be dragged independently within the preview frame without changing the network layout.",
+      "Conceptual node/link layout; exact coordinates and draggable nodes are unavailable.",
+    ],
   },
   setDiagram: {
     features: features("vennRegions", "structuredEditing", "elementSolutions", "pairedSolutions"),

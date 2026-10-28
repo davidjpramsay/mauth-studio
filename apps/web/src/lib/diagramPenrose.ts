@@ -1,6 +1,6 @@
 import type { DiagramSpec, GraphConfig } from "@mauth-studio/shared";
 import { penroseLabelOffsets } from "../../../../packages/shared/src/penroseLabels.ts";
-export { penroseLabelOffsets } from "../../../../packages/shared/src/penroseLabels.ts";
+export { penroseLabelOffsets, penroseSupportsLabelDragging } from "../../../../packages/shared/src/penroseLabels.ts";
 
 export const PENROSE_ORIGINAL_WIDTH = 420;
 export const DEFAULT_PENROSE_SCALE_PERCENT = 100;
