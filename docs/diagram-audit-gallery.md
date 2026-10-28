@@ -11,7 +11,7 @@ Use it after changing:
 
 ## Manual Check
 
-1. From the project root, run the app with `pnpm dev:api` and `pnpm dev:web`.
+1. From the project root, run the authenticated app with `pnpm desktop:dev`.
 2. Open Files, then open `DIAGRAM AUDIT GALLERY`.
 3. Check the written `Expected.` note before each diagram against the rendered diagram.
 4. Check display-only view, split preview selection, solution visibility if relevant, and browser print/PDF output for renderer changes that affect print.
@@ -19,7 +19,7 @@ Use it after changing:
 
 ## Screenshot Smoke
 
-With the API and web dev server already running, capture the key gallery examples with:
+The legacy fixed-port screenshot script does not attach a token and therefore cannot access the authenticated editor. Its old command is retained for isolated development fixtures only; do not disable authentication for a workspace containing teacher data:
 
 ```bash
 pnpm smoke:diagram-gallery

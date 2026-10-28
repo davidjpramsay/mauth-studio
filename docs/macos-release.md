@@ -110,7 +110,7 @@ Every desktop launch generates a new random bridge token. The app:
 3. writes it beside the dynamic URL in `~/Library/Application Support/Mauth Studio/runtime.json` with mode `0600`; and
 4. removes the runtime manifest when the owning app quits.
 
-The bundled connector, `pnpm agent:doctor`, `pnpm agent:mcp`, `pnpm smoke:agent-connector`, and `pnpm smoke:agent-bridge` discover the URL and token automatically. Claude/Codex users do not paste or persist the token. Fixed-port development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
+The bundled connector, `pnpm agent:doctor`, `pnpm agent:mcp`, `pnpm smoke:agent-connector`, and `pnpm smoke:agent-bridge` discover the URL and token automatically. Claude/Codex users do not paste or persist the token. Fixed-port API requests fail closed when `MAUTH_AGENT_TOKEN` is absent.
 
 ## Updates And Rollback
 

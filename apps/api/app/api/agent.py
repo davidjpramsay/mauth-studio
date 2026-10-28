@@ -264,7 +264,8 @@ def browser_bridge_status() -> dict[str, Any]:
         active_sessions = _active_sessions_unlocked()
         return {
             "available": True,
-            "authenticationRequired": bool(os.environ.get("MAUTH_AGENT_TOKEN", "").strip()),
+            "authenticationRequired": bool(os.environ.get("MAUTH_AGENT_TOKEN", "").strip())
+            or os.environ.get("MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED") != "1",
             "activeSessionCount": len(active_sessions),
             "pendingRequestCount": len(_pending_requests),
             "sessions": [

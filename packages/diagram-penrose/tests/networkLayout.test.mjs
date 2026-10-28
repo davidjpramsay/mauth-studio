@@ -43,6 +43,36 @@ test("automatic label placement is deterministic and survives manual presentatio
   assert.equal(presentPenroseLabels(moved.svg, {}).svg, first.svg);
 });
 
+test("self loops connect to their node instead of floating away", async () => {
+  const out = await render({ ...fixtures.directedLoop, options: { variation: "audit-loop" } });
+  const document = new DOMParser().parseFromString(out.svg, "image/svg+xml");
+  const circles = [...document.querySelectorAll("circle")];
+  const title = (node) => node.querySelector("title")?.textContent ?? node.parentElement?.querySelector("title")?.textContent ?? "";
+  const node = circles.find((circle) => title(circle).includes("`A`.dot"));
+  const loop = circles.find((circle) => title(circle).includes("`AA`.loop"));
+  assert.ok(node && loop, "node and loop are rendered");
+  const distance = Math.hypot(
+    Number(node.getAttribute("cx")) - Number(loop.getAttribute("cx")),
+    Number(node.getAttribute("cy")) - Number(loop.getAttribute("cy")),
+  );
+  assert.ok(Math.abs(distance - Number(loop.getAttribute("r"))) < 0.01);
+});
+
+test("directional label hints are respected with whitespace", async () => {
+  const base = await render({ ...fixtures.showcase, options: { variation: "hint-base" } });
+  const make = (hint) =>
+    render({ type: "network", options: { variation: "hint-space", substanceSource: `${base.metadata.substance}\n${hint}` } });
+  const compact = await make("LabelAbove(A)");
+  const spaced = await make("LabelAbove( A )");
+  const position = (svg) =>
+    new DOMParser()
+      .parseFromString(svg, "image/svg+xml")
+      .querySelector('[data-mauth-penrose-label="A.labelText"] > g')
+      ?.getAttribute("transform");
+  assert.ok(position(compact.svg));
+  assert.equal(position(spaced.svg), position(compact.svg));
+});
+
 test("Advanced Substance works while custom Style remains authoritative", async () => {
   const base = await render({ ...fixtures.showcase, options: { variation: "advanced-baseline" } });
   const advanced = await render({ type: "network", options: { variation: "advanced-network", substanceSource: base.metadata.substance } });

@@ -9,6 +9,7 @@ from app.api.agent import (
     REQUEST_TIMEOUT_SECONDS,
     _request_timeout_seconds,
     _reset_agent_bridge_for_tests,
+    browser_bridge_status,
 )
 from app.main import app
 
@@ -56,6 +57,19 @@ def test_packaged_bridge_requires_the_per_launch_bearer_token(monkeypatch) -> No
     assert private_api.json()["code"] == "API_AUTH_REQUIRED"
     assert discovery.status_code == 200
     assert system_status.status_code == 200
+
+
+def test_missing_token_fails_closed_unless_debug_override_is_explicit(monkeypatch) -> None:
+    monkeypatch.delenv("MAUTH_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED", raising=False)
+    blocked = client.get("/api/storage/projects")
+    assert blocked.status_code == 503
+    assert blocked.json()["code"] == "API_AUTH_NOT_CONFIGURED"
+    assert browser_bridge_status()["authenticationRequired"] is True
+    assert client.get("/api/health").status_code == 200
+    monkeypatch.setenv("MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED", "1")
+    assert browser_bridge_status()["authenticationRequired"] is False
+    assert client.get("/api/agent/current/snapshot").json()["code"] == "APP_NOT_CONNECTED"
 
 
 def test_broker_dispatches_request_and_returns_browser_response() -> None:

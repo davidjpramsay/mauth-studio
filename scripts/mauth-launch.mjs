@@ -405,6 +405,11 @@ if (stopOnly) {
   process.exit(0);
 }
 
+if (!process.env.MAUTH_AGENT_TOKEN?.trim() && process.env.MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED !== "1") {
+  console.error("The fixed-port API requires a token. Use pnpm desktop:dev for the authenticated editor.");
+  process.exit(1);
+}
+
 if (replaceExisting) {
   await stopMauthListeners("web", webPort);
   await stopMauthListeners("api", apiPort);

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cartesianGridLines, type CartesianGridOptions } from "./cartesianGrid.ts";
+import { boundedNumericRange, cartesianGridLines, type CartesianGridOptions } from "./cartesianGrid.ts";
+
+test("numeric ranges reject non-finite, non-progressing and excessively dense input", () => {
+  assert.deepEqual(boundedNumericRange(-2, 2, 1), [-2, -1, 0, 1, 2]);
+  assert.deepEqual(boundedNumericRange(1e20, 1e20 + 1e8, 0.001), []);
+  assert.deepEqual(boundedNumericRange(0, 1, 1e-12), []);
+  assert.deepEqual(boundedNumericRange(0, Infinity, 1), []);
+  assert.deepEqual(boundedNumericRange(0, 419, 1, 420).length, 420);
+  assert.deepEqual(boundedNumericRange(0, 420, 1, 420), []);
+});
 
 const example: CartesianGridOptions = {
   xMin: -1,

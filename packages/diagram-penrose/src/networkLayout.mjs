@@ -77,7 +77,7 @@ export function arrangeNetworkLabels(svg, substance) {
   }
   for (const match of substance.matchAll(/LabelsSelfLoop\((\w+),\s*(\w+)\)/g)) {
     const node = nodes.get(match[2]);
-    if (node) owners.set(match[1], { loop: [node.p[0] + 24, node.p[1] + 24], r: 18 });
+    if (node) owners.set(match[1], { loop: [node.p[0] + 12.727922, node.p[1] + 12.727922], r: 18 });
   }
   for (const element of root.querySelectorAll("g")) {
     const title = titleOf(element);
@@ -90,7 +90,8 @@ export function arrangeNetworkLabels(svg, substance) {
       h = number(equation, "height");
     const p = [Number(translation[1]) + w / 2, Number(translation[2]) + h / 2];
     const id = named(title);
-    const explicitPosition = new RegExp(`Label(?:Above|Below|Left|Right)\\(${id}\\)`).test(substance);
+    const escapedId = id?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const explicitPosition = escapedId && new RegExp(`\\bLabel(?:Above|Below|Left|Right)\\s*\\(\\s*${escapedId}\\s*\\)`).test(substance);
     labels.push({
       id,
       element,

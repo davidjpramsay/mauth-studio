@@ -24,7 +24,7 @@ import type {
   GraphSlopeFieldPoint,
 } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
-import { cartesianGridLines } from "@/lib/cartesianGrid";
+import { boundedNumericRange, cartesianGridLines } from "@/lib/cartesianGrid";
 import { clearAxisNumbersFromGrid } from "./cartesianGridLabels";
 
 import { sampledFunctionCurveSegments } from "@/lib/functionCurveSampling";
@@ -223,19 +223,9 @@ const ROUNDED_GRAPH_STROKE = {
   lineJoin: "round",
 } as const;
 
-function numericRange(min: number, max: number, step: number) {
-  if (!Number.isFinite(step) || step <= 0) return [];
-  const values: number[] = [];
-  const start = Math.ceil(min / step) * step;
-  for (let value = start; value <= max + step / 1000; value += step) {
-    values.push(Number(value.toFixed(8)));
-  }
-  return values;
-}
-
 function axisNumberValues(min: number, max: number, step: number) {
   const edgeTolerance = step / 1000;
-  return numericRange(min, max, step).filter(
+  return boundedNumericRange(min, max, step).filter(
     (value) => Math.abs(value) > edgeTolerance && value > min + edgeTolerance && value < max - edgeTolerance,
   );
 }
@@ -290,6 +280,13 @@ function slopeFieldSpec(graphConfig: GraphConfig): SlopeFieldSpec | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
   if (record.show === false) return null;
+  for (const key of ["xValues", "yValues", "points", "highlightedPoints"]) {
+    if (Array.isArray(record[key]) && record[key].length > 420) return null;
+  }
+  const pointCount =
+    (Array.isArray(record.points) ? record.points.length : 0) +
+    (Array.isArray(record.highlightedPoints) ? record.highlightedPoints.length : 0);
+  if (pointCount > 420) return null;
   const expression =
     typeof record.expression === "string" && record.expression.trim()
       ? record.expression.trim()
@@ -461,7 +458,7 @@ function slopeFieldAxisValues(
   if (explicitValues?.length) return explicitValues;
   const [min, max] = range ?? [fallbackMin, fallbackMax];
   const spacing = Number.isFinite(step) && step && step > 0 ? step : fallbackStep;
-  return numericRange(min, max, spacing);
+  return boundedNumericRange(min, max, spacing, 420);
 }
 
 function slopeFieldSegmentEndpoints(x: number, y: number, slope: number, length: number): [[number, number], [number, number]] | null {
@@ -535,8 +532,9 @@ function renderSlopeField(
   } as Record<string, unknown>;
 
   let rendered = 0;
-  const maxSegments = 420;
+  const maxSegments = 420 - (field.points?.length ?? 0) - (field.highlightedPoints?.length ?? 0);
   for (const x of xValues) {
+    if (rendered >= maxSegments) break;
     for (const y of yValues) {
       if (rendered >= maxSegments) break;
       drawSlopeFieldSegment(board, x, y, evaluator(x, y), segmentLength, baseAttributes);

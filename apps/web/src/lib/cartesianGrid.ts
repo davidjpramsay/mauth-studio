@@ -21,6 +21,15 @@ export interface CartesianGridLine {
   boundary: boolean;
 }
 
+/** Refuse unrepresentable or excessively dense tick ranges before allocating. */
+export function boundedNumericRange(min: number, max: number, step: number, limit = 2000): number[] {
+  if (![min, max, step].every(Number.isFinite) || step <= 0 || min > max) return [];
+  const first = Math.ceil(min / step);
+  const last = Math.floor((max + step / 1000) / step);
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last - first >= limit) return [];
+  return Array.from({ length: Math.max(0, last - first + 1) }, (_, offset) => Number(((first + offset) * step).toFixed(8)));
+}
+
 /** Close the grid at the exact authored bounds; never snap the mathematical view. */
 export function cartesianGridLines(options: CartesianGridOptions): CartesianGridLine[] {
   const { xMin, xMax, yMin, yMax, showGrid, showMajorGrid, showMinorGrid } = options;

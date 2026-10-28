@@ -118,7 +118,7 @@ forall NamedSegment s; Point a
 where SelfLoop(s, a) {
   s.start = a.dot.center
   s.end = a.dot.center
-  loopCenter = a.dot.center + (24, -24)
+  loopCenter = a.dot.center + (12.727922, -12.727922)
 
   s.loop = Circle {
     center: loopCenter
@@ -142,9 +142,9 @@ forall NamedSegment s; Point a
 where VectorSelfLoop(s, a) {
   s.start = a.dot.center
   s.end = a.dot.center
-  loopCenter = a.dot.center + (24, -24)
-  tip = loopCenter + (-13, 13)
-  direction = unit((-1, 1))
+  loopCenter = a.dot.center + (12.727922, -12.727922)
+  tip = loopCenter + (18, 0)
+  direction = unit((0, -1))
   normal = rot90(direction)
   base = tip - direction * 12
 

@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; closed Cartesian grid boundaries and scale-number clearance, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; security remediation is verified in source, with local installation still pending
 ```
+
+### 28 October Security Remediation
+
+The interrupted Deep Scan retained findings with incomplete repository coverage. The graph expression factories use a bounded mathematical parser rather than JavaScript compilation. The API and marking engine share a restricted SymPy AST interpreter rather than evaluating user-supplied Python. Invalid maths requests fail with HTTP 400; automatic tests cover valid maths, malicious input, LaTeX exponent bounds and marking. Tokenless private API access now fails closed, fixed-port debug servers bind loopback, and the isolated unauthenticated test override is explicitly unsafe for teacher data.
+
+Backup imports reject oversized compressed and expanded data, duplicate entries and repeated-member amplification. They compare visible destination aliases and use exclusive publication so an external writer cannot be overwritten. Publication requires filesystem hard-link support; an import can still leave newly imported items if a later operation fails. Quick Look sums reject overflow and excessive nested depth. Graph ticks and slope fields are bounded. Penrose network directional hints accept whitespace and self-loops connect to their nodes.
+
+The final full gate passed: 135 API, 744 web/action, 17 lifecycle, 11 Plotly, six Penrose, 84 launcher and five native Quick Look tests, plus lint, formatting, TypeScript and production build. Four isolated graph browser checks and the document-tabs smoke passed. An isolated packaged sidecar accepted ordinary maths, rejected executable input and required its bearer token. A self-loop fixture was visually inspected. Independent security reviews found no concrete execution bypass; fixes for their reported compatibility and backup race cases have targeted tests. Source still has compatibility limits for formerly accepted arbitrary JavaScript expressions and direct fixed-port browser development. The full security audit did not complete, and a later failure can leave partial new backup items.
+
+The hardened app build is a local checkpoint only; installation, preserved open-document state and native verification are pending. Do not restart a live editor with undo history without the teacher's explicit choice. Pre-install recovery backups are under `/private/tmp/mauth-security-preinstall`.
 
 ### 28 October Clean Cartesian Grid Boundaries
 

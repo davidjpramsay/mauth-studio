@@ -52,14 +52,13 @@ External macOS distribution uses the guarded `pnpm macos:ship` workflow and the 
 
 During normal implementation, use `pnpm macos:dev`; signing, notarization, and publication are not part of the edit-test loop. Use `pnpm macos:build` plus `pnpm macos:install` only for deliberate local installed-app checkpoints. Use `pnpm macos:release` only to inspect a versioned release bundle. Use `pnpm macos:ship` only from clean, pushed `main` when publishing a new version for another person. Do not rerun either release pipeline after every small source change.
 
-For lower-level API/web debugging, run locally from the project root using two terminals:
+For authenticated local development, run the Electron shell from the project root:
 
 ```bash
-pnpm dev:api
-pnpm dev:web
+pnpm desktop:dev
 ```
 
-If the terminal is already inside `apps/web`, use `pnpm dev` instead of `pnpm dev:web`.
+The fixed-port API refuses protected requests without `MAUTH_AGENT_TOKEN`; `pnpm dev:api` also refuses to start without it. For isolated test fixtures only, `MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED=1` explicitly disables that protection and must not be used with real teacher data. The API and web debug listeners bind to loopback. The normal Electron development shell generates and injects a per-launch token.
 
 Quality gate before commits:
 
