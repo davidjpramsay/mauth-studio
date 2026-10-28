@@ -1,6 +1,7 @@
 """Restricted symbolic maths parsing shared by the API and marking engine."""
 
 import ast
+import math
 import operator
 import re
 
@@ -58,6 +59,45 @@ _BINARY = {
 }
 _UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 _SYMBOL = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+_MAX_NUMBER_BITS = 16384
+
+
+def _rational_growth(expression: sp.Expr) -> tuple[float, float]:
+    """Bound exact arithmetic without materialising powers, including LaTeX trees."""
+    if isinstance(expression, sp.Rational):
+
+        def magnitude(value: int) -> float:
+            value = abs(value)
+            if value <= 1:
+                return 0.0
+            result = math.log2(value)
+            return result if value & (value - 1) == 0 else math.nextafter(result, math.inf)
+
+        size = (magnitude(int(expression.p)), magnitude(int(expression.q)))
+    elif isinstance(expression, sp.Pow) and expression.exp.is_Integer:
+        base = _rational_growth(expression.base)
+        exponent = int(expression.exp)
+        if exponent < 0:
+            base = (base[1], base[0])
+        # 0 and +/-1 do not grow when raised to an integer power.
+        size = tuple(bits * abs(exponent) for bits in base)
+    elif isinstance(expression, (sp.Add, sp.Mul)):
+        values = [_rational_growth(argument) for argument in expression.args]
+        numerator, denominator = (0.0, 0.0)
+        for n, d in values:
+            if isinstance(expression, sp.Add):
+                numerator, denominator = max(numerator + d, n + denominator) + 1, denominator + d
+            else:
+                numerator, denominator = numerator + n, denominator + d
+        size = (numerator, denominator)
+    else:
+        # Still inspect numeric children of symbolic expressions.
+        for argument in expression.args:
+            _rational_growth(argument)
+        return (0.0, 0.0)
+    if max(size) >= _MAX_NUMBER_BITS:
+        raise InvalidMathExpression("Mathematical value is too large")
+    return size
 
 
 def validate_symbolic_expression(expression: sp.Expr) -> sp.Expr:
@@ -65,10 +105,14 @@ def validate_symbolic_expression(expression: sp.Expr) -> sp.Expr:
     for index, item in enumerate(sp.preorder_traversal(expression)):
         if index >= 512:
             raise InvalidMathExpression("Mathematical expression is too complex")
-        if isinstance(item, sp.Integer) and abs(int(item)).bit_length() > 16384:
+        if (
+            isinstance(item, sp.Rational)
+            and max(abs(int(item.p)).bit_length(), int(item.q).bit_length()) > _MAX_NUMBER_BITS
+        ):
             raise InvalidMathExpression("Mathematical value is too large")
         if isinstance(item, sp.Pow) and item.exp.is_number and (item.exp.is_real is not True or abs(item.exp) > 1000):
             raise InvalidMathExpression("Exponent is too large")
+    _rational_growth(expression)
     return expression
 
 
@@ -103,15 +147,9 @@ def _evaluate(node: ast.AST) -> sp.Expr:
         left, right = _evaluate(node.left), _evaluate(node.right)
         if isinstance(node.op, ast.Pow) and right.is_number and (right.is_real is not True or abs(right) > 1000):
             raise InvalidMathExpression("Exponent is too large")
-        if (
-            isinstance(node.op, ast.Pow)
-            and left.is_Integer
-            and right.is_Integer
-            and right > 0
-            and abs(int(left)).bit_length() * int(right) > 16384
-        ):
-            raise InvalidMathExpression("Mathematical value is too large")
-        return _BINARY[type(node.op)](left, right)
+        if isinstance(node.op, ast.Pow):
+            validate_symbolic_expression(sp.Pow(left, right, evaluate=False))
+        return validate_symbolic_expression(_BINARY[type(node.op)](left, right))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY:
         return _UNARY[type(node.op)](_evaluate(node.operand))
     if isinstance(node, ast.Name) and node.id in _CONSTANTS:
@@ -150,4 +188,4 @@ def _evaluate(node: ast.AST) -> sp.Expr:
         arguments[0].is_integer is not True or arguments[0].is_number is not True or abs(arguments[0]) > 1000
     ):
         raise InvalidMathExpression("Factorial input is too large")
-    return function(*arguments)
+    return validate_symbolic_expression(function(*arguments))

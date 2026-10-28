@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 28 October 2026.
+Last reviewed: 29 October 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,8 +52,12 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; security remediation is verified in source and installed locally
+worktree: clean at this checkpoint; rational-growth follow-up verified in source, local update pending
 ```
+
+### 29 October Rational Growth Follow-Up
+
+The focused review found that rational numerators and denominators bypassed the integer-only size check. The shared parser now checks rational components and estimates exact-arithmetic coefficient growth in unevaluated trees before powers are evaluated, including negative exponents and LaTeX. Intermediate results are validated. Independent review found symbolic-coefficient and LaTeX compatibility gaps in the first patch; both have focused regression tests. Fourteen API/marking tests pass, including pre-evaluation rejection and ordinary fractions, reciprocals and a valid 16,001-bit denominator. The full quality gate passes with 138 API tests and the existing web, diagram, launcher and native suites. The local app update is being built; the 28 October installation remains the live app. This guards the demonstrated exact-arithmetic growth paths; it is not a general timeout or CPU budget for all symbolic mathematics.
 
 ### 28 October Security Remediation
 
