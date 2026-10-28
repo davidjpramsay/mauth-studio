@@ -235,7 +235,7 @@ export function diagramToolGuide(
     guidance: [
       "Describe mathematical purpose, relationships, exact positioning/source fidelity, teacher controls, label dragging and solution annotations in requirements before constructing graphConfig.",
       "Requirements are assessed against Mauth's actual adapters. Unsupported combinations and unknown requirements remain unresolved; never silently drop them or substitute a different renderer schema.",
-      "Penrose supports general relationship-based geometry, not only circle theorems. Its SVG labels are static; advanced constraint constructions require Advanced Substance and paired solution diagrams.",
+      "Penrose supports general relationship-based geometry with draggable labels independent of the solver. Advanced constraint constructions require Advanced Substance and paired solution diagrams. Native network/set labels are not draggable.",
       "Recommendations are planning guidance. Follow assessment.verification.requiredChecks, dry-run native actions, validate the construction mathematically, then inspect fresh Student/Solutions renders and teacher controls.",
       "Examples are starting points. Replace image src with the teacher-supplied asset; custom Penrose Substance must use Mauth's supported domain/style.",
     ],

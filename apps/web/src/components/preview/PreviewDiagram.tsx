@@ -10,6 +10,8 @@ import { graph3dConfigHasSolutionOnly } from "@/lib/diagramGraph3d";
 import { imageConfigForSolutionVisibility, imageConfigHasSolutionOnly } from "@/lib/diagramImage";
 import { statsChartConfigHasSolutionOnly } from "@/lib/diagramStatsChart";
 import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
+import { penroseLabelPositionPatch } from "@/lib/diagramPenrose";
+import { penroseRelationshipsWithLabelIds } from "../../../../../packages/shared/src/penroseLabels.ts";
 import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
@@ -82,7 +84,12 @@ function PreviewDiagramContent({
   const graph3dVisibleConfig = previewGraph3DConfigForSolutionVisibility(vectorVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const statsVisibleConfig = previewStatsChartConfigForSolutionVisibility(graph3dVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const imageVisibleConfig = imageConfigForSolutionVisibility(statsVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
-  const config = previewPenroseConfigForSolutionVisibility(imageVisibleConfig, showSolutions);
+  const penroseData = imageVisibleConfig.data as { relationships?: unknown[] } | undefined;
+  const identifiedConfig =
+    imageVisibleConfig.type === "geometricConstruction" && !imageVisibleConfig.options?.substanceSource && penroseData
+      ? { ...imageVisibleConfig, data: { ...penroseData, relationships: penroseRelationshipsWithLabelIds(penroseData.relationships) } }
+      : imageVisibleConfig;
+  const config = previewPenroseConfigForSolutionVisibility(identifiedConfig, showSolutions);
   const visibleGraphConfigChange = hasHiddenSolutionContent ? undefined : onGraphConfigChange;
   const axisLabelConfigPatch = onGraphConfigChange
     ? (patch: Partial<GraphConfig>) => onGraphConfigChange(graphConfigWithPresentationPatch(baseConfig, patch))
@@ -103,7 +110,16 @@ function PreviewDiagramContent({
     case "geometricConstruction":
     case "network":
     case "setDiagram":
-      return <GeometricConstructionDiagram graphConfig={config} />;
+      return (
+        <GeometricConstructionDiagram
+          graphConfig={config}
+          onLabelMove={
+            onGraphConfigChange
+              ? (id, offset) => onGraphConfigChange({ ...baseConfig, ...penroseLabelPositionPatch(baseConfig, id, offset) })
+              : undefined
+          }
+        />
+      );
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
     case "geometry2d":

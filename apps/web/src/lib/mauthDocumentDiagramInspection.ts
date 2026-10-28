@@ -63,7 +63,7 @@ export function inspectRenderedDiagram(blockId: string) {
   const pane = document.querySelector(".preview-pane");
   const anchor = [...(pane?.querySelectorAll<HTMLElement>("[data-scroll-anchor]") ?? [])].find(
     (node) =>
-      node.dataset.scrollAnchor?.split("/").some((part) => part === `b:${blockId}`) &&
+      node.dataset.scrollAnchor?.split("/").some((part) => part === `b:${blockId}` || part === `id:${blockId}`) &&
       node.getClientRects().length > 0 &&
       !node.closest(".a4-measure, .test-visibility-slot-copy-hidden"),
   );
@@ -103,6 +103,10 @@ export function inspectRenderedDiagram(blockId: string) {
     copy: "currentPreviewOnly",
     checks: ["renderReadiness", "labelBounds", "labelCollisions"],
     labelCount: boxes.length,
+    labels: [...diagram.querySelectorAll<HTMLElement>("[data-mauth-penrose-label]")].map((node) => ({
+      id: node.dataset.mauthPenroseLabel,
+      offset: [Number(node.dataset.labelOffsetX) || 0, Number(node.dataset.labelOffsetY) || 0],
+    })),
     issues,
     note: "Measurements cover this mounted preview only. Inspect fresh Student and Solutions copies and visually review geometry/page flow; a clean measurement is not a complete layout certificate.",
   };

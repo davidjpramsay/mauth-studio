@@ -9,7 +9,6 @@ import type {
   MauthAgentSubpartSummary,
 } from "@mauth-studio/shared";
 import {
-  DIAGRAM_TOOLS,
   DIAGRAM_TOOLS_URI,
   diagramIntentFromText,
   diagramToolSummary,

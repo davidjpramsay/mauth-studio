@@ -1228,3 +1228,5 @@ export interface MauthAgentSuggestion {
 import type { DiagramToolSummary } from "./diagramTools.ts";
 export { DIAGRAM_TOOLS, DIAGRAM_TOOLS_URI, diagramToolForType, diagramToolSummary, diagramToolGuide } from "./diagramTools.ts";
 export type { DiagramToolId, DiagramToolSummary } from "./diagramTools.ts";
+
+export type { PenroseLabelOffsets } from "./penroseLabels.ts";

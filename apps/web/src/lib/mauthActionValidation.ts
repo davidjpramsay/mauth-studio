@@ -1,4 +1,5 @@
 import type { ContentBlock } from "@mauth-studio/shared";
+import { PENROSE_LABEL_ID } from "../../../../packages/shared/src/penroseLabels.ts";
 
 import { MAUTH_DOCUMENT_ACTION_TYPES, type MauthDocumentAction } from "./mauthActions.ts";
 import { validateMauthDiagramConfig } from "./mauthDiagramValidation.ts";
@@ -533,6 +534,33 @@ function validatePenroseSettings(value: Record<string, unknown>, path: string, i
   booleanField(value, "original", path, issues, true);
   booleanField(value, "resample", path, issues, true);
   stringValueField(value, "variation", path, issues, true);
+  if (value.renderer === "geometricConstruction") {
+    booleanField(value, "resetLabelPositions", path, issues, true);
+    if (hasOwn(value, "labelOffset")) {
+      const label = recordField(value, "labelOffset", path, issues);
+      if (label) {
+        stringValueField(label, "id", `${path}.labelOffset`, issues);
+        if (typeof label.id === "string" && !PENROSE_LABEL_ID.test(label.id))
+          addIssue(
+            issues,
+            `${path}.labelOffset.id`,
+            "must be a stable Penrose label id",
+            "A.labelText or diameter.text from mauth_diagrams_inspect",
+          );
+        if (
+          label.offset !== null &&
+          !(
+            Array.isArray(label.offset) &&
+            label.offset.length === 2 &&
+            label.offset.every((n) => typeof n === "number" && Number.isFinite(n))
+          )
+        )
+          addIssue(issues, `${path}.labelOffset.offset`, "must be two finite SVG offsets or null to reset", "[x, y] | null");
+      }
+    }
+  } else if (hasOwn(value, "labelOffset") || hasOwn(value, "resetLabelPositions")) {
+    addIssue(issues, path, "label positioning is supported only for geometricConstruction", "renderer: geometricConstruction");
+  }
 }
 
 function validatePenroseElementPatch(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {

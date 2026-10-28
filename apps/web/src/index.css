@@ -423,6 +423,15 @@
     width: 100%;
   }
 
+  .penrose-diagram [data-mauth-penrose-label]:focus {
+    outline: none;
+  }
+
+  .penrose-diagram [data-mauth-penrose-label]:focus-visible {
+    outline: 1px dashed #2563eb;
+    outline-offset: 3px;
+  }
+
   .formatted-test .question-diagram span {
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     font-weight: 700;
@@ -2798,6 +2807,9 @@
 }
 
 @media print {
+  .penrose-diagram [data-mauth-penrose-label] {
+    outline: none !important;
+  }
   html,
   body,
   #root {

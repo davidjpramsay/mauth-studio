@@ -50,10 +50,18 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-App.tsx: 1839 lines
+App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; capability-based diagram choice, live inspection, native Penrose circle fixture, working Settings Content return, visible tool identity, and prior diagram/label fixes
+worktree: clean at this checkpoint; automatic Penrose geometry with draggable labels, stable presentation offsets, capability-based routing, live inspection, and prior editor/diagram fixes
 ```
+
+### 28 October Automatic Penrose Geometry With Draggable Labels
+
+Geometric construction labels use stable semantic ids and saved SVG viewBox-unit presentation offsets after solver layout. The preview commits against the complete authored config, reuses solved geometry on label-only edits, bounds teacher drags within the existing drawing frame and supports cancellation, keyboard nudging, undo/redo and Settings reset. Paired solutions remain independently editable; shared labels preserve hidden answers and their authored metadata. Structured dimension/angle aliases are assigned before solution filtering so an earlier hidden answer cannot retarget a shared label. Explicit relationship ids are preferred for repeated identical relationships; unnamed fallbacks derive from relationship type/endpoints. Resample retains relative offsets, while renamed or removed labels leave dormant overrides. The same post-solver SVG presentation adapter is used by native API rendering and the preview, including print. The SVG markup is stable across ordinary parent renders so copy switches retain event bindings. Investigation preview edits now use the existing selected-diagram/document action path, and inspection recognises their anchors.
+
+MCP capability assessment now permits automatic geometry plus draggable labels, including Advanced Substance. Focused `diagram.settings.update` accepts `labelOffset: { id, offset }` and `resetLabelPositions`; schemas validate finite pairs and stable label ids, and rendered inspection exposes ids/offsets. Advanced Substance still uses paired solutions and the Advanced editor, while network/set labels remain static. This supersedes the static geometry-label limitation recorded in the preceding checkpoint below.
+
+Full `pnpm check` passes with 114 API, 729 web/action, 17 lifecycle, 11 Plotly and 79 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Nine browser checks pass at 1440/900 px, covering native geometry, repeated exact-displacement drags, no solver rerun, undo/redo, reopening, independent Student/Solutions labels, hidden earlier answer labels, keyboard/reset/cancel, bounds, investigation history and prior JSXGraph label behaviour. Native geometry comparisons remain identical after label moves. Moved-label Student and Solutions PDFs were rendered and visually inspected. The Browser plugin is unavailable, so repository Playwright supplies interaction evidence. The hardened local app build/install passes. All 23 web files, two connector files and seven Penrose runtime files match the tested bundle; the diagram brain matches source. The packaged chooser accepts constrained geometry with draggable labels, and live Q4 inspection returns five stable label ids/offsets with no bounds/collision issues. A focused label-position action dry run passes with 23 overall checked items and zero errors/warnings. Connector doctor passes before and after a complete smoke that timed out on the existing documents-list path; no claim that this feature fixes that separate transient. Native AX exposes Move label controls. Live label-position edits appeared after installation and remain in the draft; the saved showcase bytes were unchanged through installation, and the inactive recovery tab is retained. Agent native pointer automation is not the interaction proof; isolated browser drags and live document offsets provide the evidence. No public release was published.
 
 ### 28 October Capability-Based Diagram Choice And Penrose Showcase Conversion
 
@@ -372,7 +380,7 @@ Latest full gate on 28 October 2026:
 ```text
 formatting and lint: passed
 API: 114 passed
-web/actions: 726 passed
+web/actions: 729 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
 launcher: 79 passed (desktop, connector, and CI contract)

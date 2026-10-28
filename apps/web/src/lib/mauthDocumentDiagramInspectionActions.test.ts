@@ -31,7 +31,7 @@ test("diagram inspection validates nested content and reports unmeasured layout 
   const before = structuredClone(document);
   const result = inspectDocumentDiagrams(document, { blockId: "circle", requirements: { purpose: "geometry", draggableLabels: true } });
   assert.equal(result.length, 1);
-  assert.equal(result[0].tool.selectedToolAssessment?.eligible, false);
+  assert.equal(result[0].tool.selectedToolAssessment?.eligible, true);
   assert.equal(result[0].construction.schemaValid, true);
   assert.equal(result[0].construction.proofStatus, "notCertified");
   assert.deepEqual(result[0].renderedLayout, { status: "notMeasured", note: "No rendered preview was inspected." });

@@ -66,7 +66,7 @@ import {
   type Geometry2DPrimitiveTarget,
 } from "./diagramGeometry2d.ts";
 import { DEFAULT_IMAGE_DIAGRAM, imageAnnotationAt, imageAnnotationIndexById, updateImageAnnotation } from "./diagramImage.ts";
-import { DEFAULT_PENROSE_SCALE_PERCENT } from "./diagramPenrose.ts";
+import { DEFAULT_PENROSE_SCALE_PERCENT, penroseLabelPositionPatch, penroseResetLabelPositionsPatch } from "./diagramPenrose.ts";
 import {
   penroseElementIndex,
   updatePenroseElement,
@@ -337,6 +337,8 @@ interface PenroseSettingsUpdate {
   original?: boolean;
   resample?: boolean;
   variation?: string;
+  labelOffset?: { id: string; offset: [number, number] | null };
+  resetLabelPositions?: boolean;
   element?: PenroseElementSettingsUpdate;
 }
 
@@ -1197,8 +1199,11 @@ function penroseSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpda
     nextConfig = applyPatchAccumulator(nextConfig, penroseScalePatch(nextConfig, settings.scalePercent), patches);
   }
   if (settings.resample) {
-    applyPatchAccumulator(nextConfig, penroseResamplePatch(nextConfig, settings.variation), patches);
+    nextConfig = applyPatchAccumulator(nextConfig, penroseResamplePatch(nextConfig, settings.variation), patches);
   }
+  if (settings.resetLabelPositions) nextConfig = applyPatchAccumulator(nextConfig, penroseResetLabelPositionsPatch(nextConfig), patches);
+  if (settings.labelOffset)
+    applyPatchAccumulator(nextConfig, penroseLabelPositionPatch(nextConfig, settings.labelOffset.id, settings.labelOffset.offset), patches);
   return compactGraphPatch(patches);
 }
 

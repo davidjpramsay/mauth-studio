@@ -111,6 +111,7 @@ export const DIAGRAM_CAPABILITIES: Record<DiagramToolId, { features: DiagramFeat
     features: features(
       "planeGeometry",
       "constraintLayout",
+      "draggableLabels",
       "angleMarks",
       "dimensions",
       "structuredEditing",
@@ -118,7 +119,7 @@ export const DIAGRAM_CAPABILITIES: Record<DiagramToolId, { features: DiagramFeat
       "pairedSolutions",
     ),
     limitations: [
-      "Penrose preview labels are static SVG; independent label dragging is unavailable.",
+      "Geometry labels can be dragged within the preview frame. Saved label offsets are applied after automatic layout without moving the construction.",
       "The normal editor covers points/segments and basic relationships. General constraint constructions use Advanced Substance, with paired Student/Solutions diagrams for answer annotations.",
       "Absolute coordinates are unsupported. Relative orientation can be specified with Advanced Horizontal/Above constraints; solver layout may otherwise vary.",
     ],

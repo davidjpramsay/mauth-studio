@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { compile, optimize, showError, toSVG } from "@penrose/core";
 import { JSDOM } from "jsdom";
+import { penroseRelationshipsWithLabelIds } from "../../shared/src/penroseLabels.ts";
+import { presentPenroseLabels } from "./labelPresentation.ts";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 globalThis.window ??= dom.window;
@@ -897,6 +899,7 @@ function lengthLabelEntries(spec) {
     if (names.length !== 2) continue;
     entries.push({
       name: typeof relation.name === "string" ? assertIdentifier(relation.name, "Length label name") : undefined,
+      labelId: relation._mauthLabelId,
       a: assertIdentifier(names[0], "Length point"),
       b: assertIdentifier(names[1], "Length point"),
       value: relation.value ?? "",
@@ -929,6 +932,7 @@ function segmentLabelEntries(spec) {
     const names = relation.points ?? relation.between ?? [];
     if (!Array.isArray(names) || names.length !== 2) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       a: assertIdentifier(names[0], "Segment label start point"),
       b: assertIdentifier(names[1], "Segment label end point"),
       value,
@@ -950,6 +954,7 @@ function selfLoopLabelEntries(spec) {
     const end = assertIdentifier(names[1], "Self-loop label point");
     if (start !== end) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       a: start,
       value,
       solutionOnly: relation.solutionOnly === true,
@@ -965,6 +970,7 @@ function angleLabelEntries(spec) {
     const points = anglePoints(relation);
     if (!points) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       name: typeof relation.name === "string" ? assertIdentifier(relation.name, "Angle label name") : undefined,
       a: points[0],
       b: points[1],
@@ -1708,6 +1714,9 @@ export async function renderGeometricConstructionDiagram(spec) {
 
   const preset = presetName(spec);
   const substanceSource = stringOption(spec, "substanceSource");
+  if (spec.type === "geometricConstruction" && !substanceSource) {
+    spec = { ...spec, data: { ...spec.data, relationships: penroseRelationshipsWithLabelIds(spec.data?.relationships) } };
+  }
   if (spec?.type === "setDiagram" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource")) {
     const substance = substanceSource ? substanceWithImplicitInvisibleLabels(substanceSource, preset, spec) : null;
     return renderSetDiagramSvg(spec, substance);
@@ -1732,7 +1741,21 @@ export async function renderGeometricConstructionDiagram(spec) {
   const scalePercent = Number(spec?.options?.scalePercent ?? 100);
   const rawSvg = svgElementToString(await toSVG(optimized.value));
   const displayViewBox = visibleViewBox(rawSvg, width, height);
-  const svg = fixedSizeLabelSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const fixedSvg = fixedSizeLabelSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const aliases = {};
+  if (spec.type === "geometricConstruction" && !substanceSource) {
+    for (const [prefix, entries] of [
+      ["sideLabel", lengthLabelEntries(spec)],
+      ["segmentLabel", segmentLabelEntries(spec).filter((entry) => entry.a !== entry.b)],
+      ["selfLoopLabel", selfLoopLabelEntries(spec)],
+      ["angleLabel", angleLabelEntries(spec)],
+    ])
+      entries.forEach((entry, index) => {
+        if (entry.labelId) aliases[`${prefix}${index + 1}.text`] = entry.labelId;
+      });
+  }
+  const presentation = spec.type === "geometricConstruction" ? presentPenroseLabels(fixedSvg, spec.options?.labelOffsets, aliases) : null;
+  const svg = presentation?.svg ?? fixedSvg;
   return {
     svg,
     metadata: {
@@ -1748,6 +1771,7 @@ export async function renderGeometricConstructionDiagram(spec) {
       substance,
       styleSource,
       style: spec?.style ?? "school",
+      ...(presentation ? { labelIds: presentation.labels } : {}),
     },
   };
 }

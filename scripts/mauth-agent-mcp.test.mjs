@@ -41,7 +41,7 @@ test("MCP connector publishes the complete local document and authoring contract
     });
     const conflict = await client.callTool({
       name: "mauth_diagram_tools",
-      arguments: { requirements: { purpose: "geometry", relationships: ["parallel"], draggableLabels: true } },
+      arguments: { requirements: { purpose: "geometry", relationships: ["parallel"], draggableLabels: true, exactPositioning: true } },
     });
     assert.equal(conflict.structuredContent.assessment.status, "unsupported");
     assert.equal(guide.isError, undefined);
@@ -148,6 +148,10 @@ test("scoped snapshots preserve preconditions, tab state and storage errors", ()
 test("capability policy respects explicit requirements, conflicts, alternatives and uncertainty", () => {
   const cases = [
     [{ purpose: "geometry", relationships: ["parallel", "midpoint"] }, "geometricConstruction"],
+    [
+      { purpose: "geometry", relationships: ["circleMembership"], draggableLabels: true, solutionAnnotations: "paired" },
+      "geometricConstruction",
+    ],
     [{ purpose: "geometry", exactPositioning: true, draggableLabels: true, teacherControls: "structured" }, "geometry2d"],
     [{ purpose: "coordinates", requiredFeatures: ["functions", "implicitRelations"] }, "graph2d"],
     [{ purpose: "vectors", draggableLabels: true }, "vector2d"],
@@ -164,7 +168,7 @@ test("capability policy respects explicit requirements, conflicts, alternatives 
     assert.equal(guide.assessment.verification.renderedLayout, "notRun");
   }
   for (const requirements of [
-    { purpose: "geometry", relationships: ["parallel"], draggableLabels: true },
+    { purpose: "geometry", relationships: ["parallel"], draggableLabels: true, exactPositioning: true },
     { purpose: "geometry", relationships: ["circleMembership"], teacherControls: "structured" },
     { purpose: "geometry", relationships: ["midpoint"], solutionAnnotations: "elements" },
     { purpose: "network", exactPositioning: true },
@@ -186,11 +190,11 @@ test("capability policy respects explicit requirements, conflicts, alternatives 
   });
   assert.equal(override.recommendation.id, "geometry2d");
   assert.equal(override.assessment.selectedToolAssessment.eligible, false);
-  assert.ok(override.assessment.selectedToolAssessment.missingFeatures.includes("draggableLabels"));
+  assert.ok(override.assessment.selectedToolAssessment.missingFeatures.includes("fixedCoordinates"));
   assert.equal(override.exampleGraphConfig, undefined);
   const advanced = diagramToolGuide("Circle theorem", "geometricConstruction", false, { teacherControls: "structured" }, true);
   assert.equal(advanced.assessment.selectedToolAssessment.eligible, false);
-  assert.match(advanced.assessment.selectedToolAssessment.limitations.join(" "), /static SVG/);
+  assert.match(advanced.assessment.selectedToolAssessment.limitations.join(" "), /dragged within/);
 });
 
 test("Penrose diameter construction satisfies givens and preserves answer-only geometry", async () => {
@@ -230,5 +234,20 @@ test("Penrose diameter construction satisfies givens and preserves answer-only g
       copy === "solution",
     );
     if (copy === "solution") assert.match(result.svg, /#1d4ed8/i);
+    assert.ok(result.metadata.labelIds.includes("C.labelText"));
+    assert.ok(result.metadata.labelIds.includes("diameter.text"));
+    assert.ok(!result.metadata.labelIds.includes("omega.labelText"), "invisible helper labels are not draggable");
+    const moved = await renderGeometricConstructionDiagram({
+      ...config,
+      options: { ...config.options, labelOffsets: { "C.labelText": [11, -4], "diameter.text": [0, 8] } },
+    });
+    const movedSvg = new DOMParser().parseFromString(moved.svg, "image/svg+xml");
+    assert.equal(movedSvg.querySelector('[data-mauth-penrose-label="C.labelText"]').getAttribute("transform"), "translate(11, -4)");
+    assert.equal(movedSvg.documentElement.getAttribute("viewBox"), svg.documentElement.getAttribute("viewBox"));
+    assert.deepEqual(
+      [...movedSvg.querySelectorAll("circle, line, polygon")].map((node) => node.outerHTML),
+      [...svg.querySelectorAll("circle, line, polygon")].map((node) => node.outerHTML),
+      "label offsets leave optimized geometry unchanged",
+    );
   }
 });

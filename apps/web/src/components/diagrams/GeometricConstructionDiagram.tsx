@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphConfig, PenroseDiagramResponse } from "@mauth-studio/shared";
 
 import { renderPenroseDiagram } from "@/lib/api";
 import { DEFAULT_PENROSE_SCALE_PERCENT, PENROSE_ORIGINAL_WIDTH, penroseRenderRequest } from "@/lib/diagramPenrose";
+import { presentPenroseLabels } from "../../../../../packages/diagram-penrose/src/labelPresentation.ts";
+import { usePenroseLabelDragging, type PenroseLabelMove } from "@/hooks/usePenroseLabelDragging";
 
 function numericOption(value: unknown, fallback: number) {
   const number = Number(value);
@@ -14,9 +16,19 @@ function scalePercent(graphConfig?: GraphConfig | null) {
   return scale > 0 ? scale : DEFAULT_PENROSE_SCALE_PERCENT;
 }
 
-export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
+export function GeometricConstructionDiagram({
+  graphConfig,
+  onLabelMove,
+}: {
+  graphConfig?: GraphConfig | null;
+  onLabelMove?: PenroseLabelMove;
+}) {
   const request = useMemo(() => penroseRenderRequest(graphConfig), [graphConfig]);
-  const requestKey = useMemo(() => JSON.stringify(request), [request]);
+  const requestKey = useMemo(() => {
+    const options = { ...request.options };
+    delete options.labelOffsets;
+    return JSON.stringify({ ...request, options });
+  }, [request]);
   const [rendered, setRendered] = useState<{ key: string; diagram?: PenroseDiagramResponse; error?: string } | null>(null);
   const diagram = rendered?.key === requestKey ? rendered.diagram : undefined;
   const error = rendered?.key === requestKey ? rendered.error : undefined;
@@ -26,6 +38,15 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
   const displayScale = numericOption(requestOptions.scalePercent, scalePercent(graphConfig));
   const displayWidth = (baseWidth * displayScale) / 100;
   const displayHeight = (baseHeight * displayScale) / 100;
+  const svg = useMemo(() => {
+    if (!diagram?.svg) return "";
+    return graphConfig?.type === "geometricConstruction"
+      ? presentPenroseLabels(diagram.svg, graphConfig.options?.labelOffsets).svg
+      : diagram.svg;
+  }, [diagram?.svg, graphConfig?.type, graphConfig?.options?.labelOffsets]);
+  const container = useRef<HTMLDivElement>(null);
+  const markup = useMemo(() => ({ __html: svg }), [svg]);
+  usePenroseLabelDragging(container, svg, graphConfig?.type === "geometricConstruction" ? onLabelMove : undefined);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,6 +79,7 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
 
   return (
     <div
+      ref={container}
       className="penrose-diagram min-w-0 bg-white"
       data-mauth-print-render-state={diagram ? "ready" : "loading"}
       style={{
@@ -65,7 +87,7 @@ export function GeometricConstructionDiagram({ graphConfig }: { graphConfig?: Gr
         minHeight: displayHeight,
         maxWidth: "100%",
       }}
-      dangerouslySetInnerHTML={diagram?.svg ? { __html: diagram.svg } : undefined}
+      dangerouslySetInnerHTML={svg ? markup : undefined}
     />
   );
 }
