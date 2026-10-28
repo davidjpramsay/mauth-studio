@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; screen-space label drag outlines, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; safe network resampling replaces destructive preset controls, with prior diagram/editor fixes retained
 ```
+
+### 28 October Network Resample Instead Of Preset Replacement
+
+The Network preset control replaced all authored nodes/links with the three-node example and cleared custom Substance. It is removed from both the Settings pane and inline editor. Both now offer Resample through the existing shared Penrose layout patch, preserving nodes, links, weights, hidden answers, source, scale and label adjustments. Resample changes the layout variation; obsolete fixed render dimensions are cleared as before. Network Settings explains that the content is retained. Legacy network `preset` settings are rejected at validation and execution boundaries with guidance to use resample; example data remains available only through normal new-diagram defaults. Agent rules and action docs describe this distinction.
+
+The user's live five-node showcase was already intact when inspected, including the latest moved labels and unsaved draft. No restoration or document mutation was needed. The new browser reproduction fails on the prior build because Network preset is still exposed.
+
+All ten focused browser checks pass at 1440/900 px, covering network resampling and retained content/hidden answers/label offsets, undo/redo, reopening, Advanced Substance, existing label interaction/print checks, circle constraints and invalid-layout rejection. Network drag assertions measure displacement within the diagram frame because screenshot/print feedback checks can scroll the preview. Wide/compact Settings and solution screenshots were inspected. Browser plugin not available; repository Playwright supplies interaction evidence. Full `pnpm check` passes with 115 API, 735 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. The action tests cover content/source/offset preservation and rejection of legacy preset requests before mutation.
+
+The hardened local build passes. Installation is pending macOS unlock so the running app can quit normally. The latest draft and both tabs are backed up; the live showcase retains five nodes, seven links, nine saved label adjustments and revision 2. The installed runtime still has the prior outline fix. No public release was published.
 
 ### 28 October Equal Label Outline Weight
 

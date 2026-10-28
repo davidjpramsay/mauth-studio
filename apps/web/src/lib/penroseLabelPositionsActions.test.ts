@@ -18,6 +18,28 @@ for (const renderer of ["geometricConstruction", "network"] as const) {
   };
   const scope = { kind: "question" as const, questionId: "q" };
 
+  test(`${renderer} resampling preserves authored content, source and teacher label offsets`, () => {
+    const original = { ...config, options: { ...config.options, labelOffsets: { "A.labelText": [6, -3] } } };
+    const questions = [{ ...document.questions[0], contentBlocks: [{ id: "d", kind: "diagram" as const, graphConfig: original }] }];
+    const action = {
+      type: "diagram.settings.update" as const,
+      scope,
+      blockId: "d",
+      settings: { renderer, resample: true, variation: "new-layout" },
+    };
+    assert.equal(validateMauthDocumentActionPayloads([action]).ok, true);
+    const result = applyMauthAction(questions, action);
+    assert.equal(result.ok, true);
+    if (result.ok)
+      assert.deepEqual(result.questions[0].contentBlocks[0].graphConfig, {
+        ...original,
+        options: { ...original.options, variation: "new-layout", scalePercent: 100, penrosePreset: "geometry" },
+        widthPx: undefined,
+        heightPx: undefined,
+      });
+    assert.equal(questions[0].contentBlocks[0].graphConfig.options.variation, "keep-layout");
+  });
+
   test(`${renderer} label actions preserve source, geometry, hidden answers and unrelated offsets`, () => {
     const move = {
       type: "diagram.settings.update" as const,
@@ -70,6 +92,29 @@ for (const renderer of ["geometricConstruction", "network"] as const) {
     }
   });
 }
+
+test("retired network preset is rejected rather than replacing authored graph content", () => {
+  const questions = [
+    {
+      id: "q",
+      marks: 1,
+      text: "Network",
+      contentBlocks: [{ id: "d", kind: "diagram" as const, graphConfig: { type: "network" as const } }],
+    },
+  ];
+  const original = structuredClone(questions);
+  const action = {
+    type: "diagram.settings.update" as const,
+    scope: { kind: "question" as const, questionId: "q" },
+    blockId: "d",
+    settings: { renderer: "network" as const, preset: true },
+  };
+  assert.equal(validateMauthDocumentActionPayloads([action]).ok, false);
+  const result = applyMauthAction(questions, action);
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /preset.*no longer supported.*resample/i);
+  assert.deepEqual(questions, original);
+});
 
 test("structured label identities survive filtering, reorder and label-text edits", () => {
   const relationships = [

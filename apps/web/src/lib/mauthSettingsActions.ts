@@ -119,7 +119,6 @@ import {
   imageSizePatch,
   inspectorOptionalNumber,
   inspectorSpaceLines,
-  networkPresetPatch,
   networkVisibilityPatch,
   penroseResamplePatch,
   penroseScalePatch,
@@ -350,7 +349,6 @@ interface PenroseElementSettingsUpdate extends Record<string, unknown> {
 }
 
 interface NetworkSettingsUpdate {
-  preset?: boolean;
   showNodeDots?: boolean;
   showNodeLabels?: boolean;
 }
@@ -1221,6 +1219,8 @@ function penroseElementPatchRecord(source: PenroseElementSettingsUpdate, idUsedA
 }
 
 function penroseElementSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpdate): DiagramSettingsPatchSuccess | SettingsFailure {
+  if (config.type === "network" && "preset" in settings)
+    return settingsFailure("Network preset replacement is no longer supported. Use resample to rearrange the existing network.");
   const basePatch =
     config.type === "network"
       ? networkSettingsPatch(config, settings as PenroseSettingsUpdate & NetworkSettingsUpdate)
@@ -1258,8 +1258,7 @@ function penroseElementSettingsPatch(config: GraphConfig, settings: PenroseSetti
 function networkSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpdate & NetworkSettingsUpdate): GraphPatch {
   const penrosePatch = penroseSettingsPatch(config, settings);
   const patches: GraphPatch[] = [penrosePatch];
-  let nextConfig = mergePatch(config, penrosePatch);
-  if (settings.preset) nextConfig = applyPatchAccumulator(nextConfig, networkPresetPatch(nextConfig), patches);
+  const nextConfig = mergePatch(config, penrosePatch);
   if (settings.showNodeDots !== undefined || settings.showNodeLabels !== undefined) {
     const visibilityPatch: Parameters<typeof networkVisibilityPatch>[1] = {};
     if (settings.showNodeDots !== undefined) visibilityPatch.hidePoints = !settings.showNodeDots;

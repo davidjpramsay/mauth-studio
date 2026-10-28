@@ -1054,7 +1054,14 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
 
   if (value.renderer === "network") {
     validatePenroseSettings(value, path, issues);
-    booleanFields(value, ["preset", "showNodeDots", "showNodeLabels"], path, issues);
+    booleanFields(value, ["showNodeDots", "showNodeLabels"], path, issues);
+    if (hasOwn(value, "preset"))
+      addIssue(
+        issues,
+        `${path}.preset`,
+        "Network preset replacement is no longer supported",
+        "resample: true to rearrange the existing network",
+      );
     if (hasOwn(value, "element"))
       validatePenroseElementSettings(value.element, `${path}.element`, issues, PENROSE_GEOMETRY_ELEMENT_KIND_KEYS);
     return;

@@ -11,7 +11,6 @@ import {
 } from "../../lib/diagramPenrose";
 import {
   inspectorSetShadingOptions,
-  networkPresetPatch,
   networkVisibilityPatch,
   penroseResamplePatch,
   penroseScalePatch,
@@ -102,26 +101,6 @@ export function PenroseSelectionInspector({
           >
             Reset label positions
           </Button>
-          {selectedDiagramConfig.type === "geometricConstruction" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() =>
-                onBlockChange(selectedBlock, {
-                  graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
-                })
-              }
-            >
-              <Shuffle className="mr-2 size-4" aria-hidden="true" />
-              Resample
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {selectedDiagramConfig.type === "network" && selectedNetworkData ? (
-        <>
           <Button
             type="button"
             variant="outline"
@@ -129,12 +108,22 @@ export function PenroseSelectionInspector({
             className="w-full"
             onClick={() =>
               onBlockChange(selectedBlock, {
-                graphConfig: updateGraphConfig(selectedDiagramConfig, networkPresetPatch(selectedDiagramConfig)),
+                graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
               })
             }
           >
-            Network preset
+            <Shuffle className="mr-2 size-4" aria-hidden="true" />
+            Resample
           </Button>
+          {selectedDiagramConfig.type === "network" ? (
+            <p className="text-xs text-muted-foreground">
+              Resample rearranges the same nodes and links, keeping weights and label adjustments.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {selectedDiagramConfig.type === "network" && selectedNetworkData ? (
+        <>
           <label className={checkboxLabelClassName}>
             <input
               type="checkbox"

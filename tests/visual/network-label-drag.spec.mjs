@@ -49,8 +49,12 @@ async function dragInward(page, diagram, id) {
   await expectLabelDragFinished(page, label);
   await expect.poll(async () => (await configFor(page)).options.labelOffsets?.[id]).not.toEqual(previous);
   const moved = await label.boundingBox();
-  expect(moved.x - box.x).toBeCloseTo(dx, 0);
-  expect(moved.y - box.y).toBeCloseTo(dy, 0);
+  const movedFrame = await diagram.boundingBox();
+  // Screenshot/print feedback checks can scroll the preview. Measure the
+  // label's displacement within its unchanged frame, not the viewport scroll.
+  expect(movedFrame.width).toBeCloseTo(frame.width, 0);
+  expect(moved.x - movedFrame.x - (box.x - frame.x)).toBeCloseTo(dx, 0);
+  expect(moved.y - movedFrame.y - (box.y - frame.y)).toBeCloseTo(dy, 0);
 }
 
 for (const width of [1440, 900]) {
@@ -138,6 +142,68 @@ for (const width of [1440, 900]) {
   });
 }
 
+for (const width of [1440, 900]) {
+  test(`Resample rearranges the authored network without replacing it at ${width}px`, async ({ page, browser }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    const original = {
+      ...fixture,
+      functions: [],
+      features: [],
+      style: "geometry",
+      penrosePreset: "geometry",
+      scalePercent: fixture.options.scalePercent,
+      metadata: { teacher: "retained" },
+      options: { ...fixture.options, penrosePreset: "geometry", labelOffsets: { "A.labelText": [3, 2], "relationship_AB.text": [4, -3] } },
+    };
+    const draft = assessment(1);
+    draft.questions[0].contentBlocks = [{ id: "network", kind: "diagram", graphConfig: original }];
+    await setup(page, draft);
+    const diagram = diagramFor(page);
+    const geometry = () => diagram.locator("circle, line, polygon").evaluateAll((nodes) => nodes.map((node) => node.outerHTML));
+    const before = await geometry();
+    await page.getByRole("button", { name: /^Question 1\. Click/ }).dblclick();
+    const contentTab = page.getByRole("tab", { name: "Content", exact: true });
+    if (await contentTab.isVisible()) await contentTab.click();
+    const header = page
+      .locator('[data-panel-region="header"]')
+      .filter({ has: page.locator('[data-mauth-diagram-tool="network"]') })
+      .first();
+    await header.getByRole("button", { name: "Edit Diagram block 1 settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Network preset", exact: true })).toHaveCount(0);
+    const inspector = page.locator("#mauth-inspector-pane");
+    await inspector.getByRole("button", { name: "Resample", exact: true }).click();
+    await expect.poll(async () => (await configFor(page)).options.variation).not.toBe(original.options.variation);
+    await expect(diagram).toHaveAttribute("data-mauth-print-render-state", "ready");
+    const resampled = await configFor(page);
+    expect(resampled).toEqual({ ...original, options: { ...original.options, variation: resampled.options.variation } });
+    await expect.poll(geometry).not.toEqual(before);
+    await expect(labelFor(diagram, "D.labelText")).toHaveCount(0);
+    await expect(labelFor(diagram, "relationship_AB.text")).toHaveAttribute("data-label-offset-x", "4");
+    await page.screenshot({ path: info.outputPath(`network-resample-settings-${width}.png`) });
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(() => configFor(page)).toEqual(original);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await expect.poll(() => configFor(page)).toEqual(resampled);
+    await inspector.getByRole("button", { name: "Content", exact: true }).click();
+    await page.getByRole("button", { name: /^Question 1\. Click/ }).dblclick();
+    await page.getByRole("button", { name: "Switch to Solutions mode", exact: true }).click();
+    await expect(labelFor(diagram, "D.labelText")).toHaveAttribute("role", "button");
+    await expect(labelFor(diagram, "relationship_AD.text")).toHaveAttribute("role", "button");
+    expect((await configFor(page)).data).toEqual(original.data);
+    await diagram.screenshot({ path: info.outputPath(`resampled-network-solutions-${width}.png`) });
+    const reopened = await browser.newPage({ baseURL: new URL(page.url()).origin, viewport: { width, height: 1000 } });
+    await setup(reopened, await readDraft(page));
+    expect(await configFor(reopened)).toEqual(resampled);
+    await reopened.close();
+    expect(errors).toEqual([]);
+  });
+}
+
 for (const scalePercent of [50, 200]) {
   test(`network drag feedback retains screen-pixel weight at ${scalePercent}% diagram scale`, async ({ page }) => {
     const draft = assessment(1);
@@ -194,4 +260,10 @@ test("Advanced network labels support keyboard movement and the shared reset con
   await page.getByRole("button", { name: "Reset label positions", exact: true }).click();
   await expect.poll(async () => (await configFor(page)).options.labelOffsets).toBeUndefined();
   expect((await configFor(page)).options.substanceSource).toBe(draft.questions[0].contentBlocks[0].graphConfig.options.substanceSource);
+  const beforeResample = await configFor(page);
+  await page.getByRole("button", { name: "Resample", exact: true }).click();
+  await expect.poll(async () => (await configFor(page)).options.variation).not.toBe(beforeResample.options.variation);
+  const resampled = await configFor(page);
+  expect(resampled).toEqual({ ...beforeResample, options: { ...beforeResample.options, variation: resampled.options.variation } });
+  await expect(diagram).toHaveAttribute("data-mauth-print-render-state", "ready");
 });
