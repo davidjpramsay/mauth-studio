@@ -125,6 +125,8 @@ Renderer-specific inspector surfaces should leave `SelectionInspector.tsx` as fo
 
 `PreviewDiagram` loads JSXGraph, 3D, vector, statistical, and Penrose-backed components on demand. Measurement placeholders preserve frame dimensions without loading an engine. Suspense placeholders and renderer failures participate in print readiness; a failed diagram cannot silently become a blank printed area. `functionGraphExpressions.ts` owns expression conversion and implicit-relation snapping shared by Content and rendering, so editing a blank document no longer imports JSXGraph through a helper.
 
+Compiled Penrose geometry/network scaling retains paper-size line weights, dash spacing and point-dot radii alongside fixed-size labels; the solved coordinates and geometric radii remain unchanged.
+
 Penrose responses and imported images expose loading/ready/error states beyond component loading. A changed Penrose request cannot reuse a previous request's readiness, aborted responses cannot replace current geometry, and an empty SVG response is an error. Image load failures and missing image sources also block printing.
 
 The Print button and Command/Ctrl-P share a bounded preflight. Diagram readiness, fonts, and two settled layout ticks share one deadline, with timer fallbacks for background windows. Errors or timeout show Retry/Cancel instead of opening Print. Retry remounts the print surface. Document edits, tab changes, and copy changes invalidate pending work; cancellation restores the window title. Browser-native print commands outside this app-controlled path cannot be cancelled by `beforeprint`.

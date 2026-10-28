@@ -1663,12 +1663,30 @@ function directTitle(element) {
   return [...element.children].find((child) => child.tagName.toLowerCase() === "title")?.textContent ?? "";
 }
 
-function fixedSizeLabelSvg(svg, scalePercent) {
+function fixedSizePresentationSvg(svg, scalePercent) {
   const scale = Number(scalePercent) / 100;
   if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 0.001) return svg;
 
   const document = new DOMParser().parseFromString(svg, "image/svg+xml");
   const svgElement = document.documentElement;
+
+  // Geometry extent scales, while school line weights and point dots retain
+  // their paper size, just like labels. Leave MathJax glyph internals alone.
+  for (const shape of svgElement.querySelectorAll("[stroke-width], [stroke-dasharray], circle")) {
+    if (shape.closest('svg[role="img"]')) continue;
+    const stroke = shape.getAttribute("stroke-width");
+    if (stroke !== null) shape.setAttribute("stroke-width", scaledPx(stroke, scale));
+    const dashes = shape.getAttribute("stroke-dasharray");
+    if (dashes && dashes !== "none") {
+      shape.setAttribute(
+        "stroke-dasharray",
+        dashes.replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, (value) => scaledPx(value, scale)),
+      );
+    }
+    if (shape.tagName.toLowerCase() === "circle" && /\.dot$/.test(directTitle(shape))) {
+      shape.setAttribute("r", scaledPx(shape.getAttribute("r"), scale));
+    }
+  }
 
   for (const text of [...svgElement.querySelectorAll("text")]) {
     const style = text.getAttribute("style");
@@ -1741,7 +1759,7 @@ export async function renderGeometricConstructionDiagram(spec) {
   const scalePercent = Number(spec?.options?.scalePercent ?? 100);
   const rawSvg = svgElementToString(await toSVG(optimized.value));
   const displayViewBox = visibleViewBox(rawSvg, width, height);
-  const fixedSvg = fixedSizeLabelSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const fixedSvg = fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
   const aliases = {};
   if (spec.type === "geometricConstruction" && !substanceSource) {
     for (const [prefix, entries] of [

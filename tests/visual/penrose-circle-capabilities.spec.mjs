@@ -15,6 +15,28 @@ for (const width of [1440, 900]) {
     draft.questions[0].contentBlocks = [
       { id: "circle", kind: "diagram", visibility: "student", graphConfig: fixture.student },
       { id: "circle-answer", kind: "diagram", visibility: "solution", markTicks: 0, graphConfig: fixture.solution },
+      {
+        id: "stroke-reference",
+        kind: "diagram",
+        graphConfig: {
+          type: "geometry2d",
+          widthPx: 420,
+          heightPx: 100,
+          xMin: -2,
+          xMax: 2,
+          yMin: -0.5,
+          yMax: 0.5,
+          showAxes: false,
+          showGrid: false,
+          data: {
+            points: [
+              { id: "P", x: -1, y: 0, showLabel: false },
+              { id: "Q", x: 1, y: 0, showLabel: false },
+            ],
+            segments: [{ id: "PQ", from: "P", to: "Q", color: "#203040", strokeWidth: 2 }],
+          },
+        },
+      },
     ];
     await loadFixture(page, draft);
     await page.route("**/api/diagram/penrose", async (route) =>
@@ -34,6 +56,15 @@ for (const width of [1440, 900]) {
       const diagram = page.locator(".preview-pane .a4-page .penrose-diagram").filter({ visible: true }).first();
       await expect(diagram).toHaveAttribute("data-mauth-print-render-state", "ready");
       await expect(diagram.locator("title").filter({ hasText: "rightAngleMark" })).toHaveCount(solutions ? 1 : 0);
+      const lineWeight = await page
+        .locator('.preview-pane .a4-page [stroke="#203040"]')
+        .first()
+        .evaluate((node) => parseFloat(node.getAttribute("stroke-width")) * node.getScreenCTM().a);
+      const penroseWeight = await diagram
+        .locator("circle")
+        .filter({ has: page.locator("title", { hasText: "`omega`.shape" }) })
+        .evaluate((node) => parseFloat(node.getAttribute("stroke-width")) * node.getScreenCTM().a);
+      expect(penroseWeight).toBeCloseTo(lineWeight, 2);
       const id = solutions ? "circle-answer" : "circle";
       pending.push({
         requestId: `inspection-${solutions}`,
@@ -58,6 +89,14 @@ for (const width of [1440, 900]) {
       expect(inspection.renderedLayout.labelCount).toBeGreaterThanOrEqual(5);
       await diagram.screenshot({ path: info.outputPath(`${solutions ? "solutions" : "student"}-circle-${width}.png`) });
     }
+    await page.evaluate(() => {
+      window.__strokePrinted = false;
+      window.print = () => (window.__strokePrinted = true);
+    });
+    await page.getByRole("button", { name: /^Print mode/ }).click();
+    await page.waitForFunction(() => window.__strokePrinted);
+    await page.emulateMedia({ media: "print" });
+    await page.pdf({ path: info.outputPath("matched-line-weights.pdf"), preferCSSPageSize: true });
     expect(errors).toEqual([]);
   });
 }

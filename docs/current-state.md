@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; automatic Penrose geometry with draggable labels, stable presentation offsets, capability-based routing, live inspection, and prior editor/diagram fixes
+worktree: clean at this checkpoint; consistent Penrose paper line weights, draggable labels, stable presentation offsets, capability-based routing, live inspection, and prior editor/diagram fixes
 ```
+
+### 28 October Penrose Line Weight At Larger Scales
+
+Compiled Penrose diagrams now normalize stroke widths, dash spacing and point-dot radii after layout alongside the existing fixed-size labels. The showcase circle at 200% previously doubled its line weight; it now retains the same nominal two-pixel school stroke as the JSXGraph reference. Mathematical coordinates, geometric radii, diagram extent and saved label offsets are preserved. MathJax glyph internals are excluded from geometry scaling.
+
+Full `pnpm check` passes with 114 API, 729 web/action, 17 lifecycle, 11 Plotly and 80 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Native render checks cover 50/100/160/200% and verify fixed paper weights and unchanged geometry. Six browser checks pass at 1440/900 px, including measured Penrose/JSXGraph stroke equality in Student/Solutions, native inspection, PDF output and the existing drag/history/reopening/hidden-answer/investigation cases. Reviewed screen and printed output show consistent thin outlines and answer marks. The Browser plugin is unavailable, so repository Playwright provides that comparison.
+
+The hardened local build/install passes. All 23 web, two connector and seven Penrose runtime files plus the diagram brain match the tested bundle. The installed API returns the corrected two-pixel paper stroke for both showcase copies, and connector doctor passes. The latest draft, label offsets, loaded revision, saved-file bytes and inactive recovery tab were preserved through installation; current unsaved changes remain available. No public release was published.
 
 ### 28 October Automatic Penrose Geometry With Draggable Labels
 
@@ -383,7 +391,7 @@ API: 114 passed
 web/actions: 729 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 79 passed (desktop, connector, and CI contract)
+launcher: 80 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

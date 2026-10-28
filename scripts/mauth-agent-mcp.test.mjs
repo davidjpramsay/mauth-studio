@@ -223,7 +223,14 @@ test("Penrose diameter construction satisfies givens and preserves answer-only g
     assert.ok(Math.abs(cosine) < 0.001, "angle ACB is 90 degrees");
     assert.ok(Math.abs(A[1] - B[1]) < radius * 0.001);
     assert.ok(C[1] < O[1], "apex is above the diameter");
-    assert.match(result.svg, /stroke-dasharray="6 5"/);
+    const dashed = svg.querySelector("[stroke-dasharray]");
+    assert.deepEqual(
+      dashed
+        .getAttribute("stroke-dasharray")
+        .split(" ")
+        .map((n) => (Number(n) * config.options.scalePercent) / 100),
+      [6, 5],
+    );
     const titles = [...svg.querySelectorAll("title")].map((node) => node.textContent);
     assert.equal(
       titles.some((title) => title.includes("rightAngleMark")),
@@ -249,5 +256,41 @@ test("Penrose diameter construction satisfies givens and preserves answer-only g
       [...svg.querySelectorAll("circle, line, polygon")].map((node) => node.outerHTML),
       "label offsets leave optimized geometry unchanged",
     );
+  }
+});
+
+test("Penrose scale preserves paper stroke, dash and dot sizes without moving geometry", async () => {
+  const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, "packages/diagram-penrose/fixtures/diameter-circle.json"), "utf8"));
+  let originalGeometry;
+  for (const scalePercent of [50, 100, 160, 200]) {
+    const result = await renderGeometricConstructionDiagram({
+      ...fixture.solution,
+      options: { ...fixture.solution.options, scalePercent },
+    });
+    const svg = new DOMParser().parseFromString(result.svg, "image/svg+xml");
+    const shape = (title) => {
+      const parent = [...svg.querySelectorAll("title")].find((node) => node.textContent === title).parentElement;
+      return parent.matches("circle, line, path, polygon") ? parent : parent.querySelector("circle, line, path, polygon");
+    };
+    const scale = scalePercent / 100;
+    assert.ok(Math.abs(+shape("`AB`.segmentLine").getAttribute("stroke-width") * scale - 2) < 0.002);
+    assert.ok(Math.abs(+shape("`omega`.shape").getAttribute("stroke-width") * scale - 2) < 0.002);
+    assert.ok(Math.abs(+shape("`C`.dot").getAttribute("r") * scale - 3) < 0.002);
+    const geometry = [...svg.querySelectorAll("circle, line, polygon")].map((node) =>
+      [...node.attributes]
+        .filter(
+          (attribute) =>
+            !["stroke-width", "stroke-dasharray", ...(/\.dot$/.test(node.querySelector("title")?.textContent ?? "") ? ["r"] : [])].includes(
+              attribute.name,
+            ),
+        )
+        .map((a) => [a.name, a.value]),
+    );
+    if (originalGeometry) assert.deepEqual(geometry, originalGeometry);
+    originalGeometry = geometry;
+    const answerTitle = [...svg.querySelectorAll("title")].find((node) => node.textContent.includes("rightAngleMark")).textContent;
+    const answerMark = shape(answerTitle);
+    assert.ok(Math.abs(+answerMark.getAttribute("stroke-width") * scale - 1.7) < 0.002);
   }
 });
