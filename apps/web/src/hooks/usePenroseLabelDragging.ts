@@ -6,7 +6,7 @@ export type PenroseLabelMove = (id: string, offset: [number, number]) => void;
 export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, svg: string, onMove?: PenroseLabelMove) {
   const commit = useStableEvent((id: string, offset: [number, number]) => onMove?.(id, offset));
   const editable = Boolean(onMove);
-  const focusTarget = useRef<string | null>(null);
+  const focusTarget = useRef<{ id: string; pointer: boolean } | null>(null);
   useLayoutEffect(() => {
     const container = ref.current;
     if (!container || !editable) return;
@@ -22,7 +22,8 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
       label.setAttribute("role", "button");
       label.setAttribute("aria-label", `Move label ${label.dataset.mauthPenroseLabel?.split(".")[0]}`);
       label.setAttribute("aria-description", "Drag or use arrow keys to move this label. Home restores its automatic position.");
-      if (label.dataset.mauthPenroseLabel === focusTarget.current) {
+      if (focusTarget.current && label.dataset.mauthPenroseLabel === focusTarget.current.id) {
+        if (focusTarget.current.pointer) label.dataset.mauthLabelPointerFocus = "true";
         const focus = () => {
           if (
             label.isConnected &&
@@ -69,11 +70,13 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
       if (!label || !move) return;
       event.preventDefault();
       event.stopPropagation();
+      label.dataset.mauthLabelPointerFocus = "true";
       label.focus({ preventScroll: true });
       label.setPointerCapture(event.pointerId);
       const original = label.getAttribute("transform");
       let position = move.start;
       label.style.cursor = "grabbing";
+      label.dataset.mauthLabelDragging = "true";
       function update(next: PointerEvent) {
         if (next.pointerId !== event.pointerId) return;
         next.preventDefault();
@@ -88,6 +91,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
         label!.removeEventListener("lostpointercapture", lost);
         cancelDrag = undefined;
         label!.style.cursor = "grab";
+        delete label!.dataset.mauthLabelDragging;
         if (label!.hasPointerCapture(event.pointerId)) label!.releasePointerCapture(event.pointerId);
       }
       function cancel() {
@@ -101,7 +105,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
         update(next);
         cleanup();
         if (label!.isConnected && Math.hypot(position[0] - move!.start[0], position[1] - move!.start[1]) > 0.01) {
-          focusTarget.current = move!.id;
+          focusTarget.current = { id: move!.id, pointer: true };
           commit(move!.id, position);
         }
       }
@@ -124,7 +128,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
     function key(event: KeyboardEvent) {
       const label = target(event);
       const move = label && startMove(label);
-      if (!move || cancelDrag) return;
+      if (!label || !move || cancelDrag) return;
       const step = event.shiftKey ? 10 : 2;
       const direction: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0],
@@ -135,8 +139,13 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
       if (event.key !== "Home" && !direction[event.key]) return;
       event.preventDefault();
       event.stopPropagation();
-      focusTarget.current = move.id;
+      delete label.dataset.mauthLabelPointerFocus;
+      focusTarget.current = { id: move.id, pointer: false };
       commit(move.id, event.key === "Home" ? [0, 0] : move.position(...direction[event.key]));
+    }
+    function blur(event: FocusEvent) {
+      const label = target(event);
+      if (label) delete label.dataset.mauthLabelPointerFocus;
     }
     const click = (event: MouseEvent) => {
       if (target(event)) event.stopPropagation();
@@ -144,12 +153,14 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
     container.addEventListener("pointerdown", down);
     container.addEventListener("keydown", key);
     container.addEventListener("click", click);
+    container.addEventListener("focusout", blur);
     return () => {
       window.cancelAnimationFrame(focusFrame);
       cancelDrag?.();
       container.removeEventListener("pointerdown", down);
       container.removeEventListener("keydown", key);
       container.removeEventListener("click", click);
+      container.removeEventListener("focusout", blur);
     };
   }, [ref, svg, editable, commit]);
 }

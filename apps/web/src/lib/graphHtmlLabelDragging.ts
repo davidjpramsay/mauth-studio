@@ -22,7 +22,7 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
   label.isDraggable = false;
   Object.assign(node.style, { cursor: "move", pointerEvents: "auto", userSelect: "none", webkitUserSelect: "none", touchAction: "none" });
   node.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || node.dataset.mauthLabelDragging === "true") return;
     const start = coordinates();
     if (!start) return;
     const rect = board.containerObj.getBoundingClientRect();
@@ -35,6 +35,7 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
     event.preventDefault();
     event.stopPropagation();
     node.setPointerCapture?.(event.pointerId);
+    node.dataset.mauthLabelDragging = "true";
     const move = (next: PointerEvent) => {
       if (next.pointerId !== event.pointerId || !node.isConnected) return;
       next.preventDefault();
@@ -46,9 +47,11 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
+      node.removeEventListener("lostpointercapture", finish);
+      delete node.dataset.mauthLabelDragging;
       if (node.hasPointerCapture?.(event.pointerId)) node.releasePointerCapture?.(event.pointerId);
       if (!node.isConnected) return;
-      if (next.type === "pointercancel") {
+      if (next.type !== "pointerup") {
         label.moveTo?.(start, 0);
         board.update();
         return;
@@ -59,5 +62,6 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
+    node.addEventListener("lostpointercapture", finish);
   });
 }

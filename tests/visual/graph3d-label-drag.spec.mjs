@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { assessment, loadFixture } from "./fixtures.mjs";
+import { expectLabelDragFeedback, expectLabelDragFinished } from "./label-drag-feedback.mjs";
 
 function pyramid() {
   const points = { A: [-3, -3, 0], B: [3, -3, 0], C: [3, 3, 0], D: [-3, 3, 0], T: [0, 0, 4], O: [0, 0, 0], M: [0, -3, 0] };
@@ -50,7 +51,9 @@ async function drag(page, label, dx, dy) {
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down();
   await page.mouse.move(before.x + before.width / 2 + dx, before.y + before.height / 2 + dy, { steps: 12 });
+  await expectLabelDragFeedback(page, label);
   await page.mouse.up();
+  await expectLabelDragFinished(page, label);
   return before;
 }
 
@@ -178,6 +181,7 @@ test("3D point, segment, face and legacy dimension labels keep stable targets af
   await page.mouse.move(at.x + 25, at.y + 20);
   await page.evaluate(() => window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1 })));
   await page.mouse.up();
+  await expectLabelDragFinished(page, label);
   expect((await configFor(page)).data.dimensionLines[1].labelScreenOffsetPx).toEqual(moved.data.dimensionLines[1].labelScreenOffsetPx);
   await label.dblclick();
   await expect.poll(async () => (await configFor(page)).data.dimensionLines[1].labelScreenOffsetPx).toBeUndefined();

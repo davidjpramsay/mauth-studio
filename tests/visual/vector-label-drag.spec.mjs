@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { assessment, loadFixture } from "./fixtures.mjs";
+import { expectLabelDragFeedback, expectLabelDragFinished } from "./label-drag-feedback.mjs";
 
 function fixture() {
   const draft = assessment(1);
@@ -121,7 +122,9 @@ async function drag(page, label, dx, dy) {
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down();
   await page.mouse.move(before.x + before.width / 2 + dx, before.y + before.height / 2 + dy, { steps: 12 });
+  await expectLabelDragFeedback(page, label);
   await page.mouse.up();
+  await expectLabelDragFinished(page, label);
   return before;
 }
 
@@ -159,6 +162,17 @@ for (const width of [1440, 900]) {
       }
     }
     const saved = await readConfig(page);
+    const cancelLabel = graph.locator('[data-mauth-label-role="vector"][data-mauth-vector-id="a"]');
+    const cancelBox = await cancelLabel.boundingBox();
+    await page.mouse.move(cancelBox.x + 3, cancelBox.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(cancelBox.x + 20, cancelBox.y + 12);
+    const dragging = page.locator('[data-mauth-label-dragging="true"]');
+    await expect(dragging).toHaveCount(1);
+    await dragging.evaluate((node) => node.releasePointerCapture(1));
+    await page.mouse.up();
+    await expectLabelDragFinished(page, cancelLabel);
+    expect(await readConfig(page)).toEqual(saved);
     expect(saved.metadata.vector2d.vectors.slice(2)).toMatchObject(original.metadata.vector2d.vectors.slice(2));
     expect(saved.metadata.vector2d.vectors.map(({ id, start, components, color }) => ({ id, start, components, color }))).toEqual(
       original.metadata.vector2d.vectors.map(({ id, start, components, color }) => ({ id, start, components, color })),

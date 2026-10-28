@@ -683,7 +683,7 @@ function enableProjectedLabelDragging(
     node.dataset.mauthLabelScreenOffsetY = String(screenOffset[1]);
   };
   const handlePointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || activePointerId !== null) return;
     activePointerId = event.pointerId;
     const startClientX = event.clientX;
     const startClientY = event.clientY;
@@ -696,11 +696,14 @@ function enableProjectedLabelDragging(
     event.preventDefault();
     event.stopPropagation();
     node.setPointerCapture?.(event.pointerId);
+    node.dataset.mauthLabelDragging = "true";
 
     const removeListeners = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      node.removeEventListener("lostpointercapture", handlePointerCancel);
+      delete node.dataset.mauthLabelDragging;
       removeWindowListeners = () => undefined;
     };
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -733,6 +736,7 @@ function enableProjectedLabelDragging(
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
+    node.addEventListener("lostpointercapture", handlePointerCancel);
     removeWindowListeners = removeListeners;
   };
   const handleDoubleClick = (event: MouseEvent) => {

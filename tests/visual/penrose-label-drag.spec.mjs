@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import { assessment, investigation, loadFixture } from "./fixtures.mjs";
 import { renderGeometricConstructionDiagram } from "../../packages/diagram-penrose/src/index.mjs";
+import { expectLabelDragFeedback, expectLabelDragFinished } from "./label-drag-feedback.mjs";
 
 const fixture = JSON.parse(fs.readFileSync(new URL("../../packages/diagram-penrose/fixtures/diameter-circle.json", import.meta.url)));
 const readDraft = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("mauth-studio.current-draft.v1")));
@@ -29,7 +30,9 @@ async function drag(page, label, dx, dy) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 8 });
+  await expectLabelDragFeedback(page, label);
   await page.mouse.up();
+  await expectLabelDragFinished(page, label);
   return box;
 }
 const geometry = (diagram) => diagram.locator("circle, line, polygon").evaluateAll((nodes) => nodes.map((node) => node.outerHTML));
@@ -82,6 +85,7 @@ for (const width of [1440, 900]) {
     await page.mouse.move(beforeCancel.x + 30, beforeCancel.y + 20);
     await page.keyboard.press("Escape");
     await page.mouse.up();
+    await expectLabelDragFinished(page, labelFor(diagram, "C.labelText"));
     expect((await configs(page))[0].options.labelOffsets).toEqual(saved.options.labelOffsets);
     await diagram.screenshot({ path: info.outputPath(`student-labels-${width}.png`) });
     const reopenedContext = await browser.newContext({ baseURL: new URL(page.url()).origin, viewport: { width, height: 1000 } });
@@ -173,6 +177,7 @@ test("structured Penrose labels retain hidden answers and support keyboard and r
   await page.keyboard.press("ArrowRight");
   await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"][0]).toBeGreaterThan(offset[0]);
   await expect(label).toBeFocused();
+  await expect(label).toHaveCSS("outline-style", "dashed");
   await page.keyboard.press("Home");
   await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"]).toEqual([0, 0]);
   await drag(page, label, 2000, -2000);

@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; Penrose resampling validates constraints with bounded deterministic recovery, retaining the prior diagram, label, and editor fixes
+worktree: clean at this checkpoint; consistent label-drag feedback across editable diagram families, with validated Penrose resampling and prior diagram/editor fixes retained
 ```
+
+### 28 October Consistent Label Drag Outlines
+
+The dashed Penrose box previously depended on browser `:focus-visible` heuristics, so pointer dragging showed it inconsistently. Penrose, JSXGraph function/coordinate/geometry/vector labels and projected 3D labels now share an explicit transient drag attribute and one blue dashed outline style. Release, cancellation and lost pointer capture clear the outline. Penrose keyboard focus remains visible, while pointer focus restoration after a saved move no longer leaves a stray outline. Print CSS suppresses feedback even during a drag; saved document data and native SVG exports do not contain it. Static labels remain static.
+
+Thirteen browser checks pass at 1440/900 px, exercising all five editable diagram families, point/segment/angle/dimension/face/axis labels, repeated drags, hidden solutions, history, reopening, cancellation/lost capture, retained Penrose keyboard focus and print suppression. Screenshots from every family and a rasterised Solutions PDF were inspected. The tests account for Chromium rounding outline widths/gaps to screen pixels at compact preview zoom. Browser plugin not available; repository Playwright provides the interaction evidence. Full `pnpm check` passes with 115 API, 730 web/action, 17 lifecycle, 11 Plotly and 82 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build.
+
+The hardened local build/install passes. All 23 web, two connector and seven Penrose runtime files plus the diagram brain match the verified bundle. The complete authored draft, all saved label positions, revision 2, saved-file bytes and both recovered tabs are unchanged; the live mutation id remains identical. Connector doctor passes, and a native screenshot confirms AFTER HOURS open on Question 4. Native pointer automation returned `noWindowsAvailable`, so the drag-feedback interaction evidence comes from the browser checks, not an asserted native pointer test. No public release was published.
 
 ### 28 October Penrose Resample Constraint Validation
 

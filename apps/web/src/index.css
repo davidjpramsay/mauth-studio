@@ -423,11 +423,12 @@
     width: 100%;
   }
 
-  .penrose-diagram [data-mauth-penrose-label]:focus {
+  :where([data-mauth-penrose-label]):focus {
     outline: none;
   }
 
-  .penrose-diagram [data-mauth-penrose-label]:focus-visible {
+  [data-mauth-label-dragging="true"],
+  [data-mauth-penrose-label]:focus-visible:not([data-mauth-label-pointer-focus]) {
     outline: 1px dashed #2563eb;
     outline-offset: 3px;
   }
@@ -2807,7 +2808,8 @@
 }
 
 @media print {
-  .penrose-diagram [data-mauth-penrose-label] {
+  [data-mauth-label-dragging],
+  [data-mauth-penrose-label] {
     outline: none !important;
   }
   html,

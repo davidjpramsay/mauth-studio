@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { assessment, loadFixture } from "./fixtures.mjs";
+import { expectLabelDragFeedback, expectLabelDragFinished } from "./label-drag-feedback.mjs";
 
 const circle = {
   type: "geometry2d",
@@ -46,7 +47,9 @@ async function dragLabel(page, label, dx = 20, dy = 8) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 12 });
+  await expectLabelDragFeedback(page, label);
   await page.mouse.up();
+  await expectLabelDragFinished(page, label);
 }
 
 for (const width of [1440, 900]) {
