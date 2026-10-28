@@ -470,13 +470,15 @@ const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
   onlyB: { x: 276, y: 150 },
 };
 const THREE_SET_REGION_LABEL_POSITIONS = {
-  onlyA: { x: 132, y: 128 },
-  onlyB: { x: 288, y: 128 },
+  // Area centres of the fixed three-circle layout, with room for total tabs
+  // in the single-set regions. Keep answers in the same positions as givens.
+  onlyA: { x: 140, y: 110 },
+  onlyB: { x: 280, y: 110 },
   onlyC: { x: 210, y: 226 },
-  onlyAB: { x: 210, y: 102 },
-  onlyAC: { x: 176, y: 170 },
-  onlyBC: { x: 244, y: 170 },
-  intersection: { x: 210, y: 148 },
+  onlyAB: { x: 210, y: 95 },
+  onlyAC: { x: 164, y: 173 },
+  onlyBC: { x: 256, y: 173 },
+  intersection: { x: 210, y: 146 },
   outside: { x: 342, y: 252 },
 };
 

@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; Penrose timeout recovery and bounded shared rendering, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; centred three-set Venn values, with prior Penrose recovery and diagram/editor fixes retained
 ```
+
+### 28 October Centred Three-Set Venn Values
+
+Three-set region counts previously used anchors close to the inner boundaries, particularly the two lower pairwise overlaps. The native SVG renderer now places overlap values near their regions' area centres and moves the single-set answer values into more balanced positions clear of the total tabs. The outside value, totals, circles, shading, authored counts and two-set layout are unchanged. This applies to existing and new documents without document mutations.
+
+The focused API check independently integrates the rendered overlap areas and verifies their value anchors against those centroids. Six browser checks pass, including existing two-set printing and three-set Student/Solutions copies at 75/115/200% diagram scale and 1440/900 px viewports. Numeric glyph bounds stay within their intended regions and hidden answers remain hidden. Rendered Student/Solutions screenshots were visually inspected. Browser plugin not available; repository Playwright provides the browser evidence. Full `pnpm check` passes with 122 API, 735 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and the production build.
+
+The hardened local build/install and connector doctor pass. All 24 web, two connector, seven Penrose and 201 API-sidecar files plus the desktop archive match the verified bundle. Native screenshots confirm the updated Question 6 in Student and Solutions. Before/after packaged SVG comparison finds only the six intended region-value position changes; geometry, totals and labels are otherwise identical. Both tab documents, saved-file bytes, revision 3, clean state and live snapshot id are preserved; recovered navigation/status timestamps are refreshed normally. Question 6 remains open in Student mode. No document edits or public release were made.
 
 ### 28 October Penrose Render Timeout Recovery
 

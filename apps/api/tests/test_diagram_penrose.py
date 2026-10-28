@@ -758,6 +758,38 @@ def test_three_set_totals_use_curved_tabs_and_keep_the_universe_box(blank):
     assert [node.text for node in root.findall("s:text", namespace)][:4] == ["U", "M", "A", "C"]
 
 
+def test_three_set_overlap_values_are_at_region_area_centres():
+    names = ["onlyA", "onlyB", "onlyC", "onlyAB", "onlyAC", "onlyBC", "intersection", "outside"]
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **SET_SPEC,
+            "data": {"setCount": 3, "regions": [{"name": name, "label": str(i)} for i, name in enumerate(names)]},
+        },
+    )
+    assert response.status_code == 200
+    root = ElementTree.fromstring(response.json()["svg"])
+    ns = {"s": "http://www.w3.org/2000/svg"}
+    circles = [(float(c.get("cx")), float(c.get("cy")), float(c.get("r"))) for c in root.findall("s:circle", ns)]
+    positions = {names[int(t.text)]: (float(t.get("x")), float(t.get("y"))) for t in root.findall("s:text", ns)[4:]}
+
+    # Independently integrate the rendered regions on a unit grid. This catches
+    # misplaced anchors without duplicating the renderer's coordinate table.
+    samples = {mask: [] for mask in (3, 5, 6, 7)}
+    for x in range(88, 332):
+        for y in range(52, 266):
+            point = (x + 0.5, y + 0.5)
+            mask = sum(
+                1 << i for i, (cx, cy, r) in enumerate(circles) if (point[0] - cx) ** 2 + (point[1] - cy) ** 2 < r**2
+            )
+            if mask in samples:
+                samples[mask].append(point)
+    for name, mask in [("onlyAB", 3), ("onlyAC", 5), ("onlyBC", 6), ("intersection", 7)]:
+        points = samples[mask]
+        centroid = tuple(sum(p[axis] for p in points) / len(points) for axis in (0, 1))
+        assert positions[name] == pytest.approx(centroid, abs=1)
+
+
 def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():
     response = client.post(
         "/api/diagram/penrose",

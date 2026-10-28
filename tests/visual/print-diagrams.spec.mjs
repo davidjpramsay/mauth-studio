@@ -143,3 +143,106 @@ test("shared Venn prints blank answer regions and total badges only in Student m
     await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
   }
 });
+
+for (const [width, scale] of [
+  [1440, 115],
+  [900, 115],
+  [1440, 75],
+  [1440, 200],
+]) {
+  test(`three-set values stay centred and clear in both copies at ${width}px and ${scale}%`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const fixture = assessment(1);
+    fixture.questions[0].text = "Complete the four blank regions of the Venn diagram.";
+    fixture.questions[0].contentBlocks = [
+      {
+        id: "venn-three",
+        kind: "diagram",
+        graphConfig: {
+          type: "setDiagram",
+          options: { scalePercent: scale },
+          scalePercent: scale,
+          data: {
+            setCount: 3,
+            universe: { name: "U", label: "U", countLabel: "40" },
+            sets: [
+              { name: "M", label: "M", countLabel: "22" },
+              { name: "A", label: "A", countLabel: "20" },
+              { name: "C", label: "C", countLabel: "18" },
+            ],
+            regions: [
+              { name: "onlyA", label: "8", solutionOnly: true },
+              { name: "onlyB", label: "5", solutionOnly: true },
+              { name: "onlyC", label: "5", solutionOnly: true },
+              { name: "onlyAB", label: "6" },
+              { name: "onlyAC", label: "4" },
+              { name: "onlyBC", label: "5" },
+              { name: "intersection", label: "4" },
+              { name: "outside", label: "3", solutionOnly: true },
+            ],
+          },
+        },
+      },
+    ];
+    await loadFixture(page, fixture);
+    await page.route("**/api/diagram/penrose", async (route) =>
+      route.fulfill({ json: await renderGeometricConstructionDiagram(route.request().postDataJSON()) }),
+    );
+    await page.reload();
+    for (const solutions of [false, true]) {
+      if (solutions) await page.getByRole("button", { name: "Switch to Solutions mode", exact: true }).click();
+      await page.evaluate(() => {
+        window.__printed = false;
+        window.print = () => {
+          window.__printed = true;
+        };
+      });
+      await page.getByRole("button", { name: /^Print mode/ }).click();
+      await page.waitForFunction(() => window.__printed);
+      await page.emulateMedia({ media: "print" });
+      const diagram = page.locator(".print-preview-stage .penrose-diagram");
+      await expect(diagram.locator("svg > text")).toHaveText([
+        "U",
+        "M",
+        "A",
+        "C",
+        ...(solutions ? ["8", "5", "5"] : ["", "", ""]),
+        "6",
+        "4",
+        "5",
+        "4",
+        solutions ? "3" : "",
+      ]);
+      // Every corner of each numeric glyph must stay in its own region.
+      const contained = await diagram.locator("svg").evaluate((svg) => {
+        const circles = [...svg.querySelectorAll(":scope > circle")].map((c) => [
+          Number(c.getAttribute("cx")),
+          Number(c.getAttribute("cy")),
+          Number(c.getAttribute("r")),
+        ]);
+        return [...svg.querySelectorAll(":scope > text")].slice(4, 11).every((text, i) => {
+          if (!text.textContent) return true;
+          const b = text.getBBox();
+          return [b.x, b.x + b.width].every((x) =>
+            [b.y, b.y + b.height].every((y) => {
+              const mask = circles.reduce((value, [cx, cy, r], index) => value + (Math.hypot(x - cx, y - cy) < r ? 1 << index : 0), 0);
+              return mask === [1, 2, 4, 3, 5, 6, 7][i];
+            }),
+          );
+        });
+      });
+      expect(contained).toBe(true);
+      await diagram.screenshot({ path: testInfo.outputPath(solutions ? "solutions.png" : "student.png") });
+      await page.pdf({
+        path: testInfo.outputPath(solutions ? "solutions.pdf" : "student.pdf"),
+        preferCSSPageSize: true,
+        printBackground: true,
+      });
+      await page.emulateMedia({ media: "screen" });
+      await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+    }
+    expect(errors).toEqual([]);
+  });
+}
