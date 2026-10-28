@@ -231,6 +231,8 @@ The MCP process in `scripts/mauth-agent-mcp.mjs` is a wrapper over this local HT
 
 See `docs/agent-bridge.md`, `docs/agent-docs.md`, and `docs/mauth-actions.md`.
 
+The Settings **Content** return button uses the navigation controller to close Settings, reveal and expand the selected content anchor, scroll it into view, and focus the Content editor at every workspace size. It does not merely change the compact-tab flag. Returning preserves document state and selection; the block settings button or toolbar can reopen Settings.
+
 The diagram catalog and intent classifier live in `packages/shared/src/diagramTools.ts`. Both frontend inspection/snapshot planning and the bundled MCP connector use that source. The read-only `mauth_diagram_tools` tool and `mauth://authoring/diagram-tools/v1` resource expose native ids, engine names, use cases and examples without a live API. Snapshots and dry-run snapshots add current/recommended tool metadata and advisory mismatch warnings without affecting mutation hashes or authored data. The manual diagram panel subtitle remains visible when collapsed, and Settings repeats the actual tool; all type selectors use the same catalog. Renderer implementations remain separate.
 
 ## Manual Solutions

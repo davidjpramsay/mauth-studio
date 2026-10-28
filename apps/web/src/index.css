@@ -551,10 +551,6 @@
     display: none;
   }
 
-  .settings-back-button {
-    display: none;
-  }
-
   .editor-pane,
   .selection-inspector-pane {
     container-name: workspace-pane;
@@ -634,11 +630,6 @@
   .app-workspace[data-responsive-mode="compact"] .workspace-tool-dock[data-active-tool="settings"] > .editor-pane,
   .app-workspace[data-responsive-mode="overlay"] .workspace-tool-dock[data-active-tool="settings"] > .editor-pane {
     display: none;
-  }
-
-  .app-workspace[data-responsive-mode="compact"] .settings-back-button,
-  .app-workspace[data-responsive-mode="overlay"] .settings-back-button {
-    display: inline-flex;
   }
 
   .app-workspace[data-responsive-mode="overlay"] {

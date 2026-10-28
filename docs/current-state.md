@@ -52,8 +52,12 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; diagram tool discovery, shared routing guidance, visible Content/Settings tool identity, snapshot/dry-run mismatch warnings, and prior diagram/label fixes
+worktree: clean at this checkpoint; working Settings Content return, diagram tool discovery, shared routing guidance, visible tool identity, snapshot/dry-run mismatch warnings, and prior diagram/label fixes
 ```
+
+### 28 October Settings Content Return
+
+The Settings **Content** button previously changed only the compact tab flag, so it had no visible effect in the wide layout. It now invokes the shared navigation controller to close Settings, reveal/expand the selected content anchor, scroll it into view, and focus the Content editor. Compact and overlay workspaces use the same action; the ordinary Content/Settings tabs retain their existing switch behavior. The action changes only navigation/presentation and leaves authored content intact. The new browser reproduction fails on the prior build. All four return regressions pass at 1440, 1100 and 800 px, covering pointer and keyboard activation, selected collapsed-block reveal, focus, unchanged document content, reopening Settings, and the empty state; both existing tool-identity regressions also pass. Full `pnpm check` passes with 114 API, 723 web/action, 17 lifecycle, 11 Plotly and 77 launcher/runtime tests, Quick Look, lint, TypeScript and build. The hardened local build/install passes, and all 23 installed web files match the tested bundle. Native AX interaction reproduced the old no-op and verifies the installed fix: Settings disappears, the selected circle content is visible, and Content editor receives focus. Native screenshots confirm the returned content renders; viewport and element captures were used to avoid a full-page capture artifact in Chromium. AFTER HOURS remains an unsaved revision-1 draft with its content, saved-file bytes and snapshot id unchanged. The inactive recovery tab is retained. Connector doctor passes. No public release was published.
 
 ### 28 October Diagram Tool Discovery And Identity
 
