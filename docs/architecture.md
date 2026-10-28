@@ -317,6 +317,8 @@ Rendering systems remain separate by design:
 - Plotly: statistics charts.
 - Formatting engine: backend structured/HTML render output.
 
+`cartesianGrid.ts` supplies the shared finite grid segments for function, vector and coordinate-geometry diagrams. The renderer closes all four edges at the exact authored bounds, replaces coincident grid lines rather than doubling them, and draws a solid perimeter in the visible grid style. It never changes view bounds, curve domains or saved state; hidden grids have no perimeter. Polar and Plotly grids keep their own conventions.
+
 Do not move Plotly or Penrose behavior into JSXGraph or React-only overlays. Solution graph annotations should be stored as editable diagram features, not one-off SVG markup.
 
 Browser preview uses generated A4 page boxes. Print uses the browser print dialog and physical `@page` rules whose margins are derived from the active document's stored page padding. The print content box must match the preview content box in both width and height so line wrapping cannot create print-only pages. Preview and print consume the same page segmentation rather than maintaining separate layouts.

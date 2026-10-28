@@ -52,8 +52,14 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; Penrose 3.3.1, fresh Resample labels and ranked network layout, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; closed Cartesian grid boundaries and scale-number clearance, with prior diagram/editor fixes retained
 ```
+
+### 28 October Clean Cartesian Grid Boundaries
+
+Function, vector and coordinate-geometry grids now share one finite segment generator. All four edges close at the exact authored bounds, including fractional or partial edge cells; coincident grid lines are replaced instead of doubled. Major/minor visibility and colours remain authoritative, minor-only frames have solid minor-weight edges, and hidden grids have no frame. Automatic axis-number rows/columns move just outside the frame only when their measured boxes touch its perimeter, retaining exact tick alignment. Curve domains, coordinates, teacher label offsets, hidden answers and document state are unchanged. Diagram brain, agent rules and human documentation now require clean boundaries and recommend major-step-aligned bounds for new ordinary graphs without silently changing deliberate source bounds.
+
+Six focused geometry tests pass, including tiny scales and large coordinate offsets. Two browser regressions at 1440/900 px cover the reported parabola, fractional vector bounds, minor-only coordinate geometry, hidden grids, measured numeric-label clearance, copy switching and Student/Solutions print, with unchanged stored configs and no console errors. Browser plugin not available; repository Playwright supplies browser evidence. Screenshots and freshly rendered Student/Solutions PDF pages were visually inspected. The full quality gate passes with 122 API, 741 web/action, 17 lifecycle, 11 Plotly, four Penrose, 83 launcher/runtime and three Quick Look tests, plus formatting, lint, TypeScript and production build. All five focused browser checks pass, including the existing vector label drag, Undo/Redo, reopening and print checks. The final hardened macOS build and packaged connector verification pass. Installation is pending: the running app has unsaved edits and an active Undo history, which is not persisted across restarts. The teacher has been asked whether to keep that session running or quit normally for installation. The live snapshot id, active revision 4 and content are unchanged; both recovery files are backed up in `/private/tmp/mauth-grid-evidence/pre-update-backup`. Do not quit the app or overwrite the installed bundle until this history-loss choice is resolved. No teacher content or public release was changed.
 
 ### 28 October Network Layout And Fresh Resample Labels
 
@@ -493,11 +499,11 @@ Latest full gate on 28 October 2026:
 
 ```text
 formatting and lint: passed
-API: 115 passed
-web/actions: 730 passed
+API: 122 passed
+web/actions: 741 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 82 passed (desktop, connector, and CI contract)
+launcher: 83 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

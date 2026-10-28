@@ -24,6 +24,8 @@ import type {
   GraphSlopeFieldPoint,
 } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
+import { cartesianGridLines } from "@/lib/cartesianGrid";
+import { clearAxisNumbersFromGrid } from "./cartesianGridLabels";
 
 import { sampledFunctionCurveSegments } from "@/lib/functionCurveSampling";
 import {
@@ -241,11 +243,6 @@ function axisNumberValues(min: number, max: number, step: number) {
 function axisNumberLatex(value: number) {
   const normalized = Math.abs(value) < 1e-10 ? 0 : Number(value.toFixed(8));
   return `$${normalized}$`;
-}
-
-function isMultiple(value: number, step: number) {
-  if (!Number.isFinite(step) || step <= 0) return false;
-  return Math.abs(value / step - Math.round(value / step)) < 0.001;
 }
 
 function finiteNumberFromUnknown(value: unknown) {
@@ -1162,6 +1159,7 @@ function createAxisLabelText(
       ),
     );
   }
+  return text as JXG.Text;
 }
 
 function createFeaturePoint(
@@ -3251,80 +3249,31 @@ export function FunctionGraph({
       else if (onGraphConfigChange) onGraphConfigChange({ ...graphConfig, ...patch });
     };
 
-    if (showGrid) {
-      const gridLineAttributes = (major: boolean) =>
-        ({
-          fixed: true,
-          highlight: false,
-          straightFirst: false,
-          straightLast: false,
-          strokeColor: major ? gridMajorColor : gridMinorColor,
-          strokeWidth: major ? 1.35 : 0.8,
-          dash: major ? 0 : 2,
-          layer: GRAPH_LAYERS.grid,
-        }) as Record<string, unknown>;
-
-      if (showMinorGrid && xMinorStep && xMinorStep < xMajorStep) {
-        const lineAttributes = gridLineAttributes(false);
-        numericRange(xMin, xMax, xMinorStep).forEach((x) => {
-          if (isMultiple(x, xMajorStep)) return;
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [x, yMin],
-                [x, yMax],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
-
-      if (showMinorGrid && yMinorStep && yMinorStep < yMajorStep) {
-        const lineAttributes = gridLineAttributes(false);
-        numericRange(yMin, yMax, yMinorStep).forEach((y) => {
-          if (isMultiple(y, yMajorStep)) return;
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [xMin, y],
-                [xMax, y],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
-
-      if (showMajorGrid) {
-        const lineAttributes = gridLineAttributes(true);
-        numericRange(xMin, xMax, xMajorStep).forEach((x) => {
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [x, yMin],
-                [x, yMax],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-        numericRange(yMin, yMax, yMajorStep).forEach((y) => {
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [xMin, y],
-                [xMax, y],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
+    for (const { from, to, major, boundary } of cartesianGridLines({
+      xMin,
+      xMax,
+      yMin,
+      yMax,
+      xMajorStep,
+      yMajorStep,
+      xMinorStep,
+      yMinorStep,
+      showGrid,
+      showMajorGrid,
+      showMinorGrid,
+    })) {
+      const line = board.create("segment", [from, to], {
+        fixed: true,
+        highlight: false,
+        straightFirst: false,
+        straightLast: false,
+        strokeColor: major ? gridMajorColor : gridMinorColor,
+        strokeWidth: major ? 1.35 : 0.8,
+        dash: major || boundary ? 0 : 2,
+        layer: GRAPH_LAYERS.grid,
+      });
+      makePassiveDecoration(line);
+      line.rendNode?.setAttribute("data-mauth-grid-line", boundary ? "boundary" : major ? "major" : "minor");
     }
 
     if (showAxes) {
@@ -3390,19 +3339,21 @@ export function FunctionGraph({
       );
 
       if (showXAxisNumbers && yMin <= 0 && yMax >= 0) {
-        axisNumberValues(xMin, xMax, xLabelStep).forEach((x) =>
+        const numbers = axisNumberValues(xMin, xMax, xLabelStep).map((x) =>
           createAxisLabelText(board, x, 0, axisNumberLatex(x), [0, X_TICK_LABEL_OFFSET_PX], "middle", "top", undefined, {
             "data-mauth-axis-number": "x",
           }),
         );
+        if (showGrid && (showMajorGrid || showMinorGrid)) clearAxisNumbersFromGrid(board, numbers, "x", { xMin, xMax, yMin, yMax });
       }
 
       if (showYAxisNumbers && xMin <= 0 && xMax >= 0) {
-        axisNumberValues(yMin, yMax, yLabelStep).forEach((y) =>
+        const numbers = axisNumberValues(yMin, yMax, yLabelStep).map((y) =>
           createAxisLabelText(board, 0, y, axisNumberLatex(y), [Y_TICK_LABEL_OFFSET_PX, 0], "right", "middle", undefined, {
             "data-mauth-axis-number": "y",
           }),
         );
+        if (showGrid && (showMajorGrid || showMinorGrid)) clearAxisNumbersFromGrid(board, numbers, "y", { xMin, xMax, yMin, yMax });
       }
 
       if (showAxisLabels) {
