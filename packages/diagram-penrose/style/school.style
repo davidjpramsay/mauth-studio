@@ -701,3 +701,82 @@ forall LengthLabel l; Line line
 where LabelsLine(l, line) {
   l.text.center = midpoint(line.shape.start, line.shape.end) + unit(rot90(line.shape.end - line.shape.start) + (0.001, 0.001)) * 18
 }
+
+forall Point a; Point b
+where Horizontal(a, b) {
+  ensure equal(a.dot.center[1], b.dot.center[1])
+  ensure lessThan(a.dot.center[0] + 48, b.dot.center[0])
+}
+
+forall Point a; Point b
+where Above(a, b) {
+  ensure lessThan(b.dot.center[1] + 24, a.dot.center[1])
+}
+
+forall NamedSegment s; Point a; Point b
+where Segment(s, a, b); DashedSegment(s) {
+  s.segmentLine.strokeDasharray = "6 5"
+}
+
+forall Point a; Point b; Point c
+where SolutionRightAngle(a, b, c) {
+  legA = Line {
+    start: b.dot.center
+    end: a.dot.center
+    strokeWidth: 0
+    strokeColor: none()
+    fillColor: none()
+  }
+
+  legC = Line {
+    start: b.dot.center
+    end: c.dot.center
+    strokeWidth: 0
+    strokeColor: none()
+    fillColor: none()
+  }
+
+  ensure perpendicular(a.dot.center, b.dot.center, c.dot.center)
+
+  rightAngleMark = Path {
+    d: orientedSquare(legA, legC, b.dot.center, 18)
+    fillColor: none()
+    strokeColor: rgba(0.1137, 0.3059, 0.8471, 1)
+    strokeWidth: 1.7
+  }
+}
+
+
+forall Point a; Point b; Point c
+where SolutionAngleMark(a, b, c) {
+  angleArc = Path {
+    d: repeatedArcs(b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25, [25, 25], 1, 5, arcSweepFlag(b.dot.center, b.dot.center + unit(a.dot.center - b.dot.center + (0.001, 0.001)) * 25, b.dot.center + unit(c.dot.center - b.dot.center + (0.001, 0.001)) * 25))
+    fillColor: none()
+    strokeColor: rgba(0.1137, 0.3059, 0.8471, 1)
+    strokeWidth: 1.7
+    strokeLinecap: "round"
+  }
+}
+
+
+forall LengthLabel l; Point p {
+  ensure disjoint(l.text, p.labelText, 6)
+  ensure disjoint(l.text, p.dot, 5)
+}
+
+forall Point p where LabelAbove(p) {
+  p.labelText.center = p.dot.center + (0, 12)
+}
+forall Point p where LabelBelow(p) {
+  p.labelText.center = p.dot.center + (0, -12)
+}
+forall Point p where LabelLeft(p) {
+  p.labelText.center = p.dot.center + (-12, 0)
+}
+forall Point p where LabelRight(p) {
+  p.labelText.center = p.dot.center + (12, 0)
+}
+forall LengthLabel l; Point a; Point b
+where LabelsSegmentBelow(l, a, b) {
+  l.text.center = midpoint(a.dot.center, b.dot.center) + (0, -28)
+}

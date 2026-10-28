@@ -13,6 +13,7 @@ import {
   DIAGRAM_TOOLS_URI,
   diagramIntentFromText,
   diagramToolSummary,
+  diagramToolGuide,
 } from "../../../../packages/shared/src/diagramTools.ts";
 import { investigationTotalMarks, normalizeInvestigation } from "./frontMatterConfig.ts";
 import { tableSolutionEntryCount } from "./tableSolutionEntries.ts";
@@ -94,15 +95,27 @@ function summarizeBlock(block: ContentBlock, context: string[] = []): MauthAgent
   if (block.kind === "diagram") {
     summary.graphType = block.graphConfig.type;
     summary.diagramTool = diagramToolSummary(block.graphConfig.type);
-    const intent = context.map((text) => diagramIntentFromText(text)).find(Boolean);
-    if (intent) {
-      summary.recommendedDiagramTool = { ...diagramToolSummary(intent.expectedType), reason: intent.reason };
-      if (summary.diagramTool.id !== intent.expectedType) {
+    const contextText = context.find((text) => diagramIntentFromText(text)) ?? context[0] ?? "";
+    const guide = diagramToolGuide(contextText, block.graphConfig.type, false, {}, Boolean(block.graphConfig.options?.substanceSource));
+    const assessment = guide.assessment;
+    summary.diagramAssessment = {
+      status: assessment.status,
+      confidence: assessment.confidence,
+      reviewRequired: assessment.reviewRequired,
+      uncertainty: assessment.uncertainty,
+      verification: assessment.verification,
+      authoringMode: assessment.selectedToolAssessment?.authoringMode,
+      limitations: assessment.selectedToolAssessment?.limitations ?? [],
+      alternatives: assessment.alternatives.slice(0, 3).map(({ id, eligible, missingFeatures }) => ({ id, eligible, missingFeatures })),
+    };
+    if (guide.recommendation) {
+      summary.recommendedDiagramTool = guide.recommendation;
+      if (summary.diagramTool.id !== guide.recommendation.id) {
         summary.diagramWarnings = [
           {
             code: "diagram-renderer-mismatch",
             targetId: block.id,
-            message: `This diagram uses ${summary.diagramTool.label}. Recommended: ${summary.recommendedDiagramTool.label}. ${intent.reason} Review the mathematical purpose before changing tools; renderer-specific content is not automatically converted.`,
+            message: `This diagram uses ${summary.diagramTool.label}. Recommended: ${guide.recommendation.label}. ${guide.recommendation.reason} Review the requirements before changing tools; renderer schemas are not automatically converted.`,
           },
         ];
       }
@@ -268,7 +281,7 @@ export function buildMauthAgentSnapshot<
         ]),
       ]),
     ],
-    diagramTools: { catalogUri: DIAGRAM_TOOLS_URI, lookupTool: "mauth_diagram_tools", tools: DIAGRAM_TOOLS.map((tool) => ({ ...tool })) },
+    diagramTools: { catalogUri: DIAGRAM_TOOLS_URI, lookupTool: "mauth_diagram_tools", tools: diagramToolGuide().tools },
     _links: {
       snapshot: "/api/agent/current/snapshot",
       preview: { method: "POST", href: "/api/agent/current/actions/preview" },

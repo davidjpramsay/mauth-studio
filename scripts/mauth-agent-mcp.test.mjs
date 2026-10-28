@@ -28,18 +28,26 @@ test("MCP connector publishes the complete local document and authoring contract
     const catalog = await client.readResource({ uri: ACTION_CATALOG_URI });
     assert.equal(JSON.parse(catalog.contents[0].text).version, 1);
     const tools = new Map(result.tools.map((tool) => [tool.name, tool]));
-    assert.equal(tools.size, 17);
+    assert.equal(tools.size, 18);
     assert.ok(resources.resources.some((resource) => resource.uri === DIAGRAM_TOOLS_URI));
     const guideResource = await client.readResource({ uri: DIAGRAM_TOOLS_URI });
     assert.equal(JSON.parse(guideResource.contents[0].text).tools.length, 9);
     assert.equal(tools.get("mauth_diagram_tools")?.annotations?.readOnlyHint, true);
+    assert.equal(tools.get("mauth_diagrams_inspect")?.annotations?.readOnlyHint, true);
+    assert.equal(tools.get("mauth_diagram_tools")?.inputSchema?.properties?.requirements?.additionalProperties, false);
     const guide = await client.callTool({
       name: "mauth_diagram_tools",
       arguments: { intent: "AB is a diameter. C lies on the circle. Prove angle ACB is a right angle." },
     });
+    const conflict = await client.callTool({
+      name: "mauth_diagram_tools",
+      arguments: { requirements: { purpose: "geometry", relationships: ["parallel"], draggableLabels: true } },
+    });
+    assert.equal(conflict.structuredContent.assessment.status, "unsupported");
     assert.equal(guide.isError, undefined);
     assert.equal(guide.structuredContent.recommendation.id, "geometricConstruction");
     assert.equal(guide.structuredContent.recommendation.engine, "Penrose");
+    assert.equal(guide.structuredContent.recommendation.authoringMode, "advancedSubstance");
     assert.equal(guide.structuredContent.exampleGraphConfig.type, "geometricConstruction");
     assert.deepEqual(JSON.parse(guide.content[0].text), guide.structuredContent);
     for (const name of [
@@ -135,4 +143,92 @@ test("scoped snapshots preserve preconditions, tab state and storage errors", ()
   assert.equal(projectSnapshot(snapshot, "missing").httpStatus, 404);
   const unavailable = { httpStatus: 503, code: "STORAGE_UNAVAILABLE" };
   assert.equal(projectSnapshot(unavailable, "q2"), unavailable);
+});
+
+test("capability policy respects explicit requirements, conflicts, alternatives and uncertainty", () => {
+  const cases = [
+    [{ purpose: "geometry", relationships: ["parallel", "midpoint"] }, "geometricConstruction"],
+    [{ purpose: "geometry", exactPositioning: true, draggableLabels: true, teacherControls: "structured" }, "geometry2d"],
+    [{ purpose: "coordinates", requiredFeatures: ["functions", "implicitRelations"] }, "graph2d"],
+    [{ purpose: "vectors", draggableLabels: true }, "vector2d"],
+    [{ purpose: "spatial", requiredFeatures: ["rotation3d", "dimensions"] }, "graph3d"],
+    [{ purpose: "sets", solutionAnnotations: "elements" }, "setDiagram"],
+    [{ purpose: "network", teacherControls: "structured" }, "network"],
+    [{ purpose: "statistics", requiredFeatures: ["densityShading"], solutionAnnotations: "elements" }, "statsChart"],
+    [{ purpose: "image", requiredFeatures: ["imageAnnotations"] }, "image"],
+  ];
+  for (const [requirements, expected] of cases) {
+    const guide = diagramToolGuide("", undefined, false, requirements);
+    assert.equal(guide.recommendation?.id, expected, JSON.stringify(requirements));
+    assert.equal(guide.assessment.verification.construction, "notRun");
+    assert.equal(guide.assessment.verification.renderedLayout, "notRun");
+  }
+  for (const requirements of [
+    { purpose: "geometry", relationships: ["parallel"], draggableLabels: true },
+    { purpose: "geometry", relationships: ["circleMembership"], teacherControls: "structured" },
+    { purpose: "geometry", relationships: ["midpoint"], solutionAnnotations: "elements" },
+    { purpose: "network", exactPositioning: true },
+    { purpose: "statistics", draggableLabels: true },
+    { purpose: "geometry", otherRequirements: ["animate the construction step by step"] },
+  ]) {
+    const guide = diagramToolGuide("", undefined, false, requirements);
+    assert.equal(guide.assessment.status, "unsupported", JSON.stringify(requirements));
+    assert.equal(guide.recommendation, null);
+    assert.ok(guide.assessment.uncertainty.length);
+  }
+  const ambiguous = diagramToolGuide("", undefined, false, { requiredFeatures: ["draggableLabels"] });
+  assert.equal(ambiguous.assessment.status, "ambiguous");
+  assert.equal(ambiguous.recommendation, null);
+  const override = diagramToolGuide("Circle theorem", "geometricConstruction", false, {
+    purpose: "geometry",
+    sourceFidelity: true,
+    draggableLabels: true,
+  });
+  assert.equal(override.recommendation.id, "geometry2d");
+  assert.equal(override.assessment.selectedToolAssessment.eligible, false);
+  assert.ok(override.assessment.selectedToolAssessment.missingFeatures.includes("draggableLabels"));
+  assert.equal(override.exampleGraphConfig, undefined);
+  const advanced = diagramToolGuide("Circle theorem", "geometricConstruction", false, { teacherControls: "structured" }, true);
+  assert.equal(advanced.assessment.selectedToolAssessment.eligible, false);
+  assert.match(advanced.assessment.selectedToolAssessment.limitations.join(" "), /static SVG/);
+});
+
+test("Penrose diameter construction satisfies givens and preserves answer-only geometry", async () => {
+  const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, "packages/diagram-penrose/fixtures/diameter-circle.json"), "utf8"));
+  for (const [copy, config] of Object.entries(fixture)) {
+    const result = await renderGeometricConstructionDiagram(config);
+    const svg = new DOMParser().parseFromString(result.svg, "image/svg+xml");
+    const circles = [...svg.querySelectorAll("circle")];
+    const point = (name) => {
+      const element = circles.find((node) => node.querySelector("title")?.textContent === `\`${name}\`.dot`);
+      assert.ok(element, name);
+      return [+element.getAttribute("cx"), +element.getAttribute("cy")];
+    };
+    const A = point("A"),
+      B = point("B"),
+      C = point("C"),
+      O = point("O");
+    const length = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    const radius = length(A, O);
+    assert.ok(length(O, [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]) < radius * 0.001);
+    assert.ok(Math.abs(length(B, O) - radius) < radius * 0.001);
+    assert.ok(Math.abs(length(C, O) - radius) < radius * 0.001);
+    assert.ok(Math.abs(length(A, C) - length(B, C)) < radius * 0.001);
+    const cosine = ((A[0] - C[0]) * (B[0] - C[0]) + (A[1] - C[1]) * (B[1] - C[1])) / (length(A, C) * length(B, C));
+    assert.ok(Math.abs(cosine) < 0.001, "angle ACB is 90 degrees");
+    assert.ok(Math.abs(A[1] - B[1]) < radius * 0.001);
+    assert.ok(C[1] < O[1], "apex is above the diameter");
+    assert.match(result.svg, /stroke-dasharray="6 5"/);
+    const titles = [...svg.querySelectorAll("title")].map((node) => node.textContent);
+    assert.equal(
+      titles.some((title) => title.includes("rightAngleMark")),
+      copy === "solution",
+    );
+    assert.equal(
+      titles.some((title) => title.includes("answerAngle")),
+      copy === "solution",
+    );
+    if (copy === "solution") assert.match(result.svg, /#1d4ed8/i);
+  }
 });

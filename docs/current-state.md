@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1839 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; working Settings Content return, diagram tool discovery, shared routing guidance, visible tool identity, snapshot/dry-run mismatch warnings, and prior diagram/label fixes
+worktree: clean at this checkpoint; capability-based diagram choice, live inspection, native Penrose circle fixture, working Settings Content return, visible tool identity, and prior diagram/label fixes
 ```
+
+### 28 October Capability-Based Diagram Choice And Penrose Showcase Conversion
+
+The shared chooser assesses explicit purpose, mathematical relationships, exact positioning/source fidelity, teacher controls, draggable labels and solution annotations against all nine Mauth adapter capabilities. Unsupported combinations, unknown requirements and ambiguous alternatives remain explicit; confidence describes policy evidence rather than a probability. Custom Penrose constraint constructions require Advanced Substance and paired solutions, and their labels remain static. The same policy supplies snapshot metadata. `mauth_diagrams_inspect` uses the existing document-targeted validation bridge for native schema/semantic checks and available current-preview label/readiness measurements. It reports absent renders, unassessed requirements and partial coverage without claiming a general mathematical proof or automatic verification of both copies. Capability profiles must track the actual adapter and editor features, rather than upstream library promises.
+
+Native Penrose orientation constraints, dashed segments, label placements and blue solution-only angle marks support the reusable diameter-circle fixture. Its numeric render checks verify midpoint, circle membership, equal chords, right angle and orientation. Full `pnpm check` passes with 114 API, 726 web/action, 17 lifecycle, 11 Plotly and 79 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Two browser checks at 1440 and 900 px verify paired visibility, real native rendering and bridge inspection with no label collisions/clipping. Unsupported, ambiguous, unknown and conflicting requirements have focused policy/transport coverage.
+
+The final hardened local build/install passes. All 23 web, two connector and seven Penrose runtime files, plus the diagram brain, match the tested bundle. The installed 18-tool connector smoke passes; a concurrent startup doctor snapshot timed out, then the sequential retry passed every check. Native screenshots show Q4 Student and Solutions circles and their Geometric (Penrose) Content header; the Content return also closes Settings and restores the editor. Live inspection measures five Student and six Solutions labels without clipping/collisions, with valid schemas, no semantic warnings and 23 overall checked items without solution errors/warnings. During the deliberate quit, an API child briefly remained after its parent exited; the identified orphan was stopped before installation. Neither transient is claimed fixed by this diagram change.
+
+AFTER HOURS Q4 was converted through a dry-run and revision-protected action batch, then saved at revision 2. The diagram uses native Penrose Substance with a paired Student/Solutions copy; wording, marks, worked answers, other questions and document identity were verified unchanged from the prior draft. The inactive recovery tab remains intact, and saved assessment bytes were preserved through the final installation. Both refreshed exports under `~/Documents/Mauth/Showcase Exports` have 11 inspected A4 pages; Student has no mark ticks and Solutions retains all 48. Existing answer-space allocations still fit, and previous PDFs are retained. The app is left open on Q4. Existing MCP clients need reconnecting to discover the 18-tool connector. No public release was published.
 
 ### 28 October Settings Content Return
 
@@ -357,15 +367,15 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 20 October 2026:
+Latest full gate on 28 October 2026:
 
 ```text
 formatting and lint: passed
-API: 112 passed
-web/actions: 712 passed
+API: 114 passed
+web/actions: 726 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 72 passed (desktop, connector, and CI contract)
+launcher: 79 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

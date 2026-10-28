@@ -6,6 +6,8 @@ The action layer is not an in-app chat API. It is the deterministic contract tha
 
 For diagram additions/replacements, first call `mauth_diagram_tools` (or read `mauth://authoring/diagram-tools/v1`) to select the native `graphConfig.type` and inspect its example. In the action-preview snapshot, review each module's current `diagramTool`, `recommendedDiagramTool`, and `diagramWarnings` before applying. Warnings are advisory: exact-coordinate geometry may deliberately use JSXGraph, while relationship-based circle theorem geometry normally uses Penrose. Changing tools is a deliberate content edit, never an automatic schema conversion.
 
+Diagram choice must assess explicit purpose, mathematical relationships (native constraints or fixed-coordinate geometry), exact positioning/source fidelity, teacher controls, label dragging and solution annotations through `mauth_diagram_tools.requirements`. Review capability failures, alternatives and uncertainty; unsupported/unknown requirements must remain unresolved. Penrose covers general relationship geometry, while advanced Substance constructions have static labels, use the Advanced editor and need paired solution diagrams. After an edit, `mauth_diagrams_inspect` reports native schema/semantic checks, requested capability support and available current-preview label/readiness measurements. Missing renders are reported explicitly; current-preview measurements and schema validity do not certify a general mathematical proof or both printed copies. Validate the geometry independently and inspect fresh Student and Solutions renders.
+
 ## Result Shape
 
 Every action returns:

@@ -40,6 +40,7 @@ mauth_diagram_tools when creating or replacing a diagram
 mauth_actions_preview
 mauth_actions_apply
 mauth_validation_run
+mauth_diagrams_inspect after diagram edits, in both copies
 rendered Student and Solutions/Teacher verification
 mauth_document_close when deliberately finished
 ```

@@ -1,3 +1,12 @@
+import type { assessDiagramTools } from "./diagramCapabilities.ts";
+export {
+  DIAGRAM_CAPABILITIES,
+  DIAGRAM_FEATURES,
+  DIAGRAM_PURPOSES,
+  DIAGRAM_RELATIONSHIPS,
+  assessDiagramTools,
+} from "./diagramCapabilities.ts";
+export type { DiagramRequirements, DiagramFeature } from "./diagramCapabilities.ts";
 export type InputFormat = "plain" | "latex";
 
 export type DiagramType =
@@ -1036,6 +1045,14 @@ export interface MauthAgentModuleSummary {
   solutionEntryCount?: number;
   graphType?: DiagramType | string;
   diagramTool?: DiagramToolSummary;
+  diagramAssessment?: Pick<
+    ReturnType<typeof assessDiagramTools>,
+    "status" | "confidence" | "reviewRequired" | "uncertainty" | "verification"
+  > & {
+    authoringMode?: string;
+    limitations: string[];
+    alternatives: Array<{ id: string; eligible: boolean; missingFeatures: string[] }>;
+  };
   recommendedDiagramTool?: DiagramToolSummary & { reason: string };
   diagramWarnings?: Array<{ code: string; message: string; targetId?: string }>;
   diagramAlign?: DiagramAlignment;
@@ -1112,7 +1129,11 @@ export interface MauthAgentSnapshot {
   totalMarks: number;
   validation?: unknown;
   warnings: Array<{ code: string; message: string; targetId?: string }>;
-  diagramTools?: { catalogUri: string; lookupTool: string; tools: Array<DiagramToolSummary & { useFor: string }> };
+  diagramTools?: {
+    catalogUri: string;
+    lookupTool: string;
+    tools: Array<DiagramToolSummary & { useFor: string; features?: string[]; limitations?: string[] }>;
+  };
   _links: {
     snapshot: string;
     preview: { method: "POST"; href: string };

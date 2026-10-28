@@ -31,6 +31,7 @@ try {
   for (const expected of [
     "mauth_snapshot",
     "mauth_diagram_tools",
+    "mauth_diagrams_inspect",
     "mauth_actions_preview",
     "mauth_actions_apply",
     "mauth_validation_run",

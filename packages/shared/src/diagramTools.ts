@@ -1,3 +1,5 @@
+import { assessDiagramTools, DIAGRAM_CAPABILITIES, type DiagramRequirements } from "./diagramCapabilities.ts";
+
 export interface MauthDiagramIntent {
   id: string;
   expectedType: string;
@@ -37,7 +39,8 @@ export const DIAGRAM_TOOLS = [
     id: "geometricConstruction",
     label: "Geometric (Penrose)",
     engine: "Penrose",
-    useFor: "Circle theorems, tangents, chords, geometric proofs and ruler-and-compass constructions.",
+    useFor:
+      "Relationship-based plane geometry: incidence, parallel/perpendicular lines, midpoints, bisectors, equal lengths, circles, tangents and proofs.",
   },
   { id: "network", label: "Network (Penrose)", engine: "Penrose", useFor: "Networks, nodes, links, shortest paths and spanning trees." },
   {
@@ -200,25 +203,43 @@ export const DIAGRAM_TOOL_EXAMPLES = {
   image: { type: "image", data: { src: "<teacher-supplied-image-data-url>", alt: "Describe the supplied image", annotations: [] } },
 };
 
-export function diagramToolGuide(intent = "", renderer?: string, coordinateFidelity = false) {
+export function diagramToolGuide(
+  intent = "",
+  renderer?: string,
+  coordinateFidelity = false,
+  requirements: DiagramRequirements = {},
+  advancedSubstance = false,
+) {
   const inferred = diagramIntentFromText(intent, { coordinateFidelity });
-  const recommended = inferred ? diagramToolForType(inferred.expectedType) : undefined;
-  const selected = renderer ? diagramToolForType(renderer) : recommended;
+  const assessment = assessDiagramTools(
+    DIAGRAM_TOOLS,
+    { ...requirements, ...(coordinateFidelity ? { sourceFidelity: true } : {}) },
+    inferred,
+    renderer,
+    advancedSubstance,
+  );
+  const selected = renderer
+    ? diagramToolForType(renderer)
+    : assessment.recommendation
+      ? diagramToolForType(assessment.recommendation.id)
+      : undefined;
+  const selectedAssessment = assessment.alternatives.find((tool) => tool.id === selected?.id);
   return {
     version: 1,
     catalogUri: DIAGRAM_TOOLS_URI,
-    recommendation: recommended ? { ...recommended, reason: inferred!.reason } : null,
+    recommendation: assessment.recommendation,
     selectedTool: selected ?? null,
-    tools: DIAGRAM_TOOLS,
-    examples: renderer || recommended ? undefined : DIAGRAM_TOOL_EXAMPLES,
+    assessment,
+    tools: DIAGRAM_TOOLS.map((tool) => ({ ...tool, ...DIAGRAM_CAPABILITIES[tool.id] })),
+    examples: renderer || assessment.recommendation ? undefined : DIAGRAM_TOOL_EXAMPLES,
     guidance: [
-      "Choose by mathematical purpose before constructing graphConfig. The diagram tool id is graphConfig.type.",
-      "Circle-theorem and tangent/chord constructions normally use geometricConstruction (Penrose). Choose geometry2d only for deliberate coordinate/source-fidelity requirements.",
-      "Use the native renderer's data and options; do not silently translate between incompatible renderer schemas.",
-      "Read the snapshot, dry-run the action batch, inspect diagram tool warnings, apply with revision protection, then inspect Student and Solutions output.",
-      "Examples are starting points, not canned replacements for the question. For image, replace the src placeholder with the actual teacher-supplied asset. For custom Penrose Substance use Mauth's supplied domain/style, not invented predicates or custom domain/style source.",
+      "Describe mathematical purpose, relationships, exact positioning/source fidelity, teacher controls, label dragging and solution annotations in requirements before constructing graphConfig.",
+      "Requirements are assessed against Mauth's actual adapters. Unsupported combinations and unknown requirements remain unresolved; never silently drop them or substitute a different renderer schema.",
+      "Penrose supports general relationship-based geometry, not only circle theorems. Its SVG labels are static; advanced constraint constructions require Advanced Substance and paired solution diagrams.",
+      "Recommendations are planning guidance. Follow assessment.verification.requiredChecks, dry-run native actions, validate the construction mathematically, then inspect fresh Student/Solutions renders and teacher controls.",
+      "Examples are starting points. Replace image src with the teacher-supplied asset; custom Penrose Substance must use Mauth's supported domain/style.",
     ],
-    ...(selected && selected.id in DIAGRAM_TOOL_EXAMPLES
+    ...(selected && selectedAssessment?.eligible && selected.id in DIAGRAM_TOOL_EXAMPLES
       ? { exampleGraphConfig: DIAGRAM_TOOL_EXAMPLES[selected.id as keyof typeof DIAGRAM_TOOL_EXAMPLES] }
       : {}),
   };
@@ -311,7 +332,9 @@ export function diagramIntentFromText(rawText: string, options: { coordinateFide
     );
   if (
     hasSchematicGeometryLanguage ||
-    /\bcircle (?:diagram|construction)\b|\bdiameter\b.{0,70}\bcircle\b|\b(?:ruler|compass|geometric proof|circle theorem)\b/i.test(text)
+    /\bcircle (?:diagram|construction)\b|\bdiameter\b.{0,70}\bcircle\b|\b(?:ruler|compass|geometric proof|circle theorem|angle bisector|perpendicular bisector|midpoint construction|parallel line construction|perpendicular line construction|congruent triangles)\b/i.test(
+      text,
+    )
   ) {
     return {
       id: "schematic-geometry",

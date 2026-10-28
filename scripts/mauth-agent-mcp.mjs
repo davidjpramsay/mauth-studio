@@ -7,6 +7,7 @@ import { z } from "zod/v4";
 
 import { asStructuredBody, createMauthBridgeRequest } from "./mauth-agent-http.mjs";
 import { actionSchema, actionCatalog, ACTION_CATALOG_URI, projectSnapshot } from "./mauth-action-contract.mjs";
+import { DIAGRAM_FEATURES, DIAGRAM_PURPOSES, DIAGRAM_RELATIONSHIPS } from "../packages/shared/src/diagramCapabilities.ts";
 import { DIAGRAM_TOOLS, DIAGRAM_TOOLS_URI, diagramToolGuide } from "../packages/shared/src/diagramTools.ts";
 
 const CONNECTOR_VERSION = typeof __MAUTH_CONNECTOR_VERSION__ === "string" ? __MAUTH_CONNECTOR_VERSION__ : "development";
@@ -17,7 +18,7 @@ if (process.argv.includes("--version")) {
 }
 
 const actionAuthoringDescription =
-  "MauthDocumentAction array. Before adding/replacing diagrams, call mauth_diagram_tools with the mathematical intent; circle-theorem constructions normally use geometricConstruction (Penrose). Inspect snapshot diagramWarnings in the dry run. For ordinary tests, exams, and worksheets, put the main stem in question.add.question.text or question.update.patch.text (Question wording); reserve text modules for deliberately ordered additional prose or special blocks such as End of Test.";
+  "MauthDocumentAction array. Before adding/replacing diagrams, call mauth_diagram_tools with purpose and requirements for relationships, exact positions, teacher controls, label dragging and solution annotations; inspect support, alternatives, uncertainty and required verification. Inspect snapshot diagramWarnings in the dry run. For ordinary tests, exams, and worksheets, put the main stem in question.add.question.text or question.update.patch.text (Question wording); reserve text modules for deliberately ordered additional prose or special blocks such as End of Test.";
 const bridgeOutputSchema = z
   .object({
     httpStatus: z.number(),
@@ -55,6 +56,28 @@ const reviewTargetSchema = z
     end: z.number().int().nonnegative().optional(),
     label: z.string().optional(),
   })
+  .optional();
+
+const diagramRequirementsSchema = z
+  .object({
+    purpose: z.enum(DIAGRAM_PURPOSES).optional(),
+    requiredFeatures: z.array(z.enum(DIAGRAM_FEATURES)).optional(),
+    relationships: z.array(z.enum(DIAGRAM_RELATIONSHIPS)).optional(),
+    relationshipMode: z
+      .enum(["constrained", "fixed"])
+      .optional()
+      .describe("Constrained means native layout constraints; fixed means relationships verified from supplied coordinates."),
+    exactPositioning: z.boolean().optional(),
+    sourceFidelity: z.boolean().optional(),
+    draggableLabels: z.boolean().optional(),
+    teacherControls: z.enum(["structured", "advanced", "either"]).optional(),
+    solutionAnnotations: z.enum(["elements", "paired", "either"]).optional(),
+    otherRequirements: z
+      .array(z.string())
+      .optional()
+      .describe("Requirements outside the known feature set. These remain unassessed and prevent certification."),
+  })
+  .strict()
   .optional();
 
 const bridgeRequest = createMauthBridgeRequest();
@@ -95,7 +118,7 @@ server.registerTool(
   {
     title: "Choose Mauth Diagram Tool",
     description:
-      "Read before creating or replacing a diagram. Recommend the native tool from its mathematical purpose and return renderer-specific graphConfig examples. Circle theorems, tangents and chords normally use Geometric (Penrose); coordinate plots use JSXGraph, statistics use Plotly. Read-only and available without a running app.",
+      "Read before creating or replacing a diagram. Assess mathematical relationships, exact positioning, teacher controls, draggable labels and solution annotations against Mauth capabilities. Return eligible alternatives, uncertainty, unsupported combinations, native examples and required construction/layout checks. Read-only; works offline.",
     inputSchema: z.object({
       intent: z
         .string()
@@ -105,6 +128,13 @@ server.registerTool(
         .enum(DIAGRAM_TOOLS.map((tool) => tool.id))
         .optional()
         .describe("Optional tool id to inspect; does not override the recommendation or change the document."),
+      requirements: diagramRequirementsSchema,
+      advancedSubstance: z
+        .boolean()
+        .default(false)
+        .describe(
+          "True when assessing an existing custom Penrose Substance construction; normal point/segment controls and element solutions cannot edit that source.",
+        ),
       coordinateFidelity: z
         .boolean()
         .default(false)
@@ -113,8 +143,12 @@ server.registerTool(
     outputSchema: bridgeOutputSchema,
     annotations: readOnlyAnnotations,
   },
-  async ({ intent, renderer, coordinateFidelity }) =>
-    toolResult({ httpStatus: 200, success: true, ...diagramToolGuide(intent, renderer, coordinateFidelity) }),
+  async ({ intent, renderer, coordinateFidelity, requirements, advancedSubstance }) =>
+    toolResult({
+      httpStatus: 200,
+      success: true,
+      ...diagramToolGuide(intent, renderer, coordinateFidelity, requirements, advancedSubstance),
+    }),
 );
 
 server.registerTool(
@@ -206,6 +240,29 @@ server.registerTool(
       await bridgeRequest("/api/agent/current/validation/run", {
         method: "POST",
         body: { documentId },
+      }),
+    ),
+);
+
+server.registerTool(
+  "mauth_diagrams_inspect",
+  {
+    title: "Inspect Mauth Diagrams",
+    description:
+      "Read-only checks on existing diagram blocks: native schema/semantic validation, requested capability support, and available current-preview render/label measurements. Reports missing renders and partial coverage explicitly. Run after edits and in both Student/Solutions copies; general mathematical correctness and visual page review remain required.",
+    inputSchema: z.object({
+      documentId: z.string().optional(),
+      blockId: z.string().optional().describe("Omit to inspect all question diagrams, including nested blocks."),
+      requirements: diagramRequirementsSchema,
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
+  },
+  async ({ documentId, blockId, requirements }) =>
+    toolResult(
+      await bridgeRequest("/api/agent/current/validation/run", {
+        method: "POST",
+        body: { documentId, inspectDiagrams: true, blockId, requirements },
       }),
     ),
 );
