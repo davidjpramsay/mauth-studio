@@ -325,7 +325,7 @@ where EqualLength(a, b, c, d) {
   ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
 
   tickAB = Path {
-    d: ticksOnLine(a.dot.center, b.dot.center, 6, 1, 7)
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -333,7 +333,7 @@ where EqualLength(a, b, c, d) {
   }
 
   tickCD = Path {
-    d: ticksOnLine(c.dot.center, d.dot.center, 6, 1, 7)
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -351,7 +351,7 @@ where EqualLength2(a, b, c, d) {
   ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
 
   tickAB = Path {
-    d: ticksOnLine(a.dot.center, b.dot.center, 6, 2, 7)
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -359,7 +359,7 @@ where EqualLength2(a, b, c, d) {
   }
 
   tickCD = Path {
-    d: ticksOnLine(c.dot.center, d.dot.center, 6, 2, 7)
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -372,7 +372,7 @@ where EqualLength3(a, b, c, d) {
   ensure equal(vdist(a.dot.center, b.dot.center), vdist(c.dot.center, d.dot.center))
 
   tickAB = Path {
-    d: ticksOnLine(a.dot.center, b.dot.center, 6, 3, 7)
+    d: ticksOnLine(a.dot.center, b.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -380,7 +380,7 @@ where EqualLength3(a, b, c, d) {
   }
 
   tickCD = Path {
-    d: ticksOnLine(c.dot.center, d.dot.center, 6, 3, 7)
+    d: ticksOnLine(c.dot.center, d.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -393,7 +393,7 @@ where EqualNamedLength(s1, s2) {
   ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
 
   tickFirst = Path {
-    d: ticksOnLine(s1.start, s1.end, 6, 1, 7)
+    d: ticksOnLine(s1.start, s1.end, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -401,7 +401,7 @@ where EqualNamedLength(s1, s2) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(s2.start, s2.end, 6, 1, 7)
+    d: ticksOnLine(s2.start, s2.end, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -414,7 +414,7 @@ where EqualNamedLength2(s1, s2) {
   ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
 
   tickFirst = Path {
-    d: ticksOnLine(s1.start, s1.end, 6, 2, 7)
+    d: ticksOnLine(s1.start, s1.end, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -422,7 +422,7 @@ where EqualNamedLength2(s1, s2) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(s2.start, s2.end, 6, 2, 7)
+    d: ticksOnLine(s2.start, s2.end, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -435,7 +435,7 @@ where EqualNamedLength3(s1, s2) {
   ensure equal(vdist(s1.start, s1.end), vdist(s2.start, s2.end))
 
   tickFirst = Path {
-    d: ticksOnLine(s1.start, s1.end, 6, 3, 7)
+    d: ticksOnLine(s1.start, s1.end, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -443,7 +443,7 @@ where EqualNamedLength3(s1, s2) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(s2.start, s2.end, 6, 3, 7)
+    d: ticksOnLine(s2.start, s2.end, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -456,7 +456,7 @@ where EqualLength(shared, b, shared, c) {
   ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 1, 7)
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -464,7 +464,7 @@ where EqualLength(shared, b, shared, c) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 1, 7)
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -477,7 +477,7 @@ where EqualLength(a, shared, c, shared) {
   ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 1, 7)
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -485,7 +485,7 @@ where EqualLength(a, shared, c, shared) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 1, 7)
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 1, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -498,7 +498,7 @@ where EqualLength2(shared, b, shared, c) {
   ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 2, 7)
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -506,7 +506,7 @@ where EqualLength2(shared, b, shared, c) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 2, 7)
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -519,7 +519,7 @@ where EqualLength2(a, shared, c, shared) {
   ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 2, 7)
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -527,7 +527,7 @@ where EqualLength2(a, shared, c, shared) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 2, 7)
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 2, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -540,7 +540,7 @@ where EqualLength3(shared, b, shared, c) {
   ensure equal(vdist(shared.dot.center, b.dot.center), vdist(shared.dot.center, c.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 3, 7)
+    d: ticksOnLine(shared.dot.center, b.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -548,7 +548,7 @@ where EqualLength3(shared, b, shared, c) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 3, 7)
+    d: ticksOnLine(shared.dot.center, c.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -561,7 +561,7 @@ where EqualLength3(a, shared, c, shared) {
   ensure equal(vdist(a.dot.center, shared.dot.center), vdist(c.dot.center, shared.dot.center))
 
   tickFirst = Path {
-    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 3, 7)
+    d: ticksOnLine(a.dot.center, shared.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"
@@ -569,7 +569,7 @@ where EqualLength3(a, shared, c, shared) {
   }
 
   tickSecond = Path {
-    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 3, 7)
+    d: ticksOnLine(c.dot.center, shared.dot.center, 6, 3, 5.25)
     strokeColor: rgba(0, 0, 0, 1)
     strokeWidth: 1.8
     strokeLinecap: "round"

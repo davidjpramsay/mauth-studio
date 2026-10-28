@@ -48,13 +48,15 @@ const labelFor = (graph, kind, id) => graph.locator(`[data-mauth-graph3d-label-k
 async function drag(page, label, dx, dy) {
   await label.scrollIntoViewIfNeeded();
   const before = await label.boundingBox();
+  const frame = await graphFor(page).boundingBox();
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down();
   await page.mouse.move(before.x + before.width / 2 + dx, before.y + before.height / 2 + dy, { steps: 12 });
   await expectLabelDragFeedback(page, label);
   await page.mouse.up();
   await expectLabelDragFinished(page, label);
-  return before;
+  // Print feedback checks can scroll the preview; measure within the diagram.
+  return { ...before, x: before.x - frame.x, y: before.y - frame.y };
 }
 
 for (const width of [1440, 900]) {
@@ -78,7 +80,9 @@ for (const width of [1440, 900]) {
       await expect
         .poll(async () => (await configFor(page)).data.dimensions.find((d) => d.id === id).labelScreenOffsetPx)
         .not.toEqual(initial);
-      const after = await label.boundingBox();
+      const moved = await label.boundingBox();
+      const frame = await graph.boundingBox();
+      const after = { x: moved.x - frame.x, y: moved.y - frame.y };
       expect(after.x - before.x).toBeCloseTo(18, 0);
       expect(after.y - before.y).toBeCloseTo(10, 0);
     }

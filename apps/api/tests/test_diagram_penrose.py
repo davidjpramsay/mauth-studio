@@ -1,3 +1,5 @@
+import math
+import re
 from xml.etree import ElementTree
 
 import pytest
@@ -687,8 +689,8 @@ def test_penrose_set_diagram_supports_smooth_shading_and_count_badges():
     assert 'font-size="23"' not in data["svg"]
     assert " Z" not in data["svg"].split('data-badge-kind="left-tab"', 1)[1].split("</g>", 1)[0]
     assert " Z" not in data["svg"].split('data-badge-kind="right-tab"', 1)[1].split("</g>", 1)[0]
-    assert data["metadata"]["displayWidth"] == 336
-    assert data["metadata"]["displayHeight"] == 240
+    assert data["metadata"]["displayWidth"] == pytest.approx(326.4)
+    assert data["metadata"]["displayHeight"] == pytest.approx(230.4)
     assert 'x="126" y="150"' in data["svg"]
     assert 'x="210" y="150"' in data["svg"]
     assert 'x="294" y="150"' in data["svg"]
@@ -823,6 +825,20 @@ def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():
     assert "tickSecond" in data["svg"]
     assert "angleArc" in data["svg"]
     assert "\\theta" not in data["svg"]
+    root = ElementTree.fromstring(data["svg"])
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+    ticks = [
+        p
+        for p in root.findall(".//s:path", namespace)
+        if "tickFirst" in (p.findtext("s:title", namespaces=namespace) or "")
+    ]
+    assert ticks
+    for tick in ticks:
+        coordinates = [float(v) for v in re.findall(r"[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?", tick.get("d"), re.I)]
+        assert len(coordinates) == 8  # two independent equality strokes
+        for index in (0, 4):
+            x1, y1, x2, y2 = coordinates[index : index + 4]
+            assert math.hypot(x2 - x1, y2 - y1) == pytest.approx(10.5, abs=0.01)
 
 
 def test_geometry_question_embeds_geometric_diagram():

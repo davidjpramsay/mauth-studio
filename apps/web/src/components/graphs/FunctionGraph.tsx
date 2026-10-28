@@ -34,7 +34,11 @@ import {
 } from "@/lib/graphFunctionDomains";
 import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
-import { geometry2dConfigWithLabelPosition, type Geometry2DLabelPrimitiveKind } from "@/lib/diagramGeometry2d";
+import {
+  DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX,
+  geometry2dConfigWithLabelPosition,
+  type Geometry2DLabelPrimitiveKind,
+} from "@/lib/diagramGeometry2d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
 import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
 import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
@@ -58,15 +62,15 @@ const GRID_MINOR_COLOR = "#dddddd";
 const AXIS_COLOR = "#000000";
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
-const BOARD_EDGE_PADDING_RATIO = 0.026;
-const BOARD_EDGE_PADDING_MIN_UNITS = 0.26;
+const BOARD_EDGE_PADDING_RATIO = 0.022;
+const BOARD_EDGE_PADDING_MIN_UNITS = 0.22;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
 const AXIS_LABEL_EDGE_PADDING_MIN_UNITS = 0.32;
 const ARROW_SCAN_STEPS = 180;
 const AXIS_ARROW_SIZE = 4;
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_TEXT_FONT_SIZE = GRAPH_LABEL_FONT_SIZE_PT;
-const AXIS_CONTENT_EDGE_PADDING_PX = 34;
+const AXIS_CONTENT_EDGE_PADDING_PX = 30;
 const X_TICK_LABEL_OFFSET_PX = -12;
 const Y_TICK_LABEL_OFFSET_PX = -16;
 const FUNCTION_ARROW_LENGTH_PX = 9;
@@ -1754,7 +1758,7 @@ function renderGraph2DGeometry(
     const attributes = geometry2DRenderedAttributes("decoration", decoration.id, decoration.kind);
     if (decoration.kind === "equalLength") {
       const tickCount = decoration.tickCount ?? 1;
-      const sizePx = decoration.size ?? 16;
+      const sizePx = decoration.size ?? DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX;
       (decoration.segments ?? []).forEach((segmentId) =>
         drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx, {
           ...attributes,
@@ -3206,13 +3210,13 @@ export function FunctionGraph({
       showAxes && (showYAxisNumbers || showAxisLabels)
         ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
         : graphConfig.type === "geometry2d"
-          ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, 36))
+          ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, 32))
           : boardPaddingX;
     const renderedBoardPaddingY =
       showAxes && (showXAxisNumbers || showAxisLabels)
         ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
         : graphConfig.type === "geometry2d"
-          ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, 36))
+          ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, 32))
           : boardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,

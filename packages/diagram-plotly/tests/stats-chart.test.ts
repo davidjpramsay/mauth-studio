@@ -28,8 +28,11 @@ test("normalizes manual probability column graphs with horizontal y-axis labels"
   assert.deepEqual(trace.x, [2, 4, 5]);
   assert.deepEqual(trace.y, [0.1, 0.25, 0.3]);
   assert.equal(layout.yaxis.title.text, "");
-  assert.equal(layout.margin.l, 64);
-  assert.equal(layout.margin.t, 38);
+  assert.equal(layout.margin.l, 60);
+  assert.equal(layout.margin.t, 34);
+
+  const titled = buildStatsChartPlotlyConfig({ ...spec, data: { ...spec.data, title: "Probability distribution" } });
+  assert.equal((titled.layout.margin as { t: number }).t, 58);
 });
 
 test("plots discrete raw data as relative-frequency columns", () => {
@@ -236,8 +239,8 @@ test("shades a deterministic interval under a normal curve without boundary stro
   assert.equal(layout.yaxis.ticklen, 5);
   assert.equal(layout.yaxis.tickwidth, 1.2);
   assert.equal(layout.yaxis.tickcolor, "#111111");
-  assert.equal(layout.margin.r, 30);
-  assert.equal(layout.margin.b, 58);
+  assert.equal(layout.margin.r, 26);
+  assert.equal(layout.margin.b, 54);
 });
 
 test("renders both outside tails as separate deterministic fill traces", () => {

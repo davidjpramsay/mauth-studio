@@ -63,7 +63,7 @@ const IDENTIFIER_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const DEFAULT_CANVAS_WIDTH = 420;
 const DEFAULT_CANVAS_HEIGHT = 300;
 const TEST_TEXT_FONT_SIZE_PX = 13.333;
-const SVG_CROP_PADDING = 20;
+const SVG_CROP_PADDING = 14;
 const MIN_CROPPED_DIMENSION = 80;
 const PENROSE_DIAGRAM_TYPES = new Set(["geometricConstruction", "network", "setDiagram"]);
 
@@ -462,6 +462,7 @@ function setDiagramSourceEntries(spec, substance) {
 }
 
 const SET_DIAGRAM_DEFAULT_DISPLAY_SCALE = 0.8;
+const SET_DIAGRAM_OUTER_TRIM = 6;
 const SET_DIAGRAM_SIDE_TAB_HALF_HEIGHT = 34;
 const SET_DIAGRAM_SIDE_TAB_RADIUS = 38;
 const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
@@ -620,7 +621,7 @@ function renderThreeSetDiagramSvg(spec, substance) {
       : "",
   ].join("");
 
-  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width - 2 * SET_DIAGRAM_OUTER_TRIM}" height="${height - 2 * SET_DIAGRAM_OUTER_TRIM}" viewBox="${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}">
   <defs>
     <clipPath id="${idPrefix}-left-circle">${circleDef(left)}</clipPath>
     <clipPath id="${idPrefix}-right-circle">${circleDef(right)}</clipPath>
@@ -693,11 +694,11 @@ function renderThreeSetDiagramSvg(spec, substance) {
   return {
     svg,
     metadata: {
-      width,
-      height,
-      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      viewBox: `0 0 ${width} ${height}`,
+      width: width - 2 * SET_DIAGRAM_OUTER_TRIM,
+      height: height - 2 * SET_DIAGRAM_OUTER_TRIM,
+      displayWidth: (width - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: (height - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}`,
       scalePercent,
       preset: "sets",
       presetLabel: "Sets",
@@ -759,7 +760,7 @@ function renderSetDiagramSvg(spec, substance) {
       : "",
   ].join("");
 
-  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width - 2 * SET_DIAGRAM_OUTER_TRIM}" height="${height - 2 * SET_DIAGRAM_OUTER_TRIM}" viewBox="${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}">
   <defs>
     <clipPath id="${idPrefix}-left-circle"><circle cx="${left.cx}" cy="${left.cy}" r="${left.r}"/></clipPath>
     <mask id="${idPrefix}-outside" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
@@ -797,11 +798,11 @@ function renderSetDiagramSvg(spec, substance) {
   return {
     svg,
     metadata: {
-      width,
-      height,
-      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      viewBox: `0 0 ${width} ${height}`,
+      width: width - 2 * SET_DIAGRAM_OUTER_TRIM,
+      height: height - 2 * SET_DIAGRAM_OUTER_TRIM,
+      displayWidth: (width - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: (height - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}`,
       scalePercent,
       preset: "sets",
       presetLabel: "Sets",

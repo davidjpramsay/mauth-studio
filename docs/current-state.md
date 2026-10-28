@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; clear Venn names without a universe label, with centred values and prior diagram/editor fixes retained
+worktree: clean at this checkpoint; tighter diagram margins and shorter equal-length ticks, with Venn clarity and prior diagram/editor fixes retained
 ```
+
+### 28 October Tighter Diagram Margins And Shorter Ticks
+
+Reviewed all nine diagram types. Penrose geometry/network crop clearance drops from 20 to 14 solver units, native Venn frames trim six empty canvas units per side, coordinate/vector axis reserves drop from 34 to 30 px, geometry reserves from 36 to 32 px, and Plotly margins tighten by four pixels. Chart titles combined with horizontal y-axis labels receive enough top clearance to avoid their top tick number. Image diagrams already add no padding. The 3D 9% inset is deliberately retained: attempts at 8.5% and 8.75% clipped a tall cylinder's lower outline compared with the current renderer. Authored frames, coordinates, camera state, labels and teacher offsets are unchanged. Default Penrose and JSXGraph equal-length ticks are 25% shorter; explicit teacher sizes and custom styles remain authoritative.
+
+Full `pnpm check` passes with 122 API, 735 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. The focused browser checks verify default/overridden tick lengths, label dragging, resampling constraints, static hidden-edge views, Venn glyph clearance and chart heading/tick separation at 1440/900 px. Of 37 distinct focused checks, 36 pass after correcting two viewport-relative drag assertions and measuring actual chart glyph bounds. The unchanged actual-pointer 3D hidden-edge check remains intermittent; the independent 3D render/rotation smoke and static camera/print checks pass. No 3D production change is included. A separate all-nine-types audit passes label bounds in both printed copies, with page screenshots and PDFs visually reviewed, including the showcase Student/Solutions circle. Updated Venn screenshot baselines were visually reviewed. Browser plugin not available; repository Playwright supplies interaction and print evidence.
+
+The hardened local build/install and connector doctor pass. All 24 web, two connector, seven Penrose and 201 API-sidecar files, the desktop archive and diagram brain match the verified bundle. The installed renderer returns the tighter circle crop, shorter ticks and satisfied mathematical constraints. The latest complete draft, saved-file bytes, both tab documents, revision 3, dirty state and live snapshot id are preserved; navigation/status timestamps refresh normally. Mauth has reopened; native navigation was unavailable after restart, so the final diagram layout evidence comes from browser print review and the packaged renderer. No teacher document mutation or public release was made.
 
 ### 28 October Clear Venn Set Names Without U
 

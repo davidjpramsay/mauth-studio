@@ -35,7 +35,11 @@ const circle = {
       { id: "bottom", center: "O", from: "A", to: "B" },
     ],
     angles: [{ id: "answer", points: ["C", "A", "B"], label: "$45^\\circ$", radius: 0.8, labelX: -2.45, labelY: 0.65, solutionOnly: true }],
-    decorations: [{ id: "right-C", kind: "rightAngle", points: ["A", "C", "B"], size: 0.5, solutionOnly: true }],
+    decorations: [
+      { id: "equal-default", kind: "equalLength", segments: ["AC"] },
+      { id: "equal-custom", kind: "equalLength", segments: ["BC"], size: 18 },
+      { id: "right-C", kind: "rightAngle", points: ["A", "C", "B"], size: 0.5, solutionOnly: true },
+    ],
   },
 };
 
@@ -63,6 +67,15 @@ for (const width of [1440, 900]) {
     await expect(page).toHaveTitle(/Mauth/);
     const graph = page.locator('.preview-pane .a4-page [id^="jxg-"]').first();
     await expect(graph.locator('[data-mauth-draggable-geometry2d-label="true"]')).toHaveCount(5);
+    for (const [id, length] of [
+      ["equal-default", 12],
+      ["equal-custom", 18],
+    ]) {
+      const tick = graph.locator(`[data-mauth-geometry2d-id="${id}"][data-mauth-geometry2d-role="equalLength"]`);
+      await expect(tick).toHaveCount(1);
+      expect(await tick.evaluate((element) => element.getTotalLength())).toBeCloseTo(length, 1);
+    }
+
     const c = graph.locator('[data-mauth-label-role="geometry2d-point-label"][data-mauth-geometry2d-id="C"]');
     await graph.scrollIntoViewIfNeeded();
     const frame = await graph.boundingBox();
