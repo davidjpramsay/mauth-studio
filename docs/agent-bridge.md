@@ -30,6 +30,10 @@ Agents should use this loop for document authoring:
 5. Apply the same batch with the current revision and an idempotency key.
 6. Verify the rendered result in the browser.
 
+Before building a diagram action, call the read-only `mauth_diagram_tools` with its mathematical purpose. It returns native tool ids, engines, use cases, a recommendation, and renderer-specific `exampleGraphConfig` starting points. Pass `renderer` to inspect a particular tool, or omit intent to list all nine tools and examples. `coordinateFidelity: true` selects fixed JSXGraph geometry for a geometry source whose exact placement must be preserved. This static guide also works when the app is offline and is published as the MCP resource `mauth://authoring/diagram-tools/v1`.
+
+Circle-theorem, tangent, and chord constructions normally use `geometricConstruction` (Penrose); coordinate-circle equations use `graph2d` (JSXGraph). `geometry2d` is fixed plane geometry, not a synonym for Penrose. Snapshot modules expose `diagramTool`, `recommendedDiagramTool` with a reason, and `diagramWarnings`. Wording is inherited from the nearest owning subpart/part/question, including column-nested diagrams. Mismatches also appear in snapshot-level `warnings`, including the proposed snapshot returned by action preview. These warnings are advisory and do not convert existing diagrams or bypass revision protection. The root `diagramTools` catalog remains readable by an already-connected older MCP process; discovering the new tool requires reconnecting that client after an app update.
+
 If the bridge is unavailable in a given runtime, agents should prefer the closest existing equivalent: Mauth actions in code/tests, the project-file API, the visible Files drawer, and browser verification. Direct edits under the selected documents folder, its `.mauth` metadata, `~/Library/Application Support/Mauth Studio/storage`, or legacy `storage/projects` are a recovery fallback, not the normal authoring path.
 
 ## Local Endpoints

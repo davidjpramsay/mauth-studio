@@ -1,18 +1,15 @@
-import type { ChoiceListLayout, ChoiceNumberingStyle, ColumnCount, DiagramAlignment, TableCellAlignment } from "@mauth-studio/shared";
+import {
+  DIAGRAM_TOOLS,
+  type ChoiceListLayout,
+  type ChoiceNumberingStyle,
+  type ColumnCount,
+  type DiagramAlignment,
+  type TableCellAlignment,
+} from "@mauth-studio/shared";
 
 import type { Vector2DLabelStyle } from "../../lib/diagramVector2d";
 
-export const DIAGRAM_TYPES: Array<{ value: string; label: string }> = [
-  { value: "graph2d", label: "2D graph" },
-  { value: "geometry2d", label: "2D diagram" },
-  { value: "vector2d", label: "2D vector graph" },
-  { value: "graph3d", label: "3D graph" },
-  { value: "image", label: "Image" },
-  { value: "geometricConstruction", label: "Geometric" },
-  { value: "network", label: "Network" },
-  { value: "setDiagram", label: "Venn diagram" },
-  { value: "statsChart", label: "Statistics chart" },
-];
+export const DIAGRAM_TYPES: Array<{ value: string; label: string }> = DIAGRAM_TOOLS.map((tool) => ({ value: tool.id, label: tool.label }));
 
 export const DIAGRAM_TYPE_GROUPS: Array<{ label: string; values: string[] }> = [
   { label: "Coordinate", values: ["graph2d", "vector2d", "graph3d"] },

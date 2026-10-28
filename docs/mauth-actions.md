@@ -4,6 +4,8 @@ Mauth actions are the structured document-editing contract for agent-controlled 
 
 The action layer is not an in-app chat API. It is the deterministic contract that lets human UI controls, tests, and external agents make the same document edits and receive the same result shape.
 
+For diagram additions/replacements, first call `mauth_diagram_tools` (or read `mauth://authoring/diagram-tools/v1`) to select the native `graphConfig.type` and inspect its example. In the action-preview snapshot, review each module's current `diagramTool`, `recommendedDiagramTool`, and `diagramWarnings` before applying. Warnings are advisory: exact-coordinate geometry may deliberately use JSXGraph, while relationship-based circle theorem geometry normally uses Penrose. Changing tools is a deliberate content edit, never an automatic schema conversion.
+
 ## Result Shape
 
 Every action returns:

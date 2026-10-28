@@ -172,6 +172,8 @@ When adding a durable behaviour rule, update both the relevant brain config and 
 
 ## Diagram Systems
 
+Before creating or replacing an agent-authored diagram, call `mauth_diagram_tools` with its mathematical purpose (or read `mauth://authoring/diagram-tools/v1`). The shared catalog identifies each native `graphConfig.type`, engine, use case, and example. Circle-theorem/tangent/chord constructions normally use **Geometric (Penrose)**; coordinate plots use **2D graph (JSXGraph)** and source-faithful fixed geometry uses **2D geometry (JSXGraph)**. Inspect `diagramTool`, `recommendedDiagramTool`, and `diagramWarnings` in snapshots and action dry runs. Recommendations are advisory; preserve deliberate teacher choices and do not automatically convert incompatible schemas. Manual Content headers and Settings show the current tool, including when a block is collapsed.
+
 Use the shared diagram shape:
 
 ```json

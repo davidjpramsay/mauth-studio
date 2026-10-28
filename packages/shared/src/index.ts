@@ -1035,6 +1035,9 @@ export interface MauthAgentModuleSummary {
   columnCount?: number;
   solutionEntryCount?: number;
   graphType?: DiagramType | string;
+  diagramTool?: DiagramToolSummary;
+  recommendedDiagramTool?: DiagramToolSummary & { reason: string };
+  diagramWarnings?: Array<{ code: string; message: string; targetId?: string }>;
   diagramAlign?: DiagramAlignment;
   childModules?: MauthAgentModuleSummary[];
 }
@@ -1109,6 +1112,7 @@ export interface MauthAgentSnapshot {
   totalMarks: number;
   validation?: unknown;
   warnings: Array<{ code: string; message: string; targetId?: string }>;
+  diagramTools?: { catalogUri: string; lookupTool: string; tools: Array<DiagramToolSummary & { useFor: string }> };
   _links: {
     snapshot: string;
     preview: { method: "POST"; href: string };
@@ -1200,3 +1204,6 @@ export interface MauthAgentSuggestion {
   createdAt: string;
   updatedAt: string;
 }
+import type { DiagramToolSummary } from "./diagramTools.ts";
+export { DIAGRAM_TOOLS, DIAGRAM_TOOLS_URI, diagramToolForType, diagramToolSummary, diagramToolGuide } from "./diagramTools.ts";
+export type { DiagramToolId, DiagramToolSummary } from "./diagramTools.ts";

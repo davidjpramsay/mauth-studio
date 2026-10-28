@@ -123,7 +123,48 @@ test("buildMauthAgentSnapshot summarizes modules for agent planning", () => {
   assert.equal(snapshot.questionCount, 1);
   assert.equal(snapshot.totalMarks, 4);
   assert.equal(snapshot.questions[0].modules[0].graphType, "graph2d");
+  assert.equal(snapshot.questions[0].modules[0].diagramTool?.label, "2D graph (JSXGraph)");
   assert.equal(snapshot.questions[0].modules[1].lines, 6);
+});
+
+test("snapshot recommendations inherit wording through parts, subparts and columns without rewriting diagrams", () => {
+  const q = question([]);
+  q.text = "AB is a diameter and C lies on the circle.";
+  q.parts = [
+    {
+      id: "p1",
+      marks: 0,
+      contentBlocks: [],
+      subparts: [
+        {
+          id: "s1",
+          marks: 1,
+          text: "Find the angle.",
+          contentBlocks: [
+            { id: "cols", kind: "columns", columns: [[diagramBlock("circle", { type: "geometry2d", data: { retained: true } })], []] },
+          ],
+        },
+      ],
+    },
+    { id: "p2", marks: 1, text: "Sketch a normal distribution.", contentBlocks: [diagramBlock("stats", { type: "statsChart" })] },
+  ];
+  const document = { frontMatter: { assessmentTitle: "Geometry", logoId: "school" }, questions: [q] };
+  const before = structuredClone(document);
+  const input = { document, file: { projectId: "p", activePath: "a.mauth", activeRevision: 1, dirty: true, saveStatus: "unsaved" } };
+  const snapshot = buildMauthAgentSnapshot(input);
+  const circle = snapshot.questions[0].parts[0].subparts[0].modules[0].childModules![0];
+  assert.equal(circle.diagramTool?.engine, "JSXGraph");
+  assert.equal(circle.recommendedDiagramTool?.id, "geometricConstruction");
+  assert.match(circle.diagramWarnings![0].message, /Penrose/);
+  assert.equal(snapshot.questions[0].parts[1].modules[0].recommendedDiagramTool?.id, "statsChart");
+  assert.equal(snapshot.warnings.length, 1);
+  assert.equal(snapshot.warnings[0].targetId, "circle");
+  assert.equal(snapshot.diagramTools?.tools.length, 9);
+  assert.deepEqual(document, before);
+  assert.equal(
+    snapshot.mutationBase.snapshotId,
+    buildMauthAgentSnapshot({ ...input, warnings: [{ code: "external", message: "Preview note" }] }).mutationBase.snapshotId,
+  );
 });
 
 test("buildMauthAgentSnapshot totals nested part and subpart marks", () => {
