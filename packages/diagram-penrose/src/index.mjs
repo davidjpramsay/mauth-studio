@@ -502,10 +502,24 @@ function setSvgText(text, x, y, options = {}) {
   const fontSize = formatSvgNumber((options.fontSize ?? 13.333) * (options.textScale ?? 1));
   const weight = options.weight ? ` font-weight="${options.weight}"` : "";
   const color = options.color ?? "#111827";
+  const role = options.role ? ` data-role="${options.role}"` : "";
   const solutionAttributes = options.solutionOnly
     ? ` data-mauth-penrose-kind="region" data-mauth-penrose-id="${escapeHtml(options.id ?? "")}" data-solution-only="true"`
     : "";
-  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="${color}"${solutionAttributes}>${escapeHtml(text)}</text>`;
+  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="${color}"${role}${solutionAttributes}>${escapeHtml(text)}</text>`;
+}
+
+function setCircleName(label, circle, angleDegrees, textScale) {
+  const angle = (angleDegrees * Math.PI) / 180;
+  // Reserve text-sized clearance outside the stroke, independent of diagram
+  // scale. Native set names use the same paper-size font as region values.
+  const radius = circle.r + 16 * textScale;
+  return setSvgText(
+    normalizeSetLabel(label),
+    formatSvgNumber(circle.cx + radius * Math.cos(angle)),
+    formatSvgNumber(circle.cy + radius * Math.sin(angle)),
+    { textScale, role: "set-label" },
+  );
 }
 
 const PENROSE_SOLUTION_COLOR = "#1d4ed8";
@@ -645,10 +659,9 @@ function renderThreeSetDiagramSvg(spec, substance) {
   <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
-  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(leftSet.label), 112, 66, { textScale })}
-  ${setSvgText(normalizeSetLabel(rightSet.label), 308, 66, { textScale })}
-  ${setSvgText(normalizeSetLabel(lowerSet.label), 274, 252, { textScale })}
+  ${setCircleName(leftSet.label, left, -130, textScale)}
+  ${setCircleName(rightSet.label, right, -50, textScale)}
+  ${setCircleName(lowerSet.label, lower, 35, textScale)}
   ${Object.entries(regionLabels)
     .map(([key, label]) =>
       setSvgText(
@@ -770,9 +783,8 @@ function renderSetDiagramSvg(spec, substance) {
   <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
-  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(leftSet.label), 116, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(rightSet.label), 304, 58, { textScale })}
+  ${setCircleName(leftSet.label, left, -120, textScale)}
+  ${setCircleName(rightSet.label, right, -60, textScale)}
   ${setSvgText(regionLabels.onlyA, regionLabelPositions.onlyA.x, regionLabelPositions.onlyA.y, setRegionTextOptions(regions[0], textScale))}
   ${setSvgText(regionLabels.intersection, regionLabelPositions.intersection.x, regionLabelPositions.intersection.y, setRegionTextOptions(regions[1], textScale))}
   ${setSvgText(regionLabels.onlyB, regionLabelPositions.onlyB.x, regionLabelPositions.onlyB.y, setRegionTextOptions(regions[2], textScale))}

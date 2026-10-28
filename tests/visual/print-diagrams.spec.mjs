@@ -2,6 +2,36 @@ import { test, expect } from "@playwright/test";
 import { assessment, loadFixture } from "./fixtures.mjs";
 import { renderGeometricConstructionDiagram } from "../../packages/diagram-penrose/src/index.mjs";
 
+async function expectClearSetNames(diagram, names) {
+  const nameGaps = await diagram.locator("svg").evaluate((svg) => {
+    const circles = [...svg.querySelectorAll(":scope > circle")].map((circle) => ({
+      x: Number(circle.getAttribute("cx")),
+      y: Number(circle.getAttribute("cy")),
+      r: Number(circle.getAttribute("r")),
+    }));
+    return [...svg.querySelectorAll('[data-role="set-label"]')].map((label) => {
+      const b = label.getBBox();
+      const fontScale = Number(label.getAttribute("font-size")) / 13.333;
+      const gap = Math.min(
+        ...circles.map(
+          ({ x, y, r }) =>
+            Math.hypot(x - Math.max(b.x, Math.min(x, b.x + b.width)), y - Math.max(b.y, Math.min(y, b.y + b.height))) - r - 1.2,
+        ),
+      );
+      return {
+        text: label.textContent,
+        gap: gap / fontScale,
+        inside: b.x > 27.2 && b.x + b.width < 392.8 && b.y > 27.2 && b.y + b.height < 272.8,
+      };
+    });
+  });
+  expect(nameGaps.map((label) => label.text)).toEqual(names);
+  for (const label of nameGaps) {
+    expect(label.gap, label.text).toBeGreaterThan(3);
+    expect(label.inside, label.text).toBe(true);
+  }
+}
+
 test("print preserves solution Venn diagrams and hides graph construction points", async ({ page }, testInfo) => {
   const fixture = assessment(1);
   fixture.questions[0].contentBlocks = [
@@ -136,8 +166,9 @@ test("shared Venn prints blank answer regions and total badges only in Student m
     await expect(diagram.locator('[data-role="set-count-badge"]')).toHaveCount(3);
     await expect(diagram.locator("svg > circle")).toHaveCount(2);
     const text = await diagram.textContent();
-    if (!solutions) expect(await diagram.locator("svg > text").allTextContents()).toEqual(["U", "M", "D", "", "", "", ""]);
-    for (const label of ["U", "M", "D"]) expect(text).toContain(label);
+    if (!solutions) expect(await diagram.locator("svg > text").allTextContents()).toEqual(["M", "D", "", "", "", ""]);
+    await expectClearSetNames(diagram, ["M", "D"]);
+    for (const label of ["M", "D"]) expect(text).toContain(label);
     for (const number of ["90", "50", "36", "32", "18", "22"]) expect(text.includes(number)).toBe(solutions);
     await page.emulateMedia({ media: "screen" });
     await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
@@ -204,7 +235,6 @@ for (const [width, scale] of [
       await page.emulateMedia({ media: "print" });
       const diagram = page.locator(".print-preview-stage .penrose-diagram");
       await expect(diagram.locator("svg > text")).toHaveText([
-        "U",
         "M",
         "A",
         "C",
@@ -215,6 +245,7 @@ for (const [width, scale] of [
         "4",
         solutions ? "3" : "",
       ]);
+      await expectClearSetNames(diagram, ["M", "A", "C"]);
       // Every corner of each numeric glyph must stay in its own region.
       const contained = await diagram.locator("svg").evaluate((svg) => {
         const circles = [...svg.querySelectorAll(":scope > circle")].map((c) => [
@@ -222,7 +253,7 @@ for (const [width, scale] of [
           Number(c.getAttribute("cy")),
           Number(c.getAttribute("r")),
         ]);
-        return [...svg.querySelectorAll(":scope > text")].slice(4, 11).every((text, i) => {
+        return [...svg.querySelectorAll(":scope > text")].slice(3, 10).every((text, i) => {
           if (!text.textContent) return true;
           const b = text.getBBox();
           return [b.x, b.x + b.width].every((x) =>

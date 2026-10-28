@@ -755,7 +755,8 @@ def test_three_set_totals_use_curved_tabs_and_keep_the_universe_box(blank):
         if kind != "box":
             assert badges[kind].find("s:rect", namespace) is None
             assert badges[kind].find("s:path", namespace) is not None
-    assert [node.text for node in root.findall("s:text", namespace)][:4] == ["U", "M", "A", "C"]
+    assert [node.text for node in root.findall("s:text", namespace)][:3] == ["M", "A", "C"]
+    assert all(node.text != "U" for node in root.findall(".//s:text", namespace))
 
 
 def test_three_set_overlap_values_are_at_region_area_centres():
@@ -771,7 +772,7 @@ def test_three_set_overlap_values_are_at_region_area_centres():
     root = ElementTree.fromstring(response.json()["svg"])
     ns = {"s": "http://www.w3.org/2000/svg"}
     circles = [(float(c.get("cx")), float(c.get("cy")), float(c.get("r"))) for c in root.findall("s:circle", ns)]
-    positions = {names[int(t.text)]: (float(t.get("x")), float(t.get("y"))) for t in root.findall("s:text", ns)[4:]}
+    positions = {names[int(t.text)]: (float(t.get("x")), float(t.get("y"))) for t in root.findall("s:text", ns)[3:]}
 
     # Independently integrate the rendered regions on a unit grid. This catches
     # misplaced anchors without duplicating the renderer's coordinate table.

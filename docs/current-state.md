@@ -52,8 +52,14 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; centred three-set Venn values, with prior Penrose recovery and diagram/editor fixes retained
+worktree: clean at this checkpoint; clear Venn names without a universe label, with centred values and prior diagram/editor fixes retained
 ```
+
+### 28 October Clear Venn Set Names Without U
+
+Both native Venn layouts now place set names outside their circle strokes with text-sized clearance that follows diagram text scaling. The separate U label is removed; the universe rectangle and optional overall total remain. Content no longer exposes the unused Universe label field and calls its retained total control Overall total box. Stored universe identifiers/labels remain read-compatible, with no teacher-document migration. Agent rules and the diagram brain describe the same convention.
+
+Eight focused browser checks pass across Student/Solutions, 75/115/200% scale, 1440/900 px widths and given/hidden totals. They measure actual set-name glyph boxes against every circle stroke and the universe boundary, verify hidden regions/totals, and exercise print. Updated curved-tab screenshot baselines were visually reviewed. The centred region values from `c39b1e5` remain unchanged. Full `pnpm check` passes with 122 API, 735 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and the production build. Browser plugin not available; repository Playwright supplies browser evidence. The hardened local build/install and connector doctor pass. All 24 web, two connector, seven Penrose and 201 API-sidecar files, the desktop archive and diagram brain match the verified bundle. Packaged SVG comparison confirms only set-name positions/roles and removal of U changed; centred values, totals, shading and geometry remain identical. Native accessibility output also confirms U is absent. Native navigation/screenshots were unreliable after installation, so final visual-clearance evidence comes from the browser and print fixtures. The latest draft, including concurrent Question 5 edits, both tab documents, revision 3, dirty states and saved-file bytes match the final pre-install backup. No teacher document mutation or public release was made.
 
 ### 28 October Centred Three-Set Venn Values
 
