@@ -2,10 +2,11 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compile, optimize, showError, toSVG } from "@penrose/core";
+import { compile, showError, toSVG } from "@penrose/core";
 import { JSDOM } from "jsdom";
 import { penroseRelationshipsWithLabelIds } from "../../shared/src/penroseLabels.ts";
 import { presentPenroseLabels } from "./labelPresentation.ts";
+import { optimizeValidatedLayout } from "./constraintValidation.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 globalThis.window ??= dom.window;
@@ -1753,11 +1754,12 @@ export async function renderGeometricConstructionDiagram(spec) {
   const compiled = await compile({ domain: domainSource, style: styleSource, substance, variation });
   if (compiled.isErr()) throw new Error(showError(compiled.error));
 
-  const optimized = optimize(compiled.value);
-  if (optimized.isErr()) throw new Error(showError(optimized.error));
+  const optimized = optimizeValidatedLayout(compiled.value, {
+    standardGeometryStyle: preset === "geometry" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource"),
+  });
 
   const scalePercent = Number(spec?.options?.scalePercent ?? 100);
-  const rawSvg = svgElementToString(await toSVG(optimized.value));
+  const rawSvg = svgElementToString(await toSVG(optimized.state));
   const displayViewBox = visibleViewBox(rawSvg, width, height);
   const fixedSvg = fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
   const aliases = {};
@@ -1789,6 +1791,7 @@ export async function renderGeometricConstructionDiagram(spec) {
       substance,
       styleSource,
       style: spec?.style ?? "school",
+      constraintValidation: optimized.validation,
       ...(presentation ? { labelIds: presentation.labels } : {}),
     },
   };

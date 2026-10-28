@@ -72,7 +72,9 @@ export function GeometricConstructionDiagram({
         data-mauth-print-render-state="error"
         role="alert"
       >
-        Geometry diagram could not render.
+        {error.startsWith("No layout satisfying the geometry constraints")
+          ? "No valid geometry layout was found. Try Resample again or review the construction."
+          : "Geometry diagram could not render."}
       </div>
     );
   }

@@ -259,6 +259,71 @@ test("Penrose diameter construction satisfies givens and preserves answer-only g
   }
 });
 
+test("Penrose resampling keeps circle constraints across failed and arbitrary seeds", async () => {
+  const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, "packages/diagram-penrose/fixtures/diameter-circle.json"), "utf8"));
+  const seeds = ["penrose-layout-1793158949000-9", ...Array.from({ length: 19 }, (_, i) => `resample-regression-${i}`)];
+  let retried = 0;
+  for (const config of Object.values(fixture)) {
+    for (const variation of seeds) {
+      const result = await renderGeometricConstructionDiagram({ ...config, options: { ...config.options, variation } });
+      const svg = new DOMParser().parseFromString(result.svg, "image/svg+xml");
+      const point = (name) => {
+        const element = [...svg.querySelectorAll("circle")].find((node) => node.querySelector("title")?.textContent === `\`${name}\`.dot`);
+        return [+element.getAttribute("cx"), +element.getAttribute("cy")];
+      };
+      const [A, B, C, O] = ["A", "B", "C", "O"].map(point);
+      const distance = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      const radius = distance(A, O);
+      assert.ok(radius > 1, `${variation}: non-degenerate circle`);
+      assert.ok(distance(O, [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]) < radius * 0.001);
+      assert.ok(Math.abs(distance(B, O) - radius) < radius * 0.001);
+      assert.ok(Math.abs(distance(C, O) - radius) < radius * 0.001, `${variation}: C lies on circle`);
+      assert.ok(Math.abs(distance(A, C) - distance(B, C)) < radius * 0.001, `${variation}: equal chords`);
+      assert.ok(Math.abs(A[1] - B[1]) < radius * 0.001 && A[0] < B[0] && C[1] < O[1], `${variation}: orientation`);
+      const cosine = ((A[0] - C[0]) * (B[0] - C[0]) + (A[1] - C[1]) * (B[1] - C[1])) / (distance(A, C) * distance(B, C));
+      assert.ok(Math.abs(cosine) < 0.001, `${variation}: right angle`);
+      const check = result.metadata.constraintValidation;
+      assert.equal(check.status, "satisfied");
+      assert.equal(check.requestedVariation, variation);
+      assert.ok(check.maxViolation <= check.tolerance);
+      retried += check.attempts > 1 ? 1 : 0;
+    }
+  }
+  assert.ok(retried > 0, "the previously invalid seeds exercise recovery");
+  const config = { ...fixture.student, options: { ...fixture.student.options, variation: seeds[0] } };
+  assert.deepEqual(
+    await renderGeometricConstructionDiagram(config),
+    await renderGeometricConstructionDiagram(config),
+    "retry is deterministic",
+  );
+});
+
+test("Penrose refuses contradictory constraints instead of rendering an invalid result", async () => {
+  const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
+  await assert.rejects(
+    renderGeometricConstructionDiagram({
+      type: "geometricConstruction",
+      options: { substanceSource: "Point A, B\nHorizontal(A, B)\nHorizontal(B, A)", variation: "contradictory" },
+    }),
+    /No layout satisfying the geometry constraints/,
+  );
+  // A custom Style's constraints remain authoritative even when they refer to
+  // labels. Only the built-in school label-clearance preferences are warnings.
+  const schoolStyle = readFileSync(path.join(ROOT, "packages/diagram-penrose/style/school.style"), "utf8");
+  await assert.rejects(
+    renderGeometricConstructionDiagram({
+      type: "geometricConstruction",
+      options: {
+        substanceSource: "Point A\nLabel A $A$",
+        styleSource: `${schoolStyle}\nforall Point p { override p.labelText.center = p.dot.center }`,
+        variation: "custom-impossible-label",
+      },
+    }),
+    /No layout satisfying the geometry constraints/,
+  );
+});
+
 test("Penrose scale preserves paper stroke, dash and dot sizes without moving geometry", async () => {
   const { renderGeometricConstructionDiagram } = await import("../packages/diagram-penrose/src/index.mjs");
   const fixture = JSON.parse(readFileSync(path.join(ROOT, "packages/diagram-penrose/fixtures/diameter-circle.json"), "utf8"));

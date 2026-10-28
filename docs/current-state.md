@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; 3D labels and camera remain editable with hidden answers, consistent Penrose paper line weights, stable presentation offsets, capability-based routing, and prior editor/diagram fixes
+worktree: clean at this checkpoint; Penrose resampling validates constraints with bounded deterministic recovery, retaining the prior diagram, label, and editor fixes
 ```
+
+### 28 October Penrose Resample Constraint Validation
+
+Some random seeds returned `EPConverged` while violating circle membership, equal lengths and orientation. Resample retained the correct Substance; the renderer incorrectly accepted the numerical result. Compiled layouts now check finite active residuals against a 0.001 tolerance, retry up to eight deterministic seeds using the same compiled graph, and return no SVG when constraints remain unsatisfied. Metadata distinguishes accepted geometry from built-in school label-clearance warnings; custom Style constraints are never relaxed. The error is actionable in the preview and blocks print readiness. Authored relationships, variation identity and teacher label offsets remain unchanged by automatic retries.
+
+Full `pnpm check` passes with 115 API, 730 web/action, 17 lifecycle, 11 Plotly and 82 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Regression coverage independently measures 40 Student/Solutions layouts across 20 seeds, including known failures, verifies deterministic recovery, and rejects contradictory mathematical and custom label constraints. Nine focused browser checks pass at 1440/900 px, covering the actual Resample control, saved relationships/offsets, undo/redo, prior label dragging/inspection and blocked printing of invalid geometry. The compact test explicitly switches to Content before opening diagram Settings. Screen output and a rasterised Solutions PDF were visually inspected. Browser plugin not available; repository Playwright supplies the interaction evidence.
+
+The hardened local build/install passes; all 23 web, two connector and seven Penrose runtime files plus the diagram brain match the verified bundle. The installed API validates both showcase copies and recovers the known failing seed on its third candidate. A native Resample click generated another failing first candidate and automatically recovered on the second; the visible circle, numeric geometry checks and saved variation confirm the result. The test resample was undone, restoring the complete authored draft, original label offsets, revision 2, saved-file bytes and both open-document snapshots. AFTER HOURS remains open on Question 4 with its existing unsaved changes. Connector doctor passes. Native capture briefly returned a ScreenCaptureKit error, but fresh state, screenshots and draft readback verified the actions. No public release was published.
 
 ### 28 October 3D Labels With Hidden Solutions
 
@@ -395,11 +403,11 @@ Latest full gate on 28 October 2026:
 
 ```text
 formatting and lint: passed
-API: 114 passed
-web/actions: 729 passed
+API: 115 passed
+web/actions: 730 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 80 passed (desktop, connector, and CI contract)
+launcher: 82 passed (desktop, connector, and CI contract)
 native Quick Look: 3 passed
 TypeScript and Vite production build: passed
 ```

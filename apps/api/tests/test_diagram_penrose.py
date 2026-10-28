@@ -132,6 +132,22 @@ def test_penrose_variation_resamples_geometry_layout():
     assert first.json()["svg"] != second.json()["svg"]
 
 
+def test_penrose_rejects_unsatisfied_geometry_without_returning_svg():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "geometricConstruction",
+            "options": {
+                "substanceSource": "Point A, B\nHorizontal(A, B)\nHorizontal(B, A)",
+                "variation": "contradictory",
+            },
+        },
+    )
+    assert response.status_code == 500
+    assert "No layout satisfying the geometry constraints" in response.json()["detail"]
+    assert "svg" not in response.json()
+
+
 def test_penrose_diagram_uses_original_canvas_and_test_text_labels():
     response = client.post(
         "/api/diagram/penrose",
