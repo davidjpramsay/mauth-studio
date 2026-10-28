@@ -167,7 +167,7 @@ export function penroseScalePatch(config: GraphConfig, value: number): Partial<G
 
 export function penroseResamplePatch(config: GraphConfig, variation = penroseVariationId()): Partial<GraphConfig> {
   return {
-    options: { ...penroseOptions(config), variation },
+    options: { ...penroseOptions(config), variation, labelOffsets: undefined },
     widthPx: undefined,
     heightPx: undefined,
   };

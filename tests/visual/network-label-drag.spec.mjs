@@ -180,13 +180,16 @@ for (const width of [1440, 900]) {
     await expect.poll(async () => (await configFor(page)).options.variation).not.toBe(original.options.variation);
     await expect(diagram).toHaveAttribute("data-mauth-print-render-state", "ready");
     const resampled = await configFor(page);
-    expect(resampled).toEqual({ ...original, options: { ...original.options, variation: resampled.options.variation } });
+    const { labelOffsets: _oldOffsets, ...retainedOptions } = original.options;
+    expect(resampled).toEqual({ ...original, options: { ...retainedOptions, variation: resampled.options.variation } });
     await expect.poll(geometry).not.toEqual(before);
     await expect(labelFor(diagram, "D.labelText")).toHaveCount(0);
-    await expect(labelFor(diagram, "relationship_AB.text")).toHaveAttribute("data-label-offset-x", "4");
+    await expect(labelFor(diagram, "relationship_AB.text")).toHaveAttribute("data-label-offset-x", "0");
     await page.screenshot({ path: info.outputPath(`network-resample-settings-${width}.png`) });
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     await expect.poll(() => configFor(page)).toEqual(original);
+    await expect.poll(geometry).toEqual(before);
+    await expect(labelFor(diagram, "relationship_AB.text")).toHaveAttribute("data-label-offset-x", "4");
     await page.getByRole("button", { name: "Redo", exact: true }).click();
     await expect.poll(() => configFor(page)).toEqual(resampled);
     await inspector.getByRole("button", { name: "Content", exact: true }).click();

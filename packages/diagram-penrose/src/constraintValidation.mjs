@@ -33,9 +33,11 @@ function inspectConstraints(state, standardGeometryStyle) {
   };
 }
 
-export function optimizeValidatedLayout(compiled, { standardGeometryStyle = false } = {}) {
+export async function optimizeValidatedLayout(compiled, { standardGeometryStyle = false, rankCandidate } = {}) {
   const requestedVariation = compiled.variation;
   let optimizerError;
+  let best;
+  let candidatesEvaluated = 0;
   for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt++) {
     const resolvedVariation = attempt === 0 ? requestedVariation : `${requestedVariation}::mauth-constraint-retry-${attempt}`;
     const initial = attempt === 0 ? compiled : resample({ ...compiled, variation: resolvedVariation });
@@ -46,7 +48,10 @@ export function optimizeValidatedLayout(compiled, { standardGeometryStyle = fals
     }
     const inspection = inspectConstraints(optimized.value, standardGeometryStyle);
     if (inspection.valid) {
-      return {
+      candidatesEvaluated++;
+      const ranked = rankCandidate ? await rankCandidate(optimized.value) : undefined;
+      const candidate = {
+        ranked,
         state: optimized.value,
         validation: {
           status: "satisfied",
@@ -60,7 +65,11 @@ export function optimizeValidatedLayout(compiled, { standardGeometryStyle = fals
           resolvedVariation,
         },
       };
+      if (!rankCandidate) return candidate;
+      if (!best || ranked.score < best.ranked.score) best = candidate;
+      if (attempt >= 2 && best.ranked.score === 0) break;
     }
   }
+  if (best) return { ...best, validation: { ...best.validation, candidatesEvaluated } };
   throw new Error(UNSATISFIED_LAYOUT_MESSAGE, optimizerError ? { cause: optimizerError } : undefined);
 }

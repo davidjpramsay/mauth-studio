@@ -7,6 +7,7 @@ import { JSDOM } from "jsdom";
 import { penroseRelationshipsWithLabelIds, penroseSupportsLabelDragging } from "../../shared/src/penroseLabels.ts";
 import { presentPenroseLabels } from "./labelPresentation.ts";
 import { optimizeValidatedLayout } from "./constraintValidation.mjs";
+import { arrangeNetworkLabels, networkStyle } from "./networkLayout.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 globalThis.window ??= dom.window;
@@ -1763,20 +1764,28 @@ export async function renderGeometricConstructionDiagram(spec) {
     : specToPresetSubstance(spec, preset);
   const { width, height } = diagramDimensions();
   const styleSpec = substanceSource ? (parseSubstanceDiagramSpec(substance) ?? spec) : spec;
-  const styleSource = stringOption(spec, "styleSource") ?? generatedStyleSource(styleBase, styleSpec);
+  const automaticNetwork =
+    spec.type === "network" && preset === "geometry" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource");
+  const styleSource =
+    stringOption(spec, "styleSource") ?? generatedStyleSource(styleBase, styleSpec) + (automaticNetwork ? networkStyle() : "");
   const domainSource = stringOption(spec, "domainSource") ?? domain;
   const variation = String(spec?.options?.variation ?? "geometry-default");
   const compiled = await compile({ domain: domainSource, style: styleSource, substance, variation });
   if (compiled.isErr()) throw new Error(showError(compiled.error));
 
-  const optimized = optimizeValidatedLayout(compiled.value, {
+  const scalePercent = Number(spec?.options?.scalePercent ?? 100);
+  const optimized = await optimizeValidatedLayout(compiled.value, {
     standardGeometryStyle: preset === "geometry" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource"),
+    rankCandidate: automaticNetwork
+      ? async (state) => arrangeNetworkLabels(fixedSizePresentationSvg(svgElementToString(await toSVG(state)), scalePercent), substance)
+      : undefined,
   });
 
-  const scalePercent = Number(spec?.options?.scalePercent ?? 100);
-  const rawSvg = svgElementToString(await toSVG(optimized.state));
+  const rawSvg = optimized.ranked?.svg ?? svgElementToString(await toSVG(optimized.state));
   const displayViewBox = visibleViewBox(rawSvg, width, height);
-  const fixedSvg = fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const fixedSvg = optimized.ranked
+    ? svgWithDimensions(rawSvg, displayViewBox)
+    : fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
   const aliases = {};
   if (penroseSupportsLabelDragging(spec.type) && !substanceSource) {
     for (const [prefix, entries] of [
@@ -1807,6 +1816,7 @@ export async function renderGeometricConstructionDiagram(spec) {
       styleSource,
       style: spec?.style ?? "school",
       constraintValidation: optimized.validation,
+      ...(optimized.ranked ? { networkLayout: optimized.ranked.quality } : {}),
       ...(presentation ? { labelIds: presentation.labels } : {}),
     },
   };

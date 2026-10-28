@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; tighter diagram margins and shorter equal-length ticks, with Venn clarity and prior diagram/editor fixes retained
+worktree: clean at this checkpoint; Penrose 3.3.1, fresh Resample labels and ranked network layout, with prior diagram/editor fixes retained
 ```
+
+### 28 October Network Layout And Fresh Resample Labels
+
+Penrose core is upgraded from 3.3.0 to 3.3.1. Resample now resets manual label positions while preserving the construction, hidden answers, source and styling; one Undo restores the previous variation and offsets. Reset label positions still keeps the geometry. Standard networks add soft edge-length goals, rank up to eight mathematically valid candidates and place labels using actual rendered sizes near their owning nodes/edges, avoiding other labels, geometry, loops and arrowheads. Manual offsets remain a separate post-layout layer. Advanced Substance and explicit directional label hints are supported; custom Style/domain remains authoritative. Quality metadata describes automatic layout, not manual overrides or a proof of optimality.
+
+Four new renderer tests cover multiple seeds/scales, deterministic placement, manual offsets without geometry movement, Advanced Substance and custom Style. Ten focused browser checks cover dragging, reset, Resample, Undo/Redo, content/source/hidden-answer preservation, reopening, Student/Solutions printing and invalid-constraint blocking at 1440/900 px. The reproducible [Graphviz comparison](network-layout-comparison.md) uses four identical graphs and five seeds per engine: Graphviz is much faster, but these renders have less reliable label clearance. No production renderer migration is included. Browser plugin not available; repository Playwright supplies browser evidence.
+
+Full `pnpm check` passes: 122 API, 735 web/action, 17 lifecycle, 11 Plotly, four Penrose and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. All ten focused browser checks pass, including actual Undo/Redo controls. The 40-render engine comparison was visually reviewed; generated reports stay outside source control.
+
+The hardened local build/install and connector doctor pass. All 24 web, seven Penrose, two connector and 180 regular API-sidecar files, the desktop archive and diagram brain match the verified bundle. The complete draft, both tab documents, identities, revisions and save baselines survived installation; native Undo/Redo were empty before quitting. A revision-protected structured Resample then repaired Question 5 and saved revision 4. Only that network's variation and manual offsets changed in the document; all wording, nodes, links, weights, answers, styling and the other tab are unchanged. The installed renderer reports satisfied constraints, zero crossings/label collisions/ambiguous weights/clipping for the repaired graph; mounted-preview inspection measures all 12 labels with no issues. Native pointer/Undo verification after restart remains unavailable because accessibility/screenshot state is stale; browser history/drag tests and installed API/preview measurements are separate passing evidence. Mauth is open. No public release was made.
 
 ### 28 October Tighter Diagram Margins And Shorter Ticks
 

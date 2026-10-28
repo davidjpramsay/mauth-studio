@@ -18,7 +18,7 @@ for (const renderer of ["geometricConstruction", "network"] as const) {
   };
   const scope = { kind: "question" as const, questionId: "q" };
 
-  test(`${renderer} resampling preserves authored content, source and teacher label offsets`, () => {
+  test(`${renderer} resampling preserves content and source while resetting manual label positions`, () => {
     const original = { ...config, options: { ...config.options, labelOffsets: { "A.labelText": [6, -3] } } };
     const questions = [{ ...document.questions[0], contentBlocks: [{ id: "d", kind: "diagram" as const, graphConfig: original }] }];
     const action = {
@@ -33,11 +33,12 @@ for (const renderer of ["geometricConstruction", "network"] as const) {
     if (result.ok)
       assert.deepEqual(result.questions[0].contentBlocks[0].graphConfig, {
         ...original,
-        options: { ...original.options, variation: "new-layout", scalePercent: 100, penrosePreset: "geometry" },
+        options: { ...original.options, variation: "new-layout", labelOffsets: undefined, scalePercent: 100, penrosePreset: "geometry" },
         widthPx: undefined,
         heightPx: undefined,
       });
     assert.equal(questions[0].contentBlocks[0].graphConfig.options.variation, "keep-layout");
+    assert.deepEqual(questions[0].contentBlocks[0].graphConfig.options.labelOffsets, { "A.labelText": [6, -3] });
   });
 
   test(`${renderer} label actions preserve source, geometry, hidden answers and unrelated offsets`, () => {

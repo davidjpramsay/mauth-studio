@@ -48,7 +48,7 @@ async function setup(page, draft, responses = []) {
 }
 
 for (const width of [1440, 900]) {
-  test(`Resample preserves circle relationships, teacher offsets and history at ${width}px`, async ({ page }, info) => {
+  test(`Resample preserves circle relationships and history while resetting label offsets at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 1000 });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -95,10 +95,11 @@ for (const width of [1440, 900]) {
     expect(accepted.result.metadata.constraintValidation.attempts).toBeGreaterThan(1);
     const saved = await configFor(page);
     expect(saved.options.substanceSource).toBe(config.options.substanceSource);
-    expect(saved.options.labelOffsets).toEqual(config.options.labelOffsets);
+    expect(saved.options.labelOffsets).toBeUndefined();
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     await expect.poll(async () => (await configFor(page)).options.variation).toBe(config.options.variation);
     expect(await verifyCircle(diagramFor(page))).toEqual(original);
+    expect((await configFor(page)).options.labelOffsets).toEqual(config.options.labelOffsets);
     await page.getByRole("button", { name: "Redo", exact: true }).click();
     await expect.poll(async () => (await configFor(page)).options.variation).toBe(saved.options.variation);
     expect(await verifyCircle(diagramFor(page))).toEqual(resampled);

@@ -115,9 +115,9 @@ export function PenroseSelectionInspector({
             <Shuffle className="mr-2 size-4" aria-hidden="true" />
             Resample
           </Button>
-          {selectedDiagramConfig.type === "network" ? (
+          {["network", "geometricConstruction"].includes(selectedDiagramConfig.type) ? (
             <p className="text-xs text-muted-foreground">
-              Resample rearranges the same nodes and links, keeping weights and label adjustments.
+              Resample creates a new layout and resets label positions. Content stays the same. Undo restores the previous layout.
             </p>
           ) : null}
         </div>

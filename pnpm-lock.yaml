@@ -27,6 +27,9 @@ importers:
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
+      '@viz-js/viz':
+        specifier: 3.31.0
+        version: 3.31.0
       electron:
         specifier: ^43.1.1
         version: 43.1.1
@@ -134,8 +137,8 @@ importers:
   packages/diagram-penrose:
     dependencies:
       '@penrose/core':
-        specifier: ^3.3.0
-        version: 3.3.0
+        specifier: ^3.3.1
+        version: 3.3.1
       jsdom:
         specifier: ^27.3.0
         version: 27.4.0(@noble/hashes@2.2.0)
@@ -636,8 +639,8 @@ packages:
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
 
-  '@penrose/core@3.3.0':
-    resolution: {integrity: sha512-0PfOp6YhADYaTxQ4hhlSMiUn19lHntk5kOi2WykUo9dXVR5u2qma5ocmKNIFrVtnFvyDPJaD/Ir6N8e6uT3nCQ==}
+  '@penrose/core@3.3.1':
+    resolution: {integrity: sha512-QofvV/91aZg10nMMIR05asWkFLlDTmn+As5yo4DIpG4/eQDbeZZmJeAu/vC9hvjyOG8eomq0JXL5596KGAw+qQ==}
 
   '@playwright/test@1.59.1':
     resolution: {integrity: sha512-PG6q63nQg5c9rIi4/Z5lR5IVF7yU5MqmKaPOe0HSc0O2cX1fPi96sUQu5j7eo4gKCkB2AnNGoWt7y4/Xx3Kcqg==}
@@ -895,6 +898,9 @@ packages:
         optional: true
       babel-plugin-react-compiler:
         optional: true
+
+  '@viz-js/viz@3.31.0':
+    resolution: {integrity: sha512-r7zlQdRvcwvIpjHGgs+KNWHeE/P5/Dq7k8ZAKaMCbZqomxCBJV78gVuQYaHzFVca+kB0mX0fMW9UFevCOBG50A==}
 
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
@@ -1862,6 +1868,10 @@ packages:
 
   jsxgraph@1.13.3:
     resolution: {integrity: sha512-sUVTxB5mDPL5WIEeuo9nprymRymU1ojU2YDtpcK6JzcIe3DkxpQ/2uolGuJ3R0lH6tb3wCGY+1PgVhCVic6yjg==}
+    engines: {node: '>=20.19.0'}
+
+  jsxgraph@1.14.2:
+    resolution: {integrity: sha512-OqhkRB5Qcp8dxe5ff9qdG1v/4yLrw2HDcApBoeZWRa3IzLSdIA8TXPwjspsM1XvEcV/eTPwsUFe1aiYejV2TLw==}
     engines: {node: '>=20.19.0'}
 
   keyv@4.5.4:
@@ -3506,7 +3516,7 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
-  '@penrose/core@3.3.0':
+  '@penrose/core@3.3.1':
     dependencies:
       '@datastructures-js/queue': 4.3.0
       consola: 3.4.2
@@ -3754,6 +3764,8 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.0-rc.7
       vite: 8.0.10(@types/node@25.6.0)(esbuild@0.28.1)(jiti@1.21.7)(yaml@2.9.0)
+
+  '@viz-js/viz@3.31.0': {}
 
   '@xmldom/xmldom@0.8.13': {}
 
@@ -4872,7 +4884,11 @@ snapshots:
     dependencies:
       jsxgraph: 1.13.3
 
-  jsxgraph@1.13.3: {}
+  jsxgraph@1.13.3:
+    dependencies:
+      jsxgraph: 1.14.2
+
+  jsxgraph@1.14.2: {}
 
   keyv@4.5.4:
     dependencies:

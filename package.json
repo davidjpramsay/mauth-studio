@@ -57,7 +57,7 @@
     "test:plotly": "node --experimental-strip-types --test packages/diagram-plotly/tests/*.test.ts",
     "test:quicklook": "node scripts/test-macos-quicklook.mjs",
     "test:launcher": "node --test scripts/ci-policy.test.mjs scripts/mauth-launch-plan.test.mjs scripts/install-macos-launcher-copy.test.mjs scripts/install-standalone-metadata.test.mjs scripts/mauth-runtime.test.mjs scripts/macos-ship-plan.test.mjs scripts/macos-quicklook.test.mjs scripts/macos-sidecar-build-plan.test.mjs scripts/agent-connector-build-plan.test.mjs scripts/mauth-agent-http.test.mjs scripts/mauth-agent-mcp.test.mjs desktop/agent-connector.test.mjs desktop/development-runtime.test.mjs desktop/document-open.test.mjs desktop/loading.test.mjs desktop/local-api-auth.test.mjs desktop/menu-commands.test.mjs desktop/native-dialogs.test.mjs desktop/platform-paths.test.mjs desktop/preload.test.mjs desktop/runtime.test.mjs desktop/updater.test.mjs",
-    "test": "pnpm test:api && pnpm test:web-actions && pnpm test:document-lifecycle && pnpm test:plotly && pnpm test:launcher && pnpm test:quicklook && pnpm build:web",
+    "test": "pnpm test:api && pnpm test:web-actions && pnpm test:document-lifecycle && pnpm test:plotly && pnpm test:penrose && pnpm test:launcher && pnpm test:quicklook && pnpm build:web",
     "format": "pnpm format:web && pnpm format:api",
     "format:web": "pnpm exec prettier --write .",
     "format:api": "cd apps/api && uv run ruff format app tests ../../packages/question-engine ../../packages/formatting-engine ../../packages/marking-engine",
@@ -69,7 +69,9 @@
     "lint:api": "cd apps/api && uv run ruff check app tests ../../packages/question-engine ../../packages/formatting-engine ../../packages/marking-engine",
     "check:handoff": "node scripts/handoff-docs-check.mjs",
     "check:handoff:live": "node scripts/handoff-docs-check.mjs --live",
-    "check": "pnpm check:handoff && pnpm format:check && pnpm lint && pnpm test"
+    "check": "pnpm check:handoff && pnpm format:check && pnpm lint && pnpm test",
+    "test:penrose": "node --test packages/diagram-penrose/tests/*.test.mjs",
+    "compare:network-layouts": "node scripts/compare-network-layouts.mjs"
   },
   "workspaces": [
     "apps/web",
@@ -81,6 +83,7 @@
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/test": "^1.59.1",
+    "@viz-js/viz": "3.31.0",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
