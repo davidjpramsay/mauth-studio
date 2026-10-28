@@ -174,13 +174,15 @@ test("structured Penrose labels retain hidden answers and support keyboard and r
   const label = labelFor(diagram, "A.labelText");
   await label.focus();
   const offset = (await configs(page))[0].options.labelOffsets["A.labelText"];
-  await page.keyboard.press("ArrowRight");
-  await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"][0]).toBeGreaterThan(offset[0]);
+  // A can already be at the right frame boundary after the pointer move.
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"][0]).toBeLessThan(offset[0]);
   await expect(label).toBeFocused();
   await expect(label).toHaveCSS("outline-style", "dashed");
   await page.keyboard.press("Home");
   await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"]).toEqual([0, 0]);
   await drag(page, label, 2000, -2000);
+  await expect(diagram.locator(":scope > svg")).toBeVisible();
   const frame = await diagram.locator(":scope > svg").boundingBox();
   const bounded = await label.boundingBox();
   expect(bounded.x + bounded.width).toBeLessThanOrEqual(frame.x + frame.width);

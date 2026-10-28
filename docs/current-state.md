@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; consistent label-drag feedback across editable diagram families, with validated Penrose resampling and prior diagram/editor fixes retained
+worktree: clean at this checkpoint; slightly reduced Penrose and 3D outer padding, with consistent label-drag feedback and prior diagram/editor fixes retained
 ```
+
+### 28 October Slightly Tighter Diagram Padding
+
+Compiled Penrose geometry/network crops now retain 20 rather than 24 solver units of outer padding. The 3D viewport uses an even 9% board margin per side rather than 10%, making geometry 2.5% larger within the same authored frame. Mathematical coordinates, camera/zoom settings, ranges, label offsets and Penrose paper-size strokes remain unchanged. An initial 8% margin was rejected after visual comparison showed tight clearance on a tall cylinder.
+
+The existing 3D screenshot baselines were reviewed and refreshed for the intentional framing change, also resolving their prior 480/481 px mismatch. The rotation test waits for its rendered dimension instead of an extra click that could queue a camera re-render during the drag. The Penrose keyboard test nudges inward from the smaller frame's right boundary and waits for the post-drag SVG before measuring bounds. A separate read-only copy of the current showcase confirms all circle/pyramid labels fit in Student and Solutions; both two-page render fixtures were exported and visually inspected. The varied-solids render/drag smoke passes. Browser plugin not available; repository Playwright supplies the interaction evidence.
+
+All 13 focused browser checks pass at 1440/900 px, covering Penrose/3D dragging, keyboard/reset controls, history/reopening, hidden answers, camera-dependent edges and print output. Full `pnpm check` passes with 115 API, 730 web/action, 17 lifecycle, 11 Plotly and 82 launcher/runtime tests, three Quick Look tests, lint, TypeScript and the production build.
+
+The hardened local build/install passes. All 23 web, two connector and seven Penrose runtime files and the desktop archive match the verified bundle. Connector doctor passes; the complete draft, saved-file bytes, revision 2, dirty state and both recovered tab documents are preserved, with the same live snapshot id. The native window visibly renders the updated pyramid and its labels. Circle layout and interaction evidence comes from the browser and printed fixtures; native AX navigation focused Question 4 without visibly scrolling there. No public release was published.
 
 ### 28 October Consistent Label Drag Outlines
 

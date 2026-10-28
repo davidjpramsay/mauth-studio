@@ -63,7 +63,7 @@ const IDENTIFIER_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const DEFAULT_CANVAS_WIDTH = 420;
 const DEFAULT_CANVAS_HEIGHT = 300;
 const TEST_TEXT_FONT_SIZE_PX = 13.333;
-const SVG_CROP_PADDING = 24;
+const SVG_CROP_PADDING = 20;
 const MIN_CROPPED_DIMENSION = 80;
 const PENROSE_DIAGRAM_TYPES = new Set(["geometricConstruction", "network", "setDiagram"]);
 

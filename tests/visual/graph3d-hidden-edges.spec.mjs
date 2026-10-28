@@ -97,7 +97,7 @@ test("automatic edges update during an actual pointer rotation", async ({ page }
   await loadFixture(page, draft);
   const graph = page.locator('.preview-pane .a4-page [data-mauth-diagram-type="graph3d"]').first();
   await expect(graph.locator("[data-mauth-graph3d-auto-edge]")).toHaveCount(8);
-  await graph.click({ position: { x: 220, y: 180 } });
+  await expect(graph.locator('[data-mauth-graph3d-dimension-line="height"]')).toHaveAttribute("stroke-dasharray", /.+/);
   const before = await styles(graph);
   await graph.scrollIntoViewIfNeeded();
   const box = await graph.boundingBox();
