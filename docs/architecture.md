@@ -121,6 +121,8 @@ Renderer-specific inspector surfaces should leave `SelectionInspector.tsx` as fo
 
 `BasicBlockSelectionInspector.tsx` owns the non-diagram columns, choices, table, and answer-space controls. `basicBlockInspectorSelection.ts` normalizes the selected view state, while column/table mutations continue through the existing limits and patches in `moduleSettingsPatches.ts`. `DiagramSelectionInspector.tsx` owns diagram type/alignment controls and dispatches to the focused renderer inspectors; `diagramInspectorRouting.ts` keeps base controls hidden while a function, graph feature, or geometry primitive is selected. `SelectionInspector.tsx` is now the small header, solution-control, and surface-routing shell rather than a block-kind or renderer implementation.
 
+3D preview label and camera changes use focused callbacks against the complete authored config. Student filtering must not disable interaction, and solution display colours must not be written back as source styles. Label identities are resolved before filtering, screen offsets account for preview scaling, and the renderer exposes a shared label role for inspection.
+
 ## Renderer Loading And Print Safety
 
 `PreviewDiagram` loads JSXGraph, 3D, vector, statistical, and Penrose-backed components on demand. Measurement placeholders preserve frame dimensions without loading an engine. Suspense placeholders and renderer failures participate in print readiness; a failed diagram cannot silently become a blank printed area. `functionGraphExpressions.ts` owns expression conversion and implicit-relation snapping shared by Content and rendering, so editing a blank document no longer imports JSXGraph through a helper.

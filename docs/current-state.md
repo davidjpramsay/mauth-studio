@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; consistent Penrose paper line weights, draggable labels, stable presentation offsets, capability-based routing, live inspection, and prior editor/diagram fixes
+worktree: clean at this checkpoint; 3D labels and camera remain editable with hidden answers, consistent Penrose paper line weights, stable presentation offsets, capability-based routing, and prior editor/diagram fixes
 ```
+
+### 28 October 3D Labels With Hidden Solutions
+
+The pyramid's hidden slant-height answer disabled the entire full-config edit callback in Student mode, leaving shared 4 m and 6 m labels fixed. The 3D renderer now receives focused stable-id label and camera presentation callbacks against the complete authored config, preserving hidden geometry, original solution colours and raw metadata. Pointer offsets account for preview scaling. The new browser reproduction fails on the prior build at its missing drag handler.
+
+Full `pnpm check` passes with 114 API, 730 web/action, 17 lifecycle, 11 Plotly and 80 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Five focused browser checks pass, covering both preview sizes, exact label displacement, hidden earlier legacy rows, point/segment/face/dimension targets, camera rotation, save/reopening, undo/redo, cancellation/reset and printed positions. Student output and rasterised Solutions PDFs were visually inspected. Two older hidden-edge screenshot cases still fail on a one-pixel frame-width mismatch (480 versus 481 px); an isolated build of prior commit `8378117` reproduces both failures, while their edge-style assertions and the pointer/manual-mode checks pass. Their baselines are unchanged.
+
+The hardened local build/install passes; all 23 web, two connector and seven Penrose runtime files plus the diagram brain match the tested bundle. Native pointer drags moved both 4 m and 6 m labels, and draft readback confirmed their saved offsets. Both test moves were undone: the complete authored draft, all original diagram positions, saved-file bytes, revision 2 and inactive recovery tab remain intact. AFTER HOURS is open on Question 3 in Student mode with its existing unsaved changes. Connector doctor passes and the unchanged live mutation id confirms restoration. Native diagram inspection passes construction/schema validation and 23 overall items without errors or warnings; its existing render-root selector does not recognise this 3D surface and explicitly reports `notRendered`, so it is not the layout evidence. Browser and native visual/pointer checks supply that evidence. No public release was published.
 
 ### 28 October Penrose Line Weight At Larger Scales
 

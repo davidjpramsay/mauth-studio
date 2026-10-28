@@ -688,6 +688,9 @@ function enableProjectedLabelDragging(
     const startClientX = event.clientX;
     const startClientY = event.clientY;
     const startOffset: Point2DCoords = [...screenOffset];
+    const rect = board.containerObj.getBoundingClientRect();
+    const scaleX = rect.width / (board.canvasWidth || rect.width) || 1;
+    const scaleY = rect.height / (board.canvasHeight || rect.height) || 1;
     let moved = false;
 
     event.preventDefault();
@@ -706,7 +709,7 @@ function enableProjectedLabelDragging(
       const deltaX = moveEvent.clientX - startClientX;
       const deltaY = moveEvent.clientY - startClientY;
       moved = moved || Math.hypot(deltaX, deltaY) >= 1;
-      const nextOffset = graph3dDraggedLabelScreenOffset(startOffset, deltaX, deltaY);
+      const nextOffset = graph3dDraggedLabelScreenOffset(startOffset, deltaX / scaleX, deltaY / scaleY);
       screenOffset[0] = nextOffset[0];
       screenOffset[1] = nextOffset[1];
       updateOffsetAttributes();
@@ -715,7 +718,7 @@ function enableProjectedLabelDragging(
     const finish = (finishEvent: PointerEvent, commit: boolean) => {
       if (finishEvent.pointerId !== activePointerId) return;
       removeListeners();
-      node.releasePointerCapture?.(finishEvent.pointerId);
+      if (node.hasPointerCapture?.(finishEvent.pointerId)) node.releasePointerCapture?.(finishEvent.pointerId);
       activePointerId = null;
       if (!commit) {
         screenOffset[0] = startOffset[0];
@@ -789,6 +792,7 @@ function renderProjectedGraph3DLabel({
     LATEX_3D_LABEL_ATTRIBUTES,
   ) as unknown as Basic2DElement;
   if (text.rendNode) {
+    text.rendNode.dataset.mauthLabelRole = "graph3d-label";
     text.rendNode.dataset.mauthGraph3dLabelKind = elementKind;
     text.rendNode.dataset.mauthGraph3dElementId = elementId;
   }
@@ -1815,9 +1819,13 @@ function renderGraph3DSolid(
 export function Basic3DGraph({
   graphConfig,
   onGraphConfigChange,
+  onGraphConfigPatch,
+  onLabelPositionChange,
 }: {
   graphConfig?: GraphConfig | null;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
+  onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
+  onLabelPositionChange?: CommitGraph3DLabelScreenOffset;
 }) {
   const boardId = useMemo(() => `jxg-3d-${Math.random().toString(36).slice(2)}`, []);
   const graphConfigRef = useRef(graphConfig);
@@ -1878,39 +1886,41 @@ export function Basic3DGraph({
     );
     const axisLabelsVisible = graph3dAxisLabelsVisible(renderGraphConfig, axesVisible);
     const registerLabelDragCleanup = (cleanup: () => void) => labelDragCleanups.push(cleanup);
-    const commitLabelScreenOffset: CommitGraph3DLabelScreenOffset | undefined = onGraphConfigChange
-      ? (kind, id, offset) => {
-          const currentGraphConfig = graphConfigRef.current;
-          if (!currentGraphConfig) return;
-          onGraphConfigChange(graph3dConfigWithLabelScreenOffset(currentGraphConfig, kind, id, offset));
-        }
-      : undefined;
+    const commitLabelScreenOffset: CommitGraph3DLabelScreenOffset | undefined =
+      onLabelPositionChange ??
+      (onGraphConfigChange
+        ? (kind, id, offset) => {
+            const currentGraphConfig = graphConfigRef.current;
+            if (!currentGraphConfig) return;
+            onGraphConfigChange(graph3dConfigWithLabelScreenOffset(currentGraphConfig, kind, id, offset));
+          }
+        : undefined);
 
     const commitViewState = () => {
-      if (!view || !onGraphConfigChange) return;
+      if (!view || (!onGraphConfigChange && !onGraphConfigPatch)) return;
       const nextViewState = currentViewState(view, persistedViewState.zoom);
       if (sameViewState(nextViewState, lastCommittedViewState)) return;
       lastCommittedViewState = nextViewState;
       const currentGraphConfig = graphConfigRef.current;
-      onGraphConfigChange({
-        ...(currentGraphConfig ?? { type: "graph3d" }),
-        type: currentGraphConfig?.type ?? "graph3d",
+      const patch = {
         metadata: {
           ...(currentGraphConfig?.metadata ?? {}),
           view3d: nextViewState,
         },
-      });
+      };
+      if (onGraphConfigPatch) onGraphConfigPatch(patch);
+      else onGraphConfigChange?.({ ...(currentGraphConfig ?? { type: "graph3d" }), ...patch });
     };
 
     const scheduleViewStateCommit = () => {
-      if (!onGraphConfigChange) return;
+      if (!onGraphConfigChange && !onGraphConfigPatch) return;
       if (pointerActive) return;
       window.clearTimeout(commitTimer);
       commitTimer = window.setTimeout(commitViewState, 120);
     };
 
     const commitViewStateSoon = () => {
-      if (!onGraphConfigChange) return;
+      if (!onGraphConfigChange && !onGraphConfigPatch) return;
       pointerActive = false;
       window.clearTimeout(commitTimer);
       commitTimer = window.setTimeout(commitViewState, 0);
@@ -2178,7 +2188,17 @@ export function Basic3DGraph({
       window.removeEventListener("beforeprint", commitViewState);
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, initialAz, initialBank, initialEl, initialZoom, onGraphConfigChange, renderSignature]);
+  }, [
+    boardId,
+    initialAz,
+    initialBank,
+    initialEl,
+    initialZoom,
+    onGraphConfigChange,
+    onGraphConfigPatch,
+    onLabelPositionChange,
+    renderSignature,
+  ]);
 
   return (
     <div

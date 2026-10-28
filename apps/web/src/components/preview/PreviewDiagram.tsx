@@ -6,7 +6,7 @@ import { DiagramRenderBoundary, DiagramRenderPlaceholder } from "@/components/pr
 import { graphHeight, graphWidth, isSolutionOnlyGraphFeature, isSolutionOnlyGraphFunction } from "@/lib/diagramGraph2d";
 import { geometry2dData, geometry2dDataHasSolutionOnly } from "@/lib/diagramGeometry2d";
 import { vector2dConfigHasSolutionOnly } from "@/lib/diagramVector2d";
-import { graph3dConfigHasSolutionOnly } from "@/lib/diagramGraph3d";
+import { graph3dConfigHasSolutionOnly, graph3dConfigWithLabelScreenOffset } from "@/lib/diagramGraph3d";
 import { imageConfigForSolutionVisibility, imageConfigHasSolutionOnly } from "@/lib/diagramImage";
 import { statsChartConfigHasSolutionOnly } from "@/lib/diagramStatsChart";
 import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
@@ -143,7 +143,18 @@ function PreviewDiagramContent({
       );
     case "graph3d":
     case "basic3d":
-      return <Basic3DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <Basic3DGraph
+          graphConfig={config}
+          onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={
+            onGraphConfigChange
+              ? (kind, id, offset) => onGraphConfigChange(graph3dConfigWithLabelScreenOffset(baseConfig, kind, id, offset))
+              : undefined
+          }
+        />
+      );
     case "graph2d":
     case "2d_graph":
     case "function":
