@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; safe network resampling replaces destructive preset controls, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; Penrose timeout recovery and bounded shared rendering, with prior diagram/editor fixes retained
 ```
+
+### 28 October Penrose Render Timeout Recovery
+
+The packaged API log confirms unhandled renderer subprocess timeouts at the old 15-second deadline. Question 4's unchanged Student and Solutions constructions both render successfully on a fresh request, so the failure was in runtime delivery rather than lost circle constraints. The preview previously retained a generic error with no direct retry. The new browser regression reproduces that exact failure on the prior build.
+
+Penrose requests now share identical in-flight work, cache only successful full-spec results (32-entry in-memory LRU), and run at most two children concurrently. The queue and 30-second child deadline are bounded. Timeouts are caught as structured 504 responses after child cleanup; busy queues return 503. The web layer retries temporary transport/502/503/504 failures once with cancellation, then offers Retry diagram using the same construction. Retry does not resample or mutate geometry, source, labels or document history. Constraint failures are not automatically retried and print still requires every diagram to be ready.
+
+All 15 focused browser checks pass at 1440/900 px, including automatic/manual recovery, exact request and label preservation, cancellation after construction changes, constraint-failure print blocking, existing network label controls and circle resampling. Recovered circle screenshots were inspected; numerical membership/equal-chord checks and Solutions print readiness pass. Browser plugin not available; repository Playwright supplies interaction evidence. Six added API tests cover timeout recovery, identical concurrent requests, bounded distinct renders, full-spec cache identity, eviction, retryable queue saturation and rejection of empty output. Full `pnpm check` passes with 121 API, 735 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build. Local installed-app verification is pending. Teacher draft data has not been edited.
 
 ### 28 October Network Resample Instead Of Preset Replacement
 

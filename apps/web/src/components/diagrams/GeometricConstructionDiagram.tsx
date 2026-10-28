@@ -34,9 +34,11 @@ export function GeometricConstructionDiagram({
     delete options.labelOffsets;
     return JSON.stringify({ ...request, options });
   }, [request]);
+  const [retry, setRetry] = useState(0);
+  const renderKey = JSON.stringify([requestKey, retry]);
   const [rendered, setRendered] = useState<{ key: string; diagram?: PenroseDiagramResponse; error?: string } | null>(null);
-  const diagram = rendered?.key === requestKey ? rendered.diagram : undefined;
-  const error = rendered?.key === requestKey ? rendered.error : undefined;
+  const diagram = rendered?.key === renderKey ? rendered.diagram : undefined;
+  const error = rendered?.key === renderKey ? rendered.error : undefined;
   const baseWidth = numericOption(diagram?.metadata?.displayWidth, PENROSE_ORIGINAL_WIDTH);
   const requestOptions = request.options as Record<string, unknown>;
   const baseHeight = numericOption(diagram?.metadata?.displayHeight ?? requestOptions.height, 300);
@@ -60,15 +62,15 @@ export function GeometricConstructionDiagram({
       .then((data) => {
         if (controller.signal.aborted) return;
         if (!data.svg?.trim()) throw new Error("The geometry renderer returned an empty diagram.");
-        setRendered({ key: requestKey, diagram: data });
+        setRendered({ key: renderKey, diagram: data });
       })
       .catch((fetchError) => {
         if (controller.signal.aborted) return;
-        setRendered({ key: requestKey, error: fetchError instanceof Error ? fetchError.message : String(fetchError) });
+        setRendered({ key: renderKey, error: fetchError instanceof Error ? fetchError.message : String(fetchError) });
       });
 
     return () => controller.abort();
-  }, [requestKey]);
+  }, [requestKey, renderKey]);
 
   if (error) {
     return (
@@ -77,9 +79,23 @@ export function GeometricConstructionDiagram({
         data-mauth-print-render-state="error"
         role="alert"
       >
-        {error.startsWith("No layout satisfying the geometry constraints")
-          ? "No valid geometry layout was found. Try Resample again or review the construction."
-          : "Geometry diagram could not render."}
+        <p>
+          {error.startsWith("No layout satisfying the geometry constraints")
+            ? "No valid geometry layout was found. Try Resample again or review the construction."
+            : error.startsWith("Geometry rendering timed out.") || error.startsWith("The diagram renderer is busy.")
+              ? error
+              : "Geometry diagram could not render. Retry to try the same construction."}
+        </p>
+        <button
+          type="button"
+          className="mt-2 rounded border px-3 py-1 print:hidden"
+          onClick={(event) => {
+            event.stopPropagation();
+            setRetry((value) => value + 1);
+          }}
+        >
+          Retry diagram
+        </button>
       </div>
     );
   }
