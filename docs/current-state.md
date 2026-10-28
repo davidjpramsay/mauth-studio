@@ -52,8 +52,16 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; draggable Penrose network labels and weights, with prior diagram/editor fixes retained
+worktree: clean at this checkpoint; screen-space label drag outlines, with prior diagram/editor fixes retained
 ```
+
+### 28 October Equal Label Outline Weight
+
+The previous shared CSS outline still inherited SVG viewBox and preview zoom scaling. A network reproduction measured a 1.5 px visible stroke despite its nominal 1 px CSS value; the earlier check accounted for CSS zoom but missed the SVG matrix. All draggable Penrose geometry/network, JSXGraph function/coordinate/geometry/vector and projected 3D labels now use one transient screen-space rectangle following the label bounds, with a 1 px dashed stroke and 3 px gap. Penrose keyboard focus shares the same treatment. The overlay is pointer-transparent, follows scrolling/resizing, clears with the existing drag/focus lifecycle and when its label unmounts, and is hidden from printing. Geometry, label offsets and saved documents are unchanged.
+
+All 18 focused browser checks pass at 1440/900 px, including 50/200% network scale, label tracking in screen space, repeated drags, keyboard focus, cancellation/lost capture, hidden answers, history/reopening and print suppression. Screenshots from Penrose geometry/network, JSXGraph geometry/vector and 3D were visually inspected. Browser plugin not available; repository Playwright supplies interaction evidence. Full `pnpm check` passes with 115 API, 732 web/action, 17 lifecycle, 11 Plotly and 83 launcher/runtime tests, three Quick Look tests, lint, TypeScript and production build.
+
+The hardened local build/install and connector doctor pass. All 24 web, two connector and seven Penrose runtime files plus the desktop archive match the verified build. The complete latest draft, saved-file bytes, revision 2, dirty state, both tab documents and live snapshot id are preserved. The native app is open on Question 5; outline interaction evidence comes from browser checks rather than native pointer automation. No public release was published.
 
 ### 28 October Draggable Penrose Network Labels
 

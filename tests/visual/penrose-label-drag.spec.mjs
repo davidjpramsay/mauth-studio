@@ -178,7 +178,7 @@ test("structured Penrose labels retain hidden answers and support keyboard and r
   await page.keyboard.press("ArrowLeft");
   await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"][0]).toBeLessThan(offset[0]);
   await expect(label).toBeFocused();
-  await expect(label).toHaveCSS("outline-style", "dashed");
+  await expect(page.locator(".diagram-label-feedback")).toHaveCSS("outline-style", "dashed");
   await page.keyboard.press("Home");
   await expect.poll(async () => (await configs(page))[0].options.labelOffsets["A.labelText"]).toEqual([0, 0]);
   await drag(page, label, 2000, -2000);

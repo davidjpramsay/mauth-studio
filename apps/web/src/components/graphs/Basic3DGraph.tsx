@@ -26,6 +26,7 @@ import { DEFAULT_3D_VIEW_STATE } from "@/lib/diagram3d";
 import { graph3dEdgeIsHidden, graph3dEdgeKey } from "@/lib/graph3dHiddenEdges";
 import { graph3dConfigWithLabelScreenOffset, type Graph3DLabelElementKind } from "@/lib/diagramGraph3d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
+import { showDiagramLabelFeedback } from "@/lib/diagramLabelFeedback";
 import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
@@ -697,6 +698,7 @@ function enableProjectedLabelDragging(
     event.stopPropagation();
     node.setPointerCapture?.(event.pointerId);
     node.dataset.mauthLabelDragging = "true";
+    const stopFeedback = showDiagramLabelFeedback(node);
 
     const removeListeners = () => {
       window.removeEventListener("pointermove", handlePointerMove);
@@ -704,6 +706,7 @@ function enableProjectedLabelDragging(
       window.removeEventListener("pointercancel", handlePointerCancel);
       node.removeEventListener("lostpointercapture", handlePointerCancel);
       delete node.dataset.mauthLabelDragging;
+      stopFeedback();
       removeWindowListeners = () => undefined;
     };
     const handlePointerMove = (moveEvent: PointerEvent) => {

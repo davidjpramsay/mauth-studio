@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { useStableEvent } from "./useStableEvent";
+import { showDiagramLabelFeedback } from "@/lib/diagramLabelFeedback";
 
 export type PenroseLabelMove = (id: string, offset: [number, number]) => void;
 
@@ -13,6 +14,23 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
     const labels = [...container.querySelectorAll<SVGGElement>("[data-mauth-penrose-label]")];
     let cancelDrag: (() => void) | undefined;
     let focusFrame = 0;
+    let stopFeedback: (() => void) | undefined;
+    function feedback(label?: Element | null) {
+      stopFeedback?.();
+      stopFeedback = label ? showDiagramLabelFeedback(label) : undefined;
+    }
+    function focusFeedback() {
+      const label = document.activeElement as SVGGElement | null;
+      if (!cancelDrag)
+        feedback(
+          label?.hasAttribute("data-mauth-penrose-label") &&
+            container?.contains(label) &&
+            label.matches(":focus-visible") &&
+            !label.dataset.mauthLabelPointerFocus
+            ? label
+            : null,
+        );
+    }
     for (const label of labels) {
       label.style.cursor = "grab";
       label.style.pointerEvents = "bounding-box";
@@ -29,8 +47,10 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
             label.isConnected &&
             label.getClientRects().length &&
             (document.activeElement === document.body || container.contains(document.activeElement))
-          )
+          ) {
             label.focus({ preventScroll: true });
+            focusFeedback();
+          }
         };
         focus();
         // Pagination may settle visibility after child layout effects.
@@ -77,6 +97,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
       let position = move.start;
       label.style.cursor = "grabbing";
       label.dataset.mauthLabelDragging = "true";
+      feedback(label);
       function update(next: PointerEvent) {
         if (next.pointerId !== event.pointerId) return;
         next.preventDefault();
@@ -92,6 +113,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
         cancelDrag = undefined;
         label!.style.cursor = "grab";
         delete label!.dataset.mauthLabelDragging;
+        feedback();
         if (label!.hasPointerCapture(event.pointerId)) label!.releasePointerCapture(event.pointerId);
       }
       function cancel() {
@@ -146,6 +168,7 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
     function blur(event: FocusEvent) {
       const label = target(event);
       if (label) delete label.dataset.mauthLabelPointerFocus;
+      if (!cancelDrag) feedback();
     }
     const click = (event: MouseEvent) => {
       if (target(event)) event.stopPropagation();
@@ -154,13 +177,17 @@ export function usePenroseLabelDragging(ref: RefObject<HTMLDivElement | null>, s
     container.addEventListener("keydown", key);
     container.addEventListener("click", click);
     container.addEventListener("focusout", blur);
+    container.addEventListener("focusin", focusFeedback);
+    focusFeedback();
     return () => {
       window.cancelAnimationFrame(focusFrame);
       cancelDrag?.();
+      feedback();
       container.removeEventListener("pointerdown", down);
       container.removeEventListener("keydown", key);
       container.removeEventListener("click", click);
       container.removeEventListener("focusout", blur);
+      container.removeEventListener("focusin", focusFeedback);
     };
   }, [ref, svg, editable, commit]);
 }

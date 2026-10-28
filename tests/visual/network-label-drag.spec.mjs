@@ -138,6 +138,26 @@ for (const width of [1440, 900]) {
   });
 }
 
+for (const scalePercent of [50, 200]) {
+  test(`network drag feedback retains screen-pixel weight at ${scalePercent}% diagram scale`, async ({ page }) => {
+    const draft = assessment(1);
+    draft.questions[0].contentBlocks = [
+      { id: "network", kind: "diagram", graphConfig: { ...fixture, options: { ...fixture.options, scalePercent } } },
+    ];
+    await setup(page, draft);
+    const label = labelFor(diagramFor(page), "relationship_AB.text");
+    await label.scrollIntoViewIfNeeded();
+    const box = await label.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expectLabelDragFeedback(page, label);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expectLabelDragFinished(page, label);
+    expect((await configFor(page)).options.labelOffsets).toBeUndefined();
+  });
+}
+
 test("Advanced network labels support keyboard movement and the shared reset control", async ({ page }) => {
   const draft = assessment(1);
   draft.questions[0].contentBlocks = [
@@ -162,7 +182,7 @@ test("Advanced network labels support keyboard movement and the shared reset con
   const before = (await configFor(page)).options.labelOffsets["weight.text"];
   await page.keyboard.press("ArrowUp");
   await expect.poll(async () => (await configFor(page)).options.labelOffsets["weight.text"][1]).toBeLessThan(before[1]);
-  await expect(label).toHaveCSS("outline-style", "dashed");
+  await expect(page.locator(".diagram-label-feedback")).toHaveCSS("outline-style", "dashed");
   await page.keyboard.press("Home");
   await expect.poll(async () => (await configFor(page)).options.labelOffsets["weight.text"]).toEqual([0, 0]);
   await page.getByRole("button", { name: /^Question 1\. Click/ }).dblclick();

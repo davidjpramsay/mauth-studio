@@ -427,8 +427,10 @@
     outline: none;
   }
 
-  [data-mauth-label-dragging="true"],
-  [data-mauth-penrose-label]:focus-visible:not([data-mauth-label-pointer-focus]) {
+  .diagram-label-feedback {
+    position: fixed;
+    pointer-events: none;
+    z-index: 50;
     outline: 1px dashed #2563eb;
     outline-offset: 3px;
   }
@@ -2808,6 +2810,9 @@
 }
 
 @media print {
+  .diagram-label-feedback {
+    display: none !important;
+  }
   [data-mauth-label-dragging],
   [data-mauth-penrose-label] {
     outline: none !important;

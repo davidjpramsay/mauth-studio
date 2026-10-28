@@ -1,4 +1,5 @@
 import type JXG from "jsxgraph";
+import { showDiagramLabelFeedback } from "./diagramLabelFeedback";
 
 type LabelText = {
   X?: () => number;
@@ -36,6 +37,7 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
     event.stopPropagation();
     node.setPointerCapture?.(event.pointerId);
     node.dataset.mauthLabelDragging = "true";
+    const stopFeedback = showDiagramLabelFeedback(node);
     const move = (next: PointerEvent) => {
       if (next.pointerId !== event.pointerId || !node.isConnected) return;
       next.preventDefault();
@@ -49,6 +51,7 @@ export function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: 
       window.removeEventListener("pointercancel", finish);
       node.removeEventListener("lostpointercapture", finish);
       delete node.dataset.mauthLabelDragging;
+      stopFeedback();
       if (node.hasPointerCapture?.(event.pointerId)) node.releasePointerCapture?.(event.pointerId);
       if (!node.isConnected) return;
       if (next.type !== "pointerup") {
