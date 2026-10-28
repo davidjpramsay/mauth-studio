@@ -52,7 +52,7 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; security remediation is verified in source, with local installation still pending
+worktree: clean at this checkpoint; security remediation is verified in source and installed locally
 ```
 
 ### 28 October Security Remediation
@@ -63,7 +63,7 @@ Backup imports reject oversized compressed and expanded data, duplicate entries 
 
 The final full gate passed: 135 API, 744 web/action, 17 lifecycle, 11 Plotly, six Penrose, 84 launcher and five native Quick Look tests, plus lint, formatting, TypeScript and production build. Four isolated graph browser checks and the document-tabs smoke passed. An isolated packaged sidecar accepted ordinary maths, rejected executable input and required its bearer token. A self-loop fixture was visually inspected. Independent security reviews found no concrete execution bypass; fixes for their reported compatibility and backup race cases have targeted tests. Source still has compatibility limits for formerly accepted arbitrary JavaScript expressions and direct fixed-port browser development. The full security audit did not complete, and a later failure can leave partial new backup items.
 
-The hardened app build is a local checkpoint only; installation, preserved open-document state and native verification are pending. Do not restart a live editor with undo history without the teacher's explicit choice. Pre-install recovery backups are under `/private/tmp/mauth-security-preinstall`.
+The hardened app build was installed locally after the teacher explicitly chose to quit, accepting loss of in-memory Undo history. Its signature verifies and all 249 checked web, sidecar, Penrose, connector, configuration, desktop archive and Quick Look files match the tested build. Both recovery files matched their backups after installation. Mauth reopened; the connector doctor passed all checks, and the active editor snapshot shows both tabs restored with their original documents, order, active tab, dirty states, file identities, revisions and save baselines. Navigation and recovery timestamps may change on restart. Native pointer interactions were not retested. The previous app is preserved in Launcher Backups and recovery copies are under `/private/tmp/mauth-security-preinstall/after-quit`. No shareable release was published.
 
 ### 28 October Clean Cartesian Grid Boundaries
 
