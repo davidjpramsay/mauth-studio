@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphConfig, PenroseDiagramResponse } from "@mauth-studio/shared";
 
 import { renderPenroseDiagram } from "@/lib/api";
+import { sanitizePenroseSvg } from "@/lib/penroseSvgSafety";
 import {
   DEFAULT_PENROSE_SCALE_PERCENT,
   PENROSE_ORIGINAL_WIDTH,
@@ -47,9 +48,10 @@ export function GeometricConstructionDiagram({
   const displayHeight = (baseHeight * displayScale) / 100;
   const svg = useMemo(() => {
     if (!diagram?.svg) return "";
-    return penroseSupportsLabelDragging(graphConfig?.type)
+    const presented = penroseSupportsLabelDragging(graphConfig?.type)
       ? presentPenroseLabels(diagram.svg, graphConfig?.options?.labelOffsets).svg
       : diagram.svg;
+    return sanitizePenroseSvg(presented);
   }, [diagram?.svg, graphConfig?.type, graphConfig?.options?.labelOffsets]);
   const container = useRef<HTMLDivElement>(null);
   const markup = useMemo(() => ({ __html: svg }), [svg]);

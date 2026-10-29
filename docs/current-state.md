@@ -52,8 +52,12 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; rational-growth follow-up pushed and installed locally
+worktree: clean at this checkpoint; Penrose SVG follow-up verified in source, local update pending
 ```
+
+### 29 October Penrose SVG Boundary
+
+Imported Advanced Style can emit SVG event attributes. All three Penrose families now sanitize generated SVG after label presentation, immediately before insertion into the editor DOM. The shared DOMPurify policy removes active elements, event attributes, non-fragment links and arbitrary CSS while preserving local glyph/clip/mask references, safe typography and label/solution metadata. Document content and saved offsets are unchanged. Independent review caught and corrected over-restrictive geometry-attribute and local-glyph rules. Three focused browser security regressions pass against the actual producer, including alternate URL/CSS/namespace inputs and local glyph/font/clip controls. Five existing browser checks pass for geometry/network dragging, Undo/Redo, reopening/resampling, Venn masks and Student/Solutions print; representative geometry output was visually inspected. The full `pnpm check` quality gate passes (138 API tests and all existing web, diagram, launcher and native suites, lint, formatting, TypeScript and build). The deliberate local app build/install checkpoint remains pending; do not infer installation from this source change. The running teacher session must not be restarted while its Undo history needs preserving.
 
 ### 29 October Rational Growth Follow-Up
 

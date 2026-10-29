@@ -23,6 +23,8 @@ external agent or MCP client
 
 The editor renderer is the authoritative live editing surface while it is registered with the bridge. Visible project files and their revisions are the durable source of truth. Autosave is recovery state, not a saved project file.
 
+Generated Penrose SVG is untrusted, including output from Advanced Style. Geometry, networks and sets share a final DOMPurify SVG boundary after label presentation and before active DOM insertion. It removes event handlers, active elements, external references and arbitrary CSS. Vetted inline typography/presentation becomes SVG attributes; local glyph, clip and mask references and label/solution metadata remain available. This does not change the authored construction or label offsets. Uploaded SVG images use the separate image element renderer.
+
 ## Runtime And Desktop Shell
 
 Desktop file commands use narrow preload methods for native Open/Save dialogs, recent-document registration, and Finder reveal. The renderer routes selected files through the existing document-open queue and revision-aware persistence controllers. Save As uses a scoped backend destination lookup, without changing other tabs' folder ownership; a content-hash precondition also protects against external edits while the dialog is open. Backup, restore, and version history have separate menu commands. Browser use keeps the Files drawer.
