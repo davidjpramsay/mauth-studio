@@ -76,6 +76,7 @@ interface WorkspaceNavigationBindings {
   handlePreviewPointerDown: PreviewProps["onPointerDownCapture"];
   handlePreviewClick: PreviewProps["onClickCapture"];
   openSettingsPane: WorkspaceProps["onRequestSettings"];
+  showContentPane: WorkspaceProps["onRequestContent"];
 }
 
 interface WorkspaceContextMenuBindings {
@@ -259,6 +260,7 @@ export function DocumentEditorWorkspaceBindings({
       style={layout.style}
       paneMode={layout.paneMode}
       onRequestSettings={navigation.openSettingsPane}
+      onRequestContent={navigation.showContentPane}
       editor={{
         show: layout.showEditor,
         paneRef: layout.editorPaneRef,

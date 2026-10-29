@@ -496,3 +496,14 @@ test("Penrose validation rejects unsupported solution relationships and all-answ
   assert.ok(issues.some((issue) => issue.path === "diagram.data.objects"));
   assert.ok(issues.some((issue) => issue.path === "diagram.data.relationships[0].solutionOnly"));
 });
+
+test("MCP diagram guide examples pass native renderer validation", async () => {
+  const { DIAGRAM_TOOL_EXAMPLES } = await import("../../../../packages/shared/src/diagramTools.ts");
+  for (const [type, example] of Object.entries(DIAGRAM_TOOL_EXAMPLES)) {
+    const config = structuredClone(example);
+    if (config.type === "image") config.data.src = "data:image/png;base64,iVBORw0KGgo=";
+    const issues: Parameters<typeof validateMauthDiagramConfig>[2] = [];
+    validateMauthDiagramConfig(config, "graphConfig", issues);
+    assert.deepEqual(issues, [], type);
+  }
+});

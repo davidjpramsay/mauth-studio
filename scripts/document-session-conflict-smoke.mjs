@@ -61,6 +61,8 @@ async function startApiServer(workspaceRoot) {
   const logs = [];
   const env = {
     ...process.env,
+    MAUTH_AGENT_TOKEN: "",
+    MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED: "1",
     MAUTH_DOCUMENTS_ROOT: workspaceRoot,
     MATH_APP_STORAGE_ROOT: path.join(path.dirname(workspaceRoot), "legacy-storage"),
   };

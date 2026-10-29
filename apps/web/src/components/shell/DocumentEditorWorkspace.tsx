@@ -73,6 +73,7 @@ interface DocumentEditorWorkspaceProps {
   };
   inspectorProps: ComponentProps<typeof EditorInspectorPane>;
   onRequestSettings: () => void;
+  onRequestContent: () => void;
   preview: {
     show: boolean;
     paneRef: RefObject<HTMLElement | null>;
@@ -237,6 +238,7 @@ export function DocumentEditorWorkspace({
   editor,
   inspectorProps,
   onRequestSettings,
+  onRequestContent,
   preview,
 }: DocumentEditorWorkspaceProps) {
   const inspectorAvailable = inspectorProps.open;
@@ -363,6 +365,8 @@ export function DocumentEditorWorkspace({
 
           <section
             id="mauth-editor-pane"
+            aria-label="Content editor"
+            tabIndex={-1}
             ref={editor.paneRef}
             className="editor-pane workspace-control-surface min-h-0 overflow-y-auto overflow-x-hidden border-b bg-muted/35 p-3 lg:border-b-0 lg:border-r"
             onClickCapture={(event) => {
@@ -378,7 +382,13 @@ export function DocumentEditorWorkspace({
             </div>
           </section>
 
-          <EditorInspectorPane {...inspectorProps} onShowContent={() => setActiveCompactTool("content")} />
+          <EditorInspectorPane
+            {...inspectorProps}
+            onShowContent={() => {
+              setActiveCompactTool("content");
+              onRequestContent();
+            }}
+          />
 
           <div
             className="workspace-tool-resize-handle"

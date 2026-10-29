@@ -2,6 +2,7 @@ import { GRAPH3D_FACE_RIGHT_ANGLE_TARGET_PREFIX, type GraphFeature } from "@maut
 
 import { graphLineSegmentsShareEndpoint } from "./graphFeatureGeometry.ts";
 import type { MauthActionValidationIssue } from "./mauthActionValidation.ts";
+import { PENROSE_LABEL_ID } from "../../../../packages/shared/src/penroseLabels.ts";
 
 const SUPPORTED_DIAGRAM_TYPES = new Set([
   "graph2d",
@@ -1173,6 +1174,7 @@ function validateGraph3D(config: Record<string, unknown>, path: string, issues: 
   validateCommonGraphConfig(config, path, issues);
   const data = optionalRecord(config, "data", path, issues);
   if (data) {
+    optionalEnum(data, "hiddenEdges", `${path}.data`, new Set(["auto", "manual"]), issues);
     optionalNumberPair(data, "xRange", `${path}.data`, issues);
     optionalNumberPair(data, "yRange", `${path}.data`, issues);
     optionalNumberPair(data, "zRange", `${path}.data`, issues);
@@ -1923,6 +1925,14 @@ function penroseSubstanceSource(config: Record<string, unknown>, path: string, i
 
 function validatePenroseDiagram(config: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[], vectorOnly = false) {
   validateCommonGraphConfig(config, path, issues);
+  if (isRecord(config.options) && hasOwn(config.options, "labelOffsets")) {
+    const offsets = optionalRecord(config.options, "labelOffsets", `${path}.options`, issues);
+    for (const [id, offset] of Object.entries(offsets ?? {})) {
+      if (!PENROSE_LABEL_ID.test(id))
+        addIssue(issues, `${path}.options.labelOffsets.${id}`, "must be a stable Penrose label id", "A.labelText or diameter.text");
+      numberPair(offset, `${path}.options.labelOffsets.${id}`, issues);
+    }
+  }
   const hasSubstanceSource = penroseSubstanceSource(config, path, issues);
   const data = hasSubstanceSource ? optionalRecord(config, "data", path, issues) : requiredRecord(config, "data", path, issues);
   if (hasSubstanceSource && data && !hasOwn(data, "objects") && !hasOwn(data, "relationships")) return;

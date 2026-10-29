@@ -36,14 +36,10 @@ The `Documents/` folder contains normal files teachers can browse, back up, and 
 You can override the visible workspace root with:
 
 ```bash
-MAUTH_DOCUMENTS_ROOT=/path/to/Mauth pnpm dev:api
+MAUTH_DOCUMENTS_ROOT=/path/to/Mauth pnpm desktop:dev
 ```
 
-Run that command from the project root. If you are already inside `apps/api`, use the equivalent direct API command:
-
-```bash
-MAUTH_DOCUMENTS_ROOT=/path/to/Mauth uv run uvicorn app.main:app --reload --reload-dir app --reload-dir ../../packages --reload-dir ../../configs --host 0.0.0.0 --port 8000
-```
+Run that command from the project root. The Electron development shell supplies the private API token. The low-level fixed-port API refuses protected requests if its token is absent.
 
 `MATH_APP_STORAGE_ROOT=/path/to/storage` is still supported as a legacy/test override. When it is set, the API uses the older app-managed storage layout under that root instead of the visible workspace layout.
 
@@ -151,7 +147,7 @@ A backup ZIP contains:
 - `project/versions/...`, version snapshots for active project files.
 - `logos/*.json` and `logos/files/...`, reusable logo metadata and uploaded logo image bytes.
 
-Import is safe-by-default. It validates ZIP member paths, rejects absolute paths and `..`, enforces entry-count and file-size limits, creates missing folders, imports version snapshots, and imports missing logo ids. Existing project files are not overwritten; incoming files with matching names are imported with an ` imported` suffix. Existing logo ids are skipped rather than overwritten. Autosave remains separate from backups.
+Import validates ZIP member paths, rejects duplicate entries, and limits compressed size to 150 MiB, each expanded member to 25 MiB, the expanded total and repeated reads to 500 MiB, and the archive to 5,000 entries. It creates missing folders, imports version snapshots, and imports missing logo ids. Incoming files whose destinations match existing or already planned files receive an ` imported` suffix; atomic exclusive publication prevents an external writer from being overwritten during the import. This publication requires filesystem hard-link support and fails safely when it is unavailable. Existing logo ids are skipped. Import is incremental: if a later operation fails, earlier imported items can remain. Autosave remains separate from backups.
 
 ## API
 

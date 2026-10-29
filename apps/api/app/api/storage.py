@@ -14,6 +14,7 @@ from app.models.schemas import (
     SavedTestRequest,
 )
 from app.services.storage import (
+    PROJECT_BACKUP_MAX_BYTES,
     CloudPlaceholderError,
     FileLogoStorage,
     FileProjectStorage,
@@ -332,8 +333,15 @@ def export_project_backup(project_id: str, service: ProjectStorage) -> Response:
 @router.post("/projects/{project_id}/backup/import")
 async def import_project_backup(project_id: str, request: Request, service: ProjectStorage) -> dict:
     try:
-        content = await request.body()
-        return service.import_backup(project_id, content)
+        declared_length = request.headers.get("content-length")
+        if declared_length and declared_length.isdigit() and int(declared_length) > PROJECT_BACKUP_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Backup file is too large")
+        chunks = bytearray()
+        async for chunk in request.stream():
+            if len(chunk) > PROJECT_BACKUP_MAX_BYTES - len(chunks):
+                raise HTTPException(status_code=413, detail="Backup file is too large")
+            chunks.extend(chunk)
+        return service.import_backup(project_id, bytes(chunks))
     except STORAGE_OPERATION_ERRORS as error:
         raise storage_http_error(error) from error
 

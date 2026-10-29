@@ -30,8 +30,8 @@ test("3D viewport has even board padding on every side", () => {
   const [viewWidth, viewHeight] = GRAPH3D_VIEW_SIZE;
   assert.equal(viewLeft - boardLeft, boardRight - (viewLeft + viewWidth));
   assert.equal(viewBottom - boardBottom, boardTop - (viewBottom + viewHeight));
-  assert.equal(viewLeft - boardLeft, 1);
-  assert.equal(viewBottom - boardBottom, 1);
+  assert.ok(Math.abs(viewLeft - boardLeft - 0.9) < 1e-9);
+  assert.ok(Math.abs(viewBottom - boardBottom - 0.9) < 1e-9);
 });
 
 test("3D ranges expand to one equal-scale cube without moving their centres", () => {

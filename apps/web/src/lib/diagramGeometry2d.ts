@@ -8,6 +8,8 @@ import type {
   GraphConfig,
 } from "@mauth-studio/shared";
 
+export const DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX = 12;
+
 export type Geometry2DListKey = "points" | "segments" | "arcs" | "angles" | "decorations";
 export type Geometry2DPrimitiveKind = "point" | "segment" | "arc" | "angle" | "decoration";
 
@@ -196,7 +198,14 @@ export const DEFAULT_GEOMETRY_2D_DATA: Graph2DGeometryData = {
     { id: "OBC", points: ["O", "B", "C"], radius: 0.45, show: false },
   ],
   decorations: [
-    { kind: "equalLength", id: "equal-radii", segments: ["OA", "OB"], tickCount: 1, size: 16, show: true },
+    {
+      kind: "equalLength",
+      id: "equal-radii",
+      segments: ["OA", "OB"],
+      tickCount: 1,
+      size: DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX,
+      show: true,
+    },
     { kind: "rightAngle", id: "right-angle-B", angle: "OBC", size: 0.35, show: true },
   ],
 };
@@ -361,7 +370,14 @@ export function createGeometry2DAngle(points: readonly Graph2DGeometryPoint[]): 
 export function createGeometry2DDecoration(kind: Graph2DGeometryDecoration["kind"], data: Graph2DGeometryData): Graph2DGeometryDecoration {
   if (kind === "equalLength") {
     const segmentIds = (data.segments ?? []).slice(0, 2).map((segment) => segment.id);
-    return { kind, id: id("equal-length"), segments: segmentIds, tickCount: 1, size: 16, show: true };
+    return {
+      kind,
+      id: id("equal-length"),
+      segments: segmentIds,
+      tickCount: 1,
+      size: DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX,
+      show: true,
+    };
   }
   if (kind === "equalAngle") {
     const angleIds = (data.angles ?? []).slice(0, 2).map((angle) => angle.id);

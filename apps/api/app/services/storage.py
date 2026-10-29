@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 import uuid
 import zipfile
 from base64 import b64decode, b64encode, urlsafe_b64encode
@@ -134,6 +135,20 @@ def atomic_write_text(path: Path, content: str) -> None:
     os.replace(temp_path, path)
 
 
+def atomic_create_text(path: Path, content: str) -> None:
+    """Publish a complete file without replacing a concurrently created destination."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp_path.write_text(content, encoding="utf-8")
+        try:
+            os.link(temp_path, path)
+        except FileExistsError as error:
+            raise StorageConflictError("The destination appeared during import; retry the import") from error
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 def require_materialized_file(path: Path) -> None:
     flags = getattr(path.stat(), "st_flags", 0)
     if flags & MACOS_DATALESS_FILE_FLAG:
@@ -166,6 +181,10 @@ def zip_read_bytes(archive: zipfile.ZipFile, name: str) -> bytes:
     info = archive.getinfo(safe_name)
     if info.file_size > PROJECT_BACKUP_MAX_ENTRY_BYTES:
         raise StorageValidationError(f"Backup entry is too large: {safe_name}")
+    consumed = getattr(archive, "_mauth_expanded_bytes", 0)
+    if consumed + info.file_size > PROJECT_BACKUP_MAX_EXPANDED_BYTES:
+        raise StorageValidationError("Backup expanded content is too large")
+    archive._mauth_expanded_bytes = consumed + info.file_size
     return archive.read(info)
 
 
@@ -193,6 +212,7 @@ PROJECT_BACKUP_FORMAT = "mauth-project-backup"
 PROJECT_BACKUP_VERSION = 1
 PROJECT_BACKUP_MAX_BYTES = 150 * 1024 * 1024
 PROJECT_BACKUP_MAX_ENTRY_BYTES = 25 * 1024 * 1024
+PROJECT_BACKUP_MAX_EXPANDED_BYTES = 500 * 1024 * 1024
 PROJECT_BACKUP_MAX_ENTRIES = 5000
 GENERATED_PROJECT_FOLDER_PREFIXES = ("__file_manager_smoke_",)
 
@@ -855,7 +875,11 @@ class FileProjectStorage:
         size_bytes = 0
         if kind == "file":
             content = payload.get("content") if isinstance(payload.get("content"), str) else ""
-            atomic_write_text(self._content_path(project_id, normalized_path), content)
+            destination = self._content_path(project_id, normalized_path)
+            if payload.get("createOnly") is True:
+                atomic_create_text(destination, content)
+            else:
+                atomic_write_text(destination, content)
             size_bytes = len(content.encode("utf-8"))
         else:
             self._content_path(project_id, normalized_path).mkdir(parents=True, exist_ok=True)
@@ -1086,14 +1110,22 @@ class FileProjectStorage:
             members = archive.infolist()
             if len(members) > PROJECT_BACKUP_MAX_ENTRIES:
                 raise StorageValidationError("Backup contains too many entries")
+            expanded_size = 0
+            seen_names: set[str] = set()
             for member in members:
                 safe_name = zip_safe_path(member.filename)
                 if member.is_dir():
                     continue
                 if safe_name != member.filename:
                     raise StorageValidationError("Backup entry path is invalid")
+                if safe_name in seen_names:
+                    raise StorageValidationError(f"Backup contains duplicate entry: {safe_name}")
+                seen_names.add(safe_name)
                 if member.file_size > PROJECT_BACKUP_MAX_ENTRY_BYTES:
                     raise StorageValidationError(f"Backup entry is too large: {member.filename}")
+                expanded_size += member.file_size
+                if expanded_size > PROJECT_BACKUP_MAX_EXPANDED_BYTES:
+                    raise StorageValidationError("Backup expanded content is too large")
 
             manifest = zip_read_json(archive, "mauth-project-backup.json")
             if manifest.get("format") != PROJECT_BACKUP_FORMAT:
@@ -1105,7 +1137,11 @@ class FileProjectStorage:
             source_files = source_project.get("files") if isinstance(source_project.get("files"), dict) else {}
             imported_at = utc_now_iso()
             current_files = self.list_files(project_id)
-            existing_paths = {file["path"].lower(): file for file in current_files if isinstance(file.get("path"), str)}
+            existing_paths = {
+                self._backup_import_key(project_id, file["path"]): file
+                for file in current_files
+                if isinstance(file.get("path"), str)
+            }
             planned_paths: set[str] = set()
             path_mapping: dict[str, str] = {}
             imported_files = 0
@@ -1128,15 +1164,15 @@ class FileProjectStorage:
             for source_path, record in active_source_records:
                 kind = record.get("kind") if record.get("kind") in {"file", "folder"} else "file"
                 target_path = self._backup_import_target_path(
-                    source_path, kind, existing_paths, planned_paths, path_mapping
+                    project_id, source_path, kind, existing_paths, planned_paths, path_mapping
                 )
                 path_mapping[source_path] = target_path
-                planned_paths.add(target_path.lower())
+                planned_paths.add(self._backup_import_key(project_id, target_path))
                 metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
                 metadata = {**metadata, "importedFromBackupAt": imported_at}
 
                 if kind == "folder":
-                    if target_path.lower() not in existing_paths:
+                    if self._backup_import_key(project_id, target_path) not in existing_paths:
                         self.save_file(
                             project_id, target_path, {"kind": "folder", "fileType": "folder", "metadata": metadata}
                         )
@@ -1161,6 +1197,9 @@ class FileProjectStorage:
                         "kind": "file",
                         "fileType": record.get("fileType") if isinstance(record.get("fileType"), str) else None,
                         "metadata": metadata,
+                        "baseRevision": None,
+                        "expectedContentHash": None,
+                        "createOnly": True,
                     },
                 )
                 imported_files += 1
@@ -1650,6 +1689,7 @@ class FileProjectStorage:
 
     def _backup_import_target_path(
         self,
+        project_id: str,
         source_path: str,
         kind: str,
         existing_paths: dict[str, dict[str, Any]],
@@ -1664,15 +1704,22 @@ class FileProjectStorage:
             mapped_parent = path_mapping.get(parent_source, parent_source)
         candidate = str(PurePosixPath(mapped_parent) / source.name) if mapped_parent else source.name
         candidate = safe_project_path(candidate)
-        existing = existing_paths.get(candidate.lower())
+        key = self._backup_import_key(project_id, candidate)
+        existing = existing_paths.get(key)
         if kind == "folder" and existing is not None and existing.get("kind") == "folder":
             return candidate
-        if existing is None and candidate.lower() not in planned_paths:
+        if existing is None and key not in planned_paths:
             return candidate
-        return self._unique_import_path(candidate, kind, existing_paths, planned_paths)
+        return self._unique_import_path(project_id, candidate, kind, existing_paths, planned_paths)
+
+    def _backup_import_key(self, project_id: str, file_path: str) -> str:
+        if self.uses_visible_workspace and safe_file_stem(project_id) == self.DEFAULT_PROJECT_ID:
+            file_path = self._visible_document_path(file_path).as_posix()
+        return unicodedata.normalize("NFC", file_path).casefold()
 
     def _unique_import_path(
         self,
+        project_id: str,
         file_path: str,
         kind: str,
         existing_paths: dict[str, dict[str, Any]],
@@ -1685,7 +1732,7 @@ class FileProjectStorage:
             label = " imported" if index == 1 else f" imported {index}"
             name = f"{stem}{label}{suffix}" if kind == "file" else f"{stem}{label}"
             candidate = str(PurePosixPath(parent) / name) if parent else name
-            key = candidate.lower()
+            key = self._backup_import_key(project_id, candidate)
             if key not in existing_paths and key not in planned_paths:
                 return safe_project_path(candidate)
         raise StorageConflictError("Could not find a unique imported file name")

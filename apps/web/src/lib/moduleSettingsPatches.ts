@@ -4,7 +4,7 @@ import { choiceBlockHasSolutionAnswer } from "./choiceSolutionAnswers.ts";
 import { normalizeColumnCount, normalizeTableBlock, paddedTableRow, plainTablePatch, plainTableRows } from "./contentBlockNormalization.ts";
 import { DEFAULT_3D_VIEW_STATE, graph3dViewState, type Graph3DViewState } from "./diagram3d.ts";
 import { finiteGraphNumber, imageDiagramData } from "./diagramImage.ts";
-import { DEFAULT_NETWORK_DATA, networkDataForSave, normalizedNetworkDiagramData } from "./diagramNetwork.ts";
+import { networkDataForSave, normalizedNetworkDiagramData } from "./diagramNetwork.ts";
 import { penroseOptions, removePenroseSubstanceOverride } from "./diagramPenrose.ts";
 import { diagramConfigHasSolutionAnnotations } from "./solutionDiagramCompleteness.ts";
 import { tableBlockHasSharedSolutionEntries } from "./tableSolutionEntries.ts";
@@ -167,7 +167,7 @@ export function penroseScalePatch(config: GraphConfig, value: number): Partial<G
 
 export function penroseResamplePatch(config: GraphConfig, variation = penroseVariationId()): Partial<GraphConfig> {
   return {
-    options: { ...penroseOptions(config), variation },
+    options: { ...penroseOptions(config), variation, labelOffsets: undefined },
     widthPx: undefined,
     heightPx: undefined,
   };
@@ -180,15 +180,6 @@ function networkStructuredPatch(config: GraphConfig, data: ReturnType<typeof nor
     widthPx: undefined,
     heightPx: undefined,
   };
-}
-
-export function networkPresetPatch(config: GraphConfig): Partial<GraphConfig> {
-  return networkStructuredPatch(config, {
-    hidePoints: false,
-    hidePointLabels: false,
-    objects: DEFAULT_NETWORK_DATA.objects.map((object) => ({ ...object, label: object.name })),
-    relationships: DEFAULT_NETWORK_DATA.relationships.map((relationship) => ({ ...relationship })),
-  });
 }
 
 export function networkVisibilityPatch(

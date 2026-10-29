@@ -2,8 +2,12 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compile, optimize, showError, toSVG } from "@penrose/core";
+import { compile, showError, toSVG } from "@penrose/core";
 import { JSDOM } from "jsdom";
+import { penroseRelationshipsWithLabelIds, penroseSupportsLabelDragging } from "../../shared/src/penroseLabels.ts";
+import { presentPenroseLabels } from "./labelPresentation.ts";
+import { optimizeValidatedLayout } from "./constraintValidation.mjs";
+import { arrangeNetworkLabels, networkStyle } from "./networkLayout.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
 globalThis.window ??= dom.window;
@@ -60,7 +64,7 @@ const IDENTIFIER_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const DEFAULT_CANVAS_WIDTH = 420;
 const DEFAULT_CANVAS_HEIGHT = 300;
 const TEST_TEXT_FONT_SIZE_PX = 13.333;
-const SVG_CROP_PADDING = 24;
+const SVG_CROP_PADDING = 14;
 const MIN_CROPPED_DIMENSION = 80;
 const PENROSE_DIAGRAM_TYPES = new Set(["geometricConstruction", "network", "setDiagram"]);
 
@@ -459,6 +463,7 @@ function setDiagramSourceEntries(spec, substance) {
 }
 
 const SET_DIAGRAM_DEFAULT_DISPLAY_SCALE = 0.8;
+const SET_DIAGRAM_OUTER_TRIM = 6;
 const SET_DIAGRAM_SIDE_TAB_HALF_HEIGHT = 34;
 const SET_DIAGRAM_SIDE_TAB_RADIUS = 38;
 const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
@@ -467,13 +472,15 @@ const SET_DIAGRAM_COMPACT_REGION_LABEL_POSITIONS = {
   onlyB: { x: 276, y: 150 },
 };
 const THREE_SET_REGION_LABEL_POSITIONS = {
-  onlyA: { x: 132, y: 128 },
-  onlyB: { x: 288, y: 128 },
+  // Area centres of the fixed three-circle layout, with room for total tabs
+  // in the single-set regions. Keep answers in the same positions as givens.
+  onlyA: { x: 140, y: 110 },
+  onlyB: { x: 280, y: 110 },
   onlyC: { x: 210, y: 226 },
-  onlyAB: { x: 210, y: 102 },
-  onlyAC: { x: 176, y: 170 },
-  onlyBC: { x: 244, y: 170 },
-  intersection: { x: 210, y: 148 },
+  onlyAB: { x: 210, y: 95 },
+  onlyAC: { x: 164, y: 173 },
+  onlyBC: { x: 256, y: 173 },
+  intersection: { x: 210, y: 146 },
   outside: { x: 342, y: 252 },
 };
 
@@ -497,10 +504,24 @@ function setSvgText(text, x, y, options = {}) {
   const fontSize = formatSvgNumber((options.fontSize ?? 13.333) * (options.textScale ?? 1));
   const weight = options.weight ? ` font-weight="${options.weight}"` : "";
   const color = options.color ?? "#111827";
+  const role = options.role ? ` data-role="${options.role}"` : "";
   const solutionAttributes = options.solutionOnly
     ? ` data-mauth-penrose-kind="region" data-mauth-penrose-id="${escapeHtml(options.id ?? "")}" data-solution-only="true"`
     : "";
-  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="${color}"${solutionAttributes}>${escapeHtml(text)}</text>`;
+  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" font-style="italic"${weight} fill="${color}"${role}${solutionAttributes}>${escapeHtml(text)}</text>`;
+}
+
+function setCircleName(label, circle, angleDegrees, textScale) {
+  const angle = (angleDegrees * Math.PI) / 180;
+  // Reserve text-sized clearance outside the stroke, independent of diagram
+  // scale. Native set names use the same paper-size font as region values.
+  const radius = circle.r + 16 * textScale;
+  return setSvgText(
+    normalizeSetLabel(label),
+    formatSvgNumber(circle.cx + radius * Math.cos(angle)),
+    formatSvgNumber(circle.cy + radius * Math.sin(angle)),
+    { textScale, role: "set-label" },
+  );
 }
 
 const PENROSE_SOLUTION_COLOR = "#1d4ed8";
@@ -525,12 +546,16 @@ function setCountBadge(text, x, y, type = "box", options = {}) {
   const label = options.blank ? "" : normalizeSetLabel(text);
   if (!label && !options.blank) return "";
   const fontSize = formatSvgNumber(13.333 * (options.textScale ?? 1));
-  if (type === "left-tab" || type === "right-tab") {
+  if (type === "left-tab" || type === "right-tab" || type === "bottom-tab") {
     const radius = options.radius ?? 86;
     const dy = options.tabHalfHeight ?? SET_DIAGRAM_SIDE_TAB_HALF_HEIGHT;
     const inset = Math.sqrt(Math.max(0, radius * radius - dy * dy));
-    const edgeX = type === "left-tab" ? x - radius + (radius - inset) : x + radius - (radius - inset);
     const textOffset = options.textOffset ?? setDiagramSideTabTextOffset(radius, dy);
+    if (type === "bottom-tab") {
+      const edgeY = y + inset;
+      return `<g data-role="set-count-badge" data-badge-kind="bottom-tab"><path d="M ${x - dy} ${formatSvgNumber(edgeY)} A ${SET_DIAGRAM_SIDE_TAB_RADIUS} ${SET_DIAGRAM_SIDE_TAB_RADIUS} 0 0 1 ${x + dy} ${formatSvgNumber(edgeY)}" fill="none" stroke="#111827" stroke-width="2.1"/><text x="${x}" y="${formatSvgNumber(edgeY - textOffset)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
+    }
+    const edgeX = type === "left-tab" ? x - inset : x + inset;
     const textX = type === "left-tab" ? edgeX + textOffset : edgeX - textOffset;
     const sweep = type === "left-tab" ? 1 : 0;
     return `<g data-role="set-count-badge" data-badge-kind="${type}"><path d="M ${formatSvgNumber(edgeX)} ${y - dy} A ${SET_DIAGRAM_SIDE_TAB_RADIUS} ${SET_DIAGRAM_SIDE_TAB_RADIUS} 0 0 ${sweep} ${formatSvgNumber(edgeX)} ${y + dy}" fill="none" stroke="#111827" stroke-width="2.1"/><text x="${formatSvgNumber(textX)}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria, 'Times New Roman', serif" font-size="${fontSize}" fill="#111827">${escapeHtml(label)}</text></g>`;
@@ -597,7 +622,7 @@ function renderThreeSetDiagramSvg(spec, substance) {
       : "",
   ].join("");
 
-  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width - 2 * SET_DIAGRAM_OUTER_TRIM}" height="${height - 2 * SET_DIAGRAM_OUTER_TRIM}" viewBox="${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}">
   <defs>
     <clipPath id="${idPrefix}-left-circle">${circleDef(left)}</clipPath>
     <clipPath id="${idPrefix}-right-circle">${circleDef(right)}</clipPath>
@@ -636,10 +661,9 @@ function renderThreeSetDiagramSvg(spec, substance) {
   <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${lower.cx}" cy="${lower.cy}" r="${lower.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
-  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(leftSet.label), 112, 66, { textScale })}
-  ${setSvgText(normalizeSetLabel(rightSet.label), 308, 66, { textScale })}
-  ${setSvgText(normalizeSetLabel(lowerSet.label), 210, 266, { textScale })}
+  ${setCircleName(leftSet.label, left, -130, textScale)}
+  ${setCircleName(rightSet.label, right, -50, textScale)}
+  ${setCircleName(lowerSet.label, lower, 35, textScale)}
   ${Object.entries(regionLabels)
     .map(([key, label]) =>
       setSvgText(
@@ -663,19 +687,19 @@ function renderThreeSetDiagramSvg(spec, substance) {
     )
     .join("\n  ")}
   ${setCountBadge(universe.countLabel, rect.x + rect.width - 17, rect.y + 17, "box", { textScale, blank: universe.countBlank })}
-  ${setCountBadge(leftSet.countLabel, 94, 92, "box", { textScale, blank: leftSet.countBlank })}
-  ${setCountBadge(rightSet.countLabel, 326, 92, "box", { textScale, blank: rightSet.countBlank })}
-  ${setCountBadge(lowerSet.countLabel, 210, 278, "box", { textScale, blank: lowerSet.countBlank })}
+  ${setCountBadge(leftSet.countLabel, left.cx, left.cy, "left-tab", { textScale, blank: leftSet.countBlank, radius: left.r })}
+  ${setCountBadge(rightSet.countLabel, right.cx, right.cy, "right-tab", { textScale, blank: rightSet.countBlank, radius: right.r })}
+  ${setCountBadge(lowerSet.countLabel, lower.cx, lower.cy, "bottom-tab", { textScale, blank: lowerSet.countBlank, radius: lower.r })}
 </svg>`;
 
   return {
     svg,
     metadata: {
-      width,
-      height,
-      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      viewBox: `0 0 ${width} ${height}`,
+      width: width - 2 * SET_DIAGRAM_OUTER_TRIM,
+      height: height - 2 * SET_DIAGRAM_OUTER_TRIM,
+      displayWidth: (width - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: (height - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}`,
       scalePercent,
       preset: "sets",
       presetLabel: "Sets",
@@ -737,7 +761,7 @@ function renderSetDiagramSvg(spec, substance) {
       : "",
   ].join("");
 
-  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  const svg = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" width="${width - 2 * SET_DIAGRAM_OUTER_TRIM}" height="${height - 2 * SET_DIAGRAM_OUTER_TRIM}" viewBox="${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}">
   <defs>
     <clipPath id="${idPrefix}-left-circle"><circle cx="${left.cx}" cy="${left.cy}" r="${left.r}"/></clipPath>
     <mask id="${idPrefix}-outside" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">
@@ -761,9 +785,8 @@ function renderSetDiagramSvg(spec, substance) {
   <rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${left.cx}" cy="${left.cy}" r="${left.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
   <circle cx="${right.cx}" cy="${right.cy}" r="${right.r}" fill="none" stroke="#111827" stroke-width="2.4"/>
-  ${setSvgText(normalizeSetLabel(universe.label), 54, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(leftSet.label), 116, 58, { textScale })}
-  ${setSvgText(normalizeSetLabel(rightSet.label), 304, 58, { textScale })}
+  ${setCircleName(leftSet.label, left, -120, textScale)}
+  ${setCircleName(rightSet.label, right, -60, textScale)}
   ${setSvgText(regionLabels.onlyA, regionLabelPositions.onlyA.x, regionLabelPositions.onlyA.y, setRegionTextOptions(regions[0], textScale))}
   ${setSvgText(regionLabels.intersection, regionLabelPositions.intersection.x, regionLabelPositions.intersection.y, setRegionTextOptions(regions[1], textScale))}
   ${setSvgText(regionLabels.onlyB, regionLabelPositions.onlyB.x, regionLabelPositions.onlyB.y, setRegionTextOptions(regions[2], textScale))}
@@ -776,11 +799,11 @@ function renderSetDiagramSvg(spec, substance) {
   return {
     svg,
     metadata: {
-      width,
-      height,
-      displayWidth: width * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      displayHeight: height * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
-      viewBox: `0 0 ${width} ${height}`,
+      width: width - 2 * SET_DIAGRAM_OUTER_TRIM,
+      height: height - 2 * SET_DIAGRAM_OUTER_TRIM,
+      displayWidth: (width - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      displayHeight: (height - 2 * SET_DIAGRAM_OUTER_TRIM) * SET_DIAGRAM_DEFAULT_DISPLAY_SCALE,
+      viewBox: `${SET_DIAGRAM_OUTER_TRIM} ${SET_DIAGRAM_OUTER_TRIM} ${width - 2 * SET_DIAGRAM_OUTER_TRIM} ${height - 2 * SET_DIAGRAM_OUTER_TRIM}`,
       scalePercent,
       preset: "sets",
       presetLabel: "Sets",
@@ -893,6 +916,7 @@ function lengthLabelEntries(spec) {
     if (names.length !== 2) continue;
     entries.push({
       name: typeof relation.name === "string" ? assertIdentifier(relation.name, "Length label name") : undefined,
+      labelId: relation._mauthLabelId,
       a: assertIdentifier(names[0], "Length point"),
       b: assertIdentifier(names[1], "Length point"),
       value: relation.value ?? "",
@@ -925,6 +949,7 @@ function segmentLabelEntries(spec) {
     const names = relation.points ?? relation.between ?? [];
     if (!Array.isArray(names) || names.length !== 2) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       a: assertIdentifier(names[0], "Segment label start point"),
       b: assertIdentifier(names[1], "Segment label end point"),
       value,
@@ -946,6 +971,7 @@ function selfLoopLabelEntries(spec) {
     const end = assertIdentifier(names[1], "Self-loop label point");
     if (start !== end) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       a: start,
       value,
       solutionOnly: relation.solutionOnly === true,
@@ -961,6 +987,7 @@ function angleLabelEntries(spec) {
     const points = anglePoints(relation);
     if (!points) continue;
     entries.push({
+      labelId: relation._mauthLabelId,
       name: typeof relation.name === "string" ? assertIdentifier(relation.name, "Angle label name") : undefined,
       a: points[0],
       b: points[1],
@@ -1653,12 +1680,30 @@ function directTitle(element) {
   return [...element.children].find((child) => child.tagName.toLowerCase() === "title")?.textContent ?? "";
 }
 
-function fixedSizeLabelSvg(svg, scalePercent) {
+function fixedSizePresentationSvg(svg, scalePercent) {
   const scale = Number(scalePercent) / 100;
   if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 0.001) return svg;
 
   const document = new DOMParser().parseFromString(svg, "image/svg+xml");
   const svgElement = document.documentElement;
+
+  // Geometry extent scales, while school line weights and point dots retain
+  // their paper size, just like labels. Leave MathJax glyph internals alone.
+  for (const shape of svgElement.querySelectorAll("[stroke-width], [stroke-dasharray], circle")) {
+    if (shape.closest('svg[role="img"]')) continue;
+    const stroke = shape.getAttribute("stroke-width");
+    if (stroke !== null) shape.setAttribute("stroke-width", scaledPx(stroke, scale));
+    const dashes = shape.getAttribute("stroke-dasharray");
+    if (dashes && dashes !== "none") {
+      shape.setAttribute(
+        "stroke-dasharray",
+        dashes.replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, (value) => scaledPx(value, scale)),
+      );
+    }
+    if (shape.tagName.toLowerCase() === "circle" && /\.dot$/.test(directTitle(shape))) {
+      shape.setAttribute("r", scaledPx(shape.getAttribute("r"), scale));
+    }
+  }
 
   for (const text of [...svgElement.querySelectorAll("text")]) {
     const style = text.getAttribute("style");
@@ -1704,6 +1749,9 @@ export async function renderGeometricConstructionDiagram(spec) {
 
   const preset = presetName(spec);
   const substanceSource = stringOption(spec, "substanceSource");
+  if (penroseSupportsLabelDragging(spec.type) && !substanceSource) {
+    spec = { ...spec, data: { ...spec.data, relationships: penroseRelationshipsWithLabelIds(spec.data?.relationships) } };
+  }
   if (spec?.type === "setDiagram" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource")) {
     const substance = substanceSource ? substanceWithImplicitInvisibleLabels(substanceSource, preset, spec) : null;
     return renderSetDiagramSvg(spec, substance);
@@ -1716,19 +1764,42 @@ export async function renderGeometricConstructionDiagram(spec) {
     : specToPresetSubstance(spec, preset);
   const { width, height } = diagramDimensions();
   const styleSpec = substanceSource ? (parseSubstanceDiagramSpec(substance) ?? spec) : spec;
-  const styleSource = stringOption(spec, "styleSource") ?? generatedStyleSource(styleBase, styleSpec);
+  const automaticNetwork =
+    spec.type === "network" && preset === "geometry" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource");
+  const styleSource =
+    stringOption(spec, "styleSource") ?? generatedStyleSource(styleBase, styleSpec) + (automaticNetwork ? networkStyle() : "");
   const domainSource = stringOption(spec, "domainSource") ?? domain;
   const variation = String(spec?.options?.variation ?? "geometry-default");
   const compiled = await compile({ domain: domainSource, style: styleSource, substance, variation });
   if (compiled.isErr()) throw new Error(showError(compiled.error));
 
-  const optimized = optimize(compiled.value);
-  if (optimized.isErr()) throw new Error(showError(optimized.error));
-
   const scalePercent = Number(spec?.options?.scalePercent ?? 100);
-  const rawSvg = svgElementToString(await toSVG(optimized.value));
+  const optimized = await optimizeValidatedLayout(compiled.value, {
+    standardGeometryStyle: preset === "geometry" && !stringOption(spec, "styleSource") && !stringOption(spec, "domainSource"),
+    rankCandidate: automaticNetwork
+      ? async (state) => arrangeNetworkLabels(fixedSizePresentationSvg(svgElementToString(await toSVG(state)), scalePercent), substance)
+      : undefined,
+  });
+
+  const rawSvg = optimized.ranked?.svg ?? svgElementToString(await toSVG(optimized.state));
   const displayViewBox = visibleViewBox(rawSvg, width, height);
-  const svg = fixedSizeLabelSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const fixedSvg = optimized.ranked
+    ? svgWithDimensions(rawSvg, displayViewBox)
+    : fixedSizePresentationSvg(svgWithDimensions(rawSvg, displayViewBox), scalePercent);
+  const aliases = {};
+  if (penroseSupportsLabelDragging(spec.type) && !substanceSource) {
+    for (const [prefix, entries] of [
+      ["sideLabel", lengthLabelEntries(spec)],
+      ["segmentLabel", segmentLabelEntries(spec).filter((entry) => entry.a !== entry.b)],
+      ["selfLoopLabel", selfLoopLabelEntries(spec)],
+      ["angleLabel", angleLabelEntries(spec)],
+    ])
+      entries.forEach((entry, index) => {
+        if (entry.labelId) aliases[`${prefix}${index + 1}.text`] = entry.labelId;
+      });
+  }
+  const presentation = penroseSupportsLabelDragging(spec.type) ? presentPenroseLabels(fixedSvg, spec.options?.labelOffsets, aliases) : null;
+  const svg = presentation?.svg ?? fixedSvg;
   return {
     svg,
     metadata: {
@@ -1744,6 +1815,9 @@ export async function renderGeometricConstructionDiagram(spec) {
       substance,
       styleSource,
       style: spec?.style ?? "school",
+      constraintValidation: optimized.validation,
+      ...(optimized.ranked ? { networkLayout: optimized.ranked.quality } : {}),
+      ...(presentation ? { labelIds: presentation.labels } : {}),
     },
   };
 }

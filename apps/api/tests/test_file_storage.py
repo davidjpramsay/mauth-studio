@@ -703,3 +703,108 @@ def test_project_backup_import_rejects_unsafe_zip_paths(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 400
+
+
+def test_backup_rejects_aggregate_expansion_before_writes(tmp_path, monkeypatch):
+    service = FileProjectStorage(tmp_path)
+    project_id = service.get_or_create_default_project()["id"]
+    service.save_file(project_id, "tests/keep.mauth", {"content": "unchanged"})
+    before = service.get_file(project_id, "tests/keep.mauth")
+    monkeypatch.setattr(storage_service, "PROJECT_BACKUP_MAX_EXPANDED_BYTES", 16)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("one", "a" * 9)
+        archive.writestr("two", "b" * 8)
+    with pytest.raises(StorageValidationError, match="expanded content"):
+        service.import_backup(project_id, buffer.getvalue())
+    assert service.get_file(project_id, "tests/keep.mauth") == before
+
+
+def test_backup_expansion_budget_counts_repeated_reads(monkeypatch):
+    monkeypatch.setattr(storage_service, "PROJECT_BACKUP_MAX_EXPANDED_BYTES", 12)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("payload", "abcdefgh")
+    with zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as archive:
+        assert storage_service.zip_read_bytes(archive, "payload") == b"abcdefgh"
+        with pytest.raises(StorageValidationError, match="expanded content"):
+            storage_service.zip_read_bytes(archive, "payload")
+
+
+def test_backup_http_rejects_oversized_body_before_import(tmp_path, monkeypatch):
+    service = FileProjectStorage(tmp_path)
+    monkeypatch.setattr(storage_api, "project_storage_service", service)
+    monkeypatch.setattr(storage_api, "PROJECT_BACKUP_MAX_BYTES", 8)
+    project_id = client.get("/api/storage/projects/default").json()["id"]
+    response = client.post(f"/api/storage/projects/{project_id}/backup/import", content=b"123456789")
+    assert response.status_code == 413
+    streamed = client.post(f"/api/storage/projects/{project_id}/backup/import", content=iter([b"12345", b"6789"]))
+    assert streamed.status_code == 413
+    assert service.list_files(project_id) == []
+
+
+def test_backup_rejects_duplicate_entries_before_writes(tmp_path):
+    service = FileProjectStorage(tmp_path)
+    project_id = service.get_or_create_default_project()["id"]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive, pytest.warns(UserWarning, match="Duplicate name"):
+        archive.writestr("project/project.json", "{}")
+        archive.writestr("project/project.json", "{}")
+    with pytest.raises(StorageValidationError, match="duplicate entry"):
+        service.import_backup(project_id, buffer.getvalue())
+
+
+def test_backup_import_preserves_visible_file_when_source_uses_alias(tmp_path, monkeypatch):
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(tmp_path))
+    service = FileProjectStorage()
+    project_id = service.get_or_create_default_project()["id"]
+    service.save_file(project_id, "tests/existing.mauth", {"content": "original", "baseRevision": None})
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mauth-project-backup.json", json.dumps({"format": "mauth-project-backup", "version": 1}))
+        archive.writestr("project/project.json", json.dumps({"files": {"existing.mauth": {"kind": "file"}}}))
+        archive.writestr("project/files/existing.mauth", "imported")
+    service.import_backup(project_id, buffer.getvalue())
+    assert (tmp_path / "Documents" / "existing.mauth").read_text() == "original"
+    assert (tmp_path / "Documents" / "existing imported.mauth").read_text() == "imported"
+
+
+def test_backup_import_keeps_two_aliased_archive_files_separate(tmp_path, monkeypatch):
+    monkeypatch.delenv("MATH_APP_STORAGE_ROOT", raising=False)
+    monkeypatch.setenv("MAUTH_DOCUMENTS_ROOT", str(tmp_path))
+    service = FileProjectStorage()
+    project_id = service.get_or_create_default_project()["id"]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mauth-project-backup.json", json.dumps({"format": "mauth-project-backup", "version": 1}))
+        archive.writestr(
+            "project/project.json",
+            json.dumps({"files": {"item.mauth": {"kind": "file"}, "tests/item.mauth": {"kind": "file"}}}),
+        )
+        archive.writestr("project/files/item.mauth", "first")
+        archive.writestr("project/files/tests/item.mauth", "second")
+    service.import_backup(project_id, buffer.getvalue())
+    documents = tmp_path / "Documents"
+    assert (documents / "item.mauth").read_text() == "first"
+    assert (documents / "item imported.mauth").read_text() == "second"
+
+
+def test_backup_import_will_not_replace_external_file_created_during_commit(tmp_path, monkeypatch):
+    service = FileProjectStorage(tmp_path)
+    project_id = service.get_or_create_default_project()["id"]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mauth-project-backup.json", json.dumps({"format": "mauth-project-backup", "version": 1}))
+        archive.writestr("project/project.json", json.dumps({"files": {"new.mauth": {"kind": "file"}}}))
+        archive.writestr("project/files/new.mauth", "imported")
+    original_link = storage_service.os.link
+
+    def create_racing_file(source, destination):
+        destination.write_text("external", encoding="utf-8")
+        return original_link(source, destination)
+
+    monkeypatch.setattr(storage_service.os, "link", create_racing_file)
+    with pytest.raises(storage_service.StorageConflictError, match="appeared during import"):
+        service.import_backup(project_id, buffer.getvalue())
+    assert service._content_path(project_id, "new.mauth").read_text() == "external"

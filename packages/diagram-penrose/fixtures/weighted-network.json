@@ -1,0 +1,19 @@
+{
+  "type": "network",
+  "options": { "variation": "network-label-drag", "scalePercent": 150 },
+  "data": {
+    "objects": [
+      { "type": "point", "name": "A", "label": "A" },
+      { "type": "point", "name": "B", "label": "B" },
+      { "type": "point", "name": "C", "label": "C" },
+      { "type": "point", "name": "D", "label": "D", "solutionOnly": true }
+    ],
+    "relationships": [
+      { "type": "segment", "name": "AD", "points": ["A", "D"], "label": "3", "solutionOnly": true },
+      { "type": "segment", "name": "AB", "points": ["A", "B"], "label": "4" },
+      { "type": "segment", "name": "AC", "points": ["A", "C"], "label": "2" },
+      { "type": "vectorSegment", "name": "BC", "points": ["B", "C"], "label": "1" },
+      { "type": "segment", "name": "AA", "points": ["A", "A"], "label": "7" }
+    ]
+  }
+}

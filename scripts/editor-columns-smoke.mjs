@@ -821,7 +821,7 @@ async function exerciseDiagramInspectorCycle(page, inspector, diagramPanelElemen
   await inspector.getByRole("button", { name: "Network preset" }).click();
   await inspector.locator(`input[aria-label='${label} show node dots']`).uncheck();
   await inspector.locator(`input[aria-label='${label} show node labels']`).uncheck();
-  await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bNetwork preset\b/i, /\bShow node dots\b/i], `${mode} network`);
+  await assertPanelLacks(diagramPanelElement, [/\bDiagram scale\b/i, /\bResample\b/i, /\bShow node dots\b/i], `${mode} network`);
   await assertVisibleInspectorControlsFit(inspector, `${mode} network`);
 
   await selectDiagramType(page, inspector, label, "setDiagram", "Venn diagram settings");

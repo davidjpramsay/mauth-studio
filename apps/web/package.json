@@ -15,6 +15,7 @@
     "@radix-ui/react-slot": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
+    "dompurify": "3.4.17",
     "jsxgraph": "latest",
     "lucide-react": "latest",
     "mathjax-full": "3.2.2",

@@ -1,4 +1,5 @@
 import type { ContentBlock } from "@mauth-studio/shared";
+import { PENROSE_LABEL_ID, penroseSupportsLabelDragging } from "../../../../packages/shared/src/penroseLabels.ts";
 
 import { MAUTH_DOCUMENT_ACTION_TYPES, type MauthDocumentAction } from "./mauthActions.ts";
 import { validateMauthDiagramConfig } from "./mauthDiagramValidation.ts";
@@ -533,6 +534,33 @@ function validatePenroseSettings(value: Record<string, unknown>, path: string, i
   booleanField(value, "original", path, issues, true);
   booleanField(value, "resample", path, issues, true);
   stringValueField(value, "variation", path, issues, true);
+  if (penroseSupportsLabelDragging(value.renderer)) {
+    booleanField(value, "resetLabelPositions", path, issues, true);
+    if (hasOwn(value, "labelOffset")) {
+      const label = recordField(value, "labelOffset", path, issues);
+      if (label) {
+        stringValueField(label, "id", `${path}.labelOffset`, issues);
+        if (typeof label.id === "string" && !PENROSE_LABEL_ID.test(label.id))
+          addIssue(
+            issues,
+            `${path}.labelOffset.id`,
+            "must be a stable Penrose label id",
+            "A.labelText or diameter.text from mauth_diagrams_inspect",
+          );
+        if (
+          label.offset !== null &&
+          !(
+            Array.isArray(label.offset) &&
+            label.offset.length === 2 &&
+            label.offset.every((n) => typeof n === "number" && Number.isFinite(n))
+          )
+        )
+          addIssue(issues, `${path}.labelOffset.offset`, "must be two finite SVG offsets or null to reset", "[x, y] | null");
+      }
+    }
+  } else if (hasOwn(value, "labelOffset") || hasOwn(value, "resetLabelPositions")) {
+    addIssue(issues, path, "label positioning requires geometricConstruction or network", "renderer: geometricConstruction | network");
+  }
 }
 
 function validatePenroseElementPatch(value: Record<string, unknown>, path: string, issues: MauthActionValidationIssue[]) {
@@ -998,6 +1026,7 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
   }
 
   if (value.renderer === "graph3d") {
+    enumField(value, "hiddenEdges", path, new Set(["auto", "manual"]), issues, true);
     numberFields(value, ["widthPx", "heightPx"], path, issues);
     booleanFields(value, ["showAxes", "showAxisLabels"], path, issues);
     booleanField(value, "resetView", path, issues, true);
@@ -1025,7 +1054,14 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
 
   if (value.renderer === "network") {
     validatePenroseSettings(value, path, issues);
-    booleanFields(value, ["preset", "showNodeDots", "showNodeLabels"], path, issues);
+    booleanFields(value, ["showNodeDots", "showNodeLabels"], path, issues);
+    if (hasOwn(value, "preset"))
+      addIssue(
+        issues,
+        `${path}.preset`,
+        "Network preset replacement is no longer supported",
+        "resample: true to rearrange the existing network",
+      );
     if (hasOwn(value, "element"))
       validatePenroseElementSettings(value.element, `${path}.element`, issues, PENROSE_GEOMETRY_ELEMENT_KIND_KEYS);
     return;

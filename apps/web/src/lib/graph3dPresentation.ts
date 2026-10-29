@@ -32,8 +32,8 @@ export interface Graph3DSphereCapSilhouetteArc {
 }
 
 export const GRAPH3D_BOARD_BOUNDING_BOX: [number, number, number, number] = [-5, 5, 5, -5];
-export const GRAPH3D_VIEW_ORIGIN: [number, number] = [-4, -4];
-export const GRAPH3D_VIEW_SIZE: [number, number] = [8, 8];
+export const GRAPH3D_VIEW_ORIGIN: [number, number] = [-4.1, -4.1];
+export const GRAPH3D_VIEW_SIZE: [number, number] = [8.2, 8.2];
 
 export function graph3dEqualScaleRanges(ranges: Graph3DRanges): Graph3DRanges {
   const maximumSpan = Math.max(...ranges.map(([minimum, maximum]) => maximum - minimum));

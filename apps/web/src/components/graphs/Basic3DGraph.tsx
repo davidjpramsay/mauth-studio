@@ -23,8 +23,10 @@ import {
   graph3dViewDirection,
 } from "@/lib/graph3dPresentation";
 import { DEFAULT_3D_VIEW_STATE } from "@/lib/diagram3d";
+import { graph3dEdgeIsHidden, graph3dEdgeKey } from "@/lib/graph3dHiddenEdges";
 import { graph3dConfigWithLabelScreenOffset, type Graph3DLabelElementKind } from "@/lib/diagramGraph3d";
 import { renderMathJaxSvg } from "@/lib/mathjax";
+import { showDiagramLabelFeedback } from "@/lib/diagramLabelFeedback";
 import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
@@ -177,6 +179,7 @@ interface Basic3DView {
 interface Basic2DElement {
   prepareUpdate?: () => Basic2DElement;
   update?: () => Basic2DElement;
+  updateVisibility?: () => Basic2DElement;
   updateRenderer?: () => Basic2DElement;
   rendNode?: HTMLElement;
 }
@@ -681,21 +684,29 @@ function enableProjectedLabelDragging(
     node.dataset.mauthLabelScreenOffsetY = String(screenOffset[1]);
   };
   const handlePointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || activePointerId !== null) return;
     activePointerId = event.pointerId;
     const startClientX = event.clientX;
     const startClientY = event.clientY;
     const startOffset: Point2DCoords = [...screenOffset];
+    const rect = board.containerObj.getBoundingClientRect();
+    const scaleX = rect.width / (board.canvasWidth || rect.width) || 1;
+    const scaleY = rect.height / (board.canvasHeight || rect.height) || 1;
     let moved = false;
 
     event.preventDefault();
     event.stopPropagation();
     node.setPointerCapture?.(event.pointerId);
+    node.dataset.mauthLabelDragging = "true";
+    const stopFeedback = showDiagramLabelFeedback(node);
 
     const removeListeners = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      node.removeEventListener("lostpointercapture", handlePointerCancel);
+      delete node.dataset.mauthLabelDragging;
+      stopFeedback();
       removeWindowListeners = () => undefined;
     };
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -704,7 +715,7 @@ function enableProjectedLabelDragging(
       const deltaX = moveEvent.clientX - startClientX;
       const deltaY = moveEvent.clientY - startClientY;
       moved = moved || Math.hypot(deltaX, deltaY) >= 1;
-      const nextOffset = graph3dDraggedLabelScreenOffset(startOffset, deltaX, deltaY);
+      const nextOffset = graph3dDraggedLabelScreenOffset(startOffset, deltaX / scaleX, deltaY / scaleY);
       screenOffset[0] = nextOffset[0];
       screenOffset[1] = nextOffset[1];
       updateOffsetAttributes();
@@ -713,7 +724,7 @@ function enableProjectedLabelDragging(
     const finish = (finishEvent: PointerEvent, commit: boolean) => {
       if (finishEvent.pointerId !== activePointerId) return;
       removeListeners();
-      node.releasePointerCapture?.(finishEvent.pointerId);
+      if (node.hasPointerCapture?.(finishEvent.pointerId)) node.releasePointerCapture?.(finishEvent.pointerId);
       activePointerId = null;
       if (!commit) {
         screenOffset[0] = startOffset[0];
@@ -728,6 +739,7 @@ function enableProjectedLabelDragging(
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
+    node.addEventListener("lostpointercapture", handlePointerCancel);
     removeWindowListeners = removeListeners;
   };
   const handleDoubleClick = (event: MouseEvent) => {
@@ -787,6 +799,7 @@ function renderProjectedGraph3DLabel({
     LATEX_3D_LABEL_ATTRIBUTES,
   ) as unknown as Basic2DElement;
   if (text.rendNode) {
+    text.rendNode.dataset.mauthLabelRole = "graph3d-label";
     text.rendNode.dataset.mauthGraph3dLabelKind = elementKind;
     text.rendNode.dataset.mauthGraph3dElementId = elementId;
   }
@@ -1239,6 +1252,7 @@ function renderGraph3DFace(
   labelContext: Graph3DLabelContext,
   onLabelMove: CommitGraph3DLabelScreenOffset | undefined,
   registerCleanup: (cleanup: () => void) => void,
+  automaticEdges = false,
 ) {
   if (!face.show) return;
   try {
@@ -1249,7 +1263,7 @@ function renderGraph3DFace(
       fixed: true,
       borders: {
         strokeColor: face.strokeColor ?? "#1f2937",
-        strokeWidth: face.strokeWidth ?? 1,
+        strokeWidth: automaticEdges ? 0 : (face.strokeWidth ?? 1),
         dash: face.dashed ? 2 : 0,
         fixed: true,
         highlight: false,
@@ -1311,7 +1325,7 @@ function renderGraph3DDimension(
   if (!dimension.show) return null;
   const color = dimension.color ?? "#000000";
   if (dimension.display !== "label") {
-    renderCurve3D(view, dimension.from, dimension.to, {
+    const line = renderCurve3D(view, dimension.from, dimension.to, {
       strokeColor: color,
       strokeWidth: dimension.strokeWidth ?? 1.3,
       dash: dimension.display === "guide" || dimension.dashed ? 2 : 0,
@@ -1319,6 +1333,7 @@ function renderGraph3DDimension(
       fixed: true,
       highlight: false,
     });
+    line.element2D?.rendNode?.setAttribute("data-mauth-graph3d-dimension-line", dimension.id);
   }
   if (dimension.display === "bracket") {
     const tickDirection = graph3dDimensionTickDirection(dimension.from, dimension.to, labelContext.viewState, labelContext.screenScale);
@@ -1811,9 +1826,13 @@ function renderGraph3DSolid(
 export function Basic3DGraph({
   graphConfig,
   onGraphConfigChange,
+  onGraphConfigPatch,
+  onLabelPositionChange,
 }: {
   graphConfig?: GraphConfig | null;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
+  onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
+  onLabelPositionChange?: CommitGraph3DLabelScreenOffset;
 }) {
   const boardId = useMemo(() => `jxg-3d-${Math.random().toString(36).slice(2)}`, []);
   const graphConfigRef = useRef(graphConfig);
@@ -1874,39 +1893,41 @@ export function Basic3DGraph({
     );
     const axisLabelsVisible = graph3dAxisLabelsVisible(renderGraphConfig, axesVisible);
     const registerLabelDragCleanup = (cleanup: () => void) => labelDragCleanups.push(cleanup);
-    const commitLabelScreenOffset: CommitGraph3DLabelScreenOffset | undefined = onGraphConfigChange
-      ? (kind, id, offset) => {
-          const currentGraphConfig = graphConfigRef.current;
-          if (!currentGraphConfig) return;
-          onGraphConfigChange(graph3dConfigWithLabelScreenOffset(currentGraphConfig, kind, id, offset));
-        }
-      : undefined;
+    const commitLabelScreenOffset: CommitGraph3DLabelScreenOffset | undefined =
+      onLabelPositionChange ??
+      (onGraphConfigChange
+        ? (kind, id, offset) => {
+            const currentGraphConfig = graphConfigRef.current;
+            if (!currentGraphConfig) return;
+            onGraphConfigChange(graph3dConfigWithLabelScreenOffset(currentGraphConfig, kind, id, offset));
+          }
+        : undefined);
 
     const commitViewState = () => {
-      if (!view || !onGraphConfigChange) return;
+      if (!view || (!onGraphConfigChange && !onGraphConfigPatch)) return;
       const nextViewState = currentViewState(view, persistedViewState.zoom);
       if (sameViewState(nextViewState, lastCommittedViewState)) return;
       lastCommittedViewState = nextViewState;
       const currentGraphConfig = graphConfigRef.current;
-      onGraphConfigChange({
-        ...(currentGraphConfig ?? { type: "graph3d" }),
-        type: currentGraphConfig?.type ?? "graph3d",
+      const patch = {
         metadata: {
           ...(currentGraphConfig?.metadata ?? {}),
           view3d: nextViewState,
         },
-      });
+      };
+      if (onGraphConfigPatch) onGraphConfigPatch(patch);
+      else onGraphConfigChange?.({ ...(currentGraphConfig ?? { type: "graph3d" }), ...patch });
     };
 
     const scheduleViewStateCommit = () => {
-      if (!onGraphConfigChange) return;
+      if (!onGraphConfigChange && !onGraphConfigPatch) return;
       if (pointerActive) return;
       window.clearTimeout(commitTimer);
       commitTimer = window.setTimeout(commitViewState, 120);
     };
 
     const commitViewStateSoon = () => {
-      if (!onGraphConfigChange) return;
+      if (!onGraphConfigChange && !onGraphConfigPatch) return;
       pointerActive = false;
       window.clearTimeout(commitTimer);
       commitTimer = window.setTimeout(commitViewState, 0);
@@ -1988,7 +2009,45 @@ export function Basic3DGraph({
           sphereCapSilhouette: joinedSurfaceIds.has(solid.id) ? "none" : joinedSolids.capIds.has(solid.id) ? "profile" : "sphere",
         }),
       );
-      faces.forEach((face) => renderGraph3DFace(view!, board, face, labelContext, commitLabelScreenOffset, registerLabelDragCleanup));
+      const automaticEdges = asRecord(renderGraphConfig?.data)?.hiddenEdges === "auto";
+      const faceEdges = new Map<string, { from: Point3DCoords; to: Point3DCoords; color: string; width: number }>();
+      const occludingFaces = faces.filter((face) => face.show).map((face) => face.coords);
+      if (automaticEdges) {
+        faces
+          .filter((face) => face.show)
+          .forEach((face) => {
+            face.coords.forEach((from, index) => {
+              const to = face.coords[(index + 1) % face.coords.length];
+              const key = graph3dEdgeKey(from, to);
+              if (!faceEdges.has(key)) faceEdges.set(key, { from, to, color: face.strokeColor ?? "#1f2937", width: face.strokeWidth ?? 1 });
+            });
+          });
+        segments
+          .filter((segment) => segment.show)
+          .forEach((segment) => {
+            const from = pointMap.get(segment.from)?.coords;
+            const to = pointMap.get(segment.to)?.coords;
+            if (!from || !to) return;
+            faceEdges.set(graph3dEdgeKey(from, to), { from, to, color: segment.color ?? "#111827", width: 1.8 });
+          });
+      }
+      faces.forEach((face) =>
+        renderGraph3DFace(view!, board, face, labelContext, commitLabelScreenOffset, registerLabelDragCleanup, automaticEdges),
+      );
+      faceEdges.forEach((edge, key) => {
+        const hidden = liveViewValue(view!, (state) =>
+          graph3dEdgeIsHidden(edge.from, edge.to, occludingFaces, graph3dViewDirection(state)),
+        );
+        const rendered = renderCurve3D(view!, edge.from, edge.to, {
+          strokeColor: edge.color,
+          strokeWidth: edge.width,
+          dash: () => (hidden() ? 2 : 0),
+          layer: 12,
+          highlight: false,
+        });
+        rendered.element2D?.rendNode?.setAttribute("data-mauth-graph3d-auto-edge", key);
+        liveProjectionElements.push(rendered);
+      });
 
       segments
         .filter((segment) => segment.show)
@@ -1996,12 +2055,13 @@ export function Basic3DGraph({
           const from = pointMap.get(segment.from);
           const to = pointMap.get(segment.to);
           if (!from || !to) return;
-          renderCurve3D(view!, from.coords, to.coords, {
-            strokeColor: segment.color ?? "#111827",
-            strokeWidth: 1.8,
-            dash: segment.dashed ? 2 : 0,
-            highlight: false,
-          });
+          if (!faceEdges.has(graph3dEdgeKey(from.coords, to.coords)))
+            renderCurve3D(view!, from.coords, to.coords, {
+              strokeColor: segment.color ?? "#111827",
+              strokeWidth: 1.8,
+              dash: segment.dashed ? 2 : 0,
+              highlight: false,
+            });
           if (segment.label?.trim()) {
             renderProjectedGraph3DLabel({
               board,
@@ -2097,11 +2157,16 @@ export function Basic3DGraph({
         element.updateRenderer?.();
         element.element2D?.prepareUpdate?.();
         element.element2D?.update?.();
+        element.element2D?.updateVisibility?.();
         element.element2D?.updateRenderer?.();
       }
       scheduleViewStateCommit();
     };
     eventBoard.on?.("update", handleBoardUpdate);
+    // Curve3D creates its 2D path before all 3D samples exist. Settle the
+    // projection and visibility once after construction, without waiting for
+    // the first click or camera gesture.
+    board.fullUpdate();
 
     const container = document.getElementById(boardId);
     const renderedRangeSpans = graphRanges.map(([minimum, maximum]) => maximum - minimum);
@@ -2130,7 +2195,17 @@ export function Basic3DGraph({
       window.removeEventListener("beforeprint", commitViewState);
       JXG.JSXGraph.freeBoard(board);
     };
-  }, [boardId, initialAz, initialBank, initialEl, initialZoom, onGraphConfigChange, renderSignature]);
+  }, [
+    boardId,
+    initialAz,
+    initialBank,
+    initialEl,
+    initialZoom,
+    onGraphConfigChange,
+    onGraphConfigPatch,
+    onLabelPositionChange,
+    renderSignature,
+  ]);
 
   return (
     <div

@@ -71,6 +71,28 @@ final class MauthDocumentSummaryTests: XCTestCase {
     XCTAssertThrowsError(try MauthDocumentSummary.load(from: fileURL))
   }
 
+  func testOverflowingTotalsAreOmittedWithoutCrashingPreview() throws {
+    let cases: [[String: Any]] = [
+      ["questions": [["marks": String(Int.max)], ["marks": 1]]],
+      ["questions": [["parts": [["marks": String(Int.max)], ["marks": 1]]]]],
+      ["frontMatter": ["investigation": ["criteria": [["scoringMode": "additive", "allocations": [["marks": String(Int.max)], ["marks": 1]]]]]]],
+      ["frontMatter": ["investigation": ["criteria": [["allocations": [["marks": String(Int.max)]]], ["allocations": [["marks": 1]]]]]]],
+    ]
+    for item in cases {
+      let fileURL = try writeDocument(item.merging(["format": "mauth-studio-document"]) { old, _ in old })
+      defer { try? FileManager.default.removeItem(at: fileURL) }
+      XCTAssertNil(try MauthDocumentSummary.load(from: fileURL).totalMarks)
+    }
+  }
+
+  func testDeeplyNestedMarksAreOmitted() throws {
+    var question: [String: Any] = ["marks": 1]
+    for _ in 0..<130 { question = ["parts": [question]] }
+    let fileURL = try writeDocument(["format": "mauth-studio-document", "questions": [question]])
+    defer { try? FileManager.default.removeItem(at: fileURL) }
+    XCTAssertNil(try MauthDocumentSummary.load(from: fileURL).totalMarks)
+  }
+
   private func writeDocument(_ value: [String: Any]) throws -> URL {
     let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       .appendingPathExtension("mauth")

@@ -1,4 +1,4 @@
-import type { ContentBlock, DiagramAlignment, GraphConfig } from "@mauth-studio/shared";
+import { diagramToolSummary, type ContentBlock, type DiagramAlignment, type GraphConfig } from "@mauth-studio/shared";
 
 import { normalizeDiagramAlignment } from "../../lib/contentBlockNormalization";
 import { diagramInspectorShowsBaseSettings } from "../../lib/diagramInspectorRouting";
@@ -70,6 +70,9 @@ export function DiagramSelectionInspector({
 
   return (
     <div className="space-y-3 p-3">
+      <p className="text-xs font-semibold text-muted-foreground" data-mauth-diagram-tool={selectedDiagramConfig.type}>
+        Tool: {diagramToolSummary(selectedDiagramConfig.type).label}
+      </p>
       {showBaseSettings ? (
         <>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">

@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { migrateLegacyStandaloneMetadata } from "./install-standalone-metadata.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.join(ROOT, "release", "mac-arm64", "Mauth Studio.app");
@@ -63,9 +64,7 @@ if (fs.existsSync(target)) {
 
 fs.renameSync(staging, target);
 
-if (fs.existsSync(legacyMetadata) && !fs.existsSync(path.join(standaloneMetadata, "workspace.json"))) {
-  fs.mkdirSync(path.dirname(standaloneMetadata), { recursive: true });
-  ditto(legacyMetadata, standaloneMetadata);
+if (migrateLegacyStandaloneMetadata({ legacyMetadata, standaloneMetadata, copy: ditto })) {
   console.log(`Copied existing Mauth metadata to: ${standaloneMetadata}`);
 }
 

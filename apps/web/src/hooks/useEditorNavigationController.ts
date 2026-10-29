@@ -358,6 +358,14 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
     setInspectorOpen(true);
   }
 
+  function showContentPane() {
+    setPaneMode("split");
+    setInspectorOpen(false);
+    revealEditorAnchor(activeTocItemId);
+    queueEditorJump(activeTocItemId);
+    window.requestAnimationFrame(() => editorPaneRef.current?.focus({ preventScroll: true }));
+  }
+
   function toggleInspectorPane() {
     if (!showEditor) {
       openSettingsPane();
@@ -385,6 +393,7 @@ export function useEditorNavigationController<TTocItem extends NavigationTocItem
     jumpPreviewToQuestion,
     toggleManualPane,
     openSettingsPane,
+    showContentPane,
     toggleInspectorPane,
   };
 }

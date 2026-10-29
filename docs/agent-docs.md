@@ -24,7 +24,7 @@ MAUTH_WEB_URL=http://127.0.0.1:5174 pnpm agent:doctor
 
 ## HTTP Contract
 
-Packaged `/api/agent/*` requests require the bearer token from the private runtime manifest. The supplied doctor, MCP wrapper, and smoke tooling attach it automatically. Do not copy the token into a persistent Claude/Codex configuration; it changes every time Mauth starts. Development runtimes remain unauthenticated unless `MAUTH_AGENT_TOKEN` is explicitly set.
+`/api/agent/*` requests require the bearer token from the private runtime manifest. The supplied doctor, MCP wrapper, and smoke tooling attach it automatically. Do not copy the token into a persistent Claude/Codex configuration; it changes every time Mauth starts. Development APIs fail closed if their token is absent.
 
 ```text
 GET  /api/agent/current/snapshot?documentId=optional-open-document-id

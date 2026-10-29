@@ -997,7 +997,7 @@ test("applies named diagram settings updates across supported renderers", () => 
       type: "diagram.settings.update" as const,
       scope: { kind: "question" as const, questionId: "q1" },
       blockId: "network",
-      settings: { renderer: "network" as const, preset: true, showNodeDots: false, showNodeLabels: false },
+      settings: { renderer: "network" as const, resample: true, variation: "network-layout", showNodeDots: false, showNodeLabels: false },
     },
     {
       type: "diagram.settings.update" as const,

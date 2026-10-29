@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DiagramAlignment } from "@mauth-studio/shared";
+import { diagramToolSummary, type DiagramAlignment } from "@mauth-studio/shared";
 import { CopyPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,7 @@ export function DiagramBlockPanel({
   return (
     <CollapsiblePanel
       title={title}
+      subtitle={<span data-mauth-diagram-tool={type}>Tool: {diagramToolSummary(type).label}</span>}
       leading={dragHandle}
       actions={actions}
       className={cn("bg-background", muted && "bg-muted/30")}

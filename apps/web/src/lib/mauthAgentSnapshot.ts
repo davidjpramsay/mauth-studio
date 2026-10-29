@@ -8,6 +8,12 @@ import type {
   MauthAgentSnapshot,
   MauthAgentSubpartSummary,
 } from "@mauth-studio/shared";
+import {
+  DIAGRAM_TOOLS_URI,
+  diagramIntentFromText,
+  diagramToolSummary,
+  diagramToolGuide,
+} from "../../../../packages/shared/src/diagramTools.ts";
 import { investigationTotalMarks, normalizeInvestigation } from "./frontMatterConfig.ts";
 import { tableSolutionEntryCount } from "./tableSolutionEntries.ts";
 
@@ -63,7 +69,7 @@ function blockVisibility(block: ContentBlock) {
   return "always";
 }
 
-function summarizeBlock(block: ContentBlock): MauthAgentModuleSummary {
+function summarizeBlock(block: ContentBlock, context: string[] = []): MauthAgentModuleSummary {
   const summary: MauthAgentModuleSummary = {
     id: block.id,
     kind: block.kind,
@@ -87,6 +93,32 @@ function summarizeBlock(block: ContentBlock): MauthAgentModuleSummary {
   }
   if (block.kind === "diagram") {
     summary.graphType = block.graphConfig.type;
+    summary.diagramTool = diagramToolSummary(block.graphConfig.type);
+    const contextText = context.find((text) => diagramIntentFromText(text)) ?? context[0] ?? "";
+    const guide = diagramToolGuide(contextText, block.graphConfig.type, false, {}, Boolean(block.graphConfig.options?.substanceSource));
+    const assessment = guide.assessment;
+    summary.diagramAssessment = {
+      status: assessment.status,
+      confidence: assessment.confidence,
+      reviewRequired: assessment.reviewRequired,
+      uncertainty: assessment.uncertainty,
+      verification: assessment.verification,
+      authoringMode: assessment.selectedToolAssessment?.authoringMode,
+      limitations: assessment.selectedToolAssessment?.limitations ?? [],
+      alternatives: assessment.alternatives.slice(0, 3).map(({ id, eligible, missingFeatures }) => ({ id, eligible, missingFeatures })),
+    };
+    if (guide.recommendation) {
+      summary.recommendedDiagramTool = guide.recommendation;
+      if (summary.diagramTool.id !== guide.recommendation.id) {
+        summary.diagramWarnings = [
+          {
+            code: "diagram-renderer-mismatch",
+            targetId: block.id,
+            message: `This diagram uses ${summary.diagramTool.label}. Recommended: ${guide.recommendation.label}. ${guide.recommendation.reason} Review the requirements before changing tools; renderer schemas are not automatically converted.`,
+          },
+        ];
+      }
+    }
     summary.diagramAlign = block.diagramAlign;
     summary.textPreview = compactText(
       [
@@ -105,45 +137,52 @@ function summarizeBlock(block: ContentBlock): MauthAgentModuleSummary {
   }
   if (block.kind === "columns") {
     summary.columnCount = block.columnCount ?? block.columns.length;
-    summary.childModules = block.columns.flatMap((column) => column.map((child) => summarizeBlock(child)));
+    summary.childModules = block.columns.flatMap((column) => column.map((child) => summarizeBlock(child, context)));
   }
 
   return summary;
 }
 
-function summarizeSubpart(subpart: MauthSubpartLike): MauthAgentSubpartSummary {
+function summarizeSubpart(subpart: MauthSubpartLike, parentContext: string[]): MauthAgentSubpartSummary {
+  const context = [subpart.text ?? "", ...parentContext];
   return {
     id: subpart.id,
     label: subpart.label,
     marks: subpart.marks,
     textPreview: compactText(subpart.text),
     pageBreakBefore: subpart.pageBreakBefore,
-    modules: subpart.contentBlocks.map(summarizeBlock),
+    modules: subpart.contentBlocks.map((block) => summarizeBlock(block, context)),
   };
 }
 
-function summarizePart(part: MauthPartLike): MauthAgentPartSummary {
+function summarizePart(part: MauthPartLike, parentContext: string[]): MauthAgentPartSummary {
+  const context = [part.text ?? "", ...parentContext];
   return {
     id: part.id,
     label: part.label,
     marks: part.marks,
     textPreview: compactText(part.text),
     pageBreakBefore: part.pageBreakBefore,
-    modules: part.contentBlocks.map(summarizeBlock),
-    subparts: (part.subparts ?? []).map(summarizeSubpart),
+    modules: part.contentBlocks.map((block) => summarizeBlock(block, context)),
+    subparts: (part.subparts ?? []).map((subpart) => summarizeSubpart(subpart, context)),
   };
 }
 
 function summarizeQuestion(question: MauthQuestionLike, index: number): MauthAgentQuestionSummary {
+  const context = [question.text ?? ""];
   return {
     id: question.id,
     label: `Question ${index + 1}`,
     marks: question.marks,
     textPreview: compactText(question.text),
     pageBreakAfter: question.pageBreakAfter,
-    modules: question.contentBlocks.map(summarizeBlock),
-    parts: (question.parts ?? []).map(summarizePart),
+    modules: question.contentBlocks.map((block) => summarizeBlock(block, context)),
+    parts: (question.parts ?? []).map((part) => summarizePart(part, context)),
   };
+}
+
+function diagramWarnings(modules: MauthAgentModuleSummary[]): NonNullable<MauthAgentModuleSummary["diagramWarnings"]> {
+  return modules.flatMap((module) => [...(module.diagramWarnings ?? []), ...diagramWarnings(module.childModules ?? [])]);
 }
 
 function subpartTotalMarks(subparts: MauthSubpartLike[] | undefined) {
@@ -231,7 +270,17 @@ export function buildMauthAgentSnapshot<
     questionCount: questions.length,
     totalMarks: documentTotalMarks(input.document),
     validation: input.validation,
-    warnings: input.warnings ?? [],
+    warnings: [
+      ...(input.warnings ?? []),
+      ...questions.flatMap((question) => [
+        ...diagramWarnings(question.modules),
+        ...question.parts.flatMap((part) => [
+          ...diagramWarnings(part.modules),
+          ...part.subparts.flatMap((subpart) => diagramWarnings(subpart.modules)),
+        ]),
+      ]),
+    ],
+    diagramTools: { catalogUri: DIAGRAM_TOOLS_URI, lookupTool: "mauth_diagram_tools", tools: diagramToolGuide().tools },
     _links: {
       snapshot: "/api/agent/current/snapshot",
       preview: { method: "POST", href: "/api/agent/current/actions/preview" },
