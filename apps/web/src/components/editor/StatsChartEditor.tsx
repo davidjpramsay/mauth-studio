@@ -410,7 +410,7 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
             />
           </label>
         </section>
-      ) : (
+      ) : data.chartType !== "blankAxes" ? (
         <section
           className={cn(
             "grid grid-cols-1 gap-3 border-t pt-3",
@@ -456,7 +456,7 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
             </>
           ) : null}
         </section>
-      )}
+      ) : null}
 
       <StatsChartRegionEditor
         config={config}

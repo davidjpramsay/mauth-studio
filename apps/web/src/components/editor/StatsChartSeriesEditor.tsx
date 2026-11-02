@@ -100,7 +100,9 @@ export function StatsChartSeriesEditor({
   return (
     <section className="flex flex-col gap-2 border-t pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional series</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {data.chartType === "blankAxes" ? "Plotted series" : "Additional series"}
+        </div>
         <Button
           type="button"
           variant="outline"
